@@ -112,13 +112,50 @@ Environment defaults such as `DATA_DIR` are described above.
 
 ### Environment Variable Substitution
 
-`config.json` supports `${VARNAME}` substitution in specific places:
+`config.json` supports `${VARNAME}` substitution in all string values. This is useful for:
 
-- `mcpServers[*].env` values
-- `openai-compatible` chat config: `apiKey`, `baseUrl`, and `models` entries
-- CLI wrapper `env` entries (see `wrapper.env` below)
+- Paths that depend on home directory: `"workspaceRoot": "${HOME}/workspaces"`
+- API keys and secrets: `"apiKey": "${LOCAL_LLM_KEY}"`
+- Runtime-specific paths: `"socketPath": "${XDG_RUNTIME_DIR}/podman/podman.sock"`
 
-If the environment variable is missing, the value is replaced with an empty string.
+If the environment variable is missing, the placeholder is replaced with an empty string.
+
+Examples:
+
+```json
+{
+  "plugins": {
+    "coding": {
+      "enabled": true,
+      "local": {
+        "workspaceRoot": "${HOME}/coding-workspaces"
+      }
+    }
+  },
+  "agents": [
+    {
+      "agentId": "claude-cli",
+      "displayName": "Claude",
+      "description": "Claude via CLI",
+      "chat": {
+        "provider": "claude-cli",
+        "config": {
+          "workdir": "${HOME}/projects",
+          "wrapper": {
+            "path": "${HOME}/bin/claude-wrapper.sh"
+          }
+        }
+      }
+    }
+  ],
+  "mcpServers": [
+    {
+      "command": "${HOME}/bin/mcp-server",
+      "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+    }
+  ]
+}
+```
 
 ### Top-Level Keys
 

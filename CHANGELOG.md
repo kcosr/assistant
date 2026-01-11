@@ -6,6 +6,8 @@
 
 ### Added
 
+- Support environment variable substitution (`${VAR}`) in all config string values, not just specific fields. ([#1](https://github.com/kcosr/assistant/pull/1))
+
 ### Changed
 
 ### Fixed
