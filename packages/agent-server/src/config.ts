@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { z } from 'zod';
-import type { AgentDefinition, OpenAiCompatibleChatConfig } from './agents';
+import type { AgentDefinition } from './agents';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
 
@@ -476,10 +476,11 @@ export const PluginConfigSchema = z
       .array(
         z.union([
           NonEmptyTrimmedStringSchema,
-          z.object({
-            id: NonEmptyTrimmedStringSchema,
-            label: NonEmptyTrimmedStringSchema.optional(),
-          })
+          z
+            .object({
+              id: NonEmptyTrimmedStringSchema,
+              label: NonEmptyTrimmedStringSchema.optional(),
+            })
             .passthrough(),
         ]),
       )
@@ -531,112 +532,31 @@ function substituteEnvVars(value: string): string {
   });
 }
 
+/**
+ * Recursively walk a value and substitute environment variables in all strings.
+ */
+function deepSubstitute<T>(value: T): T {
+  if (typeof value === 'string') {
+    return substituteEnvVars(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => deepSubstitute(item)) as T;
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = deepSubstitute(val);
+    }
+    return result as T;
+  }
+
+  return value;
+}
+
 function applyEnvSubstitution(config: AppConfig): AppConfig {
-  const mcpServers =
-    config.mcpServers.length > 0
-      ? config.mcpServers.map((server) => {
-          if (!server.env) {
-            return server;
-          }
-
-          const substitutedEnv: Record<string, string> = {};
-          for (const [key, rawValue] of Object.entries(server.env)) {
-            substitutedEnv[key] = substituteEnvVars(rawValue);
-          }
-
-          return {
-            ...server,
-            env: substitutedEnv,
-          };
-        })
-      : config.mcpServers;
-
-  const agents =
-    config.agents.length > 0
-      ? config.agents.map((agent) => {
-          const chat = agent.chat;
-          if (!chat || !chat.config) {
-            return agent;
-          }
-
-          if (chat.provider === 'openai-compatible') {
-            const compatibleConfig = chat.config as OpenAiCompatibleChatConfig;
-            const models =
-              compatibleConfig.models && compatibleConfig.models.length > 0
-                ? compatibleConfig.models
-                : [];
-
-            if (!compatibleConfig.baseUrl || models.length === 0) {
-              return agent;
-            }
-            const apiKey = compatibleConfig.apiKey
-              ? substituteEnvVars(compatibleConfig.apiKey)
-              : undefined;
-            const baseUrl = substituteEnvVars(compatibleConfig.baseUrl);
-            const substitutedModels = models.map((model) => substituteEnvVars(model));
-
-            const updatedAgent: AgentDefinition = {
-              ...agent,
-              chat: {
-                provider: 'openai-compatible',
-                config: {
-                  ...compatibleConfig,
-                  baseUrl,
-                  models: substitutedModels,
-                  ...(apiKey ? { apiKey } : {}),
-                },
-              },
-            };
-            return updatedAgent;
-          }
-
-          if (
-            chat.provider === 'claude-cli' ||
-            chat.provider === 'codex-cli' ||
-            chat.provider === 'pi-cli'
-          ) {
-            const cliConfig = chat.config as {
-              wrapper?: {
-                path: string;
-                env?: Record<string, string>;
-              };
-            };
-            const wrapper = cliConfig.wrapper;
-            const wrapperEnv = wrapper?.env;
-            if (!wrapper || !wrapper.path || !wrapperEnv) {
-              return agent;
-            }
-
-            const substitutedEnv: Record<string, string> = {};
-            for (const [key, rawValue] of Object.entries(wrapperEnv)) {
-              substitutedEnv[key] = substituteEnvVars(rawValue);
-            }
-
-            const updatedAgent: AgentDefinition = {
-              ...agent,
-              chat: {
-                ...chat,
-                config: {
-                  ...cliConfig,
-                  wrapper: {
-                    path: wrapper.path,
-                    env: substitutedEnv,
-                  },
-                },
-              },
-            };
-            return updatedAgent;
-          }
-
-          return agent;
-        })
-      : config.agents;
-
-  return {
-    ...config,
-    mcpServers,
-    agents,
-  };
+  return deepSubstitute(config);
 }
 
 export function loadConfig(configPath: string): AppConfig {
