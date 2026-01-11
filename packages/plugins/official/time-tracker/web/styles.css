@@ -1,0 +1,720 @@
+.time-tracker-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.time-tracker-instance-select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+}
+
+.time-tracker-track {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background-color: var(--color-bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.time-tracker-task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.time-tracker-task-selector {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  position: relative;
+}
+
+.time-tracker-task-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-task-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  padding: 2px 4px;
+}
+
+.time-tracker-task-input:focus-within {
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.time-tracker-task-input-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  outline: none;
+}
+
+.time-tracker-task-toggle {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.time-tracker-task-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.time-tracker-task-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 20;
+  display: none;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.time-tracker-task-dropdown.open {
+  display: block;
+}
+
+.time-tracker-task-option {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.time-tracker-task-option.active,
+.time-tracker-task-option:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.time-tracker-task-option.create {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.time-tracker-task-edit {
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  align-self: flex-end;
+  padding: 6px 10px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.time-tracker-task-edit:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-task-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.time-tracker-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  position: relative;
+}
+
+.time-tracker-button {
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: var(--font-size-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.time-tracker-button.primary {
+  background-color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-button.ghost {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.time-tracker-button-caret {
+  display: inline-flex;
+}
+
+.time-tracker-split-button {
+  display: inline-flex;
+  position: relative;
+}
+
+.time-tracker-split-button .time-tracker-split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.time-tracker-split-button .time-tracker-split-toggle {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.time-tracker-split-button .time-tracker-split-toggle:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.time-tracker-split-button .time-tracker-button:disabled {
+  pointer-events: none;
+}
+
+.time-tracker-duration-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: none;
+  z-index: 15;
+}
+
+.time-tracker-duration-menu.open {
+  display: block;
+}
+
+.time-tracker-duration-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-tracker-duration-item {
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: var(--spacing-xs) var(--spacing-md);
+  text-align: left;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.time-tracker-duration-item:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.time-tracker-timer {
+  display: flex;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-surface);
+  gap: var(--spacing-sm);
+  flex-direction: column;
+}
+
+.time-tracker-timer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.time-tracker-timer-display {
+  font-family: var(--font-mono);
+}
+
+.time-tracker-timer-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.time-tracker-stop-confirm {
+  display: flex;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-surface);
+  gap: var(--spacing-sm);
+  flex-direction: column;
+}
+
+.time-tracker-stop-message {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-stop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.time-tracker-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-note-input {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.time-tracker-note-input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.time-tracker-note-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.time-tracker-entries {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.time-tracker-filters {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  position: relative;
+  background-color: var(--color-bg-surface);
+}
+
+.time-tracker-filter-title {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.time-tracker-filter-button {
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.time-tracker-filter-button.active {
+  background-color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-range-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: var(--spacing-md);
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-sm);
+  z-index: 30;
+  width: 260px;
+  display: none;
+}
+
+.time-tracker-range-popover.open {
+  display: block;
+}
+
+.time-tracker-range-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-xs);
+}
+
+.time-tracker-range-nav {
+  border: none;
+  background: var(--color-bg-input);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.time-tracker-range-month {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.time-tracker-range-weekdays,
+.time-tracker-range-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.time-tracker-range-weekday {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.time-tracker-range-day {
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 4px 0;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.time-tracker-range-day.outside {
+  color: var(--color-text-muted);
+}
+
+.time-tracker-range-day.in-range {
+  background-color: rgba(67, 127, 255, 0.2);
+}
+
+.time-tracker-range-day.start,
+.time-tracker-range-day.end {
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-primary);
+}
+
+.time-tracker-range-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.time-tracker-entry-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.time-tracker-entry-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.time-tracker-entry-group-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.time-tracker-entry-row {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-elevated);
+}
+
+.time-tracker-entry-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.time-tracker-entry-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+
+.time-tracker-entry-task {
+  font-weight: 600;
+}
+
+.time-tracker-entry-duration {
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-entry-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.time-tracker-entry-action {
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+}
+
+.time-tracker-entry-action:hover {
+  color: var(--color-text-primary);
+}
+
+.time-tracker-entry-action.danger {
+  color: var(--color-error);
+}
+
+.time-tracker-entry-action.confirm {
+  color: var(--color-success);
+}
+
+.time-tracker-entry-action.cancel {
+  color: var(--color-text-muted);
+}
+
+.time-tracker-entry-action.cancel:hover {
+  color: var(--color-text-primary);
+}
+
+/* Inline delete confirmation */
+.time-tracker-entry-confirm {
+  display: none;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.time-tracker-entry-confirm-label {
+  font-size: var(--font-size-xs);
+  color: var(--theme-danger);
+  font-weight: 500;
+}
+
+.time-tracker-entry-row.confirming .time-tracker-entry-actions > .time-tracker-entry-action {
+  display: none;
+}
+
+.time-tracker-entry-row.confirming .time-tracker-entry-confirm {
+  display: flex;
+}
+
+.time-tracker-entry-note {
+  margin-top: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.time-tracker-range-total {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.time-tracker-empty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.time-tracker-form-error {
+  font-size: var(--font-size-xs);
+  color: var(--color-error);
+  margin: 0;
+}
+
+/* ===== Confirmation Dialog ===== */
+.confirm-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 1100; /* Above panel-dock-popover (1002) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.confirm-dialog {
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  max-width: 420px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+}
+
+.confirm-dialog-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.list-item-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.list-item-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.list-item-form-input,
+.list-item-form-textarea {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.list-item-form-input:focus,
+.list-item-form-textarea:focus,
+.list-item-form-select:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.list-item-form-textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.list-item-form-select {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.confirm-dialog-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+
+.confirm-dialog-button {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background-color var(--transition-fast);
+}
+
+.confirm-dialog-button.cancel {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.confirm-dialog-button.cancel:hover {
+  background-color: var(--color-bg-active);
+}
+
+.confirm-dialog-button.danger {
+  background-color: var(--color-error);
+  color: white;
+}
+
+.confirm-dialog-button.danger:hover {
+  background-color: #dc2626;
+}
+
+@media (max-width: 720px) {
+  .time-tracker-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .time-tracker-entry-row-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .time-tracker-entry-actions {
+    align-self: flex-end;
+  }
+}

@@ -1,0 +1,105 @@
+.session-info-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.session-info-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.session-info-panel-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.session-info-panel-binding {
+  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.session-info-panel-binding:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-default);
+  background-color: var(--color-bg-hover);
+}
+
+.session-info-panel-binding.is-static,
+.session-info-panel-binding:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.session-info-panel-binding.is-unbound {
+  color: var(--color-text-muted);
+}
+
+.session-info-panel-row {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.session-info-panel-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.session-info-panel-label-box {
+  background-color: var(--color-bg-surface);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 8px;
+}
+
+.session-info-panel-label-box.empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.session-info-panel-attributes {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+  margin: 0;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.session-info-panel.is-unbound .session-info-panel-body {
+  opacity: 0.75;
+}
+
+.session-info-panel-empty {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.session-info-panel-attributes.empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}

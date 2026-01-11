@@ -1,0 +1,8 @@
+{
+  "appId": "com.assistant.app",
+  "appName": "Assistant",
+  "webDir": "../web-client/public",
+  "server": {
+    "androidScheme": "https"
+  }
+}

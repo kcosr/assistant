@@ -1,0 +1,135 @@
+{
+  "agents": [
+    {
+      "agentId": "claude-cli",
+      "displayName": "Claude Code",
+      "description": "Claude Code",
+      "chat": {
+        "provider": "claude-cli",
+        "config": {
+          "extraArgs": [
+            "--model",
+            "haiku",
+            "--dangerously-skip-permissions"
+          ]
+        }
+      }
+    },
+    {
+      "agentId": "codex-cli",
+      "displayName": "Codex",
+      "description": "Codex",
+      "chat": {
+        "provider": "codex-cli",
+        "config": {
+          "extraArgs": [
+            "--model",
+            "gpt-5.2-codex",
+            "--config",
+            "model_reasoning_effort=xhigh",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox"
+          ]
+        }
+      }
+    },
+    {
+      "agentId": "pi",
+      "displayName": "pi",
+      "description": "pi",
+      "chat": {
+        "provider": "pi-cli",
+        "config": {
+          "extraArgs": [
+            "--model",
+            "anthropic/claude-haiku-4-5",
+            "--thinking",
+            "off"
+          ]
+        }
+      }
+    }
+  ],
+  "plugins": {
+    "chat": {
+      "enabled": true
+    },
+    "panels": {
+      "enabled": true
+    },
+    "sessions": {
+      "enabled": true
+    },
+    "agents": {
+      "enabled": true
+    },
+    "url-fetch": {
+      "enabled": true
+    },
+    "lists": {
+      "enabled": true,
+      "gitVersioning": {
+        "enabled": true,
+        "intervalMinutes": 1
+      },
+      "instances": [
+        "personal",
+        "work"
+      ]
+    },
+    "notes": {
+      "enabled": true,
+      "gitVersioning": {
+        "enabled": true,
+        "intervalMinutes": 1
+      },
+      "instances": [
+        "personal",
+        "work"
+      ]
+    },
+    "time-tracker": {
+      "enabled": true,
+      "gitVersioning": {
+        "enabled": true,
+        "intervalMinutes": 1
+      },
+      "instances": [
+        "personal",
+        "work"
+      ]
+    },
+    "files": {
+      "enabled": true,
+      "workspaceRoot": "~"
+    },
+    "diff": {
+      "enabled": true,
+      "gitVersioning": {
+        "enabled": true,
+        "intervalMinutes": 1
+      },
+      "instances": [
+        {
+          "id": "default",
+          "label": "Default",
+          "workspaceRoot": "/home/kevin/worktrees"
+        },
+        {
+          "id": "work",
+          "label": "Work",
+          "workspaceRoot": "/home/kevin/devtools/work"
+        }
+      ]
+    },
+    "terminal": {
+      "enabled": true
+    },
+    "links": {
+      "enabled": true,
+      "spotify": {
+        "rewriteWebUrlsToUris": true
+      }
+    }
+  }
+}

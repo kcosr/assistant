@@ -1,0 +1,328 @@
+{
+  "id": "panels",
+  "version": "0.1.0",
+  "description": "Panel inventory and event operations.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["panels"],
+    "capabilities": ["panels.read", "panels.manage"]
+  },
+  "operations": [
+    {
+      "id": "list",
+      "summary": "List known panel instances, including selected panel ids.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeChat": {
+            "type": "boolean",
+            "description": "Include chat panels (default: false)."
+          },
+          "includeContext": {
+            "type": "boolean",
+            "description": "Include per-panel context when available (default: true)."
+          },
+          "includeLayout": {
+            "type": "boolean",
+            "description": "Include layout tree and header panel ids (default: false)."
+          }
+        }
+      },
+      "capabilities": ["panels.read"]
+    },
+    {
+      "id": "selected",
+      "summary": "Return the selected non-chat panel and optionally the selected chat panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeChat": {
+            "type": "boolean",
+            "description": "Include selected chat panel details (default: false)."
+          },
+          "includeContext": {
+            "type": "boolean",
+            "description": "Include per-panel context when available (default: true)."
+          },
+          "includeLayout": {
+            "type": "boolean",
+            "description": "Include layout tree and header panel ids (default: false)."
+          }
+        }
+      },
+      "capabilities": ["panels.read"]
+    },
+    {
+      "id": "event",
+      "summary": "Send a panel_event payload to a panel instance.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to target."
+          },
+          "panelType": {
+            "type": "string",
+            "description": "Panel type id to target (for example \"chat\" or \"notes\")."
+          },
+          "payload": {
+            "type": ["object", "array", "string", "number", "boolean", "null"],
+            "items": {},
+            "additionalProperties": true,
+            "description": "JSON payload delivered to the panel."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["session", "all"],
+            "description": "Optional scope; \"all\" broadcasts to every connected client."
+          }
+        },
+        "required": ["panelId", "panelType", "payload"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "tree",
+      "summary": "Return the current panel layout tree.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeChat": {
+            "type": "boolean",
+            "description": "Include chat panels in the output (default: true)."
+          },
+          "includeContext": {
+            "type": "boolean",
+            "description": "Include per-panel context when available (default: true)."
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "text", "both"],
+            "description": "Output format (default: json)."
+          }
+        }
+      },
+      "capabilities": ["panels.read"]
+    },
+    {
+      "id": "open",
+      "summary": "Open a panel in the workspace or header.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelType": {
+            "type": "string",
+            "description": "Panel type to open (default: \"empty\")."
+          },
+          "targetPanelId": {
+            "type": "string",
+            "description": "Optional panel id to place relative to."
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "region": {
+                "type": "string",
+                "enum": ["left", "right", "top", "bottom", "center"]
+              },
+              "size": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "number" },
+                  "height": { "type": "number" }
+                }
+              }
+            },
+            "required": ["region"]
+          },
+          "focus": {
+            "type": "boolean",
+            "description": "Focus the opened panel (default: true)."
+          },
+          "pinToHeader": {
+            "type": "boolean",
+            "description": "Pin the opened panel to the header (default: false)."
+          },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["fixed", "global"]
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "description": "Optional session binding; sessionId is required when mode is \"fixed\"."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        }
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "close",
+      "summary": "Close a panel and replace it with an empty placeholder.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to close."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "remove",
+      "summary": "Remove a panel from the layout.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to remove."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "replace",
+      "summary": "Replace a panel instance with another panel type.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to replace."
+          },
+          "panelType": {
+            "type": "string",
+            "description": "Panel type to use for the replacement."
+          },
+          "binding": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["fixed", "global"]
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "description": "Optional session binding; sessionId is required when mode is \"fixed\"."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        },
+        "required": ["panelId", "panelType"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "move",
+      "summary": "Move a panel to a new placement.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to move."
+          },
+          "placement": {
+            "type": "object",
+            "properties": {
+              "region": {
+                "type": "string",
+                "enum": ["left", "right", "top", "bottom", "center"]
+              },
+              "size": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "number" },
+                  "height": { "type": "number" }
+                }
+              }
+            },
+            "required": ["region"]
+          },
+          "targetPanelId": {
+            "type": "string",
+            "description": "Optional panel id to place relative to."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        },
+        "required": ["panelId", "placement"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "toggle-split-view",
+      "summary": "Toggle a split between split and tab modes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "splitId": {
+            "type": "string",
+            "description": "Split id to toggle."
+          },
+          "panelId": {
+            "type": "string",
+            "description": "Panel id within the split to toggle."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        }
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
+      "id": "close-split",
+      "summary": "Close a split, keeping the active/first panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "splitId": {
+            "type": "string",
+            "description": "Split id to close."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          }
+        },
+        "required": ["splitId"]
+      },
+      "capabilities": ["panels.manage"]
+    }
+  ]
+}

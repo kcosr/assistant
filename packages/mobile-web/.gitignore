@@ -1,0 +1,6 @@
+# Generated native projects
+android/
+ios/
+
+# Dependencies
+node_modules/

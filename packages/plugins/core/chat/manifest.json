@@ -1,0 +1,23 @@
+{
+  "id": "chat",
+  "version": "0.1.0",
+  "description": "Chat transcript panel.",
+  "capabilities": ["chat.read", "chat.write"],
+  "panels": [
+    {
+      "type": "chat",
+      "title": "Chat",
+      "icon": "message-square",
+      "description": "Chat transcript.",
+      "multiInstance": true,
+      "defaultSessionBinding": "fixed",
+      "sessionScope": "optional",
+      "defaultPlacement": { "region": "center" },
+      "capabilities": ["chat.read", "chat.write"]
+    }
+  ],
+  "web": {
+    "bundlePath": "/plugins/chat/bundle.js",
+    "stylesPath": "/plugins/chat/styles.css"
+  }
+}

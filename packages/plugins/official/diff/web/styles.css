@@ -1,0 +1,1161 @@
+.diff-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+}
+
+.diff-panel-header .panel-header-label {
+  font-weight: 600;
+}
+
+.diff-panel-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.diff-panel-instance-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.diff-panel-instance-group.hidden {
+  display: none;
+}
+
+.diff-panel-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-panel-input,
+.diff-panel-select {
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+}
+
+.diff-panel-repo-value {
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+  min-width: 140px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.diff-panel-branch-value {
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+  min-width: 90px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.diff-panel-input {
+  min-width: 160px;
+}
+
+.diff-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.diff-panel-repo-picker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.diff-panel-repo-picker.hidden {
+  display: none;
+}
+
+.diff-panel-repo-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(15, 20, 30, 0.55);
+}
+
+.diff-panel-repo-picker-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.diff-panel-repo-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.diff-panel-repo-picker-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.diff-panel-repo-picker-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.diff-panel-repo-picker-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-repo-crumb {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.diff-repo-crumb:hover {
+  color: var(--color-text-primary);
+}
+
+.diff-repo-crumb-sep {
+  color: var(--color-text-secondary);
+}
+
+.diff-panel-repo-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diff-panel-repo-picker-footer {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--color-border-subtle);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-repo-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.diff-repo-row.active {
+  background-color: var(--color-bg-active);
+}
+
+.diff-repo-entry {
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.diff-repo-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-repo-action {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.diff-repo-action:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.diff-panel-button {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.diff-panel-button:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.diff-panel-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.diff-panel-button.diff-panel-secondary {
+  background-color: transparent;
+}
+
+.diff-panel-button.diff-panel-stage {
+  background-color: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+}
+
+.diff-panel-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-panel-toggle-input {
+  accent-color: var(--color-accent-primary);
+}
+
+.diff-panel-status {
+  min-height: 20px;
+  padding: 4px var(--spacing-md);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.diff-panel-status.error {
+  background-color: var(--color-error-soft);
+  color: var(--color-error);
+  border-bottom-color: var(--color-error-border);
+}
+
+.diff-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.diff-panel-sidebar {
+  width: 260px;
+  min-width: 200px;
+  border-right: 1px solid var(--color-border-subtle);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--color-bg-base);
+}
+
+.diff-panel-sidebar.collapsed {
+  width: 0;
+  min-width: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+.diff-sidebar-search {
+  padding: var(--spacing-sm);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.diff-file-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px;
+}
+
+.diff-file-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--color-text-primary);
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px var(--spacing-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.diff-file-row:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.diff-file-row.active {
+  background-color: var(--color-bg-active);
+}
+
+.diff-dir-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: 6px var(--spacing-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.diff-dir-row:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.diff-dir-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-file-content,
+.diff-dir-content {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.diff-entry-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-elevated);
+}
+
+.diff-entry-icon[data-kind='dir'][data-open='true'] {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent-border);
+  background-color: var(--color-accent-soft);
+}
+
+.diff-status-badge {
+  min-width: 16px;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  background: transparent;
+}
+
+.diff-status-badge.empty {
+  opacity: 0;
+}
+
+.diff-status-badge[data-kind='modified'] {
+  color: var(--color-warning);
+}
+
+.diff-status-badge[data-kind='added'] {
+  color: var(--color-success);
+}
+
+.diff-status-badge[data-kind='deleted'] {
+  color: var(--color-error);
+}
+
+.diff-status-badge[data-kind='untracked'] {
+  color: var(--color-info);
+}
+
+.diff-status-badge[data-kind='renamed'],
+.diff-status-badge[data-kind='copied'],
+.diff-status-badge[data-kind='other'] {
+  color: var(--color-accent-primary);
+}
+
+.diff-file-status {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  min-width: 72px;
+}
+
+.diff-file-name {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-panel-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.diff-view-tabs {
+  border-top: 1px solid var(--color-border-subtle);
+  display: flex;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+}
+
+.diff-view-tab {
+  flex: 1;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.diff-view-tab.active {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent-border);
+  background-color: var(--color-accent-soft);
+}
+
+.diff-file-preview-body {
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.diff-panel-diff-header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.diff-panel-diff-header.hidden {
+  display: none;
+}
+
+.diff-panel-diff-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-panel-diff-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.diff-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.diff-panel-empty {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  padding: var(--spacing-md);
+}
+
+.diff-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 4px var(--spacing-sm);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.diff-file-header-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.diff-file-header-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-file-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-left: auto;
+}
+
+.diff-hunk {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diff-hunk.selected {
+  border-color: var(--color-accent-border);
+  box-shadow: 0 0 0 1px var(--color-accent-border);
+}
+
+.diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px var(--spacing-sm);
+  background-color: var(--color-bg-elevated);
+  cursor: pointer;
+}
+
+.diff-hunk-toggle {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+}
+
+.diff-hunk-title {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-hunk-actions {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+}
+
+.diff-hunk-lines {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Unified view scrolls horizontally as a whole */
+.diff-hunk-lines-unified {
+  overflow-x: auto;
+}
+
+.diff-hunk.collapsed .diff-hunk-lines,
+.diff-hunk.collapsed .diff-hunk-comments {
+  display: none;
+}
+
+.diff-line {
+  display: grid;
+  grid-template-columns: 44px 44px 1fr;
+  gap: var(--spacing-xs);
+  padding: 2px var(--spacing-sm);
+  white-space: pre;
+}
+
+.diff-line-number {
+  text-align: right;
+  color: var(--color-text-tertiary);
+}
+
+.diff-line-text {
+  white-space: pre;
+}
+
+.diff-line-add {
+  background-color: var(--color-success-soft);
+}
+
+.diff-line-del {
+  background-color: var(--color-error-soft);
+}
+
+.diff-line-meta {
+  color: var(--color-text-muted);
+}
+
+.diff-hunk-comments {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-base);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.diff-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.diff-comment {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.diff-comment-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-comment-status {
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-elevated);
+}
+
+.diff-comment-body {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.diff-comment-actions {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+}
+
+.diff-comment-form {
+  display: none;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.diff-comment-form.active {
+  display: flex;
+}
+
+.diff-comment-textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+}
+
+.diff-comment-actions {
+  display: inline-flex;
+  gap: var(--spacing-xs);
+}
+
+/* ============================================================================
+   Split View Styles
+   ============================================================================ */
+
+.diff-hunk-lines-split {
+  display: flex;
+  flex-direction: column;
+}
+
+.diff-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 22px;
+}
+
+.diff-split-side {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 0;
+  padding: 0;
+  white-space: pre;
+  min-width: 0;
+  position: relative;
+}
+
+.diff-split-left {
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.diff-split-right {
+  border-right: none;
+}
+
+.diff-split-side .diff-line-number {
+  position: relative;
+  text-align: right;
+  padding: 1px 8px 1px 12px;
+  color: rgba(255, 255, 255, 0.4);
+  user-select: none;
+  background-color: var(--color-bg-surface);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.diff-split-side .diff-line-text {
+  white-space: pre;
+  min-width: 0;
+  padding: 1px 12px;
+  overflow-x: auto;
+}
+
+/* ============================================================================
+   Indicator Bars (left edge colored bars like @pierre/diffs)
+   ============================================================================ */
+
+/* Addition indicator bar - solid green */
+.diff-split-side.diff-line-add .diff-line-number::before,
+.diff-line.diff-line-add .diff-line-number:first-child::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: #3fb950;
+}
+
+/* Deletion indicator bar - striped red pattern */
+.diff-split-side.diff-line-del .diff-line-number::before,
+.diff-line.diff-line-del .diff-line-number:first-child::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(248, 81, 73, 0.4) 0px,
+    rgba(248, 81, 73, 0.4) 2px,
+    #f85149 2px,
+    #f85149 4px
+  );
+}
+
+/* Addition lines - green theme (always colored) */
+.diff-split-side.diff-line-add {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+.diff-split-side.diff-line-add .diff-line-number {
+  background-color: rgba(63, 185, 80, 0.25);
+  color: #3fb950;
+}
+
+.diff-split-side.diff-line-add .diff-line-text {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+/* Deletion lines - red theme (always colored) */
+.diff-split-side.diff-line-del {
+  background-color: rgba(248, 81, 73, 0.1);
+}
+
+.diff-split-side.diff-line-del .diff-line-number {
+  background-color: rgba(248, 81, 73, 0.25);
+  color: #f85149;
+}
+
+.diff-split-side.diff-line-del .diff-line-text {
+  background-color: rgba(248, 81, 73, 0.1);
+}
+
+/* Empty lines (placeholder in split view) */
+.diff-split-side.diff-line-empty {
+  background-color: rgba(110, 118, 129, 0.08);
+}
+
+.diff-split-side.diff-line-empty .diff-line-number {
+  background-color: rgba(110, 118, 129, 0.12);
+}
+
+.diff-split-side.diff-line-empty .diff-line-text {
+  background-color: rgba(110, 118, 129, 0.08);
+}
+
+.diff-split-side.diff-line-meta {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* ============================================================================
+   Unified View Styles (enhanced)
+   ============================================================================ */
+
+.diff-hunk-lines-unified .diff-line {
+  position: relative;
+  gap: 0;
+  padding: 0;
+  min-height: 22px;
+}
+
+.diff-hunk-lines-unified .diff-line .diff-line-number {
+  position: relative;
+  background-color: var(--color-bg-surface);
+  padding: 1px 8px 1px 12px;
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.diff-hunk-lines-unified .diff-line .diff-line-text {
+  padding: 1px 12px;
+}
+
+/* Unified view line backgrounds - context lines */
+.diff-hunk-lines-unified .diff-line {
+  background-color: transparent;
+}
+
+/* Unified view line backgrounds - additions */
+.diff-hunk-lines-unified .diff-line.diff-line-add {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-add .diff-line-number {
+  background-color: rgba(63, 185, 80, 0.25);
+  color: #3fb950;
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-add .diff-line-text {
+  background-color: rgba(46, 160, 67, 0.15);
+}
+
+/* Unified view line backgrounds - deletions */
+.diff-hunk-lines-unified .diff-line.diff-line-del {
+  background-color: rgba(248, 81, 73, 0.1);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-del .diff-line-number {
+  background-color: rgba(248, 81, 73, 0.25);
+  color: #f85149;
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-del .diff-line-text {
+  background-color: rgba(248, 81, 73, 0.1);
+}
+
+/* ============================================================================
+   Word-level Diff Highlighting
+   ============================================================================ */
+
+.diff-word-add {
+  background-color: rgba(46, 160, 67, 0.45);
+  border-radius: 3px;
+  padding: 1px 2px;
+  margin: 0 -1px;
+  box-decoration-break: clone;
+}
+
+.diff-word-del {
+  background-color: rgba(248, 81, 73, 0.45);
+  border-radius: 3px;
+  padding: 1px 2px;
+  margin: 0 -1px;
+  box-decoration-break: clone;
+}
+
+/* ============================================================================
+   Syntax Highlighting (highlight.js)
+   ============================================================================ */
+
+/* Keywords */
+.diff-line-text .hljs-keyword,
+.diff-line-text .hljs-selector-tag,
+.diff-line-text .hljs-built_in,
+.diff-line-text .hljs-name {
+  color: #ff7b72;
+}
+
+/* Strings */
+.diff-line-text .hljs-string,
+.diff-line-text .hljs-attr,
+.diff-line-text .hljs-symbol,
+.diff-line-text .hljs-bullet {
+  color: #a5d6ff;
+}
+
+/* Numbers */
+.diff-line-text .hljs-number,
+.diff-line-text .hljs-literal {
+  color: #79c0ff;
+}
+
+/* Types and classes */
+.diff-line-text .hljs-type,
+.diff-line-text .hljs-class,
+.diff-line-text .hljs-title {
+  color: #ffa657;
+}
+
+/* Functions */
+.diff-line-text .hljs-title.function_,
+.diff-line-text .hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+
+/* Variables and parameters */
+.diff-line-text .hljs-variable,
+.diff-line-text .hljs-params {
+  color: #ffa657;
+}
+
+/* Comments */
+.diff-line-text .hljs-comment,
+.diff-line-text .hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+
+/* Operators */
+.diff-line-text .hljs-operator,
+.diff-line-text .hljs-punctuation {
+  color: #c9d1d9;
+}
+
+/* Properties */
+.diff-line-text .hljs-property,
+.diff-line-text .hljs-attribute {
+  color: #79c0ff;
+}
+
+/* Tags (HTML/XML) */
+.diff-line-text .hljs-tag {
+  color: #7ee787;
+}
+
+/* Regex */
+.diff-line-text .hljs-regexp {
+  color: #a5d6ff;
+}
+
+/* Meta/preprocessor */
+.diff-line-text .hljs-meta,
+.diff-line-text .hljs-meta .hljs-keyword {
+  color: #ffa657;
+}
+
+/* Additions in diff-specific highlighting */
+.diff-line-text .hljs-addition {
+  color: #aff5b4;
+  background-color: rgba(63, 185, 80, 0.3);
+}
+
+/* Deletions in diff-specific highlighting */
+.diff-line-text .hljs-deletion {
+  color: #ffdcd7;
+  background-color: rgba(248, 81, 73, 0.3);
+}
+
+/* ============================================================================
+   Hover Effects (opacity-based - slightly brighter on hover)
+   ============================================================================ */
+
+/* Split view - context lines hover (grey) */
+.diff-split-row:hover .diff-split-side {
+  background-color: rgba(139, 148, 158, 0.06);
+}
+
+.diff-split-row:hover .diff-split-side .diff-line-number {
+  background-color: rgba(139, 148, 158, 0.1);
+}
+
+.diff-split-row:hover .diff-split-side .diff-line-text {
+  background-color: rgba(139, 148, 158, 0.06);
+}
+
+/* Split view - addition lines hover (slightly brighter green) */
+.diff-split-row:hover .diff-split-side.diff-line-add {
+  background-color: rgba(46, 160, 67, 0.2);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-add .diff-line-number {
+  background-color: rgba(63, 185, 80, 0.32);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-add .diff-line-text {
+  background-color: rgba(46, 160, 67, 0.2);
+}
+
+/* Split view - deletion lines hover (slightly brighter red) */
+.diff-split-row:hover .diff-split-side.diff-line-del {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-del .diff-line-number {
+  background-color: rgba(248, 81, 73, 0.32);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-del .diff-line-text {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+/* Split view - empty lines hover */
+.diff-split-row:hover .diff-split-side.diff-line-empty {
+  background-color: rgba(110, 118, 129, 0.12);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-empty .diff-line-number {
+  background-color: rgba(110, 118, 129, 0.18);
+}
+
+.diff-split-row:hover .diff-split-side.diff-line-empty .diff-line-text {
+  background-color: rgba(110, 118, 129, 0.12);
+}
+
+/* Unified view - context lines hover (grey) */
+.diff-hunk-lines-unified .diff-line:hover {
+  background-color: rgba(139, 148, 158, 0.06);
+}
+
+.diff-hunk-lines-unified .diff-line:hover .diff-line-number {
+  background-color: rgba(139, 148, 158, 0.1);
+}
+
+.diff-hunk-lines-unified .diff-line:hover .diff-line-text {
+  background-color: rgba(139, 148, 158, 0.06);
+}
+
+/* Unified view - addition lines hover (slightly brighter green) */
+.diff-hunk-lines-unified .diff-line.diff-line-add:hover {
+  background-color: rgba(46, 160, 67, 0.2);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-add:hover .diff-line-number {
+  background-color: rgba(63, 185, 80, 0.32);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-add:hover .diff-line-text {
+  background-color: rgba(46, 160, 67, 0.2);
+}
+
+/* Unified view - deletion lines hover (slightly brighter red) */
+.diff-hunk-lines-unified .diff-line.diff-line-del:hover {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-del:hover .diff-line-number {
+  background-color: rgba(248, 81, 73, 0.32);
+}
+
+.diff-hunk-lines-unified .diff-line.diff-line-del:hover .diff-line-text {
+  background-color: rgba(248, 81, 73, 0.15);
+}
+
+/* ============================================================================
+   Diff Style Toggle
+   ============================================================================ */
+
+.diff-style-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.diff-style-toggle-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.diff-style-select {
+  background-color: var(--color-bg-input);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 4px 8px;
+}
+
+/* ============================================================================
+   Responsive Adjustments for Mobile
+   ============================================================================ */
+
+@media (max-width: 800px) {
+  /* Hide the split view option on mobile - unified only */
+  .diff-panel-select[data-role='diff-style'] option[value='split'] {
+    display: none;
+  }
+
+  /* Hide the entire style selector on mobile since only unified is supported */
+  .diff-panel-label[for='diff-style-select'],
+  .diff-panel-select[data-role='diff-style'] {
+    display: none;
+  }
+}

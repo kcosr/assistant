@@ -1,0 +1,51 @@
+{
+  "id": "session-info",
+  "version": "0.1.0",
+  "description": "Session label and attribute tools for session debugging.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "session-info",
+      "title": "Session Info",
+      "description": "Shows the bound session ID and attributes for debugging.",
+      "multiInstance": true,
+      "defaultSessionBinding": "fixed",
+      "sessionScope": "optional",
+      "capabilities": ["sessions.read"]
+    }
+  ],
+  "server": {
+    "provides": ["tools"],
+    "capabilities": ["sessions.read", "sessions.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/session-info/bundle.js",
+    "stylesPath": "/plugins/session-info/styles.css"
+  },
+  "operations": [
+    {
+      "id": "label_get",
+      "summary": "Read the current session label used by the Session Info panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["sessions.read"]
+    },
+    {
+      "id": "label_set",
+      "summary": "Set a session-scoped label for the Session Info panel. Use an empty string to clear.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Label text to display in the Session Info panel."
+          }
+        },
+        "required": ["text"]
+      },
+      "capabilities": ["sessions.write"]
+    }
+  ]
+}

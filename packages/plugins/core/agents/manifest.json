@@ -1,0 +1,58 @@
+{
+  "id": "agents",
+  "version": "0.1.0",
+  "description": "Agent discovery and messaging.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["agents"],
+    "capabilities": ["agents.read", "agents.write"]
+  },
+  "operations": [
+    {
+      "id": "list",
+      "summary": "List available agents for delegation or messaging.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeAll": {
+            "type": "boolean",
+            "description": "When true, return all visible agents (ignores allowlist/denylist filtering)."
+          }
+        }
+      },
+      "capabilities": ["agents.read"]
+    },
+    {
+      "id": "message",
+      "summary": "Send a message to another agent (sync or async).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "ID of the target agent to message."
+          },
+          "content": {
+            "type": "string",
+            "description": "Message content to send to the target agent."
+          },
+          "session": {
+            "type": "string",
+            "description": "Session resolution strategy: \"latest\", \"create\", \"latest-or-create\" (default), or an explicit session id."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["sync", "async"],
+            "description": "When \"sync\", wait for a response. When \"async\", return immediately."
+          },
+          "timeout": {
+            "type": "number",
+            "description": "Timeout in seconds for sync mode (default: 300)."
+          }
+        },
+        "required": ["agentId", "content"]
+      },
+      "capabilities": ["agents.write"]
+    }
+  ]
+}

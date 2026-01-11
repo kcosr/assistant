@@ -1,0 +1,45 @@
+.ws-echo-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+
+.ws-echo-panel-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.ws-echo-panel-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ws-echo-panel-input {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  min-height: 120px;
+  padding: 8px;
+  resize: vertical;
+}
+
+.ws-echo-panel-output {
+  background-color: var(--color-bg-surface);
+  border: 1px dashed var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  min-height: 32px;
+  padding: 8px;
+  white-space: pre-wrap;
+}
+
+.ws-echo-panel-output.empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}

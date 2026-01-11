@@ -1,0 +1,894 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+export interface CliWrapperConfig {
+  /**
+   * Command wrapper path for running CLI tools in a container.
+   */
+  path: string;
+  /**
+   * Extra environment variables for the wrapper process.
+   */
+  env?: Record<string, string>;
+}
+
+export interface AgentDefinition {
+  agentId: string;
+  displayName: string;
+  description: string;
+  /**
+   * Runtime type for this agent.
+   * - "chat": in-process chat completions (default)
+   * - "external": async external connector (inputUrl + callback endpoint)
+   */
+  type?: 'chat' | 'external';
+  /**
+   * Chat provider configuration (only valid when type is "chat" or omitted).
+   * Defaults to OpenAI chat completions when omitted.
+   */
+  chat?: {
+    provider?: 'openai' | 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible';
+    /**
+     * For provider "openai": list of allowed model ids. The first
+     * model (when present) is used as the default for new sessions.
+     */
+    models?: string[];
+    config?:
+      | {
+          /**
+           * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): working directory.
+           */
+          workdir?: string;
+          /**
+           * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): extra CLI args.
+           */
+          extraArgs?: string[];
+          /**
+           * Optional wrapper configuration for running the CLI in a container.
+           */
+          wrapper?: CliWrapperConfig;
+        }
+      | OpenAiCompatibleChatConfig;
+  };
+  /**
+   * External agent configuration. Required when type is "external".
+   */
+  external?: {
+    inputUrl: string;
+    callbackBaseUrl: string;
+  };
+  /**
+   * Optional visibility flag for built-in clients (UI and agents_* tools).
+   * When false, the agent is hidden from built-in discovery and delegation.
+   * Defaults to true when omitted.
+   */
+  uiVisible?: boolean;
+  /**
+   * Legacy visibility flag for external API tool endpoints (currently unused).
+   * Defaults to false when omitted.
+   */
+  apiExposed?: boolean;
+  /**
+   * Optional custom system prompt for this agent. If omitted, a default
+   * prompt will be generated based on displayName and description.
+   */
+  systemPrompt?: string;
+  /**
+   * Optional list of glob patterns that restrict which tools
+   * this agent may access. When omitted, the agent may access
+   * all tools.
+   */
+  toolAllowlist?: string[];
+  /**
+   * Optional list of glob patterns that exclude tools for this agent.
+   * Applied after the allowlist (if any), so denylist patterns can
+   * remove tools that would otherwise be allowed.
+   */
+  toolDenylist?: string[];
+  /**
+   * Optional tool exposure mode:
+   * - "tools": expose tools via model tool calls (default)
+   * - "skills": expose plugin operations only via CLI skills
+   * - "mixed": combine tools + skills (use skillAllowlist to choose CLI-only plugins)
+   */
+  toolExposure?: 'tools' | 'skills' | 'mixed';
+  /**
+   * Optional list of glob patterns that restrict which plugin skills
+   * are exposed to this agent (matches plugin ids).
+   */
+  skillAllowlist?: string[];
+  /**
+   * Optional list of glob patterns that exclude plugin skills for this agent.
+   * Applied after the allowlist (if any), so denylist patterns can
+   * remove skills that would otherwise be allowed.
+   */
+  skillDenylist?: string[];
+  /**
+   * Optional list of glob patterns that restrict which tool capabilities
+   * this agent may access. When omitted, the agent may access all capabilities.
+   */
+  capabilityAllowlist?: string[];
+  /**
+   * Optional list of glob patterns that exclude tool capabilities for this agent.
+   * Applied after the allowlist (if any), so denylist patterns can remove
+   * capabilities that would otherwise be allowed.
+   */
+  capabilityDenylist?: string[];
+  /**
+   * Optional list of glob patterns that restrict which peer agents
+   * this agent may see or delegate to. When omitted, the agent may
+   * see all agents.
+   */
+  agentAllowlist?: string[];
+  /**
+   * Optional list of glob patterns that exclude peer agents for this
+   * agent. Applied after the allowlist (if any), so denylist patterns
+   * can remove agents that would otherwise be visible.
+   */
+  agentDenylist?: string[];
+}
+
+export interface OpenAiCompatibleChatConfig {
+  baseUrl: string;
+  apiKey?: string;
+  /**
+   * List of allowed model ids for this OpenAI-compatible endpoint. The first
+   * model is used as the default for new sessions. At least one model is
+   * required at runtime; legacy configurations that specify a single "model"
+   * string are normalised into a single-element models array.
+   */
+  models: string[];
+  maxTokens?: number;
+  temperature?: number;
+  /** Custom headers to send with each request to the OpenAI-compatible API. */
+  headers?: Record<string, string>;
+}
+
+const CLAUDE_CLI_RESERVED_ARGS = [
+  '--output-format',
+  '--session-id',
+  '--resume',
+  '-p',
+  '--include-partial-messages',
+  '--verbose',
+] as const;
+
+const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
+
+const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--continue', '-p'] as const;
+
+function assertNoReservedExtraArgs(options: {
+  index: number;
+  provider: 'claude-cli' | 'codex-cli' | 'pi-cli';
+  extraArgs?: string[];
+  reservedArgs: readonly string[];
+}): void {
+  const { index, provider, extraArgs, reservedArgs } = options;
+  if (!extraArgs || extraArgs.length === 0) {
+    return;
+  }
+
+  const reservedHit = new Set<string>();
+  for (const arg of extraArgs) {
+    for (const reserved of reservedArgs) {
+      if (arg === reserved || (reserved.startsWith('-') && arg.startsWith(`${reserved}=`))) {
+        reservedHit.add(reserved);
+        break;
+      }
+    }
+  }
+
+  if (reservedHit.size > 0) {
+    const list = Array.from(reservedHit).sort().join(', ');
+    throw new Error(
+      `agents[${index}].chat.config.extraArgs must not include reserved ${provider} flags: ${list}`,
+    );
+  }
+}
+
+export class AgentRegistry {
+  private readonly agentsById = new Map<string, AgentDefinition>();
+
+  constructor(definitions: AgentDefinition[]) {
+    for (const definition of definitions) {
+      const id = definition.agentId;
+      if (!id) {
+        continue;
+      }
+      if (this.agentsById.has(id)) {
+        throw new Error(`Duplicate agentId in AgentRegistry: ${id}`);
+      }
+      this.agentsById.set(id, { ...definition });
+    }
+  }
+
+  getAgent(agentId: string): AgentDefinition | undefined {
+    return this.agentsById.get(agentId);
+  }
+
+  listAgents(): AgentDefinition[] {
+    return Array.from(this.agentsById.values());
+  }
+
+  hasAgent(agentId: string): boolean {
+    return this.agentsById.has(agentId);
+  }
+}
+
+interface AgentDefinitionConfigShape {
+  agentId?: unknown;
+  displayName?: unknown;
+  description?: unknown;
+  type?: unknown;
+  chat?: unknown;
+  external?: unknown;
+  systemPrompt?: unknown;
+  toolAllowlist?: unknown;
+  toolDenylist?: unknown;
+  toolExposure?: unknown;
+  skillAllowlist?: unknown;
+  skillDenylist?: unknown;
+  capabilityAllowlist?: unknown;
+  capabilityDenylist?: unknown;
+  agentAllowlist?: unknown;
+  agentDenylist?: unknown;
+  uiVisible?: unknown;
+  apiExposed?: unknown;
+}
+
+interface AgentsConfigFileShape {
+  agents?: unknown;
+}
+
+function validateAgentDefinitionConfig(
+  config: AgentDefinitionConfigShape,
+  index: number,
+): AgentDefinition {
+  const rawAgentId = config.agentId;
+  const rawDisplayName = config.displayName;
+  const rawDescription = config.description;
+  const rawType = config.type;
+  const rawChat = config.chat;
+  const rawExternal = config.external;
+  const rawSystemPrompt = config.systemPrompt;
+  const rawUiVisible = config.uiVisible;
+  const rawApiExposed = config.apiExposed;
+  const rawToolExposure = config.toolExposure;
+
+  if (typeof rawAgentId !== 'string' || !rawAgentId.trim()) {
+    throw new Error(`agents[${index}].agentId must be a non-empty string`);
+  }
+  if (typeof rawDisplayName !== 'string' || !rawDisplayName.trim()) {
+    throw new Error(`agents[${index}].displayName must be a non-empty string`);
+  }
+  if (typeof rawDescription !== 'string' || !rawDescription.trim()) {
+    throw new Error(`agents[${index}].description must be a non-empty string`);
+  }
+  if (rawType !== undefined && rawType !== null && rawType !== 'chat' && rawType !== 'external') {
+    throw new Error(`agents[${index}].type must be "chat", "external", null, or omitted`);
+  }
+  if (
+    rawSystemPrompt !== undefined &&
+    rawSystemPrompt !== null &&
+    (typeof rawSystemPrompt !== 'string' || !rawSystemPrompt.trim())
+  ) {
+    throw new Error(`agents[${index}].systemPrompt must be a non-empty string when provided`);
+  }
+  if (rawUiVisible !== undefined && rawUiVisible !== null && typeof rawUiVisible !== 'boolean') {
+    throw new Error(`agents[${index}].uiVisible must be a boolean, null, or omitted`);
+  }
+  if (rawApiExposed !== undefined && rawApiExposed !== null && typeof rawApiExposed !== 'boolean') {
+    throw new Error(`agents[${index}].apiExposed must be a boolean, null, or omitted`);
+  }
+  if (
+    rawToolExposure !== undefined &&
+    rawToolExposure !== null &&
+    rawToolExposure !== 'tools' &&
+    rawToolExposure !== 'skills' &&
+    rawToolExposure !== 'mixed'
+  ) {
+    throw new Error(
+      `agents[${index}].toolExposure must be "tools", "skills", "mixed", null, or omitted`,
+    );
+  }
+
+  const agentId = rawAgentId.trim();
+  const displayName = rawDisplayName.trim();
+  const description = rawDescription.trim();
+  const type = rawType === 'external' ? 'external' : 'chat';
+  const systemPrompt =
+    typeof rawSystemPrompt === 'string' && rawSystemPrompt.trim() ? rawSystemPrompt : undefined;
+  const uiVisible = typeof rawUiVisible === 'boolean' ? rawUiVisible : undefined;
+  const apiExposed = typeof rawApiExposed === 'boolean' ? rawApiExposed : undefined;
+  const toolExposure =
+    rawToolExposure === 'tools' || rawToolExposure === 'skills' || rawToolExposure === 'mixed'
+      ? rawToolExposure
+      : undefined;
+
+  const {
+    toolAllowlist,
+    toolDenylist,
+    skillAllowlist,
+    skillDenylist,
+    capabilityAllowlist,
+    capabilityDenylist,
+    agentAllowlist,
+    agentDenylist,
+  } = config;
+
+  const parsePatternList = (raw: unknown, fieldName: string): string[] | undefined => {
+    if (raw === null || raw === undefined) {
+      return undefined;
+    }
+
+    if (!Array.isArray(raw)) {
+      throw new Error(
+        `agents[${index}].${fieldName} must be an array of strings, null, or omitted`,
+      );
+    }
+
+    const patterns: string[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const value = raw[i];
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(
+          `agents[${index}].${fieldName}[${i}] must be a non-empty string when provided`,
+        );
+      }
+      patterns.push(value.trim());
+    }
+
+    return patterns.length > 0 ? patterns : undefined;
+  };
+
+  const allowlist = parsePatternList(toolAllowlist, 'toolAllowlist');
+  const denylist = parsePatternList(toolDenylist, 'toolDenylist');
+  const skillAllow = parsePatternList(skillAllowlist, 'skillAllowlist');
+  const skillDeny = parsePatternList(skillDenylist, 'skillDenylist');
+  const capabilityAllow = parsePatternList(capabilityAllowlist, 'capabilityAllowlist');
+  const capabilityDeny = parsePatternList(capabilityDenylist, 'capabilityDenylist');
+  const agentAllow = parsePatternList(agentAllowlist, 'agentAllowlist');
+  const agentDeny = parsePatternList(agentDenylist, 'agentDenylist');
+
+  const base: AgentDefinition = {
+    agentId,
+    displayName,
+    description,
+  };
+
+  if (type !== 'chat') {
+    base.type = type;
+  }
+
+  if (rawChat !== undefined && rawChat !== null && (typeof rawChat !== 'object' || !rawChat)) {
+    throw new Error(`agents[${index}].chat must be an object, null, or omitted`);
+  }
+
+  if (
+    rawExternal !== undefined &&
+    rawExternal !== null &&
+    (typeof rawExternal !== 'object' || !rawExternal)
+  ) {
+    throw new Error(`agents[${index}].external must be an object, null, or omitted`);
+  }
+
+  if (type === 'external') {
+    const external = rawExternal as
+      | { inputUrl?: unknown; callbackBaseUrl?: unknown }
+      | undefined
+      | null;
+    const inputUrlRaw = external?.inputUrl;
+    const callbackBaseUrlRaw = external?.callbackBaseUrl;
+    const inputUrl = typeof inputUrlRaw === 'string' ? inputUrlRaw.trim() : '';
+    const callbackBaseUrl = typeof callbackBaseUrlRaw === 'string' ? callbackBaseUrlRaw.trim() : '';
+    if (!inputUrl) {
+      throw new Error(`agents[${index}].external.inputUrl must be a non-empty string`);
+    }
+    if (!callbackBaseUrl) {
+      throw new Error(`agents[${index}].external.callbackBaseUrl must be a non-empty string`);
+    }
+    base.external = { inputUrl, callbackBaseUrl };
+  } else if (rawExternal !== undefined && rawExternal !== null) {
+    throw new Error(`agents[${index}].external is only valid when type is "external"`);
+  }
+
+  if (type === 'external') {
+    if (rawChat !== undefined && rawChat !== null) {
+      throw new Error(`agents[${index}].chat is only valid when type is "chat"`);
+    }
+  } else if (rawChat !== undefined && rawChat !== null) {
+    const chat = rawChat as { provider?: unknown; config?: unknown; models?: unknown };
+    const providerRaw = chat.provider;
+
+    if (
+      providerRaw !== undefined &&
+      providerRaw !== null &&
+      providerRaw !== 'openai' &&
+      providerRaw !== 'claude-cli' &&
+      providerRaw !== 'codex-cli' &&
+      providerRaw !== 'pi-cli' &&
+      providerRaw !== 'openai-compatible'
+    ) {
+      throw new Error(
+        `agents[${index}].chat.provider must be "openai", "claude-cli", "codex-cli", "pi-cli", "openai-compatible", null, or omitted`,
+      );
+    }
+
+    const provider =
+      providerRaw === 'claude-cli' ||
+      providerRaw === 'codex-cli' ||
+      providerRaw === 'pi-cli' ||
+      providerRaw === 'openai-compatible'
+        ? (providerRaw as 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible')
+        : 'openai';
+
+    const configRaw = chat.config;
+    const modelsRaw = chat.models;
+    if (
+      configRaw !== undefined &&
+      configRaw !== null &&
+      (typeof configRaw !== 'object' || !configRaw)
+    ) {
+      throw new Error(`agents[${index}].chat.config must be an object, null, or omitted`);
+    }
+
+    if (provider === 'openai') {
+      if (configRaw !== undefined && configRaw !== null) {
+        throw new Error(
+          `agents[${index}].chat.config is only valid when chat.provider is "claude-cli", "codex-cli", "pi-cli", or "openai-compatible"`,
+        );
+      }
+
+      let models: string[] | undefined;
+      if (modelsRaw !== undefined && modelsRaw !== null) {
+        if (!Array.isArray(modelsRaw)) {
+          throw new Error(
+            `agents[${index}].chat.models must be an array of non-empty strings, null, or omitted`,
+          );
+        }
+        const collected: string[] = [];
+        for (let i = 0; i < modelsRaw.length; i += 1) {
+          const value = modelsRaw[i];
+          if (typeof value !== 'string' || !value.trim()) {
+            throw new Error(
+              `agents[${index}].chat.models[${i}] must be a non-empty string when provided`,
+            );
+          }
+          collected.push(value.trim());
+        }
+        if (collected.length === 0) {
+          throw new Error(
+            `agents[${index}].chat.models must contain at least one model when provided`,
+          );
+        }
+        models = collected;
+      }
+
+      // Attach chat config for openai provider (explicit or implicit default)
+      if (models) {
+        base.chat = {
+          provider: 'openai',
+          models,
+        };
+      }
+    } else if (provider === 'claude-cli') {
+      const config = configRaw as
+        | {
+            workdir?: unknown;
+            extraArgs?: unknown;
+          }
+        | undefined
+        | null;
+      const workdirRaw = config?.workdir;
+      const extraArgsRaw = config?.extraArgs;
+      const workdir = typeof workdirRaw === 'string' ? workdirRaw.trim() : '';
+
+      let extraArgs: string[] | undefined;
+      if (Array.isArray(extraArgsRaw)) {
+        const collected: string[] = [];
+        for (let i = 0; i < extraArgsRaw.length; i += 1) {
+          const value = extraArgsRaw[i];
+          if (typeof value !== 'string' || !value.trim()) {
+            throw new Error(
+              `agents[${index}].chat.config.extraArgs[${i}] must be a non-empty string when provided`,
+            );
+          }
+          collected.push(value.trim());
+        }
+        if (collected.length > 0) {
+          extraArgs = collected;
+        }
+      } else if (extraArgsRaw !== undefined && extraArgsRaw !== null) {
+        throw new Error(
+          `agents[${index}].chat.config.extraArgs must be an array of strings, null, or omitted`,
+        );
+      }
+
+      if (workdirRaw !== undefined && workdirRaw !== null && !workdir) {
+        throw new Error(
+          `agents[${index}].chat.config.workdir must be a non-empty string when provided`,
+        );
+      }
+
+      if (extraArgs) {
+        assertNoReservedExtraArgs({
+          index,
+          provider: 'claude-cli',
+          extraArgs,
+          reservedArgs: CLAUDE_CLI_RESERVED_ARGS,
+        });
+      }
+
+      base.chat = {
+        provider: 'claude-cli',
+        ...(workdir || extraArgs
+          ? {
+              config: {
+                ...(workdir ? { workdir } : {}),
+                ...(extraArgs ? { extraArgs } : {}),
+              },
+            }
+          : {}),
+      };
+    } else if (provider === 'codex-cli') {
+      const config = configRaw as
+        | {
+            workdir?: unknown;
+            extraArgs?: unknown;
+          }
+        | undefined
+        | null;
+      const workdirRaw = config?.workdir;
+      const extraArgsRaw = config?.extraArgs;
+      const workdir = typeof workdirRaw === 'string' ? workdirRaw.trim() : '';
+
+      let extraArgs: string[] | undefined;
+      if (Array.isArray(extraArgsRaw)) {
+        const collected: string[] = [];
+        for (let i = 0; i < extraArgsRaw.length; i += 1) {
+          const value = extraArgsRaw[i];
+          if (typeof value !== 'string' || !value.trim()) {
+            throw new Error(
+              `agents[${index}].chat.config.extraArgs[${i}] must be a non-empty string when provided`,
+            );
+          }
+          collected.push(value.trim());
+        }
+        if (collected.length > 0) {
+          extraArgs = collected;
+        }
+      } else if (extraArgsRaw !== undefined && extraArgsRaw !== null) {
+        throw new Error(
+          `agents[${index}].chat.config.extraArgs must be an array of strings, null, or omitted`,
+        );
+      }
+
+      if (workdirRaw !== undefined && workdirRaw !== null && !workdir) {
+        throw new Error(
+          `agents[${index}].chat.config.workdir must be a non-empty string when provided`,
+        );
+      }
+
+      if (extraArgs) {
+        assertNoReservedExtraArgs({
+          index,
+          provider: 'codex-cli',
+          extraArgs,
+          reservedArgs: CODEX_CLI_RESERVED_ARGS,
+        });
+      }
+
+      base.chat = {
+        provider: 'codex-cli',
+        ...(workdir || extraArgs
+          ? {
+              config: {
+                ...(workdir ? { workdir } : {}),
+                ...(extraArgs ? { extraArgs } : {}),
+              },
+            }
+          : {}),
+      };
+    } else if (provider === 'pi-cli') {
+      const config = configRaw as
+        | {
+            workdir?: unknown;
+            extraArgs?: unknown;
+          }
+        | undefined
+        | null;
+      const workdirRaw = config?.workdir;
+      const extraArgsRaw = config?.extraArgs;
+      const workdir = typeof workdirRaw === 'string' ? workdirRaw.trim() : '';
+
+      let extraArgs: string[] | undefined;
+      if (Array.isArray(extraArgsRaw)) {
+        const collected: string[] = [];
+        for (let i = 0; i < extraArgsRaw.length; i += 1) {
+          const value = extraArgsRaw[i];
+          if (typeof value !== 'string' || !value.trim()) {
+            throw new Error(
+              `agents[${index}].chat.config.extraArgs[${i}] must be a non-empty string when provided`,
+            );
+          }
+          collected.push(value.trim());
+        }
+        if (collected.length > 0) {
+          extraArgs = collected;
+        }
+      } else if (extraArgsRaw !== undefined && extraArgsRaw !== null) {
+        throw new Error(
+          `agents[${index}].chat.config.extraArgs must be an array of strings, null, or omitted`,
+        );
+      }
+
+      if (workdirRaw !== undefined && workdirRaw !== null && !workdir) {
+        throw new Error(
+          `agents[${index}].chat.config.workdir must be a non-empty string when provided`,
+        );
+      }
+
+      if (extraArgs) {
+        assertNoReservedExtraArgs({
+          index,
+          provider: 'pi-cli',
+          extraArgs,
+          reservedArgs: PI_CLI_RESERVED_ARGS,
+        });
+      }
+
+      base.chat = {
+        provider: 'pi-cli',
+        ...(workdir || extraArgs
+          ? {
+              config: {
+                ...(workdir ? { workdir } : {}),
+                ...(extraArgs ? { extraArgs } : {}),
+              },
+            }
+          : {}),
+      };
+    } else {
+      const config = configRaw as
+        | {
+            baseUrl?: unknown;
+            apiKey?: unknown;
+            model?: unknown;
+            models?: unknown;
+            maxTokens?: unknown;
+            temperature?: unknown;
+            headers?: unknown;
+          }
+        | undefined
+        | null;
+
+      const baseUrlRaw = config?.baseUrl;
+      const apiKeyRaw = config?.apiKey;
+      const modelRaw = config?.model;
+      const modelsRaw = config?.models;
+      const maxTokensRaw = config?.maxTokens;
+      const temperatureRaw = config?.temperature;
+      const headersRaw = config?.headers;
+
+      const baseUrl = typeof baseUrlRaw === 'string' ? baseUrlRaw.trim() : '';
+      const apiKey =
+        typeof apiKeyRaw === 'string' && apiKeyRaw.trim().length > 0 ? apiKeyRaw.trim() : undefined;
+      const singleModel = typeof modelRaw === 'string' ? modelRaw.trim() : '';
+      const maxTokens =
+        typeof maxTokensRaw === 'number' && Number.isFinite(maxTokensRaw) && maxTokensRaw > 0
+          ? Math.floor(maxTokensRaw)
+          : undefined;
+      const temperature =
+        typeof temperatureRaw === 'number' && Number.isFinite(temperatureRaw)
+          ? temperatureRaw
+          : undefined;
+
+      let models: string[] | undefined;
+      if (Array.isArray(modelsRaw)) {
+        const collected: string[] = [];
+        for (let i = 0; i < modelsRaw.length; i += 1) {
+          const value = modelsRaw[i];
+          if (typeof value !== 'string' || !value.trim()) {
+            throw new Error(
+              `agents[${index}].chat.config.models[${i}] must be a non-empty string when provided`,
+            );
+          }
+          collected.push(value.trim());
+        }
+        models = collected;
+      } else if (modelsRaw !== undefined && modelsRaw !== null) {
+        throw new Error(
+          `agents[${index}].chat.config.models must be an array of non-empty strings, null, or omitted`,
+        );
+      }
+
+      // Parse headers: must be a plain object with string keys and string values
+      let headers: Record<string, string> | undefined;
+      if (headersRaw !== undefined && headersRaw !== null) {
+        if (typeof headersRaw !== 'object' || Array.isArray(headersRaw)) {
+          throw new Error(
+            `agents[${index}].chat.config.headers must be an object with string values when provided`,
+          );
+        }
+        headers = {};
+        for (const [key, value] of Object.entries(headersRaw)) {
+          if (typeof value !== 'string') {
+            throw new Error(`agents[${index}].chat.config.headers["${key}"] must be a string`);
+          }
+          headers[key] = value;
+        }
+        if (Object.keys(headers).length === 0) {
+          headers = undefined;
+        }
+      }
+
+      if (!baseUrl) {
+        throw new Error(
+          `agents[${index}].chat.config.baseUrl must be a non-empty string when chat.provider is "openai-compatible"`,
+        );
+      }
+      if (modelRaw !== undefined && modelRaw !== null && !singleModel) {
+        throw new Error(
+          `agents[${index}].chat.config.model must be a non-empty string when provided`,
+        );
+      }
+      if (
+        apiKeyRaw !== undefined &&
+        apiKeyRaw !== null &&
+        (typeof apiKeyRaw !== 'string' || !apiKeyRaw.trim())
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.apiKey must be a non-empty string when provided`,
+        );
+      }
+      if (
+        maxTokensRaw !== undefined &&
+        maxTokensRaw !== null &&
+        (typeof maxTokensRaw !== 'number' ||
+          !Number.isFinite(maxTokensRaw) ||
+          Math.floor(maxTokensRaw) <= 0)
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.maxTokens must be a positive integer when provided`,
+        );
+      }
+      if (
+        temperatureRaw !== undefined &&
+        temperatureRaw !== null &&
+        (typeof temperatureRaw !== 'number' || !Number.isFinite(temperatureRaw))
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.temperature must be a finite number when provided`,
+        );
+      }
+
+      let finalModels: string[] | undefined;
+      if (models && models.length > 0) {
+        finalModels = models;
+      } else if (singleModel) {
+        finalModels = [singleModel];
+      }
+
+      if (!finalModels || finalModels.length === 0) {
+        throw new Error(
+          `agents[${index}].chat.config.models must contain at least one model when chat.provider is "openai-compatible"`,
+        );
+      }
+
+      const compatibleConfig: OpenAiCompatibleChatConfig = {
+        baseUrl,
+        models: finalModels,
+        ...(apiKey ? { apiKey } : {}),
+        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+        ...(headers ? { headers } : {}),
+      };
+
+      base.chat = {
+        provider: 'openai-compatible',
+        config: compatibleConfig,
+      };
+    }
+  }
+
+  if (systemPrompt) {
+    base.systemPrompt = systemPrompt;
+  }
+
+  const extended: AgentDefinition = { ...base };
+  if (allowlist) {
+    extended.toolAllowlist = allowlist;
+  }
+  if (denylist) {
+    extended.toolDenylist = denylist;
+  }
+  if (toolExposure) {
+    extended.toolExposure = toolExposure;
+  }
+  if (skillAllow) {
+    extended.skillAllowlist = skillAllow;
+  }
+  if (skillDeny) {
+    extended.skillDenylist = skillDeny;
+  }
+  if (capabilityAllow) {
+    extended.capabilityAllowlist = capabilityAllow;
+  }
+  if (capabilityDeny) {
+    extended.capabilityDenylist = capabilityDeny;
+  }
+  if (agentAllow) {
+    extended.agentAllowlist = agentAllow;
+  }
+  if (agentDeny) {
+    extended.agentDenylist = agentDeny;
+  }
+  if (uiVisible !== undefined) {
+    extended.uiVisible = uiVisible;
+  }
+  if (apiExposed !== undefined) {
+    extended.apiExposed = apiExposed;
+  }
+
+  return extended;
+}
+
+export function loadAgentDefinitionsFromFile(configPath: string): AgentDefinition[] {
+  const resolvedPath = path.resolve(configPath);
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(resolvedPath, 'utf8');
+  } catch (err) {
+    const anyErr = err as NodeJS.ErrnoException;
+    if (anyErr && anyErr.code === 'ENOENT') {
+      console.warn(
+        `Agents configuration file not found at ${resolvedPath}; starting with no configured agents.`,
+      );
+      return [];
+    }
+    throw new Error(`Failed to read agents configuration file at ${resolvedPath}: ${anyErr}`);
+  }
+
+  let parsed: AgentsConfigFileShape;
+  try {
+    parsed = JSON.parse(raw) as AgentsConfigFileShape;
+  } catch (err) {
+    throw new Error(
+      `Agents configuration file at ${resolvedPath} is not valid JSON: ${(err as Error).message}`,
+    );
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`Agents configuration file at ${resolvedPath} must contain a JSON object`);
+  }
+
+  const { agents } = parsed;
+  if (agents === undefined) {
+    return [];
+  }
+  if (!Array.isArray(agents)) {
+    throw new Error(`"agents" in ${resolvedPath} must be an array`);
+  }
+
+  const definitions: AgentDefinition[] = [];
+  const seenIds = new Set<string>();
+
+  for (let i = 0; i < agents.length; i += 1) {
+    const entry = agents[i] as AgentDefinitionConfigShape;
+    if (!entry || typeof entry !== 'object') {
+      throw new Error(`agents[${i}] in ${resolvedPath} must be an object`);
+    }
+
+    const definition = validateAgentDefinitionConfig(entry, i);
+    if (seenIds.has(definition.agentId)) {
+      throw new Error(
+        `Duplicate agentId "${definition.agentId}" found in agents configuration at index ${i}`,
+      );
+    }
+    seenIds.add(definition.agentId);
+    definitions.push(definition);
+  }
+
+  return definitions;
+}

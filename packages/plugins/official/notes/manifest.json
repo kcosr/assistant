@@ -1,0 +1,275 @@
+{
+  "id": "notes",
+  "version": "0.1.0",
+  "description": "Markdown notes with tags and search.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "notes",
+      "title": "Notes",
+      "icon": "notebook",
+      "description": "Create, edit, and search markdown notes.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["notes.read", "notes.write"]
+    }
+  ],
+  "server": {
+    "provides": ["notes"],
+    "capabilities": ["notes.read", "notes.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/notes/bundle.js",
+    "stylesPath": "/plugins/notes/styles.css"
+  },
+  "operations": [
+    {
+      "id": "instance_list",
+      "summary": "List configured instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["notes.read"]
+    },
+    {
+      "id": "list",
+      "summary": "List notes, optionally filtered by tags.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Filter notes by tags (AND logic)."
+          }
+        }
+      },
+      "capabilities": ["notes.read"]
+    },
+    {
+      "id": "read",
+      "summary": "Read a note's full content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          }
+        },
+        "required": ["title"]
+      },
+      "capabilities": ["notes.read"]
+    },
+    {
+      "id": "show",
+      "summary": "Show a note in the notes panel (panelId required).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "panelId": {
+            "type": "string",
+            "description": "Notes panel id to target."
+          }
+        },
+        "required": ["title", "panelId"]
+      },
+      "capabilities": ["notes.read"]
+    },
+    {
+      "id": "write",
+      "summary": "Create a new note or overwrite an existing one.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "content": {
+            "type": "string",
+            "description": "Markdown content."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags for organizing notes."
+          }
+        },
+        "required": ["title", "content"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "rename",
+      "summary": "Rename a note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Existing note title."
+          },
+          "new_title": {
+            "type": "string",
+            "description": "New note title."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Overwrite if the note already exists with the new title."
+          }
+        },
+        "required": ["title", "new_title"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "move",
+      "summary": "Move a note to another instance.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Source instance id (defaults to \"default\")."
+          },
+          "target_instance_id": {
+            "type": "string",
+            "description": "Destination instance id."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Overwrite if the note already exists in the destination instance."
+          }
+        },
+        "required": ["title", "target_instance_id"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "delete",
+      "summary": "Delete a note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          }
+        },
+        "required": ["title"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "search",
+      "summary": "Search note contents, optionally filtered by tags.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "query": {
+            "type": "string",
+            "description": "Search query."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Filter notes by tags (AND logic)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return."
+          }
+        },
+        "required": ["query"]
+      },
+      "capabilities": ["notes.read"]
+    },
+    {
+      "id": "tags-add",
+      "summary": "Add one or more tags to an existing note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags to add."
+          }
+        },
+        "required": ["title", "tags"]
+      },
+      "capabilities": ["notes.write"]
+    },
+    {
+      "id": "tags-remove",
+      "summary": "Remove one or more tags from an existing note.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Note title."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags to remove."
+          }
+        },
+        "required": ["title", "tags"]
+      },
+      "capabilities": ["notes.write"]
+    }
+  ]
+}

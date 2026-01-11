@@ -1,0 +1,445 @@
+{
+  "id": "diff",
+  "version": "0.1.0",
+  "description": "Review git diffs in the configured workspace.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "diff",
+      "title": "Diff",
+      "icon": "git-compare",
+      "description": "Review git diffs in the workspace.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["git.read", "git.write"]
+    }
+  ],
+  "server": {
+    "provides": ["diff"],
+    "capabilities": ["git.read", "git.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/diff/bundle.js",
+    "stylesPath": "/plugins/diff/styles.css"
+  },
+  "operations": [
+    {
+      "id": "instance_list",
+      "summary": "List configured diff instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "status",
+      "summary": "List changed files in the repository.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          }
+        }
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "workspace-list",
+      "summary": "List files and folders in the workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory path within the workspace root."
+          }
+        }
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "workspace-read",
+      "summary": "Read a file in the workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path within the workspace root."
+          }
+        },
+        "required": ["path"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "workspace-repos",
+      "summary": "List repositories within the workspace root.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "maxDepth": {
+            "type": "number",
+            "description": "Maximum directory depth to scan."
+          },
+          "maxRepos": {
+            "type": "number",
+            "description": "Maximum number of repositories to return."
+          }
+        }
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "patch",
+      "summary": "Fetch the diff patch for a file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path to fetch patch data for."
+          }
+        },
+        "required": ["path"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "hunk",
+      "summary": "Fetch a single diff hunk patch for a file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path to fetch patch data for."
+          },
+          "hunkHash": {
+            "type": "string",
+            "description": "Optional hunk hash to match."
+          },
+          "hunkIndex": {
+            "type": "number",
+            "description": "Optional hunk index to fetch (0-based)."
+          }
+        },
+        "required": ["path"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "show",
+      "summary": "Show a file or hunk in a diff panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path to focus."
+          },
+          "hunkHash": {
+            "type": "string",
+            "description": "Optional diff hunk hash to highlight."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "hunks-list",
+      "summary": "List diff hunks from the latest panel snapshot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to query."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "selection-get",
+      "summary": "Get the currently selected diff hunk (if any).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to query."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "comments-list",
+      "summary": "List diff review comments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional file path filter."
+          }
+        }
+      },
+      "capabilities": ["git.read"]
+    },
+    {
+      "id": "comment-add",
+      "summary": "Add a diff review comment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "target": {
+            "type": "string",
+            "enum": ["working", "staged"],
+            "description": "Diff target (working or staged)."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path for the comment."
+          },
+          "hunkHash": {
+            "type": "string",
+            "description": "Diff hunk hash."
+          },
+          "header": {
+            "type": "string",
+            "description": "Optional hunk header."
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment body."
+          }
+        },
+        "required": ["panelId", "path", "hunkHash", "body"]
+      },
+      "capabilities": ["git.write"]
+    },
+    {
+      "id": "comment-update",
+      "summary": "Update a diff review comment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "id": {
+            "type": "string",
+            "description": "Comment id."
+          },
+          "body": {
+            "type": "string",
+            "description": "New comment body."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "resolved"],
+            "description": "Comment status."
+          }
+        },
+        "required": ["panelId", "id"]
+      },
+      "capabilities": ["git.write"]
+    },
+    {
+      "id": "comment-delete",
+      "summary": "Delete a diff review comment.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "id": {
+            "type": "string",
+            "description": "Comment id."
+          }
+        },
+        "required": ["panelId", "id"]
+      },
+      "capabilities": ["git.write"]
+    },
+    {
+      "id": "stage",
+      "summary": "Stage a file or patch in the diff panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path to stage."
+          },
+          "patch": {
+            "type": "string",
+            "description": "Optional patch to stage."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["git.write"]
+    },
+    {
+      "id": "unstage",
+      "summary": "Unstage a file or patch in the diff panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Diff panel id to target."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Diff instance identifier."
+          },
+          "repoPath": {
+            "type": "string",
+            "description": "Path to the repository within the workspace root."
+          },
+          "path": {
+            "type": "string",
+            "description": "File path to unstage."
+          },
+          "patch": {
+            "type": "string",
+            "description": "Optional patch to unstage."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["git.write"]
+    }
+  ]
+}

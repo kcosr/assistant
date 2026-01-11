@@ -1,0 +1,57 @@
+{
+  "id": "files",
+  "version": "0.1.0",
+  "description": "Browse files in the configured workspace.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "files",
+      "title": "Files",
+      "icon": "folder",
+      "description": "Browse files in the workspace.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["files.read"]
+    }
+  ],
+  "server": {
+    "provides": ["files"],
+    "capabilities": ["files.read"]
+  },
+  "web": {
+    "bundlePath": "/plugins/files/bundle.js",
+    "stylesPath": "/plugins/files/styles.css"
+  },
+  "operations": [
+    {
+      "id": "workspace-list",
+      "summary": "List files and folders in the workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path within the workspace root."
+          }
+        }
+      },
+      "capabilities": ["files.read"]
+    },
+    {
+      "id": "workspace-read",
+      "summary": "Read a file in the workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path within the workspace root."
+          }
+        },
+        "required": ["path"]
+      },
+      "capabilities": ["files.read"]
+    }
+  ]
+}

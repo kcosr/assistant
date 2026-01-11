@@ -1,0 +1,29 @@
+{
+  "name": "@assistant/mobile-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Capacitor mobile build for AI Assistant (Android/iOS)",
+  "scripts": {
+    "android:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs",
+    "android:sync": "npx @capacitor/cli sync android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs",
+    "android:open": "npx cap open android",
+    "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:build:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
+    "android:run": "npm run android:sync && cd android && ./gradlew installDebug",
+    "android:doctor": "npx cap doctor",
+    "ios:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add ios",
+    "ios:sync": "npx @capacitor/cli sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "@capacitor/push-notifications": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.0",
+    "@capgo/capacitor-share-target": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0"
+  }
+}

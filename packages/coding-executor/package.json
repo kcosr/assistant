@@ -1,0 +1,20 @@
+{
+  "name": "@assistant/coding-executor",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./utils/truncate": "./dist/utils/truncate.js",
+    "./utils/pathUtils": "./dist/utils/pathUtils.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "diff": "^7.0.0",
+    "glob": "^11.0.0"
+  }
+}

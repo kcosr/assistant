@@ -1,0 +1,168 @@
+{
+  "id": "sessions",
+  "version": "0.1.0",
+  "description": "Session lifecycle and messaging operations.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["sessions"],
+    "capabilities": ["sessions.read", "sessions.write"]
+  },
+  "operations": [
+    {
+      "id": "list",
+      "summary": "List sessions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["sessions.read"]
+    },
+    {
+      "id": "create",
+      "summary": "Create a new session for an agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent id for the new session."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id (required for external agents)."
+          }
+        },
+        "required": ["agentId"]
+      },
+      "http": { "successStatus": 201 },
+      "capabilities": ["sessions.write"]
+    },
+    {
+      "id": "update",
+      "summary": "Rename or pin a session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "New session name (null clears)."
+          },
+          "pinnedAt": {
+            "type": ["string", "null"],
+            "description": "Pinned timestamp ISO string (null clears)."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
+      "id": "update-attributes",
+      "summary": "Patch session attributes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          },
+          "patch": {
+            "type": "object",
+            "description": "Attribute patch object."
+          },
+          "attributes": {
+            "type": "object",
+            "description": "Alias for patch."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
+      "id": "events",
+      "summary": "Fetch session events.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Optional event id to fetch events after."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.read"]
+    },
+    {
+      "id": "message",
+      "summary": "Send a message to a session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          },
+          "content": {
+            "type": "string",
+            "description": "User message content."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["sync", "async"],
+            "description": "Delivery mode (default: async)."
+          },
+          "timeout": {
+            "type": "number",
+            "description": "Timeout in seconds for sync mode."
+          },
+          "webhook": {
+            "type": "object",
+            "description": "Webhook config for async mode."
+          }
+        },
+        "required": ["sessionId", "content"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
+      "id": "clear",
+      "summary": "Clear session history.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
+      "id": "delete",
+      "summary": "Delete a session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.write"]
+    }
+  ]
+}

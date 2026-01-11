@@ -1,2 +1,349 @@
 # assistant
-Panel-based personal assistant with a plugin architecture for productivity workflows. AI agents share a workspace of notes, lists and other panels with the user. Supports Claude Code, Codex, and pi CLI agents with text and voice interfaces. Extend with custom plugins or use built-in plugins exported as skills with CLIs.
+
+A personal AI assistant with a panel-based plugin system, multi-agent CLI integrations, and text/voice UI.
+Plugins define panels and operations so agents can collaborate on lists, notes, and diff reviews,
+or extend the app with custom user-provided plugins.
+OpenAI-compatible sessions are limited in functionality today and will likely be replaced
+by an integration with the badlogic/pi-mono agent SDK.
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Repository Layout](#repository-layout)
+- [Documentation](#documentation)
+- [External Integrations](#external-integrations)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Architecture](#architecture)
+- [License](#license)
+
+## Features
+
+- **Text chat** with streaming responses
+- **Voice input** using browser-based speech recognition (Web Speech API)
+- **Voice output** via OpenAI TTS or ElevenLabs streaming TTS (optional)
+- **CLI agent integrations** (Claude, Codex, Pi) alongside built-in providers
+- **Panel plugins** for lists, notes, diff review, and custom workflows
+- **Tool integration** via MCP (Model Context Protocol) over stdio
+- **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions
+- **Persistent sessions** with JSONL conversation logs and optional naming/pinning
+- **Multi-client support** – multiple browser windows can share a session
+- **Theme + font preferences** (auto/light/dark + presets)
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/kcosr/assistant
+cd assistant
+
+# Install dependencies
+npm install
+
+# Build all packages
+npm run build
+
+# Start the server (uses built-in config at packages/agent-server/data/config.json)
+npm run start -w @assistant/agent-server
+
+# Open http://localhost:3000 in your browser
+```
+
+The built-in config includes Claude Code, Codex, and Pi CLI agents. For a full configuration example with all options, see `data/config.example.json`.
+
+### Configuration Overrides
+
+Override the default paths using environment variables:
+
+```bash
+# Use a custom data directory (sessions, conversations, config)
+export DATA_DIR=/path/to/data
+
+# Use a specific config file
+export APP_CONFIG_PATH=/path/to/config.json
+
+npm run start -w @assistant/agent-server
+```
+
+The server looks for config at `${DATA_DIR}/config.json` by default, or at `APP_CONFIG_PATH` if set.
+
+### Building Skills for CLI Agents
+
+Plugins can be exported as skills for use with CLI agents that support skills (e.g., Claude Code, Codex, Pi):
+
+```bash
+# Build all plugin skills to a directory
+npm run build:plugins -- --skills-dir /tmp/skills
+
+# Copy specific skills to your agent's skills directory
+# Claude: ~/.claude/skills/  |  Pi: ~/.pi/skills/  |  Codex: ~/.codex/skills/
+cp -r /tmp/skills/{notes,lists} ~/.pi/skills/
+
+# Or copy all skills (ensure no name conflicts with existing skills)
+cp -r /tmp/skills/* ~/.pi/skills/
+
+# Build only specific skills directly to the skills directory
+npm run build:plugins -- --skills notes,lists --skills-dir ~/.pi/skills/
+```
+
+Some skills include a CLI binary. Add the skill directories to your PATH, or reference CLIs by full path in your AGENTS.md:
+
+```bash
+# Option 1: Add to PATH (in ~/.bashrc or ~/.zshrc)
+export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
+
+# Option 2: Reference full paths in AGENTS.md / SKILL.md documentation
+```
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl/Cmd + K` | Open launcher/command palette |
+| `Ctrl/Cmd + ]` / `Ctrl/Cmd + [` | Cycle focus between panels |
+| `Ctrl + Shift + Cmd + P` (macOS) / `Ctrl + Shift + Alt + P` (others) | Layout navigation mode |
+| `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) | Header panel navigation |
+| `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) | Close panel (replace with placeholder) |
+| `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) | Remove panel from layout |
+| `Ctrl + Shift + Cmd + N` (macOS) / `Ctrl + Shift + Alt + N` (others) | Create new item (lists panel must be focused) |
+| `Shift + Enter` | Submit modal form (e.g., from tags input in notes/lists) |
+| `Cmd + Click` (macOS) / `Ctrl + Click` (others) | Focus a non-chat panel (chat panels focus on regular click) |
+
+In layout navigation mode: arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages.
+
+**Lists panel item selection:**
+- `Shift + Click` – Range select from last selected item to clicked item
+- `Cmd + Click` (macOS) / `Ctrl + Click` (others) – Toggle individual item selection
+- `Double-click` – Edit item
+
+**Notes panel:** Drag to select text, then release with `Shift` held to add selection to agent context.
+
+### ElevenLabs Streaming TTS (Optional)
+
+To enable ElevenLabs streaming text-to-speech (note: this can be costly):
+
+```bash
+export TTS_BACKEND=elevenlabs
+export ELEVENLABS_API_KEY=<key>
+export ELEVENLABS_TTS_VOICE_ID=VUGQSU6BSEjkbudnJbOj
+export ELEVENLABS_TTS_MODEL=eleven_multilingual_v2
+```
+
+### Git Versioning (Auto-Snapshots)
+
+Git versioning is **enabled by default** for lists, notes, and time-tracker plugins. This automatically commits changes to the plugin's data directory at regular intervals, providing version history.
+
+To disable git versioning for a plugin, remove or set `enabled: false` in the `gitVersioning` key:
+
+```json
+{
+  "plugins": {
+    "lists": {
+      "enabled": true,
+      "gitVersioning": {
+        "enabled": false
+      }
+    }
+  }
+}
+```
+
+The default interval is 1 minute. You can adjust it with `intervalMinutes`.
+
+### Recommended AGENTS.md Addition
+
+Add this to your project or user-level `AGENTS.md` to help AI agents understand and use the assistant skills:
+
+```markdown
+## Assistant Workspace
+
+The user runs a personal assistant workspace with panels for notes, lists, time tracking, and more. **Only use these skills when the user specifically mentions "assistant" or refers to the assistant workspace.** Otherwise, use standard file and shell operations.
+
+### Skills
+
+Skills are packages of instructions and optional CLI tools that integrate with the assistant workspace. Each skill has a `SKILL.md` with full documentation.
+
+#### notes
+Markdown notes with tags and search. Use for:
+- Storing research, meeting notes, documentation
+- Capturing information the user wants to reference later
+- Organizing content with tags
+
+Commands: `list`, `read`, `write`, `search`, `rename`, `delete`, `tags-add`, `tags-remove`
+
+#### lists
+Structured lists with items, tags, and custom fields. Use for:
+- Task lists and to-dos
+- Reading lists, watch lists, bookmarks
+- Any ordered collection of items with metadata
+
+Commands: `list`, `create`, `item-add`, `item-update`, `item-remove`, `items-search`
+
+#### time-tracker
+Track time against tasks with timers and manual entries. Use for:
+- Starting/stopping work timers
+- Logging time spent on tasks
+- Querying time entries for reports
+
+Commands: `task_create`, `task_list`, `timer_start`, `timer_stop`, `entry_create`, `entry_list`
+
+#### diff
+Review git diffs in the workspace. Use for:
+- Reviewing staged/unstaged changes
+- Adding review comments to hunks
+- Staging/unstaging files or patches
+
+Commands: `status`, `patch`, `hunk`, `stage`, `unstage`, `comment-add`, `comments-list`
+
+#### panels
+Panel inventory and layout management. Use for:
+- Listing open panels
+- Opening/closing/moving panels
+- Sending events to panel instances
+
+Commands: `list`, `selected`, `open`, `close`, `move`, `tree`
+
+#### url-fetch
+Fetch and extract content from URLs. Use for:
+- Fetching web page content for analysis
+- Extracting metadata (title, description) from URLs
+- Getting readable text from articles
+
+Commands: `fetch` (modes: `extracted`, `raw`, `metadata`)
+
+### Usage
+
+Run skill CLIs directly:
+
+    notes-cli list
+    lists-cli list
+    time-tracker-cli timer_status
+
+All commands support `--json` for structured output.
+```
+
+## Repository Layout
+
+Monorepo managed with npm workspaces:
+
+| Package                    | Description                                                            |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `packages/agent-server/`   | Node.js backend – WebSocket server, OpenAI integration, TTS, MCP tools |
+| `packages/web-client/`     | Browser client – chat UI, speech input, audio playback                 |
+| `packages/assistant-cli/`  | Internal runtime used to generate plugin CLIs                          |
+| `packages/shared/`         | Shared types, protocol definitions, audio frame helpers                |
+| `packages/plugins/`        | Plugin packages (core, official, examples)                             |
+| `packages/coding-executor/`| Code execution tools (bash, read, write, edit, grep, find)             |
+| `packages/coding-sidecar/` | Container sidecar for sandboxed code execution                         |
+| `packages/mobile-web/`     | Capacitor mobile app wrapper                                           |
+| `packages/notify-proxy/`   | Push notification proxy server                                         |
+| `packages/push-cli/`       | CLI for sending push notifications                                     |
+| `docs/`                    | Design documents and specifications                                    |
+
+## Documentation
+
+For the full documentation map, see [docs/index.md](docs/index.md).
+
+### Specifications
+
+| Document                            | Description                                                                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [UI Specification](docs/UI_SPEC.md) | Common UI behavior and layout requirements for all client implementations (web, Android, iOS). Covers panel layouts, responsive behavior, toolbar controls, and interaction patterns. |
+| [Plugin SDK](docs/PLUGIN_SDK.md)    | Canonical guide for plugin structure, operations, bundles, and CLI skill generation.                                                                                                  |
+| [Config Reference](docs/CONFIG.md)  | Comprehensive `config.json` reference, including agents, plugins, MCP servers, and CLI wrapper options.                                                                               |
+
+### Design Documents
+
+| Document                                          | Description                                                                                                                                                 |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Agents](docs/design/agents.md)                   | Agent architecture and configuration. Covers agent definitions, sessions, tool allowlists, and the relationship between agents and conversations.           |
+| [Preferences](docs/design/preferences.md)         | Preferences storage architecture. Details server-side vs client-side storage, the `/preferences` API, per-list settings, and the optimistic update pattern. |
+| [External Agents](docs/design/external-agents.md) | Design for async external agent integration. Describes how to connect out-of-process agent systems to the assistant UI via HTTP callbacks.                  |
+| [Calendar Plugin](docs/design/calendar-plugin.md) | Calendar plugin design (proposed). Data model, MCP tools, REST API, and UI integration for calendar event management.                                       |
+| [Content Blocks](docs/design/content-blocks.md)   | Output format documentation for Claude CLI and Codex CLI. Reference for implementing structured content block rendering.                                    |
+
+### Package Documentation
+
+| Document                                               | Description                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| [Agent Server](packages/agent-server/README.md)        | Server configuration, plugin system, and MCP tool hosting.   |
+| [Web Client](packages/web-client/README.md)            | Browser client architecture and development.                 |
+| [Plugin CLI Runtime](packages/assistant-cli/README.md) | Internal CLI runtime used by plugin build output.            |
+| [Shared](packages/shared/README.md)                    | Shared types, protocol definitions, and audio frame helpers. |
+| [Mobile Web](packages/mobile-web/README.md)            | Capacitor mobile app wrapper for Android/iOS.                |
+| [Notify Proxy](packages/notify-proxy/README.md)        | Push notification proxy server.                              |
+| [Push CLI](packages/push-cli/README.md)                | CLI for sending push notifications.                          |
+
+## External Integrations
+
+| Service        | API                          | Purpose                       |
+| -------------- | ---------------------------- | ----------------------------- |
+| **OpenAI**     | Chat Completions (streaming) | Text generation               |
+| **OpenAI**     | Audio Speech                 | TTS output (default backend)  |
+| **ElevenLabs** | WebSocket Streaming TTS      | TTS output (optional backend) |
+| **MCP Server** | JSON-RPC 2.0 over stdio      | Tool hosting                  |
+
+## Configuration
+
+See `docs/CONFIG.md` for environment variables and the `config.json` schema (including CLI agent providers).
+Full examples live in `data/config.example.json`.
+
+## Development
+
+```bash
+# Run tests
+npm test
+
+# Lint
+npm run lint
+
+# Format check
+npm run format
+
+# Build all packages
+npm run build
+```
+
+## Architecture
+
+```
+                                       ┌─────────────────────────────────────────┐
+┌─────────────────┐  WebSocket + HTTP  │            Agent Server                 │
+│   Web Client    │◄──────────────────►│             (Node.js)                   │
+│   (Browser)     │                    │                                         │
+└─────────────────┘                    │   • WebSocket: chat, audio streaming    │
+                                       │   • HTTP: static files, REST API        │
+┌─────────────────┐       HTTP         │                                         │
+│  Plugin CLIs    │◄──────────────────►│                                         │
+│ (External Agent)│     REST API       └──────────────────┬──────────────────────┘
+└─────────────────┘                                       │
+                                                          │
+        ┌─────────────────┬───────────────┬───────────────┬───────────────┬───────────────┬─────────────────┐
+        │                 │               │               │               │               │                 │
+        ▼                 ▼               ▼               ▼               ▼               ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ OpenAI Chat  │  │  Claude CLI  │  │  Codex CLI   │  │    Pi CLI    │  │  TTS Backend │  │ MCP Tools    │  │   Plugins    │
+│    (API)     │  │  (subprocess)│  │  (subprocess)│  │  (subprocess)│  │    (API)     │  │ (subprocess) │  │   (files)    │
+└──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
+```
+
+### Client-Server Protocol
+
+The client and server communicate over WebSocket using:
+
+- **JSON messages** for control, text, and metadata
+- **Binary frames** for audio data (TTS output)
+
+See `packages/shared/src/protocol.ts` for message type definitions.
+
+### Session Persistence
+
+- **Sessions index**: `${DATA_DIR}/sessions.jsonl`
+- **Conversation logs**: `${DATA_DIR}/conversations.jsonl`
+
+Logs are append-only JSONL files containing user messages, assistant responses, tool calls, and tool results.
+
+## License
+
+MIT

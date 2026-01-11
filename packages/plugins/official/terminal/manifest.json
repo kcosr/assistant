@@ -1,0 +1,71 @@
+{
+  "id": "terminal",
+  "version": "0.1.0",
+  "description": "Interactive terminal panel backed by a PTY.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "terminal",
+      "title": "Terminal",
+      "icon": "terminal",
+      "description": "Interactive shell session bound to the active workspace.",
+      "multiInstance": true,
+      "defaultSessionBinding": "fixed",
+      "sessionScope": "optional",
+      "capabilities": ["terminal.exec"]
+    }
+  ],
+  "server": {
+    "provides": ["terminal"],
+    "capabilities": ["terminal.exec"]
+  },
+  "web": {
+    "bundlePath": "/plugins/terminal/bundle.js",
+    "stylesPath": "/plugins/terminal/styles.css"
+  },
+  "operations": [
+    {
+      "id": "write",
+      "summary": "Write text to a terminal panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to write to the terminal (use \\n to send Enter)."
+          },
+          "panelId": {
+            "type": "string",
+            "description": "Optional terminal panel id to target."
+          }
+        },
+        "required": ["text"]
+      },
+      "capabilities": ["terminal.exec"],
+      "tool": {
+        "description": "Write text to a terminal panel. Provide panelId to target a specific panel (required for unbound panels)."
+      }
+    },
+    {
+      "id": "read-screen",
+      "summary": "Read the visible terminal screen from a terminal panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Optional terminal panel id to target."
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Optional timeout (ms) to wait for a client snapshot response."
+          }
+        }
+      },
+      "capabilities": ["terminal.exec"],
+      "tool": {
+        "description": "Read the visible terminal screen from a terminal panel. Requires a connected client; unbound panels must be targeted by panelId."
+      }
+    }
+  ]
+}

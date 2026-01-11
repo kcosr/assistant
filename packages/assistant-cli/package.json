@@ -1,0 +1,15 @@
+{
+  "name": "@assistant/assistant-cli",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "format": "prettier --check \"src/**/*.{ts,tsx}\""
+  },
+  "dependencies": {
+    "@assistant/shared": "*",
+    "yargs": "^17.7.2",
+    "yaml": "^2.7.0"
+  }
+}

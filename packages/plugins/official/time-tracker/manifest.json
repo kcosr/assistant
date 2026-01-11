@@ -1,0 +1,285 @@
+{
+  "id": "time-tracker",
+  "version": "0.1.0",
+  "description": "Track time against tasks with timers and manual entries.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "time-tracker",
+      "title": "Time Tracker",
+      "icon": "clock",
+      "description": "Track tasks with timers and manual time entries.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["time-tracker.read", "time-tracker.write"]
+    }
+  ],
+  "server": {
+    "provides": ["time-tracker"],
+    "capabilities": ["time-tracker.read", "time-tracker.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/time-tracker/bundle.js",
+    "stylesPath": "/plugins/time-tracker/styles.css"
+  },
+  "operations": [
+    {
+      "id": "instance_list",
+      "summary": "List configured instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "task_create",
+      "summary": "Create a task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "name": { "type": "string", "description": "Task name." },
+          "description": { "type": "string", "description": "Optional task description." }
+        },
+        "required": ["name"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "task_list",
+      "summary": "List or search tasks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "query": { "type": "string", "description": "Optional search query." }
+        }
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "task_get",
+      "summary": "Get a task by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Task id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "task_update",
+      "summary": "Update a task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Task id." },
+          "name": { "type": "string", "description": "New task name." },
+          "description": { "type": "string", "description": "New task description." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "task_delete",
+      "summary": "Delete a task and its entries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Task id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "entry_create",
+      "summary": "Create a time entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "task_id": { "type": "string", "description": "Task id." },
+          "duration_minutes": { "type": "number", "description": "Entry duration in minutes." },
+          "entry_date": { "type": "string", "description": "Entry date (YYYY-MM-DD)." },
+          "note": { "type": "string", "description": "Optional note." }
+        },
+        "required": ["task_id", "duration_minutes"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "entry_list",
+      "summary": "List entries for a date range or task.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "start_date": { "type": "string", "description": "Start date (YYYY-MM-DD)." },
+          "end_date": { "type": "string", "description": "End date (YYYY-MM-DD)." },
+          "task_id": { "type": "string", "description": "Optional task id filter." }
+        }
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "entry_get",
+      "summary": "Get a time entry by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Entry id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "entry_update",
+      "summary": "Update a time entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Entry id." },
+          "task_id": { "type": "string", "description": "New task id." },
+          "duration_minutes": { "type": "number", "description": "New duration in minutes." },
+          "entry_date": { "type": "string", "description": "Entry date (YYYY-MM-DD)." },
+          "note": { "type": "string", "description": "Optional note." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "entry_delete",
+      "summary": "Delete a time entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Entry id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "timer_start",
+      "summary": "Start the active timer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "task_id": { "type": "string", "description": "Task id." },
+          "entry_date": { "type": "string", "description": "Entry date (YYYY-MM-DD)." }
+        },
+        "required": ["task_id"]
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "timer_status",
+      "summary": "Get the active timer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["time-tracker.read"]
+    },
+    {
+      "id": "timer_stop",
+      "summary": "Stop the active timer and create an entry.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "note": { "type": "string", "description": "Optional note." }
+        }
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "timer_discard",
+      "summary": "Discard the active timer.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "set_filter",
+      "summary": "Update the panel date range filter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "start_date": { "type": "string", "description": "Start date (YYYY-MM-DD)." },
+          "end_date": { "type": "string", "description": "End date (YYYY-MM-DD)." },
+          "panel_id": { "type": "string", "description": "Optional panel id to target." }
+        },
+        "required": ["start_date", "end_date"]
+      },
+      "capabilities": ["time-tracker.write"]
+    }
+  ]
+}

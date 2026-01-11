@@ -1,0 +1,47 @@
+{
+  "name": "assistant",
+  "version": "0.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "packages/coding-executor",
+    "packages/coding-sidecar",
+    "packages/notify-proxy",
+    "packages/assistant-cli",
+    "packages/agent-server",
+    "packages/web-client",
+    "packages/mobile-web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "build": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run build -w @assistant/agent-server && npm run build -w @assistant/web-client && npm run build:plugins && npm run build -w @assistant/assistant-cli && npm run build -w @assistant/coding-sidecar && npm run build -w @assistant/notify-proxy",
+    "build:plugins": "node scripts/build-plugins.js",
+    "lint": "eslint \"packages/**/*.{ts,tsx}\"",
+    "format": "prettier --check .",
+    "test": "vitest --run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.7.4",
+    "@types/yargs": "^17.0.35",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/ui": "^2.1.9",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^27.2.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.48.1",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "diff": "^7.0.0",
+    "node-pty": "^1.1.0"
+  }
+}

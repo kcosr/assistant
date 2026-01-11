@@ -1,0 +1,25 @@
+{
+  "name": "@assistant/web-client",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json && npm run bundle",
+    "bundle": "esbuild src/index.ts --bundle --format=esm --platform=browser --outfile=public/client.js && npm run bundle:plugins",
+    "bundle:plugins": "node -e \"console.log('No web-client plugins to bundle.');\""
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "@assistant/shared": "*",
+    "dompurify": "^3.3.0",
+    "ghostty-web": "^0.4.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.1"
+  },
+  "optionalDependencies": {
+    "@capacitor/push-notifications": "^8.0.0",
+    "@capgo/capacitor-share-target": "^8.0.2"
+  }
+}

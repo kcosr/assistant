@@ -1,0 +1,19 @@
+{
+  "id": "hello",
+  "version": "0.1.0",
+  "description": "Sample plugin panel for validating plugin packaging.",
+  "panels": [
+    {
+      "type": "hello",
+      "title": "Hello",
+      "description": "Sample plugin panel loaded from a bundle.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global"
+    }
+  ],
+  "web": {
+    "bundlePath": "/plugins/hello/bundle.js",
+    "stylesPath": "/plugins/hello/styles.css"
+  }
+}

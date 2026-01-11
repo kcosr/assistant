@@ -1,0 +1,19 @@
+{
+  "id": "ws-echo",
+  "version": "0.1.0",
+  "description": "Sample WebSocket echo panel.",
+  "panels": [
+    {
+      "type": "ws-echo",
+      "title": "WS Echo",
+      "description": "Echoes text input over the WebSocket back to the same panel.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global"
+    }
+  ],
+  "web": {
+    "bundlePath": "/plugins/ws-echo/bundle.js",
+    "stylesPath": "/plugins/ws-echo/styles.css"
+  }
+}

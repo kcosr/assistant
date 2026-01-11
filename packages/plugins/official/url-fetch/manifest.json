@@ -1,0 +1,35 @@
+{
+  "id": "url-fetch",
+  "version": "0.1.0",
+  "description": "Fetch and extract content from external URLs.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["url-fetch"],
+    "capabilities": ["network.fetch"]
+  },
+  "operations": [
+    {
+      "id": "fetch",
+      "summary": "Fetch content from a URL.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to fetch"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["extracted", "raw", "metadata"],
+            "description": "Content mode: 'extracted' for readable text (default), 'raw' for HTML, 'metadata' for lightweight title/description"
+          }
+        },
+        "required": ["url"]
+      },
+      "capabilities": ["network.fetch"],
+      "tool": {
+        "description": "Fetch content from a URL. Use 'metadata' mode for lightweight title/description extraction when saving URLs."
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@assistant/coding-sidecar",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@assistant/coding-executor": "*"
+  }
+}

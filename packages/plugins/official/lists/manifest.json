@@ -1,0 +1,574 @@
+{
+  "id": "lists",
+  "version": "0.1.0",
+  "description": "Structured lists with items, tags, and custom fields.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "lists",
+      "title": "Lists",
+      "icon": "list",
+      "description": "Create, organize, and track list items.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["lists.read", "lists.write"]
+    }
+  ],
+  "server": {
+    "provides": ["lists"],
+    "capabilities": ["lists.read", "lists.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/lists/bundle.js",
+    "stylesPath": "/plugins/lists/styles.css"
+  },
+  "operations": [
+    {
+      "id": "instance_list",
+      "summary": "List configured instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "list",
+      "summary": "List all lists, optionally filtered by tags.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Filter lists by tags."
+          },
+          "tagMatch": {
+            "type": "string",
+            "enum": ["all", "any"],
+            "description": "Tag matching mode: all (AND) or any (OR)."
+          }
+        }
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "get",
+      "summary": "Get a list by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "show",
+      "summary": "Show a list in the lists panel (panelId required).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." },
+          "panelId": { "type": "string", "description": "Lists panel id to target." }
+        },
+        "required": ["id", "panelId"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "create",
+      "summary": "Create a new list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": {
+            "type": "string",
+            "description": "Optional slug id (lowercase alphanumeric with hyphens)."
+          },
+          "name": { "type": "string", "description": "List name." },
+          "description": { "type": "string", "description": "List description." },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "defaultTags": { "type": "array", "items": { "type": "string" } },
+          "customFields": {
+            "type": "array",
+            "description": "Custom field definitions for list items.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "label": { "type": "string" },
+                "type": {
+                  "type": "string",
+                  "enum": ["text", "number", "date", "time", "datetime", "select", "checkbox"]
+                },
+                "options": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["key", "label", "type"]
+            }
+          }
+        },
+        "required": ["name"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "update",
+      "summary": "Update list metadata.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." },
+          "name": { "type": "string", "description": "New list name." },
+          "description": {
+            "type": "string",
+            "description": "New description (empty string clears)."
+          },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "defaultTags": { "type": "array", "items": { "type": "string" } },
+          "customFields": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "label": { "type": "string" },
+                "type": {
+                  "type": "string",
+                  "enum": ["text", "number", "date", "time", "datetime", "select", "checkbox"]
+                },
+                "options": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["key", "label", "type"]
+            }
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "delete",
+      "summary": "Delete a list and its items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "tags-add",
+      "summary": "Add tags to a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "tags"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "tags-remove",
+      "summary": "Remove tags from a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "List id." },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "tags"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-list",
+      "summary": "List items in a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "limit": { "type": "number", "description": "Max items to return." },
+          "sort": {
+            "type": "string",
+            "enum": ["position", "newest", "oldest"],
+            "description": "Sort order."
+          },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "tagMatch": { "type": "string", "enum": ["all", "any"] }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "items-search",
+      "summary": "Search list items across lists or within a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "query": { "type": "string", "description": "Search query." },
+          "listId": { "type": "string", "description": "Optional list id." },
+          "limit": { "type": "number", "description": "Max results." },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "tagMatch": { "type": "string", "enum": ["all", "any"] }
+        },
+        "required": ["query"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "item-get",
+      "summary": "Get a list item by id or title.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "title": { "type": "string", "description": "Item title (case-insensitive)." }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "item-add",
+      "summary": "Add an item to a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "title": { "type": "string", "description": "Item title." },
+          "position": { "type": "number", "description": "Zero-based position." },
+          "url": { "type": "string", "description": "Optional URL." },
+          "notes": { "type": "string", "description": "Optional notes." },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "customFields": { "type": "object", "description": "Custom field values." }
+        },
+        "required": ["listId", "title"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-update",
+      "summary": "Update a list item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "lookupTitle": { "type": "string", "description": "Item title to match." },
+          "title": { "type": "string", "description": "New title." },
+          "position": { "type": "number", "description": "New position." },
+          "url": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] },
+          "tags": { "type": ["array", "null"], "items": { "type": "string" } },
+          "completed": { "type": ["boolean", "null"] },
+          "customFields": { "type": ["object", "null"] },
+          "touchedAt": { "type": ["string", "null"] }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-remove",
+      "summary": "Remove an item from a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "title": { "type": "string", "description": "Item title (case-insensitive)." }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-touch",
+      "summary": "Update the touch timestamp for a list item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "lookupTitle": { "type": "string", "description": "Item title to match." }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-tags-add",
+      "summary": "Add tags to a list item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "lookupTitle": { "type": "string", "description": "Item title to match." },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["listId", "tags"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-tags-remove",
+      "summary": "Remove tags from a list item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Item id." },
+          "lookupTitle": { "type": "string", "description": "Item title to match." },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["listId", "tags"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-copy",
+      "summary": "Copy an item to another list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Item id." },
+          "lookupTitle": { "type": "string", "description": "Item title to match." },
+          "sourceListId": { "type": "string", "description": "Source list id." },
+          "targetListId": { "type": "string", "description": "Target list id." },
+          "position": { "type": "number", "description": "Target position." }
+        },
+        "required": ["sourceListId", "targetListId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "item-move",
+      "summary": "Move an item to another list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": { "type": "string", "description": "Item id." },
+          "targetListId": { "type": "string", "description": "Target list id." },
+          "position": { "type": "number", "description": "Target position." }
+        },
+        "required": ["id", "targetListId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-bulk-update-tags",
+      "summary": "Bulk update tags on list items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "lookupTitle": { "type": "string" },
+                "addTags": { "type": "array", "items": { "type": "string" } },
+                "removeTags": { "type": "array", "items": { "type": "string" } },
+                "setTags": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "required": ["listId", "items"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-bulk-move",
+      "summary": "Bulk move items to target lists.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "targetListId": { "type": "string" },
+                "position": { "type": "number" }
+              },
+              "required": ["id", "targetListId"]
+            }
+          }
+        },
+        "required": ["operations"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-bulk-copy",
+      "summary": "Bulk copy items to another list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "sourceListId": { "type": "string", "description": "Source list id." },
+          "targetListId": { "type": "string", "description": "Target list id." },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" }
+              },
+              "required": ["id"]
+            }
+          }
+        },
+        "required": ["sourceListId", "targetListId", "items"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-bulk-update-fields",
+      "summary": "Bulk update custom fields or touched timestamps.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "updates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "lookupTitle": { "type": "string" },
+                "customFields": { "type": ["object", "null"] },
+                "touchedAt": { "type": ["string", "null"] }
+              }
+            }
+          }
+        },
+        "required": ["listId", "updates"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "items-bulk-update-completed",
+      "summary": "Bulk update completed status for items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "itemIds": { "type": "array", "items": { "type": "string" } },
+          "completed": { "type": "boolean" }
+        },
+        "required": ["listId", "itemIds", "completed"]
+      },
+      "capabilities": ["lists.write"]
+    }
+  ]
+}

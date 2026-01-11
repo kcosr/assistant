@@ -1,0 +1,16 @@
+{
+  "name": "@assistant/notify-proxy",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Standalone HTTP service that proxies agent-server webhooks to Android push notifications via FCM",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "notify-proxy": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {}
+}

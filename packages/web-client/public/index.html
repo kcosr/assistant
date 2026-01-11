@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (() => {
+        try {
+          const storage = window.localStorage;
+          if (!storage) {
+            return;
+          }
+          const theme = storage.getItem('aiAssistantTheme') || 'auto';
+          document.documentElement.setAttribute('data-theme', theme);
+          const uiFont = storage.getItem('aiAssistantUIFont');
+          if (uiFont && uiFont.trim()) {
+            document.documentElement.style.setProperty('--font-sans', uiFont.trim());
+          }
+          const codeFont = storage.getItem('aiAssistantCodeFont');
+          if (codeFont && codeFont.trim()) {
+            document.documentElement.style.setProperty('--font-mono', codeFont.trim());
+          }
+          const lightThemes = new Set([
+            'light',
+            'solarized-light',
+            'gruvbox-light',
+            'catppuccin-latte',
+            'forest-light',
+            'everforest-light',
+            'autumn-morning',
+            'autumn-afternoon',
+            'winter-morning',
+            'winter-afternoon',
+          ]);
+          let isLight = false;
+          if (theme === 'auto') {
+            isLight =
+              typeof window.matchMedia === 'function' &&
+              window.matchMedia('(prefers-color-scheme: light)').matches;
+          } else {
+            isLight = lightThemes.has(theme);
+          }
+          document.documentElement.setAttribute('data-theme-tone', isLight ? 'light' : 'dark');
+          document.documentElement.style.backgroundColor = isLight ? '#ffffff' : '#1a1a1a';
+        } catch {
+          // Ignore bootstrap failures and fall back to CSS defaults.
+        }
+      })();
+    </script>
+    <style>
+      .settings-dropdown,
+      .panel-launcher-overlay {
+        display: none;
+      }
+      .icon {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      [data-theme-tone='light'] .toolbar-button {
+        color: #495057;
+      }
+      [data-theme-tone='dark'] .toolbar-button {
+        color: #a0a0a0;
+      }
+    </style>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Top Toolbar -->
+    <header class="toolbar">
+      <div class="toolbar-group">
+        <button
+          type="button"
+          id="panel-launcher-button"
+          class="toolbar-button"
+          aria-label="Open panel launcher"
+          title="Panels"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="8" height="8" rx="1.5" ry="1.5" />
+            <rect x="13" y="3" width="8" height="8" rx="1.5" ry="1.5" />
+            <rect x="3" y="13" width="8" height="8" rx="1.5" ry="1.5" />
+            <rect x="13" y="13" width="8" height="8" rx="1.5" ry="1.5" />
+          </svg>
+        </button>
+        <div class="settings-dropdown-wrapper">
+          <button
+            type="button"
+            id="layout-dropdown-button"
+            class="toolbar-button"
+            aria-label="Layout presets"
+            title="Layout"
+            aria-expanded="false"
+            aria-haspopup="true"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="8" height="16" rx="1.5" ry="1.5" />
+              <rect x="13" y="4" width="8" height="16" rx="1.5" ry="1.5" />
+            </svg>
+          </button>
+          <div id="layout-dropdown" class="settings-dropdown layout-dropdown">
+            <button type="button" class="settings-dropdown-item" id="layout-replace-panel">
+              Replace panel with...
+            </button>
+            <button type="button" class="settings-dropdown-item" data-layout="auto">
+              Gather panels (auto)
+            </button>
+            <button
+              type="button"
+              class="settings-dropdown-item"
+              data-layout="columns"
+              data-columns="1"
+            >
+              1 column
+            </button>
+            <button
+              type="button"
+              class="settings-dropdown-item"
+              data-layout="columns"
+              data-columns="2"
+            >
+              2 columns
+            </button>
+            <button
+              type="button"
+              class="settings-dropdown-item"
+              data-layout="columns"
+              data-columns="3"
+            >
+              3 columns
+            </button>
+          </div>
+        </div>
+        <div id="panel-header-dock" class="panel-header-dock"></div>
+      </div>
+
+      <div class="toolbar-spacer"></div>
+
+      <div class="toolbar-group">
+        <div class="settings-dropdown-wrapper">
+          <button
+            type="button"
+            id="controls-toggle-button"
+            class="toolbar-button"
+            aria-label="Toggle settings"
+            title="Toggle settings"
+            aria-expanded="false"
+            aria-haspopup="true"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+          </button>
+          <div id="settings-dropdown" class="settings-dropdown">
+            <div class="settings-dropdown-item">
+              <label for="audio-responses-checkbox">
+                <input type="checkbox" id="audio-responses-checkbox" />
+                Audio responses
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="autofocus-chat-checkbox">
+                <input type="checkbox" id="autofocus-chat-checkbox" />
+                Auto-focus chat on connect
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="keyboard-shortcuts-checkbox">
+                <input type="checkbox" id="keyboard-shortcuts-checkbox" />
+                Keyboard shortcuts
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="auto-scroll-checkbox">
+                <input type="checkbox" id="auto-scroll-checkbox" />
+                Auto-scroll on new messages
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="include-context-checkbox">
+                <input type="checkbox" id="include-context-checkbox" />
+                Include panel context in messages
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="show-context-checkbox">
+                <input type="checkbox" id="show-context-checkbox" />
+                Show context line in chat
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="list-insert-at-top-checkbox">
+                <input type="checkbox" id="list-insert-at-top-checkbox" />
+                Insert new list items at top
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="theme-select">
+                Theme
+                <select id="theme-select" aria-label="Theme"></select>
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="ui-font-select">
+                UI font
+                <select id="ui-font-select" aria-label="UI font"></select>
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="code-font-select">
+                Code/terminal font
+                <select id="code-font-select" aria-label="Code/terminal font"></select>
+              </label>
+            </div>
+            <button type="button" id="reset-layout-button" class="settings-dropdown-item">
+              Reset layout
+            </button>
+            <button type="button" id="reset-panel-state-button" class="settings-dropdown-item">
+              Reset panel state
+            </button>
+            <button type="button" id="tag-colors-settings-button" class="settings-dropdown-item">
+              Tag colors…
+            </button>
+            <div id="settings-status" class="settings-dropdown-status">
+              <span id="status">Connecting…</span>
+            </div>
+          </div>
+        </div>
+        <div class="toolbar-user-avatar" title="User">U</div>
+      </div>
+    </header>
+
+    <!-- Main App Layout -->
+    <div class="app-layout">
+      <!-- Panels Container -->
+      <div class="app-container">
+        <div id="panel-workspace" class="panel-workspace">
+          <!-- Agent Sidebar -->
+          <aside id="agent-sidebar" class="panel agent-sidebar hidden" aria-label="Agent sessions">
+            <div class="panel-header">
+              <span class="sidebar-header-label">Agents</span>
+              <div class="panel-header-actions">
+                <button
+                  type="button"
+                  id="sidebar-view-toggle"
+                  class="sidebar-view-toggle-button"
+                  aria-label="Show all sessions together"
+                  title="Show all"
+                >
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+                <div class="agent-add-dropdown-wrapper">
+                  <button
+                    type="button"
+                    id="sidebar-agent-add-button"
+                    class="panel-close-button"
+                    aria-label="New session"
+                    title="New session"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                  >
+                    <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M12 5v14M5 12h14"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                  <div
+                    id="agent-add-dropdown"
+                    class="agent-add-dropdown"
+                    role="menu"
+                    aria-label="Create new session"
+                  >
+                    <div class="agent-add-dropdown-header">New session</div>
+                    <div id="agent-add-dropdown-list" class="agent-add-dropdown-list">
+                      <!-- Populated dynamically -->
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="sidebar-delete-all"
+                  class="panel-close-button"
+                  aria-label="Delete all sessions"
+                  title="Delete all sessions"
+                >
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="agent-sidebar-sections" class="agent-sidebar-sections"></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <template id="chat-panel-template">
+      <main class="chat-panel" aria-label="Chat">
+        <div class="panel-header chat-header">
+          <div class="panel-header-main">
+            <span class="panel-header-label">Chat</span>
+            <button
+              type="button"
+              class="chat-session-label"
+              data-role="chat-session-label"
+              aria-label="Select session"
+              aria-haspopup="menu"
+            ></button>
+            <select
+              class="model-select hidden"
+              data-role="chat-model-select"
+              aria-label="Select chat model"
+            ></select>
+          </div>
+          <div class="panel-header-actions">
+            <button
+              type="button"
+              class="panel-header-button"
+              data-role="chat-toggle-tool-output"
+              aria-label="Toggle tool output visibility"
+              title="Show/hide tool output"
+            >
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="panel-header-button"
+              data-role="chat-toggle-thinking"
+              aria-label="Toggle thinking visibility"
+              title="Show/Hide thinking"
+            >
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M9 9a3 3 0 0 1 6 0c0 1.1-.9 2-2 2h-1"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M12 2a8 8 0 0 0-8 8c0 3.3 2.1 6.1 5 7.3V20a2 2 0 0 0 2 2h2"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M16 22h2a2 2 0 0 0 2-2v-1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="panel-header-button"
+              data-role="chat-toggle-tool-expand"
+              aria-label="Toggle tool output expand"
+              title="Expand/collapse tool output"
+            >
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M7 10l5 5 5-5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="chat-log-container" data-role="chat-log-container">
+          <div class="chat-log" data-role="chat-log"></div>
+          <button
+            type="button"
+            class="chat-scroll-to-bottom"
+            data-role="chat-scroll-to-bottom"
+            aria-label="Scroll to bottom"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M7 10l5 5 5-5"
+                stroke="currentColor"
+                stroke-width="2"
+                fill="none"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>Scroll to bottom</span>
+          </button>
+        </div>
+        <div class="input-panel chat-input-panel">
+          <div class="context-preview" data-role="context-preview" aria-live="polite"></div>
+          <div
+            class="pending-message-list"
+            data-role="pending-message-list"
+            aria-live="polite"
+          ></div>
+          <form class="input-form" data-role="input-form">
+            <div class="input-field-wrapper">
+              <input
+                class="input-field"
+                data-role="input-text"
+                type="text"
+                placeholder="Type a message"
+                autocomplete="off"
+              />
+              <button
+                type="button"
+                class="input-clear-button input-icon-button input-clear-inline"
+                data-role="input-clear"
+                aria-label="Clear input"
+                tabindex="-1"
+              >
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <button
+              type="button"
+              class="context-toggle-button input-icon-button"
+              data-role="input-context-toggle"
+              aria-pressed="true"
+              aria-label="Include panel context in messages"
+              title="Include panel context in messages"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="14" rx="2" ry="2" />
+                <path d="M7 10h10M7 14h6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="brief-toggle-button input-icon-button"
+              data-role="input-brief-toggle"
+              aria-pressed="false"
+              aria-label="Toggle brief responses"
+              title="Toggle brief responses"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              class="input-mic-button input-icon-button"
+              data-role="input-mic"
+              aria-label="Voice input"
+            >
+              <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="9" y="3" width="6" height="12" rx="3" />
+                <path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z" />
+                <rect x="11" y="19" width="2" height="3" />
+                <path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z" />
+              </svg>
+            </button>
+            <button
+              type="submit"
+              class="input-submit-button input-icon-button"
+              data-role="input-submit"
+              aria-label="Send message"
+              title="Send message"
+            >
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 5v14" />
+                <path d="M5 12l7-7 7 7" />
+              </svg>
+            </button>
+          </form>
+        </div>
+      </main>
+    </template>
+
+    <div id="panel-launcher" class="panel-launcher-overlay" aria-hidden="true">
+      <div class="panel-launcher" role="dialog" aria-labelledby="panel-launcher-title">
+        <div class="panel-launcher-header">
+          <h2 id="panel-launcher-title" class="panel-launcher-title-text">Panels</h2>
+          <button type="button" id="panel-launcher-close" class="panel-launcher-close">
+            Close
+          </button>
+        </div>
+        <div class="panel-launcher-search">
+          <input
+            type="search"
+            id="panel-launcher-search"
+            class="panel-launcher-search-input"
+            placeholder="Search panels"
+            aria-label="Search panels"
+            autocomplete="off"
+          />
+        </div>
+        <div id="panel-launcher-list" class="panel-launcher-list"></div>
+      </div>
+    </div>
+
+    <script src="/config.js"></script>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

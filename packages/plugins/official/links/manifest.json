@@ -1,0 +1,34 @@
+{
+  "id": "links",
+  "version": "0.1.0",
+  "description": "Open URLs on connected clients.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["links"],
+    "capabilities": ["links.open"]
+  },
+  "operations": [
+    {
+      "id": "open",
+      "summary": "Open a URL on the connected client.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL to open on the client"
+          },
+          "raw": {
+            "type": "boolean",
+            "description": "When true, disables URL rewriting and opens the URL exactly as provided. Defaults to false."
+          }
+        },
+        "required": ["url"]
+      },
+      "capabilities": ["links.open"],
+      "tool": {
+        "description": "Open a URL on the connected client (browser or native app). Optionally rewrites Spotify web URLs (open.spotify.com) to the spotify: URI scheme."
+      }
+    }
+  ]
+}

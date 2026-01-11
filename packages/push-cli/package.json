@@ -1,0 +1,19 @@
+{
+  "name": "@assistant/push-cli",
+  "version": "0.0.0",
+  "description": "CLI to send push notifications via Firebase Cloud Messaging",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "push-cli": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}
