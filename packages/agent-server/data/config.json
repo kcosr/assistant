@@ -113,12 +113,12 @@
         {
           "id": "default",
           "label": "Default",
-          "workspaceRoot": "/home/kevin/worktrees"
+          "workspaceRoot": "${HOME}/worktrees"
         },
         {
           "id": "work",
           "label": "Work",
-          "workspaceRoot": "/home/kevin/devtools/work"
+          "workspaceRoot": "${HOME}/work"
         }
       ]
     },

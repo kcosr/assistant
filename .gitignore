@@ -16,6 +16,7 @@ packages/web-client/public/plugins/**/styles.css
 packages/agent-server/index.map.json
 packages/agent-server/data/*
 !packages/agent-server/data/config.json
+!packages/agent-server/data/config.example.json
 packages/android-client/app/build
 packages/push-cli/firebase-sa.json
 packages/mobile-web/google-services.json

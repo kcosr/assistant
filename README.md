@@ -52,7 +52,7 @@ npm run start -w @assistant/agent-server
 # Open http://localhost:3000 in your browser
 ```
 
-The built-in config includes Claude Code, Codex, and Pi CLI agents. For a full configuration example with all options, see `data/config.example.json`.
+The built-in config includes Claude Code, Codex, and Pi CLI agents. For a full configuration example with all options, see `packages/agent-server/data/config.example.json`.
 
 ### Configuration Overrides
 
