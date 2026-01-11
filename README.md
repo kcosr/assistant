@@ -7,6 +7,7 @@ OpenAI-compatible sessions are limited in functionality today and will likely be
 by an integration with the badlogic/pi-mono agent SDK.
 
 ![Assistant Screenshot](assets/screenshot.png)
+![Assistant Mobile](assets/mobile.jpeg)
 
 ## Table of Contents
 
