@@ -6,8 +6,10 @@ or extend the app with custom user-provided plugins.
 OpenAI-compatible sessions are limited in functionality today and will likely be replaced
 by an integration with the badlogic/pi-mono agent SDK.
 
-![Assistant Screenshot](assets/screenshot.png)
-<img src="assets/mobile.jpeg" alt="Assistant Mobile" width="300">
+<p>
+  <img src="assets/screenshot.png" alt="Assistant Screenshot" width="600">
+  <img src="assets/mobile.jpeg" alt="Assistant Mobile" width="200">
+</p>
 
 ## Table of Contents
 
