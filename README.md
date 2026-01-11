@@ -18,6 +18,8 @@ by an integration with the badlogic/pi-mono agent SDK.
 - [Architecture](#architecture)
 - [License](#license)
 
+![Assistant Screenshot](assets/screenshot.png)
+
 ## Features
 
 - **Text chat** with streaming responses
