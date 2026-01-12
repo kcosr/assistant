@@ -5,6 +5,12 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AgentRegistry } from '../agents';
+import type { ConversationStore } from '../conversationStore';
+import type { EnvConfig } from '../envConfig';
+import type { SessionHub } from '../sessionHub';
+import type { SessionIndex, SessionSummary } from '../sessionIndex';
+import type { SessionMessageStartResult } from '../sessionMessages';
+import type { ToolHost } from '../tools';
 import { ScheduledSessionService } from './scheduledSessionService';
 
 type SpawnResult = {
@@ -72,6 +78,7 @@ function createService(
     cron: string;
     prompt?: string | null;
     preCheck?: string | null;
+    sessionTitle?: string | null;
     enabled?: boolean;
     maxConcurrent?: number;
   }> = {},
@@ -91,6 +98,7 @@ function createService(
     maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
+    ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
   };
 
   const registry = new AgentRegistry([
@@ -121,6 +129,136 @@ function createService(
   });
 
   return { service, schedule };
+}
+
+function createSessionIndexStub() {
+  let counter = 0;
+  const sessions: SessionSummary[] = [];
+
+  const now = () => new Date().toISOString();
+
+  return {
+    sessions,
+    listSessions: vi.fn(async () => sessions.filter((session) => !session.deleted)),
+    createSession: vi.fn(async ({ agentId }: { agentId: string }) => {
+      const timestamp = now();
+      const summary: SessionSummary = {
+        sessionId: `session-${counter++}`,
+        agentId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      sessions.push(summary);
+      return { ...summary };
+    }),
+    updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        return null;
+      }
+      session.attributes = {
+        ...(session.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      };
+      session.updatedAt = now();
+      return { ...session };
+    }),
+    renameSession: vi.fn(async (sessionId: string, name: string | null) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        throw new Error(`Session not found: ${sessionId}`);
+      }
+      if (name === null) {
+        delete session.name;
+      } else {
+        session.name = name;
+      }
+      session.updatedAt = now();
+      return { ...session };
+    }),
+  };
+}
+
+function createServiceWithSessions(
+  scheduleOverrides: Partial<{
+    id: string;
+    cron: string;
+    prompt?: string | null;
+    preCheck?: string | null;
+    sessionTitle?: string | null;
+    enabled?: boolean;
+    maxConcurrent?: number;
+  }> = {},
+) {
+  const resolvedPrompt =
+    scheduleOverrides.prompt === null
+      ? undefined
+      : scheduleOverrides.prompt ?? 'Review open PRs';
+  const resolvedPreCheck =
+    scheduleOverrides.preCheck === null ? undefined : scheduleOverrides.preCheck;
+
+  const schedule = {
+    id: scheduleOverrides.id ?? 'daily-review',
+    cron: scheduleOverrides.cron ?? '0 9 * * *',
+    enabled: scheduleOverrides.enabled ?? false,
+    maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
+    ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+    ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
+    ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
+  };
+
+  const registry = new AgentRegistry([
+    {
+      agentId: 'agent',
+      displayName: 'Agent',
+      description: 'Test agent',
+      chat: {
+        provider: 'codex-cli',
+        config: { workdir: '/tmp' },
+      },
+      schedules: [schedule],
+    },
+  ]);
+
+  const sessionIndex = createSessionIndexStub();
+  const startSessionMessageFn = vi.fn(
+    async (): Promise<SessionMessageStartResult> => ({
+      response: {
+        sessionId: 'session-0',
+        sessionName: 'Session',
+        agentId: 'agent',
+        created: false,
+        status: 'complete',
+        responseId: 'resp-1',
+        response: 'ok',
+        truncated: false,
+        durationMs: 0,
+        toolCallCount: 0,
+        toolCalls: [],
+      },
+    }),
+  );
+
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+
+  const service = new ScheduledSessionService({
+    agentRegistry: registry,
+    logger,
+    dataDir: os.tmpdir(),
+    sessionIndex: sessionIndex as unknown as SessionIndex,
+    sessionHub: { broadcastSessionCreated: vi.fn() } as unknown as SessionHub,
+    conversationStore: {} as ConversationStore,
+    envConfig: {} as EnvConfig,
+    toolHost: {} as ToolHost,
+    startSessionMessageFn,
+  });
+
+  return { service, schedule, sessionIndex, startSessionMessageFn };
 }
 
 async function tick(): Promise<void> {
@@ -196,6 +334,41 @@ describe('ScheduledSessionService', () => {
     const result = await service.triggerRun('agent', 'daily-review');
     expect(result).toEqual({ status: 'skipped', reason: 'no_prompt' });
     expect(spawn.calls).toHaveLength(0);
+
+    service.shutdown();
+  });
+
+  it('refreshes session title on each run', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      sessionTitle: 'Daily Review',
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.renameSession).toHaveBeenCalledTimes(2);
+    expect(sessionIndex.renameSession).toHaveBeenNthCalledWith(1, 'session-0', 'Daily Review');
+    expect(sessionIndex.renameSession).toHaveBeenNthCalledWith(2, 'session-0', 'Daily Review');
+
+    service.shutdown();
+  });
+
+  it('uses the default scheduled title when sessionTitle is omitted', async () => {
+    const { service, sessionIndex } = createServiceWithSessions();
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.renameSession).toHaveBeenCalledTimes(1);
+    const nameArg = sessionIndex.renameSession.mock.calls[0]?.[1];
+    expect(nameArg).toMatch(/^scheduled: agent\/daily-review @ /);
 
     service.shutdown();
   });

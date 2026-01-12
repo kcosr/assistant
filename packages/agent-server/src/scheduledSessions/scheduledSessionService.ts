@@ -18,6 +18,7 @@ import { describeCron, parseNextRun } from './cronUtils';
 import type {
   LastRunInfo,
   PreCheckResult,
+  ScheduleConfig,
   ScheduleInfo,
   ScheduleState,
   ScheduleStatusEvent,
@@ -305,7 +306,7 @@ export class ScheduledSessionService {
 
       logger.info(`[scheduled-sessions] ${key} running with prompt (${prompt.length} chars)`);
 
-      const outcome = await this.runPrompt(agentId, schedule.id, prompt);
+      const outcome = await this.runPrompt(state, prompt);
       if (outcome.result === 'completed') {
         logger.info(`[scheduled-sessions] ${key} completed`);
         this.recordLastRun(state, { result: 'completed' });
@@ -457,11 +458,9 @@ export class ScheduledSessionService {
     );
   }
 
-  private async runPrompt(
-    agentId: string,
-    scheduleId: string,
-    prompt: string,
-  ): Promise<PromptRunResult> {
+  private async runPrompt(state: ScheduleState, prompt: string): Promise<PromptRunResult> {
+    const { agentId, schedule } = state;
+    const scheduleId = schedule.id;
     if (!this.hasSessionDependencies()) {
       try {
         await this.spawnSession(agentId, prompt);
@@ -481,6 +480,7 @@ export class ScheduledSessionService {
     }
 
     const { summary } = await this.resolveScheduledSession(agentId, scheduleId);
+    await this.updateScheduledSessionName(summary, agentId, schedule);
     const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
 
     const { response } = await this.startSessionMessageFn({
@@ -563,9 +563,6 @@ export class ScheduledSessionService {
     const updated =
       (await sessionIndex.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
 
-    const name = this.buildScheduledSessionName(agentId, scheduleId);
-    await this.tryRenameSession(updated, name);
-
     return { summary: updated, created: true };
   }
 
@@ -591,6 +588,17 @@ export class ScheduledSessionService {
     return { agentId, scheduleId };
   }
 
+  private resolveScheduledSessionName(
+    agentId: string,
+    schedule: ScheduleConfig,
+  ): string {
+    const configuredTitle = schedule.sessionTitle?.trim();
+    if (configuredTitle) {
+      return configuredTitle;
+    }
+    return this.buildScheduledSessionName(agentId, schedule.id);
+  }
+
   private buildScheduledSessionName(agentId: string, scheduleId: string): string {
     const timestamp = this.formatTimestampForName(new Date());
     return `scheduled: ${agentId}/${scheduleId} @ ${timestamp}`;
@@ -603,14 +611,16 @@ export class ScheduledSessionService {
     )}:${pad(date.getMinutes())}`;
   }
 
-  private async tryRenameSession(summary: SessionSummary, name: string): Promise<void> {
-    if (summary.name && summary.name.trim().length > 0) {
-      return;
-    }
+  private async updateScheduledSessionName(
+    summary: SessionSummary,
+    agentId: string,
+    schedule: ScheduleConfig,
+  ): Promise<void> {
     const sessionIndex = this.options.sessionIndex;
     if (!sessionIndex) {
       return;
     }
+    const name = this.resolveScheduledSessionName(agentId, schedule);
     try {
       await sessionIndex.renameSession(summary.sessionId, name);
     } catch (err) {
@@ -779,6 +789,7 @@ export class ScheduledSessionService {
       cronDescription: describeCron(state.schedule.cron),
       ...(state.schedule.prompt ? { prompt: state.schedule.prompt } : {}),
       ...(state.schedule.preCheck ? { preCheck: state.schedule.preCheck } : {}),
+      ...(state.schedule.sessionTitle ? { sessionTitle: state.schedule.sessionTitle } : {}),
       enabled,
       runtimeEnabled,
       status,

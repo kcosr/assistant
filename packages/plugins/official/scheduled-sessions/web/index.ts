@@ -35,6 +35,7 @@ type ScheduleInfo = {
   cronDescription: string;
   prompt?: string;
   preCheck?: string;
+  sessionTitle?: string;
   enabled: boolean;
   runtimeEnabled: boolean;
   status: ScheduleStatus;

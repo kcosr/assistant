@@ -3,6 +3,7 @@ export interface ScheduleConfig {
   cron: string;
   prompt?: string;
   preCheck?: string;
+  sessionTitle?: string;
   enabled: boolean;
   maxConcurrent: number;
 }
@@ -38,6 +39,7 @@ export interface ScheduleInfo {
   cronDescription: string;
   prompt?: string;
   preCheck?: string;
+  sessionTitle?: string;
   enabled: boolean;
   runtimeEnabled: boolean;
   status: 'idle' | 'running' | 'disabled';

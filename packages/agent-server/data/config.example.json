@@ -94,6 +94,7 @@
         {
           "id": "daily-review",
           "cron": "0 9 * * *",
+          "sessionTitle": "Daily Repo Review",
           "prompt": "Review open PRs and issues. Summarize status.",
           "enabled": true,
           "maxConcurrent": 1

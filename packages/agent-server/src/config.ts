@@ -38,6 +38,7 @@ const ScheduleConfigSchema = z.object({
   cron: NonEmptyTrimmedStringSchema,
   prompt: NonEmptyTrimmedStringSchema.optional(),
   preCheck: NonEmptyTrimmedStringSchema.optional(),
+  sessionTitle: NonEmptyTrimmedStringSchema.optional(),
   enabled: z.boolean().optional().default(true),
   maxConcurrent: z.number().int().min(1).optional().default(1),
 });
@@ -235,6 +236,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     maxConcurrent: schedule.maxConcurrent,
     ...(schedule.prompt !== undefined ? { prompt: schedule.prompt } : {}),
     ...(schedule.preCheck !== undefined ? { preCheck: schedule.preCheck } : {}),
+    ...(schedule.sessionTitle !== undefined ? { sessionTitle: schedule.sessionTitle } : {}),
   }));
 
   const base: AgentDefinition = {

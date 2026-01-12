@@ -377,6 +377,7 @@ function validateAgentDefinitionConfig(
         cron?: unknown;
         prompt?: unknown;
         preCheck?: unknown;
+        sessionTitle?: unknown;
         enabled?: unknown;
         maxConcurrent?: unknown;
       };
@@ -415,6 +416,17 @@ function validateAgentDefinitionConfig(
         throw new Error(`agents[${index}].schedules[${i}].preCheck must be a non-empty string`);
       }
 
+      const sessionTitleRaw = schedule.sessionTitle;
+      const sessionTitle =
+        typeof sessionTitleRaw === 'string' && sessionTitleRaw.trim().length > 0
+          ? sessionTitleRaw.trim()
+          : undefined;
+      if (sessionTitleRaw !== undefined && sessionTitleRaw !== null && !sessionTitle) {
+        throw new Error(
+          `agents[${index}].schedules[${i}].sessionTitle must be a non-empty string`,
+        );
+      }
+
       if (!prompt && !preCheck) {
         throw new Error(
           `agents[${index}].schedules[${i}] must define "prompt", "preCheck", or both`,
@@ -448,6 +460,7 @@ function validateAgentDefinitionConfig(
         cron,
         ...(prompt ? { prompt } : {}),
         ...(preCheck ? { preCheck } : {}),
+        ...(sessionTitle ? { sessionTitle } : {}),
         enabled,
         maxConcurrent,
       });

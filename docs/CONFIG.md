@@ -491,6 +491,7 @@ Scheduled sessions run cron-driven CLI sessions. They only work with CLI provide
         {
           "id": "daily-review",
           "cron": "0 9 * * *",
+          "sessionTitle": "Daily Repo Review",
           "prompt": "Review open PRs and issues. Summarize status.",
           "enabled": true,
           "maxConcurrent": 1
@@ -515,13 +516,15 @@ Scheduled sessions run cron-driven CLI sessions. They only work with CLI provide
 | `cron` | string | - | 5-field cron expression. Invalid cron values prevent startup. |
 | `prompt` | string | - | Optional static prompt text (must be non-empty if provided). |
 | `preCheck` | string | - | Optional shell command to run before the session. |
+| `sessionTitle` | string | - | Optional static session title; when omitted a default scheduled name with timestamp is used. |
 | `enabled` | boolean | `true` | Whether the schedule is active by default. |
 | `maxConcurrent` | number | `1` | Max concurrent runs allowed for the schedule. |
 
 Notes:
 - Each schedule must define `prompt`, `preCheck`, or both. If the combined prompt is empty after trimming, the run is skipped.
 - `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured. Non-zero exit codes skip the run; stdout is appended to `prompt` with a blank line.
-- Scheduled runs create or reuse a session tagged `scheduledSession` (`agentId` + `scheduleId`) and name it `scheduled: <agentId>/<scheduleId> @ <YYYY-MM-DD HH:mm>` when first created.
+- Scheduled runs create or reuse a session tagged `scheduledSession` (`agentId` + `scheduleId`) and refresh the session name on every run (either `sessionTitle` or the default timestamped name).
+- Manual renames in the UI will be overwritten the next time the schedule runs.
 - `enabled: false` disables automatic runs; manual runs via the scheduled-sessions plugin/API ignore `enabled` but still respect `maxConcurrent` unless `force` is set.
 - Enable the `scheduled-sessions` plugin to view status, toggle schedules, and trigger runs.
 
