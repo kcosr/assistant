@@ -1,4 +1,5 @@
 import { stripContextLine } from '../utils/chatMessageRenderer';
+import { resolveAutoTitle } from '../utils/sessionLabel';
 import type { CreateSessionOptions } from './sessionManager';
 
 interface SessionSummary {
@@ -101,6 +102,11 @@ export class AgentSidebarController {
     const name = typeof session.name === 'string' ? session.name.trim() : '';
     if (name) {
       return name;
+    }
+
+    const autoTitle = resolveAutoTitle(session.attributes);
+    if (autoTitle) {
+      return autoTitle;
     }
 
     const snippet =

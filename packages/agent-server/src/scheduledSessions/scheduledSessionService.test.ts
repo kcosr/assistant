@@ -246,19 +246,26 @@ function createServiceWithSessions(
     debug: vi.fn(),
   };
 
+  const sessionHub = {
+    broadcastSessionCreated: vi.fn(),
+    updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
+      return sessionIndex.updateSessionAttributes(sessionId, patch);
+    }),
+  };
+
   const service = new ScheduledSessionService({
     agentRegistry: registry,
     logger,
     dataDir: os.tmpdir(),
     sessionIndex: sessionIndex as unknown as SessionIndex,
-    sessionHub: { broadcastSessionCreated: vi.fn() } as unknown as SessionHub,
+    sessionHub: sessionHub as unknown as SessionHub,
     conversationStore: {} as ConversationStore,
     envConfig: {} as EnvConfig,
     toolHost: {} as ToolHost,
     startSessionMessageFn,
   });
 
-  return { service, schedule, sessionIndex, startSessionMessageFn };
+  return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn };
 }
 
 async function tick(): Promise<void> {
@@ -338,7 +345,7 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
-  it('refreshes session title on each run', async () => {
+  it('stores configured sessionTitle as core.autoTitle', async () => {
     const { service, sessionIndex } = createServiceWithSessions({
       sessionTitle: 'Daily Review',
     });
@@ -348,17 +355,16 @@ describe('ScheduledSessionService', () => {
     await service.triggerRun('agent', 'daily-review');
     await tick();
 
-    await service.triggerRun('agent', 'daily-review');
-    await tick();
-
-    expect(sessionIndex.renameSession).toHaveBeenCalledTimes(2);
-    expect(sessionIndex.renameSession).toHaveBeenNthCalledWith(1, 'session-0', 'Daily Review');
-    expect(sessionIndex.renameSession).toHaveBeenNthCalledWith(2, 'session-0', 'Daily Review');
+    const attributes = sessionIndex.sessions[0]?.attributes as
+      | { core?: { autoTitle?: string } }
+      | undefined;
+    expect(attributes?.core?.autoTitle).toBe('Daily Review');
+    expect(sessionIndex.renameSession).not.toHaveBeenCalled();
 
     service.shutdown();
   });
 
-  it('uses the default scheduled title when sessionTitle is omitted', async () => {
+  it('stores the default scheduled autoTitle when sessionTitle is omitted', async () => {
     const { service, sessionIndex } = createServiceWithSessions();
 
     await service.initialize();
@@ -366,9 +372,11 @@ describe('ScheduledSessionService', () => {
     await service.triggerRun('agent', 'daily-review');
     await tick();
 
-    expect(sessionIndex.renameSession).toHaveBeenCalledTimes(1);
-    const nameArg = sessionIndex.renameSession.mock.calls[0]?.[1];
-    expect(nameArg).toMatch(/^scheduled: agent\/daily-review @ /);
+    const attributes = sessionIndex.sessions[0]?.attributes as
+      | { core?: { autoTitle?: string } }
+      | undefined;
+    expect(attributes?.core?.autoTitle).toMatch(/^scheduled: agent\/daily-review @ /);
+    expect(sessionIndex.renameSession).not.toHaveBeenCalled();
 
     service.shutdown();
   });

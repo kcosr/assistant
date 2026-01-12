@@ -75,7 +75,7 @@ import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
 import { PluginSettingsClient } from './utils/pluginSettingsClient';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
-import { formatSessionLabel } from './utils/sessionLabel';
+import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 
@@ -1679,6 +1679,10 @@ async function main(): Promise<void> {
     const initialName = existing && typeof existing.name === 'string' ? existing.name.trim() : '';
 
     const fallbackTitle = (() => {
+      const autoTitle = resolveAutoTitle(existing?.attributes);
+      if (autoTitle) {
+        return autoTitle;
+      }
       if (existing && typeof existing.lastSnippet === 'string') {
         const trimmed = stripContextLine(existing.lastSnippet).trim();
         if (trimmed) {

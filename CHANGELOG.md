@@ -7,7 +7,7 @@
 ### Added
 
 - Support environment variable substitution (`${VAR}`) in all config string values, not just specific fields. ([#1](https://github.com/kcosr/assistant/pull/1))
-- Add scheduled sessions for cron-driven agent runs with plugin UI, API, and configurable run titles. ([#2](https://github.com/kcosr/assistant/pull/2))
+- Add scheduled sessions for cron-driven agent runs with plugin UI, API, and configurable auto titles. ([#2](https://github.com/kcosr/assistant/pull/2))
 
 ### Changed
 

@@ -480,7 +480,7 @@ export class ScheduledSessionService {
     }
 
     const { summary } = await this.resolveScheduledSession(agentId, scheduleId);
-    await this.updateScheduledSessionName(summary, agentId, schedule);
+    await this.updateScheduledSessionAutoTitle(summary, agentId, schedule);
     const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
 
     const { response } = await this.startSessionMessageFn({
@@ -561,7 +561,7 @@ export class ScheduledSessionService {
     };
 
     const updated =
-      (await sessionIndex.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
+      (await sessionHub.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
 
     return { summary: updated, created: true };
   }
@@ -588,7 +588,7 @@ export class ScheduledSessionService {
     return { agentId, scheduleId };
   }
 
-  private resolveScheduledSessionName(
+  private resolveScheduledSessionAutoTitle(
     agentId: string,
     schedule: ScheduleConfig,
   ): string {
@@ -596,10 +596,10 @@ export class ScheduledSessionService {
     if (configuredTitle) {
       return configuredTitle;
     }
-    return this.buildScheduledSessionName(agentId, schedule.id);
+    return this.buildScheduledSessionAutoTitle(agentId, schedule.id);
   }
 
-  private buildScheduledSessionName(agentId: string, scheduleId: string): string {
+  private buildScheduledSessionAutoTitle(agentId: string, scheduleId: string): string {
     const timestamp = this.formatTimestampForName(new Date());
     return `scheduled: ${agentId}/${scheduleId} @ ${timestamp}`;
   }
@@ -611,21 +611,47 @@ export class ScheduledSessionService {
     )}:${pad(date.getMinutes())}`;
   }
 
-  private async updateScheduledSessionName(
+  private resolveAutoTitleFromSummary(summary: SessionSummary): string {
+    const attributes = summary.attributes;
+    if (!attributes || typeof attributes !== 'object') {
+      return '';
+    }
+    const core = (attributes as Record<string, unknown>)['core'];
+    if (!core || typeof core !== 'object') {
+      return '';
+    }
+    const autoTitle = (core as Record<string, unknown>)['autoTitle'];
+    if (typeof autoTitle !== 'string') {
+      return '';
+    }
+    return autoTitle.trim();
+  }
+
+  private async updateScheduledSessionAutoTitle(
     summary: SessionSummary,
     agentId: string,
     schedule: ScheduleConfig,
   ): Promise<void> {
+    const sessionHub = this.options.sessionHub;
     const sessionIndex = this.options.sessionIndex;
     if (!sessionIndex) {
       return;
     }
-    const name = this.resolveScheduledSessionName(agentId, schedule);
+    const autoTitle = this.resolveScheduledSessionAutoTitle(agentId, schedule);
+    const existing = this.resolveAutoTitleFromSummary(summary);
+    if (existing === autoTitle) {
+      return;
+    }
     try {
-      await sessionIndex.renameSession(summary.sessionId, name);
+      const patch = { core: { autoTitle } };
+      if (sessionHub?.updateSessionAttributes) {
+        await sessionHub.updateSessionAttributes(summary.sessionId, patch);
+      } else {
+        await sessionIndex.updateSessionAttributes(summary.sessionId, patch);
+      }
     } catch (err) {
       this.options.logger.warn(
-        `[scheduled-sessions] Failed to set session name "${name}": ${String(err)}`,
+        `[scheduled-sessions] Failed to set session autoTitle "${autoTitle}": ${String(err)}`,
       );
     }
   }
