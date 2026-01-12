@@ -31,6 +31,7 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Voice input** using browser-based speech recognition (Web Speech API)
 - **Voice output** via OpenAI TTS or ElevenLabs streaming TTS (optional)
 - **CLI agent integrations** (Claude, Codex, Pi) alongside built-in providers
+- **Scheduled sessions** for cron-driven CLI runs
 - **Panel plugins** for lists, notes, diff review, and custom workflows
 - **Tool integration** via MCP (Model Context Protocol) over stdio
 - **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions

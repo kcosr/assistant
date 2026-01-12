@@ -518,7 +518,12 @@ Scheduled sessions run cron-driven CLI sessions. They only work with CLI provide
 | `enabled` | boolean | `true` | Whether the schedule is active by default. |
 | `maxConcurrent` | number | `1` | Max concurrent runs allowed for the schedule. |
 
-Each schedule must define `prompt`, `preCheck`, or both. If neither is present, the run is skipped.
+Notes:
+- Each schedule must define `prompt`, `preCheck`, or both. If the combined prompt is empty after trimming, the run is skipped.
+- `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured. Non-zero exit codes skip the run; stdout is appended to `prompt` with a blank line.
+- Scheduled runs create or reuse a session tagged `scheduledSession` (`agentId` + `scheduleId`) and name it `scheduled: <agentId>/<scheduleId> @ <YYYY-MM-DD HH:mm>` when first created.
+- `enabled: false` disables automatic runs; manual runs via the scheduled-sessions plugin/API ignore `enabled` but still respect `maxConcurrent` unless `force` is set.
+- Enable the `scheduled-sessions` plugin to view status, toggle schedules, and trigger runs.
 
 #### `openai` Provider
 
