@@ -2,19 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ListPanelTableController } from './listPanelTableController';
 
-const createPointerEvent = (type: string, init?: PointerEventInit): PointerEvent => {
-  if (typeof window !== 'undefined' && 'PointerEvent' in window) {
-    return new PointerEvent(type, { bubbles: true, cancelable: true, ...init });
-  }
-  const event = new Event(type, { bubbles: true, cancelable: true }) as PointerEvent;
-  Object.defineProperty(event, 'pointerId', { value: init?.pointerId ?? 1 });
-  Object.defineProperty(event, 'clientX', { value: init?.clientX ?? 0 });
-  Object.defineProperty(event, 'clientY', { value: init?.clientY ?? 0 });
-  Object.defineProperty(event, 'button', { value: init?.button ?? 0 });
-  Object.defineProperty(event, 'pointerType', { value: init?.pointerType ?? 'mouse' });
-  return event;
-};
-
 describe('ListPanelTableController double-click edit', () => {
   const listId = 'list1';
 
@@ -133,26 +120,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(menuTrigger).not.toBeNull();
 
     expect(row?.draggable).toBe(false);
-    if (typeof window !== 'undefined' && 'PointerEvent' in window) {
-      menuTrigger?.dispatchEvent(
-        createPointerEvent('pointerdown', {
-          pointerId: 1,
-          clientX: 0,
-          clientY: 0,
-          pointerType: 'mouse',
-        }),
-      );
-      menuTrigger?.dispatchEvent(
-        createPointerEvent('pointermove', {
-          pointerId: 1,
-          clientX: 12,
-          clientY: 0,
-          pointerType: 'mouse',
-        }),
-      );
-    } else {
-      menuTrigger?.dispatchEvent(new Event('dragstart', { bubbles: true }));
-    }
+    menuTrigger?.dispatchEvent(new Event('dragstart', { bubbles: true }));
 
     expect(row?.classList.contains('dragging')).toBe(true);
   });
@@ -174,26 +142,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(row).not.toBeNull();
     expect(titleCell).not.toBeNull();
 
-    if (typeof window !== 'undefined' && 'PointerEvent' in window) {
-      titleCell?.dispatchEvent(
-        createPointerEvent('pointerdown', {
-          pointerId: 1,
-          clientX: 0,
-          clientY: 0,
-          pointerType: 'mouse',
-        }),
-      );
-      titleCell?.dispatchEvent(
-        createPointerEvent('pointermove', {
-          pointerId: 1,
-          clientX: 12,
-          clientY: 0,
-          pointerType: 'mouse',
-        }),
-      );
-    } else {
-      titleCell?.dispatchEvent(new Event('dragstart', { bubbles: true }));
-    }
+    titleCell?.dispatchEvent(new Event('dragstart', { bubbles: true }));
 
     expect(row?.classList.contains('dragging')).toBe(false);
   });
