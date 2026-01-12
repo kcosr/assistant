@@ -120,22 +120,6 @@ export async function startServer(
     ...(resolveSessionWorkingDir ? { resolveSessionWorkingDir } : {}),
   });
 
-  const scheduledSessionService = new ScheduledSessionService({
-    agentRegistry: registry,
-    logger: console,
-    dataDir: config.dataDir,
-    broadcast: (event) => {
-      sessionHub.broadcastToAll({
-        type: 'panel_event',
-        panelId: '*',
-        panelType: 'scheduled-sessions',
-        sessionId: '*',
-        payload: event,
-      });
-    },
-  });
-  await scheduledSessionService.initialize();
-
   const baseToolHost = createToolHost(
     {
       toolsEnabled: config.toolsEnabled,
@@ -155,6 +139,28 @@ export async function startServer(
   }
 
   const toolHost = toolHosts.length === 1 ? baseToolHost : new CompositeToolHost(toolHosts);
+
+  const scheduledSessionService = new ScheduledSessionService({
+    agentRegistry: registry,
+    logger: console,
+    dataDir: config.dataDir,
+    sessionHub,
+    sessionIndex,
+    conversationStore,
+    envConfig: config,
+    toolHost,
+    eventStore,
+    broadcast: (event) => {
+      sessionHub.broadcastToAll({
+        type: 'panel_event',
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: event,
+      });
+    },
+  });
+  await scheduledSessionService.initialize();
 
   const httpServer = createHttpServer({
     config,

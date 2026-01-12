@@ -4,6 +4,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { AgentRegistry, CliWrapperConfig } from '../agents';
+import type { ConversationStore } from '../conversationStore';
+import type { EnvConfig } from '../envConfig';
+import type { EventStore } from '../events';
+import type { SessionHub } from '../sessionHub';
+import type { SessionIndex, SessionSummary } from '../sessionIndex';
+import type { ToolHost } from '../tools';
+import { startSessionMessage } from '../sessionMessages';
+import { getDefaultModelForNewSession } from '../sessionModel';
 import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
@@ -31,12 +39,25 @@ type Logger = {
   debug?: (message: string) => void;
 };
 
+type PromptRunResult =
+  | { result: 'completed' }
+  | { result: 'failed'; error: string }
+  | { result: 'skipped'; skipReason: string };
+
 export interface ScheduledSessionServiceOptions {
   agentRegistry: AgentRegistry;
   logger: Logger;
   dataDir: string;
+  sessionHub?: SessionHub;
+  sessionIndex?: SessionIndex;
+  conversationStore?: ConversationStore;
+  envConfig?: EnvConfig;
+  toolHost?: ToolHost;
+  eventStore?: EventStore;
+  defaultSessionTimeoutSeconds?: number;
   broadcast?: (event: ScheduleStatusEvent) => void;
   spawnFn?: typeof spawn;
+  startSessionMessageFn?: typeof startSessionMessage;
 }
 
 export class ScheduleNotFoundError extends Error {
@@ -51,9 +72,11 @@ export class ScheduledSessionService {
   private readonly schedules = new Map<string, ScheduleState>();
   private initialized = false;
   private readonly spawnFn: typeof spawn;
+  private readonly startSessionMessageFn: typeof startSessionMessage;
 
   constructor(private readonly options: ScheduledSessionServiceOptions) {
     this.spawnFn = options.spawnFn ?? spawn;
+    this.startSessionMessageFn = options.startSessionMessageFn ?? startSessionMessage;
   }
 
   async initialize(): Promise<void> {
@@ -282,10 +305,17 @@ export class ScheduledSessionService {
 
       logger.info(`[scheduled-sessions] ${key} running with prompt (${prompt.length} chars)`);
 
-      await this.spawnSession(agentId, prompt);
-
-      logger.info(`[scheduled-sessions] ${key} completed`);
-      this.recordLastRun(state, { result: 'completed' });
+      const outcome = await this.runPrompt(agentId, schedule.id, prompt);
+      if (outcome.result === 'completed') {
+        logger.info(`[scheduled-sessions] ${key} completed`);
+        this.recordLastRun(state, { result: 'completed' });
+      } else if (outcome.result === 'skipped') {
+        logger.info(`[scheduled-sessions] ${key} skipped: ${outcome.skipReason}`);
+        this.recordLastRun(state, { result: 'skipped', skipReason: outcome.skipReason });
+      } else {
+        logger.error(`[scheduled-sessions] ${key} failed: ${outcome.error}`);
+        this.recordLastRun(state, { result: 'failed', error: outcome.error });
+      }
     } catch (err) {
       logger.error(`[scheduled-sessions] ${key} failed: ${String(err)}`);
       this.recordLastRun(state, { result: 'failed', error: String(err) });
@@ -415,6 +445,179 @@ export class ScheduledSessionService {
       return trimmedPreCheck;
     }
     return null;
+  }
+
+  private hasSessionDependencies(): boolean {
+    return Boolean(
+      this.options.sessionHub &&
+        this.options.sessionIndex &&
+        this.options.conversationStore &&
+        this.options.envConfig &&
+        this.options.toolHost,
+    );
+  }
+
+  private async runPrompt(
+    agentId: string,
+    scheduleId: string,
+    prompt: string,
+  ): Promise<PromptRunResult> {
+    if (!this.hasSessionDependencies()) {
+      try {
+        await this.spawnSession(agentId, prompt);
+        return { result: 'completed' };
+      } catch (err) {
+        return { result: 'failed', error: String(err) };
+      }
+    }
+
+    const sessionIndex = this.options.sessionIndex;
+    const sessionHub = this.options.sessionHub;
+    const toolHost = this.options.toolHost;
+    const conversationStore = this.options.conversationStore;
+    const envConfig = this.options.envConfig;
+    if (!sessionIndex || !sessionHub || !toolHost || !conversationStore || !envConfig) {
+      return { result: 'failed', error: 'Scheduled session dependencies are missing' };
+    }
+
+    const { summary } = await this.resolveScheduledSession(agentId, scheduleId);
+    const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
+
+    const { response } = await this.startSessionMessageFn({
+      input: {
+        sessionId: summary.sessionId,
+        content: prompt,
+        mode: 'sync',
+        timeoutSeconds,
+      },
+      sessionIndex,
+      sessionHub,
+      agentRegistry: this.options.agentRegistry,
+      toolHost,
+      conversationStore,
+      envConfig,
+      ...(this.options.eventStore ? { eventStore: this.options.eventStore } : {}),
+      scheduledSessionService: this,
+    });
+
+    if (response.status === 'complete') {
+      return { result: 'completed' };
+    }
+    if (response.status === 'busy') {
+      return { result: 'skipped', skipReason: 'session_busy' };
+    }
+    if (response.status === 'timeout') {
+      return { result: 'failed', error: response.message };
+    }
+    if (response.status === 'error') {
+      return { result: 'failed', error: response.error };
+    }
+
+    return { result: 'failed', error: 'Unexpected session response status' };
+  }
+
+  private async resolveScheduledSession(agentId: string, scheduleId: string): Promise<{
+    summary: SessionSummary;
+    created: boolean;
+  }> {
+    const sessionIndex = this.options.sessionIndex;
+    const sessionHub = this.options.sessionHub;
+    if (!sessionIndex || !sessionHub) {
+      throw new Error('Scheduled session dependencies are missing');
+    }
+
+    const summaries = await sessionIndex.listSessions();
+    const matches = summaries.filter((summary) => {
+      if (summary.agentId !== agentId) {
+        return false;
+      }
+      const scheduled = this.getScheduledSessionMetadata(summary);
+      return scheduled?.agentId === agentId && scheduled.scheduleId === scheduleId;
+    });
+
+    matches.sort((a, b) => {
+      const aUpdated = Date.parse(a.updatedAt);
+      const bUpdated = Date.parse(b.updatedAt);
+      return bUpdated - aUpdated;
+    });
+
+    const existing = matches[0];
+    if (existing) {
+      return { summary: existing, created: false };
+    }
+
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    const model = getDefaultModelForNewSession(agent);
+    const summary = await sessionIndex.createSession(
+      model ? { agentId, model } : { agentId },
+    );
+    sessionHub.broadcastSessionCreated(summary);
+
+    const metadataPatch = {
+      scheduledSession: {
+        agentId,
+        scheduleId,
+      },
+    };
+
+    const updated =
+      (await sessionIndex.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
+
+    const name = this.buildScheduledSessionName(agentId, scheduleId);
+    await this.tryRenameSession(updated, name);
+
+    return { summary: updated, created: true };
+  }
+
+  private getScheduledSessionMetadata(summary: SessionSummary): {
+    agentId: string;
+    scheduleId: string;
+  } | null {
+    const attributes = summary.attributes;
+    if (!attributes || typeof attributes !== 'object') {
+      return null;
+    }
+    const raw = (attributes as Record<string, unknown>)['scheduledSession'];
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    const data = raw as Record<string, unknown>;
+    const agentId = typeof data['agentId'] === 'string' ? data['agentId'].trim() : '';
+    const scheduleId =
+      typeof data['scheduleId'] === 'string' ? data['scheduleId'].trim() : '';
+    if (!agentId || !scheduleId) {
+      return null;
+    }
+    return { agentId, scheduleId };
+  }
+
+  private buildScheduledSessionName(agentId: string, scheduleId: string): string {
+    const timestamp = this.formatTimestampForName(new Date());
+    return `scheduled: ${agentId}/${scheduleId} @ ${timestamp}`;
+  }
+
+  private formatTimestampForName(date: Date): string {
+    const pad = (value: number): string => value.toString().padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+      date.getHours(),
+    )}:${pad(date.getMinutes())}`;
+  }
+
+  private async tryRenameSession(summary: SessionSummary, name: string): Promise<void> {
+    if (summary.name && summary.name.trim().length > 0) {
+      return;
+    }
+    const sessionIndex = this.options.sessionIndex;
+    if (!sessionIndex) {
+      return;
+    }
+    try {
+      await sessionIndex.renameSession(summary.sessionId, name);
+    } catch (err) {
+      this.options.logger.warn(
+        `[scheduled-sessions] Failed to set session name "${name}": ${String(err)}`,
+      );
+    }
   }
 
   private buildCliCommand(agentId: string, prompt: string): {
