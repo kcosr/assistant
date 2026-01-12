@@ -1,0 +1,26 @@
+{
+  "id": "scheduled-sessions",
+  "version": "0.1.0",
+  "description": "Run agent sessions on cron schedules.",
+  "surfaces": { "tool": true, "http": true, "cli": false },
+  "panels": [
+    {
+      "type": "scheduled-sessions",
+      "title": "Scheduled Sessions",
+      "icon": "clock",
+      "description": "Monitor and control scheduled agent runs.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["scheduled-sessions.read", "scheduled-sessions.write"]
+    }
+  ],
+  "server": {
+    "provides": ["scheduled-sessions"],
+    "capabilities": ["scheduled-sessions.read", "scheduled-sessions.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/scheduled-sessions/bundle.js",
+    "stylesPath": "/plugins/scheduled-sessions/styles.css"
+  }
+}
