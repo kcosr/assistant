@@ -89,7 +89,16 @@
             }
           }
         }
-      }
+      },
+      "schedules": [
+        {
+          "id": "daily-review",
+          "cron": "0 9 * * *",
+          "prompt": "Review open PRs and issues. Summarize status.",
+          "enabled": true,
+          "maxConcurrent": 1
+        }
+      ]
     },
     {
       "agentId": "pi-cli",
@@ -152,6 +161,7 @@
       "enabled": false,
       "instances": ["work", { "id": "personal", "label": "Personal" }]
     },
+    "scheduled-sessions": { "enabled": true },
     "agents": { "enabled": true },
     "sessions": { "enabled": true },
     "url-fetch": { "enabled": true },

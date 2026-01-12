@@ -321,6 +321,9 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           envConfig,
           ...(ctx.agentRegistry ? { agentRegistry: ctx.agentRegistry } : {}),
           ...(ctx.eventStore ? { eventStore: ctx.eventStore } : {}),
+          ...(ctx.scheduledSessionService
+            ? { scheduledSessionService: ctx.scheduledSessionService }
+            : {}),
         });
 
         if (asyncTask) {

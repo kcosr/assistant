@@ -37,6 +37,7 @@ import type { TtsBackendFactory } from '../tts/types';
 import { selectTtsBackendFactory } from '../tts/selectTtsBackendFactory';
 import { updatePanelInventory } from '../panels/panelInventoryStore';
 import { resolveToolExposure } from '../skills';
+import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 import { handleTextInputWithChatCompletions } from './chatRunLifecycle';
 import { handleClientTextMessage } from './clientMessageDispatch';
@@ -62,6 +63,7 @@ export interface SessionRuntimeOptions {
   sessionHub: SessionHub;
   openaiClient?: OpenAI;
   eventStore: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
 }
 
 export class SessionRuntime {
@@ -76,6 +78,7 @@ export class SessionRuntime {
   private readonly openaiClient: OpenAI | undefined;
   private readonly sessionHub: SessionHub;
   private readonly eventStore: EventStore;
+  private readonly scheduledSessionService?: ScheduledSessionService;
   private sessionState: LogicalSessionState | undefined;
   private readonly activeRunStates = new Map<
     string,
@@ -110,6 +113,7 @@ export class SessionRuntime {
     this.sessionHub = options.sessionHub;
     this.openaiClient = options.openaiClient;
     this.eventStore = options.eventStore;
+    this.scheduledSessionService = options.scheduledSessionService;
 
     this.messageRateLimiter =
       this.config.maxMessagesPerMinute > 0
@@ -820,6 +824,9 @@ export class SessionRuntime {
       maxToolCallsPerMinute: this.config.maxToolCallsPerMinute,
       rateLimitWindowMs: this.rateLimitWindowMs,
       envConfig: this.config,
+      ...(this.scheduledSessionService
+        ? { scheduledSessionService: this.scheduledSessionService }
+        : {}),
       sendError: (code, message, details, options) =>
         this.sendError(code, message, details, options),
       log: (...args) => this.log(...args),

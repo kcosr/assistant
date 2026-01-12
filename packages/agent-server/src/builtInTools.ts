@@ -393,6 +393,9 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
         sessionHub,
         envConfig,
         ...(eventStore ? { eventStore } : {}),
+        ...(ctx.scheduledSessionService
+          ? { scheduledSessionService: ctx.scheduledSessionService }
+          : {}),
         maxToolCallsPerMinute: envConfig.maxToolCallsPerMinute,
         rateLimitWindowMs: 60_000,
         sendError: (code, message, details, options) => {
@@ -624,6 +627,9 @@ export async function handleAgentMessage(
       envConfig,
       ...(eventStore ? { eventStore } : {}),
       ...(forwardChunksTo ? { forwardChunksTo } : {}),
+      ...(ctx.scheduledSessionService
+        ? { scheduledSessionService: ctx.scheduledSessionService }
+        : {}),
       maxToolCallsPerMinute: envConfig.maxToolCallsPerMinute,
       rateLimitWindowMs: 60_000,
       sendError: (code, message, details, options) => {

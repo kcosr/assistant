@@ -7,6 +7,7 @@ import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
+import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 import {
   emitToolCallEvent,
   emitToolOutputChunkEvent,
@@ -152,6 +153,7 @@ export async function handleChatToolCalls(options: {
   rateLimitWindowMs: number;
   envConfig: EnvConfig;
   eventStore?: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
   /** Forward tool output chunks to another session (for agent-to-agent streaming) */
   forwardChunksTo?: {
     sessionId: string;
@@ -180,6 +182,7 @@ export async function handleChatToolCalls(options: {
     sendError,
     log,
     eventStore,
+    scheduledSessionService,
     forwardChunksTo,
   } = options;
 
@@ -225,6 +228,7 @@ export async function handleChatToolCalls(options: {
       baseToolHost,
       conversationStore,
       ...(eventStore ? { eventStore } : {}),
+      ...(scheduledSessionService ? { scheduledSessionService } : {}),
       onUpdate: (update) => {
         if (!update || typeof update.delta !== 'string') {
           return;

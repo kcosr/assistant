@@ -208,6 +208,7 @@ Enable or configure server plugins.
   "plugins": {
     "sessions": { "enabled": true },
     "agents": { "enabled": true },
+    "scheduled-sessions": { "enabled": true },
     "lists": { "enabled": true },
     "notes": { "enabled": true },
     "url-fetch": { "enabled": true }
@@ -391,6 +392,7 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
+| `schedules` | array | Optional scheduled session definitions (CLI providers only). |
 
 #### External Agents
 
@@ -469,6 +471,54 @@ Supported providers:
   ]
 }
 ```
+
+#### Scheduled sessions
+
+Scheduled sessions run cron-driven CLI sessions. They only work with CLI providers
+(`claude-cli`, `codex-cli`, `pi-cli`).
+
+```json
+{
+  "agents": [
+    {
+      "agentId": "repo-maintainer",
+      "displayName": "Repo Maintainer",
+      "chat": {
+        "provider": "codex-cli",
+        "config": { "workdir": "/path/to/repo" }
+      },
+      "schedules": [
+        {
+          "id": "daily-review",
+          "cron": "0 9 * * *",
+          "prompt": "Review open PRs and issues. Summarize status.",
+          "enabled": true,
+          "maxConcurrent": 1
+        },
+        {
+          "id": "deps-check",
+          "cron": "0 * * * *",
+          "preCheck": "/path/to/check-outdated-deps.sh",
+          "prompt": "The following dependencies are outdated:",
+          "enabled": true,
+          "maxConcurrent": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | string | - | Unique identifier within the agent. |
+| `cron` | string | - | 5-field cron expression. Invalid cron values prevent startup. |
+| `prompt` | string | - | Optional static prompt text (must be non-empty if provided). |
+| `preCheck` | string | - | Optional shell command to run before the session. |
+| `enabled` | boolean | `true` | Whether the schedule is active by default. |
+| `maxConcurrent` | number | `1` | Max concurrent runs allowed for the schedule. |
+
+Each schedule must define `prompt`, `preCheck`, or both. If neither is present, the run is skipped.
 
 #### `openai` Provider
 
