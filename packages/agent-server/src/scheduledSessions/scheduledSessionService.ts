@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { spawn, type SpawnOptionsWithoutStdio } from 'node:child_process';
+import { spawn, type SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -317,7 +317,7 @@ export class ScheduledSessionService {
         }
       }
 
-      const options: SpawnOptionsWithoutStdio = {
+      const options: SpawnOptions = {
         cwd: workdir,
         env: spawnEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -332,10 +332,10 @@ export class ScheduledSessionService {
       let stdout = '';
       let stderr = '';
 
-      child.stdout.on('data', (data) => {
+      child.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
-      child.stderr.on('data', (data) => {
+      child.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
 
@@ -550,7 +550,10 @@ export class ScheduledSessionService {
       throw new Error(`Agent ${agentId} uses unsupported provider: ${provider}`);
     }
     const config = agent.chat?.config as CliChatConfig | undefined;
-    return { provider, config };
+    return {
+      provider,
+      ...(config ? { config } : {}),
+    };
   }
 
   private buildScheduleInfo(state: ScheduleState): ScheduleInfo {

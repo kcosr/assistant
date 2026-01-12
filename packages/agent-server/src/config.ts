@@ -228,11 +228,20 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     schedules,
   } = value;
 
+  const normalizedSchedules = schedules?.map((schedule) => ({
+    id: schedule.id,
+    cron: schedule.cron,
+    enabled: schedule.enabled,
+    maxConcurrent: schedule.maxConcurrent,
+    ...(schedule.prompt !== undefined ? { prompt: schedule.prompt } : {}),
+    ...(schedule.preCheck !== undefined ? { preCheck: schedule.preCheck } : {}),
+  }));
+
   const base: AgentDefinition = {
     agentId,
     displayName,
     description,
-    ...(schedules ? { schedules } : {}),
+    ...(normalizedSchedules ? { schedules: normalizedSchedules } : {}),
   };
 
   const type = rawType === 'external' ? 'external' : 'chat';

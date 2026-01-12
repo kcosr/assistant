@@ -66,21 +66,31 @@ function createSpawnStub(results: SpawnResult[]) {
   return { spawnFn, calls, resolvePending };
 }
 
-function createService(scheduleOverrides: Partial<{
-  id: string;
-  cron: string;
-  prompt?: string;
-  preCheck?: string;
-  enabled?: boolean;
-  maxConcurrent?: number;
-}> = {}, spawnFn?: typeof import('node:child_process').spawn) {
+function createService(
+  scheduleOverrides: Partial<{
+    id: string;
+    cron: string;
+    prompt?: string | null;
+    preCheck?: string | null;
+    enabled?: boolean;
+    maxConcurrent?: number;
+  }> = {},
+  spawnFn?: typeof import('node:child_process').spawn,
+) {
+  const resolvedPrompt =
+    scheduleOverrides.prompt === null
+      ? undefined
+      : scheduleOverrides.prompt ?? 'Review open PRs';
+  const resolvedPreCheck =
+    scheduleOverrides.preCheck === null ? undefined : scheduleOverrides.preCheck;
+
   const schedule = {
-    id: 'daily-review',
-    cron: '0 9 * * *',
-    prompt: 'Review open PRs',
-    enabled: false,
-    maxConcurrent: 1,
-    ...scheduleOverrides,
+    id: scheduleOverrides.id ?? 'daily-review',
+    cron: scheduleOverrides.cron ?? '0 9 * * *',
+    enabled: scheduleOverrides.enabled ?? false,
+    maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
+    ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
+    ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
   };
 
   const registry = new AgentRegistry([
@@ -179,10 +189,7 @@ describe('ScheduledSessionService', () => {
 
   it('skips runs without prompt or pre-check', async () => {
     const spawn = createSpawnStub([]);
-    const { service } = createService(
-      { prompt: undefined, preCheck: undefined },
-      spawn.spawnFn,
-    );
+    const { service } = createService({ prompt: null, preCheck: null }, spawn.spawnFn);
 
     await service.initialize();
 

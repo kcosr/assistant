@@ -16,6 +16,7 @@ import type { EventStore } from './events';
 import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chatEventUtils';
 import type { SkillSummary } from './skills';
 import { resolveAgentToolExposureForHost } from './toolExposure';
+import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -201,6 +202,7 @@ interface AsyncAgentMessageContext {
   envConfig: EnvConfig;
   openaiClient?: OpenAI;
   eventStore?: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
   handleChatToolCalls: (
     runSessionId: string,
     runState: Awaited<ReturnType<SessionHub['ensureSessionState']>>,
@@ -671,6 +673,9 @@ export async function handleAgentMessage(
       envConfig,
       ...(eventStore ? { eventStore } : {}),
       ...(openaiClient ? { openaiClient } : {}),
+      ...(ctx.scheduledSessionService
+        ? { scheduledSessionService: ctx.scheduledSessionService }
+        : {}),
       handleChatToolCalls,
     };
 
@@ -731,6 +736,9 @@ export async function handleAgentMessage(
       envConfig,
       ...(eventStore ? { eventStore } : {}),
       ...(openaiClient ? { openaiClient } : {}),
+      ...(ctx.scheduledSessionService
+        ? { scheduledSessionService: ctx.scheduledSessionService }
+        : {}),
       handleChatToolCalls,
     };
 

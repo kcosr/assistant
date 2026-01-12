@@ -78,7 +78,7 @@ export class SessionRuntime {
   private readonly openaiClient: OpenAI | undefined;
   private readonly sessionHub: SessionHub;
   private readonly eventStore: EventStore;
-  private readonly scheduledSessionService?: ScheduledSessionService;
+  private readonly scheduledSessionService: ScheduledSessionService | undefined;
   private sessionState: LogicalSessionState | undefined;
   private readonly activeRunStates = new Map<
     string,
