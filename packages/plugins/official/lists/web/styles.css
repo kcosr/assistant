@@ -2041,11 +2041,13 @@
     border-color var(--transition-fast);
 }
 
-.list-item-menu-trigger[draggable='true'] {
+.list-item-menu-trigger[draggable='true'],
+.list-item-menu-trigger.list-item-drag-handle {
   cursor: grab;
 }
 
-.list-item-menu-trigger[draggable='true']:active {
+.list-item-menu-trigger[draggable='true']:active,
+.list-item-menu-trigger.list-item-drag-handle:active {
   cursor: grabbing;
 }
 
