@@ -13,6 +13,7 @@
     "packages/agent-server",
     "packages/web-client",
     "packages/mobile-web",
+    "packages/desktop",
     "packages/shared"
   ],
   "scripts": {

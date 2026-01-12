@@ -27,6 +27,7 @@ export interface SpeechAudioControllerOptions {
 
 export class SpeechAudioController {
   private isSpeechInputActive = false;
+  private speechInputDisabledReason: string | null = null;
   private speechStartToken = 0;
   private audioResponsesEnabled: boolean;
   private continuousListeningMode = false;
@@ -172,7 +173,11 @@ export class SpeechAudioController {
   }
 
   get hasSpeechInput(): boolean {
-    return this.options.speechFeaturesEnabled && !!this.options.speechInputController;
+    return (
+      this.options.speechFeaturesEnabled &&
+      !!this.options.speechInputController &&
+      !this.speechInputDisabledReason
+    );
   }
 
   get isSpeechActive(): boolean {
@@ -193,7 +198,11 @@ export class SpeechAudioController {
 
     if (!this.hasSpeechInput) {
       micButtonEl.disabled = true;
-      micButtonEl.title = 'Speech input is not supported in this browser';
+      const message = this.speechInputDisabledReason
+        ? 'Speech input is unavailable. Check microphone permissions.'
+        : 'Speech input is not supported in this browser';
+      micButtonEl.title = message;
+      micButtonEl.setAttribute('aria-label', message);
       console.log('[client] disabling mic button: speech input not supported');
     }
 
@@ -443,6 +452,11 @@ export class SpeechAudioController {
       this.logState('start-abort', { reason: 'no-speech-controller' });
       return;
     }
+    if (!this.hasSpeechInput) {
+      console.log('[client] startPushToTalk aborted: speech input disabled');
+      this.logState('start-abort', { reason: 'speech-disabled' });
+      return;
+    }
 
     if (this.shouldInterruptOutput()) {
       console.log('[client] startPushToTalk aborted: output active');
@@ -515,8 +529,17 @@ export class SpeechAudioController {
         },
         onError: (err) => {
           console.error('[client] Speech recognition error', err);
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          if (this.isSpeechPermissionError(errorMessage)) {
+            this.disableSpeechInput(
+              'permission',
+              'Speech input unavailable. Check microphone permissions.',
+            );
+            this.logState('speech-error', { error: errorMessage, disabled: true });
+            return;
+          }
           this.options.setStatus('Speech recognition error – see console');
-          this.logState('speech-error', { error: String(err) });
+          this.logState('speech-error', { error: errorMessage });
         },
         onEnd: () => {
           const wasCancelled = this.speechInputCancelled;
@@ -533,8 +556,17 @@ export class SpeechAudioController {
       });
     } catch (err) {
       console.error('[client] Failed to start speech input', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (this.isSpeechPermissionError(errorMessage)) {
+        this.disableSpeechInput(
+          'permission',
+          'Speech input unavailable. Check microphone permissions.',
+        );
+        this.logState('start-failed', { error: errorMessage, disabled: true });
+        return;
+      }
       this.options.setStatus('Speech input error – see console');
-      this.logState('start-failed', { error: String(err) });
+      this.logState('start-failed', { error: errorMessage });
     }
   }
 
@@ -654,6 +686,28 @@ export class SpeechAudioController {
     if (!hasContent) {
       pendingBubble.remove();
     }
+  }
+
+  private isSpeechPermissionError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('not-allowed') ||
+      normalized.includes('service-not-allowed') ||
+      normalized.includes('permission')
+    );
+  }
+
+  private disableSpeechInput(reason: string, message: string): void {
+    if (this.speechInputDisabledReason) {
+      return;
+    }
+    this.speechInputDisabledReason = reason;
+    const micButton = this.options.micButtonEl;
+    micButton.disabled = true;
+    micButton.classList.remove('recording', 'interrupting', 'stopping');
+    micButton.setAttribute('title', message);
+    micButton.setAttribute('aria-label', message);
+    this.logState('speech-disabled', { reason });
   }
 
   syncMicButtonState(): void {

@@ -2,6 +2,7 @@ import type { CombinedPluginManifest } from '@assistant/shared';
 
 import type { PanelFactory, PanelRegistry } from '../controllers/panelRegistry';
 import { getApiBaseUrl } from './api';
+import { isTauri } from './tauri';
 
 export interface PluginPanelRegistryApi {
   registerPanel: (panelType: string, factory: PanelFactory) => void;
@@ -58,29 +59,65 @@ export class PluginBundleLoader {
   }
 
   private loadBundle(pluginId: string, bundlePath: string): void {
-    const url = resolvePluginAssetUrl(bundlePath);
-    if (!url || this.loadedScripts.has(url)) {
+    const urls = resolvePluginAssetUrls(bundlePath);
+    if (urls.length === 0) {
       return;
     }
+    this.loadScriptWithFallback(pluginId, urls, 0);
+  }
+
+  private loadStyles(pluginId: string, stylesPath: string): void {
+    const urls = resolvePluginAssetUrls(stylesPath);
+    if (urls.length === 0) {
+      return;
+    }
+    this.loadStylesWithFallback(pluginId, urls, 0);
+  }
+
+  private loadScriptWithFallback(pluginId: string, urls: string[], index: number): void {
+    if (index >= urls.length) {
+      console.error(`Failed to load plugin bundle for "${pluginId}"`, urls);
+      return;
+    }
+    const url = urls[index];
+    if (!url) {
+      this.loadScriptWithFallback(pluginId, urls, index + 1);
+      return;
+    }
+    const existing = this.loadedScripts.get(url);
+    if (existing) {
+      void existing.catch(() => {
+        this.loadScriptWithFallback(pluginId, urls, index + 1);
+      });
+      return;
+    }
+
     const promise = new Promise<void>((resolve, reject) => {
       const script = document.createElement('script');
       script.src = url;
       script.async = true;
       script.defer = true;
       script.onload = () => resolve();
-      script.onerror = () => {
-        console.error(`Failed to load plugin bundle for "${pluginId}"`, url);
-        reject(new Error(`Failed to load plugin bundle for "${pluginId}"`));
-      };
+      script.onerror = () => reject(new Error(`Failed to load plugin bundle for "${pluginId}"`));
       document.head.appendChild(script);
     });
     this.loadedScripts.set(url, promise);
-    void promise.catch(() => undefined);
+    void promise.catch(() => {
+      this.loadScriptWithFallback(pluginId, urls, index + 1);
+    });
   }
 
-  private loadStyles(pluginId: string, stylesPath: string): void {
-    const url = resolvePluginAssetUrl(stylesPath);
-    if (!url || this.loadedStyles.has(url)) {
+  private loadStylesWithFallback(pluginId: string, urls: string[], index: number): void {
+    if (index >= urls.length) {
+      console.error(`Failed to load plugin styles for "${pluginId}"`, urls);
+      return;
+    }
+    const url = urls[index];
+    if (!url) {
+      this.loadStylesWithFallback(pluginId, urls, index + 1);
+      return;
+    }
+    if (this.loadedStyles.has(url)) {
       return;
     }
     const link = document.createElement('link');
@@ -88,7 +125,7 @@ export class PluginBundleLoader {
     link.href = url;
     link.onload = () => undefined;
     link.onerror = () => {
-      console.error(`Failed to load plugin styles for "${pluginId}"`, url);
+      this.loadStylesWithFallback(pluginId, urls, index + 1);
     };
     document.head.appendChild(link);
     this.loadedStyles.add(url);
@@ -97,17 +134,34 @@ export class PluginBundleLoader {
 
 const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:/i;
 
-function resolvePluginAssetUrl(path: string): string {
+function getPluginAssetBaseUrls(): string[] {
+  const bases: string[] = [];
+  if (isTauri()) {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null') {
+      bases.push(origin);
+    } else if (window.location.protocol && window.location.host) {
+      bases.push(`${window.location.protocol}//${window.location.host}`);
+    }
+  }
+  bases.push(getApiBaseUrl());
+  return Array.from(new Set(bases.filter(Boolean)));
+}
+
+function resolvePluginAssetUrls(path: string): string[] {
   const trimmed = path.trim();
   if (!trimmed) {
-    return '';
+    return [];
   }
   if (PROTOCOL_RE.test(trimmed)) {
-    return trimmed;
+    return [trimmed];
   }
   if (trimmed.startsWith('//')) {
-    return `${window.location.protocol}${trimmed}`;
+    return [`${window.location.protocol}${trimmed}`];
   }
-  const base = getApiBaseUrl();
-  return trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`;
+  const bases = getPluginAssetBaseUrls();
+  const urls = bases.map((base) =>
+    trimmed.startsWith('/') ? `${base}${trimmed}` : `${base}/${trimmed}`,
+  );
+  return Array.from(new Set(urls.filter(Boolean)));
 }

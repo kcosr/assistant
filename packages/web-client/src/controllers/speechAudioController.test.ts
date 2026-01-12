@@ -340,4 +340,67 @@ describe('SpeechAudioController.startPushToTalk', () => {
 
     expect(sendUserText).not.toHaveBeenCalled();
   });
+
+  it('disables speech input when permission is denied', async () => {
+    ensureWebSocketGlobal();
+
+    let callbacks:
+      | {
+          onPartial: (text: string) => void;
+          onFinal: (text: string) => void;
+          onError: (error: unknown) => void;
+          onEnd: () => void;
+        }
+      | undefined;
+
+    const speechInputController = {
+      isActive: false,
+      isMobile: false,
+      start: (options: {
+        onPartial: (text: string) => void;
+        onFinal: (text: string) => void;
+        onError: (error: unknown) => void;
+        onEnd: () => void;
+      }) => {
+        callbacks = options;
+      },
+      stop: vi.fn(),
+    };
+
+    const micButton = document.createElement('button');
+    const socket = { readyState: WebSocket.OPEN, send: vi.fn() } as unknown as WebSocket;
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController,
+      micButtonEl: micButton,
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => socket,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => false,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+    });
+
+    await controller.startPushToTalk();
+
+    expect(callbacks).toBeDefined();
+    callbacks?.onError(new Error('Speech recognition error: not-allowed'));
+    callbacks?.onEnd();
+
+    expect(micButton.disabled).toBe(true);
+    expect(micButton.getAttribute('title')).toMatch(/microphone permissions/i);
+    expect(controller.hasSpeechInput).toBe(false);
+  });
 });
