@@ -1847,6 +1847,11 @@
   box-shadow: inset 0 -2px 0 var(--color-accent-primary);
 }
 
+.list-item-row.drag-over > td {
+  background-color: var(--color-accent-subtle);
+  box-shadow: inset 0 -2px 0 var(--color-accent-primary);
+}
+
 .list-item-completed {
   opacity: 0.6;
   background-color: var(--color-bg-elevated);
@@ -3789,6 +3794,10 @@ button.tag-chip-remove {
 
 /* Drop target styling when dragging focus marker over rows */
 .list-item-row.focus-marker-drop-target {
+  box-shadow: inset 0 -2px 0 var(--color-accent-primary);
+}
+
+.list-item-row.focus-marker-drop-target > td {
   box-shadow: inset 0 -2px 0 var(--color-accent-primary);
 }
 

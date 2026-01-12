@@ -961,21 +961,6 @@ button.settings-dropdown-item {
   margin-top: var(--spacing-xs);
 }
 
-.toolbar-user-avatar {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background-color: var(--color-text-secondary);
-  color: var(--color-bg-base);
-  font-size: 10px;
-  font-weight: 600;
-  flex-shrink: 0;
-  cursor: default;
-}
-
 /* ===== Panel Launcher ===== */
 .panel-launcher-overlay {
   position: fixed;

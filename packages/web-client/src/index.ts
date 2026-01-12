@@ -160,6 +160,7 @@ interface AgentSummary {
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
 import { configureStatusBar, enableAppReloadOnResume } from './utils/capacitor';
+import { configureTauri } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
@@ -189,6 +190,9 @@ const thinkingPreferencesClient = new ThinkingPreferencesClient();
 const pluginSettingsClient = new PluginSettingsClient();
 
 async function main(): Promise<void> {
+  // Configure Tauri backend URL (no-op if not in Tauri) - must run before WebSocket setup
+  await configureTauri();
+
   // Configure Capacitor status bar (no-op if not in Capacitor)
   void configureStatusBar();
 

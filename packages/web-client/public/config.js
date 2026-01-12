@@ -3,7 +3,12 @@
  */
 
 // API host for backend connections (WebSocket and HTTP)
-window.ASSISTANT_API_HOST = 'assistant';
+// Uses https:// and wss:// automatically when set
+// window.ASSISTANT_API_HOST = 'assistant';
+
+// Set to true to use http:// and ws:// instead of https:// and wss://
+// Useful for local development without valid SSL certs
+// window.ASSISTANT_INSECURE = true;
 
 // Enable push notifications on mobile (requires google-services.json)
 // Disabled by default to prevent crashes when Firebase isn't configured
