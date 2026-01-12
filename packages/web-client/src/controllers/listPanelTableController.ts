@@ -546,7 +546,7 @@ export class ListPanelTableController {
     const createFocusMarkerRow = (expanded: boolean): HTMLTableRowElement => {
       const markerRow = document.createElement('tr');
       markerRow.className = 'focus-marker-row';
-      markerRow.draggable = true;
+      markerRow.draggable = false;
       const markerCell = document.createElement('td');
       markerCell.colSpan = colCount;
 
@@ -585,28 +585,154 @@ export class ListPanelTableController {
       markerCell.appendChild(indicator);
       markerRow.appendChild(markerCell);
 
-      // Drag handling for moving the marker
-      markerRow.addEventListener('dragstart', (e) => {
-        markerRow.classList.add('focus-marker-dragging');
-        if (e.dataTransfer) {
-          e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', 'focus-marker');
-        }
-      });
-
-      markerRow.addEventListener('dragend', () => {
-        markerRow.classList.remove('focus-marker-dragging');
-        // Clean up any drag-over states
+      const clearFocusMarkerDropTargets = (): void => {
         tbody.querySelectorAll('.focus-marker-drop-target').forEach((el) => {
           el.classList.remove('focus-marker-drop-target');
         });
-      });
+      };
 
       // Touch handling for mobile - same pattern as item drag handles
       const isCoarsePointer =
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(pointer: coarse)').matches;
+
+      if (!isCoarsePointer) {
+        const POINTER_DRAG_THRESHOLD = 6;
+        let pointerDragActive = false;
+        let pointerDragStarted = false;
+        let pointerStartX = 0;
+        let pointerStartY = 0;
+        let pointerCurrentDropRow: HTMLTableRowElement | null = null;
+
+        const pointerEventTargets: EventTarget[] = [document, window];
+        const toPointerEvent = (event: Event): PointerEvent | null => {
+          if ('pointerType' in event) {
+            return event as PointerEvent;
+          }
+          return null;
+        };
+
+        const getDropRowFromEvent = (event: PointerEvent): HTMLTableRowElement | null => {
+          const target = event.target;
+          if (target instanceof Element) {
+            const row = target.closest<HTMLTableRowElement>('.list-item-row');
+            if (row) {
+              return row;
+            }
+          }
+
+          const element = document.elementFromPoint(event.clientX, event.clientY);
+          return element?.closest<HTMLTableRowElement>('.list-item-row') ?? null;
+        };
+
+        const updatePointerTarget = (event: PointerEvent): void => {
+          const targetRow = getDropRowFromEvent(event);
+
+          if (targetRow) {
+            if (pointerCurrentDropRow && pointerCurrentDropRow !== targetRow) {
+              pointerCurrentDropRow.classList.remove('focus-marker-drop-target');
+            }
+            pointerCurrentDropRow = targetRow;
+            pointerCurrentDropRow.classList.add('focus-marker-drop-target');
+          } else if (pointerCurrentDropRow) {
+            pointerCurrentDropRow.classList.remove('focus-marker-drop-target');
+            pointerCurrentDropRow = null;
+          }
+        };
+
+        const cleanupPointerListeners = (): void => {
+          pointerEventTargets.forEach((target) => {
+            target.removeEventListener('pointermove', handlePointerMove);
+            target.removeEventListener('pointerup', handlePointerUp);
+            target.removeEventListener('pointercancel', handlePointerCancel);
+          });
+        };
+
+        const finishPointerDrag = (event?: Event): void => {
+          if (!pointerDragActive) {
+            return;
+          }
+          pointerDragActive = false;
+          cleanupPointerListeners();
+
+          if (!pointerDragStarted) {
+            pointerCurrentDropRow = null;
+            return;
+          }
+
+          event?.preventDefault();
+          pointerDragStarted = false;
+          markerRow.classList.remove('focus-marker-dragging');
+
+          if (pointerCurrentDropRow) {
+            const targetItemId = pointerCurrentDropRow.dataset['itemId'];
+            pointerCurrentDropRow.classList.remove('focus-marker-drop-target');
+            pointerCurrentDropRow = null;
+            if (targetItemId) {
+              onFocusMarkerMove?.(targetItemId);
+            }
+          } else {
+            clearFocusMarkerDropTargets();
+          }
+        };
+
+        const handlePointerMove = (event: Event): void => {
+          const pointerEvent = toPointerEvent(event);
+          if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+            return;
+          }
+
+          const dx = Math.abs(pointerEvent.clientX - pointerStartX);
+          const dy = Math.abs(pointerEvent.clientY - pointerStartY);
+
+          if (!pointerDragStarted && (dx > POINTER_DRAG_THRESHOLD || dy > POINTER_DRAG_THRESHOLD)) {
+            pointerDragStarted = true;
+            markerRow.classList.add('focus-marker-dragging');
+          }
+
+          if (!pointerDragStarted) {
+            return;
+          }
+
+          pointerEvent.preventDefault();
+          updatePointerTarget(pointerEvent);
+        };
+
+        const handlePointerUp = (event: Event): void => {
+          const pointerEvent = toPointerEvent(event);
+          if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+            return;
+          }
+          finishPointerDrag(pointerEvent);
+        };
+
+        const handlePointerCancel = (event: Event): void => {
+          const pointerEvent = toPointerEvent(event);
+          if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+            return;
+          }
+          finishPointerDrag(pointerEvent);
+        };
+
+        markerRow.addEventListener('pointerdown', (event: PointerEvent) => {
+          if (event.button !== 0 || event.pointerType === 'touch') {
+            return;
+          }
+
+          pointerDragActive = true;
+          pointerDragStarted = false;
+          pointerStartX = event.clientX;
+          pointerStartY = event.clientY;
+          pointerCurrentDropRow = null;
+
+          pointerEventTargets.forEach((target) => {
+            target.addEventListener('pointermove', handlePointerMove);
+            target.addEventListener('pointerup', handlePointerUp);
+            target.addEventListener('pointercancel', handlePointerCancel);
+          });
+        });
+      }
 
       if (isCoarsePointer) {
         let touchStartX = 0;
@@ -993,6 +1119,63 @@ export class ListPanelTableController {
     let onDragStartFromHandle: ((e: DragEvent | null) => void) | null = null;
     let onDragEnd: (() => void) | null = null;
 
+    const reorderDraggedItem = async (
+      targetRow: HTMLTableRowElement | null,
+      draggedId: string | null,
+    ): Promise<void> => {
+      if (!targetRow || !draggedId) {
+        onDragEnd?.();
+        return;
+      }
+
+      const targetItemId = targetRow.dataset['itemId'];
+      if (!targetItemId || targetItemId === draggedId) {
+        onDragEnd?.();
+        return;
+      }
+
+      const draggedItem = sortedItems.find((it) => it.id === draggedId);
+      const targetItem = sortedItems.find((it) => it.id === targetItemId);
+      if (!draggedItem || !targetItem) {
+        onDragEnd?.();
+        return;
+      }
+
+      const draggedIsCompleted = draggedItem.completed ?? false;
+      const targetIsCompleted = targetItem.completed ?? false;
+      if (draggedIsCompleted !== targetIsCompleted) {
+        onDragEnd?.();
+        return;
+      }
+
+      const newPosition =
+        typeof targetItem.position === 'number'
+          ? targetItem.position
+          : typeof item.position === 'number'
+            ? item.position
+            : index;
+
+      const originalPosition = draggedItem.position ?? 0;
+      draggedItem.position = newPosition;
+
+      rerender();
+
+      this.options.recentUserItemUpdates.add(draggedId);
+      window.setTimeout(() => {
+        this.options.recentUserItemUpdates.delete(draggedId);
+      }, this.options.userUpdateTimeoutMs);
+
+      const success = await this.options.updateListItem(listId, draggedId, {
+        position: newPosition,
+      });
+      if (!success) {
+        draggedItem.position = originalPosition;
+        rerender();
+      }
+
+      onDragEnd?.();
+    };
+
     if (itemId) {
       row.dataset['itemId'] = itemId;
       row.draggable = false;
@@ -1169,7 +1352,7 @@ export class ListPanelTableController {
 
     if (itemId) {
       menuTrigger.title = 'Drag to reorder, click for actions';
-      menuTrigger.draggable = true;
+      menuTrigger.draggable = false;
       let lastDragStartAt = 0;
       const isCoarsePointer =
         typeof window !== 'undefined' &&
@@ -1183,6 +1366,13 @@ export class ListPanelTableController {
       let touchCurrentDropRow: HTMLTableRowElement | null = null;
       let touchDraggedItemId: string | null = null;
 
+      const POINTER_DRAG_THRESHOLD = 6;
+      let pointerDragActive = false;
+      let pointerDragStarted = false;
+      let pointerStartX = 0;
+      let pointerStartY = 0;
+      let pointerCurrentDropRow: HTMLTableRowElement | null = null;
+
       const startDragFromHandle = (e: DragEvent | null) => {
         if (isCoarsePointer) {
           return;
@@ -1191,14 +1381,136 @@ export class ListPanelTableController {
         onDragStartFromHandle?.(e);
       };
 
-      menuTrigger.addEventListener('dragstart', (e) => {
-        e.stopPropagation();
-        startDragFromHandle(e);
-      });
+      const pointerEventTargets: EventTarget[] = [document, window];
+      const toPointerEvent = (event: Event): PointerEvent | null => {
+        if ('pointerType' in event) {
+          return event as PointerEvent;
+        }
+        return null;
+      };
+      const getDropRowFromEvent = (event: PointerEvent): HTMLTableRowElement | null => {
+        const target = event.target;
+        if (target instanceof Element) {
+          const rowEl = target.closest<HTMLTableRowElement>('.list-item-row');
+          if (rowEl) {
+            return rowEl;
+          }
+        }
 
-      menuTrigger.addEventListener('dragend', () => {
-        onDragEnd?.();
-      });
+        if (typeof document.elementFromPoint !== 'function') {
+          return null;
+        }
+
+        const element = document.elementFromPoint(event.clientX, event.clientY);
+        return element?.closest<HTMLTableRowElement>('.list-item-row') ?? null;
+      };
+
+      const updatePointerDropTarget = (event: PointerEvent): void => {
+        const targetRow = getDropRowFromEvent(event);
+
+        if (targetRow && targetRow !== row) {
+          if (pointerCurrentDropRow && pointerCurrentDropRow !== targetRow) {
+            pointerCurrentDropRow.classList.remove('drag-over');
+          }
+          pointerCurrentDropRow = targetRow;
+          pointerCurrentDropRow.classList.add('drag-over');
+        } else if (pointerCurrentDropRow) {
+          pointerCurrentDropRow.classList.remove('drag-over');
+          pointerCurrentDropRow = null;
+        }
+      };
+
+      const cleanupPointerListeners = (): void => {
+        pointerEventTargets.forEach((target) => {
+          target.removeEventListener('pointermove', handlePointerMove);
+          target.removeEventListener('pointerup', handlePointerUp);
+          target.removeEventListener('pointercancel', handlePointerCancel);
+        });
+      };
+
+      const finishPointerDrag = async (event?: Event): Promise<void> => {
+        if (!pointerDragActive) {
+          return;
+        }
+        pointerDragActive = false;
+        cleanupPointerListeners();
+
+        if (!pointerDragStarted) {
+          pointerCurrentDropRow = null;
+          return;
+        }
+
+        event?.preventDefault();
+        pointerDragStarted = false;
+
+        const draggedId = this.draggedItemId;
+        const targetRow = pointerCurrentDropRow;
+        pointerCurrentDropRow = null;
+
+        if (targetRow) {
+          targetRow.classList.remove('drag-over');
+        }
+
+        await reorderDraggedItem(targetRow ?? null, draggedId ?? null);
+      };
+
+      const handlePointerMove = (event: Event): void => {
+        const pointerEvent = toPointerEvent(event);
+        if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+          return;
+        }
+
+        const dx = Math.abs(pointerEvent.clientX - pointerStartX);
+        const dy = Math.abs(pointerEvent.clientY - pointerStartY);
+
+        if (!pointerDragStarted && (dx > POINTER_DRAG_THRESHOLD || dy > POINTER_DRAG_THRESHOLD)) {
+          pointerDragStarted = true;
+          startDragFromHandle(null);
+        }
+
+        if (!pointerDragStarted) {
+          return;
+        }
+
+        pointerEvent.preventDefault();
+        updatePointerDropTarget(pointerEvent);
+      };
+
+      const handlePointerUp = (event: Event): void => {
+        const pointerEvent = toPointerEvent(event);
+        if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+          return;
+        }
+        void finishPointerDrag(pointerEvent);
+      };
+
+      const handlePointerCancel = (event: Event): void => {
+        const pointerEvent = toPointerEvent(event);
+        if (!pointerEvent || !pointerDragActive || pointerEvent.pointerType === 'touch') {
+          return;
+        }
+        void finishPointerDrag(pointerEvent);
+      };
+
+      if (!isCoarsePointer) {
+        menuTrigger.addEventListener('pointerdown', (event: PointerEvent) => {
+          if (event.button !== 0 || event.pointerType === 'touch') {
+            return;
+          }
+
+          pointerDragActive = true;
+          pointerDragStarted = false;
+          pointerStartX = event.clientX;
+          pointerStartY = event.clientY;
+          pointerCurrentDropRow = null;
+
+          pointerEventTargets.forEach((target) => {
+            target.addEventListener('pointermove', handlePointerMove);
+            target.addEventListener('pointerup', handlePointerUp);
+            target.addEventListener('pointercancel', handlePointerCancel);
+          });
+        });
+      }
 
       if (isCoarsePointer) {
         menuTrigger.addEventListener(
@@ -1281,65 +1593,15 @@ export class ListPanelTableController {
             touchDragActive = false;
 
             const draggedId = touchDraggedItemId;
-            if (!touchCurrentDropRow || !draggedId) {
-              onDragEnd?.();
-              return;
-            }
-
-            const targetItemId = touchCurrentDropRow.dataset['itemId'];
-            if (!targetItemId || targetItemId === touchDraggedItemId) {
-              touchCurrentDropRow.classList.remove('drag-over');
-              touchCurrentDropRow = null;
-              onDragEnd?.();
-              return;
-            }
-
-            const draggedItem = sortedItems.find((it) => it.id === draggedId);
-            const targetItem = sortedItems.find((it) => it.id === targetItemId);
-            if (!draggedItem || !targetItem) {
-              touchCurrentDropRow.classList.remove('drag-over');
-              touchCurrentDropRow = null;
-              onDragEnd?.();
-              return;
-            }
-
-            const draggedIsCompleted = draggedItem.completed ?? false;
-            const targetIsCompleted = targetItem.completed ?? false;
-            if (draggedIsCompleted !== targetIsCompleted) {
-              touchCurrentDropRow.classList.remove('drag-over');
-              touchCurrentDropRow = null;
-              onDragEnd?.();
-              return;
-            }
-
-            const newPosition =
-              typeof targetItem.position === 'number'
-                ? targetItem.position
-                : typeof item.position === 'number'
-                  ? item.position
-                  : index;
-
-            const originalPosition = draggedItem.position ?? 0;
-            draggedItem.position = newPosition;
-
-            rerender();
-
-            this.options.recentUserItemUpdates.add(draggedId);
-            window.setTimeout(() => {
-              this.options.recentUserItemUpdates.delete(draggedId);
-            }, this.options.userUpdateTimeoutMs);
-
-            const success = await this.options.updateListItem(listId, draggedId, {
-              position: newPosition,
-            });
-            if (!success) {
-              draggedItem.position = originalPosition;
-              rerender();
-            }
-
-            touchCurrentDropRow.classList.remove('drag-over');
+            const targetRow = touchCurrentDropRow;
+            touchDraggedItemId = null;
             touchCurrentDropRow = null;
-            onDragEnd?.();
+
+            if (targetRow) {
+              targetRow.classList.remove('drag-over');
+            }
+
+            await reorderDraggedItem(targetRow ?? null, draggedId ?? null);
           },
           { passive: false },
         );

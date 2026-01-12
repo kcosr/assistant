@@ -1,0 +1,19 @@
+{
+  "name": "@assistant/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tauri desktop build for AI Assistant",
+  "scripts": {
+    "icons:generate": "node scripts/generate-icons.mjs && node scripts/generate-icns.mjs",
+    "pretauri:dev": "npm run bundle -w @assistant/web-client && npm --prefix ../.. run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "pretauri:build": "npm run build -w @assistant/web-client && npm --prefix ../.. run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:icon": "tauri icon"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "sharp": "^0.33.0"
+  }
+}

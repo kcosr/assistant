@@ -2,6 +2,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ListPanelTableController } from './listPanelTableController';
 
+const originalPointerEvent = globalThis.PointerEvent;
+
+class MockPointerEvent extends MouseEvent {
+  pointerId: number;
+  pointerType: string;
+
+  constructor(type: string, init: PointerEventInit = {}) {
+    super(type, init);
+    this.pointerId = init.pointerId ?? 0;
+    this.pointerType = init.pointerType ?? 'mouse';
+  }
+}
+
 describe('ListPanelTableController double-click edit', () => {
   const listId = 'list1';
 
@@ -21,10 +34,22 @@ describe('ListPanelTableController double-click edit', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '';
+
+    if (!globalThis.PointerEvent) {
+      (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent =
+        MockPointerEvent as unknown as typeof PointerEvent;
+    }
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
+
+    if (originalPointerEvent) {
+      (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent = originalPointerEvent;
+    } else {
+      delete (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent;
+    }
   });
 
   it('calls onEditItem when double-clicking a row', () => {
@@ -96,10 +121,22 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '';
+
+    if (!globalThis.PointerEvent) {
+      (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent =
+        MockPointerEvent as unknown as typeof PointerEvent;
+    }
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    document.body.innerHTML = '';
+
+    if (originalPointerEvent) {
+      (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent = originalPointerEvent;
+    } else {
+      delete (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent;
+    }
   });
 
   it('starts dragging only when menu trigger is used', () => {
@@ -120,9 +157,37 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(menuTrigger).not.toBeNull();
 
     expect(row?.draggable).toBe(false);
-    menuTrigger?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    menuTrigger?.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 0,
+        clientY: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 10,
+        clientY: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+      }),
+    );
 
     expect(row?.classList.contains('dragging')).toBe(true);
+
+    document.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 10,
+        clientY: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+      }),
+    );
   });
 
   it('does not start dragging from non-handle cells', () => {
@@ -142,7 +207,25 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(row).not.toBeNull();
     expect(titleCell).not.toBeNull();
 
-    titleCell?.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    titleCell?.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 0,
+        clientY: 0,
+        pointerId: 2,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 10,
+        clientY: 0,
+        pointerId: 2,
+        pointerType: 'mouse',
+      }),
+    );
 
     expect(row?.classList.contains('dragging')).toBe(false);
   });
