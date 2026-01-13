@@ -116,6 +116,72 @@ function updatePackageLock(packageJsonPaths, version) {
   return updated;
 }
 
+function updateTauriConfig(version) {
+  const tauriConfigPath = join(root, 'packages', 'desktop', 'src-tauri', 'tauri.conf.json');
+  if (!existsSync(tauriConfigPath)) {
+    return false;
+  }
+  const raw = readFileSync(tauriConfigPath, 'utf8');
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    console.warn(`Failed to parse ${tauriConfigPath}:`, err);
+    return false;
+  }
+  if (data.version === version) {
+    return false;
+  }
+  data.version = version;
+  writeFileSync(tauriConfigPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  return true;
+}
+
+function updateCargoToml(version) {
+  const cargoPath = join(root, 'packages', 'desktop', 'src-tauri', 'Cargo.toml');
+  if (!existsSync(cargoPath)) {
+    return false;
+  }
+  const raw = readFileSync(cargoPath, 'utf8');
+  const lines = raw.split('\n');
+  let inPackageSection = false;
+  let updated = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line) {
+      continue;
+    }
+    const trimmed = line.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      inPackageSection = trimmed === '[package]';
+      continue;
+    }
+    if (inPackageSection && trimmed.startsWith('version')) {
+      const nextLine = line.replace(
+        /version\s*=\s*"[^"]*"/,
+        `version = "${version}"`,
+      );
+      if (nextLine !== line) {
+        lines[i] = nextLine;
+        updated = true;
+      }
+      break;
+    }
+  }
+
+  if (!updated) {
+    return false;
+  }
+
+  let output = lines.join('\n');
+  if (!output.endsWith('\n')) {
+    output += '\n';
+  }
+  writeFileSync(cargoPath, output, 'utf8');
+  return true;
+}
+
 const currentVersion = readVersion();
 const arg = process.argv[2];
 
@@ -174,4 +240,14 @@ if (updatedCount > 0) {
 const lockUpdated = updatePackageLock(packageJsonPaths, newVersion);
 if (lockUpdated) {
   console.log('Updated package-lock.json.');
+}
+
+const tauriConfigUpdated = updateTauriConfig(newVersion);
+if (tauriConfigUpdated) {
+  console.log('Updated tauri.conf.json.');
+}
+
+const cargoUpdated = updateCargoToml(newVersion);
+if (cargoUpdated) {
+  console.log('Updated Cargo.toml.');
 }
