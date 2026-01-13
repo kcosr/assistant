@@ -10,6 +10,8 @@
 
 ### Fixed
 
+- Reduce TTS scheduling churn by sending larger PCM frames to clients. ([#000](<pr-url>))
+
 ### Removed
 
 ## [0.1.0] - 2026-01-13

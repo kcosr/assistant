@@ -41,6 +41,10 @@ export interface EnvConfig {
   ttsModel: string;
   ttsVoice: string | undefined;
   /**
+   * TTS PCM frame duration in milliseconds.
+   */
+  ttsFrameDurationMs: number;
+  /**
    * Logical TTS backend selection.
    */
   ttsBackend: 'openai' | 'elevenlabs';
@@ -137,6 +141,14 @@ export function loadEnvConfig(): EnvConfig {
     typeof ttsVoiceEnv === 'string' && ttsVoiceEnv.trim().length > 0
       ? ttsVoiceEnv.trim()
       : undefined;
+
+  const ttsFrameDurationEnv = process.env['TTS_FRAME_DURATION_MS'];
+  const parsedTtsFrameDuration =
+    ttsFrameDurationEnv !== undefined ? Number(ttsFrameDurationEnv) : Number.NaN;
+  const ttsFrameDurationMs =
+    Number.isFinite(parsedTtsFrameDuration) && parsedTtsFrameDuration > 0
+      ? Math.round(parsedTtsFrameDuration)
+      : 250;
 
   const ttsBackendEnv = (process.env['TTS_BACKEND'] ?? '').toLowerCase();
   let ttsBackend: 'openai' | 'elevenlabs' = 'openai';
@@ -254,6 +266,7 @@ export function loadEnvConfig(): EnvConfig {
     audioOutputSpeed,
     ttsModel,
     ttsVoice,
+    ttsFrameDurationMs,
     ttsBackend,
     elevenLabsApiKey,
     elevenLabsVoiceId,

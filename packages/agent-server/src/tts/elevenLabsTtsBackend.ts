@@ -23,7 +23,7 @@ class ElevenLabsTtsStreamingSession implements TtsStreamingSession {
   private hasAnyOutput = false;
   private cancelled = false;
   private timestampMs = 0;
-  private readonly frameDurationMs = 40;
+  private readonly frameDurationMs: number;
   private readonly outputSampleRate: number;
   private totalTextChars = 0;
 
@@ -45,6 +45,7 @@ class ElevenLabsTtsStreamingSession implements TtsStreamingSession {
     this.getNextSeq = options.getNextSeq;
     this.log = options.log;
     this.sendTtsError = options.sendTtsError;
+    this.frameDurationMs = this.config.ttsFrameDurationMs;
 
     const { outputFormat, outputSampleRate } = getPcmOutputFormat(this.config.audioSampleRate);
     this.outputSampleRate = outputSampleRate;
