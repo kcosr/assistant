@@ -11,6 +11,7 @@ use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpListener;
@@ -44,6 +45,9 @@ fn default_skip_cert_validation() -> bool {
     true
 }
 
+const HTTP_PROXY_CONNECT_TIMEOUT_SECS: u64 = 10;
+const HTTP_PROXY_REQUEST_TIMEOUT_SECS: u64 = 30;
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -64,6 +68,8 @@ impl ProxyState {
     fn new(backend_url: String, skip_cert_validation: bool) -> Self {
         let http_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(skip_cert_validation)
+            .connect_timeout(Duration::from_secs(HTTP_PROXY_CONNECT_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(HTTP_PROXY_REQUEST_TIMEOUT_SECS))
             .build()
             .expect("Failed to create HTTP client");
 
@@ -129,14 +135,13 @@ async fn handle_http_request(
     req: Request<Incoming>,
     proxy_state: Arc<ProxyState>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
-    let method = req.method().clone();
     let uri = req.uri().clone();
     let headers = req.headers().clone();
     let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    let method = req.method().clone();
 
     // Build backend URL
     let backend_url = format!("{}{}", proxy_state.backend_url.trim_end_matches('/'), path);
-
     // Collect request body
     let body_bytes = match req.collect().await {
         Ok(collected) => collected.to_bytes(),

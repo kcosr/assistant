@@ -69,11 +69,6 @@ class OpenAiTtsStreamingSession implements TtsStreamingSession {
     }
     this.buffer += filteredChunk;
     this.totalTextChars += filteredChunk.length;
-    this.log('OpenAI TTS appendText', {
-      responseId: this.responseId,
-      chunkChars: filteredChunk.length,
-      totalChars: this.totalTextChars,
-    });
   }
 
   async finish(): Promise<void> {
@@ -123,7 +118,7 @@ class OpenAiTtsStreamingSession implements TtsStreamingSession {
       const sampleRate = this.config.audioSampleRate;
       const channels = 1;
       const sampleFormat: AudioFrame['sampleFormat'] = 1;
-      const frameDurationMs = 40;
+      const frameDurationMs = this.config.ttsFrameDurationMs;
       const samplesPerFrame = Math.max(1, Math.round((sampleRate * frameDurationMs) / 1000));
       const bytesPerFrame = samplesPerFrame * 2;
 

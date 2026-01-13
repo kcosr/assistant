@@ -30,6 +30,28 @@ type ProxyReadyDetail = {
 };
 
 const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+const TAURI_PROXY_TIMEOUT_MS = 1500;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+  onTimeout?: () => void,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((resolve) => {
+    timeoutId = setTimeout(() => {
+      onTimeout?.();
+      resolve(fallback);
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  });
+}
 
 function normalizeProxyHost(proxyUrl: string): string {
   const trimmed = proxyUrl.trim();
@@ -172,9 +194,53 @@ export async function configureTauri(): Promise<void> {
     });
 
     // Get the local proxy URLs
-    const [proxyUrl, wsPort] = await Promise.all([getTauriProxyUrl(), getTauriWsProxyPort()]);
+    const [proxyUrl, wsPort] = await Promise.all([
+      withTimeout(getTauriProxyUrl(), TAURI_PROXY_TIMEOUT_MS, ''),
+      withTimeout(getTauriWsProxyPort(), TAURI_PROXY_TIMEOUT_MS, 0),
+    ]);
     applyProxySettings(proxyUrl, wsPort);
   } catch (err) {
     console.error('[tauri] Failed to configure proxy:', err);
   }
+}
+
+export async function waitForTauriProxyReady(timeoutMs = 5000): Promise<boolean> {
+  if (!isTauri()) {
+    return true;
+  }
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const host = window.ASSISTANT_API_HOST ?? '';
+  const wsPort = (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT ?? 0;
+  if (host || wsPort > 0) {
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const onReady = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(true);
+    };
+    const timeoutId = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(false);
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('assistant:tauri-proxy-ready', onReady);
+    };
+
+    window.addEventListener('assistant:tauri-proxy-ready', onReady, { once: true });
+  });
 }

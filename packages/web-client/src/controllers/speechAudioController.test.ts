@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SpeechAudioController } from './speechAudioController';
 
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -11,6 +12,17 @@ function ensureWebSocketGlobal(): void {
   if (typeof globalThis.WebSocket === 'undefined') {
     (globalThis as unknown as { WebSocket: unknown }).WebSocket = { OPEN: 1 };
   }
+}
+
+function dispatchPointerEvent(
+  target: HTMLElement,
+  type: string,
+  options: { pointerType?: string; button?: number } = {},
+): void {
+  const event = new Event(type, { bubbles: true }) as PointerEvent;
+  Object.defineProperty(event, 'pointerType', { value: options.pointerType ?? 'mouse' });
+  Object.defineProperty(event, 'button', { value: options.button ?? 0 });
+  target.dispatchEvent(event);
 }
 
 describe('SpeechAudioController.cancelAllActiveOperations', () => {
@@ -216,6 +228,61 @@ describe('SpeechAudioController.micButtonState', () => {
     controller.syncMicButtonState();
     expect(micButton.classList.contains('stopping')).toBe(false);
     expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+  });
+});
+
+describe('SpeechAudioController.longPress', () => {
+  it('arms continuous listening when the long-press threshold is reached', async () => {
+    ensureWebSocketGlobal();
+    vi.useFakeTimers();
+
+    const micButton = document.createElement('button');
+    const speechInputController = {
+      isActive: false,
+      isMobile: false,
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+    const socket = { readyState: WebSocket.OPEN, send: vi.fn() } as unknown as WebSocket;
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController,
+      micButtonEl: micButton,
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => socket,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => false,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+    });
+
+    controller.attach();
+
+    dispatchPointerEvent(micButton, 'pointerdown', { pointerType: 'touch', button: 0 });
+    vi.advanceTimersByTime(249);
+    await Promise.resolve();
+    expect(speechInputController.start).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    await Promise.resolve();
+    expect(speechInputController.start).toHaveBeenCalledTimes(1);
+
+    dispatchPointerEvent(micButton, 'pointerup', { pointerType: 'touch', button: 0 });
+    expect(speechInputController.stop).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });
 

@@ -145,6 +145,8 @@ Audio frames are sent as binary WebSocket messages with custom framing:
 - Sample rate, channels, format
 - PCM16 audio data
 
+When available, the client plays TTS audio through an AudioWorklet ring buffer to reduce scheduling jitter on long responses.
+
 ## Browser APIs Used
 
 | API            | Purpose                          |
@@ -152,6 +154,7 @@ Audio frames are sent as binary WebSocket messages with custom framing:
 | WebSocket      | Server communication             |
 | Web Speech API | Speech recognition (voice input) |
 | AudioContext   | TTS audio playback               |
+| AudioWorklet   | Ring-buffered TTS playback       |
 | Fetch          | Session HTTP APIs                |
 
 ## Files

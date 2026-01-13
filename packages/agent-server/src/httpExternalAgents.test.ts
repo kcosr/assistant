@@ -73,6 +73,7 @@ function createEnvConfig(overrides?: Partial<HttpEnvConfig>): HttpEnvConfig {
     audioOutputSpeed: undefined,
     ttsModel: 'test-tts-model',
     ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
     ttsBackend: 'openai',
     elevenLabsApiKey: undefined,
     elevenLabsVoiceId: undefined,

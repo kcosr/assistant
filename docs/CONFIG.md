@@ -53,6 +53,7 @@ These are only required when using built-in OpenAI chat or TTS backends. CLI age
 | `TTS_BACKEND`        | `openai`          | TTS backend: `openai` or `elevenlabs` |
 | `OPENAI_TTS_MODEL`   | `gpt-4o-mini-tts` | OpenAI TTS model                      |
 | `TTS_VOICE`          | `alloy`           | Voice name for TTS output             |
+| `TTS_FRAME_DURATION_MS` | `250`         | PCM frame duration for TTS output; larger values reduce client scheduling overhead |
 | `AUDIO_OUTPUT_SPEED` | -                 | Playback speed multiplier (e.g., `1.2`) |
 
 ### ElevenLabs TTS

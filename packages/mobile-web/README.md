@@ -173,7 +173,23 @@ The Android patch trusts user-installed CAs, which allows self-signed certificat
 
 ### API Host
 
-The default API host is configured in `packages/web-client/public/config.js` as `assistant`. Change this to match your deployment hostname.
+Mobile build commands patch the generated Capacitor asset copies (for example,
+`android/app/src/main/assets/public/config.js` and `ios/App/App/public/config.js`) after sync.
+They do not modify `packages/web-client/public/config.js`.
+Set `ASSISTANT_API_HOST` to override the default `assistant` value.
+
+Examples:
+
+```bash
+# Android emulator
+ASSISTANT_API_HOST=10.0.2.2:3000 npm run android:sync
+
+# Production host
+ASSISTANT_API_HOST=https://assistant.example npm run ios:sync
+```
+
+If you need http/ws, set a full `http://` URL or `ASSISTANT_INSECURE=true` in the environment.
+Re-run `android:sync` or `ios:sync` after changing the env vars.
 
 ### Firebase / Push Notifications
 

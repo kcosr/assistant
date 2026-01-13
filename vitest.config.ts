@@ -17,6 +17,7 @@ export default defineConfig({
       'packages/plugins/**/web/**/*.test.ts',
       'packages/notify-proxy/src/**/*.test.ts',
       'packages/web-client/src/**/*.test.ts',
+      'packages/mobile-web/scripts/**/*.test.mjs',
       'packages/assistant-cli/src/**/*.test.ts',
       'packages/coding-sidecar/src/**/*.test.ts',
     ],

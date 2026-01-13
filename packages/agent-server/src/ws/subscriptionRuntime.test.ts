@@ -48,6 +48,7 @@ function createTestConfig(transcriptsDir: string): EnvConfig {
     audioOutputSpeed: undefined,
     ttsModel: 'gpt-4o-mini-tts',
     ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
     ttsBackend: 'openai',
     elevenLabsApiKey: undefined,
     elevenLabsVoiceId: undefined,

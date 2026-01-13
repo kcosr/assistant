@@ -5,10 +5,17 @@
 ### Breaking Changes
 
 ### Added
-
 ### Changed
 
+- Start continuous listening as soon as the long-press threshold is reached. ([#000](<pr-url>))
+
 ### Fixed
+
+- Reduce TTS scheduling churn by sending larger PCM frames to clients. ([#000](<pr-url>))
+- Stream TTS playback through an AudioWorklet ring buffer to avoid long-response choppiness. ([#000](<pr-url>))
+- Delay continuous listening re-arm until TTS playback completes (with a short grace window). ([#000](<pr-url>))
+- Avoid blocking Tauri startup on proxy config and add HTTP proxy timeouts. ([#000](<pr-url>))
+- Set the API host during mobile sync so Capacitor builds do not fall back to localhost. ([#000](<pr-url>))
 
 ### Removed
 

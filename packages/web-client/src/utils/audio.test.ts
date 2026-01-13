@@ -5,7 +5,7 @@ import {
   encodeAudioFrame,
   type AudioFrame,
 } from '@assistant/shared';
-import { TtsAudioPlayer, convertPcm16ToFloat32 } from './audio';
+import { TtsAudioPlayer, convertPcm16ToFloat32, resampleFloat32 } from './audio';
 
 describe('convertPcm16ToFloat32', () => {
   it('converts signed 16-bit PCM to float32', () => {
@@ -18,6 +18,18 @@ describe('convertPcm16ToFloat32', () => {
     expect(floats[1]).toBeCloseTo(0);
     expect(floats[2]).toBeCloseTo(1, 3);
     expect(floats[0]).toBeLessThan(0);
+  });
+});
+
+describe('resampleFloat32', () => {
+  it('upsamples with linear interpolation', () => {
+    const input = new Float32Array([0, 1]);
+    const output = resampleFloat32(input, 1, 2);
+    expect(output.length).toBe(4);
+    expect(output[0]).toBeCloseTo(0);
+    expect(output[1]).toBeCloseTo(0.5, 3);
+    expect(output[2]).toBeCloseTo(1);
+    expect(output[3]).toBeCloseTo(1);
   });
 });
 
@@ -73,6 +85,7 @@ describe('TtsAudioPlayer', () => {
     currentTime = 0;
     readonly destination: unknown = {};
     state: 'running' | 'suspended' = 'running';
+    sampleRate = 24000;
 
     createGain(): GainNode {
       return new FakeGain() as unknown as GainNode;
