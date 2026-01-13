@@ -93,37 +93,78 @@ function run() {
   const scriptPath = fileURLToPath(import.meta.url);
   const scriptDir = path.dirname(scriptPath);
   const mobileDir = path.resolve(scriptDir, '..');
-  const configPath = path.resolve(mobileDir, '..', 'web-client', 'public', 'config.js');
-
-  let contents;
-  try {
-    contents = fs.readFileSync(configPath, 'utf8');
-  } catch (err) {
-    console.error('[patch-web-config] Failed to read config.js:', err);
-    process.exit(1);
-  }
+  const targets = [
+    {
+      platform: 'android',
+      configPath: path.resolve(
+        mobileDir,
+        'android',
+        'app',
+        'src',
+        'main',
+        'assets',
+        'public',
+        'config.js',
+      ),
+    },
+    {
+      platform: 'ios',
+      configPath: path.resolve(mobileDir, 'ios', 'App', 'App', 'public', 'config.js'),
+    },
+  ];
 
   const apiHost = process.env.ASSISTANT_API_HOST ?? '';
   const insecure = parseEnvBoolean(process.env.ASSISTANT_INSECURE);
   const wsPort = parseEnvNumber(process.env.ASSISTANT_WS_PORT);
 
-  const result = applyConfigOverrides(contents, {
-    apiHost,
-    insecure,
-    wsPort,
-    defaultApiHost: 'assistant',
-    preserveExistingHost: true,
-  });
+  let patchedAny = false;
+  let foundAny = false;
 
-  if (!result.changed) {
-    console.log('[patch-web-config] No config updates needed.');
+  for (const target of targets) {
+    if (!fs.existsSync(target.configPath)) {
+      continue;
+    }
+    foundAny = true;
+    let contents;
+    try {
+      contents = fs.readFileSync(target.configPath, 'utf8');
+    } catch (err) {
+      console.error(`[patch-web-config] Failed to read ${target.platform} config.js:`, err);
+      process.exit(1);
+    }
+
+    const result = applyConfigOverrides(contents, {
+      apiHost,
+      insecure,
+      wsPort,
+      defaultApiHost: 'assistant',
+      preserveExistingHost: true,
+    });
+
+    if (!result.changed) {
+      console.log(`[patch-web-config] No config updates needed (${target.platform}).`);
+      continue;
+    }
+
+    fs.writeFileSync(target.configPath, result.contents, 'utf8');
+    const relativePath = path.relative(process.cwd(), target.configPath);
+    const hostLabel = apiHost.trim() ? apiHost.trim() : 'assistant';
+    console.log(
+      `[patch-web-config] Updated ${relativePath} (ASSISTANT_API_HOST=${hostLabel})`,
+    );
+    patchedAny = true;
+  }
+
+  if (!foundAny) {
+    console.log(
+      '[patch-web-config] No generated config.js found. Run android:add or ios:add first.',
+    );
     return;
   }
 
-  fs.writeFileSync(configPath, result.contents, 'utf8');
-  const relativePath = path.relative(process.cwd(), configPath);
-  const hostLabel = apiHost.trim() ? apiHost.trim() : 'assistant';
-  console.log(`[patch-web-config] Updated ${relativePath} (ASSISTANT_API_HOST=${hostLabel})`);
+  if (!patchedAny) {
+    return;
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

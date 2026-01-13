@@ -4,15 +4,15 @@
   "private": true,
   "description": "Capacitor mobile build for AI Assistant (Android/iOS)",
   "scripts": {
-    "android:add": "npx @capacitor/cli telemetry off && node scripts/patch-web-config.mjs && npx @capacitor/cli add android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs",
-    "android:sync": "node scripts/patch-web-config.mjs && npx @capacitor/cli sync android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs",
+    "android:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
+    "android:sync": "npx @capacitor/cli sync android && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
     "android:open": "npx cap open android",
     "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:build:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
     "android:run": "npm run android:sync && cd android && ./gradlew installDebug",
     "android:doctor": "npx cap doctor",
-    "ios:add": "npx @capacitor/cli telemetry off && node scripts/patch-web-config.mjs && npx @capacitor/cli add ios",
-    "ios:sync": "node scripts/patch-web-config.mjs && npx @capacitor/cli sync ios",
+    "ios:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add ios && node scripts/patch-web-config.mjs",
+    "ios:sync": "npx @capacitor/cli sync ios && node scripts/patch-web-config.mjs",
     "ios:open": "npx cap open ios"
   },
   "dependencies": {

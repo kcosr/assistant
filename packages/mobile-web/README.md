@@ -173,7 +173,9 @@ The Android patch trusts user-installed CAs, which allows self-signed certificat
 
 ### API Host
 
-Mobile build commands write `window.ASSISTANT_API_HOST` into `packages/web-client/public/config.js` before syncing.
+Mobile build commands patch the generated Capacitor asset copies (for example,
+`android/app/src/main/assets/public/config.js` and `ios/App/App/public/config.js`) after sync.
+They do not modify `packages/web-client/public/config.js`.
 Set `ASSISTANT_API_HOST` to override the default `assistant` value.
 
 Examples:
@@ -187,6 +189,7 @@ ASSISTANT_API_HOST=https://assistant.example npm run ios:sync
 ```
 
 If you need http/ws, set a full `http://` URL or `ASSISTANT_INSECURE=true` in the environment.
+Re-run `android:sync` or `ios:sync` after changing the env vars.
 
 ### Firebase / Push Notifications
 
