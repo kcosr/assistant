@@ -24,6 +24,11 @@ type ProxyReadyPayload = {
   ws_port?: number;
 };
 
+type ProxyReadyDetail = {
+  apiHost: string;
+  wsPort: number;
+};
+
 const PROTOCOL_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 function normalizeProxyHost(proxyUrl: string): string {
@@ -48,6 +53,14 @@ function normalizeProxyHost(proxyUrl: string): string {
   return trimmed;
 }
 
+function notifyProxyReady(proxyHost: string, wsPort: number): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const detail: ProxyReadyDetail = { apiHost: proxyHost, wsPort };
+  window.dispatchEvent(new CustomEvent('assistant:tauri-proxy-ready', { detail }));
+}
+
 function applyProxySettings(proxyUrl: string, wsPort: number): void {
   const proxyHost = normalizeProxyHost(proxyUrl);
   if (proxyHost) {
@@ -59,6 +72,10 @@ function applyProxySettings(proxyUrl: string, wsPort: number): void {
   if (wsPort > 0) {
     // Store WS port for the WebSocket URL builder
     (window as { ASSISTANT_WS_PORT?: number }).ASSISTANT_WS_PORT = wsPort;
+  }
+
+  if (proxyHost || wsPort > 0) {
+    notifyProxyReady(proxyHost, wsPort);
   }
 }
 

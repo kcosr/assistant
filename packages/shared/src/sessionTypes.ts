@@ -2,6 +2,7 @@ export interface SessionCoreAttributes {
   workingDir?: string;
   activeBranch?: string;
   lastActiveAt?: string;
+  autoTitle?: string;
 }
 
 export interface SessionAttributes {

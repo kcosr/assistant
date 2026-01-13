@@ -1,5 +1,5 @@
 import type { CreateSessionOptions } from './sessionManager';
-import { formatSessionLabel } from '../utils/sessionLabel';
+import { formatSessionLabel, resolveAutoTitle } from '../utils/sessionLabel';
 import { ICONS } from '../utils/icons';
 
 export interface SessionSummary {
@@ -8,6 +8,7 @@ export interface SessionSummary {
   agentId?: string;
   pinnedAt?: string;
   updatedAt?: string;
+  attributes?: Record<string, unknown>;
 }
 
 export interface AgentSummary {
@@ -105,10 +106,14 @@ export class SessionPickerController {
 
     const getSessionSearchLabel = (summary: SessionSummary): string => {
       const name = typeof summary.name === 'string' ? summary.name.trim() : '';
+      const autoTitle = resolveAutoTitle(summary.attributes);
       const agentId = typeof summary.agentId === 'string' ? summary.agentId.trim() : '';
       const agentLabel = getAgentLabel(agentId);
       const idPrefix = summary.sessionId.slice(0, 8);
-      return [name, agentLabel, agentId, idPrefix].filter(Boolean).join(' ').toLowerCase();
+      return [name, autoTitle, agentLabel, agentId, idPrefix]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
     };
 
     const getAgentSearchLabel = (summary: AgentSummary): string => {

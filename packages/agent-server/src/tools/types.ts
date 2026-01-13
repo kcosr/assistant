@@ -3,6 +3,7 @@ import type { AgentRegistry } from '../agents';
 import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
+import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 export interface Tool {
   name: string;
@@ -88,6 +89,10 @@ export interface ToolContext {
    * legacy transcript entries.
    */
   eventStore?: EventStore;
+  /**
+   * Optional scheduled sessions service.
+   */
+  scheduledSessionService?: ScheduledSessionService;
   /**
    * Optional callback for tools to stream incremental updates (for example,
    * bash output). Tools should still return a final result as usual.

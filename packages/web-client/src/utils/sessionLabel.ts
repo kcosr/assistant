@@ -2,6 +2,7 @@ export type SessionLabelSummary = {
   sessionId: string;
   name?: string;
   agentId?: string;
+  attributes?: Record<string, unknown>;
 };
 
 export type AgentLabelSummary = {
@@ -29,6 +30,21 @@ export function formatSessionLabel(
   return `${baseLabel} (${idLabel})`;
 }
 
+export function resolveAutoTitle(attributes?: Record<string, unknown>): string {
+  if (!attributes || typeof attributes !== 'object') {
+    return '';
+  }
+  const core = (attributes as Record<string, unknown>)['core'];
+  if (!core || typeof core !== 'object') {
+    return '';
+  }
+  const autoTitle = (core as Record<string, unknown>)['autoTitle'];
+  if (typeof autoTitle !== 'string') {
+    return '';
+  }
+  return autoTitle.trim();
+}
+
 function resolveBaseLabel(
   summary: SessionLabelSummary,
   agentSummaries?: AgentLabelSummary[],
@@ -36,6 +52,10 @@ function resolveBaseLabel(
   const name = typeof summary.name === 'string' ? summary.name.trim() : '';
   if (name) {
     return name;
+  }
+  const autoTitle = resolveAutoTitle(summary.attributes);
+  if (autoTitle) {
+    return autoTitle;
   }
   const agentId = typeof summary.agentId === 'string' ? summary.agentId.trim() : '';
   if (!agentId) {

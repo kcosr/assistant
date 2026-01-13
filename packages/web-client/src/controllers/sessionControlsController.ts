@@ -1,5 +1,6 @@
 import type { CollectionItemSummary } from './collectionTypes';
 import { stripContextLine } from '../utils/chatMessageRenderer';
+import { resolveAutoTitle } from '../utils/sessionLabel';
 
 interface SessionSummary {
   sessionId: string;
@@ -41,6 +42,13 @@ export class SessionControlsController {
       const name = typeof session.name === 'string' ? session.name.trim() : '';
       if (name) {
         title = name;
+      }
+
+      if (!title) {
+        const autoTitle = resolveAutoTitle(session.attributes);
+        if (autoTitle) {
+          title = autoTitle;
+        }
       }
 
       if (!title) {

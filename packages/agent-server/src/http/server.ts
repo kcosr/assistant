@@ -10,6 +10,7 @@ import { PluginToolHost, type PluginRegistry } from '../plugins/registry';
 import { PluginSettingsStore } from '../plugins/pluginSettingsStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
+import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 import { PreferencesStore } from '../preferences/preferencesStore';
 import { handleExternalRoutes } from './routes/external';
@@ -31,6 +32,7 @@ export function createHttpServer(options: {
   toolHost: ToolHost;
   pluginRegistry?: PluginRegistry;
   eventStore: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
 }): http.Server {
   const {
     config,
@@ -41,6 +43,7 @@ export function createHttpServer(options: {
     toolHost,
     pluginRegistry,
     eventStore,
+    scheduledSessionService,
   } = options;
 
   const pluginToolHost = pluginRegistry ? new PluginToolHost(pluginRegistry) : undefined;
@@ -54,6 +57,7 @@ export function createHttpServer(options: {
     conversationStore,
     envConfig: config,
     baseToolHost: toolHost,
+    ...(scheduledSessionService ? { scheduledSessionService } : {}),
   };
   const preferencesStore = new PreferencesStore(path.join(config.dataDir, 'preferences.json'));
   const pluginSettingsStore = new PluginSettingsStore(
@@ -166,6 +170,7 @@ export function createHttpServer(options: {
         toolHost,
         httpToolContext,
         eventStore,
+        ...(scheduledSessionService ? { scheduledSessionService } : {}),
         safeSlugifyArtifactId,
         webClientPublicDir: WEB_CLIENT_PUBLIC_DIR,
         webClientDistDir: WEB_CLIENT_DIST_DIR,

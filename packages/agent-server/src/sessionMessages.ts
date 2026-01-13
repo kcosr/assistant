@@ -15,6 +15,7 @@ import type { ToolHost } from './tools';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './ws/toolCallHandling';
 import { deliverWebhook } from './webhookDelivery';
+import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
 
 export type SessionMessageWebhook = {
   url: string;
@@ -158,6 +159,7 @@ export async function startSessionMessage(options: {
   conversationStore: ConversationStore;
   envConfig: EnvConfig;
   eventStore?: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
 }): Promise<SessionMessageStartResult> {
   const { input, sessionIndex, sessionHub, toolHost, conversationStore, envConfig, eventStore } =
     options;
@@ -217,6 +219,9 @@ export async function startSessionMessage(options: {
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
+      ...(options.scheduledSessionService
+        ? { scheduledSessionService: options.scheduledSessionService }
+        : {}),
       maxToolCallsPerMinute: envConfig.maxToolCallsPerMinute,
       rateLimitWindowMs: 60_000,
       sendError: (code, message, details, toolOptions) => {

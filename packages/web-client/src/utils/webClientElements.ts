@@ -8,7 +8,6 @@ export interface WebClientElements {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
-  agentSidebar: HTMLElement | null;
   panelWorkspace: HTMLElement | null;
   settingsDropdown: HTMLElement | null;
   themeSelect: HTMLSelectElement | null;
@@ -66,7 +65,6 @@ export function getWebClientElements(): WebClientElements | null {
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,
-    agentSidebar: getElement<HTMLElement>('agent-sidebar'),
     panelWorkspace,
     settingsDropdown: getElement<HTMLElement>('settings-dropdown'),
     themeSelect: getElement<HTMLSelectElement>('theme-select'),

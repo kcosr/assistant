@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { ScheduleConfig } from './scheduledSessions/types';
+import { isValidCron5Field } from './scheduledSessions/cronUtils';
+
 export interface CliWrapperConfig {
   /**
    * Command wrapper path for running CLI tools in a container.
@@ -126,6 +129,10 @@ export interface AgentDefinition {
    * can remove agents that would otherwise be visible.
    */
   agentDenylist?: string[];
+  /**
+   * Optional scheduled sessions for this agent.
+   */
+  schedules?: ScheduleConfig[];
 }
 
 export interface OpenAiCompatibleChatConfig {
@@ -234,6 +241,7 @@ interface AgentDefinitionConfigShape {
   agentDenylist?: unknown;
   uiVisible?: unknown;
   apiExposed?: unknown;
+  schedules?: unknown;
 }
 
 interface AgentsConfigFileShape {
@@ -349,6 +357,118 @@ function validateAgentDefinitionConfig(
   const capabilityDeny = parsePatternList(capabilityDenylist, 'capabilityDenylist');
   const agentAllow = parsePatternList(agentAllowlist, 'agentAllowlist');
   const agentDeny = parsePatternList(agentDenylist, 'agentDenylist');
+
+  const parseSchedules = (raw: unknown): ScheduleConfig[] | undefined => {
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(`agents[${index}].schedules must be an array when provided`);
+    }
+    const seenIds = new Set<string>();
+    const schedules: ScheduleConfig[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const entry = raw[i];
+      if (!entry || typeof entry !== 'object') {
+        throw new Error(`agents[${index}].schedules[${i}] must be an object`);
+      }
+      const schedule = entry as {
+        id?: unknown;
+        cron?: unknown;
+        prompt?: unknown;
+        preCheck?: unknown;
+        sessionTitle?: unknown;
+        enabled?: unknown;
+        maxConcurrent?: unknown;
+      };
+      const id = typeof schedule.id === 'string' ? schedule.id.trim() : '';
+      if (!id) {
+        throw new Error(`agents[${index}].schedules[${i}].id must be a non-empty string`);
+      }
+      if (seenIds.has(id)) {
+        throw new Error(`Duplicate schedule id "${id}" in agents[${index}].schedules`);
+      }
+      seenIds.add(id);
+
+      const cron = typeof schedule.cron === 'string' ? schedule.cron.trim() : '';
+      if (!cron) {
+        throw new Error(`agents[${index}].schedules[${i}].cron must be a non-empty string`);
+      }
+      if (!isValidCron5Field(cron)) {
+        throw new Error(
+          `agents[${index}].schedules[${i}].cron must be a valid 5-field cron expression`,
+        );
+      }
+
+      const promptRaw = schedule.prompt;
+      const prompt =
+        typeof promptRaw === 'string' && promptRaw.trim().length > 0 ? promptRaw.trim() : undefined;
+      if (promptRaw !== undefined && promptRaw !== null && !prompt) {
+        throw new Error(`agents[${index}].schedules[${i}].prompt must be a non-empty string`);
+      }
+
+      const preCheckRaw = schedule.preCheck;
+      const preCheck =
+        typeof preCheckRaw === 'string' && preCheckRaw.trim().length > 0
+          ? preCheckRaw.trim()
+          : undefined;
+      if (preCheckRaw !== undefined && preCheckRaw !== null && !preCheck) {
+        throw new Error(`agents[${index}].schedules[${i}].preCheck must be a non-empty string`);
+      }
+
+      const sessionTitleRaw = schedule.sessionTitle;
+      const sessionTitle =
+        typeof sessionTitleRaw === 'string' && sessionTitleRaw.trim().length > 0
+          ? sessionTitleRaw.trim()
+          : undefined;
+      if (sessionTitleRaw !== undefined && sessionTitleRaw !== null && !sessionTitle) {
+        throw new Error(
+          `agents[${index}].schedules[${i}].sessionTitle must be a non-empty string`,
+        );
+      }
+
+      if (!prompt && !preCheck) {
+        throw new Error(
+          `agents[${index}].schedules[${i}] must define "prompt", "preCheck", or both`,
+        );
+      }
+
+      const enabledRaw = schedule.enabled;
+      if (enabledRaw !== undefined && enabledRaw !== null && typeof enabledRaw !== 'boolean') {
+        throw new Error(`agents[${index}].schedules[${i}].enabled must be a boolean when provided`);
+      }
+      const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : true;
+
+      const maxConcurrentRaw = schedule.maxConcurrent;
+      if (
+        maxConcurrentRaw !== undefined &&
+        maxConcurrentRaw !== null &&
+        (typeof maxConcurrentRaw !== 'number' ||
+          !Number.isFinite(maxConcurrentRaw) ||
+          !Number.isInteger(maxConcurrentRaw) ||
+          maxConcurrentRaw < 1)
+      ) {
+        throw new Error(
+          `agents[${index}].schedules[${i}].maxConcurrent must be an integer >= 1 when provided`,
+        );
+      }
+      const maxConcurrent =
+        typeof maxConcurrentRaw === 'number' ? maxConcurrentRaw : 1;
+
+      schedules.push({
+        id,
+        cron,
+        ...(prompt ? { prompt } : {}),
+        ...(preCheck ? { preCheck } : {}),
+        ...(sessionTitle ? { sessionTitle } : {}),
+        enabled,
+        maxConcurrent,
+      });
+    }
+    return schedules.length > 0 ? schedules : undefined;
+  };
+
+  const schedules = parseSchedules(config.schedules);
 
   const base: AgentDefinition = {
     agentId,
@@ -822,6 +942,9 @@ function validateAgentDefinitionConfig(
   }
   if (agentDeny) {
     extended.agentDenylist = agentDeny;
+  }
+  if (schedules) {
+    extended.schedules = schedules;
   }
   if (uiVisible !== undefined) {
     extended.uiVisible = uiVisible;

@@ -17,6 +17,7 @@ import { createHttpServer } from './http/server';
 import { MultiplexedConnection } from './ws/multiplexedConnection';
 import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
+import { ScheduledSessionService } from './scheduledSessions';
 
 export {
   buildSystemPrompt,
@@ -88,12 +89,12 @@ function createSessionWorkingDirResolver(
     getSessionWorkspaceRoot({ workspaceRoot, sessionId, sharedWorkspace });
 }
 
-export function startServer(
+export async function startServer(
   config: EnvConfig,
   pluginRegistry?: PluginRegistry,
   appConfig?: AppConfig,
   gitVersioningService?: GitVersioningService,
-): void {
+): Promise<void> {
   const conversationStore = new ConversationStore(config.transcriptsDir);
   const sessionIndex = new SessionIndex(path.join(config.dataDir, 'sessions.jsonl'));
   const eventStore = new FileEventStore(config.dataDir);
@@ -139,6 +140,28 @@ export function startServer(
 
   const toolHost = toolHosts.length === 1 ? baseToolHost : new CompositeToolHost(toolHosts);
 
+  const scheduledSessionService = new ScheduledSessionService({
+    agentRegistry: registry,
+    logger: console,
+    dataDir: config.dataDir,
+    sessionHub,
+    sessionIndex,
+    conversationStore,
+    envConfig: config,
+    toolHost,
+    eventStore,
+    broadcast: (event) => {
+      sessionHub.broadcastToAll({
+        type: 'panel_event',
+        panelId: '*',
+        panelType: 'scheduled-sessions',
+        sessionId: '*',
+        payload: event,
+      });
+    },
+  });
+  await scheduledSessionService.initialize();
+
   const httpServer = createHttpServer({
     config,
     conversationStore,
@@ -147,6 +170,7 @@ export function startServer(
     agentRegistry: registry,
     toolHost,
     eventStore,
+    scheduledSessionService,
     ...(pluginRegistry ? { pluginRegistry } : {}),
   });
 
@@ -174,6 +198,7 @@ export function startServer(
       conversationStore,
       sessionHub,
       eventStore,
+      scheduledSessionService,
       connectionId,
     });
   });
@@ -202,6 +227,7 @@ export function startServer(
       if (gitVersioningService) {
         gitVersioningService.shutdown();
       }
+      scheduledSessionService.shutdown();
       if (pluginRegistry) {
         await pluginRegistry.shutdown();
       }
@@ -215,6 +241,7 @@ export function startServer(
     if (gitVersioningService) {
       gitVersioningService.shutdown();
     }
+    scheduledSessionService.shutdown();
   };
 
   process.once('SIGINT', shutdownHandler);
@@ -301,7 +328,7 @@ export async function runServer(): Promise<void> {
     ...(mcpServers ? { mcpServers } : {}),
   };
 
-  startServer(mergedConfig, pluginRegistry, appConfig, gitVersioningService);
+  await startServer(mergedConfig, pluginRegistry, appConfig, gitVersioningService);
 }
 
 // Only start the HTTP/WebSocket server when this module is executed

@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 import type { AgentDefinition } from './agents';
+import { isValidCron5Field } from './scheduledSessions/cronUtils';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
 
@@ -30,6 +31,16 @@ const ExtraArgsSchema = z
 const CliWrapperConfigSchema = z.object({
   path: NonEmptyTrimmedStringSchema,
   env: z.record(z.string()).optional(),
+});
+
+const ScheduleConfigSchema = z.object({
+  id: NonEmptyTrimmedStringSchema,
+  cron: NonEmptyTrimmedStringSchema,
+  prompt: NonEmptyTrimmedStringSchema.optional(),
+  preCheck: NonEmptyTrimmedStringSchema.optional(),
+  sessionTitle: NonEmptyTrimmedStringSchema.optional(),
+  enabled: z.boolean().optional().default(true),
+  maxConcurrent: z.number().int().min(1).optional().default(1),
 });
 
 const CLAUDE_CLI_RESERVED_ARGS = [
@@ -161,6 +172,38 @@ const RawAgentConfigSchema = z.object({
   agentDenylist: GlobPatternListSchema,
   uiVisible: z.boolean().optional().nullable(),
   apiExposed: z.boolean().optional().nullable(),
+  schedules: z.array(ScheduleConfigSchema).optional(),
+}).superRefine((value, ctx) => {
+  if (!value.schedules || value.schedules.length === 0) {
+    return;
+  }
+  const seenIds = new Set<string>();
+  for (const schedule of value.schedules) {
+    if (seenIds.has(schedule.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['schedules'],
+        message: `Duplicate schedule id "${schedule.id}" within agent "${value.agentId}"`,
+      });
+    }
+    seenIds.add(schedule.id);
+
+    if (!isValidCron5Field(schedule.cron)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['schedules', schedule.id, 'cron'],
+        message: `Invalid 5-field cron expression: "${schedule.cron}"`,
+      });
+    }
+
+    if (!schedule.prompt && !schedule.preCheck) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['schedules', schedule.id],
+        message: `Schedule "${schedule.id}" must define "prompt", "preCheck", or both`,
+      });
+    }
+  }
 });
 
 export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
@@ -183,12 +226,24 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     agentDenylist,
     uiVisible,
     apiExposed,
+    schedules,
   } = value;
+
+  const normalizedSchedules = schedules?.map((schedule) => ({
+    id: schedule.id,
+    cron: schedule.cron,
+    enabled: schedule.enabled,
+    maxConcurrent: schedule.maxConcurrent,
+    ...(schedule.prompt !== undefined ? { prompt: schedule.prompt } : {}),
+    ...(schedule.preCheck !== undefined ? { preCheck: schedule.preCheck } : {}),
+    ...(schedule.sessionTitle !== undefined ? { sessionTitle: schedule.sessionTitle } : {}),
+  }));
 
   const base: AgentDefinition = {
     agentId,
     displayName,
     description,
+    ...(normalizedSchedules ? { schedules: normalizedSchedules } : {}),
   };
 
   const type = rawType === 'external' ? 'external' : 'chat';

@@ -461,6 +461,82 @@ describe('loadConfig', () => {
     expect(() => loadConfig(filePath)).toThrow(/extraArgs must not include reserved/i);
   });
 
+  it('rejects invalid cron expressions in schedules', async () => {
+    const filePath = createTempFile('config-schedules-bad-cron');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'scheduler',
+          displayName: 'Scheduler',
+          description: 'Scheduled runs',
+          chat: { provider: 'claude-cli' },
+          schedules: [
+            {
+              id: 'bad-cron',
+              cron: 'not-a-cron',
+              prompt: 'Do the thing',
+            },
+          ],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/Invalid 5-field cron expression/i);
+  });
+
+  it('requires prompt or preCheck for schedules', async () => {
+    const filePath = createTempFile('config-schedules-missing-prompt');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'scheduler',
+          displayName: 'Scheduler',
+          description: 'Scheduled runs',
+          chat: { provider: 'claude-cli' },
+          schedules: [
+            {
+              id: 'missing-prompt',
+              cron: '0 9 * * *',
+            },
+          ],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/must define/i);
+  });
+
+  it('accepts sessionTitle for schedules', async () => {
+    const filePath = createTempFile('config-schedules-session-title');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'scheduler',
+          displayName: 'Scheduler',
+          description: 'Scheduled runs',
+          chat: { provider: 'claude-cli' },
+          schedules: [
+            {
+              id: 'daily-review',
+              cron: '0 9 * * *',
+              prompt: 'Do the thing',
+              sessionTitle: 'Daily Review',
+            },
+          ],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents[0]?.schedules?.[0]?.sessionTitle).toBe('Daily Review');
+  });
+
   it('supports openai-compatible chat provider config with env substitution', async () => {
     const filePath = createTempFile('config-openai-compatible');
     const configJson = {

@@ -17,6 +17,7 @@ type SessionSummary = {
   sessionId: string;
   name?: string;
   agentId?: string;
+  attributes?: Record<string, unknown>;
 };
 
 type WorkspaceRowAction = {

@@ -10,6 +10,7 @@ import type { PluginRegistry, PluginToolHost } from '../plugins/registry';
 import type { EnvConfig } from '../envConfig';
 import type { PreferencesStore } from '../preferences/preferencesStore';
 import type { PluginSettingsStore } from '../plugins/pluginSettingsStore';
+import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 export interface HttpContext {
   config: EnvConfig;
@@ -22,6 +23,7 @@ export interface HttpContext {
   pluginToolHost?: PluginToolHost;
   httpToolContext: ToolContext;
   eventStore: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
   safeSlugifyArtifactId: (raw: string) => string | null;
   webClientPublicDir: string;
   webClientDistDir: string;
