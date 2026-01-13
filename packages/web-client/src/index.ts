@@ -56,7 +56,6 @@ import {
   UI_FONT_OPTIONS,
   watchSystemThemeChanges,
 } from './utils/themeManager';
-import { DEFAULT_PANEL_IDS } from './utils/panelDefaultLayout';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
 import {
@@ -160,7 +159,7 @@ interface AgentSummary {
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
 import { configureStatusBar, enableAppReloadOnResume } from './utils/capacitor';
-import { configureTauri } from './utils/tauri';
+import { configureTauri, isTauri } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
@@ -242,7 +241,7 @@ async function main(): Promise<void> {
   }
 
   const panelRegistry = new PanelRegistry();
-  const sessionsRuntimeRef: { current: SessionsRuntime | null } = { current: null };
+  const sessionsRuntimes = new Set<SessionsRuntime>();
   type ChatPanelEntry = {
     panelId: string;
     runtime: ChatRuntime;
@@ -268,7 +267,6 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
-    agentSidebar,
     panelWorkspace: panelWorkspaceRoot,
     settingsDropdown,
     themeSelect,
@@ -300,7 +298,10 @@ async function main(): Promise<void> {
     createSessionsPanel({
       getRuntimeOptions: getSessionsRuntimeOptions,
       onRuntimeReady: (runtime) => {
-        sessionsRuntimeRef.current = runtime;
+        sessionsRuntimes.add(runtime);
+      },
+      onRuntimeRemoved: (runtime) => {
+        sessionsRuntimes.delete(runtime);
       },
       onDeleteAll: () => {
         showDeleteAllConfirmation();
@@ -1041,12 +1042,24 @@ async function main(): Promise<void> {
 
   let keyboardNavigationController: KeyboardNavigationController | null = null;
   let sessionManager: SessionManager | null = null;
-  const getSessionsRuntime = (): SessionsRuntime | null => sessionsRuntimeRef.current;
   let sessionDataController: SessionDataController | null = null;
   let sessionTypingIndicatorController: SessionTypingIndicatorController | null = null;
   let panelLauncherController: PanelLauncherController | null = null;
   let sessionPickerController: SessionPickerController | null = null;
   let connectionManager: ConnectionManager | null = null;
+  const getSidebarElementsForKeyboardNav = (): {
+    agentSidebar: HTMLElement | null;
+    agentSidebarSections: HTMLElement | null;
+  } => {
+    const active = document.activeElement;
+    const focusedSidebar =
+      active instanceof HTMLElement ? active.closest<HTMLElement>('.agent-sidebar') : null;
+    const sidebar = focusedSidebar ?? document.querySelector<HTMLElement>('.agent-sidebar');
+    return {
+      agentSidebar: sidebar,
+      agentSidebarSections: sidebar?.querySelector<HTMLElement>('.agent-sidebar-sections') ?? null,
+    };
+  };
 
   const pluginBundleLoader = new PluginBundleLoader({
     panelRegistry,
@@ -1153,8 +1166,10 @@ async function main(): Promise<void> {
         }
       }
     }
-    for (const sessionId of getSessionsRuntime()?.getVisibleSessionIds() ?? []) {
-      targetIds.add(sessionId);
+    for (const runtime of sessionsRuntimes) {
+      for (const sessionId of runtime.getVisibleSessionIds()) {
+        targetIds.add(sessionId);
+      }
     }
     for (const sessionId of getChatPanelSessionIds()) {
       targetIds.add(sessionId);
@@ -1201,7 +1216,9 @@ async function main(): Promise<void> {
   }
 
   function renderAgentSidebar(): void {
-    getSessionsRuntime()?.render();
+    for (const runtime of sessionsRuntimes) {
+      runtime.render();
+    }
   }
 
   function openChatPanelForSession(sessionId: string): void {
@@ -1302,16 +1319,11 @@ async function main(): Promise<void> {
   await fetchPlugins();
 
   if (panelWorkspaceRoot) {
-    const initialPanelElements = new Map<string, HTMLElement>();
-    if (agentSidebar) {
-      initialPanelElements.set(DEFAULT_PANEL_IDS.sessions, agentSidebar);
-    }
     const panelWorkspaceController = new PanelWorkspaceController({
       root: panelWorkspaceRoot,
       registry: panelRegistry,
       host: panelHostControllerInstance,
       headerDockRoot: panelHeaderDock ?? null,
-      initialPanelElements,
       getAvailableCapabilities,
       getAvailablePanelTypes,
       openPanelLauncher,
@@ -1608,8 +1620,11 @@ async function main(): Promise<void> {
 
   // Check if sidebar currently has DOM focus
   function isSidebarFocused(): boolean {
-    if (!agentSidebar) return false;
-    return agentSidebar === document.activeElement || agentSidebar.contains(document.activeElement);
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) {
+      return false;
+    }
+    return Boolean(active.closest('.agent-sidebar'));
   }
 
   sessionDataController = new SessionDataController({
@@ -1887,7 +1902,7 @@ async function main(): Promise<void> {
     sessionsWithPendingMessages,
   });
 
-  if (!sessionsRuntimeRef.current) {
+  if (sessionsRuntimes.size === 0) {
     console.warn('Sessions panel runtime not initialized yet; it will attach when opened.');
   }
 
@@ -2778,14 +2793,9 @@ async function main(): Promise<void> {
   }
 
   if (panelWorkspace) {
-    const sidebarElements = getSessionsRuntime()?.getSidebarElements() ?? {
-      agentSidebar,
-      agentSidebarSections: null,
-    };
-    const resolvedAgentSidebar = sidebarElements.agentSidebar ?? agentSidebar;
     keyboardNavigationController = new KeyboardNavigationController({
-      agentSidebar: resolvedAgentSidebar,
-      agentSidebarSections: sidebarElements.agentSidebarSections,
+      getAgentSidebar: () => getSidebarElementsForKeyboardNav().agentSidebar,
+      getAgentSidebarSections: () => getSidebarElementsForKeyboardNav().agentSidebarSections,
       panelWorkspace,
       dialogManager,
       isKeyboardShortcutsEnabled: () => keyboardShortcutsEnabled,
@@ -2878,6 +2888,15 @@ async function main(): Promise<void> {
 
   function setFocusedSessionItem(item: HTMLElement | null): void {
     keyboardNavigationController?.setFocusedSessionItem(item);
+  }
+
+  if (isTauri()) {
+    window.addEventListener('assistant:tauri-proxy-ready', () => {
+      void fetchPlugins();
+      void fetchAgents();
+      void refreshSessions();
+      connect();
+    });
   }
 
   void fetchAgents();

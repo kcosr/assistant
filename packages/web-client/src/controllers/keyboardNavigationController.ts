@@ -13,8 +13,8 @@ import type { ChatRuntime } from '../panels/chat/runtime';
 import { collectVisiblePanelIdsInOrder } from '../utils/layoutTree';
 
 export interface KeyboardNavigationControllerOptions {
-  agentSidebar: HTMLElement | null;
-  agentSidebarSections: HTMLElement | null;
+  getAgentSidebar: () => HTMLElement | null;
+  getAgentSidebarSections: () => HTMLElement | null;
   panelWorkspace: PanelWorkspaceController;
   dialogManager: DialogManager;
   isKeyboardShortcutsEnabled: () => boolean;
@@ -102,13 +102,15 @@ export class KeyboardNavigationController {
 
   private getFocusedSessionItem(): HTMLElement | null {
     return (
-      this.options.agentSidebarSections?.querySelector('.agent-sidebar-session-item.focused') ??
+      this.options
+        .getAgentSidebarSections()
+        ?.querySelector('.agent-sidebar-session-item.focused') ??
       null
     );
   }
 
   getAllSessionItems(): HTMLElement[] {
-    const container = this.options.agentSidebarSections;
+    const container = this.options.getAgentSidebarSections();
     if (!container) return [];
     return Array.from(container.querySelectorAll('.agent-sidebar-session-item'));
   }
@@ -116,7 +118,7 @@ export class KeyboardNavigationController {
   focusZone(zone: FocusZone): void {
     switch (zone) {
       case 'sidebar': {
-        const sidebar = this.options.agentSidebar;
+        const sidebar = this.options.getAgentSidebar();
         if (sidebar) {
           sidebar.focus();
           const items = this.getAllSessionItems();
@@ -1140,13 +1142,14 @@ export class KeyboardNavigationController {
   }
 
   private attachSidebarNavigation(): void {
-    const sidebar = this.options.agentSidebar;
-    if (!sidebar) {
-      return;
-    }
-    sidebar.setAttribute('tabindex', '0');
-
-    sidebar.addEventListener('keydown', (event: KeyboardEvent) => {
+    document.addEventListener('keydown', (event: KeyboardEvent) => {
+      if (!this.options.isSidebarFocused()) {
+        return;
+      }
+      const sidebar = this.options.getAgentSidebar();
+      if (!sidebar) {
+        return;
+      }
       console.log('[client] sidebar keydown', {
         key: event.key,
         isSidebarFocused: this.options.isSidebarFocused(),
