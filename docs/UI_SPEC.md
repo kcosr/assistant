@@ -153,6 +153,7 @@ Panels can register additional shortcuts scoped to the focused panel.
 - Includes its own message composer (input, context toggle, brief toggle, mic).
 - Voice capture auto-submits on recognition end (no spoken "submit" keyword).
 - Mic button and media play/pause key cancel active output; subsequent press starts recording.
+- Long-pressing the mic enables continuous listening and starts recording once the long-press threshold is reached.
 - Supports code block copy controls and tool output collapse/expand.
 - Contiguous tool calls render inside a collapsible group with count, latest call summary, and state; `agents_message` calls remain standalone.
 - Chat panels are session-scoped but may be unbound; multiple chat panels may target the same session.

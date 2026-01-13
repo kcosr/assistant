@@ -97,11 +97,6 @@ class ElevenLabsTtsStreamingSession implements TtsStreamingSession {
     }
 
     this.totalTextChars += filteredChunk.length;
-    this.log('ElevenLabs TTS appendText', {
-      responseId: this.responseId,
-      chunkChars: filteredChunk.length,
-      totalChars: this.totalTextChars,
-    });
 
     try {
       await this.elevenLabsClient.sendText(filteredChunk);

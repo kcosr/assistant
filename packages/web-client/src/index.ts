@@ -159,7 +159,7 @@ interface AgentSummary {
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
 import { configureStatusBar, enableAppReloadOnResume } from './utils/capacitor';
-import { configureTauri, isTauri } from './utils/tauri';
+import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
@@ -191,6 +191,9 @@ const pluginSettingsClient = new PluginSettingsClient();
 async function main(): Promise<void> {
   // Configure Tauri backend URL (no-op if not in Tauri) - must run before WebSocket setup
   await configureTauri();
+  if (isTauri()) {
+    await waitForTauriProxyReady();
+  }
 
   // Configure Capacitor status bar (no-op if not in Capacitor)
   void configureStatusBar();
@@ -2892,7 +2895,9 @@ async function main(): Promise<void> {
 
   if (isTauri()) {
     window.addEventListener('assistant:tauri-proxy-ready', () => {
-      void fetchPlugins();
+      if (!pluginManifestsLoaded) {
+        void fetchPlugins();
+      }
       void fetchAgents();
       void refreshSessions();
       connect();

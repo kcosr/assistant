@@ -26,18 +26,23 @@ export interface SpeechAudioControllerOptions {
 }
 
 export class SpeechAudioController {
+  private static readonly AUTO_REARM_GRACE_MS = 300;
   private isSpeechInputActive = false;
   private speechInputDisabledReason: string | null = null;
   private speechStartToken = 0;
   private audioResponsesEnabled: boolean;
   private continuousListeningMode = false;
   private micPressStartTime: number | null = null;
+  private micPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private micPressHandled = false;
   private speechInputBaseText: string | null = null;
   private speechInputCancelled = false;
   private ttsPlayer: TtsAudioPlayer | null = null;
   private isTtsPlaying = false;
   private mediaSessionAttached = false;
   private chimeContext: AudioContext | null = null;
+  private autoRearmTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoRearmToken = 0;
 
   constructor(private readonly options: SpeechAudioControllerOptions) {
     this.audioResponsesEnabled = options.initialAudioResponsesEnabled;
@@ -190,6 +195,9 @@ export class SpeechAudioController {
 
   setContinuousListeningMode(enabled: boolean): void {
     this.continuousListeningMode = enabled;
+    if (!enabled) {
+      this.clearAutoRearmTimer();
+    }
     this.logState('continuous-listening', { enabled });
   }
 
@@ -210,8 +218,32 @@ export class SpeechAudioController {
       if (event.pointerType === 'mouse' && event.button !== 0) {
         return;
       }
-      this.logState('mic-pointerdown', { pointerType: event.pointerType, button: event.button });
+      const pointerType = event.pointerType;
+      this.logState('mic-pointerdown', { pointerType, button: event.button });
       this.micPressStartTime = performance.now();
+      this.micPressHandled = false;
+      this.clearMicPressTimer();
+      this.micPressTimer = setTimeout(() => {
+        this.micPressTimer = null;
+        if (this.micPressHandled || this.micPressStartTime === null) {
+          return;
+        }
+        if (this.isSpeechInputActive) {
+          return;
+        }
+
+        this.logState('mic-longpress', { pointerType });
+        if (this.cancelAllActiveOperations()) {
+          this.logState('mic-action', { action: 'cancel-output', source: 'long-press' });
+          this.micPressHandled = true;
+          return;
+        }
+
+        this.logState('mic-action', { action: 'start-recording', source: 'long-press' });
+        this.continuousListeningMode = true;
+        this.micPressHandled = true;
+        void this.startPushToTalk();
+      }, this.options.continuousListeningLongPressMs);
     });
 
     micButtonEl.addEventListener('pointerup', (event: PointerEvent) => {
@@ -219,13 +251,24 @@ export class SpeechAudioController {
         return;
       }
       const startTime = this.micPressStartTime;
+      const wasHandled = this.micPressHandled;
       this.micPressStartTime = null;
+      this.micPressHandled = false;
+      this.clearMicPressTimer();
       const now = performance.now();
       const isLongPress =
         typeof startTime === 'number' &&
         now - startTime >= this.options.continuousListeningLongPressMs;
 
-      this.logState('mic-pointerup', { isLongPress, pointerType: event.pointerType });
+      this.logState('mic-pointerup', {
+        isLongPress,
+        pointerType: event.pointerType,
+        handled: wasHandled,
+      });
+
+      if (wasHandled) {
+        return;
+      }
 
       if (this.isSpeechInputActive) {
         this.logState('mic-action', { action: 'cancel-recording' });
@@ -246,11 +289,15 @@ export class SpeechAudioController {
 
     micButtonEl.addEventListener('pointercancel', () => {
       this.micPressStartTime = null;
+      this.micPressHandled = false;
+      this.clearMicPressTimer();
       this.logState('mic-pointercancel');
     });
 
     micButtonEl.addEventListener('pointerleave', () => {
       this.micPressStartTime = null;
+      this.micPressHandled = false;
+      this.clearMicPressTimer();
       this.logState('mic-pointerleave');
     });
 
@@ -301,6 +348,7 @@ export class SpeechAudioController {
     if (this.ttsPlayer) {
       this.ttsPlayer.stop();
     }
+    this.clearAutoRearmTimer();
     this.isTtsPlaying = false;
     this.updateMediaSessionPlaybackState();
     this.logState('connection-lost-cleanup');
@@ -322,6 +370,7 @@ export class SpeechAudioController {
       this.options.micButtonEl.classList.add('interrupting');
     }
     this.isTtsPlaying = true;
+    this.scheduleAutoRearmAfterTts();
     if (!wasPlaying) {
       this.logState('tts-start');
     }
@@ -336,6 +385,7 @@ export class SpeechAudioController {
         this.ttsPlayer.setEnabled(true);
       }
     }
+    this.clearAutoRearmTimer();
     this.options.micButtonEl.classList.remove('interrupting');
     this.isTtsPlaying = false;
     this.updateMediaSessionPlaybackState();
@@ -348,6 +398,7 @@ export class SpeechAudioController {
     if (this.ttsPlayer) {
       this.ttsPlayer.stopForBargeIn();
     }
+    this.clearAutoRearmTimer();
     if (this.audioResponsesEnabled) {
       this.options.setTtsStatus('Cancelled');
     }
@@ -379,8 +430,7 @@ export class SpeechAudioController {
       return;
     }
 
-    console.log('[client] Auto-arming speech input after TTS idle');
-    void this.startPushToTalk();
+    this.scheduleAutoRearmAfterTts();
   }
 
   enableAudioResponses(): void {
@@ -420,6 +470,7 @@ export class SpeechAudioController {
     if (this.ttsPlayer) {
       this.ttsPlayer.stop();
     }
+    this.clearAutoRearmTimer();
     this.isTtsPlaying = false;
     this.audioResponsesEnabled = false;
     this.options.audioResponsesCheckboxEl.checked = false;
@@ -601,6 +652,7 @@ export class SpeechAudioController {
     this.speechInputCancelled = true;
     this.isSpeechInputActive = false;
     this.continuousListeningMode = false;
+    this.clearAutoRearmTimer();
     this.options.micButtonEl.classList.remove('recording');
     if (options.resetInput) {
       this.options.inputEl.value = this.speechInputBaseText ?? '';
@@ -632,6 +684,7 @@ export class SpeechAudioController {
       this.options.micButtonEl.classList.remove('interrupting');
       this.options.setTtsStatus('');
       this.isTtsPlaying = false;
+      this.clearAutoRearmTimer();
       this.updateMediaSessionPlaybackState();
       cancelled = true;
     }
@@ -654,6 +707,7 @@ export class SpeechAudioController {
 
     if (cancelled) {
       this.continuousListeningMode = false;
+      this.clearAutoRearmTimer();
     }
 
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -732,5 +786,55 @@ export class SpeechAudioController {
 
   private shouldInterruptOutput(): boolean {
     return this.isTtsPlaying || this.options.isOutputActive();
+  }
+
+  private clearMicPressTimer(): void {
+    if (!this.micPressTimer) {
+      return;
+    }
+    clearTimeout(this.micPressTimer);
+    this.micPressTimer = null;
+  }
+
+  private scheduleAutoRearmAfterTts(): void {
+    this.clearAutoRearmTimer();
+    if (!this.continuousListeningMode || !this.audioResponsesEnabled) {
+      return;
+    }
+    const player = this.ttsPlayer;
+    if (!player) {
+      return;
+    }
+
+    const remainingMs = player.getRemainingPlaybackMs();
+    const delayMs = Math.max(0, remainingMs + SpeechAudioController.AUTO_REARM_GRACE_MS);
+    const token = (this.autoRearmToken += 1);
+
+    this.autoRearmTimer = setTimeout(() => {
+      if (token !== this.autoRearmToken) {
+        return;
+      }
+      this.autoRearmTimer = null;
+
+      if (!this.continuousListeningMode || !this.audioResponsesEnabled) {
+        return;
+      }
+
+      const stillRemaining = player.getRemainingPlaybackMs();
+      if (this.isTtsPlaying || stillRemaining > 0 || this.options.isOutputActive()) {
+        this.scheduleAutoRearmAfterTts();
+        return;
+      }
+
+      void this.startPushToTalk();
+    }, delayMs);
+  }
+
+  private clearAutoRearmTimer(): void {
+    if (!this.autoRearmTimer) {
+      return;
+    }
+    clearTimeout(this.autoRearmTimer);
+    this.autoRearmTimer = null;
   }
 }

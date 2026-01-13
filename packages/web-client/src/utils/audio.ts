@@ -2,6 +2,7 @@ import { AUDIO_FLAG_TTS, decodeAudioFrame, type AudioFrame } from '@assistant/sh
 
 const TTS_WORKLET_PROCESSOR_NAME = 'tts-ring-buffer-processor';
 const DEFAULT_WORKLET_BUFFER_SEC = 10;
+const WORKLET_IDLE_GRACE_MS = 300;
 
 const TTS_WORKLET_SOURCE = `
 class TtsRingBufferProcessor extends AudioWorkletProcessor {
@@ -239,6 +240,7 @@ export class TtsAudioPlayer {
   private workletQueue: Float32Array[] = [];
   private workletQueuedSamples = 0;
   private workletIdleNotified = false;
+  private workletIdleTimer: ReturnType<typeof setTimeout> | null = null;
   private workletLoadPromise: Promise<void> | null = null;
 
   constructor(options?: TtsAudioPlayerOptions) {
@@ -361,7 +363,8 @@ export class TtsAudioPlayer {
    */
   getPlayedDurationMs(): number {
     if (this.workletState === 'ready' || this.workletState === 'loading') {
-      const sampleRate = this.workletSampleRate || this.audioContext?.sampleRate;
+      const sampleRate =
+        this.workletSampleRate > 0 ? this.workletSampleRate : (this.audioContext?.sampleRate ?? 0);
       if (Number.isFinite(sampleRate) && sampleRate > 0) {
         return Math.round((this.workletPlayedSamples / sampleRate) * 1000);
       }
@@ -390,6 +393,25 @@ export class TtsAudioPlayer {
     const playedMs = this.getPlayedDurationMs();
     this.stopAll();
     return playedMs;
+  }
+
+  getRemainingPlaybackMs(): number {
+    const ctx = this.audioContext;
+    if (!ctx) {
+      return 0;
+    }
+    if (this.workletState === 'ready' || this.workletState === 'loading') {
+      const sampleRate =
+        this.workletSampleRate > 0 ? this.workletSampleRate : (ctx.sampleRate || 0);
+      if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+        return 0;
+      }
+      const remainingSamples = this.workletBufferedSamples + this.workletQueuedSamples;
+      return Math.round((remainingSamples / sampleRate) * 1000);
+    }
+
+    const remainingSec = Math.max(0, this.playbackTime - ctx.currentTime);
+    return Math.round(remainingSec * 1000);
   }
 
   private scheduleBufferSource(
@@ -450,6 +472,7 @@ export class TtsAudioPlayer {
     if (samples.length === 0) {
       return;
     }
+    this.clearWorkletIdleTimer();
     this.workletIdleNotified = false;
     this.workletQueue.push(samples);
     this.workletQueuedSamples += samples.length;
@@ -537,6 +560,10 @@ export class TtsAudioPlayer {
     }
     while (this.workletQueue.length > 0) {
       const next = this.workletQueue[0];
+      if (!next) {
+        this.workletQueue.shift();
+        continue;
+      }
       if (this.workletBufferedSamples + next.length > this.workletMaxBufferSamples) {
         break;
       }
@@ -560,14 +587,12 @@ export class TtsAudioPlayer {
       return;
     }
     const isIdle = this.workletBufferedSamples === 0 && this.workletQueuedSamples === 0;
-    if (isIdle && !this.workletIdleNotified) {
-      this.workletIdleNotified = true;
-      this.onIdle();
+    if (isIdle) {
+      this.scheduleWorkletIdle();
       return;
     }
-    if (!isIdle) {
-      this.workletIdleNotified = false;
-    }
+    this.workletIdleNotified = false;
+    this.clearWorkletIdleTimer();
   }
 
   private resetWorklet(): void {
@@ -576,6 +601,7 @@ export class TtsAudioPlayer {
     this.workletBufferedSamples = 0;
     this.workletPlayedSamples = 0;
     this.workletIdleNotified = false;
+    this.clearWorkletIdleTimer();
     if (this.workletNode) {
       try {
         this.workletNode.port.postMessage({ type: 'reset' });
@@ -587,6 +613,32 @@ export class TtsAudioPlayer {
 
   private getWorkletBufferSec(): number {
     return Math.max(DEFAULT_WORKLET_BUFFER_SEC, this.jitterBufferSec * 4);
+  }
+
+  private scheduleWorkletIdle(): void {
+    if (this.workletIdleNotified || this.workletIdleTimer !== null) {
+      return;
+    }
+    this.workletIdleTimer = setTimeout(() => {
+      this.workletIdleTimer = null;
+      if (!this.enabled || !this.onIdle || this.workletState !== 'ready') {
+        return;
+      }
+      const isIdle = this.workletBufferedSamples === 0 && this.workletQueuedSamples === 0;
+      if (!isIdle || this.workletIdleNotified) {
+        return;
+      }
+      this.workletIdleNotified = true;
+      this.onIdle();
+    }, WORKLET_IDLE_GRACE_MS);
+  }
+
+  private clearWorkletIdleTimer(): void {
+    if (this.workletIdleTimer === null) {
+      return;
+    }
+    clearTimeout(this.workletIdleTimer);
+    this.workletIdleTimer = null;
   }
 
   private ensureAudioContext(): AudioContext | null {

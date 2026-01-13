@@ -69,11 +69,6 @@ class OpenAiTtsStreamingSession implements TtsStreamingSession {
     }
     this.buffer += filteredChunk;
     this.totalTextChars += filteredChunk.length;
-    this.log('OpenAI TTS appendText', {
-      responseId: this.responseId,
-      chunkChars: filteredChunk.length,
-      totalChars: this.totalTextChars,
-    });
   }
 
   async finish(): Promise<void> {
