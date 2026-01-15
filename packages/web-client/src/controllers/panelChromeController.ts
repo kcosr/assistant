@@ -132,6 +132,34 @@ export class PanelChromeController {
       const parsed = Number.parseFloat(value);
       return Number.isNaN(parsed) ? 0 : parsed;
     };
+    const measureMainWidth = () => {
+      const children = Array.from(main.children) as HTMLElement[];
+      const visibleChildren = children.filter((child) => child.getClientRects().length > 0);
+      if (visibleChildren.length === 0) {
+        return main.scrollWidth;
+      }
+      const mainStyles = getComputedStyle(main);
+      const gap = parseSize(mainStyles.columnGap || mainStyles.gap);
+      let total = 0;
+      let count = 0;
+
+      for (const child of visibleChildren) {
+        const rectWidth = child.getBoundingClientRect().width;
+        if (rectWidth === 0) {
+          continue;
+        }
+        const childStyles = getComputedStyle(child);
+        const marginLeft = parseSize(childStyles.marginLeft);
+        const marginRight = parseSize(childStyles.marginRight);
+        total += rectWidth + marginLeft + marginRight;
+        count += 1;
+      }
+
+      if (count > 1) {
+        total += gap * (count - 1);
+      }
+      return total;
+    };
     const measurePluginWidth = () => {
       const children = Array.from(pluginControls.children) as HTMLElement[];
       const visibleChildren = children.filter((child) => child.getClientRects().length > 0);
@@ -178,7 +206,7 @@ export class PanelChromeController {
       return total;
     };
     const measure = () =>
-      main.scrollWidth + measurePluginWidth() + frameControls.scrollWidth + this.buffer;
+      measureMainWidth() + measurePluginWidth() + frameControls.scrollWidth + this.buffer;
     const defaultWidth = measure();
 
     row.classList.add('chrome-row-stage-1');
