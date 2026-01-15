@@ -27,6 +27,32 @@ import { getPanelContextKey } from '../../../../web-client/src/utils/panelContex
 
 const NOTES_PANEL_TEMPLATE = `
   <aside class="notes-panel collection-panel" aria-label="Notes panel">
+    <div class="panel-chrome-row" data-role="chrome-row">
+      <div class="panel-chrome-left" data-role="instance-actions">
+        <select
+          class="panel-chrome-instance-select"
+          data-role="instance-select"
+          aria-label="Notes instance"
+        ></select>
+      </div>
+      <div class="panel-chrome-right" data-role="chrome-controls">
+        <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+          </svg>
+        </button>
+        <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+          </svg>
+        </button>
+        <button type="button" class="panel-chrome-button" data-action="close" aria-label="Close panel" title="Close">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="panel-header">
       <div class="panel-header-main">
         <span class="panel-header-label">Notes</span>
@@ -107,13 +133,6 @@ const NOTES_PANEL_TEMPLATE = `
         </div>
       </div>
       <div class="panel-header-actions">
-        <div class="notes-panel-actions" data-role="instance-actions">
-          <select
-            class="notes-instance-select"
-            data-role="instance-select"
-            aria-label="Notes instance"
-          ></select>
-        </div>
         <button
           type="button"
           class="panel-close-button collection-back-button"
@@ -1812,6 +1831,28 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const nextId = instanceSelect.value;
           if (nextId) {
             setActiveInstance(nextId);
+          }
+        });
+      }
+
+      // Chrome row button handlers
+      const chromeControls = root.querySelector<HTMLElement>('[data-role="chrome-controls"]');
+      if (chromeControls) {
+        chromeControls.addEventListener('click', (event) => {
+          const target = event.target as HTMLElement;
+          const button = target.closest<HTMLButtonElement>('[data-action]');
+          if (!button) {
+            return;
+          }
+          const action = button.dataset['action'];
+          if (action === 'close') {
+            host.closePanel(host.panelId());
+          } else if (action === 'move') {
+            // TODO: Implement move - for now show a placeholder
+            console.log('Move action triggered');
+          } else if (action === 'reorder') {
+            // TODO: Implement reorder - for now show a placeholder
+            console.log('Reorder action triggered');
           }
         });
       }

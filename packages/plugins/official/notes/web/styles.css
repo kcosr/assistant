@@ -3,6 +3,87 @@
   --collection-panel-width: 300px;
 }
 
+/* ===== Panel Chrome Row (POC) ===== */
+.panel-chrome-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px var(--spacing-sm);
+  background-color: var(--color-bg-elevated);
+  border-bottom: 1px solid var(--color-border-subtle);
+  min-height: 28px;
+}
+
+.panel-chrome-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.panel-chrome-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.panel-chrome-row:hover .panel-chrome-right,
+.panel-chrome-row:focus-within .panel-chrome-right {
+  opacity: 1;
+}
+
+.panel-chrome-instance-select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  padding: 2px 6px;
+  max-width: 140px;
+}
+
+.panel-chrome-instance-select:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+}
+
+.panel-chrome-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.panel-chrome-button:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.panel-chrome-button:active {
+  background-color: var(--color-bg-active);
+}
+
+.panel-chrome-button[data-action="close"]:hover {
+  background-color: var(--color-error);
+  color: white;
+}
+
+/* Hide chrome row controls when only one instance (optional - show dropdown only if multiple) */
+.panel-chrome-instance-select:only-child {
+  /* Keep visible even with single option for consistency */
+}
+
+/* ===== End Panel Chrome Row ===== */
+
 .panel-frame .collection-panel {
   width: 100%;
   flex: 1 1 auto;
