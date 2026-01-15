@@ -5,11 +5,6 @@
   padding: 16px;
 }
 
-.ws-echo-panel-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-
 .ws-echo-panel-label {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);

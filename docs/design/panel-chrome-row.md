@@ -13,13 +13,14 @@
 - [Frame Controls](#frame-controls)
 - [Proposed Architecture](#proposed-architecture)
 - [Plugin Integration](#plugin-integration)
-- [Implementation Plan](#implementation-plan)
-- [Open Questions](#open-questions)
+- [Implementation Notes](#implementation-notes)
+- [Decisions](#decisions)
 
 ## Status
 
-- POC complete in notes plugin (`panel-chrome-poc` branch)
-- Ready for extraction to shared code
+- Shared `PanelChromeController` + `InstanceDropdownController` extracted to web client
+- Chrome row in all built-in panels (chat, navigator, sessions sidebar, empty, placeholder),
+  official plugin panels, and example panels (session-info, hello, ws-echo)
 
 ## Summary
 
@@ -101,9 +102,9 @@ The chrome row uses CSS Grid with three columns:
 <div class="panel-header panel-chrome-row" data-role="chrome-row">
   <!-- Left: Title + Instance -->
   <div class="panel-header-main">
-    <span class="panel-header-label">Notes</span>
+    <span class="panel-header-label" data-role="chrome-title">Notes</span>
     <div class="panel-chrome-instance" data-role="instance-actions">
-      <div class="panel-chrome-instance-dropdown">
+      <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
         <button class="panel-chrome-instance-trigger">...</button>
         <div class="panel-chrome-instance-menu">...</div>
       </div>
@@ -111,7 +112,7 @@ The chrome row uses CSS Grid with three columns:
   </div>
   
   <!-- Center: Plugin Controls -->
-  <div class="panel-chrome-plugin-controls">
+  <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls">
     <!-- Plugin-specific controls injected here -->
   </div>
   
@@ -137,12 +138,7 @@ When the panel becomes too narrow to fit all controls, the chrome row progressiv
 [Title]  [Plugin Controls...]  [<] [×]
 ```
 
-### Stage 2: Hide Title
-```
-[Plugin Controls...]  [<] [×]
-```
-
-### Stage 3: Wrap to Two Rows
+### Stage 2: Wrap to Two Rows
 ```
 [Title] [Instance▾]           [<] [×]
 [Plugin Controls...]
@@ -152,8 +148,6 @@ When the panel becomes too narrow to fit all controls, the chrome row progressiv
 
 ```css
 .panel-chrome-row.chrome-row-stage-1 .panel-chrome-instance { display: none; }
-.panel-chrome-row.chrome-row-stage-2 .panel-chrome-instance,
-.panel-chrome-row.chrome-row-stage-2 .panel-header-label { display: none; }
 .panel-chrome-row.chrome-row-compact { /* two-row layout */ }
 ```
 
@@ -164,7 +158,7 @@ The chrome row uses JavaScript to detect when content doesn't fit and apply the 
 ```typescript
 const checkChromeRowFit = (): void => {
   // Remove all stages to measure natural widths
-  chromeRow.classList.remove('chrome-row-stage-1', 'chrome-row-stage-2', 'chrome-row-compact');
+  chromeRow.classList.remove('chrome-row-stage-1', 'chrome-row-compact');
   
   const rowWidth = chromeRow.clientWidth;
   const buffer = 40;
@@ -183,10 +177,6 @@ const checkChromeRowFit = (): void => {
   if (measure() <= rowWidth) return;
   
   chromeRow.classList.remove('chrome-row-stage-1');
-  chromeRow.classList.add('chrome-row-stage-2');
-  if (measure() <= rowWidth) return;
-  
-  chromeRow.classList.remove('chrome-row-stage-2');
   chromeRow.classList.add('chrome-row-compact');
 };
 ```
@@ -200,6 +190,11 @@ The fit check is triggered by:
 3. **Visibility change** for mobile support
 4. **Selection change** when dropdown content changes width
 5. **Frame controls expand/collapse**
+
+To avoid layout jitter while dragging or resizing, the controller keeps a
+`layoutState` and applies **hysteresis** (default 16px) when expanding back to a
+less compact mode. Expansion happens one step at a time (compact -> stage-1 ->
+default), and resize observations are coalesced via `requestAnimationFrame`.
 
 ## Instance Dropdown
 
@@ -247,7 +242,7 @@ Frame controls are collapsed behind a toggle button to save space:
 
 - **Toggle (`<`/`>`)** - Chevron that rotates 180° when expanded
 - **Close (`×`)** - Always visible for quick access
-- **Move, Reorder, Menu** - Hidden until toggle is clicked
+- **Move, Reorder, Menu** - Hidden until toggle is clicked; wired to workspace drag/reorder and panel menu
 
 ### Click Outside
 
@@ -275,11 +270,11 @@ Extract to `packages/web-client/src/`:
 
 ### Workspace Controller Integration
 
-The `panelWorkspaceController.ts` should:
+The workspace controller continues to own menu/drag/reorder logic, while panels render the chrome row:
 
-1. Stop rendering the old overlay frame controls for panels with chrome row
-2. Optionally render chrome row for plugins that opt-in
-3. Wire up frame control actions (move, reorder, close) to workspace methods
+1. Legacy overlay frame controls are removed; panels render chrome row controls directly
+2. `PanelChromeController` calls workspace APIs for move/reorder/menu/close
+3. Focus detection treats `.panel-chrome-row` as chrome interaction
 
 ### Plugin Manifest
 
@@ -295,89 +290,54 @@ Plugins declare instance support in their manifest (already exists):
 }
 ```
 
-### Plugin Integration API
+### Plugin Integration
 
-Plugins provide their controls via a mount callback or slot:
+Plugins render the chrome row markup and instantiate the controller to wire up frame actions and
+instance selection.
 
-```typescript
-interface PanelChromeOptions {
-  title: string;
-  pluginControls?: HTMLElement | (() => HTMLElement);
-  instanceId?: string;
-  onInstanceChange?: (instanceId: string) => void;
-}
-
-// In plugin mount:
-const chrome = new PanelChromeController(chromeRow, {
-  title: 'Notes',
-  pluginControls: createPluginControls(),
-  instanceId: selectedInstanceId,
-  onInstanceChange: setActiveInstance,
-});
+```html
+<div class="panel-header panel-chrome-row" data-role="chrome-row">
+  <div class="panel-header-main">
+    <span class="panel-header-label" data-role="chrome-title">Notes</span>
+    <div class="panel-chrome-instance" data-role="instance-actions">
+      <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
+        <!-- instance dropdown template -->
+      </div>
+    </div>
+  </div>
+  <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls">
+    <!-- plugin-specific controls -->
+  </div>
+  <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+    <!-- frame controls -->
+  </div>
+</div>
 ```
 
-## Implementation Plan
+```typescript
+const chromeController = new PanelChromeController({
+  root,
+  host,
+  title: 'Notes',
+  onInstanceChange: (instanceId) => setActiveInstance(instanceId),
+});
 
-### Phase 1: Extract Shared CSS
+chromeController.setInstances(instances, selectedInstanceId);
+```
 
-1. Move `.panel-chrome-*` styles from notes plugin to `web-client/public/styles.css`
-2. Keep notes plugin working with shared styles
-3. Verify no regressions
+## Implementation Notes
 
-### Phase 2: Create Instance Dropdown Controller
+- Shared chrome styles live in `packages/web-client/public/styles.css`.
+- Controllers live in `packages/web-client/src/controllers/panelChromeController.ts` and
+  `packages/web-client/src/controllers/instanceDropdownController.ts`.
+- Chrome row integrated in all built-in panels (chat, navigator, sessions sidebar, empty,
+  placeholder), official plugin panels, and example panels (session-info, hello, ws-echo).
+- `PanelChromeController` wires move/reorder/menu/close to workspace APIs; legacy overlay controls
+  are removed.
 
-1. Extract `InstanceDropdownController` class
-2. Handle dropdown open/close, search, keyboard navigation
-3. Provide callbacks for selection changes
-4. Update notes plugin to use the controller
+## Decisions
 
-### Phase 3: Create Panel Chrome Controller
-
-1. Extract `PanelChromeController` class
-2. Handle chrome row rendering, resize detection, progressive collapse
-3. Integrate instance dropdown controller
-4. Wire up frame control actions
-5. Update notes plugin to use the controller
-
-### Phase 4: Workspace Controller Integration
-
-1. Add option to suppress old overlay frame controls per panel
-2. Wire up frame control actions (move, reorder, close) from chrome row
-3. Consider rendering chrome row from workspace controller (optional)
-
-### Phase 5: Update Other Plugins
-
-1. **Time Tracker** - Add chrome row, move instance selector
-2. **Lists** - Add chrome row, move instance selector
-3. **Diff** - Add chrome row (no instance selector)
-4. **Terminal** - Add chrome row (no instance selector)
-5. **Files** - Add chrome row (no instance selector)
-
-### Phase 6: Documentation
-
-1. Update PLUGIN_SDK.md with chrome row integration guide
-2. Add examples for custom plugin controls
-3. Document progressive collapse behavior
-
-## Open Questions
-
-1. **Should workspace controller render chrome row?**
-   - Pro: Consistent rendering, easier frame control wiring
-   - Con: Less plugin flexibility, requires API for plugin controls
-
-2. **How to handle plugins without instance support?**
-   - Option A: Always show chrome row, just hide instance dropdown
-   - Option B: Let plugins opt-out of chrome row entirely
-
-3. **Menu button functionality**
-   - What actions should the "..." menu contain?
-   - Should it include hidden instance selector when in stage-1/stage-2?
-
-4. **Move/Reorder button functionality**
-   - Current POC just logs to console
-   - Need to wire up to workspace controller drag initiation
-   - Or convert to click-to-select-destination flow?
-
-5. **Mobile-specific behavior**
-   - Should frame controls be hidden entirely on mobile?
-   - Should progressive collapse be more aggressive?
+1. **Chrome row ownership** - Panels render chrome row markup; workspace owns behavior via APIs.
+2. **Panels without instances** - Always render chrome row; instance dropdown is hidden when unused.
+3. **Menu button behavior** - Uses the existing workspace panel menu (pin, dock, split, etc.).
+4. **Progressive collapse** - Hide instance selector first; then wrap to two rows while keeping title.

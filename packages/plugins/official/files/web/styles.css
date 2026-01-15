@@ -11,6 +11,10 @@
   font-weight: 600;
 }
 
+.files-panel-plugin-controls {
+  flex-wrap: wrap;
+}
+
 .files-panel-actions {
   display: flex;
   align-items: center;

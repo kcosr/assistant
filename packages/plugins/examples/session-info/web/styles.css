@@ -5,16 +5,8 @@
   padding: 16px;
 }
 
-.session-info-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-sm);
-}
-
-.session-info-panel-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
+.session-info-panel-plugin-controls {
+  justify-content: flex-end;
 }
 
 .session-info-panel-binding {

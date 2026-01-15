@@ -3,6 +3,7 @@ import type { PanelEventEnvelope } from '@assistant/shared';
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
 import { DialogManager } from '../../../../web-client/src/controllers/dialogManager';
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
+import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
 import { apiFetch } from '../../../../web-client/src/utils/api';
 import {
@@ -14,16 +15,89 @@ import { ICONS } from '../../../../web-client/src/utils/icons';
 
 const TIME_TRACKER_PANEL_TEMPLATE = `
   <aside class="time-tracker-panel" aria-label="Time tracker panel">
-    <div class="panel-header time-tracker-panel-header">
+    <div class="panel-header panel-chrome-row time-tracker-panel-header" data-role="chrome-row">
       <div class="panel-header-main">
-        <span class="panel-header-label">Time Tracker</span>
+        <span class="panel-header-label" data-role="chrome-title">Time Tracker</span>
+        <div class="panel-chrome-instance" data-role="instance-actions">
+          <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
+            <button
+              type="button"
+              class="panel-chrome-instance-trigger"
+              data-role="instance-trigger"
+              aria-label="Select instance"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span class="panel-chrome-instance-trigger-text" data-role="instance-trigger-text"
+                >Default</span
+              >
+              <svg
+                class="panel-chrome-instance-trigger-icon"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6 9l6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <div
+              class="panel-chrome-instance-menu"
+              data-role="instance-menu"
+              role="listbox"
+              aria-label="Instances"
+            >
+              <input
+                type="text"
+                class="panel-chrome-instance-search"
+                data-role="instance-search"
+                placeholder="Search instances..."
+                aria-label="Search instances"
+                autocomplete="off"
+              />
+              <div class="panel-chrome-instance-list" data-role="instance-list"></div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="panel-header-actions time-tracker-panel-actions" data-role="instance-actions">
-        <select
-          class="time-tracker-instance-select"
-          data-role="instance-select"
-          aria-label="Time tracker instance"
-        ></select>
+      <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls"></div>
+      <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+        <button type="button" class="panel-chrome-button panel-chrome-toggle" data-action="toggle" aria-label="Panel controls" title="Panel controls">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <div class="panel-chrome-frame-buttons">
+          <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <circle cx="12" cy="5" r="1.5"/>
+              <circle cx="12" cy="12" r="1.5"/>
+              <circle cx="12" cy="19" r="1.5"/>
+            </svg>
+          </button>
+        </div>
+        <button type="button" class="panel-chrome-button panel-chrome-close" data-action="close" aria-label="Close panel" title="Close">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div class="time-tracker-track" data-role="track-zone">
@@ -541,8 +615,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const services = resolveServices(host);
 
-      const instanceActions = root.querySelector<HTMLElement>('[data-role="instance-actions"]');
-      const instanceSelect = root.querySelector<HTMLSelectElement>('[data-role="instance-select"]');
       const taskInput = root.querySelector<HTMLInputElement>('[data-role="task-input-field"]');
       const taskToggle = root.querySelector<HTMLButtonElement>('[data-role="task-toggle"]');
       const taskDropdown = root.querySelector<HTMLElement>('[data-role="task-dropdown"]');
@@ -588,8 +660,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         !taskInput ||
         !taskDropdown ||
         !taskToggle ||
-        !instanceActions ||
-        !instanceSelect ||
         !taskRow ||
         !taskEditButton ||
         !taskHint ||
@@ -651,6 +721,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let rangeDraftEnd = dateRange.end;
       let rangeDraftMonth = new Date();
       let isRangeDragging = false;
+      let chromeController: PanelChromeController | null = null;
 
       const stored = host.loadPanelState();
       if (stored && typeof stored === 'object') {
@@ -738,15 +809,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       function renderInstanceSelect(): void {
-        instanceSelect.innerHTML = '';
-        instances.forEach((instance) => {
-          const option = document.createElement('option');
-          option.value = instance.id;
-          option.textContent = instance.label;
-          instanceSelect.appendChild(option);
-        });
-        instanceSelect.value = selectedInstanceId;
-        setVisible(instanceActions, instances.length > 1);
+        chromeController?.setInstances(instances, selectedInstanceId);
       }
 
       function setActiveInstance(instanceId: string): void {
@@ -2065,12 +2128,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       document.addEventListener('mousedown', handleDocumentClick);
       document.addEventListener('mouseup', handleDocumentMouseUp);
 
-      instanceSelect.addEventListener('change', () => {
-        const nextId = instanceSelect.value;
-        if (nextId) {
-          setActiveInstance(nextId);
-        }
+      chromeController = new PanelChromeController({
+        root,
+        host,
+        title: 'Time Tracker',
+        onInstanceChange: (instanceId) => {
+          setActiveInstance(instanceId);
+        },
       });
+      chromeController.setInstances(instances, selectedInstanceId);
 
       taskInput.addEventListener('focus', () => {
         taskInput.value = '';
@@ -2283,6 +2349,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             void refreshTasks({ silent: true });
             void refreshEntries({ silent: true });
             void refreshTimer({ silent: true });
+            chromeController?.scheduleLayoutCheck();
           }
         },
         onFocus: () => {
@@ -2297,6 +2364,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           clearTimerInterval();
           document.removeEventListener('mousedown', handleDocumentClick);
           document.removeEventListener('mouseup', handleDocumentMouseUp);
+          chromeController?.destroy();
         },
       };
     },

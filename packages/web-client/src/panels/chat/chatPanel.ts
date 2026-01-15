@@ -4,6 +4,7 @@ import type {
   PanelFactory,
   PanelHost,
 } from '../../controllers/panelRegistry';
+import { PanelChromeController } from '../../controllers/panelChromeController';
 import {
   createChatRuntime,
   type ChatRuntime,
@@ -27,6 +28,7 @@ export interface ChatPanelDom {
   sessionLabelEl: HTMLButtonElement | null;
   modelSelectEl: HTMLSelectElement | null;
   inputElements: InputRuntimeElements;
+  chromeController?: PanelChromeController;
 }
 
 function requireElement<T extends HTMLElement>(
@@ -96,6 +98,12 @@ export function createChatPanel(options: ChatPanelOptions): PanelFactory {
       const root = cloneTemplate('chat-panel-template');
       container.appendChild(root);
       const dom = getChatPanelDom(root);
+      const chromeController = new PanelChromeController({
+        root,
+        host,
+        title: 'Chat',
+      });
+      dom.chromeController = chromeController;
       const runtime = createChatRuntime({
         elements: dom.runtimeElements,
         ...options.getRuntimeOptions(host),
@@ -103,10 +111,16 @@ export function createChatPanel(options: ChatPanelOptions): PanelFactory {
       const cleanup = options.onRuntimeReady?.({ runtime, dom, host }) ?? null;
 
       return {
+        onVisibilityChange: (visible) => {
+          if (visible) {
+            chromeController.scheduleLayoutCheck();
+          }
+        },
         unmount() {
           if (cleanup) {
             cleanup();
           }
+          chromeController.destroy();
           container.innerHTML = '';
         },
       };

@@ -2,6 +2,7 @@ import type { PanelEventEnvelope } from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
 import { apiFetch } from '../../../../web-client/src/utils/api';
+import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import { CollectionPanelSearchController } from '../../../../web-client/src/controllers/collectionPanelSearchController';
 import {
   CollectionBrowserController,
@@ -29,7 +30,7 @@ const NOTES_PANEL_TEMPLATE = `
   <aside class="notes-panel collection-panel" aria-label="Notes panel">
     <div class="panel-header panel-chrome-row" data-role="chrome-row">
       <div class="panel-header-main">
-        <span class="panel-header-label">Notes</span>
+        <span class="panel-header-label" data-role="chrome-title">Notes</span>
         <div class="panel-chrome-instance" data-role="instance-actions">
           <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
             <button
@@ -45,7 +46,12 @@ const NOTES_PANEL_TEMPLATE = `
                 <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </button>
-            <div class="panel-chrome-instance-menu" data-role="instance-menu" role="listbox">
+            <div
+              class="panel-chrome-instance-menu"
+              data-role="instance-menu"
+              role="listbox"
+              aria-label="Instances"
+            >
               <input
                 type="text"
                 class="panel-chrome-instance-search"
@@ -59,7 +65,7 @@ const NOTES_PANEL_TEMPLATE = `
           </div>
         </div>
       </div>
-      <div class="panel-chrome-plugin-controls">
+      <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls">
         <div
           class="collection-panel-mode-toggle"
           data-role="notes-mode-toggle"
@@ -321,13 +327,6 @@ function sortNotes(entries: NoteMetadata[]): NoteMetadata[] {
     }
     return a.title.localeCompare(b.title);
   });
-}
-
-function setVisible(el: HTMLElement | null, visible: boolean): void {
-  if (!el) {
-    return;
-  }
-  el.style.display = visible ? '' : 'none';
 }
 
 function renderNoteTags(tags: string[] | undefined): HTMLElement | null {
@@ -655,12 +654,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       );
       const noteButton = root.querySelector<HTMLButtonElement>('[data-role="notes-mode-note"]');
       const backButton = root.querySelector<HTMLButtonElement>('[data-role="notes-back"]');
-      const instanceActions = root.querySelector<HTMLElement>('[data-role="instance-actions"]');
-      const instanceTrigger = root.querySelector<HTMLButtonElement>('[data-role="instance-trigger"]');
-      const instanceTriggerText = root.querySelector<HTMLElement>('[data-role="instance-trigger-text"]');
-      const instanceMenu = root.querySelector<HTMLElement>('[data-role="instance-menu"]');
-      const instanceSearch = root.querySelector<HTMLInputElement>('[data-role="instance-search"]');
-      const instanceList = root.querySelector<HTMLElement>('[data-role="instance-list"]');
       const dropdownContainer = root.querySelector<HTMLElement>(
         '[data-role="notes-dropdown-container"]',
       );
@@ -707,6 +700,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let markdownViewer: MarkdownViewerController | null = null;
       let selectedNoteText: string | null = null;
       let expandCollapseToggle: HTMLButtonElement | null = null;
+      let chromeController: PanelChromeController | null = null;
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -760,8 +754,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const getActiveReference = (): CollectionReference | null =>
         activeNoteTitle ? { type: 'note', id: activeNoteTitle } : null;
 
-      let checkChromeRowFitFn: (() => void) | null = null;
-
       const updateDropdownSelection = (reference: CollectionReference | null): void => {
         if (!dropdownTriggerText) {
           return;
@@ -772,10 +764,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const note = availableNotes.find((entry) => entry.title === reference.id) ?? activeNote;
           dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
         }
-        // Recalculate chrome row fit after text changes
-        requestAnimationFrame(() => {
-          checkChromeRowFitFn?.();
-        });
+        chromeController?.scheduleLayoutCheck();
       };
 
       const getInstanceLabel = (instanceId: string): string => {
@@ -791,119 +780,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         host.setPanelMetadata({ title: `Notes (${getInstanceLabel(selectedInstanceId)})` });
       };
 
-      let instanceDropdownOpen = false;
-      let instanceFilterQuery = '';
-      let instanceHighlightIndex = 0;
-      let filteredInstances: typeof instances = [];
-
-      const closeInstanceDropdown = (): void => {
-        instanceDropdownOpen = false;
-        instanceMenu?.classList.remove('open');
-        instanceTrigger?.setAttribute('aria-expanded', 'false');
-        instanceFilterQuery = '';
-        instanceHighlightIndex = 0;
-        if (instanceSearch) {
-          instanceSearch.value = '';
-        }
-      };
-
-      const openInstanceDropdown = (): void => {
-        instanceDropdownOpen = true;
-        instanceMenu?.classList.add('open');
-        instanceTrigger?.setAttribute('aria-expanded', 'true');
-        // Set initial highlight to selected instance
-        const selectedIndex = instances.findIndex((i) => i.id === selectedInstanceId);
-        instanceHighlightIndex = selectedIndex >= 0 ? selectedIndex : 0;
-        renderInstanceList();
-        instanceSearch?.focus();
-      };
-
-      const toggleInstanceDropdown = (): void => {
-        if (instanceDropdownOpen) {
-          closeInstanceDropdown();
-        } else {
-          openInstanceDropdown();
-        }
-      };
-
-      const updateInstanceHighlight = (): void => {
-        if (!instanceList) return;
-        const items = instanceList.querySelectorAll('.panel-chrome-instance-item');
-        items.forEach((item, index) => {
-          item.classList.toggle('highlighted', index === instanceHighlightIndex);
-        });
-        // Scroll into view
-        const highlighted = items[instanceHighlightIndex];
-        if (highlighted) {
-          highlighted.scrollIntoView({ block: 'nearest' });
-        }
-      };
-
-      const selectHighlightedInstance = (): void => {
-        const instance = filteredInstances[instanceHighlightIndex];
-        if (instance) {
-          setActiveInstance(instance.id);
-          closeInstanceDropdown();
-        }
-      };
-
-      const renderInstanceList = (): void => {
-        if (!instanceList) {
-          return;
-        }
-        instanceList.innerHTML = '';
-        const query = instanceFilterQuery.toLowerCase();
-        filteredInstances = query
-          ? instances.filter((i) => i.label.toLowerCase().includes(query))
-          : [...instances];
-
-        // Clamp highlight index
-        if (instanceHighlightIndex >= filteredInstances.length) {
-          instanceHighlightIndex = Math.max(0, filteredInstances.length - 1);
-        }
-
-        filteredInstances.forEach((instance, index) => {
-          const item = document.createElement('div');
-          item.className = 'panel-chrome-instance-item';
-          if (instance.id === selectedInstanceId) {
-            item.classList.add('selected');
-          }
-          if (index === instanceHighlightIndex) {
-            item.classList.add('highlighted');
-          }
-          item.textContent = instance.label;
-          item.dataset['instanceId'] = instance.id;
-          item.addEventListener('click', () => {
-            setActiveInstance(instance.id);
-            closeInstanceDropdown();
-          });
-          item.addEventListener('mouseenter', () => {
-            instanceHighlightIndex = index;
-            updateInstanceHighlight();
-          });
-          instanceList.appendChild(item);
-        });
-
-        if (filteredInstances.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'panel-chrome-instance-empty';
-          empty.textContent = 'No matches';
-          instanceList.appendChild(empty);
-        }
-      };
-
       const renderInstanceSelect = (): void => {
-        // Update trigger text
-        const selected = instances.find((i) => i.id === selectedInstanceId);
-        if (instanceTriggerText) {
-          instanceTriggerText.textContent = selected?.label ?? 'Select...';
-        }
-        // Show/hide based on instance count
-        setVisible(instanceActions, instances.length > 1);
-        // Re-render list if open
-        if (instanceDropdownOpen) {
-          renderInstanceList();
-        }
+        chromeController?.setInstances(instances, selectedInstanceId);
       };
 
       const setActiveInstance = (instanceId: string): void => {
@@ -1771,6 +1649,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (backButton) {
           backButton.style.display = mode === 'browser' ? 'none' : '';
         }
+        chromeController?.scheduleLayoutCheck();
 
         if (mode === 'browser') {
           browserController?.show(false);
@@ -1969,150 +1848,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           setMode('browser');
         });
       }
-      // Instance dropdown handlers
-      if (instanceTrigger) {
-        instanceTrigger.addEventListener('click', (event) => {
-          event.stopPropagation();
-          toggleInstanceDropdown();
-        });
-      }
-      if (instanceSearch) {
-        instanceSearch.addEventListener('input', () => {
-          instanceFilterQuery = instanceSearch.value;
-          instanceHighlightIndex = 0;
-          renderInstanceList();
-        });
-        instanceSearch.addEventListener('keydown', (event) => {
-          if (event.key === 'Escape') {
-            closeInstanceDropdown();
-            instanceTrigger?.focus();
-          } else if (event.key === 'ArrowDown') {
-            event.preventDefault();
-            instanceHighlightIndex = Math.min(instanceHighlightIndex + 1, filteredInstances.length - 1);
-            updateInstanceHighlight();
-          } else if (event.key === 'ArrowUp') {
-            event.preventDefault();
-            instanceHighlightIndex = Math.max(instanceHighlightIndex - 1, 0);
-            updateInstanceHighlight();
-          } else if (event.key === 'Enter') {
-            event.preventDefault();
-            selectHighlightedInstance();
-          }
-        });
-      }
-      // Close dropdowns when clicking outside
-      document.addEventListener('click', (event) => {
-        if (instanceDropdownOpen && !instanceMenu?.contains(event.target as Node) && !instanceTrigger?.contains(event.target as Node)) {
-          closeInstanceDropdown();
-        }
-        // Collapse frame controls if clicking outside
-        if (chromeControls?.classList.contains('expanded') && !chromeControls.contains(event.target as Node)) {
-          chromeControls.classList.remove('expanded');
-        }
+      chromeController = new PanelChromeController({
+        root,
+        host,
+        title: 'Notes',
+        onInstanceChange: (instanceId) => {
+          setActiveInstance(instanceId);
+        },
       });
-
-      // Chrome row button handlers
-      const chromeControls = root.querySelector<HTMLElement>('[data-role="chrome-controls"]');
-      if (chromeControls) {
-        chromeControls.addEventListener('click', (event) => {
-          const target = event.target as HTMLElement;
-          const button = target.closest<HTMLButtonElement>('[data-action]');
-          if (!button) {
-            return;
-          }
-          const action = button.dataset['action'];
-          if (action === 'toggle') {
-            chromeControls.classList.toggle('expanded');
-            // Recalculate layout after expand/collapse
-            requestAnimationFrame(() => checkChromeRowFitFn?.());
-          } else if (action === 'close') {
-            host.closePanel(host.panelId());
-          } else if (action === 'move') {
-            // TODO: Needs workspace controller integration for drag
-            console.log('Move action triggered - needs workspace integration');
-          } else if (action === 'reorder') {
-            // TODO: Needs workspace controller integration for drag
-            console.log('Reorder action triggered - needs workspace integration');
-          } else if (action === 'menu') {
-            // TODO: Open panel actions menu
-            console.log('Menu action triggered - needs menu implementation');
-          }
-        });
-      }
-
-      // Chrome row compact mode detection
-      const chromeRow = root.querySelector<HTMLElement>('[data-role="chrome-row"]');
-      const chromePluginControls = root.querySelector<HTMLElement>('.panel-chrome-plugin-controls');
-      const chromeFrameControls = root.querySelector<HTMLElement>('.panel-chrome-frame-controls');
-      const chromeMain = root.querySelector<HTMLElement>('.panel-chrome-row .panel-header-main');
-
-      const checkChromeRowFit = (): void => {
-        if (!chromeRow || !chromePluginControls || !chromeFrameControls || !chromeMain) {
-          return;
-        }
-        
-        // Remove all stages to measure natural widths
-        chromeRow.classList.remove('chrome-row-stage-1', 'chrome-row-stage-2', 'chrome-row-compact');
-        
-        // Force reflow to get accurate measurements
-        void chromeRow.offsetWidth;
-        
-        const rowWidth = chromeRow.clientWidth;
-        const buffer = 40;
-        
-        const measure = () => {
-          const mainWidth = chromeMain.scrollWidth;
-          const pluginWidth = chromePluginControls.scrollWidth;
-          const frameWidth = chromeFrameControls.scrollWidth;
-          return mainWidth + pluginWidth + frameWidth + buffer;
-        };
-        
-        // Try each stage progressively
-        if (measure() <= rowWidth) {
-          return; // Fits without any collapse
-        }
-        
-        // Stage 1: Hide instance dropdown
-        chromeRow.classList.add('chrome-row-stage-1');
-        void chromeRow.offsetWidth;
-        if (measure() <= rowWidth) {
-          return;
-        }
-        
-        // Stage 2: Also hide title
-        chromeRow.classList.remove('chrome-row-stage-1');
-        chromeRow.classList.add('chrome-row-stage-2');
-        void chromeRow.offsetWidth;
-        if (measure() <= rowWidth) {
-          return;
-        }
-        
-        // Stage 3: Wrap to two rows
-        chromeRow.classList.remove('chrome-row-stage-2');
-        chromeRow.classList.add('chrome-row-compact');
-      };
-
-      let chromeRowResizeObserver: ResizeObserver | null = null;
-      if (chromeRow && typeof ResizeObserver !== 'undefined') {
-        chromeRowResizeObserver = new ResizeObserver(() => {
-          checkChromeRowFit();
-        });
-        chromeRowResizeObserver.observe(chromeRow);
-      }
-      // Multiple check points to ensure it runs on all platforms
-      if (chromeRow) {
-        // Make function available for selection changes
-        checkChromeRowFitFn = checkChromeRowFit;
-        // Immediate check
-        checkChromeRowFit();
-        // After frame
-        requestAnimationFrame(() => checkChromeRowFit());
-        // After short delay (for fonts/layout settling)
-        setTimeout(() => checkChromeRowFit(), 50);
-        setTimeout(() => checkChromeRowFit(), 200);
-        // Fallback resize listener
-        window.addEventListener('resize', () => checkChromeRowFit());
-      }
+      chromeController.setInstances(instances, selectedInstanceId);
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
@@ -2157,8 +1901,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           isVisible = visible;
           if (visible) {
             void refreshNotes({ silent: true });
-            // Re-check chrome row fit on visibility change (for mobile)
-            requestAnimationFrame(() => checkChromeRowFit());
+            chromeController?.scheduleLayoutCheck();
           }
         },
         onFocus: () => {
@@ -2198,7 +1941,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             'assistant:clear-context-selection',
             handleClearContextSelectionEvent,
           );
-          chromeRowResizeObserver?.disconnect();
+          chromeController?.destroy();
           host.setContext(contextKey, null);
           container.innerHTML = '';
         },

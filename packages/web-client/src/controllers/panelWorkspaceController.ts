@@ -99,7 +99,7 @@ export class PanelWorkspaceController {
   private activeChatPanelContent: HTMLElement | null = null;
   private activeNonChatPanelId: string | null = null;
   private activeNonChatPanelFrame: HTMLElement | null = null;
-  private readonly chromeSelector = '.panel-frame-controls, .chat-header';
+  private readonly chromeSelector = '.panel-chrome-row, .chat-header';
   private activeMenu: HTMLElement | null = null;
   private activeSubMenu: HTMLElement | null = null;
   private menuCleanup: (() => void) | null = null;
@@ -1556,7 +1556,6 @@ export class PanelWorkspaceController {
       }
       this.focusPanel(panelId, this.resolveFocusSource(event.target));
     });
-    frame.appendChild(this.renderPanelControls(panelId));
     frame.appendChild(container);
 
     return frame;
@@ -2222,66 +2221,6 @@ export class PanelWorkspaceController {
     return null;
   }
 
-  private renderPanelControls(panelId: string): HTMLElement {
-    const controls = document.createElement('div');
-    controls.className = 'panel-frame-controls';
-
-    const dragButton = document.createElement('button');
-    dragButton.type = 'button';
-    dragButton.className = 'panel-frame-button panel-frame-drag';
-    dragButton.textContent = 'Move';
-    dragButton.setAttribute('aria-label', 'Move panel');
-    dragButton.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.startPanelDrag(panelId, event);
-    });
-
-    const reorderButton = document.createElement('button');
-    reorderButton.type = 'button';
-    reorderButton.className = 'panel-frame-button panel-frame-reorder';
-    reorderButton.textContent = 'Reorder';
-    reorderButton.setAttribute('aria-label', 'Reorder panel in split');
-    const hasParentSplit = Boolean(this.findNearestSplitForPanel(this.layout.layout, panelId));
-    if (!hasParentSplit) {
-      reorderButton.disabled = true;
-      reorderButton.title = 'No split to reorder';
-    }
-    reorderButton.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.startPanelReorder(panelId, event);
-    });
-
-    const menuButton = document.createElement('button');
-    menuButton.type = 'button';
-    menuButton.className = 'panel-frame-button panel-frame-menu';
-    menuButton.textContent = '...';
-    menuButton.setAttribute('aria-label', 'Panel actions');
-    menuButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.openPanelMenu(panelId, menuButton);
-    });
-
-    const closeButton = document.createElement('button');
-    closeButton.type = 'button';
-    closeButton.className = 'panel-frame-button panel-frame-close';
-    closeButton.textContent = 'x';
-    closeButton.setAttribute('aria-label', 'Close panel');
-    closeButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.closePanelToPlaceholder(panelId);
-    });
-
-    controls.appendChild(dragButton);
-    controls.appendChild(reorderButton);
-    controls.appendChild(menuButton);
-    controls.appendChild(closeButton);
-    return controls;
-  }
-
   private resolveActiveTabNode(tabs: LayoutNode[], activeId?: string | null): LayoutNode {
     const selected = activeId ? tabs.find((tab) => containsPanelId(tab, activeId)) : null;
     return selected ?? tabs[0]!;
@@ -2893,7 +2832,7 @@ export class PanelWorkspaceController {
     );
   }
 
-  private openPanelMenu(panelId: string, anchor: HTMLElement): void {
+  openPanelMenu(panelId: string, anchor: HTMLElement): void {
     this.closePanelMenu();
 
     const menu = document.createElement('div');
@@ -3132,7 +3071,7 @@ export class PanelWorkspaceController {
     }
   }
 
-  private startPanelDrag(panelId: string, event: PointerEvent): void {
+  startPanelDrag(panelId: string, event: PointerEvent): void {
     this.closePanelMenu();
     this.stopPanelDrag();
     this.stopPanelReorder();
@@ -3273,7 +3212,7 @@ export class PanelWorkspaceController {
     document.body.classList.remove('panel-dragging');
   }
 
-  private startPanelReorder(panelId: string, event: PointerEvent): void {
+  startPanelReorder(panelId: string, event: PointerEvent): void {
     this.closePanelMenu();
     this.stopPanelReorder();
     this.stopPanelDrag();

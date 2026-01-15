@@ -7,21 +7,6 @@
   color: var(--color-text-primary);
 }
 
-.time-tracker-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-
-.time-tracker-instance-select {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-default);
-  background-color: var(--color-bg-input);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-xs);
-  padding: 4px 8px;
-}
-
 .time-tracker-track {
   padding: var(--spacing-md);
   border-bottom: 1px solid var(--color-border-subtle);
