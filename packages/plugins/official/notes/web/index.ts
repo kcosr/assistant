@@ -143,6 +143,13 @@ const NOTES_PANEL_TEMPLATE = `
             <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
           </svg>
         </button>
+        <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <circle cx="12" cy="5" r="1.5"/>
+            <circle cx="12" cy="12" r="1.5"/>
+            <circle cx="12" cy="19" r="1.5"/>
+          </svg>
+        </button>
         <button type="button" class="panel-chrome-button" data-action="close" aria-label="Close panel" title="Close">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 6L6 18M6 6l12 12"/>
@@ -1846,11 +1853,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (action === 'close') {
             host.closePanel(host.panelId());
           } else if (action === 'move') {
-            // TODO: Implement move - for now show a placeholder
-            console.log('Move action triggered');
+            // TODO: Needs workspace controller integration for drag
+            console.log('Move action triggered - needs workspace integration');
           } else if (action === 'reorder') {
-            // TODO: Implement reorder - for now show a placeholder
-            console.log('Reorder action triggered');
+            // TODO: Needs workspace controller integration for drag
+            console.log('Reorder action triggered - needs workspace integration');
+          } else if (action === 'menu') {
+            // TODO: Open panel actions menu
+            console.log('Menu action triggered - needs menu implementation');
           }
         });
       }

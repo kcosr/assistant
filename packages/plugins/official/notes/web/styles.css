@@ -47,7 +47,7 @@
   gap: var(--spacing-sm);
   flex: 1;
   min-width: 0;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 /* Right section: frame controls (move/reorder/close) */
