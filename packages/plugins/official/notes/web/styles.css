@@ -5,11 +5,68 @@
 
 /* ===== Panel Chrome Row (POC) ===== */
 
-/* Chrome row uses panel-header as base, just adds layout for the sections */
+/* Chrome row uses panel-header as base, with CSS grid for true centering */
 .panel-chrome-row.panel-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: var(--spacing-sm);
+}
+
+/* Progressive collapse stages (toggled by JS) */
+
+/* Stage 1: Hide instance dropdown (still accessible via menu) */
+.panel-chrome-row.chrome-row-stage-1 .panel-chrome-instance {
+  display: none;
+}
+
+/* Stage 2: Also hide title */
+.panel-chrome-row.chrome-row-stage-2 .panel-chrome-instance,
+.panel-chrome-row.chrome-row-stage-2 .panel-header-label {
+  display: none;
+}
+
+/* Stage 3 (compact): Wrap to two-row layout */
+.panel-chrome-row.panel-header.chrome-row-compact {
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  row-gap: var(--spacing-xs);
+}
+
+.panel-chrome-row.chrome-row-compact .panel-chrome-plugin-controls {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: stretch;
+  min-width: 0;
+}
+
+/* Ensure plugin controls can shrink */
+.panel-chrome-plugin-controls {
+  min-width: 0;
+}
+
+/* Make note dropdown trigger grow to fill space but truncate when needed */
+.panel-chrome-plugin-controls .collection-search-dropdown-container {
+  min-width: 100px;
+  flex: 1 1 0;
+  max-width: 300px;
+}
+
+.panel-chrome-plugin-controls .collection-search-dropdown-trigger {
+  min-width: 0;
+  width: 100%;
+}
+
+.panel-chrome-plugin-controls .collection-search-dropdown-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In compact mode, can use more space */
+.panel-chrome-row.chrome-row-compact .collection-search-dropdown-container {
+  max-width: none;
+  flex: 1 1 0;
 }
 
 /* Left section: title + instance selector */
@@ -17,7 +74,7 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  flex-shrink: 0;
+  justify-self: start;
 }
 
 .panel-chrome-instance {
@@ -25,19 +82,107 @@
   align-items: center;
 }
 
-.panel-chrome-instance-select {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-default);
-  background-color: var(--color-bg-input);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-xs);
-  padding: 2px 6px;
-  max-width: 140px;
+.panel-chrome-instance-dropdown {
+  position: relative;
 }
 
-.panel-chrome-instance-select:focus {
+.panel-chrome-instance-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  min-width: 80px;
+  max-width: 160px;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.panel-chrome-instance-trigger:hover {
+  border-color: var(--color-border-strong);
+  background-color: var(--color-bg-hover);
+}
+
+.panel-chrome-instance-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+
+.panel-chrome-instance-trigger-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.panel-chrome-instance-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  max-width: 280px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-chrome-instance-menu.open {
+  display: flex;
+}
+
+.panel-chrome-instance-search {
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background-color: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-sm);
   outline: none;
-  border-color: var(--color-accent-primary);
+}
+
+.panel-chrome-instance-search::placeholder {
+  color: var(--color-text-muted);
+}
+
+.panel-chrome-instance-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.panel-chrome-instance-item {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+.panel-chrome-instance-item:hover,
+.panel-chrome-instance-item.highlighted {
+  background-color: var(--color-bg-hover);
+}
+
+.panel-chrome-instance-item.selected {
+  font-weight: 500;
+}
+
+.panel-chrome-instance-empty {
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 /* Center section: plugin controls */
@@ -45,24 +190,34 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  flex: 1;
   min-width: 0;
-  justify-content: center;
+  flex: 1;
 }
 
-/* Right section: frame controls (move/reorder/close) */
+/* Right section: frame controls (collapsible hamburger + always-visible close) */
 .panel-chrome-frame-controls {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
+  justify-self: end;
 }
 
-.panel-chrome-row:hover .panel-chrome-frame-controls,
-.panel-chrome-row:focus-within .panel-chrome-frame-controls {
-  opacity: 1;
+.panel-chrome-frame-buttons {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.panel-chrome-toggle svg {
+  transition: transform var(--transition-fast);
+}
+
+.panel-chrome-frame-controls.expanded .panel-chrome-frame-buttons {
+  display: flex;
+}
+
+.panel-chrome-frame-controls.expanded .panel-chrome-toggle svg {
+  transform: rotate(180deg);
 }
 
 .panel-chrome-button {
@@ -106,6 +261,11 @@
 }
 
 /* ===== End Panel Chrome Row ===== */
+
+/* Hide empty dropdown headers */
+.collection-search-dropdown-header:empty {
+  display: none;
+}
 
 .panel-frame .collection-panel {
   width: 100%;

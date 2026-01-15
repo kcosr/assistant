@@ -31,11 +31,32 @@ const NOTES_PANEL_TEMPLATE = `
       <div class="panel-header-main">
         <span class="panel-header-label">Notes</span>
         <div class="panel-chrome-instance" data-role="instance-actions">
-          <select
-            class="panel-chrome-instance-select"
-            data-role="instance-select"
-            aria-label="Notes instance"
-          ></select>
+          <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
+            <button
+              type="button"
+              class="panel-chrome-instance-trigger"
+              data-role="instance-trigger"
+              aria-label="Select instance"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span class="panel-chrome-instance-trigger-text" data-role="instance-trigger-text">Default</span>
+              <svg class="panel-chrome-instance-trigger-icon" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div class="panel-chrome-instance-menu" data-role="instance-menu" role="listbox">
+              <input
+                type="text"
+                class="panel-chrome-instance-search"
+                data-role="instance-search"
+                placeholder="Search instances..."
+                aria-label="Search instances"
+                autocomplete="off"
+              />
+              <div class="panel-chrome-instance-list" data-role="instance-list"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="panel-chrome-plugin-controls">
@@ -133,24 +154,31 @@ const NOTES_PANEL_TEMPLATE = `
         </button>
       </div>
       <div class="panel-chrome-frame-controls" data-role="chrome-controls">
-        <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+        <button type="button" class="panel-chrome-button panel-chrome-toggle" data-action="toggle" aria-label="Panel controls" title="Panel controls">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+            <path d="M15 18l-6-6 6-6"/>
           </svg>
         </button>
-        <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
-          </svg>
-        </button>
-        <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-            <circle cx="12" cy="5" r="1.5"/>
-            <circle cx="12" cy="12" r="1.5"/>
-            <circle cx="12" cy="19" r="1.5"/>
-          </svg>
-        </button>
-        <button type="button" class="panel-chrome-button" data-action="close" aria-label="Close panel" title="Close">
+        <div class="panel-chrome-frame-buttons">
+          <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <circle cx="12" cy="5" r="1.5"/>
+              <circle cx="12" cy="12" r="1.5"/>
+              <circle cx="12" cy="19" r="1.5"/>
+            </svg>
+          </button>
+        </div>
+        <button type="button" class="panel-chrome-button panel-chrome-close" data-action="close" aria-label="Close panel" title="Close">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
@@ -628,7 +656,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const noteButton = root.querySelector<HTMLButtonElement>('[data-role="notes-mode-note"]');
       const backButton = root.querySelector<HTMLButtonElement>('[data-role="notes-back"]');
       const instanceActions = root.querySelector<HTMLElement>('[data-role="instance-actions"]');
-      const instanceSelect = root.querySelector<HTMLSelectElement>('[data-role="instance-select"]');
+      const instanceTrigger = root.querySelector<HTMLButtonElement>('[data-role="instance-trigger"]');
+      const instanceTriggerText = root.querySelector<HTMLElement>('[data-role="instance-trigger-text"]');
+      const instanceMenu = root.querySelector<HTMLElement>('[data-role="instance-menu"]');
+      const instanceSearch = root.querySelector<HTMLInputElement>('[data-role="instance-search"]');
+      const instanceList = root.querySelector<HTMLElement>('[data-role="instance-list"]');
       const dropdownContainer = root.querySelector<HTMLElement>(
         '[data-role="notes-dropdown-container"]',
       );
@@ -728,16 +760,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const getActiveReference = (): CollectionReference | null =>
         activeNoteTitle ? { type: 'note', id: activeNoteTitle } : null;
 
+      let checkChromeRowFitFn: (() => void) | null = null;
+
       const updateDropdownSelection = (reference: CollectionReference | null): void => {
         if (!dropdownTriggerText) {
           return;
         }
         if (!reference) {
           dropdownTriggerText.textContent = 'Select a note...';
-          return;
+        } else {
+          const note = availableNotes.find((entry) => entry.title === reference.id) ?? activeNote;
+          dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
         }
-        const note = availableNotes.find((entry) => entry.title === reference.id) ?? activeNote;
-        dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
+        // Recalculate chrome row fit after text changes
+        requestAnimationFrame(() => {
+          checkChromeRowFitFn?.();
+        });
       };
 
       const getInstanceLabel = (instanceId: string): string => {
@@ -753,19 +791,119 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         host.setPanelMetadata({ title: `Notes (${getInstanceLabel(selectedInstanceId)})` });
       };
 
-      const renderInstanceSelect = (): void => {
-        if (!instanceSelect) {
+      let instanceDropdownOpen = false;
+      let instanceFilterQuery = '';
+      let instanceHighlightIndex = 0;
+      let filteredInstances: typeof instances = [];
+
+      const closeInstanceDropdown = (): void => {
+        instanceDropdownOpen = false;
+        instanceMenu?.classList.remove('open');
+        instanceTrigger?.setAttribute('aria-expanded', 'false');
+        instanceFilterQuery = '';
+        instanceHighlightIndex = 0;
+        if (instanceSearch) {
+          instanceSearch.value = '';
+        }
+      };
+
+      const openInstanceDropdown = (): void => {
+        instanceDropdownOpen = true;
+        instanceMenu?.classList.add('open');
+        instanceTrigger?.setAttribute('aria-expanded', 'true');
+        // Set initial highlight to selected instance
+        const selectedIndex = instances.findIndex((i) => i.id === selectedInstanceId);
+        instanceHighlightIndex = selectedIndex >= 0 ? selectedIndex : 0;
+        renderInstanceList();
+        instanceSearch?.focus();
+      };
+
+      const toggleInstanceDropdown = (): void => {
+        if (instanceDropdownOpen) {
+          closeInstanceDropdown();
+        } else {
+          openInstanceDropdown();
+        }
+      };
+
+      const updateInstanceHighlight = (): void => {
+        if (!instanceList) return;
+        const items = instanceList.querySelectorAll('.panel-chrome-instance-item');
+        items.forEach((item, index) => {
+          item.classList.toggle('highlighted', index === instanceHighlightIndex);
+        });
+        // Scroll into view
+        const highlighted = items[instanceHighlightIndex];
+        if (highlighted) {
+          highlighted.scrollIntoView({ block: 'nearest' });
+        }
+      };
+
+      const selectHighlightedInstance = (): void => {
+        const instance = filteredInstances[instanceHighlightIndex];
+        if (instance) {
+          setActiveInstance(instance.id);
+          closeInstanceDropdown();
+        }
+      };
+
+      const renderInstanceList = (): void => {
+        if (!instanceList) {
           return;
         }
-        instanceSelect.innerHTML = '';
-        instances.forEach((instance) => {
-          const option = document.createElement('option');
-          option.value = instance.id;
-          option.textContent = instance.label;
-          instanceSelect.appendChild(option);
+        instanceList.innerHTML = '';
+        const query = instanceFilterQuery.toLowerCase();
+        filteredInstances = query
+          ? instances.filter((i) => i.label.toLowerCase().includes(query))
+          : [...instances];
+
+        // Clamp highlight index
+        if (instanceHighlightIndex >= filteredInstances.length) {
+          instanceHighlightIndex = Math.max(0, filteredInstances.length - 1);
+        }
+
+        filteredInstances.forEach((instance, index) => {
+          const item = document.createElement('div');
+          item.className = 'panel-chrome-instance-item';
+          if (instance.id === selectedInstanceId) {
+            item.classList.add('selected');
+          }
+          if (index === instanceHighlightIndex) {
+            item.classList.add('highlighted');
+          }
+          item.textContent = instance.label;
+          item.dataset['instanceId'] = instance.id;
+          item.addEventListener('click', () => {
+            setActiveInstance(instance.id);
+            closeInstanceDropdown();
+          });
+          item.addEventListener('mouseenter', () => {
+            instanceHighlightIndex = index;
+            updateInstanceHighlight();
+          });
+          instanceList.appendChild(item);
         });
-        instanceSelect.value = selectedInstanceId;
+
+        if (filteredInstances.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'panel-chrome-instance-empty';
+          empty.textContent = 'No matches';
+          instanceList.appendChild(empty);
+        }
+      };
+
+      const renderInstanceSelect = (): void => {
+        // Update trigger text
+        const selected = instances.find((i) => i.id === selectedInstanceId);
+        if (instanceTriggerText) {
+          instanceTriggerText.textContent = selected?.label ?? 'Select...';
+        }
+        // Show/hide based on instance count
         setVisible(instanceActions, instances.length > 1);
+        // Re-render list if open
+        if (instanceDropdownOpen) {
+          renderInstanceList();
+        }
       };
 
       const setActiveInstance = (instanceId: string): void => {
@@ -1494,7 +1632,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getAvailableItems,
         getSupportedTypes: () => ['note'],
         getAllTags: getAllNoteTags,
-        getGroupLabel: () => 'Notes',
+        getGroupLabel: () => '',
         getActiveItemReference: getActiveReference,
         selectItem: (item) => {
           if (!item) {
@@ -1570,7 +1708,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
         },
         getAllTags: getAllNoteTags,
-        getGroupLabel: () => 'Notes',
+        getGroupLabel: () => '',
         getSupportedTypes: () => ['note'],
         getSortMode: () => browserController?.getSortMode() ?? 'alpha',
         getActiveItemReference: getActiveReference,
@@ -1831,14 +1969,47 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           setMode('browser');
         });
       }
-      if (instanceSelect) {
-        instanceSelect.addEventListener('change', () => {
-          const nextId = instanceSelect.value;
-          if (nextId) {
-            setActiveInstance(nextId);
+      // Instance dropdown handlers
+      if (instanceTrigger) {
+        instanceTrigger.addEventListener('click', (event) => {
+          event.stopPropagation();
+          toggleInstanceDropdown();
+        });
+      }
+      if (instanceSearch) {
+        instanceSearch.addEventListener('input', () => {
+          instanceFilterQuery = instanceSearch.value;
+          instanceHighlightIndex = 0;
+          renderInstanceList();
+        });
+        instanceSearch.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            closeInstanceDropdown();
+            instanceTrigger?.focus();
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            instanceHighlightIndex = Math.min(instanceHighlightIndex + 1, filteredInstances.length - 1);
+            updateInstanceHighlight();
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            instanceHighlightIndex = Math.max(instanceHighlightIndex - 1, 0);
+            updateInstanceHighlight();
+          } else if (event.key === 'Enter') {
+            event.preventDefault();
+            selectHighlightedInstance();
           }
         });
       }
+      // Close dropdowns when clicking outside
+      document.addEventListener('click', (event) => {
+        if (instanceDropdownOpen && !instanceMenu?.contains(event.target as Node) && !instanceTrigger?.contains(event.target as Node)) {
+          closeInstanceDropdown();
+        }
+        // Collapse frame controls if clicking outside
+        if (chromeControls?.classList.contains('expanded') && !chromeControls.contains(event.target as Node)) {
+          chromeControls.classList.remove('expanded');
+        }
+      });
 
       // Chrome row button handlers
       const chromeControls = root.querySelector<HTMLElement>('[data-role="chrome-controls"]');
@@ -1850,7 +2021,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           const action = button.dataset['action'];
-          if (action === 'close') {
+          if (action === 'toggle') {
+            chromeControls.classList.toggle('expanded');
+            // Recalculate layout after expand/collapse
+            requestAnimationFrame(() => checkChromeRowFitFn?.());
+          } else if (action === 'close') {
             host.closePanel(host.panelId());
           } else if (action === 'move') {
             // TODO: Needs workspace controller integration for drag
@@ -1863,6 +2038,80 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             console.log('Menu action triggered - needs menu implementation');
           }
         });
+      }
+
+      // Chrome row compact mode detection
+      const chromeRow = root.querySelector<HTMLElement>('[data-role="chrome-row"]');
+      const chromePluginControls = root.querySelector<HTMLElement>('.panel-chrome-plugin-controls');
+      const chromeFrameControls = root.querySelector<HTMLElement>('.panel-chrome-frame-controls');
+      const chromeMain = root.querySelector<HTMLElement>('.panel-chrome-row .panel-header-main');
+
+      const checkChromeRowFit = (): void => {
+        if (!chromeRow || !chromePluginControls || !chromeFrameControls || !chromeMain) {
+          return;
+        }
+        
+        // Remove all stages to measure natural widths
+        chromeRow.classList.remove('chrome-row-stage-1', 'chrome-row-stage-2', 'chrome-row-compact');
+        
+        // Force reflow to get accurate measurements
+        void chromeRow.offsetWidth;
+        
+        const rowWidth = chromeRow.clientWidth;
+        const buffer = 40;
+        
+        const measure = () => {
+          const mainWidth = chromeMain.scrollWidth;
+          const pluginWidth = chromePluginControls.scrollWidth;
+          const frameWidth = chromeFrameControls.scrollWidth;
+          return mainWidth + pluginWidth + frameWidth + buffer;
+        };
+        
+        // Try each stage progressively
+        if (measure() <= rowWidth) {
+          return; // Fits without any collapse
+        }
+        
+        // Stage 1: Hide instance dropdown
+        chromeRow.classList.add('chrome-row-stage-1');
+        void chromeRow.offsetWidth;
+        if (measure() <= rowWidth) {
+          return;
+        }
+        
+        // Stage 2: Also hide title
+        chromeRow.classList.remove('chrome-row-stage-1');
+        chromeRow.classList.add('chrome-row-stage-2');
+        void chromeRow.offsetWidth;
+        if (measure() <= rowWidth) {
+          return;
+        }
+        
+        // Stage 3: Wrap to two rows
+        chromeRow.classList.remove('chrome-row-stage-2');
+        chromeRow.classList.add('chrome-row-compact');
+      };
+
+      let chromeRowResizeObserver: ResizeObserver | null = null;
+      if (chromeRow && typeof ResizeObserver !== 'undefined') {
+        chromeRowResizeObserver = new ResizeObserver(() => {
+          checkChromeRowFit();
+        });
+        chromeRowResizeObserver.observe(chromeRow);
+      }
+      // Multiple check points to ensure it runs on all platforms
+      if (chromeRow) {
+        // Make function available for selection changes
+        checkChromeRowFitFn = checkChromeRowFit;
+        // Immediate check
+        checkChromeRowFit();
+        // After frame
+        requestAnimationFrame(() => checkChromeRowFit());
+        // After short delay (for fonts/layout settling)
+        setTimeout(() => checkChromeRowFit(), 50);
+        setTimeout(() => checkChromeRowFit(), 200);
+        // Fallback resize listener
+        window.addEventListener('resize', () => checkChromeRowFit());
       }
 
       sharedSearchController.setOnQueryChanged(applySearch);
@@ -1908,6 +2157,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           isVisible = visible;
           if (visible) {
             void refreshNotes({ silent: true });
+            // Re-check chrome row fit on visibility change (for mobile)
+            requestAnimationFrame(() => checkChromeRowFit());
           }
         },
         onFocus: () => {
@@ -1947,6 +2198,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             'assistant:clear-context-selection',
             handleClearContextSelectionEvent,
           );
+          chromeRowResizeObserver?.disconnect();
           host.setContext(contextKey, null);
           container.innerHTML = '';
         },
