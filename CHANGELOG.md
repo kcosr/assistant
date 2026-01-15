@@ -8,6 +8,9 @@
 
 ### Changed
 
+- Time tracker "Stop & Save" button now uses red styling to indicate a destructive action.
+- Time tracker entries now display creation timestamp (MM/YY HH:mm) alongside notes.
+
 ### Fixed
 
 ### Removed

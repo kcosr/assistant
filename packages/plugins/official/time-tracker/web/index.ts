@@ -72,7 +72,7 @@ const TIME_TRACKER_PANEL_TEMPLATE = `
           <span class="time-tracker-timer-display" data-role="timer-display">00:00:00</span>
         </div>
         <div class="time-tracker-timer-actions">
-          <button type="button" class="time-tracker-button primary" data-role="timer-stop">Stop &amp; Save</button>
+          <button type="button" class="time-tracker-button danger" data-role="timer-stop">Stop &amp; Save</button>
           <button type="button" class="time-tracker-button ghost" data-role="timer-discard">Discard</button>
         </div>
       </div>
@@ -318,6 +318,18 @@ function formatRangeLabel(start: string, end: string): string {
   return `${formatDateLabel(start, { includeYear: !sameYear })} - ${formatDateLabel(end, {
     includeYear: true,
   })}`;
+}
+
+function formatCreatedAt(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${month}/${year} ${hours}:${minutes}`;
 }
 
 function formatDuration(minutes: number): string {
@@ -1073,12 +1085,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           rowTop.appendChild(actions);
           row.appendChild(rowTop);
 
+          const meta = document.createElement('div');
+          meta.className = 'time-tracker-entry-meta';
+
+          const createdAt = document.createElement('span');
+          createdAt.className = 'time-tracker-entry-created';
+          createdAt.textContent = formatCreatedAt(entry.created_at);
+          meta.appendChild(createdAt);
+
           if (entry.note) {
-            const note = document.createElement('div');
+            const note = document.createElement('span');
             note.className = 'time-tracker-entry-note';
             note.textContent = entry.note;
-            row.appendChild(note);
+            meta.appendChild(note);
           }
+
+          row.appendChild(meta);
 
           groupContainer.appendChild(row);
           groupTotalMinutes += entry.duration_minutes;

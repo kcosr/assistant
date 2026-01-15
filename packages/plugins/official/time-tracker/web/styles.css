@@ -172,6 +172,17 @@
   color: var(--color-text-primary);
 }
 
+.time-tracker-button.danger {
+  background-color: var(--color-error);
+  border-color: var(--color-error);
+  color: white;
+}
+
+.time-tracker-button.danger:hover {
+  background-color: #dc2626;
+  border-color: #dc2626;
+}
+
 .time-tracker-button.ghost {
   background-color: transparent;
   border-color: transparent;
@@ -565,9 +576,21 @@
   display: flex;
 }
 
-.time-tracker-entry-note {
+.time-tracker-entry-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
   margin-top: 6px;
   font-size: var(--font-size-xs);
+}
+
+.time-tracker-entry-created {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.time-tracker-entry-note {
   color: var(--color-text-muted);
 }
 
