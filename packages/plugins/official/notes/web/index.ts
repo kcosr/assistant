@@ -28,12 +28,15 @@ import { getPanelContextKey } from '../../../../web-client/src/utils/panelContex
 const NOTES_PANEL_TEMPLATE = `
   <aside class="notes-panel collection-panel" aria-label="Notes panel">
     <div class="panel-chrome-row" data-role="chrome-row">
-      <div class="panel-chrome-left" data-role="instance-actions">
-        <select
-          class="panel-chrome-instance-select"
-          data-role="instance-select"
-          aria-label="Notes instance"
-        ></select>
+      <div class="panel-chrome-left">
+        <span class="panel-chrome-title">Notes</span>
+        <div class="panel-chrome-instance" data-role="instance-actions">
+          <select
+            class="panel-chrome-instance-select"
+            data-role="instance-select"
+            aria-label="Notes instance"
+          ></select>
+        </div>
       </div>
       <div class="panel-chrome-right" data-role="chrome-controls">
         <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
@@ -55,7 +58,6 @@ const NOTES_PANEL_TEMPLATE = `
     </div>
     <div class="panel-header">
       <div class="panel-header-main">
-        <span class="panel-header-label">Notes</span>
         <div
           class="collection-panel-mode-toggle"
           data-role="notes-mode-toggle"

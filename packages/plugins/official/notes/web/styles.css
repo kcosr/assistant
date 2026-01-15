@@ -17,7 +17,18 @@
 .panel-chrome-left {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-sm);
+}
+
+.panel-chrome-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.panel-chrome-instance {
+  display: flex;
+  align-items: center;
 }
 
 .panel-chrome-right {
@@ -77,9 +88,15 @@
   color: white;
 }
 
-/* Hide chrome row controls when only one instance (optional - show dropdown only if multiple) */
-.panel-chrome-instance-select:only-child {
-  /* Keep visible even with single option for consistency */
+/* Hide chrome row instance selector when only one instance */
+.panel-chrome-instance:empty,
+.panel-chrome-instance:has(select:only-child option:only-child) {
+  display: none;
+}
+
+/* Hide the old frame overlay controls for panels with chrome row */
+.panel-frame:has(.panel-chrome-row) > .panel-frame-controls {
+  display: none !important;
 }
 
 /* ===== End Panel Chrome Row ===== */
