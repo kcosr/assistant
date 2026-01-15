@@ -27,9 +27,9 @@ import { getPanelContextKey } from '../../../../web-client/src/utils/panelContex
 
 const NOTES_PANEL_TEMPLATE = `
   <aside class="notes-panel collection-panel" aria-label="Notes panel">
-    <div class="panel-chrome-row" data-role="chrome-row">
-      <div class="panel-chrome-left">
-        <span class="panel-chrome-title">Notes</span>
+    <div class="panel-header panel-chrome-row" data-role="chrome-row">
+      <div class="panel-header-main">
+        <span class="panel-header-label">Notes</span>
         <div class="panel-chrome-instance" data-role="instance-actions">
           <select
             class="panel-chrome-instance-select"
@@ -38,26 +38,7 @@ const NOTES_PANEL_TEMPLATE = `
           ></select>
         </div>
       </div>
-      <div class="panel-chrome-right" data-role="chrome-controls">
-        <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
-          </svg>
-        </button>
-        <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
-          </svg>
-        </button>
-        <button type="button" class="panel-chrome-button" data-action="close" aria-label="Close panel" title="Close">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-    <div class="panel-header">
-      <div class="panel-header-main">
+      <div class="panel-chrome-plugin-controls">
         <div
           class="collection-panel-mode-toggle"
           data-role="notes-mode-toggle"
@@ -83,58 +64,56 @@ const NOTES_PANEL_TEMPLATE = `
             Note
           </button>
         </div>
-      </div>
-      <div class="collection-search-dropdown-container" data-role="notes-dropdown-container">
-        <button
-          type="button"
-          class="collection-search-dropdown-trigger"
-          data-role="notes-dropdown-trigger"
-          aria-label="Select a note"
-          aria-haspopup="listbox"
-          aria-expanded="false"
-        >
-          <span
-            class="collection-search-dropdown-trigger-text"
-            data-role="notes-dropdown-trigger-text"
-            >Select a note&hellip;</span
+        <div class="collection-search-dropdown-container" data-role="notes-dropdown-container">
+          <button
+            type="button"
+            class="collection-search-dropdown-trigger"
+            data-role="notes-dropdown-trigger"
+            aria-label="Select a note"
+            aria-haspopup="listbox"
+            aria-expanded="false"
           >
-          <svg class="collection-search-dropdown-trigger-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M6 9l6 6 6-6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+            <span
+              class="collection-search-dropdown-trigger-text"
+              data-role="notes-dropdown-trigger-text"
+              >Select a note&hellip;</span
+            >
+            <svg class="collection-search-dropdown-trigger-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <div
+            class="collection-search-dropdown"
+            data-role="notes-dropdown"
+            role="listbox"
+            aria-label="Notes"
+          >
+            <input
+              type="text"
+              class="collection-search-dropdown-search"
+              data-role="notes-dropdown-search"
+              placeholder="Search notes..."
+              aria-label="Search notes"
+              autocomplete="off"
             />
-          </svg>
-        </button>
-        <div
-          class="collection-search-dropdown"
-          data-role="notes-dropdown"
-          role="listbox"
-          aria-label="Notes"
-        >
-          <input
-            type="text"
-            class="collection-search-dropdown-search"
-            data-role="notes-dropdown-search"
-            placeholder="Search notes..."
-            aria-label="Search notes"
-            autocomplete="off"
-          />
-          <div class="collection-search-dropdown-active-tags" data-role="notes-dropdown-active">
-            <!-- Active tag filters shown here -->
-          </div>
-          <div class="collection-search-dropdown-tags" data-role="notes-dropdown-tags">
-            <!-- Tag suggestions shown here -->
-          </div>
-          <div class="collection-search-dropdown-list" data-role="notes-dropdown-list">
-            <!-- Notes populated dynamically -->
+            <div class="collection-search-dropdown-active-tags" data-role="notes-dropdown-active">
+              <!-- Active tag filters shown here -->
+            </div>
+            <div class="collection-search-dropdown-tags" data-role="notes-dropdown-tags">
+              <!-- Tag suggestions shown here -->
+            </div>
+            <div class="collection-search-dropdown-list" data-role="notes-dropdown-list">
+              <!-- Notes populated dynamically -->
+            </div>
           </div>
         </div>
-      </div>
-      <div class="panel-header-actions">
         <button
           type="button"
           class="panel-close-button collection-back-button"
@@ -150,6 +129,23 @@ const NOTES_PANEL_TEMPLATE = `
               stroke-linecap="round"
               stroke-linejoin="round"
             />
+          </svg>
+        </button>
+      </div>
+      <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+        <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+          </svg>
+        </button>
+        <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+          </svg>
+        </button>
+        <button type="button" class="panel-chrome-button" data-action="close" aria-label="Close panel" title="Close">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
       </div>

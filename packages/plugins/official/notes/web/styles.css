@@ -4,44 +4,25 @@
 }
 
 /* ===== Panel Chrome Row (POC) ===== */
-.panel-chrome-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px var(--spacing-sm);
-  background-color: var(--color-bg-elevated);
-  border-bottom: 1px solid var(--color-border-subtle);
-  min-height: 28px;
-}
 
-.panel-chrome-left {
+/* Chrome row uses panel-header as base, just adds layout for the sections */
+.panel-chrome-row.panel-header {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
 }
 
-.panel-chrome-title {
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  color: var(--color-text-primary);
+/* Left section: title + instance selector */
+.panel-chrome-row .panel-header-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
 }
 
 .panel-chrome-instance {
   display: flex;
   align-items: center;
-}
-
-.panel-chrome-right {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.panel-chrome-row:hover .panel-chrome-right,
-.panel-chrome-row:focus-within .panel-chrome-right {
-  opacity: 1;
 }
 
 .panel-chrome-instance-select {
@@ -57,6 +38,31 @@
 .panel-chrome-instance-select:focus {
   outline: none;
   border-color: var(--color-accent-primary);
+}
+
+/* Center section: plugin controls */
+.panel-chrome-plugin-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+/* Right section: frame controls (move/reorder/close) */
+.panel-chrome-frame-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.panel-chrome-row:hover .panel-chrome-frame-controls,
+.panel-chrome-row:focus-within .panel-chrome-frame-controls {
+  opacity: 1;
 }
 
 .panel-chrome-button {
