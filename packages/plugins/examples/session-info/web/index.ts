@@ -1,14 +1,6 @@
 import type { PanelBinding, SessionContext } from '@assistant/shared';
-
-type PanelHost = {
-  getBinding(): PanelBinding | null;
-  setBinding(binding: PanelBinding | null): void;
-  onBindingChange(handler: (binding: PanelBinding | null) => void): () => void;
-  getSessionContext(): SessionContext | null;
-  subscribeSessionContext(handler: (ctx: SessionContext | null) => void): () => void;
-  getContext(key: string): unknown;
-  subscribeContext(key: string, handler: (value: unknown) => void): () => void;
-};
+import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
+import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 
 type SessionSummary = {
   sessionId: string;
@@ -196,24 +188,62 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       container.classList.add('session-info-panel');
       container.innerHTML = '';
 
+      const header = document.createElement('div');
+      header.className = 'panel-header panel-chrome-row session-info-panel-header';
+      header.setAttribute('data-role', 'chrome-row');
+      header.innerHTML = `
+        <div class="panel-header-main">
+          <span class="panel-header-label" data-role="chrome-title">Session Info</span>
+        </div>
+        <div class="panel-chrome-plugin-controls session-info-panel-plugin-controls" data-role="chrome-plugin-controls">
+          <button
+            type="button"
+            class="session-info-panel-binding"
+            data-role="session-info-binding"
+            aria-label="Select session"
+            aria-haspopup="menu"
+          ></button>
+        </div>
+        <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+          <button type="button" class="panel-chrome-button panel-chrome-toggle" data-action="toggle" aria-label="Panel controls" title="Panel controls">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+          </button>
+          <div class="panel-chrome-frame-buttons">
+            <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+              </svg>
+            </button>
+            <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+              </svg>
+            </button>
+            <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                <circle cx="12" cy="5" r="1.5"/>
+                <circle cx="12" cy="12" r="1.5"/>
+                <circle cx="12" cy="19" r="1.5"/>
+              </svg>
+            </button>
+          </div>
+          <button type="button" class="panel-chrome-button panel-chrome-close" data-action="close" aria-label="Close panel" title="Close">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
       const body = document.createElement('div');
       body.className = 'panel-body session-info-panel-body';
 
-      const header = document.createElement('div');
-      header.className = 'session-info-panel-header';
-
-      const title = document.createElement('div');
-      title.className = 'session-info-panel-title';
-      title.textContent = 'Session Info';
-
-      const bindingButton = document.createElement('button');
-      bindingButton.type = 'button';
-      bindingButton.className = 'session-info-panel-binding';
-      bindingButton.setAttribute('aria-label', 'Select session');
-      bindingButton.setAttribute('aria-haspopup', 'menu');
-
-      header.appendChild(title);
-      header.appendChild(bindingButton);
+      const bindingButton = header.querySelector<HTMLButtonElement>('[data-role="session-info-binding"]');
+      if (!bindingButton) {
+        throw new Error('Missing session info binding button.');
+      }
 
       const emptyState = document.createElement('div');
       emptyState.className = 'session-info-panel-empty';
@@ -242,7 +272,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const attributes = document.createElement('pre');
       attributes.className = 'session-info-panel-attributes';
 
-      body.appendChild(header);
       body.appendChild(emptyState);
       body.appendChild(bindingLine);
       body.appendChild(sessionLine);
@@ -251,7 +280,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       body.appendChild(labelBox);
       body.appendChild(attributesLabel);
       body.appendChild(attributes);
+      container.appendChild(header);
       container.appendChild(body);
+
+      const chromeController = new PanelChromeController({
+        root: container,
+        host,
+        title: 'Session Info',
+      });
 
       let binding = host.getBinding();
       let summaries = normalizeSummaries(host.getContext('session.summaries'));
@@ -303,6 +339,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sessionId ? `Session: ${sessionLabel}` : 'Select session',
         );
         bindingButton.classList.toggle('is-unbound', !sessionId);
+        chromeController.scheduleLayoutCheck();
         if (isBound) {
           attributes.classList.remove('empty');
           attributes.textContent = safeStringify(attributesValue);
@@ -351,6 +388,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       return {
+        onVisibilityChange: (visible) => {
+          if (visible) {
+            chromeController.scheduleLayoutCheck();
+          }
+        },
         unmount() {
           for (const unsubscribe of unsubscribes) {
             try {
@@ -360,6 +402,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             }
           }
           container.classList.remove('session-info-panel');
+          chromeController.destroy();
           container.innerHTML = '';
         },
       };

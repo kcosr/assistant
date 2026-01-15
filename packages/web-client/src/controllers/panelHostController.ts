@@ -24,6 +24,9 @@ export interface PanelWorkspaceHandle {
   closePanel(panelId: string): void;
   activatePanel(panelId: string): void;
   movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void;
+  openPanelMenu?(panelId: string, anchor: HTMLElement): void;
+  startPanelDrag?(panelId: string, event: PointerEvent): void;
+  startPanelReorder?(panelId: string, event: PointerEvent): void;
   openPanelLauncher?(options?: {
     targetPanelId?: string | null;
     defaultPlacement?: PanelPlacement | null;
@@ -494,6 +497,15 @@ export class PanelHostController {
       },
       movePanel: (panelId, placement, targetPanelId) => {
         this.workspace?.movePanel(panelId, placement, targetPanelId);
+      },
+      openPanelMenu: (panelId, anchor) => {
+        this.workspace?.openPanelMenu?.(panelId, anchor);
+      },
+      startPanelDrag: (panelId, event) => {
+        this.workspace?.startPanelDrag?.(panelId, event);
+      },
+      startPanelReorder: (panelId, event) => {
+        this.workspace?.startPanelReorder?.(panelId, event);
       },
       openPanelLauncher: (options) => {
         this.workspace?.openPanelLauncher?.(options);

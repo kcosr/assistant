@@ -27,6 +27,7 @@ This document describes the current workflow for building panel plugins that int
 - [Panel Bundle Registration](#panel-bundle-registration)
   - [Panel Init Options](#panel-init-options)
   - [Panel Handle (Lifecycle Callbacks)](#panel-handle-lifecycle-callbacks)
+  - [Panel Chrome Row](#panel-chrome-row)
   - [Core Services Context](#core-services-context)
 - [Panel Context](#panel-context)
 - [Panel Host API (Essentials)](#panel-host-api-essentials)
@@ -622,6 +623,48 @@ mount(container, host, init) {
   };
 }
 ```
+
+### Panel Chrome Row
+
+Use the shared chrome row to keep panel headers consistent and to expose workspace controls
+(move, reorder, menu, close) without overlapping plugin UI.
+
+Basic markup (trimmed):
+
+```html
+<div class="panel-header panel-chrome-row" data-role="chrome-row">
+  <div class="panel-header-main">
+    <span class="panel-header-label" data-role="chrome-title">Panel Title</span>
+    <div class="panel-chrome-instance" data-role="instance-actions">
+      <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
+        <!-- trigger + menu + search + list -->
+      </div>
+    </div>
+  </div>
+  <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls">
+    <!-- plugin-specific controls -->
+  </div>
+  <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+    <!-- toggle/move/reorder/menu/close buttons -->
+  </div>
+</div>
+```
+
+Initialize the controller in `mount()`:
+
+```ts
+const chrome = new PanelChromeController({
+  root,
+  host,
+  title: 'Notes',
+  onInstanceChange: (instanceId) => setActiveInstance(instanceId),
+});
+
+chrome.setInstances(instances, selectedInstanceId);
+```
+
+If your panel does not support instances, omit the instance dropdown markup and the controller
+will hide the slot automatically.
 
 ### Core Services Context
 

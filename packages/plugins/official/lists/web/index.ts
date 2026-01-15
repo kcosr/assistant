@@ -2,6 +2,7 @@ import type { PanelEventEnvelope } from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
 import { apiFetch } from '../../../../web-client/src/utils/api';
+import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import { CollectionPanelSearchController } from '../../../../web-client/src/controllers/collectionPanelSearchController';
 import {
   CollectionBrowserController,
@@ -33,9 +34,59 @@ import { getPanelContextKey } from '../../../../web-client/src/utils/panelContex
 
 const LISTS_PANEL_TEMPLATE = `
   <aside class="lists-panel collection-panel" aria-label="Lists panel">
-    <div class="panel-header">
+    <div class="panel-header panel-chrome-row" data-role="chrome-row">
       <div class="panel-header-main">
-        <span class="panel-header-label">Lists</span>
+        <span class="panel-header-label" data-role="chrome-title">Lists</span>
+        <div class="panel-chrome-instance" data-role="instance-actions">
+          <div class="panel-chrome-instance-dropdown" data-role="instance-dropdown-container">
+            <button
+              type="button"
+              class="panel-chrome-instance-trigger"
+              data-role="instance-trigger"
+              aria-label="Select instance"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span class="panel-chrome-instance-trigger-text" data-role="instance-trigger-text"
+                >Default</span
+              >
+              <svg
+                class="panel-chrome-instance-trigger-icon"
+                viewBox="0 0 24 24"
+                width="12"
+                height="12"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6 9l6 6 6-6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <div
+              class="panel-chrome-instance-menu"
+              data-role="instance-menu"
+              role="listbox"
+              aria-label="Instances"
+            >
+              <input
+                type="text"
+                class="panel-chrome-instance-search"
+                data-role="instance-search"
+                placeholder="Search instances..."
+                aria-label="Search instances"
+                autocomplete="off"
+              />
+              <div class="panel-chrome-instance-list" data-role="instance-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls">
         <div
           class="collection-panel-mode-toggle"
           data-role="lists-mode-toggle"
@@ -61,65 +112,56 @@ const LISTS_PANEL_TEMPLATE = `
             List
           </button>
         </div>
-      </div>
-      <div class="lists-panel-actions" data-role="instance-actions">
-        <select
-          class="lists-instance-select"
-          data-role="instance-select"
-          aria-label="Lists instance"
-        ></select>
-      </div>
-      <div class="collection-search-dropdown-container" data-role="lists-dropdown-container">
-        <button
-          type="button"
-          class="collection-search-dropdown-trigger"
-          data-role="lists-dropdown-trigger"
-          aria-label="Select a list"
-          aria-haspopup="listbox"
-          aria-expanded="false"
-        >
-          <span
-            class="collection-search-dropdown-trigger-text"
-            data-role="lists-dropdown-trigger-text"
-            >Select a list&hellip;</span
+        <div class="collection-search-dropdown-container" data-role="lists-dropdown-container">
+          <button
+            type="button"
+            class="collection-search-dropdown-trigger"
+            data-role="lists-dropdown-trigger"
+            aria-label="Select a list"
+            aria-haspopup="listbox"
+            aria-expanded="false"
           >
-          <svg class="collection-search-dropdown-trigger-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M6 9l6 6 6-6"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+            <span
+              class="collection-search-dropdown-trigger-text"
+              data-role="lists-dropdown-trigger-text"
+              >Select a list&hellip;</span
+            >
+            <svg class="collection-search-dropdown-trigger-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <div
+            class="collection-search-dropdown"
+            data-role="lists-dropdown"
+            role="listbox"
+            aria-label="Lists"
+          >
+            <input
+              type="text"
+              class="collection-search-dropdown-search"
+              data-role="lists-dropdown-search"
+              placeholder="Search lists..."
+              aria-label="Search lists"
+              autocomplete="off"
             />
-          </svg>
-        </button>
-        <div
-          class="collection-search-dropdown"
-          data-role="lists-dropdown"
-          role="listbox"
-          aria-label="Lists"
-        >
-          <input
-            type="text"
-            class="collection-search-dropdown-search"
-            data-role="lists-dropdown-search"
-            placeholder="Search lists..."
-            aria-label="Search lists"
-            autocomplete="off"
-          />
-          <div class="collection-search-dropdown-active-tags" data-role="lists-dropdown-active">
-            <!-- Active tag filters shown here -->
-          </div>
-          <div class="collection-search-dropdown-tags" data-role="lists-dropdown-tags">
-            <!-- Tag suggestions shown here -->
-          </div>
-          <div class="collection-search-dropdown-list" data-role="lists-dropdown-list">
-            <!-- Lists populated dynamically -->
+            <div class="collection-search-dropdown-active-tags" data-role="lists-dropdown-active">
+              <!-- Active tag filters shown here -->
+            </div>
+            <div class="collection-search-dropdown-tags" data-role="lists-dropdown-tags">
+              <!-- Tag suggestions shown here -->
+            </div>
+            <div class="collection-search-dropdown-list" data-role="lists-dropdown-list">
+              <!-- Lists populated dynamically -->
+            </div>
           </div>
         </div>
-      </div>
-      <div class="panel-header-actions">
         <button
           type="button"
           class="panel-close-button collection-back-button"
@@ -135,6 +177,37 @@ const LISTS_PANEL_TEMPLATE = `
               stroke-linecap="round"
               stroke-linejoin="round"
             />
+          </svg>
+        </button>
+      </div>
+      <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+        <button type="button" class="panel-chrome-button panel-chrome-toggle" data-action="toggle" aria-label="Panel controls" title="Panel controls">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <div class="panel-chrome-frame-buttons">
+          <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <circle cx="12" cy="5" r="1.5"/>
+              <circle cx="12" cy="12" r="1.5"/>
+              <circle cx="12" cy="19" r="1.5"/>
+            </svg>
+          </button>
+        </div>
+        <button type="button" class="panel-chrome-button panel-chrome-close" data-action="close" aria-label="Close panel" title="Close">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
           </svg>
         </button>
       </div>
@@ -177,13 +250,6 @@ function parseStringArray(value: unknown): string[] {
   return value
     .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
     .filter((entry) => entry.length > 0);
-}
-
-function setVisible(el: HTMLElement | null, visible: boolean): void {
-  if (!el) {
-    return;
-  }
-  el.style.display = visible ? '' : 'none';
 }
 
 function formatInstanceLabel(id: string): string {
@@ -484,8 +550,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       );
       const listButton = root.querySelector<HTMLButtonElement>('[data-role="lists-mode-list"]');
       const backButton = root.querySelector<HTMLButtonElement>('[data-role="lists-back"]');
-      const instanceActions = root.querySelector<HTMLElement>('[data-role="instance-actions"]');
-      const instanceSelect = root.querySelector<HTMLSelectElement>('[data-role="instance-select"]');
       const dropdownContainer = root.querySelector<HTMLElement>(
         '[data-role="lists-dropdown-container"]',
       );
@@ -533,6 +597,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let loadToken = 0;
       let browserController: CollectionBrowserController | null = null;
       let dropdownController: CollectionDropdownController | null = null;
+      let chromeController: PanelChromeController | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
 
@@ -571,10 +636,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         if (!reference) {
           dropdownTriggerText.textContent = 'Select a list...';
+          chromeController?.scheduleLayoutCheck();
           return;
         }
         const list = availableLists.find((entry) => entry.id === reference.id) ?? activeListSummary;
         dropdownTriggerText.textContent = list?.name ?? 'Select a list...';
+        chromeController?.scheduleLayoutCheck();
       };
 
       const getInstanceLabel = (instanceId: string): string => {
@@ -591,18 +658,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const renderInstanceSelect = (): void => {
-        if (!instanceSelect) {
-          return;
-        }
-        instanceSelect.innerHTML = '';
-        instances.forEach((instance) => {
-          const option = document.createElement('option');
-          option.value = instance.id;
-          option.textContent = instance.label;
-          instanceSelect.appendChild(option);
-        });
-        instanceSelect.value = selectedInstanceId;
-        setVisible(instanceActions, instances.length > 1);
+        chromeController?.setInstances(instances, selectedInstanceId);
       };
 
       const setActiveInstance = (instanceId: string): void => {
@@ -806,7 +862,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           return Array.from(tags).sort();
         },
-        getGroupLabel: () => 'Lists',
+        getGroupLabel: () => '',
         getActiveItemReference: getActiveReference,
         selectItem: (item) => {
           if (!item) {
@@ -972,6 +1028,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (backButton) {
           backButton.style.display = mode === 'browser' ? 'none' : '';
         }
+        chromeController?.scheduleLayoutCheck();
         if (mode === 'browser') {
           browserController?.setSharedSearchElements({
             searchInput: sharedSearchController.getSearchInputEl(),
@@ -1316,14 +1373,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           setMode('browser');
         });
       }
-      if (instanceSelect) {
-        instanceSelect.addEventListener('change', () => {
-          const nextId = instanceSelect.value;
-          if (nextId) {
-            setActiveInstance(nextId);
-          }
-        });
-      }
+      chromeController = new PanelChromeController({
+        root,
+        host,
+        title: 'Lists',
+        onInstanceChange: (instanceId) => {
+          setActiveInstance(instanceId);
+        },
+      });
+      chromeController.setInstances(instances, selectedInstanceId);
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
@@ -1371,6 +1429,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           isVisible = visible;
           if (visible) {
             void refreshLists({ silent: true });
+            chromeController?.scheduleLayoutCheck();
           }
         },
         onFocus: () => {
@@ -1413,6 +1472,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         },
         unmount() {
           detachPanelShortcuts();
+          chromeController?.destroy();
           host.setContext(contextKey, null);
           container.innerHTML = '';
         },

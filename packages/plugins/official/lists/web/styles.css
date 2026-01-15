@@ -3,6 +3,11 @@
   --collection-panel-width: 300px;
 }
 
+/* Hide empty dropdown headers */
+.collection-search-dropdown-header:empty {
+  display: none;
+}
+
 .panel-frame .collection-panel {
   width: 100%;
   flex: 1 1 auto;
@@ -3341,16 +3346,6 @@ button.tag-chip-remove {
     box-shadow: none;
   }
 
-  .panel-frame.is-active .panel-frame-controls {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .panel-frame.is-chat-active .panel-frame-controls {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */
   .confirm-dialog-overlay.list-item-dialog-overlay,
   .confirm-dialog-overlay.note-editor-dialog-overlay {
@@ -3815,19 +3810,4 @@ button.tag-chip-remove {
 .collection-list-actions-menu-item-disabled:hover {
   background-color: transparent;
   color: var(--color-text-secondary);
-}
-
-.lists-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-
-.lists-instance-select {
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-default);
-  background-color: var(--color-bg-input);
-  color: var(--color-text-primary);
-  font-size: var(--font-size-xs);
-  padding: 4px 8px;
 }

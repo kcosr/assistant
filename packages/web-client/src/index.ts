@@ -599,6 +599,7 @@ async function main(): Promise<void> {
       sessionId ? `Session: ${label}` : 'Select session',
     );
     entry.dom.sessionLabelEl.classList.toggle('is-unbound', !sessionId);
+    entry.dom.chromeController?.scheduleLayoutCheck();
   }
 
   function updateChatPanelModelSelect(sessionId: string | null): void {
@@ -610,6 +611,7 @@ async function main(): Promise<void> {
         modelSelectEl.classList.add('hidden');
         modelSelectEl.innerHTML = '';
         modelSelectEl.disabled = true;
+        entry?.dom.chromeController?.scheduleLayoutCheck();
       }
       return;
     }
@@ -618,6 +620,7 @@ async function main(): Promise<void> {
       modelSelectEl.classList.add('hidden');
       modelSelectEl.innerHTML = '';
       modelSelectEl.disabled = true;
+      entry.dom.chromeController?.scheduleLayoutCheck();
       return;
     }
 
@@ -633,10 +636,12 @@ async function main(): Promise<void> {
 
     const defaultModel = models[0];
     if (!defaultModel) {
+      entry.dom.chromeController?.scheduleLayoutCheck();
       return;
     }
     const currentModel = currentModelBySession.get(normalized) ?? defaultModel;
     modelSelectEl.value = currentModel;
+    entry.dom.chromeController?.scheduleLayoutCheck();
   }
 
   function registerChatPanelRuntime(options: {
@@ -1111,7 +1116,7 @@ async function main(): Promise<void> {
         if (!(active instanceof HTMLElement)) {
           return false;
         }
-        return Boolean(active.closest('.panel-frame-controls, .chat-header'));
+        return Boolean(active.closest('.panel-chrome-row, .chat-header'));
       };
       panelWorkspace?.setActiveChatPanelId(panelId);
       const binding = panelHostControllerInstance.getPanelBinding(panelId);

@@ -3,6 +3,11 @@
   --collection-panel-width: 300px;
 }
 
+/* Hide empty dropdown headers */
+.collection-search-dropdown-header:empty {
+  display: none;
+}
+
 .panel-frame .collection-panel {
   width: 100%;
   flex: 1 1 auto;
@@ -3342,16 +3347,6 @@ button.tag-chip-remove {
 
   .panel-instance.chat-active {
     box-shadow: none;
-  }
-
-  .panel-frame.is-active .panel-frame-controls {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .panel-frame.is-chat-active .panel-frame-controls {
-    opacity: 1;
-    pointer-events: auto;
   }
 
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */

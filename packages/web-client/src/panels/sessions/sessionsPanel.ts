@@ -1,4 +1,5 @@
 import type { PanelHandle, PanelModule, PanelFactory } from '../../controllers/panelRegistry';
+import { PanelChromeController } from '../../controllers/panelChromeController';
 import {
   createSessionsRuntime,
   type SessionsRuntime,
@@ -42,21 +43,65 @@ function createIcon(pathD: string): SVGSVGElement {
   return svg;
 }
 
+function createMenuIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'icon icon-sm');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const circles = [5, 12, 19];
+  for (const cy of circles) {
+    const circle = document.createElementNS(SVG_NS, 'circle');
+    circle.setAttribute('cx', '12');
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', '1.5');
+    circle.setAttribute('fill', 'currentColor');
+    circle.setAttribute('stroke', 'none');
+    svg.appendChild(circle);
+  }
+  return svg;
+}
+
+function createChromeButton(options: {
+  action: string;
+  label: string;
+  title: string;
+  icon: SVGSVGElement;
+  className?: string;
+}): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = options.className
+    ? `panel-chrome-button ${options.className}`
+    : 'panel-chrome-button';
+  button.dataset['action'] = options.action;
+  button.setAttribute('aria-label', options.label);
+  button.setAttribute('title', options.title);
+  button.appendChild(options.icon);
+  return button;
+}
+
 function buildSessionsPanelMarkup(container: HTMLElement): SessionsPanelElements {
   container.classList.add('agent-sidebar');
   container.classList.remove('hidden');
   container.replaceChildren();
 
   const header = document.createElement('div');
-  header.className = 'panel-header';
+  header.className = 'panel-header panel-chrome-row agent-sidebar-header';
+  header.setAttribute('data-role', 'chrome-row');
+
+  const headerMain = document.createElement('div');
+  headerMain.className = 'panel-header-main';
 
   const headerLabel = document.createElement('span');
-  headerLabel.className = 'sidebar-header-label';
+  headerLabel.className = 'panel-header-label sidebar-header-label';
+  headerLabel.setAttribute('data-role', 'chrome-title');
   headerLabel.textContent = 'Agents';
-  header.appendChild(headerLabel);
+  headerMain.appendChild(headerLabel);
+  header.appendChild(headerMain);
 
   const headerActions = document.createElement('div');
-  headerActions.className = 'panel-header-actions';
+  headerActions.className = 'panel-chrome-plugin-controls agent-sidebar-controls';
+  headerActions.setAttribute('data-role', 'chrome-plugin-controls');
 
   const viewToggle = document.createElement('button');
   viewToggle.type = 'button';
@@ -114,6 +159,60 @@ function buildSessionsPanelMarkup(container: HTMLElement): SessionsPanelElements
   headerActions.appendChild(deleteButton);
 
   header.appendChild(headerActions);
+
+  const frameControls = document.createElement('div');
+  frameControls.className = 'panel-chrome-frame-controls';
+  frameControls.setAttribute('data-role', 'chrome-controls');
+
+  const toggleButton = createChromeButton({
+    action: 'toggle',
+    label: 'Panel controls',
+    title: 'Panel controls',
+    icon: createIcon('M15 18l-6-6 6-6'),
+    className: 'panel-chrome-toggle',
+  });
+
+  const frameButtons = document.createElement('div');
+  frameButtons.className = 'panel-chrome-frame-buttons';
+  frameButtons.appendChild(
+    createChromeButton({
+      action: 'move',
+      label: 'Move panel',
+      title: 'Move',
+      icon: createIcon(
+        'M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20',
+      ),
+    }),
+  );
+  frameButtons.appendChild(
+    createChromeButton({
+      action: 'reorder',
+      label: 'Reorder panel',
+      title: 'Reorder',
+      icon: createIcon('M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4'),
+    }),
+  );
+  frameButtons.appendChild(
+    createChromeButton({
+      action: 'menu',
+      label: 'More actions',
+      title: 'More actions',
+      icon: createMenuIcon(),
+    }),
+  );
+
+  const closeButton = createChromeButton({
+    action: 'close',
+    label: 'Close panel',
+    title: 'Close',
+    icon: createIcon('M18 6L6 18M6 6l12 12'),
+    className: 'panel-chrome-close',
+  });
+
+  frameControls.appendChild(toggleButton);
+  frameControls.appendChild(frameButtons);
+  frameControls.appendChild(closeButton);
+  header.appendChild(frameControls);
   container.appendChild(header);
 
   const body = document.createElement('div');
@@ -139,10 +238,16 @@ export function createSessionsPanel(options: SessionsPanelOptions): PanelFactory
   return (): PanelModule => {
     let runtime: SessionsRuntime | null = null;
     let cleanup: (() => void) | null = null;
+    let chromeController: PanelChromeController | null = null;
 
     return {
-      mount(container: HTMLElement, _host, _init): PanelHandle {
+      mount(container: HTMLElement, host, _init): PanelHandle {
         const resolvedElements = ensureSessionsPanelElements(container);
+        chromeController = new PanelChromeController({
+          root: container,
+          host,
+          title: 'Agents',
+        });
         const baseOptions = options.getRuntimeOptions();
         runtime = createSessionsRuntime({
           agentSidebar: resolvedElements.agentSidebar,
@@ -172,6 +277,7 @@ export function createSessionsPanel(options: SessionsPanelOptions): PanelFactory
           onVisibilityChange: (visible) => {
             if (visible) {
               runtime?.render();
+              chromeController?.scheduleLayoutCheck();
             }
           },
           onSessionChange: () => {
@@ -180,6 +286,8 @@ export function createSessionsPanel(options: SessionsPanelOptions): PanelFactory
           unmount() {
             cleanup?.();
             cleanup = null;
+            chromeController?.destroy();
+            chromeController = null;
             if (runtime) {
               options.onRuntimeRemoved?.(runtime);
             }

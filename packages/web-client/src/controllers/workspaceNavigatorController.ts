@@ -2,11 +2,12 @@ import type {
   LayoutNode,
   LayoutPersistence,
   PanelBinding,
-  PanelPlacement,
   PanelTypeManifest,
 } from '@assistant/shared';
+import type { PanelHost } from './panelRegistry';
 import { containsPanelId } from '../utils/layoutTree';
 import { formatSessionLabel } from '../utils/sessionLabel';
+import { PanelChromeController } from './panelChromeController';
 
 type PanelActiveContext = {
   panelId: string;
@@ -39,18 +40,7 @@ function isSessionBoundPanelType(panelType: string): boolean {
   return SESSION_BOUND_PANEL_TYPES.has(panelType);
 }
 
-export type WorkspaceNavigatorHost = {
-  getContext: (key: string) => unknown | null;
-  subscribeContext: (key: string, handler: (value: unknown) => void) => () => void;
-  activatePanel: (panelId: string) => void;
-  openPanelLauncher?: (options?: {
-    targetPanelId?: string | null;
-    defaultPlacement?: PanelPlacement | null;
-  }) => void;
-  closePanel?: (panelId: string) => void;
-  toggleSplitViewMode?: (splitId: string) => void;
-  closeSplit?: (splitId: string) => void;
-};
+export type WorkspaceNavigatorHost = PanelHost;
 
 export class WorkspaceNavigatorController {
   private layout: LayoutPersistence | null = null;
@@ -60,6 +50,7 @@ export class WorkspaceNavigatorController {
   private root: HTMLElement | null = null;
   private list: HTMLElement | null = null;
   private cleanup: (() => void) | null = null;
+  private chromeController: PanelChromeController | null = null;
   private renderQueued = false;
 
   constructor(
@@ -71,6 +62,47 @@ export class WorkspaceNavigatorController {
   ) {}
 
   attach(): void {
+    const header = document.createElement('div');
+    header.className = 'panel-header panel-chrome-row workspace-navigator-header';
+    header.setAttribute('data-role', 'chrome-row');
+    header.innerHTML = `
+      <div class="panel-header-main">
+        <span class="panel-header-label" data-role="chrome-title">Navigator</span>
+      </div>
+      <div class="panel-chrome-plugin-controls" data-role="chrome-plugin-controls"></div>
+      <div class="panel-chrome-frame-controls" data-role="chrome-controls">
+        <button type="button" class="panel-chrome-button panel-chrome-toggle" data-action="toggle" aria-label="Panel controls" title="Panel controls">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <div class="panel-chrome-frame-buttons">
+          <button type="button" class="panel-chrome-button" data-action="move" aria-label="Move panel" title="Move">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="reorder" aria-label="Reorder panel" title="Reorder">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 16V4M7 4L3 8M7 4l4 4M17 8v12M17 20l4-4M17 20l-4-4"/>
+            </svg>
+          </button>
+          <button type="button" class="panel-chrome-button" data-action="menu" aria-label="More actions" title="More actions">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <circle cx="12" cy="5" r="1.5"/>
+              <circle cx="12" cy="12" r="1.5"/>
+              <circle cx="12" cy="19" r="1.5"/>
+            </svg>
+          </button>
+        </div>
+        <button type="button" class="panel-chrome-button panel-chrome-close" data-action="close" aria-label="Close panel" title="Close">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    `;
+
     const body = document.createElement('div');
     body.className = 'panel-body workspace-navigator';
 
@@ -78,9 +110,15 @@ export class WorkspaceNavigatorController {
     list.className = 'workspace-navigator-list';
     body.appendChild(list);
 
-    this.options.container.replaceChildren(body);
+    this.options.container.replaceChildren(header, body);
     this.root = body;
     this.list = list;
+    this.chromeController?.destroy();
+    this.chromeController = new PanelChromeController({
+      root: this.options.container,
+      host: this.options.host,
+      title: 'Navigator',
+    });
 
     this.layout = this.parseLayout(this.options.host.getContext('panel.layout'));
     this.activePanelId = this.parseActivePanel(this.options.host.getContext('panel.active'));
@@ -123,6 +161,8 @@ export class WorkspaceNavigatorController {
   detach(): void {
     this.cleanup?.();
     this.cleanup = null;
+    this.chromeController?.destroy();
+    this.chromeController = null;
     this.root = null;
     this.list = null;
   }
@@ -190,6 +230,7 @@ export class WorkspaceNavigatorController {
       empty.className = 'workspace-navigator-empty';
       empty.textContent = 'Workspace layout not available yet.';
       this.list.appendChild(empty);
+      this.chromeController?.scheduleLayoutCheck();
       return;
     }
 
@@ -228,6 +269,7 @@ export class WorkspaceNavigatorController {
       });
       this.renderNode(rootNode, 1, renderOptions, { isInactive: false, isActiveChild: false });
     }
+    this.chromeController?.scheduleLayoutCheck();
   }
 
   private renderNode(
