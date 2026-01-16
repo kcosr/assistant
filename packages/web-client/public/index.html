@@ -50,7 +50,8 @@
     </script>
     <style>
       .settings-dropdown,
-      .panel-launcher-overlay {
+      .panel-launcher-overlay,
+      .command-palette-overlay {
         display: none;
       }
       .icon {
@@ -85,6 +86,18 @@
             <rect x="13" y="3" width="8" height="8" rx="1.5" ry="1.5" />
             <rect x="3" y="13" width="8" height="8" rx="1.5" ry="1.5" />
             <rect x="13" y="13" width="8" height="8" rx="1.5" ry="1.5" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          id="command-palette-button"
+          class="toolbar-button"
+          aria-label="Open command palette"
+          title="Search"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.5-3.5" />
           </svg>
         </button>
         <div class="settings-dropdown-wrapper">
@@ -548,6 +561,36 @@
         </div>
       </main>
     </template>
+
+    <div id="command-palette" class="command-palette-overlay" aria-hidden="true">
+      <div
+        id="command-palette-panel"
+        class="command-palette"
+        role="dialog"
+        aria-labelledby="command-palette-title"
+      >
+        <div class="command-palette-header">
+          <h2 id="command-palette-title" class="command-palette-title">Commands</h2>
+          <button type="button" id="command-palette-close" class="command-palette-close">
+            Close
+          </button>
+        </div>
+        <div class="command-palette-input">
+          <div class="command-palette-input-wrap">
+            <div id="command-palette-ghost" class="command-palette-ghost" aria-hidden="true"></div>
+            <input
+              type="text"
+              id="command-palette-input"
+              class="command-palette-input-field"
+              aria-label="Command palette input"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+        </div>
+        <div id="command-palette-results" class="command-palette-results"></div>
+      </div>
+    </div>
 
     <div id="panel-launcher" class="panel-launcher-overlay" aria-hidden="true">
       <div class="panel-launcher" role="dialog" aria-labelledby="panel-launcher-title">

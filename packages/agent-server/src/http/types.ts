@@ -11,6 +11,7 @@ import type { EnvConfig } from '../envConfig';
 import type { PreferencesStore } from '../preferences/preferencesStore';
 import type { PluginSettingsStore } from '../plugins/pluginSettingsStore';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
+import type { SearchService } from '../search/searchService';
 
 export interface HttpContext {
   config: EnvConfig;
@@ -21,6 +22,7 @@ export interface HttpContext {
   toolHost: ToolHost;
   pluginRegistry?: PluginRegistry;
   pluginToolHost?: PluginToolHost;
+  searchService?: SearchService;
   httpToolContext: ToolContext;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;

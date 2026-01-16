@@ -6,7 +6,11 @@ import { normalizeTags } from '@assistant/shared';
 
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
-import type { PluginModule } from '../../../../agent-server/src/plugins/types';
+import type {
+  PluginModule,
+  SearchProvider,
+  SearchResult,
+} from '../../../../agent-server/src/plugins/types';
 import {
   DEFAULT_PLUGIN_INSTANCE_ID,
   normalizePluginInstanceId,
@@ -195,6 +199,116 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     return store;
   };
 
+  const truncateSnippet = (value: string, limit = 140): string => {
+    const trimmed = value.replace(/\s+/g, ' ').trim();
+    if (trimmed.length <= limit) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, Math.max(0, limit - 3))}...`;
+  };
+
+  const searchProvider: SearchProvider = {
+    async search(query, options) {
+      const trimmed = query.trim();
+      const { instanceId, limit = 10 } = options;
+      const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
+      const results: SearchResult[] = [];
+
+      if (!trimmed) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const lists = await store.listLists();
+          for (const list of lists) {
+            results.push({
+              id: `list:${list.id}`,
+              title: list.name,
+              subtitle: list.id,
+              snippet: list.description ? truncateSnippet(list.description) : undefined,
+              launch: {
+                panelType: 'lists',
+                payload: {
+                  type: 'lists_show',
+                  instance_id: instId,
+                  listId: list.id,
+                },
+              },
+            });
+          }
+          if (results.length >= limit) {
+            break;
+          }
+        }
+        return results.slice(0, limit);
+      }
+
+      const normalizedQuery = trimmed.toLowerCase();
+      for (const instId of targetInstances) {
+        if (!instanceById.has(instId)) {
+          continue;
+        }
+        const store = await getStore(instId);
+        const lists = await store.listLists();
+        const listLookup = new Map(lists.map((list) => [list.id, list.name]));
+        const listResults = lists
+          .filter((list) => {
+            const name = list.name.toLowerCase();
+            const id = list.id.toLowerCase();
+            const description = list.description?.toLowerCase() ?? '';
+            return (
+              name.includes(normalizedQuery) ||
+              id.includes(normalizedQuery) ||
+              description.includes(normalizedQuery)
+            );
+          })
+          .map<SearchResult>((list) => ({
+            id: `list:${list.id}`,
+            title: list.name,
+            subtitle: list.id,
+            snippet: list.description ? truncateSnippet(list.description) : undefined,
+            launch: {
+              panelType: 'lists',
+              payload: {
+                type: 'lists_show',
+                instance_id: instId,
+                listId: list.id,
+              },
+            },
+          }));
+
+        const itemLimit = Math.max(limit - listResults.length, 0);
+        const items =
+          itemLimit > 0 ? await store.searchItems({ query: trimmed, limit: itemLimit }) : [];
+        const itemResults: SearchResult[] = [];
+        for (const item of items) {
+          const subtitle = listLookup.get(item.listId) ?? item.listId;
+          const snippetSource = item.notes?.trim() || item.url?.trim() || '';
+          itemResults.push({
+            id: item.id,
+            title: item.title,
+            subtitle,
+            snippet: snippetSource ? truncateSnippet(snippetSource) : undefined,
+            launch: {
+              panelType: 'lists',
+              payload: {
+                type: 'lists_show',
+                instance_id: instId,
+                listId: item.listId,
+                itemId: item.id,
+              },
+            },
+          });
+        }
+
+        results.push(...listResults, ...itemResults);
+      }
+
+      return results.slice(0, limit);
+    },
+  };
+
   const resolveStore = async (
     parsed: Record<string, unknown>,
   ): Promise<{ instanceId: string; store: ListsStore }> => {
@@ -203,6 +317,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
   };
 
   return {
+    searchProvider,
     operations: {
       instance_list: async (): Promise<PluginInstanceDefinition[]> => instances,
       list: async (args): Promise<unknown> => {

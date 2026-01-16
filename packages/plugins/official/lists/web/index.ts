@@ -580,6 +580,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       });
 
       const bodyManager = new CollectionPanelBodyManager(panelContent);
+      let highlightTimeout: number | null = null;
+      const highlightListItem = (itemId: string): void => {
+        const bodyEl = bodyManager.getBodyEl();
+        if (!bodyEl) {
+          return;
+        }
+        const safeId =
+          typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+            ? CSS.escape(itemId)
+            : itemId;
+        const row = bodyEl.querySelector<HTMLElement>(
+          `.list-item-row[data-item-id="${safeId}"]`,
+        );
+        if (!row) {
+          return;
+        }
+        bodyEl
+          .querySelectorAll<HTMLElement>('.list-item-row.list-item-highlight')
+          .forEach((el) => el.classList.remove('list-item-highlight'));
+        row.classList.add('list-item-highlight');
+        row.scrollIntoView({ block: 'center' });
+        if (highlightTimeout) {
+          window.clearTimeout(highlightTimeout);
+        }
+        highlightTimeout = window.setTimeout(() => {
+          row.classList.remove('list-item-highlight');
+        }, 1500);
+      };
       const recentUserItemUpdates = new Set<string>();
 
       let instances: Instance[] = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
@@ -1411,6 +1439,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             initialListId = null;
           }
           void refreshLists().then(() => {
+            if (activeListId) {
+              setMode('list');
+              return;
+            }
             if (initialListId) {
               void selectList(initialListId).then(() => {
                 if (initialMode) {
@@ -1450,13 +1482,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (type === 'lists_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
             if (eventInstanceId !== selectedInstanceId) {
-              return;
+              setActiveInstance(eventInstanceId);
             }
             const listId = typeof payload['listId'] === 'string' ? payload['listId'].trim() : '';
+            const itemId = typeof payload['itemId'] === 'string' ? payload['itemId'].trim() : '';
             if (!listId) {
               return;
             }
-            void selectList(listId, { focus: true });
+            void selectList(listId, { focus: true }).then(() => {
+              if (itemId) {
+                highlightListItem(itemId);
+              }
+            });
             return;
           }
           if (type === 'panel_update') {
@@ -1474,6 +1511,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           detachPanelShortcuts();
           chromeController?.destroy();
           host.setContext(contextKey, null);
+          if (highlightTimeout) {
+            window.clearTimeout(highlightTimeout);
+            highlightTimeout = null;
+          }
           container.innerHTML = '';
         },
       };

@@ -25,6 +25,14 @@ import type { CollectionItemSummary } from './controllers/collectionTypes';
 import { PanelRegistry, type PanelFactory, type PanelHost } from './controllers/panelRegistry';
 import { PanelHostController } from './controllers/panelHostController';
 import { PanelLauncherController } from './controllers/panelLauncherController';
+import {
+  CommandPaletteController,
+  type GlobalSearchOptions,
+  type LaunchAction,
+  type SearchApiResult,
+  type SearchApiResponse,
+  type SearchableScope,
+} from './controllers/commandPaletteController';
 import { PanelWorkspaceController } from './controllers/panelWorkspaceController';
 import { initShareTarget } from './controllers/shareTargetController';
 import {
@@ -286,6 +294,13 @@ async function main(): Promise<void> {
     panelLauncherSearch,
     panelLauncherCloseButton,
     panelHeaderDock,
+    commandPaletteButton,
+    commandPalette,
+    commandPalettePanel,
+    commandPaletteInput,
+    commandPaletteGhost,
+    commandPaletteResults,
+    commandPaletteCloseButton,
   } = elements;
 
   const builtInPanels = new Map<string, { manifest: PanelTypeManifest; factory: PanelFactory }>();
@@ -1053,6 +1068,7 @@ async function main(): Promise<void> {
   let sessionDataController: SessionDataController | null = null;
   let sessionTypingIndicatorController: SessionTypingIndicatorController | null = null;
   let panelLauncherController: PanelLauncherController | null = null;
+  let commandPaletteController: CommandPaletteController | null = null;
   let sessionPickerController: SessionPickerController | null = null;
   let connectionManager: ConnectionManager | null = null;
   const getSidebarElementsForKeyboardNav = (): {
@@ -1287,6 +1303,35 @@ async function main(): Promise<void> {
     } else {
       panelLauncherController.open();
     }
+  };
+
+  const fetchSearchScopes = async (): Promise<SearchableScope[]> => {
+    const response = await apiFetch('/api/search/scopes');
+    if (!response.ok) {
+      throw new Error(`Search scopes request failed: ${response.status}`);
+    }
+    const data = (await response.json()) as { scopes?: SearchableScope[] };
+    return Array.isArray(data?.scopes) ? data.scopes : [];
+  };
+
+  const fetchSearchResults = async (
+    options: GlobalSearchOptions,
+  ): Promise<SearchApiResponse> => {
+    const params = new URLSearchParams({ q: options.query });
+    if (options.scope) {
+      params.set('scope', options.scope);
+    }
+    if (options.instance) {
+      params.set('instance', options.instance);
+    }
+    if (typeof options.limit === 'number') {
+      params.set('limit', options.limit.toString());
+    }
+    const response = await apiFetch(`/api/search?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Search request failed: ${response.status}`);
+    }
+    return (await response.json()) as SearchApiResponse;
   };
 
   const openSessionPicker = (options: SessionPickerOpenOptions): void => {
@@ -2125,6 +2170,92 @@ async function main(): Promise<void> {
     : null;
   panelLauncherController?.attach();
 
+  const resolveCommandPaletteIcon = (panelType: string): string | null => {
+    const manifest = panelRegistry.getManifest(panelType);
+    const iconName = manifest?.icon;
+    if (iconName && iconName in ICONS) {
+      return ICONS[iconName as keyof typeof ICONS];
+    }
+    return ICONS.panelGrid;
+  };
+
+  const handleSearchLaunch = (result: SearchApiResult, action: LaunchAction): boolean => {
+    if (!panelWorkspace) {
+      return false;
+    }
+    const panelType = result.launch.panelType;
+    const payload = result.launch.payload;
+    let panelId: string | null = null;
+
+    if (action.type === 'modal') {
+      panelId = panelWorkspace.openModalPanel(panelType, { focus: true });
+    } else if (action.type === 'workspace') {
+      panelId = panelWorkspace.openPanel(panelType, {
+        focus: true,
+        placement: { region: 'right' },
+      });
+    } else if (action.type === 'pin') {
+      panelId = panelWorkspace.openPanel(panelType, {
+        focus: true,
+        placement: { region: 'right' },
+      });
+      if (panelId) {
+        panelWorkspace.pinPanelById(panelId);
+      }
+    } else if (action.type === 'replace') {
+      const targetPanelId = panelWorkspace.getActivePanelId();
+      if (!targetPanelId) {
+        return false;
+      }
+      const replaced = panelWorkspace.replacePanel(targetPanelId, panelType);
+      if (replaced) {
+        panelId = targetPanelId;
+      } else {
+        const existing = panelWorkspace.getPanelIdsByType(panelType)[0] ?? null;
+        if (existing) {
+          panelWorkspace.focusPanel(existing);
+          panelId = existing;
+        }
+      }
+    }
+
+    if (!panelId) {
+      setStatus(statusEl, `Unable to open ${panelType} panel`);
+      return false;
+    }
+
+    requestAnimationFrame(() => {
+      panelHostController?.dispatchPanelEvent({
+        type: 'panel_event',
+        panelId,
+        panelType,
+        payload,
+      } as PanelEventEnvelope);
+    });
+    return true;
+  };
+
+  commandPaletteController =
+    commandPalette && commandPaletteInput && commandPaletteResults
+      ? new CommandPaletteController({
+          overlay: commandPalette,
+          palette: commandPalettePanel,
+          input: commandPaletteInput,
+          ghost: commandPaletteGhost,
+          results: commandPaletteResults,
+          closeButton: commandPaletteCloseButton,
+          triggerButton: commandPaletteButton,
+          fetchScopes: fetchSearchScopes,
+          fetchResults: fetchSearchResults,
+          getSelectedPanelId: () => panelWorkspace?.getActivePanelId() ?? null,
+          onLaunch: handleSearchLaunch,
+          resolveIcon: resolveCommandPaletteIcon,
+          setStatus: (text) => setStatus(statusEl, text),
+          isMobileViewport,
+        })
+      : null;
+  commandPaletteController?.attach();
+
   if (layoutDropdown) {
     const presetButtons = layoutDropdown.querySelectorAll<HTMLButtonElement>('[data-layout]');
     presetButtons.forEach((button) => {
@@ -2829,8 +2960,8 @@ async function main(): Promise<void> {
         }
         return null;
       },
-      openPanelLauncher: () => {
-        panelLauncherController?.open();
+      openCommandPalette: () => {
+        commandPaletteController?.open();
       },
       getFocusedSessionId: () => focusedSessionId,
       setFocusedSessionId: (id) => {

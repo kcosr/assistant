@@ -18,6 +18,7 @@ import { MultiplexedConnection } from './ws/multiplexedConnection';
 import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
 import { ScheduledSessionService } from './scheduledSessions';
+import { SearchService } from './search/searchService';
 
 export {
   buildSystemPrompt,
@@ -162,6 +163,9 @@ export async function startServer(
   });
   await scheduledSessionService.initialize();
 
+  const searchService = new SearchService(pluginRegistry);
+  searchService.syncFromRegistry();
+
   const httpServer = createHttpServer({
     config,
     conversationStore,
@@ -169,6 +173,7 @@ export async function startServer(
     sessionHub,
     agentRegistry: registry,
     toolHost,
+    searchService,
     eventStore,
     scheduledSessionService,
     ...(pluginRegistry ? { pluginRegistry } : {}),

@@ -35,6 +35,43 @@ export interface PluginToolDefinition {
   handler: (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>;
 }
 
+export interface SearchOptions {
+  /** Limit to specific instance, or undefined for all */
+  instanceId?: string;
+  /** Maximum results to return */
+  limit?: number;
+}
+
+export interface SearchResultLaunch {
+  /** Panel type to open */
+  panelType: string;
+  /** Event payload */
+  payload: Record<string, unknown>;
+}
+
+export interface SearchResult {
+  /** Unique identifier for this result */
+  id: string;
+  /** Display title */
+  title: string;
+  /** Optional subtitle (e.g., tags, parent list name) */
+  subtitle?: string;
+  /** Optional text snippet showing match context */
+  snippet?: string;
+  /** Relevance score (higher = more relevant) */
+  score?: number;
+  /** How to launch this result */
+  launch: SearchResultLaunch;
+}
+
+export interface SearchProvider {
+  /**
+   * Search this plugin's content.
+   * Called by the global search service.
+   */
+  search: (query: string, options: SearchOptions) => Promise<SearchResult[]>;
+}
+
 export type OperationHandler = (
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -72,6 +109,11 @@ export interface ToolPlugin {
    * Tools exposed by this plugin.
    */
   tools: PluginToolDefinition[];
+
+  /**
+   * Optional search provider for global search.
+   */
+  searchProvider?: SearchProvider;
 
   /**
    * Initialise plugin state. Called once with a data
@@ -112,6 +154,7 @@ export type PluginConfig = AppPluginConfig;
 export interface PluginModule {
   tools?: PluginToolDefinition[];
   operations?: Record<string, OperationHandler>;
+  searchProvider?: SearchProvider;
   panelEventHandlers?: Record<string, PanelEventHandler>;
   httpRoutes?: HttpRouteHandler[];
   initialize?: (dataDir: string, pluginConfig?: PluginConfig) => Promise<void>;
