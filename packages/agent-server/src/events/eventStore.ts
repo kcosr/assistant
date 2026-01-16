@@ -5,6 +5,8 @@ import { EventEmitter } from 'node:events';
 import type { ChatEvent } from '@assistant/shared';
 import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
+import type { SessionHub } from '../sessionHub';
+
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
   appendBatch(sessionId: string, events: ChatEvent[]): Promise<void>;
@@ -208,5 +210,92 @@ export class FileEventStore implements EventStore {
     }
 
     return events;
+  }
+}
+
+export class SessionScopedEventStore implements EventStore {
+  constructor(
+    private readonly base: EventStore,
+    private readonly sessionHub: SessionHub,
+  ) {}
+
+  async append(sessionId: string, event: ChatEvent): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.append(trimmed, event);
+    }
+    this.validateEventForSession(trimmed, event);
+  }
+
+  async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (events.length === 0) {
+      return;
+    }
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.appendBatch(trimmed, events);
+    }
+    for (const event of events) {
+      this.validateEventForSession(trimmed, event);
+    }
+  }
+
+  async getEvents(sessionId: string): Promise<ChatEvent[]> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return [];
+    }
+    return this.base.getEvents(trimmed);
+  }
+
+  async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return [];
+    }
+    return this.base.getEventsSince(trimmed, afterEventId);
+  }
+
+  subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void {
+    const trimmed = this.normaliseSessionId(sessionId);
+    const state = this.sessionHub.getSessionState(trimmed);
+    const agentId = state?.summary.agentId;
+    if (agentId) {
+      const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
+      if (agent?.chat?.provider === 'pi-cli') {
+        return () => undefined;
+      }
+    }
+    return this.base.subscribe(trimmed, callback);
+  }
+
+  private async shouldPersist(sessionId: string): Promise<boolean> {
+    const state = this.sessionHub.getSessionState(sessionId);
+    const agentId =
+      state?.summary.agentId ?? (await this.sessionHub.getSessionIndex().getSession(sessionId))
+        ?.agentId;
+    if (!agentId) {
+      return true;
+    }
+    const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
+    const provider = agent?.chat?.provider ?? 'openai';
+    return provider !== 'pi-cli';
+  }
+
+  private normaliseSessionId(sessionId: string): string {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      throw new Error('sessionId must not be empty');
+    }
+    return trimmed;
+  }
+
+  private validateEventForSession(sessionId: string, event: ChatEvent): void {
+    const validated = validateChatEvent(event);
+    if (validated.sessionId.trim() !== sessionId) {
+      throw new Error(
+        `ChatEvent.sessionId "${validated.sessionId}" does not match target session "${sessionId}"`,
+      );
+    }
   }
 }

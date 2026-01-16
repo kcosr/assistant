@@ -787,4 +787,39 @@ describe('ChatRenderer', () => {
     );
     expect(blocks).toHaveLength(2);
   });
+
+  it('renders custom and summary messages as standalone entries', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('custom_message', {
+        id: 'e-custom',
+        turnId: 't-custom',
+        responseId: undefined,
+        payload: { text: 'Custom entry', label: 'Pi' },
+      }),
+      createBaseEvent('summary_message', {
+        id: 'e-summary',
+        turnId: 't-summary',
+        responseId: undefined,
+        payload: { text: 'Compaction summary', summaryType: 'compaction' },
+      }),
+    ]);
+
+    const customMessage = container.querySelector<HTMLDivElement>('.message.custom-message');
+    expect(customMessage).not.toBeNull();
+    expect(customMessage?.dataset['eventId']).toBe('e-custom');
+    expect(customMessage?.textContent).toContain('Custom entry');
+    const customLabel = customMessage?.querySelector<HTMLDivElement>('.message-meta');
+    expect(customLabel?.textContent).toBe('Pi');
+
+    const summaryMessage = container.querySelector<HTMLDivElement>('.message.summary-message');
+    expect(summaryMessage).not.toBeNull();
+    expect(summaryMessage?.dataset['eventId']).toBe('e-summary');
+    expect(summaryMessage?.dataset['summaryType']).toBe('compaction');
+    expect(summaryMessage?.textContent).toContain('Compaction summary');
+  });
 });

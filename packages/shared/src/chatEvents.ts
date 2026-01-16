@@ -9,6 +9,8 @@ export const ChatEventTypeSchema = z.enum([
   'assistant_done',
   'thinking_chunk',
   'thinking_done',
+  'custom_message',
+  'summary_message',
   'tool_call',
   'tool_input_chunk',
   'tool_output_chunk',
@@ -62,6 +64,21 @@ export const ThinkingDonePayloadSchema = z.object({
   text: z.string(),
 });
 export type ThinkingDonePayload = z.infer<typeof ThinkingDonePayloadSchema>;
+
+export const CustomMessagePayloadSchema = z.object({
+  text: z.string(),
+  label: z.string().optional(),
+});
+export type CustomMessagePayload = z.infer<typeof CustomMessagePayloadSchema>;
+
+export const SummaryMessageTypeSchema = z.enum(['compaction', 'branch_summary']);
+export type SummaryMessageType = z.infer<typeof SummaryMessageTypeSchema>;
+
+export const SummaryMessagePayloadSchema = z.object({
+  text: z.string(),
+  summaryType: SummaryMessageTypeSchema.optional(),
+});
+export type SummaryMessagePayload = z.infer<typeof SummaryMessagePayloadSchema>;
 
 export const ToolCallPayloadSchema = z.object({
   toolCallId: z.string(),
@@ -168,6 +185,8 @@ export type ChatEventPayload =
   | AssistantDonePayload
   | ThinkingChunkPayload
   | ThinkingDonePayload
+  | CustomMessagePayload
+  | SummaryMessagePayload
   | ToolCallPayload
   | ToolOutputChunkPayload
   | ToolResultPayload
@@ -225,6 +244,16 @@ export const ThinkingChunkEventSchema = ChatEventBaseSchema.extend({
 export const ThinkingDoneEventSchema = ChatEventBaseSchema.extend({
   type: z.literal('thinking_done'),
   payload: ThinkingDonePayloadSchema,
+});
+
+export const CustomMessageEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('custom_message'),
+  payload: CustomMessagePayloadSchema,
+});
+
+export const SummaryMessageEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('summary_message'),
+  payload: SummaryMessagePayloadSchema,
 });
 
 export const ToolCallEventSchema = ChatEventBaseSchema.extend({
@@ -291,6 +320,8 @@ export const ChatEventSchema = z.discriminatedUnion('type', [
   AssistantDoneEventSchema,
   ThinkingChunkEventSchema,
   ThinkingDoneEventSchema,
+  CustomMessageEventSchema,
+  SummaryMessageEventSchema,
   ToolCallEventSchema,
   ToolInputChunkEventSchema,
   ToolOutputChunkEventSchema,
@@ -314,6 +345,8 @@ export type AssistantChunkEvent = z.infer<typeof AssistantChunkEventSchema>;
 export type AssistantDoneEvent = z.infer<typeof AssistantDoneEventSchema>;
 export type ThinkingChunkEvent = z.infer<typeof ThinkingChunkEventSchema>;
 export type ThinkingDoneEvent = z.infer<typeof ThinkingDoneEventSchema>;
+export type CustomMessageEvent = z.infer<typeof CustomMessageEventSchema>;
+export type SummaryMessageEvent = z.infer<typeof SummaryMessageEventSchema>;
 export type ToolCallEvent = z.infer<typeof ToolCallEventSchema>;
 export type ToolInputChunkEvent = z.infer<typeof ToolInputChunkEventSchema>;
 export type ToolOutputChunkEvent = z.infer<typeof ToolOutputChunkEventSchema>;

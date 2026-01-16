@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { registerCliProcess } from './cliProcessRegistry';
 import { buildCliEnv } from './cliEnv';
@@ -16,6 +17,14 @@ export interface PiCliChatConfig {
    * Optional working directory for the Pi CLI process.
    */
   workdir?: string;
+  /**
+   * Optional host session directory for reading Pi history.
+   */
+  sessionDir?: string;
+  /**
+   * Optional session dir override passed to the Pi CLI via --session-dir.
+   */
+  sessionDirCli?: string;
   /**
    * Extra CLI args for the Pi CLI process.
    */
@@ -50,6 +59,52 @@ export interface PiCliSpawn {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function expandTilde(input: string): string {
+  if (!input.startsWith('~')) {
+    return input;
+  }
+  if (input === '~') {
+    return os.homedir();
+  }
+  if (input.startsWith('~/')) {
+    return path.join(os.homedir(), input.slice(2));
+  }
+  return input;
+}
+
+function resolveSessionDirHost(options: {
+  config?: PiCliChatConfig;
+  dataDir: string;
+  wrapperEnabled: boolean;
+  workdir?: string;
+}): string {
+  const { config, dataDir, wrapperEnabled, workdir } = options;
+  const configured = config?.sessionDir?.trim();
+  if (configured && configured.length > 0) {
+    return path.resolve(expandTilde(configured));
+  }
+  if (wrapperEnabled) {
+    const sessionRoot = workdir ?? process.cwd();
+    return path.resolve(sessionRoot, '.assistant', 'pi-sessions');
+  }
+  return path.resolve(dataDir, 'pi-sessions');
+}
+
+function resolveSessionDirCli(options: {
+  config?: PiCliChatConfig;
+  wrapperEnabled: boolean;
+  sessionDirHost: string;
+}): string | null {
+  const configured = options.config?.sessionDirCli?.trim();
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+  if (options.wrapperEnabled) {
+    return '.assistant/pi-sessions';
+  }
+  return options.sessionDirHost;
 }
 
 function extractTextDelta(event: PiCliEvent): string | undefined {
@@ -161,30 +216,29 @@ export async function runPiCliChat(options: {
   const resolvedWorkdir = config?.workdir?.trim();
   const workdir = resolvedWorkdir && resolvedWorkdir.length > 0 ? resolvedWorkdir : undefined;
 
-  // When using a wrapper, use a relative path so it resolves inside the container.
-  // The container's cwd should map to the workspace root on the host.
-  // When not using a wrapper, use the absolute dataDir path.
-  let sessionFilePath: string;
-  if (wrapperEnabled) {
-    const sessionRoot = workdir ?? process.cwd();
-    const resolvedSessionDir = path.join(sessionRoot, '.assistant', 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch (err) {
-      log('pi failed to create session directory', { dir: resolvedSessionDir, error: String(err) });
-    }
-    sessionFilePath = `.assistant/pi-sessions/${sessionId}.jsonl`;
-  } else {
-    const resolvedSessionDir = path.join(dataDir, 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch (err) {
-      log('pi failed to create session directory', { dir: resolvedSessionDir, error: String(err) });
-    }
-    sessionFilePath = path.join(resolvedSessionDir, `${sessionId}.jsonl`);
+  const sessionDirHost = resolveSessionDirHost({
+    config,
+    dataDir,
+    wrapperEnabled,
+    ...(workdir ? { workdir } : {}),
+  });
+  try {
+    fs.mkdirSync(sessionDirHost, { recursive: true });
+  } catch (err) {
+    log('pi failed to create session directory', { dir: sessionDirHost, error: String(err) });
   }
 
-  const args: string[] = ['--mode', 'json', '--session', sessionFilePath];
+  const sessionDirCli = resolveSessionDirCli({
+    config,
+    wrapperEnabled,
+    sessionDirHost,
+  });
+
+  const args: string[] = ['--mode', 'json'];
+  if (sessionDirCli) {
+    args.push('--session-dir', sessionDirCli);
+  }
+  args.push('--session', sessionId);
 
   if (resumeSession) {
     args.push('--continue');

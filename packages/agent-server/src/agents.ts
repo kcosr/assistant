@@ -37,11 +37,19 @@ export interface AgentDefinition {
      */
     models?: string[];
     config?:
-      | {
+        | {
           /**
            * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): working directory.
            */
           workdir?: string;
+          /**
+           * Used for "pi-cli": host path for reading Pi session history files.
+           */
+          sessionDir?: string;
+          /**
+           * Used for "pi-cli": optional CLI session dir override passed to --session-dir.
+           */
+          sessionDirCli?: string;
           /**
            * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): extra CLI args.
            */
@@ -162,7 +170,7 @@ const CLAUDE_CLI_RESERVED_ARGS = [
 
 const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
 
-const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--continue', '-p'] as const;
+const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--session-dir', '--continue', '-p'] as const;
 
 function assertNoReservedExtraArgs(options: {
   index: number;

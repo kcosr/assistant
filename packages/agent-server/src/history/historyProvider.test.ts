@@ -1,0 +1,100 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import type { ChatEvent } from '@assistant/shared';
+
+import { PiSessionHistoryProvider } from './historyProvider';
+import type { AgentDefinition } from '../agents';
+import type { EnvConfig } from '../envConfig';
+
+async function createTempDir(prefix: string): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
+}
+
+describe('PiSessionHistoryProvider', () => {
+  it('maps Pi session entries into chat events', async () => {
+    const sessionDir = await createTempDir('pi-session-history');
+    const sessionId = 'session-1';
+    const filePath = path.join(sessionDir, `${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom_message',
+        id: 'custom-1',
+        text: 'Custom payload',
+        label: 'Notice',
+      }),
+      JSON.stringify({
+        type: 'compaction',
+        id: 'summary-1',
+        summary: 'Summary payload',
+      }),
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-1',
+          content: 'Hello there',
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-1',
+          content: 'Hi back',
+          thinking: 'Thinking... ',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const envConfig = { dataDir: sessionDir } as EnvConfig;
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi CLI',
+      chat: {
+        provider: 'pi-cli',
+        config: {
+          sessionDir,
+        },
+      },
+    };
+
+    const provider = new PiSessionHistoryProvider({ envConfig });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      agentId: agent.agentId,
+      agent,
+    });
+
+    const custom = events.find((event) => event.type === 'custom_message') as
+      | Extract<ChatEvent, { type: 'custom_message' }>
+      | undefined;
+    expect(custom?.payload.text).toBe('Custom payload');
+    expect(custom?.payload.label).toBe('Notice');
+
+    const summary = events.find((event) => event.type === 'summary_message') as
+      | Extract<ChatEvent, { type: 'summary_message' }>
+      | undefined;
+    expect(summary?.payload.text).toBe('Summary payload');
+    expect(summary?.payload.summaryType).toBe('compaction');
+
+    const user = events.find((event) => event.type === 'user_message') as
+      | Extract<ChatEvent, { type: 'user_message' }>
+      | undefined;
+    expect(user?.payload.text).toBe('Hello there');
+
+    const assistant = events.find((event) => event.type === 'assistant_done') as
+      | Extract<ChatEvent, { type: 'assistant_done' }>
+      | undefined;
+    expect(assistant?.payload.text).toBe('Hi back');
+
+    const thinking = events.find((event) => event.type === 'thinking_done') as
+      | Extract<ChatEvent, { type: 'thinking_done' }>
+      | undefined;
+    expect(thinking?.payload.text).toBe('Thinking... ');
+  });
+});

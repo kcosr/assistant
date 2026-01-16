@@ -4,6 +4,7 @@ import type {
   AssistantChunkEvent,
   AssistantDoneEvent,
   ChatEvent,
+  CustomMessageEvent,
   ErrorEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
@@ -11,6 +12,7 @@ import type {
   ToolInputChunkEvent,
   ToolOutputChunkEvent,
   ToolResultEvent,
+  SummaryMessageEvent,
   TurnEndEvent,
   TurnStartEvent,
   InterruptEvent,
@@ -18,6 +20,7 @@ import type {
   UserMessageEvent,
 } from '@assistant/shared';
 import { applyMarkdownToElement } from '../utils/markdown';
+import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
   decorateUserMessageAsAgent,
@@ -149,6 +152,12 @@ export class ChatRenderer {
         break;
       case 'thinking_done':
         this.handleThinkingDone(event);
+        break;
+      case 'custom_message':
+        this.handleCustomMessage(event);
+        break;
+      case 'summary_message':
+        this.handleSummaryMessage(event);
         break;
       case 'tool_call':
         this.handleToolCall(event);
@@ -355,6 +364,72 @@ export class ChatRenderer {
     thinkingEl.textContent = text;
     thinkingEl.dataset['eventId'] = event.id;
     thinkingEl.dataset['renderer'] = 'unified';
+  }
+
+  private renderInfoMessage(
+    turnEl: HTMLElement,
+    text: string,
+    options: { className: string; label?: string; useMarkdown?: boolean },
+  ): HTMLDivElement {
+    clearEmptySessionHint(this.container);
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${options.className}`;
+
+    const label = options.label?.trim();
+    if (label) {
+      const labelEl = document.createElement('div');
+      labelEl.className = 'message-meta';
+      labelEl.textContent = label;
+      wrapper.appendChild(labelEl);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    if (options.useMarkdown) {
+      applyMarkdownToElement(body, text);
+    } else {
+      body.textContent = text;
+    }
+    wrapper.appendChild(body);
+    turnEl.appendChild(wrapper);
+    return wrapper;
+  }
+
+  private handleCustomMessage(event: CustomMessageEvent): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const text = event.payload.text ?? '';
+    const label = event.payload.label?.trim();
+    const messageEl = this.renderInfoMessage(turnEl, text, {
+      className: 'custom-message',
+      ...(label ? { label } : {}),
+      useMarkdown: true,
+    });
+    messageEl.dataset['eventId'] = event.id;
+    messageEl.dataset['renderer'] = 'unified';
+  }
+
+  private handleSummaryMessage(event: SummaryMessageEvent): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const text = event.payload.text ?? '';
+    const summaryType = event.payload.summaryType;
+    const label =
+      summaryType === 'compaction'
+        ? 'Compaction summary'
+        : summaryType === 'branch_summary'
+          ? 'Branch summary'
+          : 'Summary';
+    const messageEl = this.renderInfoMessage(turnEl, text, {
+      className: 'summary-message',
+      label,
+      useMarkdown: true,
+    });
+    if (summaryType) {
+      messageEl.dataset['summaryType'] = summaryType;
+    }
+    messageEl.dataset['eventId'] = event.id;
+    messageEl.dataset['renderer'] = 'unified';
   }
 
   private handleToolCall(event: ToolCallEvent): void {

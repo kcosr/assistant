@@ -12,6 +12,7 @@ import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 import type { SearchService } from '../search/searchService';
+import type { HistoryProviderRegistry } from '../history/historyProvider';
 
 import { PreferencesStore } from '../preferences/preferencesStore';
 import { handleExternalRoutes } from './routes/external';
@@ -36,6 +37,7 @@ export function createHttpServer(options: {
   searchService?: SearchService;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  historyProvider?: HistoryProviderRegistry;
 }): http.Server {
   const {
     config,
@@ -48,6 +50,7 @@ export function createHttpServer(options: {
     searchService,
     eventStore,
     scheduledSessionService,
+    historyProvider,
   } = options;
 
   const pluginToolHost = pluginRegistry ? new PluginToolHost(pluginRegistry) : undefined;
@@ -61,6 +64,7 @@ export function createHttpServer(options: {
     conversationStore,
     envConfig: config,
     baseToolHost: toolHost,
+    ...(historyProvider ? { historyProvider } : {}),
     ...(scheduledSessionService ? { scheduledSessionService } : {}),
   };
   const preferencesStore = new PreferencesStore(path.join(config.dataDir, 'preferences.json'));

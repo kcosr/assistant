@@ -3,6 +3,7 @@ import type { AgentRegistry } from '../agents';
 import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
+import type { HistoryProviderRegistry } from '../history/historyProvider';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 export interface Tool {
@@ -89,6 +90,10 @@ export interface ToolContext {
    * legacy transcript entries.
    */
   eventStore?: EventStore;
+  /**
+   * Optional history provider registry for transcript replay.
+   */
+  historyProvider?: HistoryProviderRegistry;
   /**
    * Optional scheduled sessions service.
    */

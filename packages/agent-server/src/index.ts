@@ -6,7 +6,7 @@ import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
 import { ConversationStore } from './conversationStore';
-import { FileEventStore } from './events';
+import { FileEventStore, SessionScopedEventStore } from './events';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
@@ -19,6 +19,11 @@ import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
 import { ScheduledSessionService } from './scheduledSessions';
 import { SearchService } from './search/searchService';
+import {
+  EventStoreHistoryProvider,
+  HistoryProviderRegistry,
+  PiSessionHistoryProvider,
+} from './history/historyProvider';
 
 export {
   buildSystemPrompt,
@@ -100,6 +105,10 @@ export async function startServer(
   const sessionIndex = new SessionIndex(path.join(config.dataDir, 'sessions.jsonl'));
   const eventStore = new FileEventStore(config.dataDir);
   const registry = agentRegistry ?? new AgentRegistry([]);
+  const historyProvider = new HistoryProviderRegistry([
+    new PiSessionHistoryProvider({ envConfig: config, eventStore }),
+    new EventStoreHistoryProvider(eventStore),
+  ]);
 
   const maxCachedSessions =
     appConfig?.sessions && typeof appConfig.sessions.maxCached === 'number'
@@ -120,6 +129,7 @@ export async function startServer(
     maxCachedSessions,
     ...(resolveSessionWorkingDir ? { resolveSessionWorkingDir } : {}),
   });
+  const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub);
 
   const baseToolHost = createToolHost(
     {
@@ -150,7 +160,7 @@ export async function startServer(
     conversationStore,
     envConfig: config,
     toolHost,
-    eventStore,
+    eventStore: chatEventStore,
     broadcast: (event) => {
       sessionHub.broadcastToAll({
         type: 'panel_event',
@@ -174,8 +184,9 @@ export async function startServer(
     agentRegistry: registry,
     toolHost,
     searchService,
-    eventStore,
+    eventStore: chatEventStore,
     scheduledSessionService,
+    historyProvider,
     ...(pluginRegistry ? { pluginRegistry } : {}),
   });
 
@@ -202,7 +213,7 @@ export async function startServer(
       toolHost,
       conversationStore,
       sessionHub,
-      eventStore,
+      eventStore: chatEventStore,
       scheduledSessionService,
       connectionId,
     });

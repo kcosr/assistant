@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import type { AgentRegistry, CliWrapperConfig } from '../agents';
@@ -29,6 +30,8 @@ type CliProvider = 'claude-cli' | 'codex-cli' | 'pi-cli';
 
 type CliChatConfig = {
   workdir?: string;
+  sessionDir?: string;
+  sessionDirCli?: string;
   extraArgs?: string[];
   wrapper?: CliWrapperConfig;
 };
@@ -44,6 +47,19 @@ type PromptRunResult =
   | { result: 'completed' }
   | { result: 'failed'; error: string }
   | { result: 'skipped'; skipReason: string };
+
+function expandTilde(input: string): string {
+  if (!input.startsWith('~')) {
+    return input;
+  }
+  if (input === '~') {
+    return os.homedir();
+  }
+  if (input.startsWith('~/')) {
+    return path.join(os.homedir(), input.slice(2));
+  }
+  return input;
+}
 
 export interface ScheduledSessionServiceOptions {
   agentRegistry: AgentRegistry;
@@ -712,8 +728,22 @@ export class ScheduledSessionService {
       };
     }
 
-    const sessionFilePath = this.resolvePiSessionPath(config, wrapperEnabled);
-    const args = ['--mode', 'json', '--session', sessionFilePath];
+    const { sessionId, sessionDirCli, sessionDirHost } = this.resolvePiSessionInfo({
+      config,
+      wrapperEnabled,
+      ...(cwd ? { workdir: cwd } : {}),
+    });
+    try {
+      fs.mkdirSync(sessionDirHost, { recursive: true });
+    } catch {
+      // ignore failures, CLI will surface errors on start
+    }
+
+    const args = ['--mode', 'json'];
+    if (sessionDirCli) {
+      args.push('--session-dir', sessionDirCli);
+    }
+    args.push('--session', sessionId);
     if (config?.extraArgs?.length) {
       args.push(...config.extraArgs);
     }
@@ -726,29 +756,33 @@ export class ScheduledSessionService {
     };
   }
 
-  private resolvePiSessionPath(config: CliChatConfig | undefined, wrapperEnabled: boolean): string {
+  private resolvePiSessionInfo(options: {
+    config?: CliChatConfig;
+    wrapperEnabled: boolean;
+    workdir?: string;
+  }): { sessionId: string; sessionDirCli: string | null; sessionDirHost: string } {
+    const { config, wrapperEnabled, workdir } = options;
     const sessionId = randomUUID();
-    const resolvedWorkdir =
-      config?.workdir && config.workdir.trim().length > 0 ? config.workdir.trim() : undefined;
-
-    if (wrapperEnabled) {
-      const sessionRoot = resolvedWorkdir ?? process.cwd();
-      const resolvedSessionDir = path.join(sessionRoot, '.assistant', 'pi-sessions');
-      try {
-        fs.mkdirSync(resolvedSessionDir, { recursive: true });
-      } catch {
-        // ignore failures, CLI will surface errors on start
-      }
-      return `.assistant/pi-sessions/${sessionId}.jsonl`;
+    const configuredHost = config?.sessionDir?.trim();
+    let sessionDirHost: string;
+    if (configuredHost && configuredHost.length > 0) {
+      sessionDirHost = path.resolve(expandTilde(configuredHost));
+    } else if (wrapperEnabled) {
+      const sessionRoot = workdir ?? process.cwd();
+      sessionDirHost = path.resolve(sessionRoot, '.assistant', 'pi-sessions');
+    } else {
+      sessionDirHost = path.resolve(this.options.dataDir, 'pi-sessions');
     }
 
-    const resolvedSessionDir = path.join(this.options.dataDir, 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch {
-      // ignore failures, CLI will surface errors on start
-    }
-    return path.join(resolvedSessionDir, `${sessionId}.jsonl`);
+    const configuredCli = config?.sessionDirCli?.trim();
+    const sessionDirCli =
+      configuredCli && configuredCli.length > 0
+        ? configuredCli
+        : wrapperEnabled
+          ? '.assistant/pi-sessions'
+          : sessionDirHost;
+
+    return { sessionId, sessionDirCli, sessionDirHost };
   }
 
   private buildKey(agentId: string, scheduleId: string): string {

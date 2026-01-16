@@ -341,6 +341,8 @@ describe('loadConfig', () => {
           chat: {
             provider: 'pi-cli',
             config: {
+              sessionDir: '/tmp/pi-sessions',
+              sessionDirCli: '.assistant/pi-sessions',
               extraArgs: [
                 '--provider',
                 'google',
@@ -368,6 +370,8 @@ describe('loadConfig', () => {
     expect(agent.chat).toEqual({
       provider: 'pi-cli',
       config: {
+        sessionDir: '/tmp/pi-sessions',
+        sessionDirCli: '.assistant/pi-sessions',
         extraArgs: [
           '--provider',
           'google',
@@ -438,6 +442,7 @@ describe('loadConfig', () => {
     { provider: 'claude-cli', reservedArg: '--output-format' },
     { provider: 'codex-cli', reservedArg: '--json' },
     { provider: 'pi-cli', reservedArg: '--session' },
+    { provider: 'pi-cli', reservedArg: '--session-dir' },
   ])('rejects reserved extraArgs for $provider', async ({ provider, reservedArg }) => {
     const filePath = createTempFile(`config-${provider}-reserved`);
     const configJson = {

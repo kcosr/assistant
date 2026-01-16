@@ -2,10 +2,13 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
-import { FileEventStore } from './eventStore';
+import { FileEventStore, SessionScopedEventStore, type EventStore } from './eventStore';
+import type { SessionSummary } from '../sessionIndex';
+import type { SessionHub } from '../sessionHub';
+import { AgentRegistry } from '../agents';
 
 function createTempDataDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -183,5 +186,70 @@ describe('FileEventStore', () => {
     const events = await store.getEvents(sessionId);
     expect(events).toHaveLength(1);
     expect(events[0]?.id).toBe('e1');
+  });
+});
+
+describe('SessionScopedEventStore', () => {
+  it('skips persistence for pi-cli sessions', async () => {
+    const summaries = new Map<string, SessionSummary>([
+      [
+        'pi-session',
+        {
+          sessionId: 'pi-session',
+          agentId: 'pi',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      [
+        'openai-session',
+        {
+          sessionId: 'openai-session',
+          agentId: 'openai',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    ]);
+
+    const sessionHub = {
+      getSessionState: () => undefined,
+      getSessionIndex: () => ({
+        getSession: async (sessionId: string) => summaries.get(sessionId),
+      }),
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi CLI',
+            chat: { provider: 'pi-cli' },
+          },
+          {
+            agentId: 'openai',
+            displayName: 'OpenAI',
+            description: 'OpenAI',
+            chat: { provider: 'openai' },
+          },
+        ]),
+    } as SessionHub;
+
+    const baseStore: EventStore = {
+      append: vi.fn(async () => undefined),
+      appendBatch: vi.fn(async () => undefined),
+      getEvents: vi.fn(async () => []),
+      getEventsSince: vi.fn(async () => []),
+      subscribe: vi.fn(() => () => undefined),
+    };
+
+    const store = new SessionScopedEventStore(baseStore, sessionHub);
+
+    const piEvent = createEvent({ id: 'e-pi', sessionId: 'pi-session' });
+    await store.append('pi-session', piEvent);
+    expect(baseStore.append).not.toHaveBeenCalled();
+
+    const openaiEvent = createEvent({ id: 'e-openai', sessionId: 'openai-session' });
+    await store.append('openai-session', openaiEvent);
+    expect(baseStore.append).toHaveBeenCalledWith('openai-session', openaiEvent);
   });
 });
