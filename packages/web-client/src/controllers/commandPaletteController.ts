@@ -33,7 +33,11 @@ export interface SearchApiResponse {
   };
 }
 
-export type LaunchAction = { type: 'replace' } | { type: 'workspace' } | { type: 'modal' };
+export type LaunchAction =
+  | { type: 'modal' }
+  | { type: 'workspace' }
+  | { type: 'pin' }
+  | { type: 'replace' };
 
 export interface CommandPaletteControllerOptions {
   overlay: HTMLElement | null;
@@ -92,9 +96,10 @@ const MAIN_MENU_ITEMS: Array<{
   action: LaunchAction;
   requiresSelection?: boolean;
 }> = [
-  { id: 'replace', label: 'Replace', action: { type: 'replace' }, requiresSelection: true },
-  { id: 'workspace', label: 'Open workspace', action: { type: 'workspace' } },
   { id: 'modal', label: 'Open modal', action: { type: 'modal' } },
+  { id: 'workspace', label: 'Open workspace', action: { type: 'workspace' } },
+  { id: 'pin', label: 'Pin to header', action: { type: 'pin' } },
+  { id: 'replace', label: 'Replace', action: { type: 'replace' }, requiresSelection: true },
 ];
 
 const SEARCH_DEBOUNCE_MS = 150;
@@ -726,7 +731,7 @@ export class CommandPaletteController {
         return;
       }
     }
-    const action: LaunchAction = forceReplace ? { type: 'replace' } : { type: 'workspace' };
+    const action: LaunchAction = forceReplace ? { type: 'replace' } : { type: 'modal' };
     const launched = this.options.onLaunch(result, action);
     if (launched !== false) {
       this.close();

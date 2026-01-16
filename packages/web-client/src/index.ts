@@ -2187,13 +2187,21 @@ async function main(): Promise<void> {
     const payload = result.launch.payload;
     let panelId: string | null = null;
 
-    if (action.type === 'workspace') {
+    if (action.type === 'modal') {
+      panelId = panelWorkspace.openModalPanel(panelType, { focus: true });
+    } else if (action.type === 'workspace') {
       panelId = panelWorkspace.openPanel(panelType, {
         focus: true,
         placement: { region: 'right' },
       });
-    } else if (action.type === 'modal') {
-      panelId = panelWorkspace.openModalPanel(panelType, { focus: true });
+    } else if (action.type === 'pin') {
+      panelId = panelWorkspace.openPanel(panelType, {
+        focus: true,
+        placement: { region: 'right' },
+      });
+      if (panelId) {
+        panelWorkspace.pinPanelById(panelId);
+      }
     } else if (action.type === 'replace') {
       const targetPanelId = panelWorkspace.getActivePanelId();
       if (!targetPanelId) {

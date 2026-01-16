@@ -38,7 +38,7 @@ A global search and command palette that allows users to quickly find content ac
 - **Plain text search**: Instant global search across everything
 - **Scoped search**: `/search notes work meeting` for targeted queries
 - **Staged input**: Guided flow with `<placeholder>` prompts and Enter-to-skip
-- **Flexible launch**: Open in workspace (default), open modal, or replace selected panel
+- **Flexible launch**: Open modal (default), open workspace, pin to header, or replace selected panel
 
 ---
 
@@ -240,7 +240,7 @@ Result row structure:
 When user presses **Right Arrow** on a result, show action menu:
 
 Default launch behavior:
-- **Enter**: Open in workspace (new panel docked to the right)
+- **Enter**: Open modal (default)
 - **Shift+Enter**: Replace selected panel (if one is selected). If no panel is selected, do nothing and keep the palette open.
 - **Touch**: Tap a result to open the action menu on mobile
 
@@ -252,9 +252,10 @@ Default launch behavior:
 ├─────────────────────────────────────────────┤
 │   📝 Meeting notes Q4 — notes:work          │
 │   ┌─────────────────────┐                   │
-│   │ ▶ Replace           │                   │
+│   │ ▶ Open modal        │                   │
 │   │   Open workspace    │                   │
-│   │   Open modal        │                   │
+│   │   Pin to header     │                   │
+│   │   Replace           │                   │
 │   └─────────────────────┘                   │
 └─────────────────────────────────────────────┘
 ```
@@ -268,8 +269,9 @@ Default launch behavior:
 │   📝 Meeting notes Q4 — notes:work          │
 │   ┌─────────────────────┐                   │
 │   │   Replace           │ ← greyed          │
-│   │ ▶ Open workspace    │                   │
-│   │   Open modal        │                   │
+│   │ ▶ Open modal        │                   │
+│   │   Open workspace    │                   │
+│   │   Pin to header     │                   │
 │   └─────────────────────┘                   │
 └─────────────────────────────────────────────┘
 ```
@@ -278,9 +280,10 @@ Default launch behavior:
 
 | Action | Behavior | Requires Selection |
 |--------|----------|-------------------|
-| **Replace** | Replace selected panel with new panel showing result | Yes |
-| **Open workspace** | Add new panel docked to right of workspace | No |
 | **Open modal** | Open result in a modal panel overlay | No |
+| **Open workspace** | Add new panel docked to right of workspace | No |
+| **Pin to header** | Open result as a pinned panel in the header dock | No |
+| **Replace** | Replace selected panel with new panel showing result | Yes |
 
 ---
 
@@ -586,9 +589,10 @@ interface CommandPaletteOptions {
 }
 
 type LaunchAction =
-  | { type: 'replace' }
+  | { type: 'modal' }
   | { type: 'workspace' }
-  | { type: 'modal' };
+  | { type: 'pin' }
+  | { type: 'replace' };
 ```
 
 ### State Machine
@@ -648,7 +652,7 @@ The palette operates as a state machine:
 |-----|------|---------------|----------------|-------|-------------|
 | `↑` | — | Select prev result | Select prev option | Select prev result | Select prev action |
 | `↓` | — | Select next result | Select next option | Select next result | Select next action |
-| `Enter` | — | Open workspace (default) | Confirm selection | Open workspace (default) | Execute action |
+| `Enter` | — | Open modal (default) | Confirm selection | Open modal (default) | Execute action |
 | `→` | — | Open action menu | — | Open action menu | — |
 | `←` | — | — | — | — | — |
 | `Escape` | Close | Close | Go back / Close | Go back | Go back |
@@ -926,9 +930,10 @@ For large datasets, implement server-side search indexing for better performance
 
 ### Phase 4: Launch Integration
 
-- [ ] Implement Replace action
-- [ ] Implement Open workspace action
 - [ ] Implement Open modal action
+- [ ] Implement Open workspace action
+- [ ] Implement Pin to header action
+- [ ] Implement Replace action
 - [ ] Handle panel selection state
 
 ### Phase 5: Polish

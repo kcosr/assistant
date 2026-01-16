@@ -1617,6 +1617,11 @@ body.panel-reordering {
   border-radius: var(--radius-lg);
 }
 
+.panel-frame.panel-frame-modal .panel-chrome-toggle,
+.panel-frame.panel-frame-modal .panel-chrome-frame-buttons {
+  display: none;
+}
+
 .panel-reorder-overlay {
   position: fixed;
   inset: 0;
