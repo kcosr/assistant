@@ -112,12 +112,11 @@ export class SearchService {
 
   async search(options: GlobalSearchOptions): Promise<SearchApiResponse> {
     const query = options.query.trim();
-    if (!query) {
-      return { results: [] };
-    }
-
     const scope = options.scope?.trim() ?? '';
     const instance = options.instance?.trim() ?? '';
+    if (!query && !scope) {
+      return { results: [] };
+    }
     const limit =
       typeof options.limit === 'number' && Number.isFinite(options.limit)
         ? options.limit

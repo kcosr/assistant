@@ -172,11 +172,13 @@ Only shown if a specific scope was selected:
 ┌─────────────────────────────────────────────┐
 │ /search notes work <query>|                 │
 ├─────────────────────────────────────────────┤
-│ Type to search work notes...                │
+│ ▶ 📝 Release plan                           │
+│   📝 Weekly sync                            │
+│   📝 Project kickoff                        │
 └─────────────────────────────────────────────┘
 ```
 
-User types search query, results appear as they type.
+When the query is empty, show items by title for the selected scope (notes titles, list titles only). As the user types, results filter normally.
 
 #### Stage 5: Results
 
@@ -391,7 +393,7 @@ GET /api/search
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `q` | string | Yes | Search query |
+| `q` | string | Yes | Search query (empty allowed when scoped to list titles) |
 | `scope` | string | No | Plugin ID to search (omit for all) |
 | `instance` | string | No | Instance ID (omit for all instances) |
 | `limit` | number | No | Max results per plugin (default: 10) |

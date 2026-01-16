@@ -290,14 +290,15 @@ export class CommandPaletteController {
       return;
     }
     const query = state.query?.trim() ?? '';
-    if (!query) {
+    const scopeId = state.mode === 'query' ? state.scopeId ?? undefined : undefined;
+    const instanceId = state.mode === 'query' ? state.instanceId ?? undefined : undefined;
+    const allowEmptyQuery = state.mode === 'query' && Boolean(scopeId);
+    if (!query && !allowEmptyQuery) {
       this.loading = false;
       this.results = [];
       this.lastQueryKey = '';
       return;
     }
-    const scopeId = state.mode === 'query' ? state.scopeId ?? undefined : undefined;
-    const instanceId = state.mode === 'query' ? state.instanceId ?? undefined : undefined;
     const key = `${query}::${scopeId ?? ''}::${instanceId ?? ''}`;
     if (key === this.lastQueryKey) {
       return;
@@ -308,6 +309,10 @@ export class CommandPaletteController {
     }
     const token = ++this.searchToken;
     this.loading = true;
+    if (!query) {
+      this.results = [];
+      this.render();
+    }
     this.searchTimer = window.setTimeout(async () => {
       try {
         const response = await this.options.fetchResults({
@@ -527,15 +532,11 @@ export class CommandPaletteController {
 
   private renderResultsList(container: HTMLElement): void {
     const query = this.cachedState.query?.trim() ?? '';
-    if (!query) {
-      const empty = document.createElement('div');
-      empty.className = 'command-palette-empty';
-      empty.textContent = this.activeMode === 'global' ? 'Type to search' : 'Type to search';
-      container.appendChild(empty);
+    if (!query && this.results.length === 0) {
       return;
     }
 
-    if (this.loading) {
+    if (this.loading && query) {
       const empty = document.createElement('div');
       empty.className = 'command-palette-empty';
       empty.textContent = 'Searching...';
@@ -543,7 +544,7 @@ export class CommandPaletteController {
       return;
     }
 
-    if (this.results.length === 0) {
+    if (this.results.length === 0 && query) {
       const empty = document.createElement('div');
       empty.className = 'command-palette-empty';
       empty.textContent = 'No results';

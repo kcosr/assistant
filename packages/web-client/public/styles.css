@@ -1256,6 +1256,10 @@ button.settings-dropdown-item {
   overflow: auto;
 }
 
+.command-palette-results:empty {
+  padding: 0;
+}
+
 .command-palette-empty {
   padding: var(--spacing-sm);
   text-align: center;

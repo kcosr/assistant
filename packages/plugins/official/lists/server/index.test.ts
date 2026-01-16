@@ -428,6 +428,48 @@ describe('lists plugin operations', () => {
     });
   });
 
+  it('search provider returns list titles for empty query', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create(
+      {
+        id: 'reading',
+        name: 'Reading List',
+        description: 'Books to read soon',
+      },
+      ctx,
+    );
+
+    const item = (await ops['item-add'](
+      {
+        listId: 'reading',
+        title: 'Reading Dune',
+      },
+      ctx,
+    )) as ListItem;
+
+    const searchProvider = plugin.searchProvider;
+    if (!searchProvider) {
+      throw new Error('Expected searchProvider to be defined');
+    }
+
+    const results = await searchProvider.search('', { limit: 10 });
+    const listResult = results.find((result) => result.id === 'list:reading');
+    expect(listResult?.title).toBe('Reading List');
+
+    const itemResult = results.find((result) => result.id === item.id);
+    expect(itemResult).toBeUndefined();
+  });
+
   it('supports multiple instances and isolates data', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

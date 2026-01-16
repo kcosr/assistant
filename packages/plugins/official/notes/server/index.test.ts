@@ -122,6 +122,35 @@ describe('notes plugin operations', () => {
     }
   });
 
+  it('search provider returns note titles for empty query', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.write({ title: 'Alpha Note', content: 'First', tags: ['alpha'] }, ctx);
+    await ops.write({ title: 'Beta Note', content: 'Second', tags: ['beta'] }, ctx);
+
+    const searchProvider = plugin.searchProvider;
+    if (!searchProvider) {
+      throw new Error('Expected searchProvider to be defined');
+    }
+
+    const results = await searchProvider.search('', { limit: 10 });
+    const titles = results.map((result) => result.title);
+    expect(titles).toContain('Alpha Note');
+    expect(titles).toContain('Beta Note');
+
+    if (plugin.shutdown) {
+      await plugin.shutdown();
+    }
+  });
+
   it('supports multiple instances and isolates data', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

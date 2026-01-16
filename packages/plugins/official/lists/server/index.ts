@@ -210,14 +210,41 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
   const searchProvider: SearchProvider = {
     async search(query, options) {
       const trimmed = query.trim();
-      if (!trimmed) {
-        return [];
-      }
       const { instanceId, limit = 10 } = options;
       const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
       const results: SearchResult[] = [];
-      const normalizedQuery = trimmed.toLowerCase();
 
+      if (!trimmed) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const lists = await store.listLists();
+          for (const list of lists) {
+            results.push({
+              id: `list:${list.id}`,
+              title: list.name,
+              subtitle: list.id,
+              snippet: list.description ? truncateSnippet(list.description) : undefined,
+              launch: {
+                panelType: 'lists',
+                payload: {
+                  type: 'lists_show',
+                  instance_id: instId,
+                  listId: list.id,
+                },
+              },
+            });
+          }
+          if (results.length >= limit) {
+            break;
+          }
+        }
+        return results.slice(0, limit);
+      }
+
+      const normalizedQuery = trimmed.toLowerCase();
       for (const instId of targetInstances) {
         if (!instanceById.has(instId)) {
           continue;
