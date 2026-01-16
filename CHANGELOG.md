@@ -12,11 +12,7 @@
 
 ### Changed
 
-- Keep list panels in list view when selecting lists from search. ([#7](https://github.com/kcosr/assistant/pull/7))
-
 ### Fixed
-
-- Prevent Escape from closing modal panels when another dialog is open. ([#7](https://github.com/kcosr/assistant/pull/7))
 
 ### Removed
 
