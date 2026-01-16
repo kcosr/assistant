@@ -11,6 +11,7 @@ import { PluginSettingsStore } from '../plugins/pluginSettingsStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
+import type { SearchService } from '../search/searchService';
 
 import { PreferencesStore } from '../preferences/preferencesStore';
 import { handleExternalRoutes } from './routes/external';
@@ -18,6 +19,7 @@ import { handlePluginRoutes } from './routes/plugins';
 import { handlePreferencesRoutes } from './routes/preferences';
 import { handlePanelRoutes } from './routes/panels';
 import { handleStaticRoutes } from './routes/static';
+import { handleSearchRoutes } from './routes/search';
 import type { HttpContext, HttpHelpers, HttpRouteHandler } from './types';
 
 const WEB_CLIENT_PUBLIC_DIR = path.resolve(__dirname, '../../../../../web-client/public');
@@ -31,6 +33,7 @@ export function createHttpServer(options: {
   agentRegistry: AgentRegistry;
   toolHost: ToolHost;
   pluginRegistry?: PluginRegistry;
+  searchService?: SearchService;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
 }): http.Server {
@@ -42,6 +45,7 @@ export function createHttpServer(options: {
     agentRegistry,
     toolHost,
     pluginRegistry,
+    searchService,
     eventStore,
     scheduledSessionService,
   } = options;
@@ -178,6 +182,7 @@ export function createHttpServer(options: {
         pluginSettingsStore,
         ...(pluginRegistry ? { pluginRegistry } : {}),
         ...(pluginToolHost ? { pluginToolHost } : {}),
+        ...(searchService ? { searchService } : {}),
       };
 
       const helpers: HttpHelpers = { sendJson, readJsonBody };
@@ -187,6 +192,7 @@ export function createHttpServer(options: {
         handleStaticRoutes,
         handleExternalRoutes,
         handlePanelRoutes,
+        handleSearchRoutes,
         ...pluginRoutes,
         handlePluginRoutes,
         handlePreferencesRoutes,

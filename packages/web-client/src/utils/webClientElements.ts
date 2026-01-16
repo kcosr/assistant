@@ -24,6 +24,13 @@ export interface WebClientElements {
   panelLauncherSearch: HTMLInputElement | null;
   panelLauncherCloseButton: HTMLButtonElement | null;
   panelHeaderDock: HTMLElement | null;
+  commandPaletteButton: HTMLButtonElement | null;
+  commandPalette: HTMLElement | null;
+  commandPalettePanel: HTMLElement | null;
+  commandPaletteInput: HTMLInputElement | null;
+  commandPaletteGhost: HTMLElement | null;
+  commandPaletteResults: HTMLElement | null;
+  commandPaletteCloseButton: HTMLButtonElement | null;
 }
 
 function getElement<T extends HTMLElement>(id: string): T | null {
@@ -81,5 +88,12 @@ export function getWebClientElements(): WebClientElements | null {
     panelLauncherSearch: getElement<HTMLInputElement>('panel-launcher-search'),
     panelLauncherCloseButton: getElement<HTMLButtonElement>('panel-launcher-close'),
     panelHeaderDock: getElement<HTMLElement>('panel-header-dock'),
+    commandPaletteButton: getElement<HTMLButtonElement>('command-palette-button'),
+    commandPalette: getElement<HTMLElement>('command-palette'),
+    commandPalettePanel: getElement<HTMLElement>('command-palette-panel'),
+    commandPaletteInput: getElement<HTMLInputElement>('command-palette-input'),
+    commandPaletteGhost: getElement<HTMLElement>('command-palette-ghost'),
+    commandPaletteResults: getElement<HTMLElement>('command-palette-results'),
+    commandPaletteCloseButton: getElement<HTMLButtonElement>('command-palette-close'),
   };
 }

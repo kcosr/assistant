@@ -25,7 +25,7 @@ export interface KeyboardNavigationControllerOptions {
   focusInput: () => void;
   getInputEl: () => HTMLInputElement | null;
   getActiveChatRuntime: () => ChatRuntime | null;
-  openPanelLauncher: () => void;
+  openCommandPalette: () => void;
   getFocusedSessionId: () => string | null;
   setFocusedSessionId: (id: string | null) => void;
   isSidebarFocused: () => boolean;
@@ -158,13 +158,13 @@ export class KeyboardNavigationController {
     const headerNavModifiers: ModifierKey[] = layoutNavModifiers;
 
     this.shortcutRegistry.register({
-      id: 'open-panel-launcher',
+      id: 'open-command-palette',
       key: 'k',
       modifiers: ['ctrl'],
       cmdOrCtrl: true,
-      description: 'Open panel launcher',
+      description: 'Open command palette',
       handler: () => {
-        this.options.openPanelLauncher();
+        this.options.openCommandPalette();
       },
     });
 

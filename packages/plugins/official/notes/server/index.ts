@@ -5,7 +5,11 @@ import { normalizeTags } from '@assistant/shared';
 
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
-import type { PluginModule } from '../../../../agent-server/src/plugins/types';
+import type {
+  PluginModule,
+  SearchProvider,
+  SearchResult,
+} from '../../../../agent-server/src/plugins/types';
 import {
   DEFAULT_PLUGIN_INSTANCE_ID,
   normalizePluginInstanceId,
@@ -170,7 +174,46 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     return store;
   };
 
+  const searchProvider: SearchProvider = {
+    async search(query, options) {
+      const trimmed = query.trim();
+      if (!trimmed) {
+        return [];
+      }
+      const { instanceId, limit = 10 } = options;
+      const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
+      const results: SearchResult[] = [];
+
+      for (const instId of targetInstances) {
+        if (!instanceById.has(instId)) {
+          continue;
+        }
+        const store = await getStore(instId);
+        const notes = await store.search({ query: trimmed, limit });
+        for (const note of notes) {
+          results.push({
+            id: note.title,
+            title: note.title,
+            subtitle: note.tags?.join(', '),
+            snippet: note.snippet,
+            launch: {
+              panelType: 'notes',
+              payload: {
+                type: 'notes_show',
+                instance_id: instId,
+                title: note.title,
+              },
+            },
+          });
+        }
+      }
+
+      return results.slice(0, limit);
+    },
+  };
+
   return {
+    searchProvider,
     operations: {
       instance_list: async (): Promise<PluginInstanceDefinition[]> => instances,
       list: async (args): Promise<NoteMetadata[]> => {

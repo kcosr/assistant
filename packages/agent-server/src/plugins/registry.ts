@@ -241,6 +241,7 @@ export class DefaultPluginRegistry implements PluginRegistry {
       name: manifest.id,
       manifest,
       tools,
+      ...(module?.searchProvider ? { searchProvider: module.searchProvider } : {}),
       ...(module?.panelEventHandlers ? { panelEventHandlers: module.panelEventHandlers } : {}),
       ...(httpRoutes.length > 0 ? { httpRoutes } : {}),
       initialize: module?.initialize ?? (async () => {}),

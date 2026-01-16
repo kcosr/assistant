@@ -377,6 +377,57 @@ describe('lists plugin operations', () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
+  it('search provider returns list and item matches', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create(
+      {
+        id: 'reading',
+        name: 'Reading List',
+        description: 'Books to read soon',
+      },
+      ctx,
+    );
+
+    const item = (await ops['item-add'](
+      {
+        listId: 'reading',
+        title: 'Reading Dune',
+      },
+      ctx,
+    )) as ListItem;
+
+    const searchProvider = plugin.searchProvider;
+    if (!searchProvider) {
+      throw new Error('Expected searchProvider to be defined');
+    }
+
+    const results = await searchProvider.search('reading', { limit: 10 });
+    const listResult = results.find((result) => result.id === 'list:reading');
+    expect(listResult?.title).toBe('Reading List');
+    expect(listResult?.launch.payload).toMatchObject({
+      type: 'lists_show',
+      listId: 'reading',
+    });
+
+    const itemResult = results.find((result) => result.id === item.id);
+    expect(itemResult?.subtitle).toBe('Reading List');
+    expect(itemResult?.launch.payload).toMatchObject({
+      type: 'lists_show',
+      listId: 'reading',
+      itemId: item.id,
+    });
+  });
+
   it('supports multiple instances and isolates data', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();
