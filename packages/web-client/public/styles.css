@@ -1592,7 +1592,7 @@ body.panel-reordering {
   justify-content: center;
   padding: var(--spacing-lg);
   background: rgba(10, 15, 24, 0.35);
-  z-index: 1150;
+  z-index: 1000;
 }
 
 .panel-modal-overlay.open {
