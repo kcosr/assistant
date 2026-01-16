@@ -63,6 +63,16 @@
   flex-direction: column;
 }
 
+.collection-panel-content.note-edit-mode .list-item-form {
+  flex: 1;
+  min-height: 0;
+}
+
+.collection-panel-content.note-edit-mode .list-item-form-label:has(.note-content-textarea) {
+  flex: 1;
+  min-height: 0;
+}
+
 .collection-view-placeholder {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
@@ -3237,6 +3247,12 @@ button.tag-chip-remove {
   min-height: 220px;
   font-family: var(--font-mono);
   line-height: var(--line-height-relaxed);
+}
+
+.collection-panel-content.note-edit-mode .note-content-textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
 }
 
 .confirm-dialog-buttons {
