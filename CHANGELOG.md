@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added Pi session history provider with chat replay/refresh support and session-dir config ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ### Changed
 
