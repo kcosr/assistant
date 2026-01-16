@@ -242,6 +242,7 @@ When user presses **Right Arrow** on a result, show action menu:
 Default launch behavior:
 - **Enter**: Open in workspace (new panel docked to the right)
 - **Shift+Enter**: Replace selected panel (if one is selected). If no panel is selected, do nothing and keep the palette open.
+- **Touch**: Tap a result to open the action menu on mobile
 
 #### With Panel Selected
 

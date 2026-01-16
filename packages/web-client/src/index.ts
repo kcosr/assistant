@@ -2243,6 +2243,7 @@ async function main(): Promise<void> {
           onLaunch: handleSearchLaunch,
           resolveIcon: resolveCommandPaletteIcon,
           setStatus: (text) => setStatus(statusEl, text),
+          isMobileViewport,
         })
       : null;
   commandPaletteController?.attach();

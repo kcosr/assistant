@@ -49,6 +49,7 @@ export interface CommandPaletteControllerOptions {
   onLaunch: (result: SearchApiResult, action: LaunchAction) => boolean | void;
   resolveIcon?: (panelType: string) => string | null;
   setStatus?: (message: string) => void;
+  isMobileViewport?: () => boolean;
 }
 
 type PaletteMode = 'idle' | 'global' | 'command' | 'scope' | 'instance' | 'query';
@@ -591,8 +592,16 @@ export class CommandPaletteController {
       row.appendChild(icon);
       row.appendChild(content);
 
-      row.addEventListener('click', () => {
+      row.addEventListener('click', (event) => {
         this.resultIndex = index;
+        if (this.options.isMobileViewport?.()) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.closeMenus();
+          this.render();
+          this.openActionMenu();
+          return;
+        }
         this.handleDefaultLaunch(false);
       });
       row.addEventListener('dblclick', () => {
