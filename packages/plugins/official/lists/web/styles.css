@@ -1633,27 +1633,33 @@
   color: var(--tag-fg, var(--color-text-secondary));
 }
 
-.collection-list-table {
+table.collection-list-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate !important;
+  border-spacing: 0;
   font-size: var(--font-size-sm);
   margin-top: var(--spacing-xs);
 }
 
-.collection-list-table th,
-.collection-list-table td {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border: 1px solid var(--color-border-subtle);
+table.collection-list-table th,
+table.collection-list-table td {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: none;
+  border-bottom: 1px solid var(--color-border-subtle);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .collection-list-table th {
-  background-color: var(--color-bg-elevated);
-  font-weight: 500;
-  color: var(--color-text-primary);
+  background-color: transparent;
+  font-weight: 600;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
   position: relative;
   user-select: none;
+  border-bottom: 2px solid var(--color-border-subtle);
 }
 
 /* Title column needs reasonable min-width (second column now, after checkbox) */
@@ -1701,8 +1707,10 @@
 
 .collection-list-empty-row td {
   text-align: center;
-  font-style: italic;
+  font-style: normal;
   color: var(--color-text-muted);
+  padding: var(--spacing-lg) var(--spacing-md);
+  border-bottom: none;
 }
 
 .list-column-menu {
@@ -1746,21 +1754,25 @@
 /* Sortable column headers */
 .collection-list-table th.sortable-header {
   cursor: pointer;
-  transition: background-color var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+  border-radius: var(--radius-sm);
 }
 
 .collection-list-table th.sortable-header:hover {
-  background-color: var(--color-bg-active);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-hover);
 }
 
 .collection-list-table th.sortable-header.sorted {
-  background-color: var(--color-bg-elevated);
   color: var(--color-accent-primary);
+  background-color: transparent;
 }
 
 .collection-list-table th .sort-indicator {
-  font-size: 0.75em;
-  opacity: 0.8;
+  font-size: 0.85em;
+  opacity: 0.9;
   margin-left: 2px;
 }
 
@@ -1827,6 +1839,14 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.list-item-row:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.list-item-row:hover > td {
+  background-color: var(--color-bg-hover);
+}
+
 @media (pointer: coarse) {
   .list-item-row {
     /* Prevent native text selection on touch devices */
@@ -1858,11 +1878,18 @@
 }
 
 .list-item-completed {
-  opacity: 0.6;
-  background-color: var(--color-bg-elevated);
+  opacity: 0.55;
+}
+
+.list-item-completed:hover {
+  opacity: 0.75;
 }
 
 .list-item-selected {
+  background-color: var(--color-bg-active);
+}
+
+.list-item-selected > td {
   background-color: var(--color-bg-active);
 }
 
@@ -1895,13 +1922,14 @@
   white-space: nowrap;
   text-align: center;
   vertical-align: middle;
-  padding: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm) var(--spacing-md);
 }
 
 .list-item-checkbox-header {
   width: 1px; /* Shrink to fit content */
   padding: var(--spacing-xs);
   border: none;
+  border-bottom: 2px solid var(--color-border-subtle);
   background-color: transparent;
 }
 
