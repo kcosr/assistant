@@ -1439,6 +1439,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             initialListId = null;
           }
           void refreshLists().then(() => {
+            if (activeListId) {
+              setMode('list');
+              return;
+            }
             if (initialListId) {
               void selectList(initialListId).then(() => {
                 if (initialMode) {
