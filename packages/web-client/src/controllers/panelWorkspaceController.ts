@@ -787,6 +787,9 @@ export class PanelWorkspaceController {
       if (event.key !== 'Escape') {
         return;
       }
+      if (this.isModalEscapeBlocked()) {
+        return;
+      }
       const modalId = this.modalPanelIds.values().next().value as string | undefined;
       if (modalId) {
         event.preventDefault();
@@ -803,6 +806,20 @@ export class PanelWorkspaceController {
 
     this.modalOverlay = overlay;
     return overlay;
+  }
+
+  private isModalEscapeBlocked(): boolean {
+    const selectors = [
+      '.confirm-dialog-overlay',
+      '.workspace-switcher-overlay.open',
+      '#share-target-modal.visible',
+      '.command-palette-overlay.open',
+      '.panel-launcher-overlay.open',
+      '.session-picker-popover',
+      '.context-menu',
+      '.panel-dock-popover.open',
+    ];
+    return selectors.some((selector) => Boolean(document.querySelector(selector)));
   }
 
   closePanelToPlaceholder(panelId: string): void {
