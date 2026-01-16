@@ -30,15 +30,14 @@ export const handleSearchRoutes: HttpRouteHandler = async (
   }
 
   if (segments.length === 2) {
-    const rawQuery = url.searchParams.get('q') ?? '';
-    const query = rawQuery.trim();
-    if (!query) {
+    const rawQuery = url.searchParams.get('q');
+    const query = rawQuery?.trim() ?? '';
+    const scope = url.searchParams.get('scope')?.trim() ?? '';
+    const instance = url.searchParams.get('instance')?.trim() ?? '';
+    if (!query && !scope) {
       sendJson(400, { error: 'q is required' });
       return true;
     }
-
-    const scope = url.searchParams.get('scope');
-    const instance = url.searchParams.get('instance');
     const limitParam = url.searchParams.get('limit');
     let limit: number | undefined;
     if (limitParam !== null) {

@@ -1257,7 +1257,7 @@ button.settings-dropdown-item {
 }
 
 .command-palette-results:empty {
-  padding: 0;
+  padding: var(--spacing-xs) var(--spacing-md);
 }
 
 .command-palette-empty {
