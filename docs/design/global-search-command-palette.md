@@ -38,7 +38,7 @@ A global search and command palette that allows users to quickly find content ac
 - **Plain text search**: Instant global search across everything
 - **Scoped search**: `/search notes work meeting` for targeted queries
 - **Staged input**: Guided flow with `<placeholder>` prompts and Enter-to-skip
-- **Flexible launch**: Open in workspace (default) or replace selected panel
+- **Flexible launch**: Open in workspace (default), open modal, or replace selected panel
 
 ---
 
@@ -253,6 +253,7 @@ Default launch behavior:
 │   ┌─────────────────────┐                   │
 │   │ ▶ Replace           │                   │
 │   │   Open workspace    │                   │
+│   │   Open modal        │                   │
 │   └─────────────────────┘                   │
 └─────────────────────────────────────────────┘
 ```
@@ -267,6 +268,7 @@ Default launch behavior:
 │   ┌─────────────────────┐                   │
 │   │   Replace           │ ← greyed          │
 │   │ ▶ Open workspace    │                   │
+│   │   Open modal        │                   │
 │   └─────────────────────┘                   │
 └─────────────────────────────────────────────┘
 ```
@@ -277,6 +279,7 @@ Default launch behavior:
 |--------|----------|-------------------|
 | **Replace** | Replace selected panel with new panel showing result | Yes |
 | **Open workspace** | Add new panel docked to right of workspace | No |
+| **Open modal** | Open result in a modal panel overlay | No |
 
 ---
 
@@ -583,7 +586,8 @@ interface CommandPaletteOptions {
 
 type LaunchAction =
   | { type: 'replace' }
-  | { type: 'workspace' };
+  | { type: 'workspace' }
+  | { type: 'modal' };
 ```
 
 ### State Machine
@@ -923,6 +927,7 @@ For large datasets, implement server-side search indexing for better performance
 
 - [ ] Implement Replace action
 - [ ] Implement Open workspace action
+- [ ] Implement Open modal action
 - [ ] Handle panel selection state
 
 ### Phase 5: Polish

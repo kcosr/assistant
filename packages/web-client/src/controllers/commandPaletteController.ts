@@ -33,7 +33,7 @@ export interface SearchApiResponse {
   };
 }
 
-export type LaunchAction = { type: 'replace' } | { type: 'workspace' };
+export type LaunchAction = { type: 'replace' } | { type: 'workspace' } | { type: 'modal' };
 
 export interface CommandPaletteControllerOptions {
   overlay: HTMLElement | null;
@@ -93,6 +93,7 @@ const MAIN_MENU_ITEMS: Array<{
 }> = [
   { id: 'replace', label: 'Replace', action: { type: 'replace' }, requiresSelection: true },
   { id: 'workspace', label: 'Open workspace', action: { type: 'workspace' } },
+  { id: 'modal', label: 'Open modal', action: { type: 'modal' } },
 ];
 
 const SEARCH_DEBOUNCE_MS = 150;

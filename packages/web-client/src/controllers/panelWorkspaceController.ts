@@ -113,6 +113,9 @@ export class PanelWorkspaceController {
   private headerPopoverAnchor: HTMLElement | null = null;
   private openHeaderPanelId: string | null = null;
   private readonly panelContextSubscriptions = new Map<string, () => void>();
+  private readonly modalPanelIds = new Set<string>();
+  private modalOverlay: HTMLElement | null = null;
+  private modalOverlayCleanup: (() => void) | null = null;
 
   constructor(private readonly options: PanelWorkspaceControllerOptions) {
     this.headerDockRoot = options.headerDockRoot ?? null;
@@ -550,6 +553,58 @@ export class PanelWorkspaceController {
     return panelId;
   }
 
+  openModalPanel(panelType: string, options: PanelOpenOptions = {}): string | null {
+    const manifest = this.options.registry.getManifest(panelType);
+    if (!manifest || !this.isPanelAvailable(panelType, manifest)) {
+      return null;
+    }
+
+    for (const modalId of Array.from(this.modalPanelIds)) {
+      this.closeModalPanel(modalId);
+    }
+
+    const panelId = createPanelId(panelType, new Set(Object.keys(this.layout.panels)));
+    const initOptions: PanelInitOptions = {};
+    if (options.binding) {
+      initOptions.binding = options.binding;
+    }
+    if (options.state !== undefined) {
+      initOptions.state = options.state;
+    }
+
+    const instance = this.options.registry.createInstance(panelType, panelId, initOptions);
+    this.layout = {
+      ...this.layout,
+      panels: {
+        ...this.layout.panels,
+        [panelId]: instance,
+      },
+    };
+    this.modalPanelIds.add(panelId);
+
+    const overlay = this.ensureModalOverlay();
+    overlay.replaceChildren();
+    const modal = document.createElement('div');
+    modal.className = 'panel-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', this.getPanelTitle(panelId));
+    const frame = this.renderPanel(panelId);
+    frame.classList.add('panel-frame-modal');
+    modal.appendChild(frame);
+    overlay.appendChild(modal);
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+
+    this.mountPanels();
+    this.updateVisibility();
+    this.observePanels();
+    this.syncPanelContextSubscriptions();
+    this.focusPanel(panelId);
+    this.updatePanelContextSummary();
+    return panelId;
+  }
+
   replacePanel(panelId: string, panelType: string, options: PanelInitOptions = {}): boolean {
     const existing = this.layout.panels[panelId];
     if (!existing) {
@@ -610,6 +665,10 @@ export class PanelWorkspaceController {
   }
 
   closePanel(panelId: string): void {
+    if (this.isModalPanel(panelId)) {
+      this.closeModalPanel(panelId);
+      return;
+    }
     if (!this.layout.panels[panelId]) {
       return;
     }
@@ -657,6 +716,93 @@ export class PanelWorkspaceController {
     this.options.host.unmountPanel(panelId);
     this.mountedPanelIds.delete(panelId);
     this.panelVisibility.delete(panelId);
+  }
+
+  private isModalPanel(panelId: string): boolean {
+    return this.modalPanelIds.has(panelId);
+  }
+
+  private closeModalPanel(panelId: string): void {
+    if (!this.modalPanelIds.has(panelId)) {
+      return;
+    }
+    this.modalPanelIds.delete(panelId);
+
+    const { [panelId]: _, ...remainingPanels } = this.layout.panels;
+    this.layout = { ...this.layout, panels: remainingPanels };
+
+    const unsubscribe = this.panelContextSubscriptions.get(panelId);
+    if (unsubscribe) {
+      unsubscribe();
+      this.panelContextSubscriptions.delete(panelId);
+    }
+
+    if (this.activePanelId === panelId) {
+      this.activePanelId = null;
+      this.setActivePanelContext(null, 'program');
+    }
+
+    this.options.host.setPanelVisibility(panelId, false);
+    this.options.host.unmountPanel(panelId);
+    this.mountedPanelIds.delete(panelId);
+    this.panelVisibility.delete(panelId);
+
+    if (this.modalPanelIds.size === 0 && this.modalOverlay) {
+      this.modalOverlay.classList.remove('open');
+      this.modalOverlay.setAttribute('aria-hidden', 'true');
+      this.modalOverlay.replaceChildren();
+      this.modalOverlay.remove();
+      if (this.modalOverlayCleanup) {
+        this.modalOverlayCleanup();
+        this.modalOverlayCleanup = null;
+      }
+      this.modalOverlay = null;
+    }
+
+    this.updateVisibility();
+    this.ensureActivePanel();
+    this.refreshActivePanelFrames();
+    this.updatePanelContextSummary();
+  }
+
+  private ensureModalOverlay(): HTMLElement {
+    if (this.modalOverlay) {
+      return this.modalOverlay;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'panel-modal-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(overlay);
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (event.target !== overlay) {
+        return;
+      }
+      const modalId = this.modalPanelIds.values().next().value as string | undefined;
+      if (modalId) {
+        this.closePanel(modalId);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      const modalId = this.modalPanelIds.values().next().value as string | undefined;
+      if (modalId) {
+        event.preventDefault();
+        this.closePanel(modalId);
+      }
+    };
+
+    overlay.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    this.modalOverlayCleanup = () => {
+      overlay.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+
+    this.modalOverlay = overlay;
+    return overlay;
   }
 
   closePanelToPlaceholder(panelId: string): void {
@@ -1141,16 +1287,38 @@ export class PanelWorkspaceController {
   }
 
   private persistLayout(): void {
+    const layout = this.stripModalPanels(this.layout);
     if (this.options.saveLayout) {
-      this.options.saveLayout(this.layout);
+      this.options.saveLayout(layout);
       return;
     }
 
     try {
-      savePanelLayout(this.layout);
+      savePanelLayout(layout);
     } catch {
       // Ignore localStorage serialization errors.
     }
+  }
+
+  private stripModalPanels(layout: LayoutPersistence): LayoutPersistence {
+    if (this.modalPanelIds.size === 0) {
+      return layout;
+    }
+    const panels = { ...layout.panels };
+    for (const panelId of this.modalPanelIds) {
+      delete panels[panelId];
+    }
+    const headerPanels = layout.headerPanels.filter((id) => !this.modalPanelIds.has(id));
+    const headerPanelSizes = { ...layout.headerPanelSizes };
+    for (const panelId of this.modalPanelIds) {
+      delete headerPanelSizes[panelId];
+    }
+    return {
+      ...layout,
+      panels,
+      headerPanels,
+      headerPanelSizes,
+    };
   }
 
   private captureScrollPositions(): Map<HTMLElement, number> {
@@ -2511,6 +2679,9 @@ export class PanelWorkspaceController {
     if (this.openHeaderPanelId) {
       visiblePanels.add(this.openHeaderPanelId);
     }
+    for (const panelId of this.modalPanelIds) {
+      visiblePanels.add(panelId);
+    }
     const openPanelIds = new Set(Object.keys(this.layout.panels));
 
     let didChange = false;
@@ -2572,6 +2743,9 @@ export class PanelWorkspaceController {
 
   private ensureActivePanel(): void {
     const visiblePanels = collectVisiblePanelIds(this.layout.layout);
+    for (const panelId of this.modalPanelIds) {
+      visiblePanels.add(panelId);
+    }
     if (visiblePanels.size === 0) {
       return;
     }
@@ -2662,6 +2836,7 @@ export class PanelWorkspaceController {
     return (
       this.options.root.querySelector<HTMLElement>(`.panel-frame[data-panel-id="${panelId}"]`) ??
       this.headerPopover?.querySelector<HTMLElement>(`.panel-frame[data-panel-id="${panelId}"]`) ??
+      this.modalOverlay?.querySelector<HTMLElement>(`.panel-frame[data-panel-id="${panelId}"]`) ??
       null
     );
   }

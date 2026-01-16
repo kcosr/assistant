@@ -1584,6 +1584,39 @@ body.panel-reordering {
   pointer-events: none;
 }
 
+.panel-modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  background: rgba(10, 15, 24, 0.35);
+  z-index: 1150;
+}
+
+.panel-modal-overlay.open {
+  display: flex;
+}
+
+.panel-modal {
+  width: min(960px, 92vw);
+  height: min(85vh, 860px);
+  display: flex;
+}
+
+.panel-frame.panel-frame-modal {
+  border-radius: var(--radius-lg);
+  background-color: var(--color-bg-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.panel-frame.panel-frame-modal > .panel,
+.panel-frame.panel-frame-modal > .panel-instance,
+.panel-frame.panel-frame-modal > .chat-panel {
+  border-radius: var(--radius-lg);
+}
+
 .panel-reorder-overlay {
   position: fixed;
   inset: 0;

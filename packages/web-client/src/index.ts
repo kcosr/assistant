@@ -2192,6 +2192,8 @@ async function main(): Promise<void> {
         focus: true,
         placement: { region: 'right' },
       });
+    } else if (action.type === 'modal') {
+      panelId = panelWorkspace.openModalPanel(panelType, { focus: true });
     } else if (action.type === 'replace') {
       const targetPanelId = panelWorkspace.getActivePanelId();
       if (!targetPanelId) {
