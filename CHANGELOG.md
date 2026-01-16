@@ -6,9 +6,17 @@
 
 ### Added
 
+- Global search command palette with scoped search and modal/pin launch actions. ([#7](https://github.com/kcosr/assistant/pull/7))
+- Search providers for notes and lists, including list name matches and scoped title browse. ([#7](https://github.com/kcosr/assistant/pull/7))
+- Modal panel overlay support. ([#7](https://github.com/kcosr/assistant/pull/7))
+
 ### Changed
 
+- Keep list panels in list view when selecting lists from search. ([#7](https://github.com/kcosr/assistant/pull/7))
+
 ### Fixed
+
+- Prevent Escape from closing modal panels when another dialog is open. ([#7](https://github.com/kcosr/assistant/pull/7))
 
 ### Removed
 
