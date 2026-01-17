@@ -14,7 +14,6 @@ import type {
 import { SessionRuntime, type SessionRuntimeOptions } from './sessionRuntime';
 import type { WsTransport } from './wsTransport';
 import type { SessionConnection } from './sessionConnection';
-import { ConversationStore } from '../conversationStore';
 import { SessionIndex } from '../sessionIndex';
 import { AgentRegistry } from '../agents';
 import { SessionHub } from '../sessionHub';
@@ -32,15 +31,13 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
-function createTestConfig(transcriptsDir: string): EnvConfig {
+function createTestConfig(dataDir: string): EnvConfig {
   return {
     port: 0,
     apiKey: 'test-api-key',
     chatModel: 'gpt-4o-mini',
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir,
-    dataDir: os.tmpdir(),
+    dataDir,
     audioInputMode: 'manual',
     audioSampleRate: 24000,
     audioTranscriptionEnabled: false,
@@ -69,6 +66,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -127,14 +126,13 @@ function createRuntime(options: {
     },
   };
 
-  const config = createTestConfig(createTempDir('subscription-runtime-conversations'));
+  const config = createTestConfig(createTempDir('subscription-runtime-data'));
 
   const runtimeOptions: SessionRuntimeOptions = {
     transport,
     connection,
     config,
     toolHost: noopToolHost,
-    conversationStore: new ConversationStore(config.transcriptsDir),
     sessionHub: options.sessionHub,
     eventStore: createTestEventStore(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,12 +157,10 @@ function createRuntime(options: {
 describe('SessionRuntime subscription message handlers', () => {
   it('handleSubscribe subscribes and emits subscribed message', async () => {
     const sessionsFile = createTempFile('subscription-runtime-subscribe-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-subscribe-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
 
     const summary = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime, transportSent } = createRuntime({ sessionHub });
@@ -187,12 +183,10 @@ describe('SessionRuntime subscription message handlers', () => {
 
   it('handleUnsubscribe unsubscribes from the requested session', async () => {
     const sessionsFile = createTempFile('subscription-runtime-unsubscribe-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-unsubscribe-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
 
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
@@ -229,12 +223,10 @@ describe('SessionRuntime subscription message handlers', () => {
 
   it('rejects text_input for sessions the connection is not subscribed to', async () => {
     const sessionsFile = createTempFile('subscription-runtime-text-route-unsubscribed-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-text-route-unsubscribed-convos');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
 
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
@@ -285,12 +277,10 @@ describe('SessionRuntime subscription message handlers', () => {
 
   it('queues subscribe before panel_event handlers', async () => {
     const sessionsFile = createTempFile('subscription-runtime-queue-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-queue-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
 
     const summary = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime, transportSent, connection } = createRuntime({ sessionHub });
@@ -330,10 +320,8 @@ describe('SessionRuntime subscription message handlers', () => {
 
   it('processes panel_event handlers serially per connection', async () => {
     const sessionsFile = createTempFile('subscription-runtime-panel-order-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-panel-order-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
 
     const sequence: string[] = [];
@@ -355,7 +343,6 @@ describe('SessionRuntime subscription message handlers', () => {
     };
 
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
       pluginRegistry,
@@ -393,10 +380,8 @@ describe('SessionRuntime subscription message handlers', () => {
 
   it('processes terminal snapshot responses while chat runs are active', async () => {
     const sessionsFile = createTempFile('subscription-runtime-snapshot-queue-sessions');
-    const transcriptsDir = createTempDir('subscription-runtime-snapshot-queue-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
 
     const handler: PanelEventHandler = vi.fn(async () => {});
@@ -409,7 +394,6 @@ describe('SessionRuntime subscription message handlers', () => {
     };
 
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
       pluginRegistry,

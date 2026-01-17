@@ -4,7 +4,6 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CombinedPluginManifest, PanelInventoryPayload } from '@assistant/shared';
-import { ConversationStore } from '../../../../agent-server/src/conversationStore';
 import { SessionHub, SessionIndex } from '../../../../agent-server/src/index';
 import { AgentRegistry } from '../../../../agent-server/src/agents';
 import {
@@ -12,6 +11,7 @@ import {
   updatePanelInventory,
 } from '../../../../agent-server/src/panels/panelInventoryStore';
 import type { ToolContext } from '../../../../agent-server/src/tools';
+import type { EventStore } from '../../../../agent-server/src/events';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
 
@@ -21,12 +21,19 @@ function createTempFile(prefix: string): string {
 
 async function createTestEnvironment() {
   const sessionsFile = createTempFile('panels-plugin-sessions');
-  const conversationsFile = createTempFile('panels-plugin-conversations');
 
   const sessionIndex = new SessionIndex(sessionsFile);
-  const conversationStore = new ConversationStore(conversationsFile);
+  const eventStore: EventStore = {
+    append: async () => {},
+    appendBatch: async () => {},
+    getEvents: async () => [],
+    getEventsSince: async () => [],
+    subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
+  };
   const agentRegistry = new AgentRegistry([]);
-  const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+  const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
   const initialSession = await sessionIndex.createSession({ agentId: 'general' });
 

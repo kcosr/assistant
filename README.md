@@ -35,7 +35,7 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Panel plugins** for lists, notes, diff review, and custom workflows
 - **Tool integration** via MCP (Model Context Protocol) over stdio
 - **Built-in session tools** – agent can list, search, create, switch, rename, and pin sessions
-- **Persistent sessions** with JSONL conversation logs and optional naming/pinning
+- **Persistent sessions** with JSONL event logs and optional naming/pinning
 - **Multi-client support** – multiple browser windows can share a session
 - **Theme + font preferences** (auto/light/dark + presets)
 
@@ -65,7 +65,7 @@ The built-in config includes Claude Code, Codex, and Pi CLI agents. For a full c
 Override the default paths using environment variables:
 
 ```bash
-# Use a custom data directory (sessions, conversations, config)
+# Use a custom data directory (sessions, events, config)
 export DATA_DIR=/path/to/data
 
 # Use a specific config file
@@ -350,9 +350,9 @@ See `packages/shared/src/protocol.ts` for message type definitions.
 ### Session Persistence
 
 - **Sessions index**: `${DATA_DIR}/sessions.jsonl`
-- **Conversation logs**: `${DATA_DIR}/conversations.jsonl`
+- **Session event logs**: `${DATA_DIR}/sessions/<sessionId>/events.jsonl`
 
-Logs are append-only JSONL files containing user messages, assistant responses, tool calls, and tool results.
+Event logs are append-only ChatEvent records containing user messages, assistant output, tool calls/results, and agent callbacks.
 
 ## License
 

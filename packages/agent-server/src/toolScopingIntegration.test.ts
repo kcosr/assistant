@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { ConversationStore } from './conversationStore';
 import { Session, SessionHub, SessionIndex } from './index';
 import { AgentRegistry } from './agents';
 import { type Tool, type ToolContext, type ToolHost, ToolError } from './tools';
@@ -17,16 +16,14 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
-function createTestConfig(transcriptsDir: string): unknown {
+function createTestConfig(dataDir: string): unknown {
   return {
     port: 0,
     apiKey: 'test-api-key',
     chatModel: 'gpt-4o-mini',
     mcpServers: undefined,
     toolsEnabled: true,
-    conversationLogPath: '',
-    transcriptsDir,
-    dataDir: os.tmpdir(),
+    dataDir,
     audioInputMode: 'manual',
     audioSampleRate: 24000,
     audioTranscriptionEnabled: false,
@@ -80,6 +77,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -102,10 +101,10 @@ class StaticToolHost implements ToolHost {
 describe('Session tool scoping integration', () => {
   it('agent with toolAllowlist only sees matching tools plus system tools', async () => {
     const sessionsFile = createTempFile('tool-scoping-allowlist-sessions');
-    const transcriptsDir = createTempDir('tool-scoping-allowlist-conversations');
+    const dataDir = createTempDir('tool-scoping-allowlist-data');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
+    const eventStore = createTestEventStore();
 
     const agentRegistry = new AgentRegistry([
       {
@@ -117,7 +116,7 @@ describe('Session tool scoping integration', () => {
       },
     ]);
 
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const baseTools: Tool[] = [
       {
@@ -141,8 +140,7 @@ describe('Session tool scoping integration', () => {
     const summary = await sessionIndex.createSession({ agentId: 'todo-agent' });
 
     const ws = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
-    const eventStore = createTestEventStore();
+    const config = createTestConfig(dataDir);
 
     const session = new Session({
       clientSocket: ws as unknown as WebSocket,
@@ -150,7 +148,6 @@ describe('Session tool scoping integration', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });
@@ -181,10 +178,10 @@ describe('Session tool scoping integration', () => {
 
   it('agent with capabilityAllowlist only sees matching capability tools plus system tools', async () => {
     const sessionsFile = createTempFile('tool-scoping-capability-allowlist-sessions');
-    const transcriptsDir = createTempDir('tool-scoping-capability-allowlist-conversations');
+    const dataDir = createTempDir('tool-scoping-capability-allowlist-data');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
+    const eventStore = createTestEventStore();
 
     const agentRegistry = new AgentRegistry([
       {
@@ -196,7 +193,7 @@ describe('Session tool scoping integration', () => {
       },
     ]);
 
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const baseTools: Tool[] = [
       {
@@ -228,15 +225,13 @@ describe('Session tool scoping integration', () => {
     const summary = await sessionIndex.createSession({ agentId: 'lists-agent' });
 
     const ws = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
-    const eventStore = createTestEventStore();
+    const config = createTestConfig(dataDir);
 
     const session = new Session({
       clientSocket: ws as unknown as WebSocket,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });
@@ -267,10 +262,10 @@ describe('Session tool scoping integration', () => {
 
   it('agent with toolDenylist does not see denied tools', async () => {
     const sessionsFile = createTempFile('tool-scoping-denylist-sessions');
-    const transcriptsDir = createTempDir('tool-scoping-denylist-conversations');
+    const dataDir = createTempDir('tool-scoping-denylist-data');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
+    const eventStore = createTestEventStore();
 
     const agentRegistry = new AgentRegistry([
       {
@@ -282,7 +277,7 @@ describe('Session tool scoping integration', () => {
       },
     ]);
 
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const baseTools: Tool[] = [
       {
@@ -306,15 +301,13 @@ describe('Session tool scoping integration', () => {
     const summary = await sessionIndex.createSession({ agentId: 'cautious-agent' });
 
     const ws = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
-    const eventStore = createTestEventStore();
+    const config = createTestConfig(dataDir);
 
     const session = new Session({
       clientSocket: ws as unknown as WebSocket,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });
@@ -345,10 +338,10 @@ describe('Session tool scoping integration', () => {
 
   it('rejects callTool for tools not allowed by the agent allowlist', async () => {
     const sessionsFile = createTempFile('tool-scoping-call-sessions');
-    const transcriptsDir = createTempDir('tool-scoping-call-conversations');
+    const dataDir = createTempDir('tool-scoping-call-data');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
+    const eventStore = createTestEventStore();
 
     const agentRegistry = new AgentRegistry([
       {
@@ -360,7 +353,7 @@ describe('Session tool scoping integration', () => {
       },
     ]);
 
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const baseTools: Tool[] = [
       {
@@ -384,15 +377,13 @@ describe('Session tool scoping integration', () => {
     const summary = await sessionIndex.createSession({ agentId: 'todo-agent' });
 
     const ws = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
-    const eventStore = createTestEventStore();
+    const config = createTestConfig(dataDir);
 
     const session = new Session({
       clientSocket: ws as unknown as WebSocket,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });

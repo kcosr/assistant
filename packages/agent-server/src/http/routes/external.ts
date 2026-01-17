@@ -1,7 +1,8 @@
-import type { ServerTextDoneMessage } from '@assistant/shared';
+import type { ChatEvent, ServerTextDoneMessage } from '@assistant/shared';
 
 import type { HttpRouteHandler } from '../types';
 import { createExternalResponseId } from '../../externalAgents';
+import { appendAndBroadcastChatEvents, createChatEventBase } from '../../events/chatEventUtils';
 
 export const handleExternalRoutes: HttpRouteHandler = async (
   context,
@@ -55,17 +56,6 @@ export const handleExternalRoutes: HttpRouteHandler = async (
 
     const responseId = createExternalResponseId();
 
-    void context.conversationStore.logTextDone({
-      sessionId,
-      responseId,
-      text,
-    });
-    void context.conversationStore.logAssistantMessage({
-      sessionId,
-      responseId,
-      modality: 'text',
-      text,
-    });
     void context.sessionHub.recordSessionActivity(
       sessionId,
       text.length > 120 ? `${text.slice(0, 117)}…` : text,
@@ -82,6 +72,25 @@ export const handleExternalRoutes: HttpRouteHandler = async (
       text,
     };
     context.sessionHub.broadcastToSession(sessionId, message);
+
+    const events: ChatEvent[] = [
+      {
+        ...createChatEventBase({
+          sessionId,
+          responseId,
+        }),
+        type: 'assistant_done',
+        payload: { text },
+      },
+    ];
+    void appendAndBroadcastChatEvents(
+      {
+        eventStore: context.eventStore,
+        sessionHub: context.sessionHub,
+        sessionId,
+      },
+      events,
+    );
 
     res.statusCode = 200;
     res.end();

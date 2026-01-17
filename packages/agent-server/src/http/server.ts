@@ -2,7 +2,6 @@ import http from 'node:http';
 import path from 'node:path';
 
 import type { ToolContext, ToolHost } from '../tools';
-import type { ConversationStore } from '../conversationStore';
 import type { SessionIndex } from '../sessionIndex';
 import type { SessionHub } from '../sessionHub';
 import type { AgentRegistry } from '../agents';
@@ -28,7 +27,6 @@ const WEB_CLIENT_DIST_DIR = WEB_CLIENT_PUBLIC_DIR;
 
 export function createHttpServer(options: {
   config: EnvConfig;
-  conversationStore: ConversationStore;
   sessionIndex: SessionIndex;
   sessionHub: SessionHub;
   agentRegistry: AgentRegistry;
@@ -41,7 +39,6 @@ export function createHttpServer(options: {
 }): http.Server {
   const {
     config,
-    conversationStore,
     sessionIndex,
     sessionHub,
     agentRegistry,
@@ -61,7 +58,6 @@ export function createHttpServer(options: {
     sessionHub,
     sessionIndex,
     agentRegistry,
-    conversationStore,
     envConfig: config,
     baseToolHost: toolHost,
     ...(historyProvider ? { historyProvider } : {}),
@@ -171,7 +167,6 @@ export function createHttpServer(options: {
     try {
       const context: HttpContext = {
         config,
-        conversationStore,
         sessionIndex,
         sessionHub,
         agentRegistry,

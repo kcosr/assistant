@@ -4,7 +4,6 @@ import OpenAI from 'openai';
 import type { AgentDefinition, AgentRegistry } from './agents';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
-import type { ConversationStore } from './conversationStore';
 import type { EnvConfig } from './envConfig';
 import { openaiConfigured } from './envConfig';
 import type { EventStore } from './events';
@@ -156,13 +155,11 @@ export async function startSessionMessage(options: {
   sessionHub: SessionHub;
   agentRegistry?: AgentRegistry;
   toolHost: ToolHost;
-  conversationStore: ConversationStore;
   envConfig: EnvConfig;
   eventStore?: EventStore;
   scheduledSessionService?: ScheduledSessionService;
 }): Promise<SessionMessageStartResult> {
-  const { input, sessionIndex, sessionHub, toolHost, conversationStore, envConfig, eventStore } =
-    options;
+  const { input, sessionIndex, sessionHub, toolHost, envConfig, eventStore } = options;
 
   const content = input.content;
   if (!content.trim()) {
@@ -215,7 +212,6 @@ export async function startSessionMessage(options: {
       toolCalls,
       baseToolHost: toolHost,
       sessionToolHost: scopedToolHost,
-      conversationStore,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
@@ -245,7 +241,6 @@ export async function startSessionMessage(options: {
           sessionId: input.sessionId,
           state,
           text: content,
-          conversationStore,
           sessionHub,
           envConfig,
           ...(openaiClient ? { openaiClient } : {}),
@@ -313,7 +308,6 @@ export async function startSessionMessage(options: {
         state,
         text: content,
         responseId,
-        conversationStore,
         sessionHub,
         envConfig,
         ...(openaiClient ? { openaiClient } : {}),

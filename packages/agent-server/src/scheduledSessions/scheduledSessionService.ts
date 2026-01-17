@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import type { AgentRegistry, CliWrapperConfig } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { SessionHub } from '../sessionHub';
@@ -67,7 +66,6 @@ export interface ScheduledSessionServiceOptions {
   dataDir: string;
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
-  conversationStore?: ConversationStore;
   envConfig?: EnvConfig;
   toolHost?: ToolHost;
   eventStore?: EventStore;
@@ -468,7 +466,6 @@ export class ScheduledSessionService {
     return Boolean(
       this.options.sessionHub &&
         this.options.sessionIndex &&
-        this.options.conversationStore &&
         this.options.envConfig &&
         this.options.toolHost,
     );
@@ -489,9 +486,8 @@ export class ScheduledSessionService {
     const sessionIndex = this.options.sessionIndex;
     const sessionHub = this.options.sessionHub;
     const toolHost = this.options.toolHost;
-    const conversationStore = this.options.conversationStore;
     const envConfig = this.options.envConfig;
-    if (!sessionIndex || !sessionHub || !toolHost || !conversationStore || !envConfig) {
+    if (!sessionIndex || !sessionHub || !toolHost || !envConfig) {
       return { result: 'failed', error: 'Scheduled session dependencies are missing' };
     }
 
@@ -510,7 +506,6 @@ export class ScheduledSessionService {
       sessionHub,
       agentRegistry: this.options.agentRegistry,
       toolHost,
-      conversationStore,
       envConfig,
       ...(this.options.eventStore ? { eventStore: this.options.eventStore } : {}),
       scheduledSessionService: this,

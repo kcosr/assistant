@@ -5,7 +5,6 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AgentRegistry } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { SessionHub } from '../sessionHub';
 import type { SessionIndex, SessionSummary } from '../sessionIndex';
@@ -259,7 +258,6 @@ function createServiceWithSessions(
     dataDir: os.tmpdir(),
     sessionIndex: sessionIndex as unknown as SessionIndex,
     sessionHub: sessionHub as unknown as SessionHub,
-    conversationStore: {} as ConversationStore,
     envConfig: {} as EnvConfig,
     toolHost: {} as ToolHost,
     startSessionMessageFn,

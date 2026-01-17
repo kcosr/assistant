@@ -5,12 +5,10 @@ import { getSessionWorkspaceRoot } from '@assistant/coding-executor';
 import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
-import { ConversationStore } from './conversationStore';
 import { FileEventStore, SessionScopedEventStore } from './events';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
-import { migrateConversationStorage } from './conversationMigration';
 import { CompositeToolHost, createToolHost, type McpServerConfig, type ToolHost } from './tools';
 import { loadEnvConfig, openaiConfigured, type EnvConfig } from './envConfig';
 import { createHttpServer } from './http/server';
@@ -101,7 +99,6 @@ export async function startServer(
   appConfig?: AppConfig,
   gitVersioningService?: GitVersioningService,
 ): Promise<void> {
-  const conversationStore = new ConversationStore(config.transcriptsDir);
   const sessionIndex = new SessionIndex(path.join(config.dataDir, 'sessions.jsonl'));
   const eventStore = new FileEventStore(config.dataDir);
   const registry = agentRegistry ?? new AgentRegistry([]);
@@ -122,12 +119,13 @@ export async function startServer(
   );
 
   const sessionHub = new SessionHub({
-    conversationStore,
     sessionIndex,
     agentRegistry: registry,
     ...(pluginRegistry ? { pluginRegistry } : {}),
     maxCachedSessions,
     ...(resolveSessionWorkingDir ? { resolveSessionWorkingDir } : {}),
+    historyProvider,
+    eventStore,
   });
   const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub);
 
@@ -157,7 +155,6 @@ export async function startServer(
     dataDir: config.dataDir,
     sessionHub,
     sessionIndex,
-    conversationStore,
     envConfig: config,
     toolHost,
     eventStore: chatEventStore,
@@ -178,7 +175,6 @@ export async function startServer(
 
   const httpServer = createHttpServer({
     config,
-    conversationStore,
     sessionIndex,
     sessionHub,
     agentRegistry: registry,
@@ -211,7 +207,6 @@ export async function startServer(
       clientSocket: ws,
       config,
       toolHost,
-      conversationStore,
       sessionHub,
       eventStore: chatEventStore,
       scheduledSessionService,
@@ -235,11 +230,6 @@ export async function startServer(
 
   process.once('beforeExit', () => {
     void (async () => {
-      try {
-        await conversationStore.flush();
-      } catch (err) {
-        console.error('Failed to flush conversation store on shutdown', err);
-      }
       if (gitVersioningService) {
         gitVersioningService.shutdown();
       }
@@ -301,10 +291,6 @@ export async function runServer(): Promise<void> {
       });
 
   agentRegistry = new AgentRegistry(agentDefinitions);
-
-  // One-time migration from legacy single-file conversation log to per-session
-  // transcripts, if needed.
-  await migrateConversationStorage(envConfig.conversationLogPath, envConfig.transcriptsDir);
 
   const pluginRegistry = new DefaultPluginRegistry();
   await pluginRegistry.initialize(appConfig, envConfig.dataDir, {

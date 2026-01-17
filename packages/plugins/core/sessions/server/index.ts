@@ -254,8 +254,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const sessionIndex = requireSessionIndex(ctx);
         const envConfig = ctx.envConfig;
         const baseToolHost = ctx.baseToolHost;
-        const conversationStore = ctx.conversationStore;
-        if (!envConfig || !baseToolHost || !conversationStore) {
+        if (!envConfig || !baseToolHost) {
           throw new ToolError(
             'session_message_not_supported',
             'sessions_message is not available in this context',
@@ -337,7 +336,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           sessionIndex,
           sessionHub,
           toolHost: baseToolHost,
-          conversationStore,
           envConfig,
           ...(ctx.agentRegistry ? { agentRegistry: ctx.agentRegistry } : {}),
           ...(ctx.eventStore ? { eventStore: ctx.eventStore } : {}),

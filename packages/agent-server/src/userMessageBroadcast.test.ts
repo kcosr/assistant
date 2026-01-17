@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { ConversationStore } from './conversationStore';
 import { Session, SessionHub, SessionIndex } from './index';
 import { AgentRegistry } from './agents';
 import type { ToolHost, ToolContext, Tool } from './tools';
@@ -18,16 +17,14 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
-function createTestConfig(transcriptsDir: string): unknown {
+function createTestConfig(dataDir: string): unknown {
   return {
     port: 0,
     apiKey: 'test-api-key',
     chatModel: 'gpt-4o-mini',
     mcpServers: undefined,
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir,
-    dataDir: os.tmpdir(),
+    dataDir,
     audioInputMode: 'manual',
     audioSampleRate: 24000,
     audioTranscriptionEnabled: false,
@@ -81,6 +78,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -96,18 +95,16 @@ const noopToolHost: ToolHost = {
 describe('user message broadcast', () => {
   it('broadcasts user_message to other connections only', async () => {
     const sessionsFile = createTempFile('user-message-broadcast-sessions');
-    const transcriptsDir = createTempDir('user-message-broadcast-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
 
     const summary = await sessionIndex.createSession({ agentId: 'general' });
 
     const ws1 = new TestWebSocket();
     const ws2 = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
+    const config = createTestConfig(createTempDir('user-message-broadcast-data'));
     const eventStore = createTestEventStore();
 
     const session1 = new Session({
@@ -116,7 +113,6 @@ describe('user message broadcast', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost: noopToolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });
@@ -126,7 +122,6 @@ describe('user message broadcast', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost: noopToolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });

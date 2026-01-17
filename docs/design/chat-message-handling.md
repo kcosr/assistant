@@ -345,15 +345,15 @@ Handled by `chatRenderer.ts` → `replayEvents()` using the unified event log.
 
 ### Required: Persist Interrupted State
 
-Currently `interrupted: true` is logged on assistant_message but not rendered on reconstruction.
+Cancellation now emits an `interrupt` chat event, but reconstruction still does not render an indicator.
 
-**Backend** (`conversationStore.ts`):
+**Backend** (`events/eventStore.ts`):
 
 ```typescript
-interface AssistantMessageLogRecord {
-  // ...
-  interrupted?: boolean; // ✅ Already logged
-}
+const interruptEvent = {
+  type: 'interrupt',
+  payload: { reason: 'user_cancel' },
+};
 ```
 
 **Frontend fix needed** (`sessionDataController.ts`):
@@ -476,21 +476,21 @@ type RenderableEvent =
 
 ### Backend Event Logging
 
-The `conversationStore` now logs granular events with accurate timestamps:
+The `eventStore` now logs granular events with accurate timestamps:
 
 - `text_delta` / `text_done` - Text streaming
 - `thinking_start` / `thinking_delta` / `thinking_done` - Extended thinking
 - `tool_call_start` / `tool_output_delta` / `tool_result` - Tool execution
 - `output_cancelled` - User cancellation
 
-Transcript reconstruction sorts by timestamp, then by file order for ties, ensuring deterministic ordering that matches real-time streaming.
+Event log reconstruction sorts by timestamp, then by file order for ties, ensuring deterministic ordering that matches real-time streaming.
 
 ### Key Benefits
 
 1. **Identical DOM**: Real-time and reconstruction produce the same structure
 2. **Chronological order**: Elements appear in streaming order
 3. **Consistent interruption handling**: Tool blocks preserve interrupted state after reload
-4. **Single source of truth**: The transcript is authoritative; reconstruction replays it
+4. **Single source of truth**: The event log is authoritative; reconstruction replays it
 
 ### Known Limitations
 

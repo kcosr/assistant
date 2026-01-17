@@ -5,7 +5,6 @@ import OpenAI from 'openai';
 import type { ServerTextDoneMessage, ServerUserMessageMessage } from '@assistant/shared';
 import type { ChatEvent, TurnStartTrigger } from '@assistant/shared';
 
-import type { ConversationStore } from './conversationStore';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from './chatCompletionTypes';
 import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
@@ -30,7 +29,6 @@ export interface ChatProcessorOptions {
   state: LogicalSessionState;
   text: string;
   responseId?: string;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   envConfig: EnvConfig;
   openaiClient?: OpenAI;
@@ -96,7 +94,6 @@ export async function processUserMessage(
     sessionId,
     state,
     text,
-    conversationStore,
     sessionHub,
     envConfig,
     openaiClient,
@@ -220,30 +217,6 @@ export async function processUserMessage(
       events,
     );
   }
-  if (agentMessageContext) {
-    const {
-      fromSessionId,
-      fromAgentId,
-      responseId: agentResponseId,
-      logType,
-    } = agentMessageContext;
-
-    if (logType !== 'none') {
-      void conversationStore.logAgentMessage({
-        sessionId,
-        fromSessionId,
-        ...(fromAgentId ? { fromAgentId } : {}),
-        ...(agentResponseId ? { responseId: agentResponseId } : {}),
-        text: trimmedText,
-      });
-    }
-  } else {
-    void conversationStore.logUserMessage({
-      sessionId,
-      modality: 'text',
-      text: trimmedText,
-    });
-  }
   void sessionHub.recordSessionActivity(
     sessionId,
     trimmedText.length > 120 ? `${trimmedText.slice(0, 117)}…` : trimmedText,
@@ -361,7 +334,6 @@ export async function processUserMessage(
       envConfig,
       chatCompletionTools,
       handleChatToolCalls,
-      conversationStore,
       sessionHub,
       output,
       abortController,
@@ -392,18 +364,6 @@ export async function processUserMessage(
       const active = state.activeChatRun;
       const ttsSessionForRun = active?.ttsSession;
 
-      void conversationStore.logTextDone({
-        sessionId,
-        responseId,
-        text: fullText,
-        ...(agentExchangeId ? { agentExchangeId } : {}),
-      });
-      console.log('[chatProcessor] logTextDone', {
-        sessionId,
-        responseId,
-        agentExchangeId: agentExchangeId ?? null,
-        textLength: fullText.length,
-      });
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
         responseId,
@@ -455,21 +415,6 @@ export async function processUserMessage(
         active && typeof active.audioTruncatedAtMs === 'number'
           ? active.audioTruncatedAtMs
           : undefined;
-      console.log('[chatProcessor] logAssistantMessage', {
-        sessionId,
-        responseId,
-        agentExchangeId: agentExchangeId ?? null,
-        hasThinkingText: !!thinkingText,
-        textLength: fullText.length,
-      });
-      void conversationStore.logAssistantMessage({
-        sessionId,
-        responseId,
-        modality: ttsGenerated ? 'both' : 'text',
-        text: fullText,
-        ...(thinkingText ? { thinkingText } : {}),
-        ...(ttsGenerated && audioTruncatedAtMs !== undefined ? { audioTruncatedAtMs } : {}),
-      });
       void sessionHub.recordSessionActivity(
         sessionId,
         fullText.length > 120 ? `${fullText.slice(0, 117)}…` : fullText,

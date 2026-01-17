@@ -25,7 +25,6 @@ import type {
 import { CURRENT_PROTOCOL_VERSION, PanelInventoryPayloadSchema } from '@assistant/shared';
 
 import { createScopedToolHost, mapToolsToChatCompletionSpecs, type ToolHost } from '../tools';
-import type { ConversationStore } from '../conversationStore';
 import { RateLimiter } from '../rateLimit';
 import type { SessionHub } from '../sessionHub';
 import type { LogicalSessionState } from '../sessionHub';
@@ -59,7 +58,6 @@ export interface SessionRuntimeOptions {
   connectionId?: string;
   config: EnvConfig;
   toolHost: ToolHost;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   openaiClient?: OpenAI;
   eventStore: EventStore;
@@ -74,7 +72,6 @@ export class SessionRuntime {
   private readonly config: EnvConfig;
   private readonly baseToolHost: ToolHost;
   private sessionToolHost: ToolHost;
-  private readonly conversationStore: ConversationStore;
   private readonly openaiClient: OpenAI | undefined;
   private readonly sessionHub: SessionHub;
   private readonly eventStore: EventStore;
@@ -109,7 +106,6 @@ export class SessionRuntime {
     this.config = options.config;
     this.baseToolHost = options.toolHost;
     this.sessionToolHost = options.toolHost;
-    this.conversationStore = options.conversationStore;
     this.sessionHub = options.sessionHub;
     this.openaiClient = options.openaiClient;
     this.eventStore = options.eventStore;
@@ -774,7 +770,6 @@ export class SessionRuntime {
       state: stateForRun,
       sessionId: sessionIdForRun,
       connection: this.connection,
-      conversationStore: this.conversationStore,
       sessionHub: this.sessionHub,
       ...(this.openaiClient ? { openaiClient: this.openaiClient } : {}),
       config: this.config,
@@ -818,7 +813,6 @@ export class SessionRuntime {
       toolCalls,
       baseToolHost: this.baseToolHost,
       sessionToolHost,
-      conversationStore: this.conversationStore,
       sessionHub: this.sessionHub,
       eventStore: this.eventStore,
       maxToolCallsPerMinute: this.config.maxToolCallsPerMinute,
@@ -901,7 +895,6 @@ export class SessionRuntime {
     handleChatOutputCancelInternal({
       message,
       activeRunState,
-      conversationStore: this.conversationStore,
       sessionHub: this.sessionHub,
       broadcastOutputCancelled: (sessionId, responseId) => {
         this.sendOutputCancelled(sessionId, responseId);

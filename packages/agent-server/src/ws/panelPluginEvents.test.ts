@@ -6,7 +6,6 @@ import { WebSocket } from 'ws';
 
 import { CURRENT_PROTOCOL_VERSION, type ClientPanelEventMessage } from '@assistant/shared';
 
-import { ConversationStore } from '../conversationStore';
 import { Session, SessionHub, SessionIndex } from '../index';
 import { AgentRegistry } from '../agents';
 import type { Tool, ToolContext, ToolHost } from '../tools';
@@ -22,16 +21,14 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
-function createTestConfig(transcriptsDir: string): unknown {
+function createTestConfig(dataDir: string): unknown {
   return {
     port: 0,
     apiKey: 'test-api-key',
     chatModel: 'gpt-4o-mini',
     mcpServers: undefined,
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir,
-    dataDir: os.tmpdir(),
+    dataDir,
     audioInputMode: 'manual',
     audioSampleRate: 24000,
     audioTranscriptionEnabled: false,
@@ -95,6 +92,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -118,10 +117,9 @@ function extractPanelEvents(sent: unknown[]): Array<Record<string, unknown>> {
 describe('panel plugin websocket handlers', () => {
   it('routes panel_event to a plugin handler and skips default broadcast', async () => {
     const sessionsFile = createTempFile('panel-plugin-ws-sessions');
-    const transcriptsDir = createTempDir('panel-plugin-ws-transcripts');
+    const dataDir = createTempDir('panel-plugin-ws-data');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
 
     const handler: PanelEventHandler = vi.fn(async (event, ctx) => {
@@ -141,24 +139,23 @@ describe('panel plugin websocket handlers', () => {
       getPanelEventHandler: (panelType) => (panelType === 'terminal' ? handler : undefined),
     };
 
+    const eventStore = createTestEventStore();
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
       pluginRegistry,
+      eventStore,
     });
 
     const sessionSummary = await sessionIndex.createSession({ agentId: 'general' });
     const ws = new TestWebSocket();
-    const config = createTestConfig(transcriptsDir);
-    const eventStore = createTestEventStore();
+    const config = createTestConfig(dataDir);
 
     const session = new Session({
       clientSocket: ws as unknown as WebSocket,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: config as any,
       toolHost: noopToolHost,
-      conversationStore,
       sessionHub,
       eventStore,
     });

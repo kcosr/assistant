@@ -3,29 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ClientControlMessage, ServerMessage } from '@assistant/shared';
 
 import { handleChatOutputCancel } from './chatOutputCancelHandling';
-import type { ConversationStore } from '../conversationStore';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
+import type { EventStore } from '../events';
 
 describe('handleChatOutputCancel', () => {
-  it('logs interrupted assistant message and tool results for active tool calls', async () => {
+  it('emits interrupted assistant message and tool results for active tool calls', async () => {
     const sessionId = 'session-1';
     const responseId = 'resp-1';
-
-    const logAssistantMessage = vi.fn(
-      async (_record: Parameters<ConversationStore['logAssistantMessage']>[0]) => undefined,
-    );
-    const logToolResult = vi.fn(
-      async (_record: Parameters<ConversationStore['logToolResult']>[0]) => undefined,
-    );
-    const logOutputCancelled = vi.fn(
-      async (_record: Parameters<ConversationStore['logOutputCancelled']>[0]) => undefined,
-    );
-
-    const conversationStore = {
-      logAssistantMessage,
-      logToolResult,
-      logOutputCancelled,
-    } as unknown as ConversationStore;
 
     const broadcastMessages: ServerMessage[] = [];
     const recordSessionActivity = vi.fn(async () => undefined);
@@ -38,6 +22,20 @@ describe('handleChatOutputCancel', () => {
     } as unknown as SessionHub;
 
     const abortController = new AbortController();
+    const events: Array<{ type: string; payload?: { text?: string; toolCallId?: string } }> = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events as never[],
+      getEventsSince: async () => events as never[],
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
 
     const state: LogicalSessionState = {
       summary: {
@@ -48,6 +46,7 @@ describe('handleChatOutputCancel', () => {
       chatMessages: [],
       activeChatRun: {
         responseId,
+        turnId: 'turn-1',
         abortController,
         accumulatedText: 'Partial answer',
         activeToolCalls: new Map([
@@ -82,39 +81,19 @@ describe('handleChatOutputCancel', () => {
     handleChatOutputCancel({
       message,
       activeRunState: { sessionId, state },
-      conversationStore,
       sessionHub,
       broadcastOutputCancelled: vi.fn(),
       log: vi.fn(),
+      eventStore,
     });
 
     expect(abortController.signal.aborted).toBe(true);
 
-    expect(logAssistantMessage).toHaveBeenCalledTimes(1);
-    const assistantRecord = logAssistantMessage.mock.calls[0]?.[0];
-    expect(assistantRecord).toBeDefined();
-    if (!assistantRecord) {
-      throw new Error('expected assistant record to be defined');
-    }
-    expect(assistantRecord.sessionId).toBe(sessionId);
-    expect(assistantRecord.responseId).toBe(responseId);
-    expect(assistantRecord.text).toBe('Partial answer');
-    expect(assistantRecord.interrupted).toBe(true);
-
-    expect(logToolResult).toHaveBeenCalledTimes(2);
-    const toolRecords = logToolResult.mock.calls
-      .map((call) => call[0])
-      .filter((r): r is Parameters<ConversationStore['logToolResult']>[0] => !!r);
-    const callIds = toolRecords.map((r) => r.callId).sort();
-    expect(callIds).toEqual(['call-1', 'call-2']);
-    for (const record of toolRecords) {
-      expect(record.sessionId).toBe(sessionId);
-      expect(record.ok).toBe(false);
-      expect(record.error).toEqual({
-        code: 'tool_interrupted',
-        message: 'Tool call was interrupted by the user',
-      });
-    }
+    const assistantEvent = events.find((event) => event.type === 'assistant_done');
+    expect(assistantEvent?.payload?.text).toBe('Partial answer');
+    const toolEvents = events.filter((event) => event.type === 'tool_result');
+    const toolEventIds = toolEvents.map((event) => event.payload?.toolCallId).sort();
+    expect(toolEventIds).toEqual(['call-1', 'call-2']);
 
     const toolResultMessages = broadcastMessages.filter((m) => m.type === 'tool_result') as Array<
       Extract<ServerMessage, { type: 'tool_result' }>
@@ -132,13 +111,7 @@ describe('handleChatOutputCancel', () => {
 
     expect(state.activeChatRun?.activeToolCalls?.size).toBe(0);
 
-    expect(logOutputCancelled).toHaveBeenCalledTimes(1);
-    const cancelledRecord = logOutputCancelled.mock.calls[0]?.[0];
-    expect(cancelledRecord).toBeDefined();
-    if (!cancelledRecord) {
-      throw new Error('expected output_cancelled record to be defined');
-    }
-    expect(cancelledRecord.sessionId).toBe(sessionId);
-    expect(cancelledRecord.responseId).toBe(responseId);
+    const interruptEvent = events.find((event) => event.type === 'interrupt');
+    expect(interruptEvent).toBeDefined();
   });
 });

@@ -13,14 +13,14 @@ It is intentionally implementation-oriented (file pointers, event shapes, edge c
 ## Table of Contents
 
 - [Problem Statement (What “unified rendering” means)](#1-problem-statement-what-unified-rendering-means)
-- [Data Model: Transcript Records](#2-data-model-transcript-records)
+- [Data Model: Chat Event Records](#2-data-model-chat-event-records)
 - [Backend: Emitting + Logging Events](#3-backend-emitting--logging-events)
 - [Frontend: Shared Renderer (`MessageRenderer`)](#4-frontend-shared-renderer-messagerenderer)
 - [Source files](#source-files)
 
 ## Source files
 
-- `packages/agent-server/src/conversationStore.ts`
+- `packages/agent-server/src/events/eventStore.ts`
 - `packages/agent-server/src/ws/chatRunLifecycle.ts`
 - `packages/agent-server/src/chatProcessor.ts`
 - `packages/agent-server/src/ws/toolCallHandling.ts`
@@ -46,20 +46,20 @@ Issue `#586` requires these paths to match:
 
 ---
 
-## 2) Data Model: Transcript Records
+## 2) Data Model: Chat Event Records
 
 ### 2.1 Storage format
 
-The backend stores a per-session transcript as JSONL:
+The backend stores a per-session event log as JSONL:
 
-- One file per session: `dataDir/transcripts/<sessionId>.jsonl`
+- One file per session: `dataDir/sessions/<sessionId>/events.jsonl`
 - Each line is a JSON object with a `type` field.
 
-The transcript is treated as the **source of truth** for refresh/replay.
+The event log is treated as the **source of truth** for refresh/replay.
 
 ### 2.2 Record categories
 
-There are two categories of records in the wild:
+Legacy transcript records are historical context only; the persisted history is the event log.
 
 #### A) Legacy (turn-based) records
 
@@ -94,7 +94,7 @@ Relevant fields (not exhaustive):
 
 Backend record definitions live in:
 
-- `packages/agent-server/src/conversationStore.ts`
+- `packages/shared/src/chatEvents.ts`
 
 ---
 
@@ -390,7 +390,7 @@ Look at the session’s transcript JSONL file on disk and check for:
 
 Backend:
 
-- `packages/agent-server/src/conversationStore.ts`
+- `packages/agent-server/src/events/eventStore.ts`
 - `packages/agent-server/src/ws/chatRunLifecycle.ts`
 - `packages/agent-server/src/ws/toolCallHandling.ts`
 - `packages/agent-server/src/ws/chatOutputCancelHandling.ts`

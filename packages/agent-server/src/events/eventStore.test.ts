@@ -240,6 +240,8 @@ describe('SessionScopedEventStore', () => {
       getEvents: vi.fn(async () => []),
       getEventsSince: vi.fn(async () => []),
       subscribe: vi.fn(() => () => undefined),
+      clearSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
     };
 
     const store = new SessionScopedEventStore(baseStore, sessionHub);

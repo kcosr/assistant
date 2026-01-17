@@ -43,7 +43,7 @@ These are only required when using built-in OpenAI chat or TTS backends. CLI age
 | Variable          | Default  | Description                                 |
 | ----------------- | -------- | ------------------------------------------- |
 | `PORT`            | `3000`   | HTTP/WebSocket server port                  |
-| `DATA_DIR`        | `./data` | Directory for session and conversation logs |
+| `DATA_DIR`        | `./data` | Directory for session data (event logs, preferences, plugin settings) |
 | `APP_CONFIG_PATH` | -        | Override config file location               |
 
 ### TTS

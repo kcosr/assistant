@@ -13,6 +13,8 @@ export interface EventStore {
   getEvents(sessionId: string): Promise<ChatEvent[]>;
   getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]>;
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void;
+  clearSession(sessionId: string): Promise<void>;
+  deleteSession(sessionId: string): Promise<void>;
 }
 
 type WriteTask = () => Promise<void>;
@@ -112,6 +114,48 @@ export class FileEventStore implements EventStore {
     return () => {
       this.emitter.off(eventName, callback);
     };
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    const trimmedSessionId = this.normaliseSessionId(sessionId);
+    const filePath = this.getSessionFilePath(trimmedSessionId);
+
+    const task: WriteTask = async () => {
+      try {
+        await fs.unlink(filePath);
+      } catch (err) {
+        const anyErr = err as NodeJS.ErrnoException;
+        if (anyErr && anyErr.code !== 'ENOENT') {
+          console.error('Failed to clear events file', err);
+        }
+      }
+    };
+
+    await this.queueWrite(trimmedSessionId, task);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const trimmedSessionId = this.normaliseSessionId(sessionId);
+    const filePath = this.getSessionFilePath(trimmedSessionId);
+    const dirPath = path.dirname(filePath);
+
+    const task: WriteTask = async () => {
+      try {
+        await fs.unlink(filePath);
+      } catch (err) {
+        const anyErr = err as NodeJS.ErrnoException;
+        if (anyErr && anyErr.code !== 'ENOENT') {
+          console.error('Failed to delete events file', err);
+        }
+      }
+      try {
+        await fs.rm(dirPath, { recursive: true, force: true });
+      } catch (err) {
+        console.error('Failed to delete events directory', err);
+      }
+    };
+
+    await this.queueWrite(trimmedSessionId, task);
   }
 
   private normaliseSessionId(sessionId: string): string {
@@ -267,6 +311,22 @@ export class SessionScopedEventStore implements EventStore {
       }
     }
     return this.base.subscribe(trimmed, callback);
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return;
+    }
+    await this.base.clearSession(trimmed);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return;
+    }
+    await this.base.deleteSession(trimmed);
   }
 
   private async shouldPersist(sessionId: string): Promise<boolean> {

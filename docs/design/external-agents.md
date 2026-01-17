@@ -99,7 +99,7 @@ This implies server-side validation constraints (URL-safe, length bounds, unique
                 ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ Agent Server                                                   │
-│  - SessionIndex + ConversationStore                            │
+│  - SessionIndex + EventStore                                   │
 │  - ExternalAgent runtime                                       │
 │      • forwards user input to inputUrl                         │
 │      • accepts inbound assistant messages                       │

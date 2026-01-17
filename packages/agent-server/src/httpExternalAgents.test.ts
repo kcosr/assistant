@@ -3,10 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
-import type { CombinedPluginManifest, ServerMessage } from '@assistant/shared';
+import type { ChatEvent, CombinedPluginManifest, ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from './agents';
-import { ConversationStore } from './conversationStore';
 import { createHttpServer, SessionHub, SessionIndex } from './index';
 import type { PluginRegistry } from './plugins/registry';
 import { createPluginOperationSurface } from './plugins/operations';
@@ -48,9 +47,11 @@ function createSessionsPluginRegistry(): PluginRegistry {
 
 class TestSessionHub extends SessionHub {
   public lastBroadcast: { sessionId: string; message: ServerMessage } | undefined;
+  public broadcasts: Array<{ sessionId: string; message: ServerMessage }> = [];
 
   override broadcastToSession(sessionId: string, message: ServerMessage): void {
     this.lastBroadcast = { sessionId, message };
+    this.broadcasts.push({ sessionId, message });
   }
 }
 
@@ -60,8 +61,6 @@ function createEnvConfig(overrides?: Partial<HttpEnvConfig>): HttpEnvConfig {
     apiKey: 'test-api-key',
     chatModel: 'test-model',
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir: createTempDir('http-external-log'),
     dataDir: path.join(
       os.tmpdir(),
       `http-external-data-${Date.now()}-${Math.random().toString(16)}`,
@@ -96,27 +95,50 @@ function startTestServer(
   baseUrl: string;
   sessionIndex: SessionIndex;
   sessionHub: TestSessionHub;
-  conversationStore: ConversationStore;
+  eventStore: EventStore;
 }> {
   return new Promise((resolve, reject) => {
     const config = createEnvConfig();
-    const conversationStore = new ConversationStore(config.transcriptsDir);
     const sessionIndex = new SessionIndex(createTempFile('http-external-sessions'));
     const pluginRegistry = options?.pluginRegistry ?? createSessionsPluginRegistry();
+    const eventState = new Map<string, ChatEvent[]>();
+    const eventStore: EventStore = {
+      append: async (sessionId, event) => {
+        const events = eventState.get(sessionId) ?? [];
+        events.push(event);
+        eventState.set(sessionId, events);
+      },
+      appendBatch: async (sessionId, events) => {
+        const existing = eventState.get(sessionId) ?? [];
+        existing.push(...events);
+        eventState.set(sessionId, existing);
+      },
+      getEvents: async (sessionId) => eventState.get(sessionId) ?? [],
+      getEventsSince: async (sessionId, afterEventId) => {
+        const events = eventState.get(sessionId) ?? [];
+        if (!afterEventId) {
+          return events;
+        }
+        const index = events.findIndex((event) => event.id === afterEventId);
+        if (index === -1) {
+          return events;
+        }
+        return events.slice(index + 1);
+      },
+      subscribe: () => () => {},
+      clearSession: async (sessionId) => {
+        eventState.delete(sessionId);
+      },
+      deleteSession: async (sessionId) => {
+        eventState.delete(sessionId);
+      },
+    };
     const sessionHub = new TestSessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
+      eventStore,
       ...(pluginRegistry ? { pluginRegistry } : {}),
     });
-
-    const eventStore: EventStore = {
-      append: async () => {},
-      appendBatch: async () => {},
-      getEvents: async () => [],
-      getEventsSince: async () => [],
-      subscribe: () => () => {},
-    };
 
     const noopToolHost: ToolHost = {
       listTools: async () => [],
@@ -127,7 +149,6 @@ function startTestServer(
 
     const server = createHttpServer({
       config,
-      conversationStore,
       sessionIndex,
       sessionHub,
       agentRegistry,
@@ -148,7 +169,7 @@ function startTestServer(
         baseUrl: `http://127.0.0.1:${address.port}`,
         sessionIndex,
         sessionHub,
-        conversationStore,
+        eventStore,
       });
     });
 
@@ -330,7 +351,7 @@ describe('external agents HTTP endpoints', () => {
       },
     ]);
 
-    const { server, baseUrl, sessionIndex, sessionHub, conversationStore } =
+    const { server, baseUrl, sessionIndex, sessionHub, eventStore } =
       await startTestServer(agentRegistry);
     servers.push(server);
 
@@ -371,8 +392,8 @@ describe('external agents HTTP endpoints', () => {
     expect(revivedParsed.result?.sessionId).toBe('EXTERNAL-REUSE');
     expect(revivedParsed.result?.deleted).toBeUndefined();
 
-    const transcriptBefore = await conversationStore.getSessionTranscript('EXTERNAL-REUSE');
-    expect(transcriptBefore.length).toBeGreaterThanOrEqual(0);
+    const eventsBefore = await eventStore.getEvents('EXTERNAL-REUSE');
+    expect(eventsBefore).toEqual([]);
 
     const callback = await httpRequest({
       method: 'POST',
@@ -385,20 +406,21 @@ describe('external agents HTTP endpoints', () => {
     expect(callback.statusCode).toBe(200);
     expect(callback.bodyText).toBe('');
 
-    const transcriptAfter = await conversationStore.getSessionTranscript('EXTERNAL-REUSE');
-    const assistant = transcriptAfter.find((r) => r.type === 'assistant_message') as
+    const eventsAfter = await eventStore.getEvents('EXTERNAL-REUSE');
+    const assistantDone = eventsAfter.find(
+      (event) =>
+        event.type === 'assistant_done' &&
+        (event as { payload?: { text?: string } }).payload?.text === 'Hello *world*',
+    );
+    expect(assistantDone).toBeTruthy();
+
+    const broadcastMessages = sessionHub.broadcasts
+      .filter((entry) => entry.sessionId === 'EXTERNAL-REUSE')
+      .map((entry) => entry.message);
+    const textDone = broadcastMessages.find((message) => message.type === 'text_done') as
       | { text?: string }
       | undefined;
-    expect(assistant?.text).toBe('Hello *world*');
-    const textDone = transcriptAfter.find(
-      (r) => r.type === 'text_done' && (r as { text?: string }).text === 'Hello *world*',
-    );
-    expect(textDone).toBeTruthy();
-
-    const broadcast = sessionHub.lastBroadcast;
-    expect(broadcast?.sessionId).toBe('EXTERNAL-REUSE');
-    expect(broadcast?.message.type).toBe('text_done');
-    expect((broadcast?.message as { text?: string }).text).toBe('Hello *world*');
+    expect(textDone?.text).toBe('Hello *world*');
 
     const missingCallback = await httpRequest({
       method: 'POST',

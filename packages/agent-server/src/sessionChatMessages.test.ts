@@ -1,24 +1,29 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ChatEvent } from '@assistant/shared';
 import { AgentRegistry } from './agents';
-import type { ConversationLogRecord } from './conversationStore';
-import { buildChatMessagesFromTranscript } from './sessionChatMessages';
+import { buildChatMessagesFromEvents } from './sessionChatMessages';
 
-describe('buildChatMessagesFromTranscript', () => {
+describe('buildChatMessagesFromEvents', () => {
   it('converts agent_message records to user role messages', () => {
     const registry = new AgentRegistry([]);
-    const records: ConversationLogRecord[] = [
+    const events: ChatEvent[] = [
       {
-        type: 'agent_message',
-        timestamp: new Date().toISOString(),
+        id: 'evt-1',
+        timestamp: Date.now(),
         sessionId: 'session-1',
-        fromSessionId: 'source-session',
-        fromAgentId: 'source-agent',
-        text: 'Hello from another agent',
+        type: 'agent_message',
+        payload: {
+          messageId: 'msg-1',
+          targetAgentId: 'agent-b',
+          targetSessionId: 'session-2',
+          message: 'Hello from another agent',
+          wait: true,
+        },
       },
     ];
 
-    const messages = buildChatMessagesFromTranscript(records, registry, undefined, []);
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
 
     expect(messages.length).toBe(2);
     expect(messages[0]?.role).toBe('system');
@@ -28,19 +33,22 @@ describe('buildChatMessagesFromTranscript', () => {
 
   it('converts agent_callback records to user role messages', () => {
     const registry = new AgentRegistry([]);
-    const records: ConversationLogRecord[] = [
+    const events: ChatEvent[] = [
       {
-        type: 'agent_callback',
-        timestamp: new Date().toISOString(),
+        id: 'evt-2',
+        timestamp: Date.now(),
         sessionId: 'session-caller',
-        fromSessionId: 'session-target',
-        fromAgentId: 'target-agent',
-        responseId: 'resp-123',
-        text: 'Callback from target agent',
+        type: 'agent_callback',
+        payload: {
+          messageId: 'msg-2',
+          fromAgentId: 'target-agent',
+          fromSessionId: 'session-target',
+          result: 'Callback from target agent',
+        },
       },
     ];
 
-    const messages = buildChatMessagesFromTranscript(records, registry, undefined, []);
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
 
     expect(messages.length).toBe(2);
     expect(messages[0]?.role).toBe('system');

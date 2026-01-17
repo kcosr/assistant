@@ -16,7 +16,6 @@ import type {
   ChatCompletionToolCallMessageToolCall,
   ChatCompletionToolCallState,
 } from './chatCompletionTypes';
-import type { ConversationStore } from './conversationStore';
 import { openaiConfigured, type EnvConfig } from './envConfig';
 import type { EventStore } from './events';
 import {
@@ -68,7 +67,6 @@ export interface ChatRunCoreOptions {
     state: LogicalSessionState,
     toolCalls: ChatCompletionToolCallState[],
   ) => Promise<void>;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   output: ChatRunOutputAdapter;
   abortController: AbortController;
@@ -170,7 +168,6 @@ function createChatRunStreamHandlers(options: {
   sessionId: string;
   state: LogicalSessionState;
   responseId: string;
-  conversationStore: ConversationStore;
   output: ChatRunOutputAdapter;
   eventStore?: EventStore;
   sessionHub: SessionHub;
@@ -185,7 +182,6 @@ function createChatRunStreamHandlers(options: {
     sessionId,
     state,
     responseId,
-    conversationStore,
     output,
     eventStore,
     sessionHub,
@@ -209,21 +205,11 @@ function createChatRunStreamHandlers(options: {
     return {};
   };
 
-  const logAgentExchangePayload = (): { agentExchangeId?: string } => {
-    const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
-    return agentExchangeId ? { agentExchangeId } : {};
-  };
-
   const emitThinkingStart = async (): Promise<void> => {
     if (thinkingStarted) {
       return;
     }
     thinkingStarted = true;
-    void conversationStore.logThinkingStart({
-      sessionId,
-      responseId,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingStartMessage = {
       type: 'thinking_start',
       responseId,
@@ -240,12 +226,6 @@ function createChatRunStreamHandlers(options: {
       await emitThinkingStart();
     }
     thinkingText += delta;
-    void conversationStore.logThinkingDelta({
-      sessionId,
-      responseId,
-      delta,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingDeltaMessage = {
       type: 'thinking_delta',
       responseId,
@@ -287,12 +267,6 @@ function createChatRunStreamHandlers(options: {
     if (!thinkingStarted && finalText) {
       await emitThinkingStart();
     }
-    void conversationStore.logThinkingDone({
-      sessionId,
-      responseId,
-      text: finalText,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingDoneMessage = {
       type: 'thinking_done',
       responseId,
@@ -331,13 +305,6 @@ function createChatRunStreamHandlers(options: {
         state.activeChatRun.textStartedAt = new Date().toISOString();
       }
     }
-
-    void conversationStore.logTextDelta({
-      sessionId,
-      responseId,
-      delta: deltaText,
-      ...logAgentExchangePayload(),
-    });
 
     const message: ServerTextDeltaMessage = {
       type: 'text_delta',
@@ -501,7 +468,6 @@ export async function runChatCompletionCore(
     openaiClient,
     chatCompletionTools,
     handleChatToolCalls,
-    conversationStore,
     sessionHub,
     output,
     abortController,
@@ -519,7 +485,6 @@ export async function runChatCompletionCore(
     sessionId,
     state,
     responseId,
-    conversationStore,
     output,
     sessionHub,
     shouldEmitChatEvents,
@@ -540,7 +505,6 @@ export async function runChatCompletionCore(
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,
@@ -585,7 +549,6 @@ export async function runChatCompletionCore(
     const codexCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,
@@ -636,7 +599,6 @@ export async function runChatCompletionCore(
     const piCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,

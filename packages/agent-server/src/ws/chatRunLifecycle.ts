@@ -11,7 +11,6 @@ import type {
   ServerUserMessageMessage,
 } from '@assistant/shared';
 
-import type { ConversationStore } from '../conversationStore';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
@@ -36,7 +35,6 @@ export async function handleTextInputWithChatCompletions(options: {
   state: LogicalSessionState | undefined;
   sessionId: string | undefined;
   connection: SessionConnection;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   openaiClient?: OpenAI;
   config: EnvConfig;
@@ -66,7 +64,6 @@ export async function handleTextInputWithChatCompletions(options: {
     state,
     sessionId,
     connection,
-    conversationStore,
     sessionHub,
     openaiClient,
     config: envConfig,
@@ -147,11 +144,6 @@ export async function handleTextInputWithChatCompletions(options: {
   const shouldEmitChatEvents = !!eventStore;
   const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
 
-  void conversationStore.logUserMessage({
-    sessionId,
-    modality: 'text',
-    text,
-  });
   void sessionHub.recordSessionActivity(
     sessionId,
     text.length > 120 ? `${text.slice(0, 117)}…` : text,
@@ -290,7 +282,6 @@ export async function handleTextInputWithChatCompletions(options: {
       envConfig,
       chatCompletionTools,
       handleChatToolCalls,
-      conversationStore,
       sessionHub,
       output,
       abortController,
@@ -317,13 +308,6 @@ export async function handleTextInputWithChatCompletions(options: {
     if (shouldLogAssistant) {
       const active = state.activeChatRun;
       const ttsSessionForRun = active?.ttsSession;
-
-      void conversationStore.logTextDone({
-        sessionId,
-        responseId,
-        text: fullText,
-        ...(active?.agentExchangeId ? { agentExchangeId: active.agentExchangeId } : {}),
-      });
 
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
@@ -362,14 +346,6 @@ export async function handleTextInputWithChatCompletions(options: {
         active && typeof active.audioTruncatedAtMs === 'number'
           ? active.audioTruncatedAtMs
           : undefined;
-      void conversationStore.logAssistantMessage({
-        sessionId,
-        responseId,
-        modality: ttsGenerated ? 'both' : 'text',
-        text: fullText,
-        ...(thinkingText ? { thinkingText } : {}),
-        ...(ttsGenerated && audioTruncatedAtMs !== undefined ? { audioTruncatedAtMs } : {}),
-      });
       void sessionHub.recordSessionActivity(
         sessionId,
         fullText.length > 120 ? `${fullText.slice(0, 117)}…` : fullText,
