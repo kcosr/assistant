@@ -516,26 +516,10 @@ export async function runChatCompletionCore(
         ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0 ? { cwd: rawCwd.trim() } : {}),
       };
     }
-    const resumeSession = hadPriorUserMessages || Boolean(storedClaudeSession?.sessionId);
+    const resumeSession = Boolean(storedClaudeSession?.sessionId);
     const resolvedCwd = claudeConfig?.workdir?.trim() || process.cwd();
-    const nextSessionId = sessionId.trim();
+    const resolvedSessionId = storedClaudeSession?.sessionId?.trim() || sessionId.trim();
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
-    if (nextSessionId && nextCwd) {
-      const currentSessionId = storedClaudeSession?.sessionId ?? '';
-      const currentCwd = storedClaudeSession?.cwd ?? undefined;
-      if (nextSessionId !== currentSessionId || nextCwd !== currentCwd) {
-        try {
-          const providerPatch = buildProviderAttributesPatch('claude-cli', {
-            sessionId: nextSessionId,
-            cwd: nextCwd,
-          });
-          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
-          storedClaudeSession = { sessionId: nextSessionId, cwd: nextCwd };
-        } catch (err) {
-          log('failed to persist Claude session mapping', err);
-        }
-      }
-    }
 
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
@@ -552,7 +536,7 @@ export async function runChatCompletionCore(
     });
 
     const { text: claudeText, aborted: cliAborted } = await runClaudeCliChat({
-      sessionId,
+      sessionId: resolvedSessionId,
       resumeSession,
       userText: text,
       ...(claudeConfig ? { config: claudeConfig } : {}),
@@ -565,6 +549,23 @@ export async function runChatCompletionCore(
       onToolResult: claudeCallbacks.onToolResult,
       log,
     });
+
+    if (resolvedSessionId && nextCwd) {
+      const currentSessionId = storedClaudeSession?.sessionId ?? '';
+      const currentCwd = storedClaudeSession?.cwd ?? undefined;
+      if (resolvedSessionId !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch('claude-cli', {
+            sessionId: resolvedSessionId,
+            cwd: nextCwd,
+          });
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedClaudeSession = { sessionId: resolvedSessionId, cwd: nextCwd };
+        } catch (err) {
+          log('failed to persist Claude session mapping', err);
+        }
+      }
+    }
 
     aborted = cliAborted;
     fullText = claudeText;

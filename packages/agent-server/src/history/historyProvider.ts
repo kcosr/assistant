@@ -1146,6 +1146,29 @@ function extractLabel(entry: Record<string, unknown>): string | null {
 }
 
 function extractThinking(entry: Record<string, unknown>): string {
+  const content = entry['content'];
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'thinking' && normalized !== 'analysis' && normalized !== 'reasoning') {
+        continue;
+      }
+      const raw = block['thinking'] ?? block['text'] ?? block['content'];
+      const text = extractTextValue(raw);
+      if (text) {
+        parts.push(text);
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join('');
+    }
+  }
   const raw = entry['thinking'] ?? entry['thinkingContent'] ?? entry['reasoning'] ?? entry['analysis'];
   return extractTextValue(raw);
 }

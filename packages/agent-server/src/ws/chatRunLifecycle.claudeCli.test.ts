@@ -139,7 +139,30 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       broadcastToSession: () => undefined,
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
-      updateSessionAttributes: async () => undefined,
+      updateSessionAttributes: async (_sessionId: string, patch: unknown) => {
+        const summary = state.summary as unknown as { attributes?: Record<string, unknown> };
+        const current = summary.attributes ?? {};
+        const patchRecord = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+        const currentProvidersEntry = current['providers'];
+        const currentProviders =
+          currentProvidersEntry &&
+          typeof currentProvidersEntry === 'object' &&
+          !Array.isArray(currentProvidersEntry)
+            ? (currentProvidersEntry as Record<string, unknown>)
+            : {};
+        const patchProvidersEntry = patchRecord['providers'];
+        const patchProviders =
+          patchProvidersEntry &&
+          typeof patchProvidersEntry === 'object' &&
+          !Array.isArray(patchProvidersEntry)
+            ? (patchProvidersEntry as Record<string, unknown>)
+            : {};
+        summary.attributes = {
+          ...current,
+          ...patchRecord,
+          ['providers']: { ...currentProviders, ...patchProviders },
+        };
+      },
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },
@@ -225,7 +248,30 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
-      updateSessionAttributes: async () => undefined,
+      updateSessionAttributes: async (_sessionId: string, patch: unknown) => {
+        const summary = state.summary as unknown as { attributes?: Record<string, unknown> };
+        const current = summary.attributes ?? {};
+        const patchRecord = patch && typeof patch === 'object' ? (patch as Record<string, unknown>) : {};
+        const currentProvidersEntry = current['providers'];
+        const currentProviders =
+          currentProvidersEntry &&
+          typeof currentProvidersEntry === 'object' &&
+          !Array.isArray(currentProvidersEntry)
+            ? (currentProvidersEntry as Record<string, unknown>)
+            : {};
+        const patchProvidersEntry = patchRecord['providers'];
+        const patchProviders =
+          patchProvidersEntry &&
+          typeof patchProvidersEntry === 'object' &&
+          !Array.isArray(patchProvidersEntry)
+            ? (patchProvidersEntry as Record<string, unknown>)
+            : {};
+        summary.attributes = {
+          ...current,
+          ...patchRecord,
+          ['providers']: { ...currentProviders, ...patchProviders },
+        };
+      },
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },

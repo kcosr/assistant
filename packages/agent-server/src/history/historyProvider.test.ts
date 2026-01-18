@@ -47,6 +47,7 @@ describe('PiSessionHistoryProvider', () => {
           role: 'assistant',
           id: 'resp-1',
           content: [
+            { type: 'thinking', thinking: 'Thinking... ' },
             { type: 'text', text: 'Hi back' },
             {
               type: 'toolCall',
@@ -55,7 +56,6 @@ describe('PiSessionHistoryProvider', () => {
               arguments: { command: 'ls -a' },
             },
           ],
-          thinking: 'Thinking... ',
         },
       }),
       JSON.stringify({
