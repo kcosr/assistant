@@ -211,6 +211,52 @@ describe('ChatRenderer', () => {
     expect(blocks).toHaveLength(2);
   });
 
+  it('formats tool_result content arrays as tool output', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          result: {
+            content: [
+              { type: 'text', text: 'line 1\n' },
+              { type: 'text', text: 'line 2\n' },
+            ],
+            details: {},
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const outputBody = toolBlock.querySelector<HTMLDivElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('line 1');
+    expect(outputBody?.textContent).toContain('line 2');
+
+    const jsonToggle = toolBlock.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    expect(jsonToggle).not.toBeNull();
+  });
+
   it('does not group agents_message tool calls', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

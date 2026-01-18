@@ -66,6 +66,26 @@ export function formatToolResultText(options: {
     if (typeof record['content'] === 'string') {
       return record['content'];
     }
+    if (Array.isArray(record['content'])) {
+      const parts: string[] = [];
+      for (const block of record['content'] as unknown[]) {
+        if (typeof block === 'string') {
+          parts.push(block);
+          continue;
+        }
+        if (!block || typeof block !== 'object') {
+          continue;
+        }
+        const blockRecord = block as Record<string, unknown>;
+        const text = blockRecord['text'];
+        if (typeof text === 'string') {
+          parts.push(text);
+        }
+      }
+      if (parts.length > 0) {
+        return parts.join('');
+      }
+    }
     if (typeof record['message'] === 'string') {
       return record['message'];
     }

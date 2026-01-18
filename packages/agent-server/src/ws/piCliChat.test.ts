@@ -244,6 +244,117 @@ describe('runPiCliChat', () => {
     expect(result.result).toBe('file1\nfile2\n');
   });
 
+  it('streams tool_execution_update events as tool output chunks', async () => {
+    const child = new FakePiProcess();
+    const outputChunks: Array<{
+      callId: string;
+      toolName: string;
+      chunk: string;
+      offset: number;
+    }> = [];
+
+    const spawnFn: PiCliSpawn = () => child as unknown as ReturnType<PiCliSpawn>;
+
+    const promise = runPiCliChat({
+      sessionId: 'session-4',
+      userText: 'run tool',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      onToolOutputChunk: (callId, toolName, chunk, offset) => {
+        outputChunks.push({ callId, toolName, chunk, offset });
+      },
+      log: () => undefined,
+      spawnFn,
+    });
+
+    const update1 = {
+      type: 'tool_execution_update',
+      toolCallId: 'toolu_2',
+      toolName: 'bash',
+      args: { command: 'echo hi' },
+      partialResult: {
+        content: [{ type: 'text', text: 'alpha' }],
+        details: {},
+      },
+    };
+
+    const update2 = {
+      type: 'tool_execution_update',
+      toolCallId: 'toolu_2',
+      toolName: 'bash',
+      args: { command: 'echo hi' },
+      partialResult: {
+        content: [{ type: 'text', text: 'alpha beta' }],
+        details: {},
+      },
+    };
+
+    child.stdout.write(`${JSON.stringify(update1)}\n`);
+    child.stdout.write(`${JSON.stringify(update2)}\n`);
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(outputChunks).toEqual([
+      { callId: 'toolu_2', toolName: 'bash', chunk: 'alpha', offset: 5 },
+      { callId: 'toolu_2', toolName: 'bash', chunk: ' beta', offset: 10 },
+    ]);
+  });
+
+  it('uses overlap detection for tool output updates with truncated tails', async () => {
+    const child = new FakePiProcess();
+    const outputChunks: Array<{ chunk: string; offset: number }> = [];
+
+    const spawnFn: PiCliSpawn = () => child as unknown as ReturnType<PiCliSpawn>;
+
+    const promise = runPiCliChat({
+      sessionId: 'session-5',
+      userText: 'run tool',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      onToolOutputChunk: (_callId, _toolName, chunk, offset) => {
+        outputChunks.push({ chunk, offset });
+      },
+      log: () => undefined,
+      spawnFn,
+    });
+
+    const update1 = {
+      type: 'tool_execution_update',
+      toolCallId: 'toolu_3',
+      toolName: 'bash',
+      args: { command: 'echo hi' },
+      partialResult: {
+        content: [{ type: 'text', text: '12345' }],
+        details: {},
+      },
+    };
+
+    const update2 = {
+      type: 'tool_execution_update',
+      toolCallId: 'toolu_3',
+      toolName: 'bash',
+      args: { command: 'echo hi' },
+      partialResult: {
+        content: [{ type: 'text', text: '34567' }],
+        details: {},
+      },
+    };
+
+    child.stdout.write(`${JSON.stringify(update1)}\n`);
+    child.stdout.write(`${JSON.stringify(update2)}\n`);
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(outputChunks).toEqual([
+      { chunk: '12345', offset: 5 },
+      { chunk: '67', offset: 7 },
+    ]);
+  });
+
   it('kills the pi process when aborted', async () => {
     const child = new FakePiProcess();
     const spawnFn: PiCliSpawn = () => child as unknown as ReturnType<PiCliSpawn>;

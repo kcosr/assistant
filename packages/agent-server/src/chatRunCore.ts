@@ -22,6 +22,7 @@ import {
   appendAndBroadcastChatEvents,
   createChatEventBase,
   emitToolInputChunkEvent,
+  emitToolOutputChunkEvent,
 } from './events/chatEventUtils';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
@@ -632,6 +633,26 @@ export async function runChatCompletionCore(
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
 
+    const emitPiToolOutputChunk = (
+      callId: string,
+      toolName: string,
+      chunk: string,
+      offset: number,
+      stream?: 'stdout' | 'stderr' | 'output',
+    ): void => {
+      emitToolOutputChunkEvent({
+        sessionHub,
+        sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(responseId ? { responseId } : {}),
+        toolCallId: callId,
+        toolName,
+        chunk,
+        offset,
+        ...(stream ? { stream } : {}),
+      });
+    };
+
     const syncPiSessionInfo = async (info: PiSessionInfo): Promise<void> => {
       const nextSessionId =
         typeof info.sessionId === 'string' && info.sessionId.trim().length > 0
@@ -674,6 +695,7 @@ export async function runChatCompletionCore(
       onThinkingDone: streamHandlers.emitThinkingDone,
       onToolCallStart: piCallbacks.onToolCallStart,
       onToolResult: piCallbacks.onToolResult,
+      onToolOutputChunk: emitPiToolOutputChunk,
       onSessionInfo: syncPiSessionInfo,
       log,
     });

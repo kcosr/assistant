@@ -38,6 +38,7 @@ import {
   updateToolOutputBlockLabel,
   updateToolOutputBlockContent,
 } from '../utils/toolOutputRenderer';
+import { formatToolResultText } from '../utils/toolResultFormatting';
 
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
@@ -724,7 +725,6 @@ export class ChatRenderer {
 
     const result = event.payload.result;
     const isAgentMessage = toolName === 'agents_message';
-    const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
 
     let handledAgentAsync = false;
     if (isAgentMessage && typeof result === 'object' && result !== null) {
@@ -763,63 +763,30 @@ export class ChatRenderer {
     }
 
     // Extract display text and optional raw JSON for toggle
-    let text: string;
+    let text = '';
     let rawJson: string | undefined;
     let resultOk = true;
 
-    if (!handledAgentAsync && isAgentMessage && typeof result === 'object' && result !== null) {
-      const resultObj = result as Record<string, unknown>;
-      // Sync mode has 'response' field with the agent's text
-      if (typeof resultObj['response'] === 'string') {
-        text = resultObj['response'];
+    if (!handledAgentAsync) {
+      if (typeof result === 'object' && result !== null) {
+        const resultObj = result as Record<string, unknown>;
+        if (typeof resultObj['ok'] === 'boolean') {
+          resultOk = resultObj['ok'] !== false;
+        }
         try {
           rawJson = JSON.stringify(result, null, 2);
         } catch {
-          // Ignore serialization errors
-        }
-      } else {
-        // Async mode or other - stringify the whole thing
-        try {
-          text = JSON.stringify(result, null, 2);
-        } catch {
-          text = '[unrenderable result]';
+          rawJson = undefined;
         }
       }
-    } else if (!handledAgentAsync && isBashTool && typeof result === 'object' && result !== null) {
-      // Bash tools return { ok, output, exitCode, timedOut? }
-      // Show output as primary text, with JSON toggle for full result
-      const resultObj = result as Record<string, unknown>;
-      if (typeof resultObj['output'] === 'string') {
-        text = resultObj['output'];
-        resultOk = resultObj['ok'] !== false;
-        try {
-          rawJson = JSON.stringify(result, null, 2);
-        } catch {
-          // Ignore serialization errors
-        }
-      } else {
-        try {
-          text = JSON.stringify(result, null, 2);
-        } catch {
-          text = '[unrenderable result]';
-        }
-      }
-    } else if (!handledAgentAsync && typeof result === 'string') {
-      text = result;
-    } else {
-      if (!handledAgentAsync) {
-        try {
-          text = JSON.stringify(result ?? '', null, 2);
-        } catch {
-          text = '[unrenderable result]';
-        }
-      } else {
-        text = '';
-      }
-    }
 
-    if (!handledAgentAsync && typeof result === 'object' && result !== null) {
-      if (!rawJson) {
+      text = formatToolResultText({
+        toolName,
+        ok: resultOk,
+        result,
+      });
+
+      if (!rawJson && typeof result === 'object' && result !== null) {
         try {
           rawJson = JSON.stringify(result);
         } catch {
