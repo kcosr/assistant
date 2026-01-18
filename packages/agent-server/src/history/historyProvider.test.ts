@@ -159,6 +159,67 @@ describe('PiSessionHistoryProvider', () => {
     });
     expect(fallback).toBe(true);
   });
+
+  it('splits thinking blocks around tool calls', async () => {
+    const baseDir = await createTempDir('pi-session-history');
+    const sessionId = 'session-2';
+    const piSessionId = 'pi-session-2';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-2',
+          content: [
+            { type: 'thinking', thinking: 'First.' },
+            {
+              type: 'toolCall',
+              id: 'tool-2',
+              name: 'bash',
+              arguments: { command: 'pwd' },
+            },
+            { type: 'thinking', thinking: 'Second.' },
+            { type: 'text', text: 'Done.' },
+          ],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const thinkingEvents = events.filter(
+      (event) => event.type === 'thinking_done',
+    ) as Array<Extract<ChatEvent, { type: 'thinking_done' }>>;
+    expect(thinkingEvents.map((event) => event.payload.text)).toEqual(['First.', 'Second.']);
+
+    const firstThinkingIndex = events.findIndex((event) => event.type === 'thinking_done');
+    const toolCallIndex = events.findIndex((event) => event.type === 'tool_call');
+    const secondThinkingIndex = events.findIndex(
+      (event) => event.type === 'thinking_done' && event.payload.text === 'Second.',
+    );
+    expect(firstThinkingIndex).toBeGreaterThan(-1);
+    expect(toolCallIndex).toBeGreaterThan(-1);
+    expect(secondThinkingIndex).toBeGreaterThan(-1);
+    expect(firstThinkingIndex).toBeLessThan(toolCallIndex);
+    expect(toolCallIndex).toBeLessThan(secondThinkingIndex);
+  });
 });
 
 describe('ClaudeSessionHistoryProvider', () => {

@@ -988,38 +988,126 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (!currentTurnId) {
         continue;
       }
+      const turnId = currentTurnId;
       const responseId: string = currentResponseId ?? getResponseId(messageEntry);
       currentResponseId = responseId;
 
-      const thinkingText = extractThinking(messageEntry);
-      if (thinkingText) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'thinking_done',
-          payload: { text: thinkingText },
-        });
-      }
+      const content = messageEntry['content'];
+      if (Array.isArray(content)) {
+        let thinkingBuffer = '';
+        let textBuffer = '';
 
-      const toolCalls = extractToolCalls(messageEntry);
-      for (const call of toolCalls) {
-        emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
-      }
+        const flushThinking = (): void => {
+          if (!thinkingBuffer) {
+            return;
+          }
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'thinking_done',
+            payload: { text: thinkingBuffer },
+          });
+          thinkingBuffer = '';
+        };
 
-      const assistantText = extractText(messageEntry);
-      if (assistantText) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'assistant_done',
-          payload: { text: assistantText },
-        });
+        const flushText = (): void => {
+          if (!textBuffer) {
+            return;
+          }
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: textBuffer },
+          });
+          textBuffer = '';
+        };
+
+        for (const item of content) {
+          if (!item || typeof item !== 'object') {
+            const text = extractTextValue(item);
+            if (text) {
+              textBuffer += text;
+            }
+            continue;
+          }
+
+          const block = item as Record<string, unknown>;
+          const type = getString(block['type']);
+          const normalized = type ? type.toLowerCase() : '';
+
+          if (normalized === 'thinking' || normalized === 'analysis' || normalized === 'reasoning') {
+            const text = extractTextValue(block['thinking'] ?? block['text'] ?? block['content']);
+            if (text) {
+              thinkingBuffer += text;
+            }
+            continue;
+          }
+
+          if (normalized === 'text') {
+            const text = extractTextValue(block['text'] ?? block['content']);
+            if (text) {
+              textBuffer += text;
+            }
+            continue;
+          }
+
+          if (['toolcall', 'tool_call', 'tool_use', 'tooluse'].includes(normalized)) {
+            flushThinking();
+            flushText();
+            const toolCallId = getString(block['id']) || getString(block['toolCallId']) || randomUUID();
+            const toolName =
+              getString(block['name']) || getString(block['toolName']) || getString(block['tool']) || '';
+            const args = coerceArgs(block['arguments'] ?? block['args'] ?? block['input']);
+            emitToolCall(messageEntry, timestamp, toolCallId, toolName, args);
+            continue;
+          }
+
+          const text = extractTextValue(block['text'] ?? block['content']);
+          if (text) {
+            textBuffer += text;
+          }
+        }
+
+        flushThinking();
+        flushText();
+      } else {
+        const thinkingText = extractThinking(messageEntry);
+        if (thinkingText) {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'thinking_done',
+            payload: { text: thinkingText },
+          });
+        }
+
+        const toolCalls = extractToolCalls(messageEntry);
+        for (const call of toolCalls) {
+          emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
+        }
+
+        const assistantText = extractText(messageEntry);
+        if (assistantText) {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: assistantText },
+          });
+        }
       }
 
       continue;

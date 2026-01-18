@@ -331,16 +331,19 @@ export class ChatRenderer {
       return;
     }
 
+    this.ensureTextSegment(responseId);
+
     const responseEl = this.getOrCreateAssistantResponseContainer(
       event.turnId,
       event.id,
       responseId,
     );
-    const thinkingEl = this.getOrCreateThinkingElement(responseId, responseEl);
+    const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
+    const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
 
-    const previous = this.thinkingTextBuffers.get(responseId) ?? '';
+    const previous = this.thinkingTextBuffers.get(segmentKey) ?? '';
     const combined = previous + event.payload.text;
-    this.thinkingTextBuffers.set(responseId, combined);
+    this.thinkingTextBuffers.set(segmentKey, combined);
 
     thinkingEl.textContent = combined;
     thinkingEl.dataset['eventId'] = event.id;
@@ -353,15 +356,18 @@ export class ChatRenderer {
       return;
     }
 
+    this.ensureTextSegment(responseId);
+
     const responseEl = this.getOrCreateAssistantResponseContainer(
       event.turnId,
       event.id,
       responseId,
     );
-    const thinkingEl = this.getOrCreateThinkingElement(responseId, responseEl);
+    const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
+    const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
 
     const text = event.payload.text;
-    this.thinkingTextBuffers.set(responseId, text);
+    this.thinkingTextBuffers.set(segmentKey, text);
     thinkingEl.textContent = text;
     thinkingEl.dataset['eventId'] = event.id;
     thinkingEl.dataset['renderer'] = 'unified';
@@ -1051,19 +1057,27 @@ export class ChatRenderer {
     this.needsNewTextSegment.add(responseId);
   }
 
+  private getThinkingSegmentKey(responseId: string): { segmentIdx: number; segmentKey: string } {
+    const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
+    const segmentKey = `${responseId}:${segmentIdx}`;
+    return { segmentIdx, segmentKey };
+  }
+
   private getOrCreateThinkingElement(
-    responseId: string,
+    segmentKey: string,
     responseEl: HTMLDivElement,
+    segmentIdx: number,
   ): HTMLDivElement {
-    const existing = this.thinkingElements.get(responseId);
+    const existing = this.thinkingElements.get(segmentKey);
     if (existing) {
       return existing;
     }
 
     const thinkingEl = document.createElement('div');
     thinkingEl.className = 'thinking-content';
-    responseEl.insertBefore(thinkingEl, responseEl.firstChild);
-    this.thinkingElements.set(responseId, thinkingEl);
+    thinkingEl.dataset['segment'] = String(segmentIdx);
+    responseEl.appendChild(thinkingEl);
+    this.thinkingElements.set(segmentKey, thinkingEl);
 
     return thinkingEl;
   }
