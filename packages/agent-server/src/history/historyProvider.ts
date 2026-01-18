@@ -68,6 +68,98 @@ export class EventStoreHistoryProvider implements HistoryProvider {
   }
 }
 
+type ClaudeSessionCacheEntry = {
+  mtimeMs: number;
+  events: ChatEvent[];
+};
+
+export class ClaudeSessionHistoryProvider implements HistoryProvider {
+  private readonly cache = new Map<string, ClaudeSessionCacheEntry>();
+
+  constructor(
+    private readonly options: {
+      baseDir?: string;
+      eventStore?: EventStore;
+    },
+  ) {}
+
+  supports(providerId?: string | null): boolean {
+    return providerId === 'claude-cli';
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    return !resolveClaudeSessionInfo(request.attributes);
+  }
+
+  async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
+    const { sessionId, force } = request;
+    const sessionInfo = resolveClaudeSessionInfo(request.attributes);
+    if (!sessionInfo) {
+      return this.fallbackToEventStore(request);
+    }
+    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.claude', 'projects');
+    const sessionPath = await findClaudeSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
+    if (!sessionPath) {
+      return this.fallbackToEventStore(request);
+    }
+
+    let stats: { mtimeMs: number } | null = null;
+    try {
+      const stat = await fs.stat(sessionPath);
+      if (stat.isFile()) {
+        stats = { mtimeMs: stat.mtimeMs };
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to stat Claude session file', {
+          sessionId: sessionInfo.sessionId,
+          path: sessionPath,
+          error: error.message,
+        });
+      }
+      this.cache.delete(sessionPath);
+      return this.fallbackToEventStore(request);
+    }
+
+    if (!stats) {
+      this.cache.delete(sessionPath);
+      return this.fallbackToEventStore(request);
+    }
+
+    const cached = this.cache.get(sessionPath);
+    if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
+      return cached.events;
+    }
+
+    let content: string;
+    try {
+      content = await fs.readFile(sessionPath, 'utf8');
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      console.error('[history] Failed to read Claude session file', {
+        sessionId: sessionInfo.sessionId,
+        path: sessionPath,
+        error: error.message,
+      });
+      this.cache.delete(sessionPath);
+      return this.fallbackToEventStore(request);
+    }
+
+    const events = buildChatEventsFromClaudeSession(content, sessionId);
+    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
+    return events;
+  }
+
+  private async fallbackToEventStore(request: HistoryRequest): Promise<ChatEvent[]> {
+    if (!this.options.eventStore) {
+      return [];
+    }
+    const fallback = new EventStoreHistoryProvider(this.options.eventStore);
+    return fallback.getHistory(request);
+  }
+}
+
 type PiSessionCacheEntry = {
   mtimeMs: number;
   events: ChatEvent[];
@@ -165,6 +257,24 @@ type PiSessionInfo = {
   cwd: string;
 };
 
+type ClaudeSessionInfo = {
+  sessionId: string;
+  cwd: string;
+};
+
+function resolveClaudeSessionInfo(attributes?: SessionAttributes): ClaudeSessionInfo | null {
+  const candidate = getProviderAttributes(attributes, 'claude-cli', ['claude']);
+  if (!candidate) {
+    return null;
+  }
+  const sessionId = candidate['sessionId'];
+  const cwd = candidate['cwd'];
+  if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {
+    return null;
+  }
+  return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+}
+
 function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | null {
   const candidate = getProviderAttributes(attributes, 'pi-cli', ['pi']);
   if (!candidate) {
@@ -176,6 +286,46 @@ function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | n
     return null;
   }
   return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+}
+
+function encodeClaudeCwd(cwd: string): string | null {
+  const trimmed = cwd.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.replace(/[\\/:]/g, '-');
+  if (!normalized) {
+    return null;
+  }
+  return normalized;
+}
+
+async function findClaudeSessionFile(
+  baseDir: string,
+  cwd: string,
+  sessionId: string,
+): Promise<string | null> {
+  const encoded = encodeClaudeCwd(cwd);
+  if (!encoded) {
+    return null;
+  }
+  const sessionDir = path.join(baseDir, encoded);
+  const sessionPath = path.join(sessionDir, `${sessionId}.jsonl`);
+  try {
+    const stat = await fs.stat(sessionPath);
+    if (stat.isFile()) {
+      return sessionPath;
+    }
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      console.error('[history] Failed to read Claude session file', {
+        path: sessionPath,
+        error: error.message,
+      });
+    }
+  }
+  return null;
 }
 
 function encodePiCwd(cwd: string): string | null {
@@ -232,6 +382,368 @@ async function findPiSessionFile(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {
+  const entries = parseJsonLines(content);
+  const events: ChatEvent[] = [];
+
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const emittedAssistantText = new Set<string>();
+  const emittedThinking = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+
+  let currentTurnId: string | null = null;
+  let currentResponseId: string | null = null;
+
+  const getClaudeTurnId = (
+    entry: Record<string, unknown>,
+    messageEntry?: Record<string, unknown>,
+  ): string =>
+    getString(entry['uuid']) ||
+    getString(entry['messageId']) ||
+    getString(messageEntry?.['id']) ||
+    getString(entry['id']) ||
+    randomUUID();
+
+  const getClaudeResponseId = (
+    entry: Record<string, unknown>,
+    messageEntry?: Record<string, unknown>,
+  ): string =>
+    getString(messageEntry?.['id']) ||
+    getString(entry['uuid']) ||
+    getString(entry['id']) ||
+    randomUUID();
+
+  const endTurn = (timestamp: number): void => {
+    if (!currentTurnId) {
+      return;
+    }
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      type: 'turn_end',
+      payload: {},
+    });
+    currentTurnId = null;
+    currentResponseId = null;
+  };
+
+  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+    currentTurnId = turnId;
+    currentResponseId = null;
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      type: 'turn_start',
+      payload: { trigger },
+    });
+  };
+
+  const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
+    if (!currentTurnId) {
+      const turnId = getClaudeTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+    }
+    return currentTurnId;
+  };
+
+  const ensureResponseId = (entry: Record<string, unknown>, messageEntry?: Record<string, unknown>): string => {
+    const responseId = currentResponseId ?? getClaudeResponseId(entry, messageEntry);
+    currentResponseId = responseId;
+    return responseId;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+    });
+    emittedToolResults.add(toolCallId);
+  };
+
+  const extractClaudeUserText = (messageEntry: Record<string, unknown>): string => {
+    const content = messageEntry['content'];
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      const parts: string[] = [];
+      for (const item of content) {
+        if (!item || typeof item !== 'object') {
+          continue;
+        }
+        const block = item as Record<string, unknown>;
+        const type = getString(block['type']);
+        const normalized = type ? type.toLowerCase() : '';
+        if (normalized === 'tool_result' || normalized.endsWith('_tool_result')) {
+          continue;
+        }
+        const text = extractTextValue(block);
+        if (text) {
+          parts.push(text);
+        }
+      }
+      return parts.join('');
+    }
+    return extractText(messageEntry);
+  };
+
+  const extractClaudeThinking = (messageEntry: Record<string, unknown>): string => {
+    const content = messageEntry['content'];
+    if (!Array.isArray(content)) {
+      return '';
+    }
+    const parts: string[] = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'thinking' && normalized !== 'analysis') {
+        continue;
+      }
+      const raw = block['thinking'] ?? block['text'] ?? block['content'];
+      const text = extractTextValue(raw);
+      if (text) {
+        parts.push(text);
+      }
+    }
+    return parts.join('');
+  };
+
+  const extractClaudeToolResults = (
+    entry: Record<string, unknown>,
+    messageEntry: Record<string, unknown>,
+  ): Array<{ toolCallId: string; result: unknown; error?: { code: string; message: string } }> => {
+    const content = messageEntry['content'];
+    if (!Array.isArray(content)) {
+      return [];
+    }
+    const results: Array<{
+      toolCallId: string;
+      result: unknown;
+      error?: { code: string; message: string };
+    }> = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'tool_result' && !normalized.endsWith('_tool_result')) {
+        continue;
+      }
+      const toolCallId =
+        getString(block['tool_use_id']) ||
+        getString(block['toolUseId']) ||
+        getString(block['toolCallId']) ||
+        getString(block['id']) ||
+        randomUUID();
+      const toolUseResult = entry['toolUseResult'];
+      const result =
+        toolUseResult !== undefined
+          ? toolUseResult
+          : 'result' in block
+            ? block['result']
+            : block['content'];
+      const isError = block['is_error'] === true || block['isError'] === true;
+      const error =
+        extractToolError(block) ??
+        (isError ? { code: 'tool_error', message: 'Tool call failed' } : undefined);
+      results.push({ toolCallId, result, ...(error ? { error } : {}) });
+    }
+    return results;
+  };
+
+  for (const entry of entries) {
+    const entryType = getString(entry['type']);
+    if (entryType === 'file-history-snapshot') {
+      continue;
+    }
+    if (entryType === 'summary') {
+      const timestamp = resolveTimestamp(entry);
+      endTurn(timestamp);
+      const turnId = getClaudeTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+      events.push({
+        id: randomUUID(),
+        timestamp,
+        sessionId,
+        turnId,
+        type: 'summary_message',
+        payload: {
+          text: extractText(entry),
+        },
+      });
+      endTurn(timestamp);
+      continue;
+    }
+    if (entryType === 'system') {
+      continue;
+    }
+
+    const messageEntry = resolveMessageEntry(entry);
+    const role = getString(messageEntry['role']);
+
+    if (role === 'user') {
+      const toolResults = extractClaudeToolResults(entry, messageEntry);
+      const userText = extractClaudeUserText(messageEntry);
+      const timestamp = resolveTimestamp(messageEntry, entry);
+
+      if (toolResults.length > 0 && !userText) {
+        for (const result of toolResults) {
+          emitToolResult(entry, timestamp, result.toolCallId, result.result, result.error);
+        }
+        continue;
+      }
+
+      endTurn(timestamp);
+      const turnId = getClaudeTurnId(entry, messageEntry);
+      startTurn(turnId, 'user', timestamp);
+      events.push({
+        id: randomUUID(),
+        timestamp,
+        sessionId,
+        turnId,
+        type: 'user_message',
+        payload: { text: userText || extractText(messageEntry) },
+      });
+      continue;
+    }
+
+    if (role === 'assistant') {
+      const timestamp = resolveTimestamp(messageEntry, entry);
+      if (!currentTurnId) {
+        const turnId = getClaudeTurnId(entry, messageEntry);
+        startTurn(turnId, 'system', timestamp);
+      }
+      if (!currentTurnId) {
+        continue;
+      }
+
+      const responseId = ensureResponseId(entry, messageEntry);
+
+      const thinkingText = extractClaudeThinking(messageEntry);
+      if (thinkingText && !emittedThinking.has(responseId)) {
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId: currentTurnId,
+          responseId,
+          type: 'thinking_done',
+          payload: { text: thinkingText },
+        });
+        emittedThinking.add(responseId);
+      }
+
+      const toolCalls = extractToolCalls(messageEntry);
+      for (const call of toolCalls) {
+        emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
+      }
+
+      const assistantText = extractText(messageEntry);
+      if (assistantText && !emittedAssistantText.has(responseId)) {
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId: currentTurnId,
+          responseId,
+          type: 'assistant_done',
+          payload: { text: assistantText },
+        });
+        emittedAssistantText.add(responseId);
+      }
+      continue;
+    }
+  }
+
+  const finalTimestamp = Date.now();
+  endTurn(finalTimestamp);
+  return events;
 }
 
 function buildChatEventsFromPiSession(content: string, sessionId: string): ChatEvent[] {
@@ -549,7 +1061,7 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
         entries.push(parsed as Record<string, unknown>);
       }
     } catch (err) {
-      console.error('[history] Failed to parse Pi session line', line);
+      console.error('[history] Failed to parse session line', line);
     }
   }
   return entries;

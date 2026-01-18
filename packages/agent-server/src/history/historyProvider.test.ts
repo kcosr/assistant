@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 
-import { PiSessionHistoryProvider } from './historyProvider';
+import { ClaudeSessionHistoryProvider, PiSessionHistoryProvider } from './historyProvider';
 import type { AgentDefinition } from '../agents';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -155,6 +155,126 @@ describe('PiSessionHistoryProvider', () => {
     const fallback = provider.shouldPersist?.({
       sessionId: 'session-2',
       providerId: 'pi-cli',
+      attributes: {},
+    });
+    expect(fallback).toBe(true);
+  });
+});
+
+describe('ClaudeSessionHistoryProvider', () => {
+  it('maps Claude session entries into chat events', async () => {
+    const baseDir = await createTempDir('claude-session-history');
+    const sessionId = 'session-1';
+    const cwd = '/home/kevin/worktrees/assistant';
+    const encodedCwd = cwd.replace(/[\\/:]/g, '-');
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `${sessionId}.jsonl`);
+    const toolResultPayload = { output: 'output' };
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        uuid: 'user-1',
+        sessionId,
+        cwd,
+        message: {
+          role: 'user',
+          content: 'Hello there',
+        },
+        timestamp: '2026-01-01T00:00:00.000Z',
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        uuid: 'assistant-1',
+        sessionId,
+        message: {
+          role: 'assistant',
+          id: 'msg-1',
+          content: [
+            { type: 'thinking', thinking: 'Thinking... ' },
+            { type: 'tool_use', id: 'toolu-1', name: 'bash', input: { command: 'ls -a' } },
+            { type: 'text', text: 'Hi back' },
+          ],
+        },
+        timestamp: '2026-01-01T00:00:01.000Z',
+      }),
+      JSON.stringify({
+        type: 'user',
+        uuid: 'tool-result-1',
+        sessionId,
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'toolu-1', content: 'output' }],
+        },
+        toolUseResult: toolResultPayload,
+        timestamp: '2026-01-01T00:00:02.000Z',
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new ClaudeSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'claude-cli',
+      attributes: {
+        providers: {
+          'claude-cli': {
+            sessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const userMessages = events.filter((event) => event.type === 'user_message');
+    expect(userMessages).toHaveLength(1);
+    const user = userMessages[0] as Extract<ChatEvent, { type: 'user_message' }>;
+    expect(user.payload.text).toBe('Hello there');
+
+    const assistant = events.find((event) => event.type === 'assistant_done') as
+      | Extract<ChatEvent, { type: 'assistant_done' }>
+      | undefined;
+    expect(assistant?.payload.text).toBe('Hi back');
+
+    const thinking = events.find((event) => event.type === 'thinking_done') as
+      | Extract<ChatEvent, { type: 'thinking_done' }>
+      | undefined;
+    expect(thinking?.payload.text).toBe('Thinking... ');
+
+    const toolCall = events.find((event) => event.type === 'tool_call') as
+      | Extract<ChatEvent, { type: 'tool_call' }>
+      | undefined;
+    expect(toolCall?.payload.toolCallId).toBe('toolu-1');
+    expect(toolCall?.payload.toolName).toBe('bash');
+    expect(toolCall?.payload.args).toEqual({ command: 'ls -a' });
+
+    const toolResult = events.find((event) => event.type === 'tool_result') as
+      | Extract<ChatEvent, { type: 'tool_result' }>
+      | undefined;
+    expect(toolResult?.payload.toolCallId).toBe('toolu-1');
+    expect(toolResult?.payload.result).toEqual(toolResultPayload);
+  });
+
+  it('treats sessions with provider metadata as external history', async () => {
+    const provider = new ClaudeSessionHistoryProvider({});
+
+    const shouldPersist = provider.shouldPersist?.({
+      sessionId: 'session-1',
+      providerId: 'claude-cli',
+      attributes: {
+        providers: {
+          'claude-cli': {
+            sessionId: 'claude-session-1',
+            cwd: '/home/kevin/worktrees/assistant',
+          },
+        },
+      },
+    });
+
+    expect(shouldPersist).toBe(false);
+    const fallback = provider.shouldPersist?.({
+      sessionId: 'session-2',
+      providerId: 'claude-cli',
       attributes: {},
     });
     expect(fallback).toBe(true);

@@ -54,6 +54,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => undefined,
       // Queue-related methods are not exercised in these tests.
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
@@ -138,6 +139,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       broadcastToSession: () => undefined,
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },
@@ -223,6 +225,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },
@@ -319,6 +322,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       broadcastToSession,
       broadcastToSessionExcluding,
       recordSessionActivity,
+      updateSessionAttributes: async () => undefined,
       queueMessage,
       dequeueMessageById: async () => undefined,
       processNextQueuedMessage: async () => false,
@@ -409,6 +413,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },
