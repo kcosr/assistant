@@ -1916,7 +1916,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (type === 'notes_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
             if (eventInstanceId !== selectedInstanceId) {
-              return;
+              setActiveInstance(eventInstanceId);
             }
             const title = typeof payload['title'] === 'string' ? payload['title'].trim() : '';
             if (!title) {
