@@ -227,6 +227,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   const entries = parseJsonLines(content);
   const events: ChatEvent[] = [];
 
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
 
@@ -257,6 +261,101 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       type: 'turn_start',
       payload: { trigger },
     });
+  };
+
+  const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
+    if (!currentTurnId) {
+      const turnId = getTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+    }
+    return currentTurnId;
+  };
+
+  const ensureResponseId = (entry: Record<string, unknown>): string => {
+    const responseId = currentResponseId ?? getResponseId(entry);
+    currentResponseId = responseId;
+    return responseId;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+    });
+    emittedToolResults.add(toolCallId);
   };
 
   for (const entry of entries) {
@@ -306,6 +405,39 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       continue;
     }
 
+    if (entryType === 'tool_execution_start' || entryType === 'tool_execution_update') {
+      const timestamp = resolveTimestamp(entry);
+      const toolCallId = getToolCallId(entry);
+      const toolName =
+        getString(entry['toolName']) ||
+        getString(entry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(entry['args'] ?? entry['input'] ?? entry['arguments']);
+      emitToolCall(entry, timestamp, toolCallId, toolName, args);
+      continue;
+    }
+
+    if (entryType === 'tool_execution_end') {
+      const timestamp = resolveTimestamp(entry);
+      const toolCallId = getToolCallId(entry);
+      const toolName =
+        getString(entry['toolName']) ||
+        getString(entry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(entry['args'] ?? entry['input'] ?? entry['arguments']);
+      emitToolCall(entry, timestamp, toolCallId, toolName, args);
+      const isError = entry['isError'] === true;
+      const error = isError ? extractToolError(entry) ?? {
+        code: 'tool_error',
+        message: 'Tool call failed',
+      } : undefined;
+      const result = extractToolResult(entry);
+      emitToolResult(entry, timestamp, toolCallId, result, error);
+      continue;
+    }
+
     const messageEntry = resolveMessageEntry(entry);
     const role = getString(messageEntry['role']);
     if (role === 'user') {
@@ -351,19 +483,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
       const toolCalls = extractToolCalls(messageEntry);
       for (const call of toolCalls) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'tool_call',
-          payload: {
-            toolCallId: call.toolCallId,
-            toolName: call.toolName,
-            args: call.args,
-          },
-        });
+        emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
       }
 
       const assistantText = extractText(messageEntry);
@@ -384,32 +504,17 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
     if (role === 'toolResult' || role === 'tool_result' || entryType === 'tool_result') {
       const timestamp = resolveTimestamp(messageEntry, entry);
-      if (!currentTurnId) {
-        const turnId = getTurnId(messageEntry);
-        startTurn(turnId, 'system', timestamp);
-      }
-      const responseId: string = currentResponseId ?? getResponseId(messageEntry);
-      currentResponseId = responseId;
-
       const toolCallId = getToolCallId(messageEntry);
       const toolResult = extractToolResult(messageEntry);
+      const toolName =
+        getString(messageEntry['toolName']) ||
+        getString(messageEntry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(messageEntry['args'] ?? messageEntry['input'] ?? messageEntry['arguments']);
+      emitToolCall(messageEntry, timestamp, toolCallId, toolName, args);
       const error = extractToolError(messageEntry);
-
-      if (currentTurnId) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'tool_result',
-          payload: {
-            toolCallId,
-            result: toolResult,
-            ...(error ? { error } : {}),
-          },
-        });
-      }
+      emitToolResult(messageEntry, timestamp, toolCallId, toolResult, error);
       continue;
     }
   }
@@ -529,26 +634,66 @@ type ToolCallEntry = {
 };
 
 function extractToolCalls(entry: Record<string, unknown>): ToolCallEntry[] {
-  const raw = entry['toolCalls'] ?? entry['tool_calls'] ?? entry['tools'];
-  if (!Array.isArray(raw)) {
-    return [];
+  const calls: ToolCallEntry[] = [];
+  const seen = new Set<string>();
+
+  const pushCall = (toolCallId: string, toolName: string, args: Record<string, unknown>): void => {
+    if (!toolCallId || !toolName || seen.has(toolCallId)) {
+      return;
+    }
+    seen.add(toolCallId);
+    calls.push({ toolCallId, toolName, args });
+  };
+
+  const content = entry['content'];
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (!['toolcall', 'tool_call', 'tool_use', 'tooluse'].includes(normalized)) {
+        continue;
+      }
+      const toolCallId = getString(block['id']) || getString(block['toolCallId']) || randomUUID();
+      const toolName =
+        getString(block['name']) || getString(block['toolName']) || getString(block['tool']) || '';
+      const args = coerceArgs(block['arguments'] ?? block['args'] ?? block['input']);
+      pushCall(toolCallId, toolName, args);
+    }
   }
 
-  const calls: ToolCallEntry[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') {
-      continue;
+  const raw = entry['toolCalls'] ?? entry['tool_calls'] ?? entry['tools'];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const call = item as Record<string, unknown>;
+      const toolCallId = getString(call['id']) || getString(call['toolCallId']) || randomUUID();
+      const functionEntry = call['function'];
+      const functionRecord =
+        functionEntry && typeof functionEntry === 'object' && !Array.isArray(functionEntry)
+          ? (functionEntry as Record<string, unknown>)
+          : null;
+      const toolName =
+        getString(call['name']) ||
+        getString(call['toolName']) ||
+        getString(call['tool']) ||
+        getString(functionRecord?.['name']) ||
+        '';
+      if (!toolName) {
+        continue;
+      }
+      const args = coerceArgs(
+        call['args'] ?? call['arguments'] ?? call['input'] ?? functionRecord?.['arguments'],
+      );
+      pushCall(toolCallId, toolName, args);
     }
-    const call = item as Record<string, unknown>;
-    const toolCallId = getString(call['id']) || getString(call['toolCallId']) || randomUUID();
-    const toolName =
-      getString(call['name']) || getString(call['toolName']) || getString(call['tool']) || '';
-    if (!toolName) {
-      continue;
-    }
-    const args = coerceArgs(call['args'] ?? call['arguments'] ?? call['input']);
-    calls.push({ toolCallId, toolName, args });
   }
+
   return calls;
 }
 

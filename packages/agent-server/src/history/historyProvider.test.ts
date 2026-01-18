@@ -46,8 +46,24 @@ describe('PiSessionHistoryProvider', () => {
         message: {
           role: 'assistant',
           id: 'resp-1',
-          content: 'Hi back',
+          content: [
+            { type: 'text', text: 'Hi back' },
+            {
+              type: 'toolCall',
+              id: 'tool-1',
+              name: 'bash',
+              arguments: { command: 'ls -a' },
+            },
+          ],
           thinking: 'Thinking... ',
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'toolResult',
+          toolCallId: 'tool-1',
+          toolName: 'bash',
+          content: [{ type: 'text', text: 'output' }],
         },
       }),
     ];
@@ -104,5 +120,18 @@ describe('PiSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'thinking_done' }>
       | undefined;
     expect(thinking?.payload.text).toBe('Thinking... ');
+
+    const toolCall = events.find((event) => event.type === 'tool_call') as
+      | Extract<ChatEvent, { type: 'tool_call' }>
+      | undefined;
+    expect(toolCall?.payload.toolCallId).toBe('tool-1');
+    expect(toolCall?.payload.toolName).toBe('bash');
+    expect(toolCall?.payload.args).toEqual({ command: 'ls -a' });
+
+    const toolResult = events.find((event) => event.type === 'tool_result') as
+      | Extract<ChatEvent, { type: 'tool_result' }>
+      | undefined;
+    expect(toolResult?.payload.toolCallId).toBe('tool-1');
+    expect(Array.isArray(toolResult?.payload.result)).toBe(true);
   });
 });
