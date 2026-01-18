@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import os from 'node:os';
 import { registerCliProcess } from './cliProcessRegistry';
 import { buildCliEnv } from './cliEnv';
 import type { CliWrapperConfig } from '../agents';
@@ -208,8 +209,14 @@ export async function runClaudeCliChat(options: {
     }
   }
   const spawnOptions: SpawnOptionsWithoutStdio = { env: spawnEnv };
-  if (config?.workdir && config.workdir.trim().length > 0) {
-    spawnOptions.cwd = config.workdir.trim();
+  const resolvedWorkdir = config?.workdir?.trim();
+  if (resolvedWorkdir && resolvedWorkdir.length > 0) {
+    spawnOptions.cwd = resolvedWorkdir;
+  } else {
+    const homeDir = os.homedir();
+    if (homeDir) {
+      spawnOptions.cwd = homeDir;
+    }
   }
   if (process.platform !== 'win32') {
     // On POSIX, run Claude in its own process group so we can

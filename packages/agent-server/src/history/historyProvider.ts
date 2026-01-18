@@ -8,6 +8,7 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
+import { getCodexSessionStore } from '../codexSessionStore';
 import { getProviderAttributes } from './providerAttributes';
 
 export interface HistoryRequest {
@@ -68,6 +69,90 @@ export class EventStoreHistoryProvider implements HistoryProvider {
   }
 }
 
+type ClaudeSessionCacheEntry = {
+  mtimeMs: number;
+  events: ChatEvent[];
+};
+
+export class ClaudeSessionHistoryProvider implements HistoryProvider {
+  private readonly cache = new Map<string, ClaudeSessionCacheEntry>();
+
+  constructor(
+    private readonly options: {
+      baseDir?: string;
+      eventStore?: EventStore;
+    },
+  ) {}
+
+  supports(providerId?: string | null): boolean {
+    return providerId === 'claude-cli';
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    return false;
+  }
+
+  async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
+    const { sessionId, force } = request;
+    const sessionInfo = resolveClaudeSessionInfo(request.attributes);
+    if (!sessionInfo) {
+      return [];
+    }
+    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.claude', 'projects');
+    const sessionPath = await findClaudeSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
+    if (!sessionPath) {
+      return [];
+    }
+
+    let stats: { mtimeMs: number } | null = null;
+    try {
+      const stat = await fs.stat(sessionPath);
+      if (stat.isFile()) {
+        stats = { mtimeMs: stat.mtimeMs };
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to stat Claude session file', {
+          sessionId: sessionInfo.sessionId,
+          path: sessionPath,
+          error: error.message,
+        });
+      }
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    if (!stats) {
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const cached = this.cache.get(sessionPath);
+    if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
+      return cached.events;
+    }
+
+    let content: string;
+    try {
+      content = await fs.readFile(sessionPath, 'utf8');
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      console.error('[history] Failed to read Claude session file', {
+        sessionId: sessionInfo.sessionId,
+        path: sessionPath,
+        error: error.message,
+      });
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const events = buildChatEventsFromClaudeSession(content, sessionId);
+    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
+    return events;
+  }
+}
+
 type PiSessionCacheEntry = {
   mtimeMs: number;
   events: ChatEvent[];
@@ -88,19 +173,19 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 
   shouldPersist(request: HistoryRequest): boolean {
-    return !resolvePiSessionInfo(request.attributes);
+    return false;
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
     const { sessionId, force } = request;
     const sessionInfo = resolvePiSessionInfo(request.attributes);
     if (!sessionInfo) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
     const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
     const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
     if (!sessionPath) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     let stats: { mtimeMs: number } | null = null;
@@ -119,12 +204,12 @@ export class PiSessionHistoryProvider implements HistoryProvider {
         });
       }
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     if (!stats) {
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const cached = this.cache.get(sessionPath);
@@ -143,20 +228,135 @@ export class PiSessionHistoryProvider implements HistoryProvider {
         error: error.message,
       });
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
     return events;
   }
+}
 
-  private async fallbackToEventStore(request: HistoryRequest): Promise<ChatEvent[]> {
-    if (!this.options.eventStore) {
+type CodexSessionCacheEntry = {
+  mtimeMs: number;
+  events: ChatEvent[];
+};
+
+export class CodexSessionHistoryProvider implements HistoryProvider {
+  private readonly cache = new Map<string, CodexSessionCacheEntry>();
+  private readonly pathCache = new Map<string, string>();
+
+  constructor(
+    private readonly options: {
+      baseDir?: string;
+      eventStore?: EventStore;
+      dataDir?: string;
+    },
+  ) {}
+
+  supports(providerId?: string | null): boolean {
+    return providerId === 'codex-cli';
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    return false;
+  }
+
+  async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
+    const { sessionId, force } = request;
+    const sessionInfo = resolveCodexSessionInfo(request.attributes);
+    let codexSessionId = sessionInfo?.sessionId;
+
+    if (!codexSessionId && this.options.dataDir) {
+      try {
+        const store = getCodexSessionStore(this.options.dataDir);
+        const mapping = await store.get(sessionId);
+        codexSessionId = mapping?.codexSessionId;
+      } catch (err) {
+        console.error('[history] Failed to read Codex session mapping', err);
+      }
+    }
+
+    if (!codexSessionId) {
       return [];
     }
-    const fallback = new EventStoreHistoryProvider(this.options.eventStore);
-    return fallback.getHistory(request);
+
+    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.codex', 'sessions');
+    const sessionPath = await this.resolveCodexSessionPath(baseDir, codexSessionId);
+    if (!sessionPath) {
+      return [];
+    }
+
+    let stats: { mtimeMs: number } | null = null;
+    try {
+      const stat = await fs.stat(sessionPath);
+      if (stat.isFile()) {
+        stats = { mtimeMs: stat.mtimeMs };
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to stat Codex session file', {
+          sessionId: codexSessionId,
+          path: sessionPath,
+          error: error.message,
+        });
+      }
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    if (!stats) {
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const cached = this.cache.get(sessionPath);
+    if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
+      return cached.events;
+    }
+
+    let content: string;
+    try {
+      content = await fs.readFile(sessionPath, 'utf8');
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      console.error('[history] Failed to read Codex session file', {
+        sessionId: codexSessionId,
+        path: sessionPath,
+        error: error.message,
+      });
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const events = buildChatEventsFromCodexSession(content, sessionId);
+    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
+    return events;
+  }
+
+  private async resolveCodexSessionPath(
+    baseDir: string,
+    codexSessionId: string,
+  ): Promise<string | null> {
+    const key = `${baseDir}::${codexSessionId}`;
+    const cached = this.pathCache.get(key);
+    if (cached) {
+      try {
+        const stat = await fs.stat(cached);
+        if (stat.isFile()) {
+          return cached;
+        }
+      } catch {
+        this.pathCache.delete(key);
+      }
+    }
+
+    const resolved = await findCodexSessionFile(baseDir, codexSessionId);
+    if (resolved) {
+      this.pathCache.set(key, resolved);
+    }
+    return resolved;
   }
 }
 
@@ -164,6 +364,29 @@ type PiSessionInfo = {
   sessionId: string;
   cwd: string;
 };
+
+type CodexSessionInfo = {
+  sessionId: string;
+  cwd?: string;
+};
+
+type ClaudeSessionInfo = {
+  sessionId: string;
+  cwd: string;
+};
+
+function resolveClaudeSessionInfo(attributes?: SessionAttributes): ClaudeSessionInfo | null {
+  const candidate = getProviderAttributes(attributes, 'claude-cli', ['claude']);
+  if (!candidate) {
+    return null;
+  }
+  const sessionId = candidate['sessionId'];
+  const cwd = candidate['cwd'];
+  if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {
+    return null;
+  }
+  return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+}
 
 function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | null {
   const candidate = getProviderAttributes(attributes, 'pi-cli', ['pi']);
@@ -176,6 +399,62 @@ function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | n
     return null;
   }
   return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+}
+
+function resolveCodexSessionInfo(attributes?: SessionAttributes): CodexSessionInfo | null {
+  const candidate = getProviderAttributes(attributes, 'codex-cli', ['codex']);
+  if (!candidate) {
+    return null;
+  }
+  const sessionId = candidate['sessionId'];
+  if (!isNonEmptyString(sessionId)) {
+    return null;
+  }
+  const cwd = candidate['cwd'];
+  return {
+    sessionId: sessionId.trim(),
+    ...(isNonEmptyString(cwd) ? { cwd: cwd.trim() } : {}),
+  };
+}
+
+function encodeClaudeCwd(cwd: string): string | null {
+  const trimmed = cwd.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.replace(/[\\/:]/g, '-');
+  if (!normalized) {
+    return null;
+  }
+  return normalized;
+}
+
+async function findClaudeSessionFile(
+  baseDir: string,
+  cwd: string,
+  sessionId: string,
+): Promise<string | null> {
+  const encoded = encodeClaudeCwd(cwd);
+  if (!encoded) {
+    return null;
+  }
+  const sessionDir = path.join(baseDir, encoded);
+  const sessionPath = path.join(sessionDir, `${sessionId}.jsonl`);
+  try {
+    const stat = await fs.stat(sessionPath);
+    if (stat.isFile()) {
+      return sessionPath;
+    }
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      console.error('[history] Failed to read Claude session file', {
+        path: sessionPath,
+        error: error.message,
+      });
+    }
+  }
+  return null;
 }
 
 function encodePiCwd(cwd: string): string | null {
@@ -230,8 +509,417 @@ async function findPiSessionFile(
   return path.join(sessionDir, matches[matches.length - 1]!);
 }
 
+async function findCodexSessionFile(
+  baseDir: string,
+  sessionId: string,
+): Promise<string | null> {
+  const suffix = `${sessionId}.jsonl`;
+  const queue = [baseDir];
+  let bestPath: string | null = null;
+  let bestMtime = -1;
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current) {
+      continue;
+    }
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to read Codex sessions directory', {
+          path: current,
+          error: error.message,
+        });
+      }
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(suffix)) {
+        continue;
+      }
+      try {
+        const stat = await fs.stat(entryPath);
+        if (!stat.isFile()) {
+          continue;
+        }
+        if (stat.mtimeMs >= bestMtime) {
+          bestMtime = stat.mtimeMs;
+          bestPath = entryPath;
+        }
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        if (error.code !== 'ENOENT') {
+          console.error('[history] Failed to stat Codex session file', {
+            path: entryPath,
+            error: error.message,
+          });
+        }
+      }
+    }
+  }
+
+  return bestPath;
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {
+  const entries = parseJsonLines(content);
+  const events: ChatEvent[] = [];
+
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const emittedAssistantText = new Set<string>();
+  const emittedThinking = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+
+  let currentTurnId: string | null = null;
+  let currentResponseId: string | null = null;
+
+  const getClaudeTurnId = (
+    entry: Record<string, unknown>,
+    messageEntry?: Record<string, unknown>,
+  ): string =>
+    getString(entry['uuid']) ||
+    getString(entry['messageId']) ||
+    getString(messageEntry?.['id']) ||
+    getString(entry['id']) ||
+    randomUUID();
+
+  const getClaudeResponseId = (
+    entry: Record<string, unknown>,
+    messageEntry?: Record<string, unknown>,
+  ): string =>
+    getString(messageEntry?.['id']) ||
+    getString(entry['uuid']) ||
+    getString(entry['id']) ||
+    randomUUID();
+
+  const endTurn = (timestamp: number): void => {
+    if (!currentTurnId) {
+      return;
+    }
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      type: 'turn_end',
+      payload: {},
+    });
+    currentTurnId = null;
+    currentResponseId = null;
+  };
+
+  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+    currentTurnId = turnId;
+    currentResponseId = null;
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      type: 'turn_start',
+      payload: { trigger },
+    });
+  };
+
+  const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
+    if (!currentTurnId) {
+      const turnId = getClaudeTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+    }
+    return currentTurnId;
+  };
+
+  const ensureResponseId = (entry: Record<string, unknown>, messageEntry?: Record<string, unknown>): string => {
+    const responseId = currentResponseId ?? getClaudeResponseId(entry, messageEntry);
+    currentResponseId = responseId;
+    return responseId;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId(entry);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+    });
+    emittedToolResults.add(toolCallId);
+  };
+
+  const extractClaudeUserText = (messageEntry: Record<string, unknown>): string => {
+    const content = messageEntry['content'];
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      const parts: string[] = [];
+      for (const item of content) {
+        if (!item || typeof item !== 'object') {
+          continue;
+        }
+        const block = item as Record<string, unknown>;
+        const type = getString(block['type']);
+        const normalized = type ? type.toLowerCase() : '';
+        if (normalized === 'tool_result' || normalized.endsWith('_tool_result')) {
+          continue;
+        }
+        const text = extractTextValue(block);
+        if (text) {
+          parts.push(text);
+        }
+      }
+      return parts.join('');
+    }
+    return extractText(messageEntry);
+  };
+
+  const extractClaudeThinking = (messageEntry: Record<string, unknown>): string => {
+    const content = messageEntry['content'];
+    if (!Array.isArray(content)) {
+      return '';
+    }
+    const parts: string[] = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'thinking' && normalized !== 'analysis') {
+        continue;
+      }
+      const raw = block['thinking'] ?? block['text'] ?? block['content'];
+      const text = extractTextValue(raw);
+      if (text) {
+        parts.push(text);
+      }
+    }
+    return parts.join('');
+  };
+
+  const extractClaudeToolResults = (
+    entry: Record<string, unknown>,
+    messageEntry: Record<string, unknown>,
+  ): Array<{ toolCallId: string; result: unknown; error?: { code: string; message: string } }> => {
+    const content = messageEntry['content'];
+    if (!Array.isArray(content)) {
+      return [];
+    }
+    const results: Array<{
+      toolCallId: string;
+      result: unknown;
+      error?: { code: string; message: string };
+    }> = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'tool_result' && !normalized.endsWith('_tool_result')) {
+        continue;
+      }
+      const toolCallId =
+        getString(block['tool_use_id']) ||
+        getString(block['toolUseId']) ||
+        getString(block['toolCallId']) ||
+        getString(block['id']) ||
+        randomUUID();
+      const toolUseResult = entry['toolUseResult'];
+      const result =
+        toolUseResult !== undefined
+          ? toolUseResult
+          : 'result' in block
+            ? block['result']
+            : block['content'];
+      const isError = block['is_error'] === true || block['isError'] === true;
+      const error =
+        extractToolError(block) ??
+        (isError ? { code: 'tool_error', message: 'Tool call failed' } : undefined);
+      results.push({ toolCallId, result, ...(error ? { error } : {}) });
+    }
+    return results;
+  };
+
+  for (const entry of entries) {
+    const entryType = getString(entry['type']);
+    if (entryType === 'file-history-snapshot') {
+      continue;
+    }
+    if (entryType === 'summary') {
+      continue;
+    }
+    if (entryType === 'system') {
+      continue;
+    }
+
+    const messageEntry = resolveMessageEntry(entry);
+    const role = getString(messageEntry['role']);
+
+    if (role === 'user') {
+      const toolResults = extractClaudeToolResults(entry, messageEntry);
+      const userText = extractClaudeUserText(messageEntry);
+      const timestamp = resolveTimestamp(messageEntry, entry);
+
+      if (toolResults.length > 0 && !userText) {
+        for (const result of toolResults) {
+          emitToolResult(entry, timestamp, result.toolCallId, result.result, result.error);
+        }
+        continue;
+      }
+
+      endTurn(timestamp);
+      const turnId = getClaudeTurnId(entry, messageEntry);
+      startTurn(turnId, 'user', timestamp);
+      events.push({
+        id: randomUUID(),
+        timestamp,
+        sessionId,
+        turnId,
+        type: 'user_message',
+        payload: { text: userText || extractText(messageEntry) },
+      });
+      continue;
+    }
+
+    if (role === 'assistant') {
+      const timestamp = resolveTimestamp(messageEntry, entry);
+      if (!currentTurnId) {
+        const turnId = getClaudeTurnId(entry, messageEntry);
+        startTurn(turnId, 'system', timestamp);
+      }
+      if (!currentTurnId) {
+        continue;
+      }
+
+      const responseId = ensureResponseId(entry, messageEntry);
+
+      const thinkingText = extractClaudeThinking(messageEntry);
+      if (thinkingText && !emittedThinking.has(responseId)) {
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId: currentTurnId,
+          responseId,
+          type: 'thinking_done',
+          payload: { text: thinkingText },
+        });
+        emittedThinking.add(responseId);
+      }
+
+      const toolCalls = extractToolCalls(messageEntry);
+      for (const call of toolCalls) {
+        emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
+      }
+
+      const assistantText = extractText(messageEntry);
+      if (assistantText && !emittedAssistantText.has(responseId)) {
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId: currentTurnId,
+          responseId,
+          type: 'assistant_done',
+          payload: { text: assistantText },
+        });
+        emittedAssistantText.add(responseId);
+      }
+      continue;
+    }
+  }
+
+  const finalTimestamp = Date.now();
+  endTurn(finalTimestamp);
+  return events;
 }
 
 function buildChatEventsFromPiSession(content: string, sessionId: string): ChatEvent[] {
@@ -476,38 +1164,126 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (!currentTurnId) {
         continue;
       }
+      const turnId = currentTurnId;
       const responseId: string = currentResponseId ?? getResponseId(messageEntry);
       currentResponseId = responseId;
 
-      const thinkingText = extractThinking(messageEntry);
-      if (thinkingText) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'thinking_done',
-          payload: { text: thinkingText },
-        });
-      }
+      const content = messageEntry['content'];
+      if (Array.isArray(content)) {
+        let thinkingBuffer = '';
+        let textBuffer = '';
 
-      const toolCalls = extractToolCalls(messageEntry);
-      for (const call of toolCalls) {
-        emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
-      }
+        const flushThinking = (): void => {
+          if (!thinkingBuffer) {
+            return;
+          }
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'thinking_done',
+            payload: { text: thinkingBuffer },
+          });
+          thinkingBuffer = '';
+        };
 
-      const assistantText = extractText(messageEntry);
-      if (assistantText) {
-        events.push({
-          id: randomUUID(),
-          timestamp,
-          sessionId,
-          turnId: currentTurnId,
-          responseId,
-          type: 'assistant_done',
-          payload: { text: assistantText },
-        });
+        const flushText = (): void => {
+          if (!textBuffer) {
+            return;
+          }
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: textBuffer },
+          });
+          textBuffer = '';
+        };
+
+        for (const item of content) {
+          if (!item || typeof item !== 'object') {
+            const text = extractTextValue(item);
+            if (text) {
+              textBuffer += text;
+            }
+            continue;
+          }
+
+          const block = item as Record<string, unknown>;
+          const type = getString(block['type']);
+          const normalized = type ? type.toLowerCase() : '';
+
+          if (normalized === 'thinking' || normalized === 'analysis' || normalized === 'reasoning') {
+            const text = extractTextValue(block['thinking'] ?? block['text'] ?? block['content']);
+            if (text) {
+              thinkingBuffer += text;
+            }
+            continue;
+          }
+
+          if (normalized === 'text') {
+            const text = extractTextValue(block['text'] ?? block['content']);
+            if (text) {
+              textBuffer += text;
+            }
+            continue;
+          }
+
+          if (['toolcall', 'tool_call', 'tool_use', 'tooluse'].includes(normalized)) {
+            flushThinking();
+            flushText();
+            const toolCallId = getString(block['id']) || getString(block['toolCallId']) || randomUUID();
+            const toolName =
+              getString(block['name']) || getString(block['toolName']) || getString(block['tool']) || '';
+            const args = coerceArgs(block['arguments'] ?? block['args'] ?? block['input']);
+            emitToolCall(messageEntry, timestamp, toolCallId, toolName, args);
+            continue;
+          }
+
+          const text = extractTextValue(block['text'] ?? block['content']);
+          if (text) {
+            textBuffer += text;
+          }
+        }
+
+        flushThinking();
+        flushText();
+      } else {
+        const thinkingText = extractThinking(messageEntry);
+        if (thinkingText) {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'thinking_done',
+            payload: { text: thinkingText },
+          });
+        }
+
+        const toolCalls = extractToolCalls(messageEntry);
+        for (const call of toolCalls) {
+          emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
+        }
+
+        const assistantText = extractText(messageEntry);
+        if (assistantText) {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: assistantText },
+          });
+        }
       }
 
       continue;
@@ -535,6 +1311,359 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   return events;
 }
 
+function buildChatEventsFromCodexSession(content: string, sessionId: string): ChatEvent[] {
+  const entries = parseJsonLines(content);
+  const events: ChatEvent[] = [];
+
+  const hasEventUserMessages = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'user_message',
+  );
+  const hasEventAgentMessages = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'agent_message',
+  );
+  const hasEventReasoning = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'agent_reasoning',
+  );
+
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+
+  let currentTurnId: string | null = null;
+  let currentResponseId: string | null = null;
+  let thinkingBuffer = '';
+  let thinkingTimestamp = 0;
+
+  const endTurn = (timestamp: number): void => {
+    if (!currentTurnId) {
+      return;
+    }
+    flushThinking(timestamp);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      type: 'turn_end',
+      payload: {},
+    });
+    currentTurnId = null;
+    currentResponseId = null;
+  };
+
+  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+    currentTurnId = turnId;
+    currentResponseId = null;
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      type: 'turn_start',
+      payload: { trigger },
+    });
+  };
+
+  const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
+    if (!currentTurnId) {
+      const turnId = getTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+    }
+    return currentTurnId;
+  };
+
+  const ensureResponseId = (): string => {
+    if (!currentResponseId) {
+      currentResponseId = randomUUID();
+    }
+    return currentResponseId;
+  };
+
+  const appendThinking = (text: string, timestamp: number): void => {
+    if (!text) {
+      return;
+    }
+    if (thinkingBuffer && !thinkingBuffer.endsWith('\n')) {
+      thinkingBuffer += '\n\n';
+    }
+    thinkingBuffer += text;
+    thinkingTimestamp = timestamp;
+  };
+
+  const flushThinking = (timestamp: number): void => {
+    if (!thinkingBuffer || !currentTurnId) {
+      thinkingBuffer = '';
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp: thinkingTimestamp || timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      responseId,
+      type: 'thinking_done',
+      payload: { text: thinkingBuffer },
+    });
+    thinkingBuffer = '';
+    thinkingTimestamp = 0;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+    });
+    emittedToolResults.add(toolCallId);
+  };
+
+  for (const entry of entries) {
+    const entryType = getString(entry['type']);
+    if (!entryType) {
+      continue;
+    }
+
+    if (entryType === 'session_meta' || entryType === 'turn_context' || entryType === 'compacted') {
+      continue;
+    }
+
+    if (entryType === 'event_msg') {
+      if (!isRecord(entry['payload'])) {
+        continue;
+      }
+      const payload = entry['payload'];
+      const payloadType = getString(payload['type']);
+      const timestamp = resolveTimestamp(entry, payload);
+
+      if (payloadType === 'user_message') {
+        if (!hasEventUserMessages) {
+          continue;
+        }
+        flushThinking(timestamp);
+        endTurn(timestamp);
+        const turnId = getTurnId(entry);
+        startTurn(turnId, 'user', timestamp);
+        const messageText = extractTextValue(payload['message']);
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId,
+          type: 'user_message',
+          payload: { text: messageText },
+        });
+        continue;
+      }
+
+      if (payloadType === 'agent_message') {
+        if (!hasEventAgentMessages) {
+          continue;
+        }
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        flushThinking(timestamp);
+        const responseId = ensureResponseId();
+        const messageText = extractTextValue(payload['message']);
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId,
+          responseId,
+          type: 'assistant_done',
+          payload: { text: messageText },
+        });
+        continue;
+      }
+
+      if (payloadType === 'agent_reasoning') {
+        if (!hasEventReasoning) {
+          continue;
+        }
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        ensureResponseId();
+        const reasoningText = extractTextValue(payload['text'] ?? payload['message']);
+        appendThinking(reasoningText, timestamp);
+        continue;
+      }
+
+      continue;
+    }
+
+    if (entryType === 'response_item') {
+      if (!isRecord(entry['payload'])) {
+        continue;
+      }
+      const payload = entry['payload'];
+      const payloadType = getString(payload['type']);
+      const timestamp = resolveTimestamp(entry, payload);
+
+      if (payloadType === 'function_call' || payloadType === 'custom_tool_call') {
+        flushThinking(timestamp);
+        const toolCallId = getString(payload['call_id']) || randomUUID();
+        const toolName = getString(payload['name']) || 'tool';
+        const argsRaw = payload['arguments'] ?? payload['input'];
+        let args = coerceArgs(argsRaw);
+        if (!Object.keys(args).length && argsRaw) {
+          args = { input: argsRaw };
+        }
+        emitToolCall(entry, timestamp, toolCallId, toolName, args);
+        continue;
+      }
+
+      if (payloadType === 'function_call_output' || payloadType === 'custom_tool_call_output') {
+        flushThinking(timestamp);
+        const toolCallId = getString(payload['call_id']) || randomUUID();
+        const output = parseCodexToolOutput(payload['output']);
+        emitToolResult(entry, timestamp, toolCallId, output);
+        continue;
+      }
+
+      if (payloadType === 'reasoning' && !hasEventReasoning) {
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        ensureResponseId();
+        const reasoningText = extractCodexReasoningSummary(payload);
+        appendThinking(reasoningText, timestamp);
+        continue;
+      }
+
+      if (payloadType === 'message') {
+        const role = getString(payload['role']);
+        if (role === 'user' && !hasEventUserMessages) {
+          flushThinking(timestamp);
+          endTurn(timestamp);
+          const turnId = getTurnId(entry);
+          startTurn(turnId, 'user', timestamp);
+          const messageText = extractTextValue(payload['content']);
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            type: 'user_message',
+            payload: { text: messageText },
+          });
+          continue;
+        }
+
+        if (role === 'assistant' && !hasEventAgentMessages) {
+          const turnId = ensureTurn(entry, timestamp);
+          if (!turnId) {
+            continue;
+          }
+          flushThinking(timestamp);
+          const responseId = ensureResponseId();
+          const assistantText = extractTextValue(payload['content']);
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: assistantText },
+          });
+          continue;
+        }
+      }
+    }
+  }
+
+  const finalTimestamp = Date.now();
+  endTurn(finalTimestamp);
+  return events;
+}
+
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
   const lines = content
     .split('\n')
@@ -549,10 +1678,14 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
         entries.push(parsed as Record<string, unknown>);
       }
     } catch (err) {
-      console.error('[history] Failed to parse Pi session line', line);
+      console.error('[history] Failed to parse session line', line);
     }
   }
   return entries;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function resolveMessageEntry(entry: Record<string, unknown>): Record<string, unknown> {
@@ -634,8 +1767,54 @@ function extractLabel(entry: Record<string, unknown>): string | null {
 }
 
 function extractThinking(entry: Record<string, unknown>): string {
+  const content = entry['content'];
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const item of content) {
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const block = item as Record<string, unknown>;
+      const type = getString(block['type']);
+      const normalized = type ? type.toLowerCase() : '';
+      if (normalized !== 'thinking' && normalized !== 'analysis' && normalized !== 'reasoning') {
+        continue;
+      }
+      const raw = block['thinking'] ?? block['text'] ?? block['content'];
+      const text = extractTextValue(raw);
+      if (text) {
+        parts.push(text);
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join('');
+    }
+  }
   const raw = entry['thinking'] ?? entry['thinkingContent'] ?? entry['reasoning'] ?? entry['analysis'];
   return extractTextValue(raw);
+}
+
+function extractCodexReasoningSummary(payload: Record<string, unknown>): string {
+  const summary = payload['summary'];
+  if (!Array.isArray(summary)) {
+    return extractTextValue(payload['text'] ?? payload['content']);
+  }
+  const parts: string[] = [];
+  for (const item of summary) {
+    if (!item || typeof item !== 'object') {
+      const text = extractTextValue(item);
+      if (text) {
+        parts.push(text);
+      }
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const text = extractTextValue(record['text'] ?? record['content']);
+    if (text) {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
 }
 
 type ToolCallEntry = {
@@ -728,6 +1907,27 @@ function extractToolResult(entry: Record<string, unknown>): unknown {
     return entry['content'];
   }
   return null;
+}
+
+function parseCodexToolOutput(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return value;
+  }
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return value;
+    }
+  }
+  return value;
 }
 
 function extractToolError(

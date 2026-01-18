@@ -633,6 +633,53 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming')).toBe(true);
   });
 
+  it('creates a new thinking block after tool calls', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('thinking_done', {
+        id: 'e1',
+        payload: { text: 'Planning...' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'bash',
+          args: { command: 'ls' },
+        },
+      }),
+      createBaseEvent('thinking_done', {
+        id: 'e3',
+        payload: { text: 'Next steps...' },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const response = container.querySelector<HTMLDivElement>('.assistant-response');
+    expect(response).not.toBeNull();
+    if (!response) return;
+
+    const thinkingBlocks = response.querySelectorAll<HTMLDivElement>('.thinking-content');
+    expect(thinkingBlocks).toHaveLength(2);
+
+    const toolContainer = response.querySelector<HTMLDivElement>('.tool-calls');
+    expect(toolContainer).not.toBeNull();
+    if (!toolContainer) return;
+
+    const children = Array.from(response.children);
+    const firstThinkingIndex = children.indexOf(thinkingBlocks[0]!);
+    const toolIndex = children.indexOf(toolContainer);
+    const secondThinkingIndex = children.indexOf(thinkingBlocks[1]!);
+    expect(firstThinkingIndex).toBeLessThan(toolIndex);
+    expect(toolIndex).toBeLessThan(secondThinkingIndex);
+  });
+
   it('deduplicates chunks with same or lower offset', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

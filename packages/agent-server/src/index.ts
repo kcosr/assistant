@@ -18,6 +18,8 @@ import { GitVersioningService } from './gitVersioning';
 import { ScheduledSessionService } from './scheduledSessions';
 import { SearchService } from './search/searchService';
 import {
+  ClaudeSessionHistoryProvider,
+  CodexSessionHistoryProvider,
   EventStoreHistoryProvider,
   HistoryProviderRegistry,
   PiSessionHistoryProvider,
@@ -103,6 +105,8 @@ export async function startServer(
   const eventStore = new FileEventStore(config.dataDir);
   const registry = agentRegistry ?? new AgentRegistry([]);
   const historyProvider = new HistoryProviderRegistry([
+    new ClaudeSessionHistoryProvider({ eventStore }),
+    new CodexSessionHistoryProvider({ eventStore, dataDir: config.dataDir }),
     new PiSessionHistoryProvider({ eventStore }),
     new EventStoreHistoryProvider(eventStore),
   ]);

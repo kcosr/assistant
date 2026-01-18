@@ -1,5 +1,6 @@
 import { type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import os from 'node:os';
 import { PassThrough } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
@@ -146,6 +147,34 @@ describe('runClaudeCliChat', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.options.cwd).toBe('/tmp/claude-workdir');
+  });
+
+  it('defaults cwd to the home directory when workdir is not provided', async () => {
+    const child = new FakeClaudeProcess();
+    const calls: Array<{ options: SpawnOptionsWithoutStdio }> = [];
+
+    const spawnFn: ClaudeCliSpawn = (_command, _args, options) => {
+      calls.push({ options });
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.options.cwd).toBe(os.homedir());
   });
 
   it('uses wrapper command and merges wrapper env when configured', async () => {
