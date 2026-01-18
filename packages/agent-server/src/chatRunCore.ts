@@ -503,6 +503,39 @@ export async function runChatCompletionCore(
 
   if (provider === 'claude-cli') {
     const claudeConfig = agent?.chat?.config as ClaudeCliChatConfig | undefined;
+    const attributes = state.summary.attributes;
+    let storedClaudeSession: { sessionId?: string; cwd?: string } | null = null;
+    const providerInfo = getProviderAttributes(attributes, 'claude-cli', ['claude']);
+    if (providerInfo) {
+      const rawSessionId = providerInfo['sessionId'];
+      const rawCwd = providerInfo['cwd'];
+      storedClaudeSession = {
+        ...(typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
+          ? { sessionId: rawSessionId.trim() }
+          : {}),
+        ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0 ? { cwd: rawCwd.trim() } : {}),
+      };
+    }
+    const resumeSession = hadPriorUserMessages || Boolean(storedClaudeSession?.sessionId);
+    const resolvedCwd = claudeConfig?.workdir?.trim() || process.cwd();
+    const nextSessionId = sessionId.trim();
+    const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
+    if (nextSessionId && nextCwd) {
+      const currentSessionId = storedClaudeSession?.sessionId ?? '';
+      const currentCwd = storedClaudeSession?.cwd ?? undefined;
+      if (nextSessionId !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch('claude-cli', {
+            sessionId: nextSessionId,
+            cwd: nextCwd,
+          });
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedClaudeSession = { sessionId: nextSessionId, cwd: nextCwd };
+        } catch (err) {
+          log('failed to persist Claude session mapping', err);
+        }
+      }
+    }
 
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
@@ -520,7 +553,7 @@ export async function runChatCompletionCore(
 
     const { text: claudeText, aborted: cliAborted } = await runClaudeCliChat({
       sessionId,
-      resumeSession: hadPriorUserMessages,
+      resumeSession,
       userText: text,
       ...(claudeConfig ? { config: claudeConfig } : {}),
       abortSignal: abortController.signal,

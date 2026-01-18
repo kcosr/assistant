@@ -600,6 +600,11 @@ For `pi-cli`, history is read from the default Pi sessions directory:
 session header, so set `workdir` if you need a stable path across runs. No extra config
 is required.
 
+For `claude-cli`, history is read from the default Claude projects directory:
+`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The `cwd` matches the CLI working
+directory, so set `workdir` if you need a stable path across runs. No extra config is
+required.
+
 Reserved flags (must not be in `extraArgs`):
 
 - `claude-cli`: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`
