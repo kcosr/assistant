@@ -62,6 +62,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isStringWithLength(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
 function extractTextDelta(event: PiCliEvent): string | undefined {
   const type = event['type'];
 
@@ -75,7 +79,7 @@ function extractTextDelta(event: PiCliEvent): string | undefined {
       const innerType = inner['type'];
       if (innerType === 'text_delta') {
         const delta = inner['delta'];
-        if (isNonEmptyString(delta)) {
+        if (isStringWithLength(delta)) {
           return delta;
         }
       }
@@ -84,13 +88,13 @@ function extractTextDelta(event: PiCliEvent): string | undefined {
 
   // Fallbacks for any alternative shapes that might surface text directly.
   const delta = event['delta'];
-  if (isNonEmptyString(delta)) {
+  if (isStringWithLength(delta)) {
     return delta;
   }
 
   if (delta && typeof delta === 'object') {
     const deltaText = (delta as Record<string, unknown>)['text'];
-    if (isNonEmptyString(deltaText)) {
+    if (isStringWithLength(deltaText)) {
       return deltaText;
     }
   }
@@ -116,7 +120,7 @@ function extractToolResultText(result: unknown): string | undefined {
     const blockObj = block as Record<string, unknown>;
     const blockType = blockObj['type'];
     const blockText = blockObj['text'];
-    if (blockType === 'text' && isNonEmptyString(blockText)) {
+    if (blockType === 'text' && isStringWithLength(blockText)) {
       chunks.push(blockText);
     }
   }
@@ -129,7 +133,7 @@ function extractToolResultText(result: unknown): string | undefined {
 }
 
 function extractToolOutputText(result: unknown): string | undefined {
-  if (isNonEmptyString(result)) {
+  if (isStringWithLength(result)) {
     return result;
   }
 
@@ -593,7 +597,7 @@ export async function runPiCliChat(options: {
 
         if (innerType === 'thinking_delta') {
           const delta = inner['delta'];
-          if (isNonEmptyString(delta)) {
+          if (isStringWithLength(delta)) {
             await emitThinkingStart();
             await emitThinkingDelta(delta);
           }

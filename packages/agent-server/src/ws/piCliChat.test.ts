@@ -118,20 +118,30 @@ describe('runPiCliChat', () => {
       type: 'message_update',
       assistantMessageEvent: {
         type: 'text_delta',
-        delta: ' world',
+        delta: '\n',
+        contentIndex: 0,
+      },
+    };
+
+    const event3 = {
+      type: 'message_update',
+      assistantMessageEvent: {
+        type: 'text_delta',
+        delta: 'world',
         contentIndex: 0,
       },
     };
 
     child.stdout.write(`${JSON.stringify(event1)}\n`);
     child.stdout.write(`${JSON.stringify(event2)}\n`);
+    child.stdout.write(`${JSON.stringify(event3)}\n`);
     child.stdout.end();
     child.emit('close', 0, null);
 
     const result = await promise;
-    expect(deltas).toEqual(['Hello', ' world']);
+    expect(deltas).toEqual(['Hello', '\n', 'world']);
     expect(thinkingDeltas).toEqual([]);
-    expect(result.text).toBe('Hello world');
+    expect(result.text).toBe('Hello\nworld');
   });
 
   it('captures session header info from Pi output', async () => {

@@ -338,9 +338,10 @@ DOMPurify.addHook('afterSanitizeAttributes', (node: Element) => {
 export function renderMarkdown(text: string): string {
   // Prepare text for streaming (close incomplete blocks)
   const prepared = prepareForMarkdown(text);
+  const normalized = prepared.replace(/\r\n?/g, '\n');
 
   // Parse markdown to HTML
-  const rawHtml = marked.parse(prepared, { async: false }) as string;
+  const rawHtml = marked.parse(normalized, { async: false, breaks: true }) as string;
 
   // Sanitize the HTML to prevent XSS
   const sanitized = DOMPurify.sanitize(rawHtml, purifyConfig);
