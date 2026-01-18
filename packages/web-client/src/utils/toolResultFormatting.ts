@@ -26,6 +26,27 @@ export function formatToolResultText(options: {
     return result;
   }
 
+  if (Array.isArray(result)) {
+    const parts: string[] = [];
+    for (const block of result) {
+      if (typeof block === 'string') {
+        parts.push(block);
+        continue;
+      }
+      if (!block || typeof block !== 'object') {
+        continue;
+      }
+      const blockRecord = block as Record<string, unknown>;
+      const text = blockRecord['text'];
+      if (typeof text === 'string') {
+        parts.push(text);
+      }
+    }
+    if (parts.length > 0) {
+      return parts.join('');
+    }
+  }
+
   if (typeof result === 'object') {
     const record = result as Record<string, unknown>;
 

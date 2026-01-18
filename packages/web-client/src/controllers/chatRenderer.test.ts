@@ -234,13 +234,10 @@ describe('ChatRenderer', () => {
         id: 'e2',
         payload: {
           toolCallId: 'tc1',
-          result: {
-            content: [
-              { type: 'text', text: 'line 1\n' },
-              { type: 'text', text: 'line 2\n' },
-            ],
-            details: {},
-          },
+          result: [
+            { type: 'text', text: 'line 1\n' },
+            { type: 'text', text: 'line 2\n' },
+          ],
         },
       }),
     );
