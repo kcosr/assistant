@@ -591,13 +591,14 @@ All CLI providers share the same config shape:
 ```
 
 - `workdir`: optional working directory for the CLI process
-- `sessionDir` (pi-cli only): host path for reading Pi session history files
-- `sessionDirCli` (pi-cli only): optional CLI override passed to `--session-dir`
 - `extraArgs`: optional extra CLI flags (reserved flags are managed by the server)
 - `wrapper.path`: optional wrapper executable used to run the CLI (for containerized runs)
 - `wrapper.env`: optional environment map for the wrapper (supports `${ENV}` substitution)
 
-For `pi-cli`, the host read path defaults to `${workdir}/.assistant/pi-sessions` when a wrapper is configured and `sessionDir` is omitted; otherwise it defaults to `DATA_DIR/pi-sessions`. If `sessionDirCli` is omitted, the server passes `--session-dir` using `.assistant/pi-sessions` for wrapper runs, or the resolved host session directory for local runs.
+For `pi-cli`, history is read from the default Pi sessions directory:
+`~/.pi/agent/sessions/<encoded-cwd>/*_<pi-session-id>.jsonl`. The `cwd` comes from the Pi
+session header, so set `workdir` if you need a stable path across runs. No extra config
+is required.
 
 Reserved flags (must not be in `extraArgs`):
 

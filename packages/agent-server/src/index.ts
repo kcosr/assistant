@@ -103,7 +103,7 @@ export async function startServer(
   const eventStore = new FileEventStore(config.dataDir);
   const registry = agentRegistry ?? new AgentRegistry([]);
   const historyProvider = new HistoryProviderRegistry([
-    new PiSessionHistoryProvider({ envConfig: config, eventStore }),
+    new PiSessionHistoryProvider({ eventStore }),
     new EventStoreHistoryProvider(eventStore),
   ]);
 

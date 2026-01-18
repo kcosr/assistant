@@ -341,8 +341,6 @@ describe('loadConfig', () => {
           chat: {
             provider: 'pi-cli',
             config: {
-              sessionDir: '/tmp/pi-sessions',
-              sessionDirCli: '.assistant/pi-sessions',
               extraArgs: [
                 '--provider',
                 'google',
@@ -370,8 +368,6 @@ describe('loadConfig', () => {
     expect(agent.chat).toEqual({
       provider: 'pi-cli',
       config: {
-        sessionDir: '/tmp/pi-sessions',
-        sessionDirCli: '.assistant/pi-sessions',
         extraArgs: [
           '--provider',
           'google',

@@ -31,7 +31,7 @@ import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
 import { runChatCompletionIteration } from './ws/chatCompletionStreaming';
-import { runPiCliChat, type PiCliChatConfig } from './ws/piCliChat';
+import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 
 type ChatProvider = 'openai' | 'openai-compatible' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
@@ -595,6 +595,28 @@ export async function runChatCompletionCore(
     fullText = codexText;
   } else if (provider === 'pi-cli') {
     const piConfig = agent?.chat?.config as PiCliChatConfig | undefined;
+    const attributes = state.summary.attributes;
+    let storedPiSession: { sessionId?: string; cwd?: string } | null = null;
+    if (attributes && typeof attributes === 'object') {
+      const providers = (attributes as Record<string, unknown>)['providers'];
+      if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
+        const pi = (providers as Record<string, unknown>)['pi'];
+        if (pi && typeof pi === 'object' && !Array.isArray(pi)) {
+          const piConfigEntry = pi as Record<string, unknown>;
+          const rawSessionId = piConfigEntry['sessionId'];
+          const rawCwd = piConfigEntry['cwd'];
+          storedPiSession = {
+            ...(typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
+              ? { sessionId: rawSessionId.trim() }
+              : {}),
+            ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0
+              ? { cwd: rawCwd.trim() }
+              : {}),
+          };
+        }
+      }
+    }
+    const resumeSessionId = storedPiSession?.sessionId;
 
     const piCallbacks = createCliToolCallbacks({
       sessionId,
@@ -610,12 +632,41 @@ export async function runChatCompletionCore(
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
 
+    const syncPiSessionInfo = async (info: PiSessionInfo): Promise<void> => {
+      const nextSessionId =
+        typeof info.sessionId === 'string' && info.sessionId.trim().length > 0
+          ? info.sessionId.trim()
+          : '';
+      if (!nextSessionId) {
+        return;
+      }
+      const nextCwd =
+        typeof info.cwd === 'string' && info.cwd.trim().length > 0 ? info.cwd.trim() : undefined;
+      const currentSessionId = storedPiSession?.sessionId ?? '';
+      const currentCwd = storedPiSession?.cwd ?? undefined;
+      if (nextSessionId === currentSessionId && nextCwd === currentCwd) {
+        return;
+      }
+      storedPiSession = { sessionId: nextSessionId, ...(nextCwd ? { cwd: nextCwd } : {}) };
+      try {
+        await sessionHub.updateSessionAttributes(sessionId, {
+          providers: {
+            pi: {
+              sessionId: nextSessionId,
+              ...(nextCwd ? { cwd: nextCwd } : {}),
+            },
+          },
+        });
+      } catch (err) {
+        log('failed to persist Pi session mapping', err);
+      }
+    };
+
     const { text: piText, aborted: cliAborted } = await runPiCliChat({
       sessionId,
-      resumeSession: hadPriorUserMessages,
+      ...(resumeSessionId ? { piSessionId: resumeSessionId } : {}),
       userText: text,
       ...(piConfig ? { config: piConfig } : {}),
-      dataDir: envConfig.dataDir,
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,
       onThinkingStart: streamHandlers.emitThinkingStart,
@@ -623,6 +674,7 @@ export async function runChatCompletionCore(
       onThinkingDone: streamHandlers.emitThinkingDone,
       onToolCallStart: piCallbacks.onToolCallStart,
       onToolResult: piCallbacks.onToolResult,
+      onSessionInfo: syncPiSessionInfo,
       log,
     });
 

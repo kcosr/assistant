@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { ClientControlMessage, ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ClientControlMessage, ServerMessage } from '@assistant/shared';
 
 import { handleChatOutputCancel } from './chatOutputCancelHandling';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
@@ -22,7 +22,7 @@ describe('handleChatOutputCancel', () => {
     } as unknown as SessionHub;
 
     const abortController = new AbortController();
-    const events: Array<{ type: string; payload?: { text?: string; toolCallId?: string } }> = [];
+    const events: ChatEvent[] = [];
     const eventStore: EventStore = {
       append: async (_sessionId, event) => {
         events.push(event);
@@ -30,8 +30,8 @@ describe('handleChatOutputCancel', () => {
       appendBatch: async (_sessionId, batch) => {
         events.push(...batch);
       },
-      getEvents: async () => events as never[],
-      getEventsSince: async () => events as never[],
+      getEvents: async () => events,
+      getEventsSince: async () => events,
       subscribe: () => () => {},
       clearSession: async () => {},
       deleteSession: async () => {},

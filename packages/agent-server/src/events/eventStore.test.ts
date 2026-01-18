@@ -199,6 +199,14 @@ describe('SessionScopedEventStore', () => {
           agentId: 'pi',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          attributes: {
+            providers: {
+              pi: {
+                sessionId: 'pi-session-id',
+                cwd: '/home/pi',
+              },
+            },
+          },
         },
       ],
       [
@@ -232,7 +240,7 @@ describe('SessionScopedEventStore', () => {
             chat: { provider: 'openai' },
           },
         ]),
-    } as SessionHub;
+    } as unknown as SessionHub;
 
     const baseStore: EventStore = {
       append: vi.fn(async () => undefined),

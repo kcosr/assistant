@@ -8,7 +8,7 @@ import type {
   ChatCompletionToolCallMessageToolCall,
 } from './chatCompletionTypes';
 
-type AssistantMessage = Extract<ChatCompletionMessage, { role: 'assistant' }>;
+type AssistantMessage = ChatCompletionMessage & { role: 'assistant' };
 
 export function buildChatMessagesFromEvents(
   events: ChatEvent[],

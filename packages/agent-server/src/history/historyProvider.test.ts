@@ -8,7 +8,6 @@ import type { ChatEvent } from '@assistant/shared';
 
 import { PiSessionHistoryProvider } from './historyProvider';
 import type { AgentDefinition } from '../agents';
-import type { EnvConfig } from '../envConfig';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
@@ -16,9 +15,14 @@ async function createTempDir(prefix: string): Promise<string> {
 
 describe('PiSessionHistoryProvider', () => {
   it('maps Pi session entries into chat events', async () => {
-    const sessionDir = await createTempDir('pi-session-history');
+    const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-1';
-    const filePath = path.join(sessionDir, `${sessionId}.jsonl`);
+    const piSessionId = 'pi-session-1';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
     const lines = [
       JSON.stringify({
         type: 'custom_message',
@@ -49,25 +53,29 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const envConfig = { dataDir: sessionDir } as EnvConfig;
     const agent: AgentDefinition = {
       agentId: 'pi',
       displayName: 'Pi',
       description: 'Pi CLI',
       chat: {
         provider: 'pi-cli',
-        config: {
-          sessionDir,
-        },
       },
     };
 
-    const provider = new PiSessionHistoryProvider({ envConfig });
+    const provider = new PiSessionHistoryProvider({ baseDir });
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
       agentId: agent.agentId,
       agent,
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
     });
 
     const custom = events.find((event) => event.type === 'custom_message') as

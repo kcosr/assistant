@@ -230,9 +230,10 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const providerId = agent?.chat?.provider ?? null;
           const events = await historyProvider.getHistory({
             sessionId,
-            agentId,
+            ...(agentId ? { agentId } : {}),
+            ...(agent ? { agent } : {}),
             providerId,
-            agent,
+            ...(existing.attributes ? { attributes: existing.attributes } : {}),
             ...(after ? { after } : {}),
             ...(force ? { force } : {}),
           });

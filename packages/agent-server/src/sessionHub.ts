@@ -528,6 +528,7 @@ export class SessionHub {
       ...(agentId ? { agentId } : {}),
       ...(agent ? { agent } : {}),
       ...(providerId ? { providerId } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
       ...(forceReload ? { force: true } : {}),
     });
   }

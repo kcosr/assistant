@@ -3,9 +3,6 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { registerCliProcess } from './cliProcessRegistry';
 import { buildCliEnv } from './cliEnv';
 import type { CliWrapperConfig } from '../agents';
@@ -18,14 +15,6 @@ export interface PiCliChatConfig {
    */
   workdir?: string;
   /**
-   * Optional host session directory for reading Pi history.
-   */
-  sessionDir?: string;
-  /**
-   * Optional session dir override passed to the Pi CLI via --session-dir.
-   */
-  sessionDirCli?: string;
-  /**
    * Extra CLI args for the Pi CLI process.
    */
   extraArgs?: string[];
@@ -33,6 +22,11 @@ export interface PiCliChatConfig {
    * Optional wrapper configuration for running the CLI in a container.
    */
   wrapper?: CliWrapperConfig;
+}
+
+export interface PiSessionInfo {
+  sessionId: string;
+  cwd?: string;
 }
 
 export interface PiCliToolCallbacks {
@@ -59,52 +53,6 @@ export interface PiCliSpawn {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-function expandTilde(input: string): string {
-  if (!input.startsWith('~')) {
-    return input;
-  }
-  if (input === '~') {
-    return os.homedir();
-  }
-  if (input.startsWith('~/')) {
-    return path.join(os.homedir(), input.slice(2));
-  }
-  return input;
-}
-
-function resolveSessionDirHost(options: {
-  config?: PiCliChatConfig;
-  dataDir: string;
-  wrapperEnabled: boolean;
-  workdir?: string;
-}): string {
-  const { config, dataDir, wrapperEnabled, workdir } = options;
-  const configured = config?.sessionDir?.trim();
-  if (configured && configured.length > 0) {
-    return path.resolve(expandTilde(configured));
-  }
-  if (wrapperEnabled) {
-    const sessionRoot = workdir ?? process.cwd();
-    return path.resolve(sessionRoot, '.assistant', 'pi-sessions');
-  }
-  return path.resolve(dataDir, 'pi-sessions');
-}
-
-function resolveSessionDirCli(options: {
-  config?: PiCliChatConfig;
-  wrapperEnabled: boolean;
-  sessionDirHost: string;
-}): string | null {
-  const configured = options.config?.sessionDirCli?.trim();
-  if (configured && configured.length > 0) {
-    return configured;
-  }
-  if (options.wrapperEnabled) {
-    return '.assistant/pi-sessions';
-  }
-  return options.sessionDirHost;
 }
 
 function extractTextDelta(event: PiCliEvent): string | undefined {
@@ -173,12 +121,27 @@ function extractToolResultText(result: unknown): string | undefined {
   return chunks.join('');
 }
 
+function extractSessionInfo(event: PiCliEvent): PiSessionInfo | null {
+  const type = event['type'];
+  if (type !== 'session' && type !== 'session_header') {
+    return null;
+  }
+  const id = event['id'];
+  if (!isNonEmptyString(id)) {
+    return null;
+  }
+  const cwd = event['cwd'];
+  return {
+    sessionId: id.trim(),
+    ...(isNonEmptyString(cwd) ? { cwd: cwd.trim() } : {}),
+  };
+}
+
 export async function runPiCliChat(options: {
   sessionId: string;
-  resumeSession: boolean;
+  piSessionId?: string;
   userText: string;
   config?: PiCliChatConfig;
-  dataDir: string;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
   onThinkingStart?: () => void | Promise<void>;
@@ -186,19 +149,20 @@ export async function runPiCliChat(options: {
   onThinkingDone?: (text: string) => void | Promise<void>;
   onToolCallStart?: PiCliToolCallbacks['onToolCallStart'];
   onToolResult?: PiCliToolCallbacks['onToolResult'];
+  onSessionInfo?: (info: PiSessionInfo) => void | Promise<void>;
   log: (...args: unknown[]) => void;
   spawnFn?: PiCliSpawn;
-}): Promise<{ text: string; aborted: boolean }> {
+}): Promise<{ text: string; aborted: boolean; sessionInfo?: PiSessionInfo }> {
   const {
     sessionId,
-    resumeSession,
+    piSessionId,
     userText,
     config,
-    dataDir,
     abortSignal,
     onTextDelta,
     onToolCallStart,
     onToolResult,
+    onSessionInfo,
     log,
   } = options;
 
@@ -206,7 +170,7 @@ export async function runPiCliChat(options: {
 
   log('runPiCliChat start', {
     sessionId,
-    resumeSession,
+    piSessionId,
     hasExtraArgs: (config?.extraArgs?.length ?? 0) > 0,
   });
 
@@ -216,32 +180,9 @@ export async function runPiCliChat(options: {
   const resolvedWorkdir = config?.workdir?.trim();
   const workdir = resolvedWorkdir && resolvedWorkdir.length > 0 ? resolvedWorkdir : undefined;
 
-  const sessionDirHost = resolveSessionDirHost({
-    config,
-    dataDir,
-    wrapperEnabled,
-    ...(workdir ? { workdir } : {}),
-  });
-  try {
-    fs.mkdirSync(sessionDirHost, { recursive: true });
-  } catch (err) {
-    log('pi failed to create session directory', { dir: sessionDirHost, error: String(err) });
-  }
-
-  const sessionDirCli = resolveSessionDirCli({
-    config,
-    wrapperEnabled,
-    sessionDirHost,
-  });
-
   const args: string[] = ['--mode', 'json'];
-  if (sessionDirCli) {
-    args.push('--session-dir', sessionDirCli);
-  }
-  args.push('--session', sessionId);
-
-  if (resumeSession) {
-    args.push('--continue');
+  if (piSessionId) {
+    args.push('--session', piSessionId);
   }
 
   if (config?.extraArgs?.length) {
@@ -298,6 +239,7 @@ export async function runPiCliChat(options: {
 
   let aborted = false;
   let fullText = '';
+  let sessionInfo: PiSessionInfo | undefined;
   const emittedToolCallIds = new Set<string>();
   const emittedToolResultIds = new Set<string>();
   // Track active tool calls (started but not yet completed) so we can send interrupted results on abort
@@ -424,6 +366,25 @@ export async function runPiCliChat(options: {
     }
   };
 
+  const recordSessionInfo = async (info: PiSessionInfo): Promise<void> => {
+    if (
+      sessionInfo &&
+      sessionInfo.sessionId === info.sessionId &&
+      sessionInfo.cwd === info.cwd
+    ) {
+      return;
+    }
+    sessionInfo = info;
+    if (!onSessionInfo) {
+      return;
+    }
+    try {
+      await onSessionInfo(info);
+    } catch (err) {
+      log('pi onSessionInfo error', err);
+    }
+  };
+
   const processLine = async (line: string): Promise<void> => {
     const trimmed = line.trim();
     if (!trimmed) {
@@ -438,6 +399,11 @@ export async function runPiCliChat(options: {
     }
 
     const type = event['type'];
+    const sessionInfoPayload = extractSessionInfo(event);
+    if (sessionInfoPayload) {
+      await recordSessionInfo(sessionInfoPayload);
+      return;
+    }
 
     if (type === 'tool_execution_start' && onToolCallStart) {
       const toolCallIdRaw = event['toolCallId'];
@@ -593,7 +559,7 @@ export async function runPiCliChat(options: {
       textLength: fullText.length,
       aborted: false,
     });
-    return { text: fullText, aborted: false };
+    return { text: fullText, aborted: false, ...(sessionInfo ? { sessionInfo } : {}) };
   } finally {
     abortSignal.removeEventListener('abort', abortListener);
   }

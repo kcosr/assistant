@@ -306,7 +306,7 @@ export class SessionScopedEventStore implements EventStore {
     const agentId = state?.summary.agentId;
     if (agentId) {
       const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
-      if (agent?.chat?.provider === 'pi-cli') {
+      if (agent?.chat?.provider === 'pi-cli' && this.hasPiSessionInfo(state?.summary)) {
         return () => undefined;
       }
     }
@@ -331,15 +331,18 @@ export class SessionScopedEventStore implements EventStore {
 
   private async shouldPersist(sessionId: string): Promise<boolean> {
     const state = this.sessionHub.getSessionState(sessionId);
-    const agentId =
-      state?.summary.agentId ?? (await this.sessionHub.getSessionIndex().getSession(sessionId))
-        ?.agentId;
+    const summary =
+      state?.summary ?? (await this.sessionHub.getSessionIndex().getSession(sessionId));
+    const agentId = summary?.agentId;
     if (!agentId) {
       return true;
     }
     const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
     const provider = agent?.chat?.provider ?? 'openai';
-    return provider !== 'pi-cli';
+    if (provider !== 'pi-cli') {
+      return true;
+    }
+    return !this.hasPiSessionInfo(summary);
   }
 
   private normaliseSessionId(sessionId: string): string {
@@ -348,6 +351,34 @@ export class SessionScopedEventStore implements EventStore {
       throw new Error('sessionId must not be empty');
     }
     return trimmed;
+  }
+
+  private hasPiSessionInfo(summary?: { attributes?: unknown } | null): boolean {
+    if (!summary) {
+      return false;
+    }
+    const attributes = summary.attributes;
+    if (!attributes || typeof attributes !== 'object') {
+      return false;
+    }
+    const providers = (attributes as Record<string, unknown>)['providers'];
+    if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
+      return false;
+    }
+    const pi = (providers as Record<string, unknown>)['pi'];
+    if (!pi || typeof pi !== 'object' || Array.isArray(pi)) {
+      return false;
+    }
+    const piInfo = pi as Record<string, unknown>;
+    const sessionId = piInfo['sessionId'];
+    const cwd = piInfo['cwd'];
+    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
+      return false;
+    }
+    if (typeof cwd !== 'string' || cwd.trim().length === 0) {
+      return false;
+    }
+    return true;
   }
 
   private validateEventForSession(sessionId: string, event: ChatEvent): void {

@@ -109,8 +109,6 @@
         "provider": "pi-cli",
         "config": {
           "workdir": "/path/to/workspace",
-          "sessionDir": "/path/to/workspace/.assistant/pi-sessions",
-          "sessionDirCli": ".assistant/pi-sessions",
           "extraArgs": [
             "--provider",
             "anthropic",

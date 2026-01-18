@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { ChatEvent } from '@assistant/shared';
+import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
-import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 
 export interface HistoryRequest {
@@ -14,6 +14,7 @@ export interface HistoryRequest {
   agentId?: string;
   providerId?: string | null;
   agent?: AgentDefinition;
+  attributes?: SessionAttributes;
   after?: string;
   force?: boolean;
 }
@@ -62,7 +63,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
   constructor(
     private readonly options: {
-      envConfig: EnvConfig;
+      baseDir?: string;
       eventStore?: EventStore;
     },
   ) {}
@@ -72,9 +73,16 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
-    const { sessionId, agent, force } = request;
-    const sessionDir = resolvePiSessionDir(agent, this.options.envConfig.dataDir);
-    const sessionPath = path.join(sessionDir, `${sessionId}.jsonl`);
+    const { sessionId, force } = request;
+    const sessionInfo = resolvePiSessionInfo(request.attributes);
+    if (!sessionInfo) {
+      return this.fallbackToEventStore(request);
+    }
+    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
+    const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
+    if (!sessionPath) {
+      return this.fallbackToEventStore(request);
+    }
 
     let stats: { mtimeMs: number } | null = null;
     try {
@@ -86,21 +94,21 @@ export class PiSessionHistoryProvider implements HistoryProvider {
       const error = err as NodeJS.ErrnoException;
       if (error.code !== 'ENOENT') {
         console.error('[history] Failed to stat Pi session file', {
-          sessionId,
+          sessionId: sessionInfo.sessionId,
           path: sessionPath,
           error: error.message,
         });
       }
-      this.cache.delete(sessionId);
+      this.cache.delete(sessionPath);
       return this.fallbackToEventStore(request);
     }
 
     if (!stats) {
-      this.cache.delete(sessionId);
+      this.cache.delete(sessionPath);
       return this.fallbackToEventStore(request);
     }
 
-    const cached = this.cache.get(sessionId);
+    const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
       return cached.events;
     }
@@ -111,16 +119,16 @@ export class PiSessionHistoryProvider implements HistoryProvider {
     } catch (err) {
       const error = err as NodeJS.ErrnoException;
       console.error('[history] Failed to read Pi session file', {
-        sessionId,
+        sessionId: sessionInfo.sessionId,
         path: sessionPath,
         error: error.message,
       });
-      this.cache.delete(sessionId);
+      this.cache.delete(sessionPath);
       return this.fallbackToEventStore(request);
     }
 
     const events = buildChatEventsFromPiSession(content, sessionId);
-    this.cache.set(sessionId, { mtimeMs: stats.mtimeMs, events });
+    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
     return events;
   }
 
@@ -133,46 +141,82 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 }
 
-function resolvePiSessionDir(agent: AgentDefinition | undefined, dataDir: string): string {
-  const config =
-    agent?.chat?.config && typeof agent.chat.config === 'object' && !Array.isArray(agent.chat.config)
-      ? (agent.chat.config as Record<string, unknown>)
-      : null;
-  const rawSessionDir =
-    config && isNonEmptyString(config['sessionDir']) ? config['sessionDir'] : null;
-  if (rawSessionDir && isNonEmptyString(rawSessionDir)) {
-    return path.resolve(expandTilde(String(rawSessionDir)));
+type PiSessionInfo = {
+  sessionId: string;
+  cwd: string;
+};
+
+function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | null {
+  if (!attributes || typeof attributes !== 'object') {
+    return null;
   }
-
-  const wrapperValue = config?.['wrapper'];
-  const wrapperConfig =
-    wrapperValue && typeof wrapperValue === 'object' && !Array.isArray(wrapperValue)
-      ? (wrapperValue as Record<string, unknown>)
-      : null;
-  const wrapperPath =
-    wrapperConfig && isNonEmptyString(wrapperConfig['path']) ? wrapperConfig['path'] : null;
-  const wrapperEnabled = Boolean(wrapperPath);
-
-  if (wrapperEnabled) {
-    const workdirRaw = config && isNonEmptyString(config['workdir']) ? config['workdir'] : null;
-    const baseDir = workdirRaw && isNonEmptyString(workdirRaw) ? String(workdirRaw) : process.cwd();
-    return path.resolve(baseDir, '.assistant', 'pi-sessions');
+  const providers = (attributes as Record<string, unknown>)['providers'];
+  if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
+    return null;
   }
-
-  return path.resolve(dataDir, 'pi-sessions');
+  const pi = (providers as Record<string, unknown>)['pi'];
+  if (!pi || typeof pi !== 'object' || Array.isArray(pi)) {
+    return null;
+  }
+  const candidate = pi as Record<string, unknown>;
+  const sessionId = candidate['sessionId'];
+  const cwd = candidate['cwd'];
+  if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {
+    return null;
+  }
+  return { sessionId: sessionId.trim(), cwd: cwd.trim() };
 }
 
-function expandTilde(input: string): string {
-  if (!input.startsWith('~')) {
-    return input;
+function encodePiCwd(cwd: string): string | null {
+  const trimmed = cwd.trim();
+  if (!trimmed) {
+    return null;
   }
-  if (input === '~') {
-    return os.homedir();
+  const stripped = trimmed.replace(/^[/\\]/, '');
+  if (!stripped) {
+    return null;
   }
-  if (input.startsWith('~/')) {
-    return path.join(os.homedir(), input.slice(2));
+  const normalized = stripped.replace(/[\\/:]/g, '-');
+  if (!normalized) {
+    return null;
   }
-  return input;
+  return `--${normalized}--`;
+}
+
+async function findPiSessionFile(
+  baseDir: string,
+  cwd: string,
+  sessionId: string,
+): Promise<string | null> {
+  const encoded = encodePiCwd(cwd);
+  if (!encoded) {
+    return null;
+  }
+  const sessionDir = path.join(baseDir, encoded);
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(sessionDir, { withFileTypes: true });
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      console.error('[history] Failed to read Pi session directory', {
+        path: sessionDir,
+        error: error.message,
+      });
+    }
+    return null;
+  }
+
+  const matches = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(`_${sessionId}.jsonl`))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return path.join(sessionDir, matches[matches.length - 1]!);
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -245,6 +289,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const timestamp = resolveTimestamp(entry);
       endTurn(timestamp);
       const turnId = getTurnId(entry);
+      const label = extractLabel(entry);
       startTurn(turnId, 'system', timestamp);
       events.push({
         id: randomUUID(),
@@ -254,7 +299,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         type: 'custom_message',
         payload: {
           text: extractText(entry),
-          ...(extractLabel(entry) ? { label: extractLabel(entry) } : {}),
+          ...(label ? { label } : {}),
         },
       });
       endTurn(timestamp);
@@ -288,7 +333,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (!currentTurnId) {
         continue;
       }
-      const responseId = currentResponseId ?? getResponseId(messageEntry);
+      const responseId: string = currentResponseId ?? getResponseId(messageEntry);
       currentResponseId = responseId;
 
       const thinkingText = extractThinking(messageEntry);
@@ -343,7 +388,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         const turnId = getTurnId(messageEntry);
         startTurn(turnId, 'system', timestamp);
       }
-      const responseId = currentResponseId ?? getResponseId(messageEntry);
+      const responseId: string = currentResponseId ?? getResponseId(messageEntry);
       currentResponseId = responseId;
 
       const toolCallId = getToolCallId(messageEntry);

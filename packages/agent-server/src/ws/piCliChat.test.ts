@@ -38,7 +38,6 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-1',
-      resumeSession: false,
       userText: 'hello',
       config: {
         extraArgs: [
@@ -52,7 +51,6 @@ describe('runPiCliChat', () => {
           'bash,fs',
         ],
       },
-      dataDir: '/tmp/assistant-tests',
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
       log: () => undefined,
@@ -70,16 +68,8 @@ describe('runPiCliChat', () => {
     const args = call?.args ?? [];
     expect(args).toContain('--mode');
     expect(args).toContain('json');
-    expect(args).toContain('--session-dir');
-    const dirIndex = args.indexOf('--session-dir');
-    expect(dirIndex).toBeGreaterThanOrEqual(0);
-    const sessionDir = dirIndex >= 0 ? args[dirIndex + 1] : undefined;
-    expect(sessionDir).toBe(path.resolve('/tmp/assistant-tests', 'pi-sessions'));
-    expect(args).toContain('--session');
-    const sessionIndex = args.indexOf('--session');
-    expect(sessionIndex).toBeGreaterThanOrEqual(0);
-    const sessionValue = sessionIndex >= 0 ? args[sessionIndex + 1] : undefined;
-    expect(sessionValue).toBe('session-1');
+    expect(args).not.toContain('--session-dir');
+    expect(args).not.toContain('--session');
     expect(args).toContain('-p');
     expect(args).toContain('--provider');
     expect(args).toContain('google');
@@ -101,9 +91,7 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-2',
-      resumeSession: false,
       userText: 'hello',
-      dataDir: '/tmp/assistant-tests',
       abortSignal: new AbortController().signal,
       onTextDelta: (delta) => {
         deltas.push(delta);
@@ -146,6 +134,39 @@ describe('runPiCliChat', () => {
     expect(result.text).toBe('Hello world');
   });
 
+  it('captures session header info from Pi output', async () => {
+    const child = new FakePiProcess();
+    const received: Array<{ sessionId: string; cwd?: string }> = [];
+
+    const spawnFn: PiCliSpawn = () => child as unknown as ReturnType<PiCliSpawn>;
+
+    const promise = runPiCliChat({
+      sessionId: 'session-info',
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      onSessionInfo: (info) => {
+        received.push(info);
+      },
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.write(
+      `${JSON.stringify({
+        type: 'session',
+        id: 'pi-session-42',
+        cwd: '/home/kevin',
+      })}\n`,
+    );
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    const result = await promise;
+    expect(received).toEqual([{ sessionId: 'pi-session-42', cwd: '/home/kevin' }]);
+    expect(result.sessionInfo).toEqual({ sessionId: 'pi-session-42', cwd: '/home/kevin' });
+  });
+
   it('maps tool_execution_start and tool_execution_end events to tool callbacks', async () => {
     const child = new FakePiProcess();
     const toolCalls: Array<{
@@ -164,9 +185,7 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-3',
-      resumeSession: false,
       userText: 'run tool',
-      dataDir: '/tmp/assistant-tests',
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
       onThinkingStart: () => undefined,
@@ -232,9 +251,7 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-abort',
-      resumeSession: false,
       userText: 'hello',
-      dataDir: '/tmp/assistant-tests',
       abortSignal: abortController.signal,
       onTextDelta: () => undefined,
       onThinkingStart: () => undefined,
@@ -257,9 +274,7 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-non-json',
-      resumeSession: false,
       userText: 'hello',
-      dataDir: '/tmp/assistant-tests',
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
       onThinkingStart: () => undefined,
@@ -276,7 +291,7 @@ describe('runPiCliChat', () => {
     await expect(promise).rejects.toThrow(/Unexpected Pi CLI output/);
   });
 
-  it('adds --continue when resumeSession is true', async () => {
+  it('adds --session when piSessionId is provided', async () => {
     const child = new FakePiProcess();
     const calls: Array<{ command: string; args: readonly string[] }> = [];
 
@@ -287,9 +302,8 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-continue',
-      resumeSession: true,
+      piSessionId: 'pi-session-continue',
       userText: 'next',
-      dataDir: '/tmp/assistant-tests',
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
       onThinkingStart: () => undefined,
@@ -306,7 +320,11 @@ describe('runPiCliChat', () => {
 
     expect(calls).toHaveLength(1);
     const [call] = calls;
-    expect(call?.args).toContain('--continue');
+    const args = call?.args ?? [];
+    expect(args).toContain('--session');
+    const sessionIndex = args.indexOf('--session');
+    expect(sessionIndex).toBeGreaterThanOrEqual(0);
+    expect(args[sessionIndex + 1]).toBe('pi-session-continue');
   });
 
   it('uses wrapper command and relative session path when configured', async () => {
@@ -325,9 +343,7 @@ describe('runPiCliChat', () => {
 
     const promise = runPiCliChat({
       sessionId: 'session-wrapper',
-      resumeSession: false,
       userText: 'hello',
-      dataDir: '/tmp/assistant-tests',
       config: {
         workdir,
         wrapper: {
@@ -351,13 +367,8 @@ describe('runPiCliChat', () => {
     expect(call?.command).toBe('/tmp/pi-wrapper');
     const args = call?.args ?? [];
     expect(args[0]).toBe('pi');
-    const sessionDirIndex = args.indexOf('--session-dir');
-    expect(sessionDirIndex).toBeGreaterThanOrEqual(0);
-    expect(args[sessionDirIndex + 1]).toBe('.assistant/pi-sessions');
-    const sessionIndex = args.indexOf('--session');
-    expect(sessionIndex).toBeGreaterThanOrEqual(0);
-    expect(args[sessionIndex + 1]).toBe('session-wrapper');
+    expect(args).not.toContain('--session-dir');
+    expect(args).not.toContain('--session');
     expect(call?.options.cwd).toBe(workdir);
-    expect(fs.existsSync(path.join(workdir, '.assistant', 'pi-sessions'))).toBe(true);
   });
 });

@@ -108,8 +108,6 @@ const CliChatConfigSchema = z.object({
 
 const PiCliChatConfigSchema = z.object({
   workdir: NonEmptyTrimmedStringSchema.optional(),
-  sessionDir: NonEmptyTrimmedStringSchema.optional(),
-  sessionDirCli: NonEmptyTrimmedStringSchema.optional(),
   extraArgs: ExtraArgsSchema,
   wrapper: CliWrapperConfigSchema.optional(),
 });
@@ -385,8 +383,6 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
           ? {
               config: {
                 ...(config.workdir ? { workdir: config.workdir } : {}),
-                ...(config.sessionDir ? { sessionDir: config.sessionDir } : {}),
-                ...(config.sessionDirCli ? { sessionDirCli: config.sessionDirCli } : {}),
                 ...(config.extraArgs ? { extraArgs: config.extraArgs } : {}),
                 ...(config.wrapper
                   ? {

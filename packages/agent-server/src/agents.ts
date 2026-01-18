@@ -43,14 +43,6 @@ export interface AgentDefinition {
            */
           workdir?: string;
           /**
-           * Used for "pi-cli": host path for reading Pi session history files.
-           */
-          sessionDir?: string;
-          /**
-           * Used for "pi-cli": optional CLI session dir override passed to --session-dir.
-           */
-          sessionDirCli?: string;
-          /**
            * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): extra CLI args.
            */
           extraArgs?: string[];
