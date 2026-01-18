@@ -469,6 +469,22 @@ export class SessionHub {
     return state;
   }
 
+  shouldPersistSessionEvents(summary: SessionSummary): boolean {
+    if (!this.historyProvider) {
+      return true;
+    }
+    const agentId = summary.agentId;
+    const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
+    const providerId = agent?.chat?.provider;
+    return this.historyProvider.shouldPersist({
+      sessionId: summary.sessionId,
+      ...(agentId ? { agentId } : {}),
+      ...(agent ? { agent } : {}),
+      ...(providerId ? { providerId } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+    });
+  }
+
   async ensureSessionState(
     sessionId: string,
     summaryHint?: SessionSummary,

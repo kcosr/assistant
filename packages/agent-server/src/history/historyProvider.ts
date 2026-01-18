@@ -8,6 +8,7 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
+import { getProviderAttributes } from './providerAttributes';
 
 export interface HistoryRequest {
   sessionId: string;
@@ -22,6 +23,7 @@ export interface HistoryRequest {
 export interface HistoryProvider {
   supports(providerId?: string | null): boolean;
   getHistory(request: HistoryRequest): Promise<ChatEvent[]>;
+  shouldPersist?(request: HistoryRequest): boolean;
 }
 
 export class HistoryProviderRegistry {
@@ -34,6 +36,15 @@ export class HistoryProviderRegistry {
       return [];
     }
     return provider.getHistory(request);
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    const provider =
+      this.providers.find((candidate) => candidate.supports(request.providerId)) ?? null;
+    if (!provider || typeof provider.shouldPersist !== 'function') {
+      return true;
+    }
+    return provider.shouldPersist(request);
   }
 }
 
@@ -50,6 +61,10 @@ export class EventStoreHistoryProvider implements HistoryProvider {
       return this.eventStore.getEventsSince(sessionId, after);
     }
     return this.eventStore.getEvents(sessionId);
+  }
+
+  shouldPersist(): boolean {
+    return true;
   }
 }
 
@@ -70,6 +85,10 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
   supports(providerId?: string | null): boolean {
     return providerId === 'pi-cli';
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    return !resolvePiSessionInfo(request.attributes);
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
@@ -147,18 +166,10 @@ type PiSessionInfo = {
 };
 
 function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | null {
-  if (!attributes || typeof attributes !== 'object') {
+  const candidate = getProviderAttributes(attributes, 'pi-cli', ['pi']);
+  if (!candidate) {
     return null;
   }
-  const providers = (attributes as Record<string, unknown>)['providers'];
-  if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
-    return null;
-  }
-  const pi = (providers as Record<string, unknown>)['pi'];
-  if (!pi || typeof pi !== 'object' || Array.isArray(pi)) {
-    return null;
-  }
-  const candidate = pi as Record<string, unknown>;
   const sessionId = candidate['sessionId'];
   const cwd = candidate['cwd'];
   if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {

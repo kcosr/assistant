@@ -201,7 +201,7 @@ describe('SessionScopedEventStore', () => {
           updatedAt: new Date().toISOString(),
           attributes: {
             providers: {
-              pi: {
+              'pi-cli': {
                 sessionId: 'pi-session-id',
                 cwd: '/home/pi',
               },
@@ -240,6 +240,14 @@ describe('SessionScopedEventStore', () => {
             chat: { provider: 'openai' },
           },
         ]),
+      shouldPersistSessionEvents: (summary: SessionSummary) => {
+        const attributes = summary.attributes as Record<string, unknown> | undefined;
+        const providers = attributes?.['providers'] as Record<string, unknown> | undefined;
+        const providerEntry = providers?.['pi-cli'] ?? providers?.['pi'];
+        const hasExternalInfo =
+          providerEntry && typeof providerEntry === 'object' && !Array.isArray(providerEntry);
+        return summary.agentId !== 'pi' || !hasExternalInfo;
+      },
     } as unknown as SessionHub;
 
     const baseStore: EventStore = {

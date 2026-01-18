@@ -6,6 +6,7 @@ import type { ChatEvent } from '@assistant/shared';
 import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
 import type { SessionHub } from '../sessionHub';
+import type { SessionSummary } from '../sessionIndex';
 
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
@@ -303,12 +304,8 @@ export class SessionScopedEventStore implements EventStore {
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void {
     const trimmed = this.normaliseSessionId(sessionId);
     const state = this.sessionHub.getSessionState(trimmed);
-    const agentId = state?.summary.agentId;
-    if (agentId) {
-      const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
-      if (agent?.chat?.provider === 'pi-cli' && this.hasPiSessionInfo(state?.summary)) {
-        return () => undefined;
-      }
+    if (state && !this.sessionHub.shouldPersistSessionEvents(state.summary)) {
+      return () => undefined;
     }
     return this.base.subscribe(trimmed, callback);
   }
@@ -330,19 +327,11 @@ export class SessionScopedEventStore implements EventStore {
   }
 
   private async shouldPersist(sessionId: string): Promise<boolean> {
-    const state = this.sessionHub.getSessionState(sessionId);
-    const summary =
-      state?.summary ?? (await this.sessionHub.getSessionIndex().getSession(sessionId));
-    const agentId = summary?.agentId;
-    if (!agentId) {
+    const summary = await this.resolveSummary(sessionId);
+    if (!summary) {
       return true;
     }
-    const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
-    const provider = agent?.chat?.provider ?? 'openai';
-    if (provider !== 'pi-cli') {
-      return true;
-    }
-    return !this.hasPiSessionInfo(summary);
+    return this.sessionHub.shouldPersistSessionEvents(summary);
   }
 
   private normaliseSessionId(sessionId: string): string {
@@ -353,32 +342,12 @@ export class SessionScopedEventStore implements EventStore {
     return trimmed;
   }
 
-  private hasPiSessionInfo(summary?: { attributes?: unknown } | null): boolean {
-    if (!summary) {
-      return false;
+  private async resolveSummary(sessionId: string): Promise<SessionSummary | undefined> {
+    const state = this.sessionHub.getSessionState(sessionId);
+    if (state?.summary) {
+      return state.summary;
     }
-    const attributes = summary.attributes;
-    if (!attributes || typeof attributes !== 'object') {
-      return false;
-    }
-    const providers = (attributes as Record<string, unknown>)['providers'];
-    if (!providers || typeof providers !== 'object' || Array.isArray(providers)) {
-      return false;
-    }
-    const pi = (providers as Record<string, unknown>)['pi'];
-    if (!pi || typeof pi !== 'object' || Array.isArray(pi)) {
-      return false;
-    }
-    const piInfo = pi as Record<string, unknown>;
-    const sessionId = piInfo['sessionId'];
-    const cwd = piInfo['cwd'];
-    if (typeof sessionId !== 'string' || sessionId.trim().length === 0) {
-      return false;
-    }
-    if (typeof cwd !== 'string' || cwd.trim().length === 0) {
-      return false;
-    }
-    return true;
+    return this.sessionHub.getSessionIndex().getSession(sessionId);
   }
 
   private validateEventForSession(sessionId: string, event: ChatEvent): void {

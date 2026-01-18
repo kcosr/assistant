@@ -86,7 +86,7 @@ describe('PiSessionHistoryProvider', () => {
       agent,
       attributes: {
         providers: {
-          pi: {
+          'pi-cli': {
             sessionId: piSessionId,
             cwd,
           },
@@ -133,5 +133,30 @@ describe('PiSessionHistoryProvider', () => {
       | undefined;
     expect(toolResult?.payload.toolCallId).toBe('tool-1');
     expect(Array.isArray(toolResult?.payload.result)).toBe(true);
+  });
+
+  it('treats sessions with provider metadata as external history', async () => {
+    const provider = new PiSessionHistoryProvider({});
+
+    const shouldPersist = provider.shouldPersist?.({
+      sessionId: 'session-1',
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: 'pi-session-1',
+            cwd: '/home/kevin',
+          },
+        },
+      },
+    });
+
+    expect(shouldPersist).toBe(false);
+    const fallback = provider.shouldPersist?.({
+      sessionId: 'session-2',
+      providerId: 'pi-cli',
+      attributes: {},
+    });
+    expect(fallback).toBe(true);
   });
 });

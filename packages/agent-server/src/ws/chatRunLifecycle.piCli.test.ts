@@ -184,7 +184,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
 
     expect(updateSessionAttributes).toHaveBeenCalledWith('s1', {
       providers: {
-        pi: {
+        'pi-cli': {
           sessionId: 'pi-session-123',
           cwd: '/home/kevin',
         },
