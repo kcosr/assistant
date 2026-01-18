@@ -207,12 +207,9 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
       },
       events: async (args, ctx): Promise<{ sessionId: string; events: unknown[] }> => {
+        const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
         const eventStore = ctx.eventStore;
-        if (!eventStore) {
-          throw new ToolError('event_store_unavailable', 'Event store is not available');
-        }
-
         const parsed = asObject(args);
         const sessionId = requireSessionId(parsed['sessionId']);
         const existing = await sessionIndex.getSession(sessionId);
@@ -223,6 +220,30 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const afterRaw = parsed['after'];
         const after =
           typeof afterRaw === 'string' && afterRaw.trim().length > 0 ? afterRaw.trim() : undefined;
+
+        const force = parsed['force'] === true;
+        const historyProvider = ctx.historyProvider;
+        if (historyProvider) {
+          const registry = requireAgentRegistry(ctx, sessionHub);
+          const agentId = existing.agentId;
+          const agent = agentId ? registry.getAgent(agentId) : undefined;
+          const providerId = agent?.chat?.provider ?? null;
+          const events = await historyProvider.getHistory({
+            sessionId,
+            ...(agentId ? { agentId } : {}),
+            ...(agent ? { agent } : {}),
+            providerId,
+            ...(existing.attributes ? { attributes: existing.attributes } : {}),
+            ...(after ? { after } : {}),
+            ...(force ? { force } : {}),
+          });
+          return { sessionId, events };
+        }
+
+        if (!eventStore) {
+          throw new ToolError('event_store_unavailable', 'Event store is not available');
+        }
+
         const events = after
           ? await eventStore.getEventsSince(sessionId, after)
           : await eventStore.getEvents(sessionId);
@@ -234,8 +255,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const sessionIndex = requireSessionIndex(ctx);
         const envConfig = ctx.envConfig;
         const baseToolHost = ctx.baseToolHost;
-        const conversationStore = ctx.conversationStore;
-        if (!envConfig || !baseToolHost || !conversationStore) {
+        if (!envConfig || !baseToolHost) {
           throw new ToolError(
             'session_message_not_supported',
             'sessions_message is not available in this context',
@@ -317,7 +337,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           sessionIndex,
           sessionHub,
           toolHost: baseToolHost,
-          conversationStore,
           envConfig,
           ...(ctx.agentRegistry ? { agentRegistry: ctx.agentRegistry } : {}),
           ...(ctx.eventStore ? { eventStore: ctx.eventStore } : {}),

@@ -438,6 +438,7 @@ describe('loadConfig', () => {
     { provider: 'claude-cli', reservedArg: '--output-format' },
     { provider: 'codex-cli', reservedArg: '--json' },
     { provider: 'pi-cli', reservedArg: '--session' },
+    { provider: 'pi-cli', reservedArg: '--session-dir' },
   ])('rejects reserved extraArgs for $provider', async ({ provider, reservedArg }) => {
     const filePath = createTempFile(`config-${provider}-reserved`);
     const configJson = {

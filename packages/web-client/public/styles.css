@@ -3137,6 +3137,36 @@ body.panel-reordering {
   margin-left: var(--spacing-xl);
 }
 
+.message.custom-message,
+.message.summary-message {
+  margin-left: var(--spacing-xl);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+.message.summary-message {
+  background-color: var(--color-bg-surface);
+  border-left: 3px solid var(--color-accent-primary);
+  font-style: italic;
+}
+
+.message.custom-message .message-meta,
+.message.summary-message .message-meta {
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+
+.message.custom-message .message-body,
+.message.summary-message .message-body {
+  color: inherit;
+}
+
 .message-interrupted {
   font-size: var(--font-size-xs);
   font-style: italic;

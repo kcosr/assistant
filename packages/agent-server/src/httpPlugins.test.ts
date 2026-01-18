@@ -5,7 +5,6 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { CombinedPluginManifest } from '@assistant/shared';
 
-import { ConversationStore } from './conversationStore';
 import { AgentRegistry } from './agents';
 import { SessionHub, SessionIndex, createHttpServer } from './index';
 import type { PluginRegistry } from './plugins/registry';
@@ -29,8 +28,6 @@ function createEnvConfig(overrides?: Partial<HttpEnvConfig>): HttpEnvConfig {
     apiKey: 'test-api-key',
     chatModel: 'test-model',
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir: createTempDir('http-plugins-log'),
     dataDir: path.join(
       os.tmpdir(),
       `http-plugins-data-${Date.now()}-${Math.random().toString(16)}`,
@@ -62,23 +59,23 @@ function startTestServer(options?: {
 }): Promise<{ server: http.Server; baseUrl: string }> {
   return new Promise((resolve, reject) => {
     const config = createEnvConfig();
-    const conversationStore = new ConversationStore(config.transcriptsDir);
     const sessionsFile = createTempFile('http-plugins-sessions');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({
-      conversationStore,
-      sessionIndex,
-      agentRegistry,
-    });
-
     const eventStore: EventStore = {
       append: async () => {},
       appendBatch: async () => {},
       getEvents: async () => [],
       getEventsSince: async () => [],
       subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
     };
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore,
+    });
 
     const noopToolHost: ToolHost = {
       listTools: async () => [],
@@ -89,7 +86,6 @@ function startTestServer(options?: {
 
     const serverOptions: Parameters<typeof createHttpServer>[0] = {
       config,
-      conversationStore,
       sessionIndex,
       sessionHub,
       agentRegistry,

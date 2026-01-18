@@ -3,8 +3,6 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { registerCliProcess } from './cliProcessRegistry';
 import { buildCliEnv } from './cliEnv';
 import type { CliWrapperConfig } from '../agents';
@@ -26,6 +24,11 @@ export interface PiCliChatConfig {
   wrapper?: CliWrapperConfig;
 }
 
+export interface PiSessionInfo {
+  sessionId: string;
+  cwd?: string;
+}
+
 export interface PiCliToolCallbacks {
   onToolCallStart?: (
     callId: string,
@@ -37,6 +40,13 @@ export interface PiCliToolCallbacks {
     toolName: string,
     ok: boolean,
     result: unknown,
+  ) => void | Promise<void>;
+  onToolOutputChunk?: (
+    callId: string,
+    toolName: string,
+    chunk: string,
+    offset: number,
+    stream?: 'stdout' | 'stderr' | 'output',
   ) => void | Promise<void>;
 }
 
@@ -52,6 +62,10 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isStringWithLength(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
 function extractTextDelta(event: PiCliEvent): string | undefined {
   const type = event['type'];
 
@@ -65,7 +79,7 @@ function extractTextDelta(event: PiCliEvent): string | undefined {
       const innerType = inner['type'];
       if (innerType === 'text_delta') {
         const delta = inner['delta'];
-        if (isNonEmptyString(delta)) {
+        if (isStringWithLength(delta)) {
           return delta;
         }
       }
@@ -74,13 +88,13 @@ function extractTextDelta(event: PiCliEvent): string | undefined {
 
   // Fallbacks for any alternative shapes that might surface text directly.
   const delta = event['delta'];
-  if (isNonEmptyString(delta)) {
+  if (isStringWithLength(delta)) {
     return delta;
   }
 
   if (delta && typeof delta === 'object') {
     const deltaText = (delta as Record<string, unknown>)['text'];
-    if (isNonEmptyString(deltaText)) {
+    if (isStringWithLength(deltaText)) {
       return deltaText;
     }
   }
@@ -106,7 +120,7 @@ function extractToolResultText(result: unknown): string | undefined {
     const blockObj = block as Record<string, unknown>;
     const blockType = blockObj['type'];
     const blockText = blockObj['text'];
-    if (blockType === 'text' && isNonEmptyString(blockText)) {
+    if (blockType === 'text' && isStringWithLength(blockText)) {
       chunks.push(blockText);
     }
   }
@@ -118,12 +132,71 @@ function extractToolResultText(result: unknown): string | undefined {
   return chunks.join('');
 }
 
+function extractToolOutputText(result: unknown): string | undefined {
+  if (isStringWithLength(result)) {
+    return result;
+  }
+
+  return extractToolResultText(result);
+}
+
+function extractToolOutputStream(result: unknown): 'stdout' | 'stderr' | 'output' | undefined {
+  if (!result || typeof result !== 'object') {
+    return undefined;
+  }
+  const details = (result as Record<string, unknown>)['details'];
+  if (!details || typeof details !== 'object') {
+    return undefined;
+  }
+  const stream = (details as Record<string, unknown>)['stream'];
+  if (stream === 'stdout' || stream === 'stderr' || stream === 'output') {
+    return stream;
+  }
+  return undefined;
+}
+
+function computeToolOutputDelta(previousText: string, nextText: string): string {
+  if (!nextText) {
+    return '';
+  }
+  if (!previousText) {
+    return nextText;
+  }
+  if (nextText.startsWith(previousText)) {
+    return nextText.slice(previousText.length);
+  }
+
+  const maxOverlap = Math.min(previousText.length, nextText.length, 8192);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (previousText.slice(-overlap) === nextText.slice(0, overlap)) {
+      return nextText.slice(overlap);
+    }
+  }
+
+  return nextText;
+}
+
+function extractSessionInfo(event: PiCliEvent): PiSessionInfo | null {
+  const type = event['type'];
+  if (type !== 'session' && type !== 'session_header') {
+    return null;
+  }
+  const id = event['id'];
+  if (!isNonEmptyString(id)) {
+    return null;
+  }
+  const cwd = event['cwd'];
+  return {
+    sessionId: id.trim(),
+    ...(isNonEmptyString(cwd) ? { cwd: cwd.trim() } : {}),
+  };
+}
+
 export async function runPiCliChat(options: {
   sessionId: string;
-  resumeSession: boolean;
+  piSessionId?: string;
   userText: string;
   config?: PiCliChatConfig;
-  dataDir: string;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
   onThinkingStart?: () => void | Promise<void>;
@@ -131,19 +204,22 @@ export async function runPiCliChat(options: {
   onThinkingDone?: (text: string) => void | Promise<void>;
   onToolCallStart?: PiCliToolCallbacks['onToolCallStart'];
   onToolResult?: PiCliToolCallbacks['onToolResult'];
+  onToolOutputChunk?: PiCliToolCallbacks['onToolOutputChunk'];
+  onSessionInfo?: (info: PiSessionInfo) => void | Promise<void>;
   log: (...args: unknown[]) => void;
   spawnFn?: PiCliSpawn;
-}): Promise<{ text: string; aborted: boolean }> {
+}): Promise<{ text: string; aborted: boolean; sessionInfo?: PiSessionInfo }> {
   const {
     sessionId,
-    resumeSession,
+    piSessionId,
     userText,
     config,
-    dataDir,
     abortSignal,
     onTextDelta,
     onToolCallStart,
     onToolResult,
+    onToolOutputChunk,
+    onSessionInfo,
     log,
   } = options;
 
@@ -151,7 +227,7 @@ export async function runPiCliChat(options: {
 
   log('runPiCliChat start', {
     sessionId,
-    resumeSession,
+    piSessionId,
     hasExtraArgs: (config?.extraArgs?.length ?? 0) > 0,
   });
 
@@ -161,33 +237,9 @@ export async function runPiCliChat(options: {
   const resolvedWorkdir = config?.workdir?.trim();
   const workdir = resolvedWorkdir && resolvedWorkdir.length > 0 ? resolvedWorkdir : undefined;
 
-  // When using a wrapper, use a relative path so it resolves inside the container.
-  // The container's cwd should map to the workspace root on the host.
-  // When not using a wrapper, use the absolute dataDir path.
-  let sessionFilePath: string;
-  if (wrapperEnabled) {
-    const sessionRoot = workdir ?? process.cwd();
-    const resolvedSessionDir = path.join(sessionRoot, '.assistant', 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch (err) {
-      log('pi failed to create session directory', { dir: resolvedSessionDir, error: String(err) });
-    }
-    sessionFilePath = `.assistant/pi-sessions/${sessionId}.jsonl`;
-  } else {
-    const resolvedSessionDir = path.join(dataDir, 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch (err) {
-      log('pi failed to create session directory', { dir: resolvedSessionDir, error: String(err) });
-    }
-    sessionFilePath = path.join(resolvedSessionDir, `${sessionId}.jsonl`);
-  }
-
-  const args: string[] = ['--mode', 'json', '--session', sessionFilePath];
-
-  if (resumeSession) {
-    args.push('--continue');
+  const args: string[] = ['--mode', 'json'];
+  if (piSessionId) {
+    args.push('--session', piSessionId);
   }
 
   if (config?.extraArgs?.length) {
@@ -244,10 +296,12 @@ export async function runPiCliChat(options: {
 
   let aborted = false;
   let fullText = '';
+  let sessionInfo: PiSessionInfo | undefined;
   const emittedToolCallIds = new Set<string>();
   const emittedToolResultIds = new Set<string>();
   // Track active tool calls (started but not yet completed) so we can send interrupted results on abort
   const activeToolCalls = new Map<string, { callId: string; toolName: string }>();
+  const toolOutputStates = new Map<string, { text: string; offset: number }>();
   const stderrChunks: Buffer[] = [];
 
   let thinkingAccumulated = '';
@@ -313,6 +367,7 @@ export async function runPiCliChat(options: {
       }
     }
     activeToolCalls.clear();
+    toolOutputStates.clear();
     terminateChildProcessTree();
   };
 
@@ -370,6 +425,100 @@ export async function runPiCliChat(options: {
     }
   };
 
+  const recordSessionInfo = async (info: PiSessionInfo): Promise<void> => {
+    if (
+      sessionInfo &&
+      sessionInfo.sessionId === info.sessionId &&
+      sessionInfo.cwd === info.cwd
+    ) {
+      return;
+    }
+    sessionInfo = info;
+    if (!onSessionInfo) {
+      return;
+    }
+    try {
+      await onSessionInfo(info);
+    } catch (err) {
+      log('pi onSessionInfo error', err);
+    }
+  };
+
+  const normalizeToolCallMeta = (
+    event: PiCliEvent,
+  ): { callId: string; toolName: string; args: Record<string, unknown> } | null => {
+    const toolCallIdRaw = event['toolCallId'];
+    const toolNameRaw = event['toolName'];
+    const callId =
+      typeof toolCallIdRaw === 'string' && toolCallIdRaw.trim().length > 0
+        ? toolCallIdRaw.trim()
+        : '';
+    const toolName =
+      typeof toolNameRaw === 'string' && toolNameRaw.trim().length > 0 ? toolNameRaw.trim() : '';
+
+    if (!callId || !toolName) {
+      return null;
+    }
+
+    const argsField = event['args'];
+    const args =
+      argsField && typeof argsField === 'object' ? (argsField as Record<string, unknown>) : {};
+
+    return { callId, toolName, args };
+  };
+
+  const emitToolCallStartIfNeeded = async (
+    callId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): Promise<void> => {
+    if (!activeToolCalls.has(callId)) {
+      activeToolCalls.set(callId, { callId, toolName });
+    }
+
+    if (!onToolCallStart || emittedToolCallIds.has(callId)) {
+      return;
+    }
+
+    emittedToolCallIds.add(callId);
+    try {
+      await onToolCallStart(callId, toolName, args);
+    } catch (err) {
+      log('pi onToolCallStart error', err);
+    }
+  };
+
+  const emitToolOutputDelta = async (
+    callId: string,
+    toolName: string,
+    partialResult: unknown,
+  ): Promise<void> => {
+    if (!onToolOutputChunk) {
+      return;
+    }
+
+    const outputText = extractToolOutputText(partialResult);
+    if (outputText === undefined) {
+      return;
+    }
+
+    const previousState = toolOutputStates.get(callId) ?? { text: '', offset: 0 };
+    const delta = computeToolOutputDelta(previousState.text, outputText);
+    const nextOffset = previousState.offset + delta.length;
+    toolOutputStates.set(callId, { text: outputText, offset: nextOffset });
+
+    if (!delta) {
+      return;
+    }
+
+    const stream = extractToolOutputStream(partialResult);
+    try {
+      await onToolOutputChunk(callId, toolName, delta, nextOffset, stream);
+    } catch (err) {
+      log('pi onToolOutputChunk error', err);
+    }
+  };
+
   const processLine = async (line: string): Promise<void> => {
     const trimmed = line.trim();
     if (!trimmed) {
@@ -384,52 +533,39 @@ export async function runPiCliChat(options: {
     }
 
     const type = event['type'];
+    const sessionInfoPayload = extractSessionInfo(event);
+    if (sessionInfoPayload) {
+      await recordSessionInfo(sessionInfoPayload);
+      return;
+    }
 
-    if (type === 'tool_execution_start' && onToolCallStart) {
-      const toolCallIdRaw = event['toolCallId'];
-      const toolNameRaw = event['toolName'];
-      const callId =
-        typeof toolCallIdRaw === 'string' && toolCallIdRaw.trim().length > 0
-          ? toolCallIdRaw.trim()
-          : '';
-      const toolName =
-        typeof toolNameRaw === 'string' && toolNameRaw.trim().length > 0 ? toolNameRaw.trim() : '';
-
-      if (callId && toolName && !emittedToolCallIds.has(callId)) {
-        emittedToolCallIds.add(callId);
-
-        // Track active tool call
-        activeToolCalls.set(callId, { callId, toolName });
-
-        const argsField = event['args'];
-        const args =
-          argsField && typeof argsField === 'object' ? (argsField as Record<string, unknown>) : {};
-
-        try {
-          await onToolCallStart(callId, toolName, args);
-        } catch (err) {
-          log('pi onToolCallStart error', err);
-        }
+    if (type === 'tool_execution_start') {
+      const meta = normalizeToolCallMeta(event);
+      if (meta) {
+        await emitToolCallStartIfNeeded(meta.callId, meta.toolName, meta.args);
       }
+      return;
+    }
 
+    if (type === 'tool_execution_update') {
+      const meta = normalizeToolCallMeta(event);
+      if (meta) {
+        await emitToolCallStartIfNeeded(meta.callId, meta.toolName, meta.args);
+        await emitToolOutputDelta(meta.callId, meta.toolName, event['partialResult']);
+      }
       return;
     }
 
     if (type === 'tool_execution_end' && onToolResult) {
-      const toolCallIdRaw = event['toolCallId'];
-      const toolNameRaw = event['toolName'];
-      const callId =
-        typeof toolCallIdRaw === 'string' && toolCallIdRaw.trim().length > 0
-          ? toolCallIdRaw.trim()
-          : '';
-      const toolName =
-        typeof toolNameRaw === 'string' && toolNameRaw.trim().length > 0 ? toolNameRaw.trim() : '';
-
+      const meta = normalizeToolCallMeta(event);
+      const callId = meta?.callId ?? '';
+      const toolName = meta?.toolName ?? '';
       if (callId && toolName && !emittedToolResultIds.has(callId)) {
         emittedToolResultIds.add(callId);
 
         // Tool call completed, remove from active tracking
         activeToolCalls.delete(callId);
+        toolOutputStates.delete(callId);
 
         const isErrorRaw = event['isError'];
         const ok = isErrorRaw === true ? false : true;
@@ -461,7 +597,7 @@ export async function runPiCliChat(options: {
 
         if (innerType === 'thinking_delta') {
           const delta = inner['delta'];
-          if (isNonEmptyString(delta)) {
+          if (isStringWithLength(delta)) {
             await emitThinkingStart();
             await emitThinkingDelta(delta);
           }
@@ -539,7 +675,7 @@ export async function runPiCliChat(options: {
       textLength: fullText.length,
       aborted: false,
     });
-    return { text: fullText, aborted: false };
+    return { text: fullText, aborted: false, ...(sessionInfo ? { sessionInfo } : {}) };
   } finally {
     abortSignal.removeEventListener('abort', abortListener);
   }

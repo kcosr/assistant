@@ -8,28 +8,38 @@ import { CURRENT_PROTOCOL_VERSION } from '@assistant/shared';
 
 import { handleHello } from './helloHandling';
 import type { SessionConnection } from './sessionConnection';
-import { ConversationStore } from '../conversationStore';
 import { SessionIndex } from '../sessionIndex';
 import { AgentRegistry } from '../agents';
 import { SessionHub } from '../sessionHub';
+import type { EventStore } from '../events';
 
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
 }
 
-function createTempDir(prefix: string): string {
-  return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
+function createTestEventStore(): EventStore {
+  return {
+    append: async () => {},
+    appendBatch: async () => {},
+    getEvents: async () => [],
+    getEventsSince: async () => [],
+    subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
+  };
 }
 
 describe('handleHello', () => {
   it('supports v1 hello with protocolVersion 1', async () => {
     const sessionsFile = createTempFile('hello-handling-v1-sessions');
-    const transcriptsDir = createTempDir('hello-handling-v1-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const summary = await sessionIndex.createSession({ agentId: 'general' });
 
@@ -77,12 +87,14 @@ describe('handleHello', () => {
 
   it('subscribes to all sessions and sets a primary session for v2 hello', async () => {
     const sessionsFile = createTempFile('hello-handling-v2-sessions');
-    const transcriptsDir = createTempDir('hello-handling-v2-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
@@ -148,12 +160,14 @@ describe('handleHello', () => {
 
   it('rejects unsupported protocol versions', async () => {
     const sessionsFile = createTempFile('hello-handling-unsupported-sessions');
-    const transcriptsDir = createTempDir('hello-handling-unsupported-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const connection: SessionConnection = {
       sendServerMessageFromHub: () => {},

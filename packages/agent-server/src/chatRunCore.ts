@@ -16,13 +16,13 @@ import type {
   ChatCompletionToolCallMessageToolCall,
   ChatCompletionToolCallState,
 } from './chatCompletionTypes';
-import type { ConversationStore } from './conversationStore';
 import { openaiConfigured, type EnvConfig } from './envConfig';
 import type { EventStore } from './events';
 import {
   appendAndBroadcastChatEvents,
   createChatEventBase,
   emitToolInputChunkEvent,
+  emitToolOutputChunkEvent,
 } from './events/chatEventUtils';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
@@ -32,7 +32,8 @@ import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
 import { runChatCompletionIteration } from './ws/chatCompletionStreaming';
-import { runPiCliChat, type PiCliChatConfig } from './ws/piCliChat';
+import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
+import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
 
 type ChatProvider = 'openai' | 'openai-compatible' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
@@ -68,7 +69,6 @@ export interface ChatRunCoreOptions {
     state: LogicalSessionState,
     toolCalls: ChatCompletionToolCallState[],
   ) => Promise<void>;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   output: ChatRunOutputAdapter;
   abortController: AbortController;
@@ -170,7 +170,6 @@ function createChatRunStreamHandlers(options: {
   sessionId: string;
   state: LogicalSessionState;
   responseId: string;
-  conversationStore: ConversationStore;
   output: ChatRunOutputAdapter;
   eventStore?: EventStore;
   sessionHub: SessionHub;
@@ -185,7 +184,6 @@ function createChatRunStreamHandlers(options: {
     sessionId,
     state,
     responseId,
-    conversationStore,
     output,
     eventStore,
     sessionHub,
@@ -209,21 +207,11 @@ function createChatRunStreamHandlers(options: {
     return {};
   };
 
-  const logAgentExchangePayload = (): { agentExchangeId?: string } => {
-    const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
-    return agentExchangeId ? { agentExchangeId } : {};
-  };
-
   const emitThinkingStart = async (): Promise<void> => {
     if (thinkingStarted) {
       return;
     }
     thinkingStarted = true;
-    void conversationStore.logThinkingStart({
-      sessionId,
-      responseId,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingStartMessage = {
       type: 'thinking_start',
       responseId,
@@ -240,12 +228,6 @@ function createChatRunStreamHandlers(options: {
       await emitThinkingStart();
     }
     thinkingText += delta;
-    void conversationStore.logThinkingDelta({
-      sessionId,
-      responseId,
-      delta,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingDeltaMessage = {
       type: 'thinking_delta',
       responseId,
@@ -287,12 +269,6 @@ function createChatRunStreamHandlers(options: {
     if (!thinkingStarted && finalText) {
       await emitThinkingStart();
     }
-    void conversationStore.logThinkingDone({
-      sessionId,
-      responseId,
-      text: finalText,
-      ...logAgentExchangePayload(),
-    });
     const message: ServerThinkingDoneMessage = {
       type: 'thinking_done',
       responseId,
@@ -331,13 +307,6 @@ function createChatRunStreamHandlers(options: {
         state.activeChatRun.textStartedAt = new Date().toISOString();
       }
     }
-
-    void conversationStore.logTextDelta({
-      sessionId,
-      responseId,
-      delta: deltaText,
-      ...logAgentExchangePayload(),
-    });
 
     const message: ServerTextDeltaMessage = {
       type: 'text_delta',
@@ -501,7 +470,6 @@ export async function runChatCompletionCore(
     openaiClient,
     chatCompletionTools,
     handleChatToolCalls,
-    conversationStore,
     sessionHub,
     output,
     abortController,
@@ -519,7 +487,6 @@ export async function runChatCompletionCore(
     sessionId,
     state,
     responseId,
-    conversationStore,
     output,
     sessionHub,
     shouldEmitChatEvents,
@@ -540,7 +507,6 @@ export async function runChatCompletionCore(
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,
@@ -585,7 +551,6 @@ export async function runChatCompletionCore(
     const codexCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,
@@ -632,11 +597,26 @@ export async function runChatCompletionCore(
     fullText = codexText;
   } else if (provider === 'pi-cli') {
     const piConfig = agent?.chat?.config as PiCliChatConfig | undefined;
+    const attributes = state.summary.attributes;
+    let storedPiSession: { sessionId?: string; cwd?: string } | null = null;
+    const providerInfo = getProviderAttributes(attributes, 'pi-cli', ['pi']);
+    if (providerInfo) {
+      const rawSessionId = providerInfo['sessionId'];
+      const rawCwd = providerInfo['cwd'];
+      storedPiSession = {
+        ...(typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
+          ? { sessionId: rawSessionId.trim() }
+          : {}),
+        ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0
+          ? { cwd: rawCwd.trim() }
+          : {}),
+      };
+    }
+    const resumeSessionId = storedPiSession?.sessionId;
 
     const piCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
-      conversationStore,
       sessionHub,
       sendMessage: output.send,
       log,
@@ -648,12 +628,58 @@ export async function runChatCompletionCore(
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
 
+    const emitPiToolOutputChunk = (
+      callId: string,
+      toolName: string,
+      chunk: string,
+      offset: number,
+      stream?: 'stdout' | 'stderr' | 'output',
+    ): void => {
+      emitToolOutputChunkEvent({
+        sessionHub,
+        sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(responseId ? { responseId } : {}),
+        toolCallId: callId,
+        toolName,
+        chunk,
+        offset,
+        ...(stream ? { stream } : {}),
+      });
+    };
+
+    const syncPiSessionInfo = async (info: PiSessionInfo): Promise<void> => {
+      const nextSessionId =
+        typeof info.sessionId === 'string' && info.sessionId.trim().length > 0
+          ? info.sessionId.trim()
+          : '';
+      if (!nextSessionId) {
+        return;
+      }
+      const nextCwd =
+        typeof info.cwd === 'string' && info.cwd.trim().length > 0 ? info.cwd.trim() : undefined;
+      const currentSessionId = storedPiSession?.sessionId ?? '';
+      const currentCwd = storedPiSession?.cwd ?? undefined;
+      if (nextSessionId === currentSessionId && nextCwd === currentCwd) {
+        return;
+      }
+      storedPiSession = { sessionId: nextSessionId, ...(nextCwd ? { cwd: nextCwd } : {}) };
+      try {
+        const providerPatch = buildProviderAttributesPatch('pi-cli', {
+          sessionId: nextSessionId,
+          ...(nextCwd ? { cwd: nextCwd } : {}),
+        });
+        await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+      } catch (err) {
+        log('failed to persist Pi session mapping', err);
+      }
+    };
+
     const { text: piText, aborted: cliAborted } = await runPiCliChat({
       sessionId,
-      resumeSession: hadPriorUserMessages,
+      ...(resumeSessionId ? { piSessionId: resumeSessionId } : {}),
       userText: text,
       ...(piConfig ? { config: piConfig } : {}),
-      dataDir: envConfig.dataDir,
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,
       onThinkingStart: streamHandlers.emitThinkingStart,
@@ -661,6 +687,8 @@ export async function runChatCompletionCore(
       onThinkingDone: streamHandlers.emitThinkingDone,
       onToolCallStart: piCallbacks.onToolCallStart,
       onToolResult: piCallbacks.onToolResult,
+      onToolOutputChunk: emitPiToolOutputChunk,
+      onSessionInfo: syncPiSessionInfo,
       log,
     });
 

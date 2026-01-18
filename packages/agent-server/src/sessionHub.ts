@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import type {
+  ChatEvent,
   ServerMessage,
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
@@ -13,14 +14,15 @@ import type {
   SessionAttributesPatch,
 } from '@assistant/shared';
 
-import { ConversationStore, type ConversationLogRecord } from './conversationStore';
 import { AgentRegistry } from './agents';
+import type { EventStore } from './events';
+import type { HistoryProviderRegistry } from './history/historyProvider';
 import { SessionIndex, type SessionSummary } from './sessionIndex';
 import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
 import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
-import { buildChatMessagesFromTranscript } from './sessionChatMessages';
+import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 
 export interface LogicalSessionState {
@@ -104,7 +106,6 @@ interface QueuedMessageTask extends QueuedMessage {
 }
 
 export class SessionHub {
-  private readonly conversationStore: ConversationStore;
   private readonly sessionIndex: SessionIndex;
   private readonly agentRegistry: AgentRegistry;
   private readonly sessions = new Map<string, LogicalSessionState>();
@@ -113,23 +114,27 @@ export class SessionHub {
   private readonly queuedMessageTasks = new Map<string, QueuedMessageTask>();
   private readonly maxCachedSessions: number;
   private readonly sessionAccessOrder: string[] = [];
+  private readonly historyProvider: HistoryProviderRegistry | undefined;
+  private readonly eventStore: EventStore | undefined;
 
   private readonly resolveSessionWorkingDir: ((sessionId: string) => string | null) | undefined;
 
   constructor(options: {
-    conversationStore: ConversationStore;
     sessionIndex: SessionIndex;
     agentRegistry: AgentRegistry;
     pluginRegistry?: PluginRegistry;
     maxCachedSessions?: number;
     /** Optional resolver for core.workingDir when a session is created/loaded */
     resolveSessionWorkingDir?: (sessionId: string) => string | null;
+    historyProvider?: HistoryProviderRegistry;
+    eventStore?: EventStore;
   }) {
-    this.conversationStore = options.conversationStore;
     this.sessionIndex = options.sessionIndex;
     this.agentRegistry = options.agentRegistry;
     this.pluginRegistry = options.pluginRegistry;
     this.resolveSessionWorkingDir = options.resolveSessionWorkingDir;
+    this.historyProvider = options.historyProvider;
+    this.eventStore = options.eventStore;
 
     const rawMaxCached = options.maxCachedSessions;
     if (rawMaxCached !== undefined && Number.isFinite(rawMaxCached) && rawMaxCached > 0) {
@@ -154,10 +159,6 @@ export class SessionHub {
   async listSessionSummaries(): Promise<SessionSummary[]> {
     const summaries = await this.sessionIndex.listSessions();
     return summaries.filter((session) => !session.deleted);
-  }
-
-  async getSessionTranscript(sessionId: string): Promise<ConversationLogRecord[]> {
-    return this.conversationStore.getSessionTranscript(sessionId);
   }
 
   getMessageQueue(sessionId: string): QueuedMessage[] {
@@ -308,9 +309,11 @@ export class SessionHub {
     console.log('[sessionHub] deleteSession', { sessionId });
     const summary = await this.sessionIndex.markSessionDeleted(sessionId);
     try {
-      await this.conversationStore.deleteSession(sessionId);
+      if (this.eventStore) {
+        await this.eventStore.deleteSession(sessionId);
+      }
     } catch (err) {
-      console.error('[sessionHub] Failed to delete session transcript for deleted session', err);
+      console.error('[sessionHub] Failed to delete session history for deleted session', err);
     }
     const state = this.sessions.get(sessionId);
     if (state) {
@@ -366,19 +369,14 @@ export class SessionHub {
       throw new Error(`Cannot clear deleted session: ${sessionId}`);
     }
 
-    await this.conversationStore.clearSession(sessionId);
+    if (this.eventStore) {
+      await this.eventStore.clearSession(sessionId);
+    }
     const summary = await this.sessionIndex.clearSession(sessionId);
 
     const state = this.sessions.get(sessionId);
     if (state) {
-      const transcript = await this.conversationStore.getSessionTranscript(sessionId);
-      const chatMessages = buildChatMessagesFromTranscript(
-        transcript,
-        this.agentRegistry,
-        summary.agentId,
-        undefined,
-        sessionId,
-      );
+      const chatMessages = await this.resolveChatMessages(summary, true);
       state.summary = summary;
       state.chatMessages = chatMessages;
     }
@@ -471,6 +469,22 @@ export class SessionHub {
     return state;
   }
 
+  shouldPersistSessionEvents(summary: SessionSummary): boolean {
+    if (!this.historyProvider) {
+      return true;
+    }
+    const agentId = summary.agentId;
+    const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
+    const providerId = agent?.chat?.provider;
+    return this.historyProvider.shouldPersist({
+      sessionId: summary.sessionId,
+      ...(agentId ? { agentId } : {}),
+      ...(agent ? { agent } : {}),
+      ...(providerId ? { providerId } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+    });
+  }
+
   async ensureSessionState(
     sessionId: string,
     summaryHint?: SessionSummary,
@@ -488,14 +502,7 @@ export class SessionHub {
     }
     summary = await this.ensureSessionWorkingDir(summary);
 
-    const transcript = await this.conversationStore.getSessionTranscript(sessionId);
-    const chatMessages = buildChatMessagesFromTranscript(
-      transcript,
-      this.agentRegistry,
-      summary.agentId,
-      undefined,
-      sessionId,
-    );
+    const chatMessages = await this.resolveChatMessages(summary, forceReload);
 
     const state: LogicalSessionState = {
       summary,
@@ -506,6 +513,40 @@ export class SessionHub {
     this.sessions.set(sessionId, state);
     this.touchSessionAccess(sessionId);
     return state;
+  }
+
+  private async resolveChatMessages(
+    summary: SessionSummary,
+    forceReload?: boolean,
+  ): Promise<ChatCompletionMessage[]> {
+    const events = await this.loadSessionEvents(summary, forceReload);
+    return buildChatMessagesFromEvents(
+      events,
+      this.agentRegistry,
+      summary.agentId,
+      undefined,
+      summary.sessionId,
+    );
+  }
+
+  private async loadSessionEvents(
+    summary: SessionSummary,
+    forceReload?: boolean,
+  ): Promise<ChatEvent[]> {
+    if (!this.historyProvider) {
+      return [];
+    }
+    const agentId = summary.agentId;
+    const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
+    const providerId = agent?.chat?.provider;
+    return this.historyProvider.getHistory({
+      sessionId: summary.sessionId,
+      ...(agentId ? { agentId } : {}),
+      ...(agent ? { agent } : {}),
+      ...(providerId ? { providerId } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+      ...(forceReload ? { force: true } : {}),
+    });
   }
 
   private touchSessionAccess(sessionId: string): void {

@@ -1,8 +1,8 @@
 import type { SessionHub, SessionIndex } from '../index';
 import type { AgentRegistry } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
+import type { HistoryProviderRegistry } from '../history/historyProvider';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
 export interface Tool {
@@ -80,15 +80,15 @@ export interface ToolContext {
    */
   baseToolHost?: ToolHost;
   /**
-   * Conversation log store for persisting messages and tool events.
-   */
-  conversationStore?: ConversationStore;
-  /**
    * Optional unified chat event store for this environment. When provided,
    * tools like agents_message can emit ChatEvent records alongside
-   * legacy transcript entries.
+   * persisted chat history.
    */
   eventStore?: EventStore;
+  /**
+   * Optional history provider registry for transcript replay.
+   */
+  historyProvider?: HistoryProviderRegistry;
   /**
    * Optional scheduled sessions service.
    */

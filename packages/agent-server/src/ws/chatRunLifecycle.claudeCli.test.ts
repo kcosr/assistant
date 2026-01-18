@@ -5,7 +5,6 @@ import type OpenAI from 'openai';
 import type { ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
@@ -26,6 +25,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -61,17 +62,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCallStart: vi.fn(),
-    } as unknown as ConversationStore;
-
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
       chatMessages: [],
@@ -98,7 +88,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -156,17 +145,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCallStart: vi.fn(),
-    } as unknown as ConversationStore;
-
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
       chatMessages: [],
@@ -185,7 +163,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -207,7 +184,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -254,19 +230,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCall: vi.fn(),
-      logToolCallStart: vi.fn(),
-      logToolResult: vi.fn(),
-    } as unknown as ConversationStore;
-
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
       chatMessages: [],
@@ -292,7 +255,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -362,19 +324,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCall: vi.fn(),
-      logToolCallStart: vi.fn(),
-      logToolResult: vi.fn(),
-    } as unknown as ConversationStore;
-
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
       chatMessages: [],
@@ -395,7 +344,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -421,7 +369,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
         execute: expect.any(Function),
       }),
     );
-    expect(conversationStore.logUserMessage).not.toHaveBeenCalled();
     expect(broadcastToSession).not.toHaveBeenCalled();
     expect(broadcastToSessionExcluding).not.toHaveBeenCalled();
     expect(recordSessionActivity).not.toHaveBeenCalled();
@@ -469,19 +416,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCall: vi.fn(),
-      logToolCallStart: vi.fn(),
-      logToolResult: vi.fn(),
-    } as unknown as ConversationStore;
-
     vi.mocked(runClaudeCliChat).mockImplementationOnce(async (options) => {
       reloadedState.activeChatRun = state.activeChatRun;
       await options.onTextDelta('Hi', 'Hi');
@@ -496,7 +430,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,

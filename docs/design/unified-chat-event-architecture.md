@@ -21,7 +21,7 @@ This document describes a refactoring of the chat message handling to use a sing
 
 Reference implementations and related code paths:
 
-- `packages/agent-server/src/conversationStore.ts`
+- `packages/agent-server/src/events/eventStore.ts`
 - `packages/agent-server/src/sessionMessages.ts`
 - `packages/agent-server/src/ws/chatRunLifecycle.ts`
 - `packages/web-client/src/controllers/chatRenderer.ts`
@@ -386,8 +386,7 @@ class ChatRenderer {
 ### Phase 1: Event Schema & Store
 
 - Define `ChatEvent` types in `packages/shared`
-- Implement `EventStore` alongside existing `ConversationStore`
-- Dual-write: log to both stores during transition
+- Implement `EventStore` as the sole persistence layer (legacy transcript store removed)
 
 ### Phase 2: Provider Normalizers
 
@@ -409,8 +408,7 @@ class ChatRenderer {
 
 ### Phase 5: Cleanup
 
-- Remove old `ConversationStore` methods
-- Remove old transcript format
+- Remove legacy transcript format and helpers
 - Migration tool for existing sessions
 
 ## File Structure

@@ -3,8 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CombinedPluginManifest } from '@assistant/shared';
-import { ConversationStore } from '../../../../agent-server/src/conversationStore';
+import type { ChatEvent, CombinedPluginManifest } from '@assistant/shared';
 import { SessionHub, SessionIndex } from '../../../../agent-server/src/index';
 import { AgentRegistry } from '../../../../agent-server/src/agents';
 import {
@@ -13,6 +12,7 @@ import {
   type ToolContext,
 } from '../../../../agent-server/src/tools';
 import type { EnvConfig } from '../../../../agent-server/src/envConfig';
+import type { EventStore } from '../../../../agent-server/src/events';
 import * as chatProcessor from '../../../../agent-server/src/chatProcessor';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
@@ -25,14 +25,56 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
+class TestEventStore implements EventStore {
+  private readonly events = new Map<string, ChatEvent[]>();
+
+  async append(sessionId: string, event: ChatEvent): Promise<void> {
+    const list = this.events.get(sessionId) ?? [];
+    list.push(event);
+    this.events.set(sessionId, list);
+  }
+
+  async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
+    const list = this.events.get(sessionId) ?? [];
+    list.push(...events);
+    this.events.set(sessionId, list);
+  }
+
+  async getEvents(sessionId: string): Promise<ChatEvent[]> {
+    return this.events.get(sessionId) ?? [];
+  }
+
+  async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
+    const events = this.events.get(sessionId) ?? [];
+    if (!afterEventId) {
+      return events;
+    }
+    const index = events.findIndex((event) => event.id === afterEventId);
+    if (index === -1) {
+      return events;
+    }
+    return events.slice(index + 1);
+  }
+
+  subscribe(_sessionId: string, _callback: (event: ChatEvent) => void): () => void {
+    return () => {};
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    this.events.delete(sessionId);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.events.delete(sessionId);
+  }
+}
+
 function createEnvConfig(dataDir: string): EnvConfig {
   return {
     port: 0,
     apiKey: 'test-key',
     chatModel: 'gpt-4o',
     toolsEnabled: false,
-    conversationLogPath: '',
-    transcriptsDir: '',
     dataDir,
     audioInputMode: 'manual',
     audioSampleRate: 24000,
@@ -56,13 +98,12 @@ function createEnvConfig(dataDir: string): EnvConfig {
 
 async function createTestEnvironment() {
   const sessionsFile = createTempFile('agents-plugin-sessions');
-  const conversationsFile = createTempFile('agents-plugin-conversations');
   const dataDir = createTempDir('agents-plugin-data');
 
   const sessionIndex = new SessionIndex(sessionsFile);
-  const conversationStore = new ConversationStore(conversationsFile);
+  const eventStore = new TestEventStore();
   const agentRegistry = new AgentRegistry([]);
-  const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+  const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
   const host = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
   const initialSession = await sessionIndex.createSession({ agentId: 'general' });
@@ -71,6 +112,7 @@ async function createTestEnvironment() {
     sessionId: initialSession.sessionId,
     signal: new AbortController().signal,
     envConfig: createEnvConfig(dataDir),
+    eventStore,
   };
 
   return {
@@ -78,7 +120,7 @@ async function createTestEnvironment() {
     ctx,
     sessionIndex,
     sessionHub,
-    conversationStore,
+    eventStore,
     agentRegistry,
   };
 }
@@ -90,7 +132,7 @@ function createTestPlugin() {
 describe('agents plugin operations', () => {
   describe('message', () => {
     it('rejects messaging agents that are not visible from the current agent session', async () => {
-      const { ctx, sessionIndex, conversationStore, sessionHub, host } =
+      const { ctx, sessionIndex, eventStore, sessionHub, host } =
         await createTestEnvironment();
       const plugin = createTestPlugin();
 
@@ -125,7 +167,6 @@ describe('agents plugin operations', () => {
         sessionIndex,
         envConfig: createEnvConfig(ctx.envConfig?.dataDir ?? ''),
         baseToolHost: host,
-        conversationStore,
         sessionHub,
       };
 
@@ -140,7 +181,7 @@ describe('agents plugin operations', () => {
     });
 
     it('triggers a new turn in the calling session on async callback when caller is idle', async () => {
-      const { ctx, sessionIndex, conversationStore, sessionHub, host } =
+      const { ctx, sessionIndex, eventStore, sessionHub, host } =
         await createTestEnvironment();
       const plugin = createTestPlugin();
 
@@ -169,7 +210,6 @@ describe('agents plugin operations', () => {
         sessionIndex,
         envConfig: createEnvConfig(ctx.envConfig?.dataDir ?? ''),
         baseToolHost: host,
-        conversationStore,
         sessionHub,
       };
 
@@ -201,7 +241,8 @@ describe('agents plugin operations', () => {
           throw new Error(`Unexpected sessionId for processUserMessage: ${options.sessionId}`);
         });
 
-      const logAgentCallbackSpy = vi.spyOn(conversationStore, 'logAgentCallback');
+      const eventsBefore = await eventStore.getEvents(callerSession.sessionId);
+      expect(eventsBefore).toEqual([]);
       const broadcastSpy = vi.spyOn(sessionHub, 'broadcastToSession');
 
       const result = (await plugin.operations?.message(
@@ -228,12 +269,21 @@ describe('agents plugin operations', () => {
         }),
       );
 
-      expect(logAgentCallbackSpy).toHaveBeenCalledWith({
-        sessionId: callerSession.sessionId,
-        fromSessionId: targetSession.sessionId,
-        fromAgentId: 'worker',
-        responseId: 'worker-resp-1',
-        text: 'Worker finished the task',
+      const eventsAfter = await eventStore.getEvents(callerSession.sessionId);
+      const callbackEvent = eventsAfter.find(
+        (event) =>
+          event.type === 'agent_callback' &&
+          (event as { payload?: { result?: string } }).payload?.result ===
+            'Worker finished the task',
+      ) as ChatEvent | undefined;
+      expect(callbackEvent).toBeTruthy();
+      expect(callbackEvent).toMatchObject({
+        type: 'agent_callback',
+        payload: {
+          fromSessionId: targetSession.sessionId,
+          fromAgentId: 'worker',
+          result: 'Worker finished the task',
+        },
       });
 
       const callbackMessages = broadcastSpy.mock.calls
@@ -253,7 +303,7 @@ describe('agents plugin operations', () => {
     });
 
     it('includes messageId when async agent messages are queued due to a busy target session', async () => {
-      const { ctx, sessionIndex, conversationStore, sessionHub, host } =
+      const { ctx, sessionIndex, eventStore, sessionHub, host } =
         await createTestEnvironment();
       const plugin = createTestPlugin();
 
@@ -289,7 +339,6 @@ describe('agents plugin operations', () => {
         sessionIndex,
         envConfig: createEnvConfig(ctx.envConfig?.dataDir ?? ''),
         baseToolHost: host,
-        conversationStore,
         sessionHub,
       };
 
@@ -310,7 +359,7 @@ describe('agents plugin operations', () => {
     });
 
     it('queues async callbacks when the calling session is busy', async () => {
-      const { ctx, sessionIndex, conversationStore, sessionHub, host } =
+      const { ctx, sessionIndex, eventStore, sessionHub, host } =
         await createTestEnvironment();
       const plugin = createTestPlugin();
 
@@ -346,7 +395,6 @@ describe('agents plugin operations', () => {
         sessionIndex,
         envConfig: createEnvConfig(ctx.envConfig?.dataDir ?? ''),
         baseToolHost: host,
-        conversationStore,
         sessionHub,
       };
 
@@ -379,7 +427,6 @@ describe('agents plugin operations', () => {
         });
 
       const queueMessageSpy = vi.spyOn(sessionHub, 'queueMessage');
-      const logAgentCallbackSpy = vi.spyOn(conversationStore, 'logAgentCallback');
 
       const result = (await plugin.operations?.message(
         {
@@ -399,12 +446,21 @@ describe('agents plugin operations', () => {
       expect(processUserMessageSpy).toHaveBeenCalledTimes(1);
       expect(processUserMessageSpy.mock.calls[0]?.[0].sessionId).toBe(targetSession.sessionId);
 
-      expect(logAgentCallbackSpy).toHaveBeenCalledWith({
-        sessionId: callerSession.sessionId,
-        fromSessionId: targetSession.sessionId,
-        fromAgentId: 'worker',
-        responseId: 'worker-resp-queued',
-        text: 'Worker finished queued task',
+      const eventsAfter = await eventStore.getEvents(callerSession.sessionId);
+      const callbackEvent = eventsAfter.find(
+        (event) =>
+          event.type === 'agent_callback' &&
+          (event as { payload?: { result?: string } }).payload?.result ===
+            'Worker finished queued task',
+      ) as ChatEvent | undefined;
+      expect(callbackEvent).toBeTruthy();
+      expect(callbackEvent).toMatchObject({
+        type: 'agent_callback',
+        payload: {
+          fromSessionId: targetSession.sessionId,
+          fromAgentId: 'worker',
+          result: 'Worker finished queued task',
+        },
       });
 
       expect(queueMessageSpy).toHaveBeenCalledTimes(1);

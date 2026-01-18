@@ -5,12 +5,17 @@ import { EventEmitter } from 'node:events';
 import type { ChatEvent } from '@assistant/shared';
 import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
+import type { SessionHub } from '../sessionHub';
+import type { SessionSummary } from '../sessionIndex';
+
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
   appendBatch(sessionId: string, events: ChatEvent[]): Promise<void>;
   getEvents(sessionId: string): Promise<ChatEvent[]>;
   getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]>;
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void;
+  clearSession(sessionId: string): Promise<void>;
+  deleteSession(sessionId: string): Promise<void>;
 }
 
 type WriteTask = () => Promise<void>;
@@ -112,6 +117,48 @@ export class FileEventStore implements EventStore {
     };
   }
 
+  async clearSession(sessionId: string): Promise<void> {
+    const trimmedSessionId = this.normaliseSessionId(sessionId);
+    const filePath = this.getSessionFilePath(trimmedSessionId);
+
+    const task: WriteTask = async () => {
+      try {
+        await fs.unlink(filePath);
+      } catch (err) {
+        const anyErr = err as NodeJS.ErrnoException;
+        if (anyErr && anyErr.code !== 'ENOENT') {
+          console.error('Failed to clear events file', err);
+        }
+      }
+    };
+
+    await this.queueWrite(trimmedSessionId, task);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const trimmedSessionId = this.normaliseSessionId(sessionId);
+    const filePath = this.getSessionFilePath(trimmedSessionId);
+    const dirPath = path.dirname(filePath);
+
+    const task: WriteTask = async () => {
+      try {
+        await fs.unlink(filePath);
+      } catch (err) {
+        const anyErr = err as NodeJS.ErrnoException;
+        if (anyErr && anyErr.code !== 'ENOENT') {
+          console.error('Failed to delete events file', err);
+        }
+      }
+      try {
+        await fs.rm(dirPath, { recursive: true, force: true });
+      } catch (err) {
+        console.error('Failed to delete events directory', err);
+      }
+    };
+
+    await this.queueWrite(trimmedSessionId, task);
+  }
+
   private normaliseSessionId(sessionId: string): string {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -208,5 +255,107 @@ export class FileEventStore implements EventStore {
     }
 
     return events;
+  }
+}
+
+export class SessionScopedEventStore implements EventStore {
+  constructor(
+    private readonly base: EventStore,
+    private readonly sessionHub: SessionHub,
+  ) {}
+
+  async append(sessionId: string, event: ChatEvent): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.append(trimmed, event);
+    }
+    this.validateEventForSession(trimmed, event);
+  }
+
+  async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (events.length === 0) {
+      return;
+    }
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.appendBatch(trimmed, events);
+    }
+    for (const event of events) {
+      this.validateEventForSession(trimmed, event);
+    }
+  }
+
+  async getEvents(sessionId: string): Promise<ChatEvent[]> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return [];
+    }
+    return this.base.getEvents(trimmed);
+  }
+
+  async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return [];
+    }
+    return this.base.getEventsSince(trimmed, afterEventId);
+  }
+
+  subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void {
+    const trimmed = this.normaliseSessionId(sessionId);
+    const state = this.sessionHub.getSessionState(trimmed);
+    if (state && !this.sessionHub.shouldPersistSessionEvents(state.summary)) {
+      return () => undefined;
+    }
+    return this.base.subscribe(trimmed, callback);
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return;
+    }
+    await this.base.clearSession(trimmed);
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (!(await this.shouldPersist(trimmed))) {
+      return;
+    }
+    await this.base.deleteSession(trimmed);
+  }
+
+  private async shouldPersist(sessionId: string): Promise<boolean> {
+    const summary = await this.resolveSummary(sessionId);
+    if (!summary) {
+      return true;
+    }
+    return this.sessionHub.shouldPersistSessionEvents(summary);
+  }
+
+  private normaliseSessionId(sessionId: string): string {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      throw new Error('sessionId must not be empty');
+    }
+    return trimmed;
+  }
+
+  private async resolveSummary(sessionId: string): Promise<SessionSummary | undefined> {
+    const state = this.sessionHub.getSessionState(sessionId);
+    if (state?.summary) {
+      return state.summary;
+    }
+    return this.sessionHub.getSessionIndex().getSession(sessionId);
+  }
+
+  private validateEventForSession(sessionId: string, event: ChatEvent): void {
+    const validated = validateChatEvent(event);
+    if (validated.sessionId.trim() !== sessionId) {
+      throw new Error(
+        `ChatEvent.sessionId "${validated.sessionId}" does not match target session "${sessionId}"`,
+      );
+    }
   }
 }

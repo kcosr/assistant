@@ -135,6 +135,12 @@ describe('renderMarkdown', () => {
     expect(result).toContain('quote');
   });
 
+  it('should render line breaks in plain text', () => {
+    const result = renderMarkdown('line 1\nline 2');
+    expect(result).toContain('<br');
+    expect(result).toContain('line 2');
+  });
+
   it('should render tables (GFM)', () => {
     const result = renderMarkdown('| a | b |\n|---|---|\n| 1 | 2 |');
     expect(result).toContain('<table');

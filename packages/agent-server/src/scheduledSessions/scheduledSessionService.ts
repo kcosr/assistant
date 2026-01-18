@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type SpawnOptions } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import type { AgentRegistry, CliWrapperConfig } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { SessionHub } from '../sessionHub';
@@ -51,7 +48,6 @@ export interface ScheduledSessionServiceOptions {
   dataDir: string;
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
-  conversationStore?: ConversationStore;
   envConfig?: EnvConfig;
   toolHost?: ToolHost;
   eventStore?: EventStore;
@@ -452,7 +448,6 @@ export class ScheduledSessionService {
     return Boolean(
       this.options.sessionHub &&
         this.options.sessionIndex &&
-        this.options.conversationStore &&
         this.options.envConfig &&
         this.options.toolHost,
     );
@@ -473,9 +468,8 @@ export class ScheduledSessionService {
     const sessionIndex = this.options.sessionIndex;
     const sessionHub = this.options.sessionHub;
     const toolHost = this.options.toolHost;
-    const conversationStore = this.options.conversationStore;
     const envConfig = this.options.envConfig;
-    if (!sessionIndex || !sessionHub || !toolHost || !conversationStore || !envConfig) {
+    if (!sessionIndex || !sessionHub || !toolHost || !envConfig) {
       return { result: 'failed', error: 'Scheduled session dependencies are missing' };
     }
 
@@ -494,7 +488,6 @@ export class ScheduledSessionService {
       sessionHub,
       agentRegistry: this.options.agentRegistry,
       toolHost,
-      conversationStore,
       envConfig,
       ...(this.options.eventStore ? { eventStore: this.options.eventStore } : {}),
       scheduledSessionService: this,
@@ -712,8 +705,7 @@ export class ScheduledSessionService {
       };
     }
 
-    const sessionFilePath = this.resolvePiSessionPath(config, wrapperEnabled);
-    const args = ['--mode', 'json', '--session', sessionFilePath];
+    const args = ['--mode', 'json'];
     if (config?.extraArgs?.length) {
       args.push(...config.extraArgs);
     }
@@ -724,31 +716,6 @@ export class ScheduledSessionService {
       env,
       ...(cwd ? { cwd } : {}),
     };
-  }
-
-  private resolvePiSessionPath(config: CliChatConfig | undefined, wrapperEnabled: boolean): string {
-    const sessionId = randomUUID();
-    const resolvedWorkdir =
-      config?.workdir && config.workdir.trim().length > 0 ? config.workdir.trim() : undefined;
-
-    if (wrapperEnabled) {
-      const sessionRoot = resolvedWorkdir ?? process.cwd();
-      const resolvedSessionDir = path.join(sessionRoot, '.assistant', 'pi-sessions');
-      try {
-        fs.mkdirSync(resolvedSessionDir, { recursive: true });
-      } catch {
-        // ignore failures, CLI will surface errors on start
-      }
-      return `.assistant/pi-sessions/${sessionId}.jsonl`;
-    }
-
-    const resolvedSessionDir = path.join(this.options.dataDir, 'pi-sessions');
-    try {
-      fs.mkdirSync(resolvedSessionDir, { recursive: true });
-    } catch {
-      // ignore failures, CLI will surface errors on start
-    }
-    return path.join(resolvedSessionDir, `${sessionId}.jsonl`);
   }
 
   private buildKey(agentId: string, scheduleId: string): string {

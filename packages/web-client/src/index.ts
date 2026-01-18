@@ -813,6 +813,22 @@ async function main(): Promise<void> {
     };
     chatPanelsById.set(panelId, entry);
     const abortController = new AbortController();
+    if (dom.refreshButtonEl) {
+      dom.refreshButtonEl.disabled = true;
+      dom.refreshButtonEl.addEventListener(
+        'click',
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          dom.refreshButtonEl?.blur();
+          if (!bindingSessionId) {
+            return;
+          }
+          void loadSessionTranscript(bindingSessionId, { force: true });
+        },
+        { signal: abortController.signal },
+      );
+    }
     if (dom.sessionLabelEl) {
       dom.sessionLabelEl.addEventListener(
         'click',
@@ -866,6 +882,9 @@ async function main(): Promise<void> {
       }
       if (sessionId) {
         chatPanelIdBySession.set(sessionId, panelId);
+      }
+      if (dom.refreshButtonEl) {
+        dom.refreshButtonEl.disabled = !sessionId;
       }
       if (!sessionId) {
         entry.runtime.chatRenderer.clear();
@@ -2528,7 +2547,10 @@ async function main(): Promise<void> {
       const eventsResponse = await apiFetch(sessionsOperationPath('events'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: trimmed }),
+        body: JSON.stringify({
+          sessionId: trimmed,
+          ...(options?.force ? { force: true } : {}),
+        }),
       });
       if (!eventsResponse.ok) {
         console.error('Failed to fetch session events', sessionId, eventsResponse.status);

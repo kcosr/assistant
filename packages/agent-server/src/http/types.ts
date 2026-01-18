@@ -1,7 +1,6 @@
 import type http from 'node:http';
 
 import type { ToolContext, ToolHost } from '../tools';
-import type { ConversationStore } from '../conversationStore';
 import type { SessionIndex } from '../sessionIndex';
 import type { SessionHub } from '../sessionHub';
 import type { AgentRegistry } from '../agents';
@@ -15,7 +14,6 @@ import type { SearchService } from '../search/searchService';
 
 export interface HttpContext {
   config: EnvConfig;
-  conversationStore: ConversationStore;
   sessionIndex: SessionIndex;
   sessionHub: SessionHub;
   agentRegistry: AgentRegistry;

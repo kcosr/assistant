@@ -5,18 +5,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ServerMessage } from '@assistant/shared';
 
-import { ConversationStore } from './conversationStore';
 import { SessionHub } from './sessionHub';
 import { SessionIndex } from './sessionIndex';
 import { AgentRegistry } from './agents';
 import type { SessionConnection } from './ws/sessionConnection';
+import type { EventStore } from './events';
 
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
-}
-
-function createTempDir(prefix: string): string {
-  return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
 function createTestConnection(): {
@@ -34,15 +30,29 @@ function createTestConnection(): {
   return { connection, sendServerMessageFromHub };
 }
 
+function createTestEventStore(): EventStore {
+  return {
+    append: async () => {},
+    appendBatch: async () => {},
+    getEvents: async () => [],
+    getEventsSince: async () => [],
+    subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
+  };
+}
+
 describe('SessionHub subscription helpers', () => {
   it('subscribeConnection ensures session state and tracks subscriptions', async () => {
     const sessionsFile = createTempFile('session-hub-subscribe-sessions');
-    const transcriptsDir = createTempDir('session-hub-subscribe-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const summary = await sessionIndex.createSession({ agentId: 'general' });
     const { connection } = createTestConnection();
@@ -57,12 +67,14 @@ describe('SessionHub subscription helpers', () => {
 
   it('unsubscribeConnection removes a single subscription', async () => {
     const sessionsFile = createTempFile('session-hub-unsubscribe-sessions');
-    const transcriptsDir = createTempDir('session-hub-unsubscribe-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
@@ -79,12 +91,14 @@ describe('SessionHub subscription helpers', () => {
 
   it('detachConnectionFromAllSessions clears all subscriptions', async () => {
     const sessionsFile = createTempFile('session-hub-detach-sessions');
-    const transcriptsDir = createTempDir('session-hub-detach-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
 
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
@@ -104,15 +118,13 @@ describe('SessionHub subscription helpers', () => {
 
   it('evicts least recently used sessions without active runs or connections', async () => {
     const sessionsFile = createTempFile('session-hub-evict-lru-sessions');
-    const transcriptsDir = createTempDir('session-hub-evict-lru-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
+      eventStore: createTestEventStore(),
       maxCachedSessions: 2,
     });
 
@@ -136,15 +148,13 @@ describe('SessionHub subscription helpers', () => {
 
   it('does not evict sessions with active chat runs', async () => {
     const sessionsFile = createTempFile('session-hub-evict-active-run-sessions');
-    const transcriptsDir = createTempDir('session-hub-evict-active-run-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
+      eventStore: createTestEventStore(),
       maxCachedSessions: 1,
     });
 
@@ -167,15 +177,13 @@ describe('SessionHub subscription helpers', () => {
 
   it('does not evict sessions with active connections', async () => {
     const sessionsFile = createTempFile('session-hub-evict-connected-sessions');
-    const transcriptsDir = createTempDir('session-hub-evict-connected-conversations');
 
     const sessionIndex = new SessionIndex(sessionsFile);
-    const conversationStore = new ConversationStore(transcriptsDir);
     const agentRegistry = new AgentRegistry([]);
     const sessionHub = new SessionHub({
-      conversationStore,
       sessionIndex,
       agentRegistry,
+      eventStore: createTestEventStore(),
       maxCachedSessions: 1,
     });
 

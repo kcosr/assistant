@@ -4,6 +4,7 @@ import type {
   AssistantChunkEvent,
   AssistantDoneEvent,
   ChatEvent,
+  CustomMessageEvent,
   ErrorEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
@@ -11,6 +12,7 @@ import type {
   ToolInputChunkEvent,
   ToolOutputChunkEvent,
   ToolResultEvent,
+  SummaryMessageEvent,
   TurnEndEvent,
   TurnStartEvent,
   InterruptEvent,
@@ -18,6 +20,7 @@ import type {
   UserMessageEvent,
 } from '@assistant/shared';
 import { applyMarkdownToElement } from '../utils/markdown';
+import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
   decorateUserMessageAsAgent,
@@ -35,6 +38,7 @@ import {
   updateToolOutputBlockLabel,
   updateToolOutputBlockContent,
 } from '../utils/toolOutputRenderer';
+import { formatToolResultText } from '../utils/toolResultFormatting';
 
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
@@ -149,6 +153,12 @@ export class ChatRenderer {
         break;
       case 'thinking_done':
         this.handleThinkingDone(event);
+        break;
+      case 'custom_message':
+        this.handleCustomMessage(event);
+        break;
+      case 'summary_message':
+        this.handleSummaryMessage(event);
         break;
       case 'tool_call':
         this.handleToolCall(event);
@@ -355,6 +365,72 @@ export class ChatRenderer {
     thinkingEl.textContent = text;
     thinkingEl.dataset['eventId'] = event.id;
     thinkingEl.dataset['renderer'] = 'unified';
+  }
+
+  private renderInfoMessage(
+    turnEl: HTMLElement,
+    text: string,
+    options: { className: string; label?: string; useMarkdown?: boolean },
+  ): HTMLDivElement {
+    clearEmptySessionHint(this.container);
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${options.className}`;
+
+    const label = options.label?.trim();
+    if (label) {
+      const labelEl = document.createElement('div');
+      labelEl.className = 'message-meta';
+      labelEl.textContent = label;
+      wrapper.appendChild(labelEl);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'message-body';
+    if (options.useMarkdown) {
+      applyMarkdownToElement(body, text);
+    } else {
+      body.textContent = text;
+    }
+    wrapper.appendChild(body);
+    turnEl.appendChild(wrapper);
+    return wrapper;
+  }
+
+  private handleCustomMessage(event: CustomMessageEvent): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const text = event.payload.text ?? '';
+    const label = event.payload.label?.trim();
+    const messageEl = this.renderInfoMessage(turnEl, text, {
+      className: 'custom-message',
+      ...(label ? { label } : {}),
+      useMarkdown: true,
+    });
+    messageEl.dataset['eventId'] = event.id;
+    messageEl.dataset['renderer'] = 'unified';
+  }
+
+  private handleSummaryMessage(event: SummaryMessageEvent): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const text = event.payload.text ?? '';
+    const summaryType = event.payload.summaryType;
+    const label =
+      summaryType === 'compaction'
+        ? 'Compaction summary'
+        : summaryType === 'branch_summary'
+          ? 'Branch summary'
+          : 'Summary';
+    const messageEl = this.renderInfoMessage(turnEl, text, {
+      className: 'summary-message',
+      label,
+      useMarkdown: true,
+    });
+    if (summaryType) {
+      messageEl.dataset['summaryType'] = summaryType;
+    }
+    messageEl.dataset['eventId'] = event.id;
+    messageEl.dataset['renderer'] = 'unified';
   }
 
   private handleToolCall(event: ToolCallEvent): void {
@@ -649,7 +725,6 @@ export class ChatRenderer {
 
     const result = event.payload.result;
     const isAgentMessage = toolName === 'agents_message';
-    const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
 
     let handledAgentAsync = false;
     if (isAgentMessage && typeof result === 'object' && result !== null) {
@@ -688,63 +763,30 @@ export class ChatRenderer {
     }
 
     // Extract display text and optional raw JSON for toggle
-    let text: string;
+    let text = '';
     let rawJson: string | undefined;
     let resultOk = true;
 
-    if (!handledAgentAsync && isAgentMessage && typeof result === 'object' && result !== null) {
-      const resultObj = result as Record<string, unknown>;
-      // Sync mode has 'response' field with the agent's text
-      if (typeof resultObj['response'] === 'string') {
-        text = resultObj['response'];
+    if (!handledAgentAsync) {
+      if (typeof result === 'object' && result !== null) {
+        const resultObj = result as Record<string, unknown>;
+        if (typeof resultObj['ok'] === 'boolean') {
+          resultOk = resultObj['ok'] !== false;
+        }
         try {
           rawJson = JSON.stringify(result, null, 2);
         } catch {
-          // Ignore serialization errors
-        }
-      } else {
-        // Async mode or other - stringify the whole thing
-        try {
-          text = JSON.stringify(result, null, 2);
-        } catch {
-          text = '[unrenderable result]';
+          rawJson = undefined;
         }
       }
-    } else if (!handledAgentAsync && isBashTool && typeof result === 'object' && result !== null) {
-      // Bash tools return { ok, output, exitCode, timedOut? }
-      // Show output as primary text, with JSON toggle for full result
-      const resultObj = result as Record<string, unknown>;
-      if (typeof resultObj['output'] === 'string') {
-        text = resultObj['output'];
-        resultOk = resultObj['ok'] !== false;
-        try {
-          rawJson = JSON.stringify(result, null, 2);
-        } catch {
-          // Ignore serialization errors
-        }
-      } else {
-        try {
-          text = JSON.stringify(result, null, 2);
-        } catch {
-          text = '[unrenderable result]';
-        }
-      }
-    } else if (!handledAgentAsync && typeof result === 'string') {
-      text = result;
-    } else {
-      if (!handledAgentAsync) {
-        try {
-          text = JSON.stringify(result ?? '', null, 2);
-        } catch {
-          text = '[unrenderable result]';
-        }
-      } else {
-        text = '';
-      }
-    }
 
-    if (!handledAgentAsync && typeof result === 'object' && result !== null) {
-      if (!rawJson) {
+      text = formatToolResultText({
+        toolName,
+        ok: resultOk,
+        result,
+      });
+
+      if (!rawJson && typeof result === 'object' && result !== null) {
         try {
           rawJson = JSON.stringify(result);
         } catch {

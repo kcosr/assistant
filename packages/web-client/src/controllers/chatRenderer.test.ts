@@ -211,6 +211,49 @@ describe('ChatRenderer', () => {
     expect(blocks).toHaveLength(2);
   });
 
+  it('formats tool_result content arrays as tool output', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          result: [
+            { type: 'text', text: 'line 1\n' },
+            { type: 'text', text: 'line 2\n' },
+          ],
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const outputBody = toolBlock.querySelector<HTMLDivElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('line 1');
+    expect(outputBody?.textContent).toContain('line 2');
+
+    const jsonToggle = toolBlock.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    expect(jsonToggle).not.toBeNull();
+  });
+
   it('does not group agents_message tool calls', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -786,5 +829,40 @@ describe('ChatRenderer', () => {
       ':scope > .tool-call-group-content > .tool-output-block',
     );
     expect(blocks).toHaveLength(2);
+  });
+
+  it('renders custom and summary messages as standalone entries', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('custom_message', {
+        id: 'e-custom',
+        turnId: 't-custom',
+        responseId: undefined,
+        payload: { text: 'Custom entry', label: 'Pi' },
+      }),
+      createBaseEvent('summary_message', {
+        id: 'e-summary',
+        turnId: 't-summary',
+        responseId: undefined,
+        payload: { text: 'Compaction summary', summaryType: 'compaction' },
+      }),
+    ]);
+
+    const customMessage = container.querySelector<HTMLDivElement>('.message.custom-message');
+    expect(customMessage).not.toBeNull();
+    expect(customMessage?.dataset['eventId']).toBe('e-custom');
+    expect(customMessage?.textContent).toContain('Custom entry');
+    const customLabel = customMessage?.querySelector<HTMLDivElement>('.message-meta');
+    expect(customLabel?.textContent).toBe('Pi');
+
+    const summaryMessage = container.querySelector<HTMLDivElement>('.message.summary-message');
+    expect(summaryMessage).not.toBeNull();
+    expect(summaryMessage?.dataset['eventId']).toBe('e-summary');
+    expect(summaryMessage?.dataset['summaryType']).toBe('compaction');
+    expect(summaryMessage?.textContent).toContain('Compaction summary');
   });
 });

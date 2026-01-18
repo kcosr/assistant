@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type OpenAI from 'openai';
 
-import type { ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ServerMessage } from '@assistant/shared';
 
-import type { ConversationStore } from './conversationStore';
 import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
+import type { EventStore } from './events';
 
 vi.mock('./ws/chatCompletionStreaming', () => {
   return {
@@ -17,12 +17,12 @@ vi.mock('./ws/chatCompletionStreaming', () => {
 import { runChatCompletionIteration } from './ws/chatCompletionStreaming';
 import { processUserMessage } from './chatProcessor';
 
-describe('processUserMessage stream event logging', () => {
+describe('processUserMessage stream event emission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('logs text_delta and text_done records for openai runs', async () => {
+  it('emits assistant_chunk and assistant_done events for openai runs', async () => {
     vi.mocked(runChatCompletionIteration).mockImplementationOnce(async (options) => {
       await options.onDeltaText?.('Hello', 'Hello');
       await options.onDeltaText?.(' world', 'Hello world');
@@ -40,21 +40,20 @@ describe('processUserMessage stream event logging', () => {
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
 
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAgentMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCall: vi.fn(),
-      logToolCallStart: vi.fn(),
-      logToolOutputDelta: vi.fn(),
-      logToolResult: vi.fn(),
-      logOutputCancelled: vi.fn(),
-    } as unknown as ConversationStore;
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
 
     const state: LogicalSessionState = {
       summary: {
@@ -70,7 +69,6 @@ describe('processUserMessage stream event logging', () => {
       sessionId: 's1',
       state,
       text: 'hi',
-      conversationStore,
       sessionHub,
       envConfig: {
         apiKey: 'test-api-key',
@@ -83,17 +81,15 @@ describe('processUserMessage stream event logging', () => {
       handleChatToolCalls: async () => undefined,
       outputMode: 'text',
       ttsBackendFactory: null,
+      eventStore,
     });
 
-    expect(conversationStore.logTextDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 's1', delta: 'Hello' }),
-    );
-    expect(conversationStore.logTextDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 's1', delta: ' world' }),
-    );
-    expect(conversationStore.logTextDone).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 's1', text: 'Hello world' }),
-    );
+    const chunkTexts = events
+      .filter((event) => event.type === 'assistant_chunk')
+      .map((event) => event.payload?.text);
+    expect(chunkTexts).toEqual(['Hello', ' world']);
+    const doneEvent = events.find((event) => event.type === 'assistant_done');
+    expect(doneEvent?.payload?.text).toBe('Hello world');
 
     expect(broadcast.some((message) => message.type === 'text_done')).toBe(true);
   });

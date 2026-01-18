@@ -37,7 +37,7 @@ export interface AgentDefinition {
      */
     models?: string[];
     config?:
-      | {
+        | {
           /**
            * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): working directory.
            */
@@ -162,7 +162,7 @@ const CLAUDE_CLI_RESERVED_ARGS = [
 
 const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
 
-const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--continue', '-p'] as const;
+const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--session-dir', '--continue', '-p'] as const;
 
 function assertNoReservedExtraArgs(options: {
   index: number;

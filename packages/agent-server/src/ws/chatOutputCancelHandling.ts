@@ -1,7 +1,6 @@
 import type { ClientControlMessage, ServerToolResultMessage } from '@assistant/shared';
 import type { ChatEvent } from '@assistant/shared';
 
-import type { ConversationStore } from '../conversationStore';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
 import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
@@ -14,7 +13,6 @@ export interface ActiveChatRunState {
 export interface HandleChatOutputCancelOptions {
   message: ClientControlMessage;
   activeRunState: ActiveChatRunState | undefined;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   broadcastOutputCancelled: (sessionId: string, responseId?: string) => void;
   log: (message: string, details?: unknown) => void;
@@ -25,7 +23,6 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   const {
     message,
     activeRunState,
-    conversationStore,
     sessionHub,
     broadcastOutputCancelled,
     log,
@@ -66,15 +63,27 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
 
   const partialText = run.accumulatedText.trim();
   if (partialText.length > 0) {
-    // Log assistant message AFTER tool calls so reconstruction attaches tools to this bubble.
-    // Don't use textStartedAt - we want this to come after any tool_result records.
-    void conversationStore.logAssistantMessage({
-      sessionId,
-      responseId: run.responseId,
-      modality: 'text',
-      text: partialText,
-      interrupted: true,
-    });
+    if (eventStore) {
+      const events: ChatEvent[] = [
+        {
+          ...createChatEventBase({
+            sessionId,
+            ...(run.turnId ? { turnId: run.turnId } : {}),
+            ...(run.responseId ? { responseId: run.responseId } : {}),
+          }),
+          type: 'assistant_done',
+          payload: { text: partialText },
+        },
+      ];
+      void appendAndBroadcastChatEvents(
+        {
+          eventStore,
+          sessionHub,
+          sessionId,
+        },
+        events,
+      );
+    }
 
     state.chatMessages.push({
       role: 'assistant',
@@ -94,15 +103,6 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         code: 'tool_interrupted',
         message: 'Tool call was interrupted by the user',
       };
-
-      void conversationStore.logToolResult({
-        sessionId,
-        callId: call.callId,
-        toolName: call.toolName,
-        ok: false,
-        error: errorPayload,
-        ...(run.agentExchangeId ? { agentExchangeId: run.agentExchangeId } : {}),
-      });
 
       // Add tool result to chat messages so OpenAI API doesn't complain about missing tool response
       const toolMessageContent = JSON.stringify({
@@ -124,14 +124,34 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         error: errorPayload,
       };
       sessionHub.broadcastToSession(sessionId, messagePayload);
+
+      if (eventStore && run.turnId && run.responseId) {
+        void appendAndBroadcastChatEvents(
+          {
+            eventStore,
+            sessionHub,
+            sessionId,
+          },
+          [
+            {
+              ...createChatEventBase({
+                sessionId,
+                ...(run.turnId ? { turnId: run.turnId } : {}),
+                ...(run.responseId ? { responseId: run.responseId } : {}),
+              }),
+              type: 'tool_result',
+              payload: {
+                toolCallId: call.callId,
+                result: null,
+                error: errorPayload,
+              },
+            },
+          ],
+        );
+      }
     }
     activeToolCalls.clear();
   }
-
-  void conversationStore.logOutputCancelled({
-    sessionId,
-    ...(run.responseId ? { responseId: run.responseId } : {}),
-  });
 
   // Best-effort: emit a unified interrupt event so ChatRenderer can render
   // cancellation consistently with other chat events.

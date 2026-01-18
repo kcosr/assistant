@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type OpenAI from 'openai';
 
 import { AgentRegistry } from './agents';
-import { ConversationStore } from './conversationStore';
 import { SessionHub } from './sessionHub';
 import { SessionIndex } from './sessionIndex';
 import { buildExternalCallbackUrl } from './externalAgents';
@@ -16,8 +15,16 @@ function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
 }
 
-function createTempDir(prefix: string): string {
-  return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
+function createTestEventStore(): EventStore {
+  return {
+    append: async () => {},
+    appendBatch: async () => {},
+    getEvents: async () => [],
+    getEventsSince: async () => [],
+    subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
+  };
 }
 
 afterEach(() => {
@@ -65,16 +72,9 @@ describe('ws external forwarding', () => {
       },
     ]);
 
-    const conversationStore = new ConversationStore(createTempDir('external-forward-log'));
     const sessionIndex = new SessionIndex(createTempFile('external-forward-sessions'));
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
-    const eventStore: EventStore = {
-      append: async () => {},
-      appendBatch: async () => {},
-      getEvents: async () => [],
-      getEventsSince: async () => [],
-      subscribe: () => () => {},
-    };
+    const eventStore = createTestEventStore();
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const summary = await sessionIndex.createSession({
       sessionId: 'EXTERNAL-123',
@@ -93,7 +93,6 @@ describe('ws external forwarding', () => {
         sendServerMessageFromHub: () => undefined,
         sendErrorFromHub: () => undefined,
       },
-      conversationStore,
       sessionHub,
       openaiClient: {} as unknown as OpenAI,
       config: {
@@ -101,8 +100,6 @@ describe('ws external forwarding', () => {
         apiKey: 'test-api-key',
         chatModel: 'test-model',
         toolsEnabled: false,
-        conversationLogPath: '',
-        transcriptsDir: createTempDir('external-forward-config-log'),
         dataDir: os.tmpdir(),
         audioInputMode: 'manual',
         audioSampleRate: 24000,
@@ -176,16 +173,9 @@ describe('ws external forwarding', () => {
       },
     ]);
 
-    const conversationStore = new ConversationStore(createTempDir('external-forward-error-log'));
     const sessionIndex = new SessionIndex(createTempFile('external-forward-error-sessions'));
-    const sessionHub = new SessionHub({ conversationStore, sessionIndex, agentRegistry });
-    const eventStore: EventStore = {
-      append: async () => {},
-      appendBatch: async () => {},
-      getEvents: async () => [],
-      getEventsSince: async () => [],
-      subscribe: () => () => {},
-    };
+    const eventStore = createTestEventStore();
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, eventStore });
 
     const summary = await sessionIndex.createSession({
       sessionId: 'EXTERNAL-124',
@@ -204,7 +194,6 @@ describe('ws external forwarding', () => {
         sendServerMessageFromHub: () => undefined,
         sendErrorFromHub: () => undefined,
       },
-      conversationStore,
       sessionHub,
       openaiClient: {} as unknown as OpenAI,
       config: {
@@ -212,8 +201,6 @@ describe('ws external forwarding', () => {
         apiKey: 'test-api-key',
         chatModel: 'test-model',
         toolsEnabled: false,
-        conversationLogPath: '',
-        transcriptsDir: createTempDir('external-forward-error-config-log'),
         dataDir: os.tmpdir(),
         audioInputMode: 'manual',
         audioSampleRate: 24000,

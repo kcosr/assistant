@@ -76,7 +76,7 @@ Server listens on `http://localhost:3000` (configurable via `PORT`).
 ├──────────────────────────────────────────────────────────────┤
 │  Persistence                                                  │
 │  ├── SessionIndex (sessions.jsonl)                            │
-│  └── ConversationStore (conversations.jsonl)                  │
+│  └── EventStore (sessions/<id>/events.jsonl)                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -128,7 +128,7 @@ High-level map of `packages/agent-server/src/` after the backend refactor:
   - `src/tts/backends.ts`: barrel exports
   - `src/tts/openAiTtsBackend.ts`, `src/tts/elevenLabsTtsBackend.ts`: per-backend implementations
   - `src/tts/selectTtsBackendFactory.ts`: backend selection from env/config
-- `src/sessionHub.ts`, `src/sessionIndex.ts`, `src/conversationStore.ts`: core persistence + session coordination
+- `src/sessionHub.ts`, `src/sessionIndex.ts`, `src/events/eventStore.ts`: core persistence + session coordination
 
 ## Coding plugin tools
 
@@ -457,7 +457,7 @@ These are required only when using built-in OpenAI chat or TTS backends. The ser
 | `src/index.ts`             | Main server, HTTP routes, WebSocket handling, Session class |
 | `src/tools.ts`             | Tool host infrastructure (MCP, built-in, composite)         |
 | `src/builtInTools.ts`      | Built-in tool helpers (agent coordination wiring)           |
-| `src/conversationStore.ts` | JSONL persistence for conversations                         |
+| `src/events/eventStore.ts` | JSONL persistence for session ChatEvents                    |
 | `src/elevenLabsTts.ts`     | ElevenLabs streaming TTS client                             |
 | `src/modes.ts`             | Audio input mode types                                      |
 | `src/audio.ts`             | Audio validation utilities                                  |

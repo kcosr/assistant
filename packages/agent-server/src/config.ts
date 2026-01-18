@@ -54,7 +54,7 @@ const CLAUDE_CLI_RESERVED_ARGS = [
 
 const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
 
-const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--continue', '-p'] as const;
+const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--session-dir', '--continue', '-p'] as const;
 
 function assertNoReservedArgs(options: {
   agentId: string;

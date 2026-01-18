@@ -9,7 +9,6 @@ import type {
   ServerToolResultMessage,
 } from '@assistant/shared';
 
-import type { ConversationStore } from '../conversationStore';
 import type { SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
 import { emitToolCallEvent, emitToolResultEvent } from '../events/chatEventUtils';
@@ -17,7 +16,6 @@ import { emitToolCallEvent, emitToolResultEvent } from '../events/chatEventUtils
 export interface CliToolCallbackOptions {
   sessionId: string;
   responseId: string;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   sendMessage: (message: ServerMessage) => void;
   log: (...args: unknown[]) => void;
@@ -53,7 +51,6 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
   const {
     sessionId,
     responseId,
-    conversationStore,
     sessionHub,
     sendMessage,
     log,
@@ -80,21 +77,6 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
     }
 
     const agentExchangeId = getAgentExchangeId?.();
-
-    void conversationStore.logToolCall({
-      sessionId,
-      callId,
-      toolName,
-      argsJson,
-    });
-
-    void conversationStore.logToolCallStart({
-      sessionId,
-      callId,
-      toolName,
-      arguments: argsJson,
-      ...(agentExchangeId ? { agentExchangeId } : {}),
-    });
 
     const message: ServerToolCallStartMessage = {
       type: 'tool_call_start',
@@ -163,23 +145,6 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
     }
 
     const agentExchangeId = getAgentExchangeId?.();
-
-    const logRecord: Parameters<ConversationStore['logToolResult']>[0] = {
-      sessionId,
-      callId,
-      toolName,
-      ok,
-      ...(agentExchangeId ? { agentExchangeId } : {}),
-    };
-
-    if (errorObj) {
-      logRecord.error = errorObj;
-    }
-    if (result !== undefined) {
-      logRecord.result = result;
-    }
-
-    void conversationStore.logToolResult(logRecord);
 
     const message: ServerToolResultMessage = {
       type: 'tool_result',

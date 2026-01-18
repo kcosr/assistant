@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 
 import type { McpServerConfig } from './tools';
@@ -18,14 +17,6 @@ export interface EnvConfig {
   chatModel?: string;
   mcpServers?: McpServerConfig[];
   toolsEnabled: boolean;
-  /**
-   * Legacy single-file conversation log path. Kept for migration warnings.
-   */
-  conversationLogPath: string;
-  /**
-   * Directory for per-session JSONL transcripts.
-   */
-  transcriptsDir: string;
   /**
    * Root directory for JSONL conversation logs and related data.
    */
@@ -88,18 +79,6 @@ export function loadEnvConfig(): EnvConfig {
     dataDirEnv && dataDirEnv.trim().length > 0
       ? path.resolve(dataDirEnv)
       : path.resolve(process.cwd(), 'data');
-
-  const conversationLogPathEnv = process.env['CONVERSATION_LOG_PATH'];
-  const conversationLogPath =
-    conversationLogPathEnv && conversationLogPathEnv.trim().length > 0
-      ? path.resolve(conversationLogPathEnv)
-      : path.join(dataDir, 'conversations.jsonl');
-
-  const transcriptsDirEnv = process.env['TRANSCRIPTS_DIR'];
-  const transcriptsDir =
-    transcriptsDirEnv && transcriptsDirEnv.trim().length > 0
-      ? path.resolve(transcriptsDirEnv)
-      : path.join(dataDir, 'transcripts');
 
   const audioInputModeEnv = (process.env['AUDIO_INPUT_MODE'] ?? '').toLowerCase();
   const audioInputMode: AudioInputMode =
@@ -180,22 +159,6 @@ export function loadEnvConfig(): EnvConfig {
       ? elevenLabsBaseUrlEnv.trim()
       : 'https://api.elevenlabs.io';
 
-  // Migration helper: log when legacy single-file log exists but transcripts
-  // directory has not been created yet. Actual migration is handled during
-  // server startup.
-  try {
-    const legacyExists = fs.existsSync(conversationLogPath);
-    const transcriptsDirExists = fs.existsSync(transcriptsDir);
-    if (legacyExists && !transcriptsDirExists) {
-      console.warn(
-        `Found legacy conversation log at ${conversationLogPath}, and transcripts directory ${transcriptsDir} does not exist yet. ` +
-          'Legacy conversations will be migrated to per-session transcript files on startup.',
-      );
-    }
-  } catch {
-    // Best-effort only; failures here must not prevent startup.
-  }
-
   if (ttsBackend === 'elevenlabs' && (!elevenLabsApiKey || !elevenLabsVoiceId)) {
     console.warn(
       'TTS_BACKEND=elevenlabs requires ELEVENLABS_API_KEY and ELEVENLABS_TTS_VOICE_ID; ElevenLabs TTS backend will be disabled.',
@@ -256,8 +219,6 @@ export function loadEnvConfig(): EnvConfig {
     ...(apiKey ? { apiKey } : {}),
     ...(chatModel ? { chatModel } : {}),
     toolsEnabled,
-    conversationLogPath,
-    transcriptsDir,
     dataDir,
     audioInputMode,
     audioSampleRate,

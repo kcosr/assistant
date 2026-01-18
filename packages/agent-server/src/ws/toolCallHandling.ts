@@ -1,7 +1,6 @@
 import type { ServerToolCallStartMessage, ServerToolResultMessage } from '@assistant/shared';
 
 import { ToolError, type ToolContext, type ToolHost } from '../tools';
-import type { ConversationStore } from '../conversationStore';
 import type { RateLimiter } from '../rateLimit';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -146,7 +145,6 @@ export async function handleChatToolCalls(options: {
   toolCalls: ChatCompletionToolCallState[];
   baseToolHost: ToolHost;
   sessionToolHost: ToolHost;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   toolCallRateLimiter?: RateLimiter;
   maxToolCallsPerMinute: number;
@@ -173,7 +171,6 @@ export async function handleChatToolCalls(options: {
     toolCalls,
     baseToolHost,
     sessionToolHost,
-    conversationStore,
     sessionHub,
     envConfig,
     toolCallRateLimiter,
@@ -226,7 +223,6 @@ export async function handleChatToolCalls(options: {
       envConfig,
       sessionHub,
       baseToolHost,
-      conversationStore,
       ...(eventStore ? { eventStore } : {}),
       ...(scheduledSessionService ? { scheduledSessionService } : {}),
       onUpdate: (update) => {
@@ -272,22 +268,6 @@ export async function handleChatToolCalls(options: {
     const argsJson = call.argumentsJson.trim() || '{}';
 
     const rateLimited = toolCallRateLimiter ? toolCallRateLimiter.check(1) : { allowed: true };
-
-    void conversationStore.logToolCall({
-      sessionId,
-      callId: call.id,
-      toolName: call.name,
-      argsJson,
-      timestamp: batchTimestamp,
-    });
-
-    void conversationStore.logToolCallStart({
-      sessionId,
-      callId: call.id,
-      toolName: call.name,
-      arguments: argsJson,
-      ...(agentExchangeId ? { agentExchangeId } : {}),
-    });
 
     // Notify client that tool call is starting
     const toolCallStartMessage: ServerToolCallStartMessage = {
@@ -335,14 +315,6 @@ export async function handleChatToolCalls(options: {
         code: 'rate_limit_tools',
         message: 'Too many tool calls in a short period; please try again later.',
       };
-
-      void conversationStore.logToolResult({
-        sessionId,
-        callId: call.id,
-        toolName: call.name,
-        ok: false,
-        error: errorPayload,
-      });
 
       const toolMessageContent = JSON.stringify({
         ok: false,
@@ -410,21 +382,6 @@ export async function handleChatToolCalls(options: {
     }
 
     const truncationSummary = result !== undefined ? extractTruncationSummary(result) : null;
-
-    const logRecord: Parameters<ConversationStore['logToolResult']>[0] = {
-      sessionId,
-      callId: call.id,
-      toolName: call.name,
-      ok,
-      result,
-    };
-    if (error) {
-      logRecord.error = error;
-    }
-    if (agentExchangeId) {
-      logRecord.agentExchangeId = agentExchangeId;
-    }
-    void conversationStore.logToolResult(logRecord);
 
     // Broadcast tool result to client
     const toolResultMessage: ServerToolResultMessage = {

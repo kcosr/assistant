@@ -2,7 +2,6 @@ import http from 'node:http';
 import path from 'node:path';
 
 import type { ToolContext, ToolHost } from '../tools';
-import type { ConversationStore } from '../conversationStore';
 import type { SessionIndex } from '../sessionIndex';
 import type { SessionHub } from '../sessionHub';
 import type { AgentRegistry } from '../agents';
@@ -12,6 +11,7 @@ import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 import type { SearchService } from '../search/searchService';
+import type { HistoryProviderRegistry } from '../history/historyProvider';
 
 import { PreferencesStore } from '../preferences/preferencesStore';
 import { handleExternalRoutes } from './routes/external';
@@ -27,7 +27,6 @@ const WEB_CLIENT_DIST_DIR = WEB_CLIENT_PUBLIC_DIR;
 
 export function createHttpServer(options: {
   config: EnvConfig;
-  conversationStore: ConversationStore;
   sessionIndex: SessionIndex;
   sessionHub: SessionHub;
   agentRegistry: AgentRegistry;
@@ -36,10 +35,10 @@ export function createHttpServer(options: {
   searchService?: SearchService;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  historyProvider?: HistoryProviderRegistry;
 }): http.Server {
   const {
     config,
-    conversationStore,
     sessionIndex,
     sessionHub,
     agentRegistry,
@@ -48,6 +47,7 @@ export function createHttpServer(options: {
     searchService,
     eventStore,
     scheduledSessionService,
+    historyProvider,
   } = options;
 
   const pluginToolHost = pluginRegistry ? new PluginToolHost(pluginRegistry) : undefined;
@@ -58,9 +58,9 @@ export function createHttpServer(options: {
     sessionHub,
     sessionIndex,
     agentRegistry,
-    conversationStore,
     envConfig: config,
     baseToolHost: toolHost,
+    ...(historyProvider ? { historyProvider } : {}),
     ...(scheduledSessionService ? { scheduledSessionService } : {}),
   };
   const preferencesStore = new PreferencesStore(path.join(config.dataDir, 'preferences.json'));
@@ -167,7 +167,6 @@ export function createHttpServer(options: {
     try {
       const context: HttpContext = {
         config,
-        conversationStore,
         sessionIndex,
         sessionHub,
         agentRegistry,

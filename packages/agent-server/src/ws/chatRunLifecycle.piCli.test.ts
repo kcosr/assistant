@@ -5,7 +5,6 @@ import type OpenAI from 'openai';
 import type { ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from '../agents';
-import type { ConversationStore } from '../conversationStore';
 import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
@@ -26,6 +25,8 @@ function createTestEventStore(): EventStore {
     getEvents: async () => [],
     getEventsSince: async () => [],
     subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
   };
 }
 
@@ -45,6 +46,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     ]);
 
     const broadcast: ServerMessage[] = [];
+    const updateSessionAttributes = vi.fn(async () => undefined);
 
     const sessionHub: SessionHub = {
       getAgentRegistry: () => agentRegistry,
@@ -52,6 +54,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
         broadcast.push(message);
       },
       broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes,
       recordSessionActivity: () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
@@ -59,17 +62,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       dequeueMessageById: async () => undefined,
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
-
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCallStart: vi.fn(),
-    } as unknown as ConversationStore;
 
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
@@ -96,7 +88,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
@@ -132,6 +123,75 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     expect(sendError).not.toHaveBeenCalled();
   });
 
+  it('stores Pi session mapping when session info is reported', async () => {
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi CLI',
+        chat: { provider: 'pi-cli' },
+      },
+    ]);
+
+    const updateSessionAttributes = vi.fn(async () => undefined);
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes,
+      recordSessionActivity: () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    (state.summary as unknown as { agentId?: string }).agentId = 'pi';
+
+    vi.mocked(runPiCliChat).mockImplementationOnce(async (options) => {
+      await options.onSessionInfo?.({ sessionId: 'pi-session-123', cwd: '/home/kevin' });
+      await options.onTextDelta('Hi', 'Hi');
+      return { text: 'Hi', aborted: false };
+    });
+
+    const eventStore = createTestEventStore();
+
+    await handleTextInputWithChatCompletions({
+      ready: true,
+      message: { type: 'text_input', text: 'hi', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      openaiClient: {} as OpenAI,
+      config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: vi.fn(),
+      log: () => undefined,
+      eventStore,
+    });
+
+    expect(updateSessionAttributes).toHaveBeenCalledWith('s1', {
+      providers: {
+        'pi-cli': {
+          sessionId: 'pi-session-123',
+          cwd: '/home/kevin',
+        },
+      },
+    });
+  });
+
   it('broadcasts tool_call_start and tool_result messages from Pi CLI tool callbacks', async () => {
     const agentRegistry = new AgentRegistry([
       {
@@ -143,6 +203,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     ]);
 
     const broadcast: ServerMessage[] = [];
+    const updateSessionAttributes = vi.fn(async () => undefined);
 
     const sessionHub: SessionHub = {
       getAgentRegistry: () => agentRegistry,
@@ -150,6 +211,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
         broadcast.push(message);
       },
       broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes,
       recordSessionActivity: () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
@@ -157,19 +219,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       dequeueMessageById: async () => undefined,
       processNextQueuedMessage: async () => false,
     } as unknown as SessionHub;
-
-    const conversationStore: ConversationStore = {
-      logUserMessage: vi.fn(),
-      logAssistantMessage: vi.fn(),
-      logTextDelta: vi.fn(),
-      logTextDone: vi.fn(),
-      logThinkingStart: vi.fn(),
-      logThinkingDelta: vi.fn(),
-      logThinkingDone: vi.fn(),
-      logToolCall: vi.fn(),
-      logToolCallStart: vi.fn(),
-      logToolResult: vi.fn(),
-    } as unknown as ConversationStore;
 
     const state: LogicalSessionState = {
       summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
@@ -194,7 +243,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       state,
       sessionId: 's1',
       connection: {} as never,
-      conversationStore,
       sessionHub,
       openaiClient: {} as OpenAI,
       config: { chatModel: 'gpt-4o-mini' } as EnvConfig,

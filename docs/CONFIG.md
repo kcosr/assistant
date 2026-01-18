@@ -43,7 +43,7 @@ These are only required when using built-in OpenAI chat or TTS backends. CLI age
 | Variable          | Default  | Description                                 |
 | ----------------- | -------- | ------------------------------------------- |
 | `PORT`            | `3000`   | HTTP/WebSocket server port                  |
-| `DATA_DIR`        | `./data` | Directory for session and conversation logs |
+| `DATA_DIR`        | `./data` | Directory for session data (event logs, preferences, plugin settings) |
 | `APP_CONFIG_PATH` | -        | Override config file location               |
 
 ### TTS
@@ -595,11 +595,16 @@ All CLI providers share the same config shape:
 - `wrapper.path`: optional wrapper executable used to run the CLI (for containerized runs)
 - `wrapper.env`: optional environment map for the wrapper (supports `${ENV}` substitution)
 
+For `pi-cli`, history is read from the default Pi sessions directory:
+`~/.pi/agent/sessions/<encoded-cwd>/*_<pi-session-id>.jsonl`. The `cwd` comes from the Pi
+session header, so set `workdir` if you need a stable path across runs. No extra config
+is required.
+
 Reserved flags (must not be in `extraArgs`):
 
 - `claude-cli`: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`
 - `codex-cli`: `--json`, `resume`
-- `pi-cli`: `--mode`, `--session`, `--continue`, `-p`
+- `pi-cli`: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`
 
 ## Security Notes
 

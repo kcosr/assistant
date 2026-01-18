@@ -4,7 +4,6 @@ import OpenAI from 'openai';
 
 import type { SessionHub, SessionIndex } from './index';
 import { openaiConfigured, type EnvConfig } from './envConfig';
-import type { ConversationStore } from './conversationStore';
 import type { AgentDefinition, AgentRegistry } from './agents';
 import type { BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
@@ -197,7 +196,6 @@ interface AsyncAgentMessageContext {
   chatTools: unknown[];
   availableTools?: Awaited<ReturnType<ToolHost['listTools']>>;
   availableSkills?: SkillSummary[];
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   envConfig: EnvConfig;
   openaiClient?: OpenAI;
@@ -229,7 +227,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     chatTools,
     availableTools,
     availableSkills,
-    conversationStore,
     sessionHub,
     envConfig,
     openaiClient,
@@ -242,7 +239,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     state: sessionState,
     text: content,
     responseId,
-    conversationStore,
     sessionHub,
     envConfig,
     ...(openaiClient ? { openaiClient } : {}),
@@ -293,25 +289,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
       },
       events,
     );
-  }
-
-  // Log callback
-  try {
-    console.log('[agents_message async] logging agent_callback', {
-      callerSessionId: fromSessionId,
-      targetSessionId: sessionId,
-      responseId: result.responseId,
-      textLength: text.length,
-    });
-    void conversationStore.logAgentCallback({
-      sessionId: fromSessionId,
-      fromSessionId: sessionId,
-      ...(agent.agentId ? { fromAgentId: agent.agentId } : {}),
-      responseId: result.responseId,
-      text,
-    });
-  } catch (err) {
-    console.error('[agents_message async] error while logging agent_callback', err);
   }
 
   // Broadcast callback result to caller session
@@ -391,7 +368,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
         toolCalls,
         baseToolHost,
         sessionToolHost: callerScopedToolHost,
-        conversationStore,
         sessionHub,
         envConfig,
         ...(eventStore ? { eventStore } : {}),
@@ -437,7 +413,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
           sessionId: callerSessionId,
           state: callerState,
           text: callbackText,
-          conversationStore,
           sessionHub,
           envConfig,
           chatCompletionTools: callerChatTools,
@@ -481,10 +456,9 @@ export async function handleAgentMessage(
 ): Promise<unknown> {
   const envConfig = ctx.envConfig;
   const baseToolHost = ctx.baseToolHost;
-  const conversationStore = ctx.conversationStore;
   const eventStore = ctx.eventStore;
 
-  if (!envConfig || !baseToolHost || !conversationStore) {
+  if (!envConfig || !baseToolHost) {
     throw createToolError(
       'agent_message_not_supported',
       'agents_message is not available in this context',
@@ -624,7 +598,6 @@ export async function handleAgentMessage(
       toolCalls,
       baseToolHost,
       sessionToolHost: scopedToolHost,
-      conversationStore,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
@@ -668,7 +641,6 @@ export async function handleAgentMessage(
       chatTools,
       availableTools,
       ...(availableSkills ? { availableSkills } : {}),
-      conversationStore,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
@@ -731,7 +703,6 @@ export async function handleAgentMessage(
       chatTools,
       availableTools,
       ...(availableSkills ? { availableSkills } : {}),
-      conversationStore,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
@@ -770,7 +741,6 @@ export async function handleAgentMessage(
         sessionId,
         state: sessionState,
         text: parsed.content,
-        conversationStore,
         sessionHub,
         envConfig,
         ...(openaiClient ? { openaiClient } : {}),

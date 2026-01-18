@@ -6,7 +6,6 @@ import type { ServerMessage } from '@assistant/shared';
 
 import type { ToolHost } from '../tools';
 import type { EventStore } from '../events';
-import type { ConversationStore } from '../conversationStore';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import { openaiConfigured, type EnvConfig } from '../envConfig';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -20,7 +19,6 @@ export interface MultiplexedConnectionOptions {
   clientSocket: WebSocket;
   config: EnvConfig;
   toolHost: ToolHost;
-  conversationStore: ConversationStore;
   sessionHub: SessionHub;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
@@ -54,7 +52,6 @@ export class MultiplexedConnection implements SessionConnection {
       connectionId: this.id,
       config: options.config,
       toolHost: options.toolHost,
-      conversationStore: options.conversationStore,
       sessionHub: options.sessionHub,
       eventStore: options.eventStore,
       ...(options.scheduledSessionService
