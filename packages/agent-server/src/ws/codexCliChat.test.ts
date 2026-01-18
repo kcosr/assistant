@@ -219,6 +219,45 @@ describe('runCodexCliChat', () => {
     expect(result.codexSessionId).toBe('codex-session-xyz');
   });
 
+  it('captures codex session_id from session_meta output', async () => {
+    const child = new FakeCodexProcess();
+    const spawnFn: CodexCliSpawn = () => child as unknown as ReturnType<CodexCliSpawn>;
+
+    const promise = runCodexCliChat({
+      ourSessionId: 'session-123',
+      userText: 'hello',
+      existingCodexSessionId: undefined,
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    const sessionMetaEvent = {
+      type: 'session_meta',
+      payload: {
+        id: 'codex-session-meta',
+      },
+    };
+
+    const messageEvent = {
+      type: 'item.completed',
+      item: {
+        id: 'item_0',
+        type: 'agent_message',
+        text: 'Hi',
+      },
+    };
+
+    child.stdout.write(`${JSON.stringify(sessionMetaEvent)}\n`);
+    child.stdout.write(`${JSON.stringify(messageEvent)}\n`);
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    const result = await promise;
+    expect(result.codexSessionId).toBe('codex-session-meta');
+  });
+
   it('decodes exec_command_output_delta stdout as base64 and appends to text', async () => {
     const child = new FakeCodexProcess();
     const deltas: string[] = [];

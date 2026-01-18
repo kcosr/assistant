@@ -4,6 +4,9 @@ import {
   type SpawnOptionsWithoutStdio,
 } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { registerCliProcess } from './cliProcessRegistry';
 import { buildCliEnv } from './cliEnv';
 import type { CliWrapperConfig } from '../agents';
@@ -528,6 +531,18 @@ export async function runCodexCliChat(options: {
       return;
     }
 
+    if (msgType === 'session_meta') {
+      const payload = msg['payload'];
+      if (payload && typeof payload === 'object') {
+        const payloadRecord = payload as Record<string, unknown>;
+        const sessionIdValue = payloadRecord['id'];
+        if (isNonEmptyString(sessionIdValue)) {
+          codexSessionId = sessionIdValue.trim();
+        }
+      }
+      return;
+    }
+
     if (msgType === 'thread.started') {
       const threadId = msg['thread_id'];
       if (isNonEmptyString(threadId)) {
@@ -735,6 +750,9 @@ export async function runCodexCliChat(options: {
 
     if (aborted || abortSignal.aborted) {
       log('codex aborted', { fullTextLength: fullText.length });
+      if (codexSessionId) {
+        await ensureCodexSessionMetaSource(codexSessionId, log);
+      }
       return {
         text: lastAgentMessageText || fullText,
         aborted: true,
@@ -752,6 +770,9 @@ export async function runCodexCliChat(options: {
 
     const finalText = fullText || lastAgentMessageText;
     log('codex success', { finalTextLength: finalText.length, codexSessionId });
+    if (codexSessionId) {
+      await ensureCodexSessionMetaSource(codexSessionId, log);
+    }
     return {
       text: finalText,
       aborted: false,
@@ -760,4 +781,158 @@ export async function runCodexCliChat(options: {
   } finally {
     abortSignal.removeEventListener('abort', abortListener);
   }
+}
+
+async function ensureCodexSessionMetaSource(
+  codexSessionId: string,
+  log: (message: string, data?: Record<string, unknown>) => void,
+): Promise<void> {
+  const baseDir = resolveCodexSessionsDir();
+  const sessionPath = await findCodexSessionFile(baseDir, codexSessionId, log);
+  if (!sessionPath) {
+    return;
+  }
+
+  let content: string;
+  try {
+    content = await fs.readFile(sessionPath, 'utf8');
+  } catch (err) {
+    log('codex session meta read failed', {
+      sessionId: codexSessionId,
+      path: sessionPath,
+      error: String(err),
+    });
+    return;
+  }
+
+  const newlineIndex = content.indexOf('\n');
+  if (newlineIndex <= 0) {
+    return;
+  }
+
+  const hasCarriageReturn = content[newlineIndex - 1] === '\r';
+  const lineEnding = hasCarriageReturn ? '\r\n' : '\n';
+  const lineEndIndex = hasCarriageReturn ? newlineIndex - 1 : newlineIndex;
+  const firstLine = content.slice(0, lineEndIndex).trim();
+  if (!firstLine) {
+    return;
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(firstLine) as Record<string, unknown>;
+  } catch (err) {
+    log('codex session meta parse failed', {
+      sessionId: codexSessionId,
+      path: sessionPath,
+      error: String(err),
+    });
+    return;
+  }
+
+  if (parsed['type'] !== 'session_meta') {
+    return;
+  }
+
+  const payload = parsed['payload'];
+  if (!payload || typeof payload !== 'object') {
+    return;
+  }
+
+  const payloadRecord = payload as Record<string, unknown>;
+  const rawSource = payloadRecord['source'];
+  const existingSource = isNonEmptyString(rawSource) ? rawSource.trim() : '';
+  if (existingSource && existingSource !== 'exec' && existingSource !== 'unknown') {
+    return;
+  }
+
+  payloadRecord['source'] = 'cli';
+  parsed['payload'] = payloadRecord;
+  const updatedFirstLine = JSON.stringify(parsed);
+  if (updatedFirstLine === firstLine) {
+    return;
+  }
+
+  const rest = content.slice(newlineIndex + 1);
+  try {
+    await fs.writeFile(sessionPath, `${updatedFirstLine}${lineEnding}${rest}`, 'utf8');
+  } catch (err) {
+    log('codex session meta write failed', {
+      sessionId: codexSessionId,
+      path: sessionPath,
+      error: String(err),
+    });
+    return;
+  }
+
+  log('codex session meta source updated', {
+    sessionId: codexSessionId,
+    path: sessionPath,
+    source: 'cli',
+  });
+}
+
+function resolveCodexSessionsDir(): string {
+  const codexHome = process.env['CODEX_HOME'];
+  if (isNonEmptyString(codexHome)) {
+    return path.join(codexHome.trim(), 'sessions');
+  }
+  return path.join(os.homedir(), '.codex', 'sessions');
+}
+
+async function findCodexSessionFile(
+  baseDir: string,
+  sessionId: string,
+  log: (message: string, data?: Record<string, unknown>) => void,
+): Promise<string | null> {
+  const suffix = `${sessionId}.jsonl`;
+  const queue = [baseDir];
+  let bestPath: string | null = null;
+  let bestMtime = -1;
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current) {
+      continue;
+    }
+
+    let entries: Array<import('node:fs').Dirent>;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        log('codex sessions dir read failed', { path: current, error: error.message });
+      }
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(suffix)) {
+        continue;
+      }
+      try {
+        const stat = await fs.stat(entryPath);
+        if (!stat.isFile()) {
+          continue;
+        }
+        if (stat.mtimeMs >= bestMtime) {
+          bestMtime = stat.mtimeMs;
+          bestPath = entryPath;
+        }
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        if (error.code !== 'ENOENT') {
+          log('codex session file stat failed', { path: entryPath, error: error.message });
+        }
+      }
+    }
+  }
+
+  return bestPath;
 }

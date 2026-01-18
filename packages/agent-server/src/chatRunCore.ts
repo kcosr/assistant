@@ -27,6 +27,7 @@ import {
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
+import os from 'node:os';
 
 import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
@@ -517,7 +518,7 @@ export async function runChatCompletionCore(
       };
     }
     const resumeSession = Boolean(storedClaudeSession?.sessionId);
-    const resolvedCwd = claudeConfig?.workdir?.trim() || process.cwd();
+    const resolvedCwd = claudeConfig?.workdir?.trim() || os.homedir() || process.cwd();
     const resolvedSessionId = storedClaudeSession?.sessionId?.trim() || sessionId.trim();
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
 
@@ -571,6 +572,19 @@ export async function runChatCompletionCore(
     fullText = claudeText;
   } else if (provider === 'codex-cli') {
     const codexConfig = agent?.chat?.config as CodexCliChatConfig | undefined;
+    const attributes = state.summary.attributes;
+    let storedCodexSession: { sessionId?: string; cwd?: string } | null = null;
+    const providerInfo = getProviderAttributes(attributes, 'codex-cli', ['codex']);
+    if (providerInfo) {
+      const rawSessionId = providerInfo['sessionId'];
+      const rawCwd = providerInfo['cwd'];
+      storedCodexSession = {
+        ...(typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
+          ? { sessionId: rawSessionId.trim() }
+          : {}),
+        ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0 ? { cwd: rawCwd.trim() } : {}),
+      };
+    }
 
     const codexSessionStore = getCodexSessionStore(envConfig.dataDir);
     let existingCodexSessionId: string | undefined;
@@ -624,6 +638,24 @@ export async function runChatCompletionCore(
         });
       } catch (err) {
         log('failed to persist Codex session mapping', err);
+      }
+    }
+
+    if (codexSessionId) {
+      const nextCwd = codexConfig?.workdir?.trim() || undefined;
+      const currentSessionId = storedCodexSession?.sessionId ?? '';
+      const currentCwd = storedCodexSession?.cwd ?? undefined;
+      if (codexSessionId !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch('codex-cli', {
+            sessionId: codexSessionId,
+            ...(nextCwd ? { cwd: nextCwd } : {}),
+          }, ['codex']);
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedCodexSession = { sessionId: codexSessionId, ...(nextCwd ? { cwd: nextCwd } : {}) };
+        } catch (err) {
+          log('failed to persist Codex session mapping', err);
+        }
       }
     }
 

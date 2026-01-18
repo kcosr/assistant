@@ -8,6 +8,7 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
+import { getCodexSessionStore } from '../codexSessionStore';
 import { getProviderAttributes } from './providerAttributes';
 
 export interface HistoryRequest {
@@ -88,19 +89,19 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
   }
 
   shouldPersist(request: HistoryRequest): boolean {
-    return !resolveClaudeSessionInfo(request.attributes);
+    return false;
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
     const { sessionId, force } = request;
     const sessionInfo = resolveClaudeSessionInfo(request.attributes);
     if (!sessionInfo) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
     const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.claude', 'projects');
     const sessionPath = await findClaudeSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
     if (!sessionPath) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     let stats: { mtimeMs: number } | null = null;
@@ -119,12 +120,12 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
         });
       }
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     if (!stats) {
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const cached = this.cache.get(sessionPath);
@@ -143,20 +144,12 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
         error: error.message,
       });
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const events = buildChatEventsFromClaudeSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
     return events;
-  }
-
-  private async fallbackToEventStore(request: HistoryRequest): Promise<ChatEvent[]> {
-    if (!this.options.eventStore) {
-      return [];
-    }
-    const fallback = new EventStoreHistoryProvider(this.options.eventStore);
-    return fallback.getHistory(request);
   }
 }
 
@@ -180,19 +173,19 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 
   shouldPersist(request: HistoryRequest): boolean {
-    return !resolvePiSessionInfo(request.attributes);
+    return false;
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
     const { sessionId, force } = request;
     const sessionInfo = resolvePiSessionInfo(request.attributes);
     if (!sessionInfo) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
     const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
     const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
     if (!sessionPath) {
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     let stats: { mtimeMs: number } | null = null;
@@ -211,12 +204,12 @@ export class PiSessionHistoryProvider implements HistoryProvider {
         });
       }
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     if (!stats) {
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const cached = this.cache.get(sessionPath);
@@ -235,26 +228,146 @@ export class PiSessionHistoryProvider implements HistoryProvider {
         error: error.message,
       });
       this.cache.delete(sessionPath);
-      return this.fallbackToEventStore(request);
+      return [];
     }
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
     return events;
   }
+}
 
-  private async fallbackToEventStore(request: HistoryRequest): Promise<ChatEvent[]> {
-    if (!this.options.eventStore) {
+type CodexSessionCacheEntry = {
+  mtimeMs: number;
+  events: ChatEvent[];
+};
+
+export class CodexSessionHistoryProvider implements HistoryProvider {
+  private readonly cache = new Map<string, CodexSessionCacheEntry>();
+  private readonly pathCache = new Map<string, string>();
+
+  constructor(
+    private readonly options: {
+      baseDir?: string;
+      eventStore?: EventStore;
+      dataDir?: string;
+    },
+  ) {}
+
+  supports(providerId?: string | null): boolean {
+    return providerId === 'codex-cli';
+  }
+
+  shouldPersist(request: HistoryRequest): boolean {
+    return false;
+  }
+
+  async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
+    const { sessionId, force } = request;
+    const sessionInfo = resolveCodexSessionInfo(request.attributes);
+    let codexSessionId = sessionInfo?.sessionId;
+
+    if (!codexSessionId && this.options.dataDir) {
+      try {
+        const store = getCodexSessionStore(this.options.dataDir);
+        const mapping = await store.get(sessionId);
+        codexSessionId = mapping?.codexSessionId;
+      } catch (err) {
+        console.error('[history] Failed to read Codex session mapping', err);
+      }
+    }
+
+    if (!codexSessionId) {
       return [];
     }
-    const fallback = new EventStoreHistoryProvider(this.options.eventStore);
-    return fallback.getHistory(request);
+
+    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.codex', 'sessions');
+    const sessionPath = await this.resolveCodexSessionPath(baseDir, codexSessionId);
+    if (!sessionPath) {
+      return [];
+    }
+
+    let stats: { mtimeMs: number } | null = null;
+    try {
+      const stat = await fs.stat(sessionPath);
+      if (stat.isFile()) {
+        stats = { mtimeMs: stat.mtimeMs };
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to stat Codex session file', {
+          sessionId: codexSessionId,
+          path: sessionPath,
+          error: error.message,
+        });
+      }
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    if (!stats) {
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const cached = this.cache.get(sessionPath);
+    if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
+      return cached.events;
+    }
+
+    let content: string;
+    try {
+      content = await fs.readFile(sessionPath, 'utf8');
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      console.error('[history] Failed to read Codex session file', {
+        sessionId: codexSessionId,
+        path: sessionPath,
+        error: error.message,
+      });
+      this.cache.delete(sessionPath);
+      return [];
+    }
+
+    const events = buildChatEventsFromCodexSession(content, sessionId);
+    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
+    return events;
+  }
+
+  private async resolveCodexSessionPath(
+    baseDir: string,
+    codexSessionId: string,
+  ): Promise<string | null> {
+    const key = `${baseDir}::${codexSessionId}`;
+    const cached = this.pathCache.get(key);
+    if (cached) {
+      try {
+        const stat = await fs.stat(cached);
+        if (stat.isFile()) {
+          return cached;
+        }
+      } catch {
+        this.pathCache.delete(key);
+      }
+    }
+
+    const resolved = await findCodexSessionFile(baseDir, codexSessionId);
+    if (resolved) {
+      this.pathCache.set(key, resolved);
+    }
+    return resolved;
   }
 }
 
 type PiSessionInfo = {
   sessionId: string;
   cwd: string;
+};
+
+type CodexSessionInfo = {
+  sessionId: string;
+  cwd?: string;
 };
 
 type ClaudeSessionInfo = {
@@ -286,6 +399,22 @@ function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | n
     return null;
   }
   return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+}
+
+function resolveCodexSessionInfo(attributes?: SessionAttributes): CodexSessionInfo | null {
+  const candidate = getProviderAttributes(attributes, 'codex-cli', ['codex']);
+  if (!candidate) {
+    return null;
+  }
+  const sessionId = candidate['sessionId'];
+  if (!isNonEmptyString(sessionId)) {
+    return null;
+  }
+  const cwd = candidate['cwd'];
+  return {
+    sessionId: sessionId.trim(),
+    ...(isNonEmptyString(cwd) ? { cwd: cwd.trim() } : {}),
+  };
 }
 
 function encodeClaudeCwd(cwd: string): string | null {
@@ -378,6 +507,68 @@ async function findPiSessionFile(
   }
 
   return path.join(sessionDir, matches[matches.length - 1]!);
+}
+
+async function findCodexSessionFile(
+  baseDir: string,
+  sessionId: string,
+): Promise<string | null> {
+  const suffix = `${sessionId}.jsonl`;
+  const queue = [baseDir];
+  let bestPath: string | null = null;
+  let bestMtime = -1;
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (!current) {
+      continue;
+    }
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        console.error('[history] Failed to read Codex sessions directory', {
+          path: current,
+          error: error.message,
+        });
+      }
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        queue.push(entryPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(suffix)) {
+        continue;
+      }
+      try {
+        const stat = await fs.stat(entryPath);
+        if (!stat.isFile()) {
+          continue;
+        }
+        if (stat.mtimeMs >= bestMtime) {
+          bestMtime = stat.mtimeMs;
+          bestPath = entryPath;
+        }
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        if (error.code !== 'ENOENT') {
+          console.error('[history] Failed to stat Codex session file', {
+            path: entryPath,
+            error: error.message,
+          });
+        }
+      }
+    }
+  }
+
+  return bestPath;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -643,21 +834,6 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
       continue;
     }
     if (entryType === 'summary') {
-      const timestamp = resolveTimestamp(entry);
-      endTurn(timestamp);
-      const turnId = getClaudeTurnId(entry);
-      startTurn(turnId, 'system', timestamp);
-      events.push({
-        id: randomUUID(),
-        timestamp,
-        sessionId,
-        turnId,
-        type: 'summary_message',
-        payload: {
-          text: extractText(entry),
-        },
-      });
-      endTurn(timestamp);
       continue;
     }
     if (entryType === 'system') {
@@ -1135,6 +1311,359 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   return events;
 }
 
+function buildChatEventsFromCodexSession(content: string, sessionId: string): ChatEvent[] {
+  const entries = parseJsonLines(content);
+  const events: ChatEvent[] = [];
+
+  const hasEventUserMessages = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'user_message',
+  );
+  const hasEventAgentMessages = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'agent_message',
+  );
+  const hasEventReasoning = entries.some(
+    (entry) =>
+      getString(entry['type']) === 'event_msg' &&
+      isRecord(entry['payload']) &&
+      getString(entry['payload']['type']) === 'agent_reasoning',
+  );
+
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+
+  let currentTurnId: string | null = null;
+  let currentResponseId: string | null = null;
+  let thinkingBuffer = '';
+  let thinkingTimestamp = 0;
+
+  const endTurn = (timestamp: number): void => {
+    if (!currentTurnId) {
+      return;
+    }
+    flushThinking(timestamp);
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      type: 'turn_end',
+      payload: {},
+    });
+    currentTurnId = null;
+    currentResponseId = null;
+  };
+
+  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+    currentTurnId = turnId;
+    currentResponseId = null;
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      type: 'turn_start',
+      payload: { trigger },
+    });
+  };
+
+  const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
+    if (!currentTurnId) {
+      const turnId = getTurnId(entry);
+      startTurn(turnId, 'system', timestamp);
+    }
+    return currentTurnId;
+  };
+
+  const ensureResponseId = (): string => {
+    if (!currentResponseId) {
+      currentResponseId = randomUUID();
+    }
+    return currentResponseId;
+  };
+
+  const appendThinking = (text: string, timestamp: number): void => {
+    if (!text) {
+      return;
+    }
+    if (thinkingBuffer && !thinkingBuffer.endsWith('\n')) {
+      thinkingBuffer += '\n\n';
+    }
+    thinkingBuffer += text;
+    thinkingTimestamp = timestamp;
+  };
+
+  const flushThinking = (timestamp: number): void => {
+    if (!thinkingBuffer || !currentTurnId) {
+      thinkingBuffer = '';
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp: thinkingTimestamp || timestamp,
+      sessionId,
+      turnId: currentTurnId,
+      responseId,
+      type: 'thinking_done',
+      payload: { text: thinkingBuffer },
+    });
+    thinkingBuffer = '';
+    thinkingTimestamp = 0;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const turnId = ensureTurn(entry, timestamp);
+    if (!turnId) {
+      return;
+    }
+    const responseId = ensureResponseId();
+    events.push({
+      id: randomUUID(),
+      timestamp,
+      sessionId,
+      turnId,
+      responseId,
+      type: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+    });
+    emittedToolResults.add(toolCallId);
+  };
+
+  for (const entry of entries) {
+    const entryType = getString(entry['type']);
+    if (!entryType) {
+      continue;
+    }
+
+    if (entryType === 'session_meta' || entryType === 'turn_context' || entryType === 'compacted') {
+      continue;
+    }
+
+    if (entryType === 'event_msg') {
+      if (!isRecord(entry['payload'])) {
+        continue;
+      }
+      const payload = entry['payload'];
+      const payloadType = getString(payload['type']);
+      const timestamp = resolveTimestamp(entry, payload);
+
+      if (payloadType === 'user_message') {
+        if (!hasEventUserMessages) {
+          continue;
+        }
+        flushThinking(timestamp);
+        endTurn(timestamp);
+        const turnId = getTurnId(entry);
+        startTurn(turnId, 'user', timestamp);
+        const messageText = extractTextValue(payload['message']);
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId,
+          type: 'user_message',
+          payload: { text: messageText },
+        });
+        continue;
+      }
+
+      if (payloadType === 'agent_message') {
+        if (!hasEventAgentMessages) {
+          continue;
+        }
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        flushThinking(timestamp);
+        const responseId = ensureResponseId();
+        const messageText = extractTextValue(payload['message']);
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId,
+          responseId,
+          type: 'assistant_done',
+          payload: { text: messageText },
+        });
+        continue;
+      }
+
+      if (payloadType === 'agent_reasoning') {
+        if (!hasEventReasoning) {
+          continue;
+        }
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        ensureResponseId();
+        const reasoningText = extractTextValue(payload['text'] ?? payload['message']);
+        appendThinking(reasoningText, timestamp);
+        continue;
+      }
+
+      continue;
+    }
+
+    if (entryType === 'response_item') {
+      if (!isRecord(entry['payload'])) {
+        continue;
+      }
+      const payload = entry['payload'];
+      const payloadType = getString(payload['type']);
+      const timestamp = resolveTimestamp(entry, payload);
+
+      if (payloadType === 'function_call' || payloadType === 'custom_tool_call') {
+        flushThinking(timestamp);
+        const toolCallId = getString(payload['call_id']) || randomUUID();
+        const toolName = getString(payload['name']) || 'tool';
+        const argsRaw = payload['arguments'] ?? payload['input'];
+        let args = coerceArgs(argsRaw);
+        if (!Object.keys(args).length && argsRaw) {
+          args = { input: argsRaw };
+        }
+        emitToolCall(entry, timestamp, toolCallId, toolName, args);
+        continue;
+      }
+
+      if (payloadType === 'function_call_output' || payloadType === 'custom_tool_call_output') {
+        flushThinking(timestamp);
+        const toolCallId = getString(payload['call_id']) || randomUUID();
+        const output = parseCodexToolOutput(payload['output']);
+        emitToolResult(entry, timestamp, toolCallId, output);
+        continue;
+      }
+
+      if (payloadType === 'reasoning' && !hasEventReasoning) {
+        const turnId = ensureTurn(entry, timestamp);
+        if (!turnId) {
+          continue;
+        }
+        ensureResponseId();
+        const reasoningText = extractCodexReasoningSummary(payload);
+        appendThinking(reasoningText, timestamp);
+        continue;
+      }
+
+      if (payloadType === 'message') {
+        const role = getString(payload['role']);
+        if (role === 'user' && !hasEventUserMessages) {
+          flushThinking(timestamp);
+          endTurn(timestamp);
+          const turnId = getTurnId(entry);
+          startTurn(turnId, 'user', timestamp);
+          const messageText = extractTextValue(payload['content']);
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            type: 'user_message',
+            payload: { text: messageText },
+          });
+          continue;
+        }
+
+        if (role === 'assistant' && !hasEventAgentMessages) {
+          const turnId = ensureTurn(entry, timestamp);
+          if (!turnId) {
+            continue;
+          }
+          flushThinking(timestamp);
+          const responseId = ensureResponseId();
+          const assistantText = extractTextValue(payload['content']);
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            responseId,
+            type: 'assistant_done',
+            payload: { text: assistantText },
+          });
+          continue;
+        }
+      }
+    }
+  }
+
+  const finalTimestamp = Date.now();
+  endTurn(finalTimestamp);
+  return events;
+}
+
 function parseJsonLines(content: string): Array<Record<string, unknown>> {
   const lines = content
     .split('\n')
@@ -1153,6 +1682,10 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
     }
   }
   return entries;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function resolveMessageEntry(entry: Record<string, unknown>): Record<string, unknown> {
@@ -1261,6 +1794,29 @@ function extractThinking(entry: Record<string, unknown>): string {
   return extractTextValue(raw);
 }
 
+function extractCodexReasoningSummary(payload: Record<string, unknown>): string {
+  const summary = payload['summary'];
+  if (!Array.isArray(summary)) {
+    return extractTextValue(payload['text'] ?? payload['content']);
+  }
+  const parts: string[] = [];
+  for (const item of summary) {
+    if (!item || typeof item !== 'object') {
+      const text = extractTextValue(item);
+      if (text) {
+        parts.push(text);
+      }
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const text = extractTextValue(record['text'] ?? record['content']);
+    if (text) {
+      parts.push(text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
 type ToolCallEntry = {
   toolCallId: string;
   toolName: string;
@@ -1351,6 +1907,27 @@ function extractToolResult(entry: Record<string, unknown>): unknown {
     return entry['content'];
   }
   return null;
+}
+
+function parseCodexToolOutput(value: unknown): unknown {
+  if (typeof value !== 'string') {
+    return value;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return value;
+  }
+  if (
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return value;
+    }
+  }
+  return value;
 }
 
 function extractToolError(

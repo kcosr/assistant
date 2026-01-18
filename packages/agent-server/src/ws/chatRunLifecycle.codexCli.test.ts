@@ -54,6 +54,7 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => state.summary,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');
       },

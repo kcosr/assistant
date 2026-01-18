@@ -6,7 +6,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 
-import { ClaudeSessionHistoryProvider, PiSessionHistoryProvider } from './historyProvider';
+import {
+  ClaudeSessionHistoryProvider,
+  CodexSessionHistoryProvider,
+  PiSessionHistoryProvider,
+} from './historyProvider';
 import type { AgentDefinition } from '../agents';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -157,7 +161,7 @@ describe('PiSessionHistoryProvider', () => {
       providerId: 'pi-cli',
       attributes: {},
     });
-    expect(fallback).toBe(true);
+    expect(fallback).toBe(false);
   });
 
   it('splits thinking blocks around tool calls', async () => {
@@ -243,6 +247,11 @@ describe('ClaudeSessionHistoryProvider', () => {
           content: 'Hello there',
         },
         timestamp: '2026-01-01T00:00:00.000Z',
+      }),
+      JSON.stringify({
+        type: 'summary',
+        summary: 'Ignored summary',
+        timestamp: '2026-01-01T00:00:00.500Z',
       }),
       JSON.stringify({
         type: 'assistant',
@@ -338,6 +347,157 @@ describe('ClaudeSessionHistoryProvider', () => {
       providerId: 'claude-cli',
       attributes: {},
     });
-    expect(fallback).toBe(true);
+    expect(fallback).toBe(false);
+  });
+});
+
+describe('CodexSessionHistoryProvider', () => {
+  it('maps Codex session entries into chat events', async () => {
+    const baseDir = await createTempDir('codex-session-history');
+    const sessionId = 'session-1';
+    const codexSessionId = 'codex-session-1';
+    const sessionDir = path.join(baseDir, '2026', '01', '18');
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(
+      sessionDir,
+      `rollout-2026-01-18T00-00-00-000Z-${codexSessionId}.jsonl`,
+    );
+    const lines = [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: { id: codexSessionId, cwd: '/home/kevin' },
+        timestamp: '2026-01-01T00:00:00.000Z',
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'user_message', message: 'Hello there' },
+        timestamp: '2026-01-01T00:00:01.000Z',
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'agent_reasoning', text: 'Thinking...' },
+        timestamp: '2026-01-01T00:00:02.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'shell_command',
+          arguments: '{"command":"ls"}',
+          call_id: 'call-1',
+        },
+        timestamp: '2026-01-01T00:00:03.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: { type: 'function_call_output', call_id: 'call-1', output: 'ok' },
+        timestamp: '2026-01-01T00:00:04.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          call_id: 'call-2',
+          input: '*** Begin Patch',
+        },
+        timestamp: '2026-01-01T00:00:05.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call_output',
+          call_id: 'call-2',
+          output: '{"output":"Success"}',
+        },
+        timestamp: '2026-01-01T00:00:06.000Z',
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'agent_message', message: 'Hi back' },
+        timestamp: '2026-01-01T00:00:07.000Z',
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new CodexSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: codexSessionId,
+          },
+        },
+      },
+    });
+
+    const user = events.find((event) => event.type === 'user_message') as
+      | Extract<ChatEvent, { type: 'user_message' }>
+      | undefined;
+    expect(user?.payload.text).toBe('Hello there');
+
+    const thinking = events.find((event) => event.type === 'thinking_done') as
+      | Extract<ChatEvent, { type: 'thinking_done' }>
+      | undefined;
+    expect(thinking?.payload.text).toContain('Thinking...');
+
+    const toolCall = events.find((event) => event.type === 'tool_call') as
+      | Extract<ChatEvent, { type: 'tool_call' }>
+      | undefined;
+    expect(toolCall?.payload.toolCallId).toBe('call-1');
+    expect(toolCall?.payload.toolName).toBe('shell_command');
+    expect(toolCall?.payload.args).toEqual({ command: 'ls' });
+
+    const customToolCall = events.find(
+      (event) =>
+        event.type === 'tool_call' &&
+        event.payload.toolCallId === 'call-2',
+    ) as Extract<ChatEvent, { type: 'tool_call' }> | undefined;
+    expect(customToolCall?.payload.toolName).toBe('apply_patch');
+    expect(customToolCall?.payload.args).toEqual({ input: '*** Begin Patch' });
+
+    const toolResult = events.find((event) => event.type === 'tool_result') as
+      | Extract<ChatEvent, { type: 'tool_result' }>
+      | undefined;
+    expect(toolResult?.payload.toolCallId).toBe('call-1');
+    expect(toolResult?.payload.result).toBe('ok');
+
+    const customToolResult = events.find(
+      (event) =>
+        event.type === 'tool_result' &&
+        event.payload.toolCallId === 'call-2',
+    ) as Extract<ChatEvent, { type: 'tool_result' }> | undefined;
+    expect(customToolResult?.payload.result).toEqual({ output: 'Success' });
+
+    const assistant = events.find((event) => event.type === 'assistant_done') as
+      | Extract<ChatEvent, { type: 'assistant_done' }>
+      | undefined;
+    expect(assistant?.payload.text).toBe('Hi back');
+  });
+
+  it('treats sessions with provider metadata as external history', async () => {
+    const provider = new CodexSessionHistoryProvider({});
+
+    const shouldPersist = provider.shouldPersist?.({
+      sessionId: 'session-1',
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: 'codex-session-1',
+          },
+        },
+      },
+    });
+
+    expect(shouldPersist).toBe(false);
+    const fallback = provider.shouldPersist?.({
+      sessionId: 'session-2',
+      providerId: 'codex-cli',
+      attributes: {},
+    });
+    expect(fallback).toBe(false);
   });
 });

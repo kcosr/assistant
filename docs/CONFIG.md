@@ -601,15 +601,20 @@ session header, so set `workdir` if you need a stable path across runs. No extra
 is required.
 
 For `claude-cli`, history is read from the default Claude projects directory:
-`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The `cwd` matches the CLI working
-directory, so set `workdir` if you need a stable path across runs. No extra config is
-required.
+`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The CLI defaults to the user home
+directory when `workdir` is not set, so history typically lands under
+`~/.claude/projects/-home-<user>`. Set `workdir` if you need Claude history under a
+different path. No extra config is required.
+
+For `codex-cli`, history is read from the default Codex sessions directory:
+`~/.codex/sessions/<yyyy>/<mm>/<dd>/...-<codex-session-id>.jsonl`. The session id is
+emitted by the CLI and tracked automatically; no extra config is required.
 
 Reserved flags (must not be in `extraArgs`):
 
 - `claude-cli`: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`
 - `codex-cli`: `--json`, `resume`
-- `pi-cli`: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`
+- `pi-cli`: `--mode`, `--session`, `--continue`, `-p`
 
 ## Security Notes
 
