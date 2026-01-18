@@ -5,7 +5,7 @@
 ### Breaking Changes
 
 ### Added
-- Added Pi session history provider with chat replay/refresh support and session-dir config ([#9](https://github.com/kcosr/assistant/pull/9))
+- Added Pi session history provider with chat replay/refresh support and default Pi session file lookup. ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ### Changed
 
@@ -17,6 +17,7 @@
 
 ### Removed
 - Removed legacy conversation transcript store in favor of event logs. ([#9](https://github.com/kcosr/assistant/pull/9))
+- Removed `pi-cli` sessionDir/sessionDirCli config options in favor of default Pi session directories. ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ## [0.1.3] - 2026-01-16
 
