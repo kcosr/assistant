@@ -168,7 +168,10 @@ updateChangelogForRelease(version);
 console.log();
 
 console.log('Committing and tagging...');
-run('git add VERSION CHANGELOG.md package.json package-lock.json packages/*/package.json');
+run(
+  'git add VERSION CHANGELOG.md package.json package-lock.json packages/*/package.json ' +
+    'packages/desktop/src-tauri/Cargo.toml packages/desktop/src-tauri/tauri.conf.json'
+);
 run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
 console.log();
