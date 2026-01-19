@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added CLI model selection plus thinking controls for Pi/Codex with provider-aware Pi model parsing. ([#13](https://github.com/kcosr/assistant/pull/13))
 
 ### Changed
 
