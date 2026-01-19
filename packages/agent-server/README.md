@@ -931,6 +931,8 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `"external"`: forwards user messages to `external.inputUrl` and accepts assistant messages via callback
   - `chat` (only for `type: "chat"` or when `type` is omitted)
   - `provider` (default `"openai"`): `"openai"`, `"claude-cli"`, `"codex-cli"`, `"pi-cli"`, or `"openai-compatible"`
+  - `models` (optional array): allowed model ids for `"openai"` and CLI providers; first is default. For `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model`.
+  - `thinking` (optional array): allowed thinking levels for `"pi-cli"` and `"codex-cli"`; first is default (Codex maps to `model_reasoning_effort`)
   - `config`:
     - for `provider: "claude-cli"`:
       - `workdir` (optional): working directory for the Claude CLI
@@ -940,7 +942,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--json`, `resume`)
     - for `provider: "pi-cli"`:
       - `workdir` (optional): working directory for the Pi CLI
-      - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--continue`, `-p`)
+      - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`; when `chat.models` is set, `--model` and `--provider` are also managed by the server; when `chat.thinking` is set, `--thinking` is also managed by the server)
     - for `provider: "openai-compatible"` (OpenAI-compatible HTTP APIs such as llama.cpp, vLLM, Ollama, Together, Groq, etc.):
       - `baseUrl` (required): base URL for the API, for example `http://localhost:8080/v1`
       - `apiKey` (optional): API key for the backend; if the value contains `${VARNAME}`, it will be substituted from `process.env.VARNAME`
@@ -949,6 +951,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - `temperature` (optional): temperature to use for generation
       - `headers` (optional): object with custom HTTP headers to send with each request, for example `{"X-Custom-Auth": "token123"}`
   - For CLI providers (`"claude-cli"`, `"codex-cli"`, `"pi-cli"`), the agent server starts each CLI in its own POSIX process group and, on user cancel, sends a `SIGTERM` followed by a `SIGKILL` to that group. This ensures any subprocesses launched by the CLI (for example `bash` commands) are cleaned up when a chat run is aborted.
+  - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
 - `external` (only for `type: "external"`)
   - `inputUrl`: outbound HTTP endpoint that receives user input payloads
   - `callbackBaseUrl`: base URL for computing `callbackUrl` (path prefix allowed)

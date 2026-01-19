@@ -32,10 +32,16 @@ export interface AgentDefinition {
   chat?: {
     provider?: 'openai' | 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible';
     /**
-     * For provider "openai": list of allowed model ids. The first
-     * model (when present) is used as the default for new sessions.
+     * For provider "openai" and CLI providers: list of allowed model ids.
+     * The first model (when present) is used as the default for new sessions.
      */
     models?: string[];
+    /**
+     * For providers "pi-cli" and "codex-cli": list of allowed thinking levels.
+     * The first level (when present) is used as the default for new sessions.
+     * For Codex, the level maps to model_reasoning_effort via --config.
+     */
+    thinking?: string[];
     config?:
         | {
           /**
@@ -163,6 +169,7 @@ const CLAUDE_CLI_RESERVED_ARGS = [
 const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
 
 const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--session-dir', '--continue', '-p'] as const;
+const CODEX_REASONING_KEY = 'model_reasoning_effort';
 
 function assertNoReservedExtraArgs(options: {
   index: number;
@@ -191,6 +198,109 @@ function assertNoReservedExtraArgs(options: {
       `agents[${index}].chat.config.extraArgs must not include reserved ${provider} flags: ${list}`,
     );
   }
+}
+
+function hasCodexReasoningConfig(extraArgs: string[]): boolean {
+  for (let i = 0; i < extraArgs.length; i += 1) {
+    const arg = extraArgs[i];
+    if (typeof arg !== 'string' || arg.length === 0) {
+      continue;
+    }
+    if (arg === '--config' || arg === '-c') {
+      const value = extraArgs[i + 1];
+      if (typeof value === 'string' && value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('--config=')) {
+      const value = arg.slice('--config='.length);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('-c=')) {
+      const value = arg.slice('-c='.length);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('-c') && arg.length > 2) {
+      const value = arg.slice(2);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function assertNoCodexReasoningExtraArgs(options: { index: number; extraArgs?: string[] }): void {
+  const { index, extraArgs } = options;
+  if (!extraArgs || extraArgs.length === 0) {
+    return;
+  }
+  if (hasCodexReasoningConfig(extraArgs)) {
+    throw new Error(
+      `agents[${index}].chat.config.extraArgs must not include codex model_reasoning_effort overrides when chat.thinking is set`,
+    );
+  }
+}
+
+function parseChatModels(options: { index: number; modelsRaw: unknown }): string[] | undefined {
+  const { index, modelsRaw } = options;
+  if (modelsRaw === undefined || modelsRaw === null) {
+    return undefined;
+  }
+  if (!Array.isArray(modelsRaw)) {
+    throw new Error(
+      `agents[${index}].chat.models must be an array of non-empty strings, null, or omitted`,
+    );
+  }
+  const collected: string[] = [];
+  for (let i = 0; i < modelsRaw.length; i += 1) {
+    const value = modelsRaw[i];
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(
+        `agents[${index}].chat.models[${i}] must be a non-empty string when provided`,
+      );
+    }
+    collected.push(value.trim());
+  }
+  if (collected.length === 0) {
+    throw new Error(`agents[${index}].chat.models must contain at least one model when provided`);
+  }
+  return collected;
+}
+
+function parseChatThinking(options: { index: number; thinkingRaw: unknown }): string[] | undefined {
+  const { index, thinkingRaw } = options;
+  if (thinkingRaw === undefined || thinkingRaw === null) {
+    return undefined;
+  }
+  if (!Array.isArray(thinkingRaw)) {
+    throw new Error(
+      `agents[${index}].chat.thinking must be an array of non-empty strings, null, or omitted`,
+    );
+  }
+  const collected: string[] = [];
+  for (let i = 0; i < thinkingRaw.length; i += 1) {
+    const value = thinkingRaw[i];
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(
+        `agents[${index}].chat.thinking[${i}] must be a non-empty string when provided`,
+      );
+    }
+    collected.push(value.trim());
+  }
+  if (collected.length === 0) {
+    throw new Error(
+      `agents[${index}].chat.thinking must contain at least one entry when provided`,
+    );
+  }
+  return collected;
 }
 
 export class AgentRegistry {
@@ -517,7 +627,12 @@ function validateAgentDefinitionConfig(
       throw new Error(`agents[${index}].chat is only valid when type is "chat"`);
     }
   } else if (rawChat !== undefined && rawChat !== null) {
-    const chat = rawChat as { provider?: unknown; config?: unknown; models?: unknown };
+    const chat = rawChat as {
+      provider?: unknown;
+      config?: unknown;
+      models?: unknown;
+      thinking?: unknown;
+    };
     const providerRaw = chat.provider;
 
     if (
@@ -559,30 +674,7 @@ function validateAgentDefinitionConfig(
         );
       }
 
-      let models: string[] | undefined;
-      if (modelsRaw !== undefined && modelsRaw !== null) {
-        if (!Array.isArray(modelsRaw)) {
-          throw new Error(
-            `agents[${index}].chat.models must be an array of non-empty strings, null, or omitted`,
-          );
-        }
-        const collected: string[] = [];
-        for (let i = 0; i < modelsRaw.length; i += 1) {
-          const value = modelsRaw[i];
-          if (typeof value !== 'string' || !value.trim()) {
-            throw new Error(
-              `agents[${index}].chat.models[${i}] must be a non-empty string when provided`,
-            );
-          }
-          collected.push(value.trim());
-        }
-        if (collected.length === 0) {
-          throw new Error(
-            `agents[${index}].chat.models must contain at least one model when provided`,
-          );
-        }
-        models = collected;
-      }
+      const models = parseChatModels({ index, modelsRaw });
 
       // Attach chat config for openai provider (explicit or implicit default)
       if (models) {
@@ -592,6 +684,7 @@ function validateAgentDefinitionConfig(
         };
       }
     } else if (provider === 'claude-cli') {
+      const models = parseChatModels({ index, modelsRaw });
       const config = configRaw as
         | {
             workdir?: unknown;
@@ -631,16 +724,20 @@ function validateAgentDefinitionConfig(
       }
 
       if (extraArgs) {
+        const reservedArgs = models
+          ? [...CLAUDE_CLI_RESERVED_ARGS, '--model']
+          : CLAUDE_CLI_RESERVED_ARGS;
         assertNoReservedExtraArgs({
           index,
           provider: 'claude-cli',
           extraArgs,
-          reservedArgs: CLAUDE_CLI_RESERVED_ARGS,
+          reservedArgs,
         });
       }
 
       base.chat = {
         provider: 'claude-cli',
+        ...(models ? { models } : {}),
         ...(workdir || extraArgs
           ? {
               config: {
@@ -651,6 +748,8 @@ function validateAgentDefinitionConfig(
           : {}),
       };
     } else if (provider === 'codex-cli') {
+      const models = parseChatModels({ index, modelsRaw });
+      const thinking = parseChatThinking({ index, thinkingRaw: chat.thinking });
       const config = configRaw as
         | {
             workdir?: unknown;
@@ -690,16 +789,24 @@ function validateAgentDefinitionConfig(
       }
 
       if (extraArgs) {
+        const reservedArgs = models
+          ? [...CODEX_CLI_RESERVED_ARGS, '--model']
+          : CODEX_CLI_RESERVED_ARGS;
         assertNoReservedExtraArgs({
           index,
           provider: 'codex-cli',
           extraArgs,
-          reservedArgs: CODEX_CLI_RESERVED_ARGS,
+          reservedArgs,
         });
+        if (thinking) {
+          assertNoCodexReasoningExtraArgs({ index, extraArgs });
+        }
       }
 
       base.chat = {
         provider: 'codex-cli',
+        ...(models ? { models } : {}),
+        ...(thinking ? { thinking } : {}),
         ...(workdir || extraArgs
           ? {
               config: {
@@ -710,6 +817,8 @@ function validateAgentDefinitionConfig(
           : {}),
       };
     } else if (provider === 'pi-cli') {
+      const models = parseChatModels({ index, modelsRaw });
+      const thinking = parseChatThinking({ index, thinkingRaw: chat.thinking });
       const config = configRaw as
         | {
             workdir?: unknown;
@@ -749,16 +858,25 @@ function validateAgentDefinitionConfig(
       }
 
       if (extraArgs) {
+        const reservedArgs = models || thinking
+          ? [
+              ...PI_CLI_RESERVED_ARGS,
+              ...(models ? ['--model', '--provider'] : []),
+              ...(thinking ? ['--thinking'] : []),
+            ]
+          : PI_CLI_RESERVED_ARGS;
         assertNoReservedExtraArgs({
           index,
           provider: 'pi-cli',
           extraArgs,
-          reservedArgs: PI_CLI_RESERVED_ARGS,
+          reservedArgs,
         });
       }
 
       base.chat = {
         provider: 'pi-cli',
+        ...(models ? { models } : {}),
+        ...(thinking ? { thinking } : {}),
         ...(workdir || extraArgs
           ? {
               config: {

@@ -9,6 +9,7 @@ export type SessionIndexRecord =
       timestamp: string;
       agentId: string;
       model?: string;
+      thinking?: string;
     }
   | {
       type: 'session_updated';
@@ -49,6 +50,12 @@ export type SessionIndexRecord =
       sessionId: string;
       timestamp: string;
       model: string | null;
+    }
+  | {
+      type: 'session_thinking_set';
+      sessionId: string;
+      timestamp: string;
+      thinking: string | null;
     }
   | {
       type: 'session_attributes_patch';
@@ -94,7 +101,8 @@ export function loadSessionIndexFromFileContent(
       }
 
       if (parsed.type === 'session_created') {
-        const created = parsed as { agentId?: unknown; model?: unknown } & typeof parsed;
+        const created = parsed as { agentId?: unknown; model?: unknown; thinking?: unknown } &
+          typeof parsed;
         summary.createdAt = timestamp;
         summary.updatedAt = timestamp;
         if (typeof created.agentId === 'string' && created.agentId.length > 0) {
@@ -102,6 +110,9 @@ export function loadSessionIndexFromFileContent(
         }
         if (typeof created.model === 'string' && created.model.length > 0) {
           summary.model = created.model;
+        }
+        if (typeof created.thinking === 'string' && created.thinking.length > 0) {
+          summary.thinking = created.thinking;
         }
       } else if (parsed.type === 'session_updated') {
         const updated = parsed as { lastSnippet?: unknown } & typeof parsed;
@@ -144,6 +155,17 @@ export function loadSessionIndexFromFileContent(
           delete summary.model;
         } else if (typeof modelSet.model === 'string' && modelSet.model.length > 0) {
           summary.model = modelSet.model;
+        }
+      } else if (parsed.type === 'session_thinking_set') {
+        const thinkingSet = parsed as { thinking?: unknown } & typeof parsed;
+        summary.updatedAt = timestamp;
+        if (thinkingSet.thinking === null) {
+          delete summary.thinking;
+        } else if (
+          typeof thinkingSet.thinking === 'string' &&
+          thinkingSet.thinking.length > 0
+        ) {
+          summary.thinking = thinkingSet.thinking;
         }
       } else if (parsed.type === 'session_attributes_patch') {
         const patchRecord = parsed as { patch?: unknown } & typeof parsed;

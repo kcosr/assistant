@@ -39,14 +39,10 @@ describe('runPiCliChat', () => {
     const promise = runPiCliChat({
       sessionId: 'session-1',
       userText: 'hello',
+      model: 'google/pi-model',
+      thinking: 'medium',
       config: {
         extraArgs: [
-          '--provider',
-          'google',
-          '--model',
-          'pi-model',
-          '--thinking',
-          'medium',
           '--tools',
           'bash,fs',
         ],
@@ -75,6 +71,7 @@ describe('runPiCliChat', () => {
     expect(args).toContain('google');
     expect(args).toContain('--model');
     expect(args).toContain('pi-model');
+    expect(args).not.toContain('google/pi-model');
     expect(args).toContain('--thinking');
     expect(args).toContain('medium');
     expect(args).toContain('--tools');

@@ -25,6 +25,10 @@ interface SessionSummary {
    * Currently selected chat model for this session (when applicable).
    */
   model?: string;
+  /**
+   * Currently selected thinking level for this session (when applicable).
+   */
+  thinking?: string;
 }
 
 interface ListSessionsResponse {

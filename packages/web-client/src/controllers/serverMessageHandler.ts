@@ -76,6 +76,11 @@ export interface ServerMessageHandlerOptions {
     availableModels?: string[];
     currentModel?: string;
   }) => void;
+  updateSessionThinkingForSession?: (options: {
+    sessionId: string;
+    availableThinking?: string[];
+    currentThinking?: string;
+  }) => void;
   cancelQueuedMessage: (messageId: string) => void;
   editQueuedMessage: (messageId: string, text: string, sessionId: string) => void;
   handlePanelEvent?: (event: PanelEventEnvelope) => void;
@@ -327,6 +332,28 @@ export class ServerMessageHandler {
               : {}),
           };
           this.options.updateSessionModelForSession(payload);
+        }
+        if (typeof this.options.updateSessionThinkingForSession === 'function') {
+          const anyMessage = message as {
+            availableThinking?: string[];
+            currentThinking?: string;
+          };
+          const payload: {
+            sessionId: string;
+            availableThinking?: string[];
+            currentThinking?: string;
+          } = {
+            sessionId: message.sessionId,
+            ...(Array.isArray(anyMessage.availableThinking) &&
+            anyMessage.availableThinking.length > 0
+              ? { availableThinking: anyMessage.availableThinking }
+              : {}),
+            ...(typeof anyMessage.currentThinking === 'string' &&
+            anyMessage.currentThinking.trim().length > 0
+              ? { currentThinking: anyMessage.currentThinking.trim() }
+              : {}),
+          };
+          this.options.updateSessionThinkingForSession(payload);
         }
         this.options.setStatus(
           this.options.statusEl,

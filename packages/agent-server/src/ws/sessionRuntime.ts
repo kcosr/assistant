@@ -11,6 +11,7 @@ import type {
   ClientPingMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
+  ClientSetSessionThinkingMessage,
   ClientSubscribeMessage,
   ClientTextInputMessage,
   ClientUnsubscribeMessage,
@@ -30,7 +31,7 @@ import type { SessionHub } from '../sessionHub';
 import type { LogicalSessionState } from '../sessionHub';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
-import { getAgentAvailableModels } from '../sessionModel';
+import { getAgentAvailableModels, getAgentAvailableThinkingLevels } from '../sessionModel';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { TtsBackendFactory } from '../tts/types';
 import { selectTtsBackendFactory } from '../tts/selectTtsBackendFactory';
@@ -175,6 +176,8 @@ export class SessionRuntime {
         onSubscribe: (message) => this.enqueue(() => this.handleSubscribe(message)),
         onUnsubscribe: (message) => this.enqueue(() => this.handleUnsubscribe(message)),
         onSetSessionModel: (message) => this.enqueue(() => this.handleSetSessionModel(message)),
+        onSetSessionThinking: (message) =>
+          this.enqueue(() => this.handleSetSessionThinking(message)),
         onCancelQueuedMessage: (message) =>
           this.enqueue(() => this.handleCancelQueuedMessage(message)),
       });
@@ -532,6 +535,112 @@ export class SessionRuntime {
     }
   }
 
+  private async handleSetSessionThinking(
+    message: ClientSetSessionThinkingMessage,
+  ): Promise<void> {
+    const rawThinking = message.thinking;
+    const trimmedThinking = typeof rawThinking === 'string' ? rawThinking.trim() : '';
+    if (!trimmedThinking) {
+      this.sendError('invalid_thinking', 'Thinking level must be a non-empty string');
+      return;
+    }
+
+    const sessionId = message.sessionId.trim();
+    if (!sessionId) {
+      this.sendError('invalid_session_id', 'Session id must not be empty');
+      return;
+    }
+
+    if (typeof this.connection.isSubscribedTo === 'function') {
+      const isSubscribed = this.connection.isSubscribedTo(sessionId);
+      if (!isSubscribed) {
+        this.sendError(
+          'invalid_session_id',
+          'Cannot update session thinking for a session that this connection is not subscribed to',
+          { sessionId },
+        );
+        return;
+      }
+    }
+
+    let state = this.sessionState;
+    if (!state || state.summary.sessionId !== sessionId) {
+      try {
+        state =
+          this.sessionHub.getSessionState(sessionId) ??
+          (await this.sessionHub.ensureSessionState(sessionId));
+        if (this.sessionId === sessionId) {
+          this.sessionState = state;
+        }
+      } catch (err) {
+        this.log('failed to resolve session state for set_session_thinking', err);
+        this.sendError(
+          'internal_error',
+          'Failed to resolve session for thinking update',
+          { sessionId, error: String(err) },
+          { retryable: true },
+        );
+        return;
+      }
+    }
+
+    if (!state) {
+      this.sendError('session_not_ready', 'Session binding is not initialised yet');
+      return;
+    }
+
+    const summary = state.summary;
+    const agentId = summary.agentId;
+    if (!agentId) {
+      this.sendError(
+        'thinking_not_supported',
+        'Thinking selection is only supported for sessions bound to an agent',
+      );
+      return;
+    }
+
+    const registry = this.sessionHub.getAgentRegistry();
+    const agent = registry.getAgent(agentId);
+    if (!agent || !agent.chat) {
+      this.sendError('thinking_not_supported', 'Agent does not support thinking selection');
+      return;
+    }
+
+    const availableThinking = getAgentAvailableThinkingLevels(agent);
+    if (availableThinking.length === 0) {
+      this.sendError(
+        'thinking_not_supported',
+        'Agent does not have any configured thinking levels for selection',
+      );
+      return;
+    }
+
+    if (!availableThinking.includes(trimmedThinking)) {
+      this.sendError('thinking_not_allowed', 'Requested thinking level is not allowed', {
+        thinking: trimmedThinking,
+        availableThinking,
+      });
+      return;
+    }
+
+    try {
+      const updatedSummary = await this.sessionHub
+        .getSessionIndex()
+        .setSessionThinking(sessionId, trimmedThinking);
+      if (updatedSummary) {
+        state.summary = updatedSummary;
+      }
+    } catch (err) {
+      this.log('failed to update session thinking', err);
+      this.sendError(
+        'internal_error',
+        'Failed to update session thinking',
+        { sessionId, error: String(err) },
+        { retryable: true },
+      );
+    }
+  }
+
   private async handleCancelQueuedMessage(message: ClientCancelQueuedMessage): Promise<void> {
     const rawId = message.messageId;
     const trimmedId = typeof rawId === 'string' ? rawId.trim() : '';
@@ -665,6 +774,8 @@ export class SessionRuntime {
 
     let availableModels: string[] | undefined;
     let currentModel: string | undefined;
+    let availableThinking: string[] | undefined;
+    let currentThinking: string | undefined;
 
     const summary = state.summary;
     const agentId = summary.agentId;
@@ -675,10 +786,17 @@ export class SessionRuntime {
       if (models.length > 0) {
         availableModels = models;
       }
+      const thinkingLevels = getAgentAvailableThinkingLevels(agent);
+      if (thinkingLevels.length > 0) {
+        availableThinking = thinkingLevels;
+      }
     }
 
     if (typeof summary.model === 'string' && summary.model.trim().length > 0) {
       currentModel = summary.model.trim();
+    }
+    if (typeof summary.thinking === 'string' && summary.thinking.trim().length > 0) {
+      currentThinking = summary.thinking.trim();
     }
 
     const readyMessage: ServerSessionReadyMessage = {
@@ -689,6 +807,8 @@ export class SessionRuntime {
       outputMode: this.outputMode,
       ...(availableModels ? { availableModels } : {}),
       ...(currentModel ? { currentModel } : {}),
+      ...(availableThinking ? { availableThinking } : {}),
+      ...(currentThinking ? { currentThinking } : {}),
     };
 
     this.sendToClient(readyMessage);

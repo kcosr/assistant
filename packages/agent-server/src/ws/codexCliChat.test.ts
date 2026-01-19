@@ -62,6 +62,71 @@ describe('runCodexCliChat', () => {
     expect(args[args.length - 1]).toBe('hello');
   });
 
+  it('adds model to codex args when provided', async () => {
+    const child = new FakeCodexProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: CodexCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<CodexCliSpawn>;
+    };
+
+    const promise = runCodexCliChat({
+      ourSessionId: 'session-123',
+      existingCodexSessionId: undefined,
+      userText: 'hello',
+      model: 'o3',
+      config: { extraArgs: ['--config', 'model_reasoning_effort=xhigh'] },
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).toContain('--model');
+    expect(args).toContain('o3');
+    expect(args).toContain('--config');
+    expect(args).toContain('model_reasoning_effort=xhigh');
+  });
+
+  it('adds reasoning config when thinking is provided', async () => {
+    const child = new FakeCodexProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: CodexCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<CodexCliSpawn>;
+    };
+
+    const promise = runCodexCliChat({
+      ourSessionId: 'session-123',
+      existingCodexSessionId: undefined,
+      userText: 'hello',
+      thinking: 'high',
+      config: { extraArgs: ['--config', 'foo=bar'] },
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).toContain('--config');
+    expect(args).toContain('model_reasoning_effort=high');
+    expect(args).toContain('foo=bar');
+  });
+
   it('uses wrapper command and merges wrapper env when configured', async () => {
     const child = new FakeCodexProcess();
     const calls: Array<{

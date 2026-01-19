@@ -29,6 +29,7 @@ import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
 import os from 'node:os';
 
+import { resolveCliModelForRun, resolveSessionThinkingForRun } from './sessionModel';
 import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
@@ -521,6 +522,7 @@ export async function runChatCompletionCore(
     const resolvedCwd = claudeConfig?.workdir?.trim() || os.homedir() || process.cwd();
     const resolvedSessionId = storedClaudeSession?.sessionId?.trim() || sessionId.trim();
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
+    const model = resolveCliModelForRun({ agent, summary: state.summary });
 
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
@@ -540,6 +542,7 @@ export async function runChatCompletionCore(
       sessionId: resolvedSessionId,
       resumeSession,
       userText: text,
+      ...(model ? { model } : {}),
       ...(claudeConfig ? { config: claudeConfig } : {}),
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,
@@ -609,6 +612,8 @@ export async function runChatCompletionCore(
       providerName: 'Codex CLI',
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
+    const model = resolveCliModelForRun({ agent, summary: state.summary });
+    const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
 
     const {
       text: codexText,
@@ -618,6 +623,8 @@ export async function runChatCompletionCore(
       ourSessionId: sessionId,
       existingCodexSessionId,
       userText: text,
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
       ...(codexConfig ? { config: codexConfig } : {}),
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,
@@ -679,6 +686,8 @@ export async function runChatCompletionCore(
       };
     }
     const resumeSessionId = storedPiSession?.sessionId;
+    const model = resolveCliModelForRun({ agent, summary: state.summary });
+    const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
 
     const piCallbacks = createCliToolCallbacks({
       sessionId,
@@ -745,6 +754,8 @@ export async function runChatCompletionCore(
       sessionId,
       ...(resumeSessionId ? { piSessionId: resumeSessionId } : {}),
       userText: text,
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
       ...(piConfig ? { config: piConfig } : {}),
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,

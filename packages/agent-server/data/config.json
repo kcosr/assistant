@@ -6,10 +6,13 @@
       "description": "Claude Code",
       "chat": {
         "provider": "claude-cli",
+        "models": [
+          "opus",
+          "sonnet",
+          "haiku"
+        ],
         "config": {
           "extraArgs": [
-            "--model",
-            "haiku",
             "--dangerously-skip-permissions"
           ]
         }
@@ -21,12 +24,19 @@
       "description": "Codex",
       "chat": {
         "provider": "codex-cli",
+        "models": [
+          "gpt-5.2-codex",
+          "gpt-5.2"
+        ],
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "config": {
           "extraArgs": [
-            "--model",
-            "gpt-5.2-codex",
-            "--config",
-            "model_reasoning_effort=xhigh",
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox"
           ]
@@ -39,14 +49,17 @@
       "description": "pi",
       "chat": {
         "provider": "pi-cli",
-        "config": {
-          "extraArgs": [
-            "--model",
-            "anthropic/claude-haiku-4-5",
-            "--thinking",
-            "off"
-          ]
-        }
+        "models": [
+          "anthropic/claude-sonnet-4-5",
+          "openai-codex/gpt-5.2-codex"
+        ],
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
       }
     }
   ],

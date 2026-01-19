@@ -1,7 +1,7 @@
 import type { AgentRegistry } from './agents';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { SessionIndex, SessionSummary } from './sessionIndex';
-import { getDefaultModelForNewSession } from './sessionModel';
+import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from './sessionModel';
 
 export interface SessionResolutionResult {
   sessionId: string;
@@ -38,8 +38,11 @@ export async function resolveAgentSession(
   } else if (resolutionStrategy === 'create') {
     const agent = agentRegistry.getAgent(trimmedAgentId);
     const model = getDefaultModelForNewSession(agent);
+    const thinking = getDefaultThinkingForNewSession(agent);
     summary = await sessionIndex.createSession(
-      model ? { agentId: trimmedAgentId, model } : { agentId: trimmedAgentId },
+      model || thinking
+        ? { agentId: trimmedAgentId, ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) }
+        : { agentId: trimmedAgentId },
     );
     created = true;
     sessionHub.broadcastSessionCreated(summary);
@@ -48,8 +51,15 @@ export async function resolveAgentSession(
     if (!summary) {
       const agent = agentRegistry.getAgent(trimmedAgentId);
       const model = getDefaultModelForNewSession(agent);
+      const thinking = getDefaultThinkingForNewSession(agent);
       summary = await sessionIndex.createSession(
-        model ? { agentId: trimmedAgentId, model } : { agentId: trimmedAgentId },
+        model || thinking
+          ? {
+              agentId: trimmedAgentId,
+              ...(model ? { model } : {}),
+              ...(thinking ? { thinking } : {}),
+            }
+          : { agentId: trimmedAgentId },
       );
       created = true;
       sessionHub.broadcastSessionCreated(summary);

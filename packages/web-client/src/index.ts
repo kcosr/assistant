@@ -156,6 +156,14 @@ interface SessionSummary {
    */
   attributes?: Record<string, unknown>;
   lastSnippet?: string;
+  /**
+   * Optional selected model for this session.
+   */
+  model?: string;
+  /**
+   * Optional selected thinking level for this session.
+   */
+  thinking?: string;
 }
 
 interface AgentSummary {
@@ -515,6 +523,8 @@ async function main(): Promise<void> {
   const subscribedSessionIds = new Set<string>();
   const availableModelsBySession = new Map<string, string[]>();
   const currentModelBySession = new Map<string, string>();
+  const availableThinkingBySession = new Map<string, string[]>();
+  const currentThinkingBySession = new Map<string, string>();
   let pluginManifests: CombinedPluginManifest[] = [];
   let pluginManifestsLoaded = false;
   const CORE_CAPABILITIES = ['sessions.read', 'sessions.write', 'panels.read', 'panels.manage'];
@@ -656,6 +666,48 @@ async function main(): Promise<void> {
     }
     const currentModel = currentModelBySession.get(normalized) ?? defaultModel;
     modelSelectEl.value = currentModel;
+    entry.dom.chromeController?.scheduleLayoutCheck();
+  }
+
+  function updateChatPanelThinkingSelect(sessionId: string | null): void {
+    const normalized = normalizeSessionId(sessionId);
+    const entry = normalized ? getChatPanelEntryForSession(normalized) : null;
+    const thinkingSelectEl = entry?.dom.thinkingSelectEl ?? null;
+    if (!normalized || !entry || !thinkingSelectEl) {
+      if (thinkingSelectEl) {
+        thinkingSelectEl.classList.add('hidden');
+        thinkingSelectEl.innerHTML = '';
+        thinkingSelectEl.disabled = true;
+        entry?.dom.chromeController?.scheduleLayoutCheck();
+      }
+      return;
+    }
+    const thinkingLevels = availableThinkingBySession.get(normalized) ?? [];
+    if (thinkingLevels.length <= 1) {
+      thinkingSelectEl.classList.add('hidden');
+      thinkingSelectEl.innerHTML = '';
+      thinkingSelectEl.disabled = true;
+      entry.dom.chromeController?.scheduleLayoutCheck();
+      return;
+    }
+
+    thinkingSelectEl.classList.remove('hidden');
+    thinkingSelectEl.disabled = false;
+    thinkingSelectEl.innerHTML = '';
+    for (const level of thinkingLevels) {
+      const option = document.createElement('option');
+      option.value = level;
+      option.textContent = level;
+      thinkingSelectEl.appendChild(option);
+    }
+
+    const defaultThinking = thinkingLevels[0];
+    if (!defaultThinking) {
+      entry.dom.chromeController?.scheduleLayoutCheck();
+      return;
+    }
+    const currentThinking = currentThinkingBySession.get(normalized) ?? defaultThinking;
+    thinkingSelectEl.value = currentThinking;
     entry.dom.chromeController?.scheduleLayoutCheck();
   }
 
@@ -895,10 +947,16 @@ async function main(): Promise<void> {
       updateChatPanelSessionLabel(entry);
       if (sessionId) {
         updateChatPanelModelSelect(sessionId);
+        updateChatPanelThinkingSelect(sessionId);
       } else if (entry.dom.modelSelectEl) {
         entry.dom.modelSelectEl.classList.add('hidden');
         entry.dom.modelSelectEl.innerHTML = '';
         entry.dom.modelSelectEl.disabled = true;
+      }
+      if (!sessionId && entry.dom.thinkingSelectEl) {
+        entry.dom.thinkingSelectEl.classList.add('hidden');
+        entry.dom.thinkingSelectEl.innerHTML = '';
+        entry.dom.thinkingSelectEl.disabled = true;
       }
       const active = host.getContext('panel.active') as { panelId?: string } | null;
       if (sessionId && active?.panelId === panelId && sessionId !== inputSessionId) {
@@ -929,6 +987,25 @@ async function main(): Promise<void> {
           }
           currentModelBySession.set(sessionId, selected);
           sendSetSessionModel(sessionId, selected);
+        },
+        { signal: abortController.signal },
+      );
+    }
+    if (dom.thinkingSelectEl) {
+      dom.thinkingSelectEl.addEventListener(
+        'change',
+        () => {
+          const selected = dom.thinkingSelectEl?.value ?? '';
+          const sessionId = entry.bindingSessionId;
+          if (!sessionId || !selected) {
+            return;
+          }
+          const previous = currentThinkingBySession.get(sessionId) ?? null;
+          if (previous === selected) {
+            return;
+          }
+          currentThinkingBySession.set(sessionId, selected);
+          sendSetSessionThinking(sessionId, selected);
         },
         { signal: abortController.signal },
       );
@@ -1073,6 +1150,26 @@ async function main(): Promise<void> {
     const message = {
       type: 'set_session_model' as const,
       model: trimmed,
+      sessionId: trimmedSessionId,
+    };
+    socket.send(JSON.stringify(message));
+  }
+
+  function sendSetSessionThinking(sessionId: string, thinking: string): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const trimmedSessionId = sessionId.trim();
+    if (!trimmedSessionId) {
+      return;
+    }
+    const trimmed = thinking.trim();
+    if (!trimmed) {
+      return;
+    }
+    const message = {
+      type: 'set_session_thinking' as const,
+      thinking: trimmed,
       sessionId: trimmedSessionId,
     };
     socket.send(JSON.stringify(message));
@@ -1707,15 +1804,21 @@ async function main(): Promise<void> {
     setSessionSummaries: (summaries) => {
       sessionSummaries = summaries;
       currentModelBySession.clear();
+      currentThinkingBySession.clear();
       for (const summary of summaries) {
-        const anySummary = summary as SessionSummary & { model?: string };
-        if (typeof anySummary.model === 'string' && anySummary.model.trim().length > 0) {
-          currentModelBySession.set(anySummary.sessionId, anySummary.model.trim());
+        if (typeof summary.model === 'string' && summary.model.trim().length > 0) {
+          currentModelBySession.set(summary.sessionId, summary.model.trim());
+        }
+        if (typeof summary.thinking === 'string' && summary.thinking.trim().length > 0) {
+          currentThinkingBySession.set(summary.sessionId, summary.thinking.trim());
         }
       }
       syncSessionContext();
       for (const sessionId of currentModelBySession.keys()) {
         updateChatPanelModelSelect(sessionId);
+      }
+      for (const sessionId of currentThinkingBySession.keys()) {
+        updateChatPanelThinkingSelect(sessionId);
       }
     },
     setAgentSummaries: (agents) => {
@@ -2877,6 +2980,18 @@ async function main(): Promise<void> {
         currentModelBySession.set(sessionId, currentModel.trim());
       }
       updateChatPanelModelSelect(sessionId);
+    },
+    updateSessionThinkingForSession: ({ sessionId, availableThinking, currentThinking }) => {
+      if (Array.isArray(availableThinking)) {
+        const normalized = availableThinking
+          .map((level) => level.trim())
+          .filter((level) => level.length > 0);
+        availableThinkingBySession.set(sessionId, normalized);
+      }
+      if (typeof currentThinking === 'string' && currentThinking.trim().length > 0) {
+        currentThinkingBySession.set(sessionId, currentThinking.trim());
+      }
+      updateChatPanelThinkingSelect(sessionId);
     },
     getPendingMessageListControllerForSession: (sessionId) =>
       getChatInputRuntimeForSession(sessionId)?.pendingMessageListController ?? null,

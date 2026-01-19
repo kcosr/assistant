@@ -166,6 +166,8 @@ export async function runCodexCliChat(options: {
   ourSessionId: string;
   existingCodexSessionId: string | undefined;
   userText: string;
+  model?: string;
+  thinking?: string;
   config?: CodexCliChatConfig;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
@@ -200,16 +202,31 @@ export async function runCodexCliChat(options: {
   });
 
   const args: string[] = ['exec'];
+  const reasoningArgs = options.thinking
+    ? ['--config', `model_reasoning_effort=${options.thinking}`]
+    : [];
 
   if (existingCodexSessionId && existingCodexSessionId.trim().length > 0) {
     // --json must come before 'resume' subcommand
     args.push('--json');
+    if (options.model) {
+      args.push('--model', options.model);
+    }
+    if (reasoningArgs.length > 0) {
+      args.push(...reasoningArgs);
+    }
     if (config?.extraArgs?.length) {
       args.push(...config.extraArgs);
     }
     args.push('resume', existingCodexSessionId.trim(), userText);
   } else {
     args.push('--json');
+    if (options.model) {
+      args.push('--model', options.model);
+    }
+    if (reasoningArgs.length > 0) {
+      args.push(...reasoningArgs);
+    }
     if (config?.extraArgs?.length) {
       args.push(...config.extraArgs);
     }

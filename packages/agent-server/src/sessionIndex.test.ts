@@ -27,6 +27,26 @@ describe('SessionIndex sticky session infrastructure', () => {
     expect(content).toContain('"agentId":"reading-list"');
   });
 
+  it('persists thinking levels and updates them', async () => {
+    const filePath = createTempFile('session-index-thinking');
+    const index = new SessionIndex(filePath);
+
+    const summary = await index.createSession({ agentId: 'pi', thinking: 'medium' });
+    expect(summary.thinking).toBe('medium');
+
+    const reloaded = new SessionIndex(filePath);
+    const loaded = await reloaded.getSession(summary.sessionId);
+    expect(loaded?.thinking).toBe('medium');
+
+    const updated = await index.setSessionThinking(summary.sessionId, 'high');
+    expect(updated?.thinking).toBe('high');
+
+    const content = await fs.readFile(filePath, 'utf8');
+    expect(content).toContain('"type":"session_created"');
+    expect(content).toContain('"thinking":"medium"');
+    expect(content).toContain('"type":"session_thinking_set"');
+  });
+
   it('renames sessions with case-insensitive uniqueness and supports name removal', async () => {
     const filePath = createTempFile('session-index-rename');
     const index = new SessionIndex(filePath);

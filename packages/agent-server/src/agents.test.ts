@@ -137,8 +137,10 @@ describe('loadAgentDefinitionsFromFile', () => {
           description: 'Uses local Pi CLI.',
           chat: {
             provider: 'pi-cli',
+            models: ['pi-model'],
+            thinking: ['medium'],
             config: {
-              extraArgs: ['--provider', 'google', '--model', 'pi-model', '--thinking', 'medium'],
+              extraArgs: ['--tools', 'bash,fs'],
             },
           },
         },
@@ -151,8 +153,142 @@ describe('loadAgentDefinitionsFromFile', () => {
     expect(definitions).toHaveLength(1);
     expect(definitions[0]?.chat).toEqual({
       provider: 'pi-cli',
+      models: ['pi-model'],
+      thinking: ['medium'],
       config: {
-        extraArgs: ['--provider', 'google', '--model', 'pi-model', '--thinking', 'medium'],
+        extraArgs: ['--tools', 'bash,fs'],
+      },
+    });
+  });
+
+  it('rejects pi-cli --model extraArgs when models are configured', async () => {
+    const filePath = createTempFile('agents-config-pi-cli-models-conflict');
+    const config = {
+      agents: [
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Uses local Pi CLI.',
+          chat: {
+            provider: 'pi-cli',
+            models: ['pi-model'],
+            config: {
+              extraArgs: ['--model', 'pi-model'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(/reserved pi-cli flags: --model/);
+  });
+
+  it('rejects pi-cli --provider extraArgs when models are configured', async () => {
+    const filePath = createTempFile('agents-config-pi-cli-provider-conflict');
+    const config = {
+      agents: [
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Uses local Pi CLI.',
+          chat: {
+            provider: 'pi-cli',
+            models: ['pi-model'],
+            config: {
+              extraArgs: ['--provider', 'google'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(
+      /reserved pi-cli flags: --provider/,
+    );
+  });
+
+  it('rejects pi-cli --thinking extraArgs when thinking is configured', async () => {
+    const filePath = createTempFile('agents-config-pi-cli-thinking-conflict');
+    const config = {
+      agents: [
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Uses local Pi CLI.',
+          chat: {
+            provider: 'pi-cli',
+            thinking: ['medium'],
+            config: {
+              extraArgs: ['--thinking', 'high'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(
+      /reserved pi-cli flags: --thinking/,
+    );
+  });
+
+  it('rejects codex-cli model_reasoning_effort extraArgs when thinking is configured', async () => {
+    const filePath = createTempFile('agents-config-codex-cli-thinking-conflict');
+    const config = {
+      agents: [
+        {
+          agentId: 'codex',
+          displayName: 'Codex',
+          description: 'Uses local Codex CLI.',
+          chat: {
+            provider: 'codex-cli',
+            thinking: ['high'],
+            config: {
+              extraArgs: ['--config', 'model_reasoning_effort=high'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(/model_reasoning_effort/);
+  });
+
+  it('loads codex-cli thinking config', async () => {
+    const filePath = createTempFile('agents-config-codex-cli-thinking');
+    const config = {
+      agents: [
+        {
+          agentId: 'codex',
+          displayName: 'Codex',
+          description: 'Uses local Codex CLI.',
+          chat: {
+            provider: 'codex-cli',
+            thinking: ['low', 'high'],
+            config: {
+              extraArgs: ['--full-auto'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    const definitions = loadAgentDefinitionsFromFile(filePath);
+    expect(definitions).toHaveLength(1);
+    expect(definitions[0]?.chat).toEqual({
+      provider: 'codex-cli',
+      thinking: ['low', 'high'],
+      config: {
+        extraArgs: ['--full-auto'],
       },
     });
   });

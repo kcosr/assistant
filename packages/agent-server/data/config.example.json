@@ -52,13 +52,15 @@
       "description": "Claude Code CLI agent.",
       "chat": {
         "provider": "claude-cli",
+        "models": ["opus", "sonnet", "haiku"],
         "config": {
           "workdir": "/path/to/workspace",
-          "extraArgs": ["--model", "sonnet", "--dangerously-skip-permissions"],
+          "extraArgs": ["--dangerously-skip-permissions"],
           "wrapper": {
-            "path": "/path/to/container/run.sh",
+            "path": "/home/kevin/devtools/container/run.sh",
             "env": {
               "PERSISTENT": "1",
+              "PROXY": "1",
               "CONTAINER_NAME": "assistant"
             }
           }
@@ -71,20 +73,25 @@
       "description": "OpenAI Codex CLI agent.",
       "chat": {
         "provider": "codex-cli",
+        "models": ["gpt-5.2-codex", "gpt-5.2"],
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "config": {
           "workdir": "/path/to/workspace",
           "extraArgs": [
-            "--model",
-            "o3",
-            "--config",
-            "model_reasoning_effort=high",
-            "--full-auto",
+            "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox"
           ],
           "wrapper": {
-            "path": "/path/to/container/run.sh",
+            "path": "/home/kevin/devtools/container/run.sh",
             "env": {
               "PERSISTENT": "1",
+              "PROXY": "1",
               "CONTAINER_NAME": "assistant"
             }
           }
@@ -107,23 +114,46 @@
       "description": "Pi coding assistant.",
       "chat": {
         "provider": "pi-cli",
+        "models": [
+          "anthropic/claude-sonnet-4-5",
+          "openai-codex/gpt-5.2-codex"
+        ],
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
         "config": {
-          "workdir": "/path/to/workspace",
-          "extraArgs": [
-            "--provider",
-            "anthropic",
-            "--model",
-            "claude-sonnet-4-20250514",
-            "--thinking",
-            "off"
-          ],
           "wrapper": {
-            "path": "/path/to/container/run.sh",
+            "path": "/home/kevin/devtools/container/run.sh",
             "env": {
               "PERSISTENT": "1",
+              "PROXY": "1",
               "CONTAINER_NAME": "assistant"
             }
           }
+        }
+      }
+    },
+    {
+      "agentId": "pi-cli-multi",
+      "displayName": "Pi CLI (Multi-Model)",
+      "description": "Pi CLI with multiple selectable models.",
+      "chat": {
+        "provider": "pi-cli",
+        "models": [
+          "anthropic/claude-sonnet-4-20250514",
+          "openai/gpt-4o",
+          "anthropic/claude-opus-4-20250514"
+        ],
+        "thinking": [
+          "off",
+          "high"
+        ],
+        "config": {
+          "workdir": "/path/to/workspace"
         }
       }
     },
