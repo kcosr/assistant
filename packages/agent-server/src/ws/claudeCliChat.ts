@@ -143,6 +143,7 @@ export async function runClaudeCliChat(options: {
   sessionId: string;
   resumeSession: boolean;
   userText: string;
+  model?: string;
   config?: ClaudeCliChatConfig;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
@@ -183,6 +184,10 @@ export async function runClaudeCliChat(options: {
     'stream-json',
     '--include-partial-messages',
   ];
+
+  if (options.model) {
+    args.push('--model', options.model);
+  }
 
   if (config?.extraArgs?.length) {
     args.push(...config.extraArgs);

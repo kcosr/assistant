@@ -55,6 +55,7 @@ const CLAUDE_CLI_RESERVED_ARGS = [
 const CODEX_CLI_RESERVED_ARGS = ['--json', 'resume'] as const;
 
 const PI_CLI_RESERVED_ARGS = ['--mode', '--session', '--session-dir', '--continue', '-p'] as const;
+const CODEX_REASONING_KEY = 'model_reasoning_effort';
 
 function assertNoReservedArgs(options: {
   agentId: string;
@@ -83,6 +84,109 @@ function assertNoReservedArgs(options: {
       `agents[${agentId}].chat.config.extraArgs must not include reserved ${provider} flags: ${list}`,
     );
   }
+}
+
+function hasCodexReasoningConfig(extraArgs: string[]): boolean {
+  for (let i = 0; i < extraArgs.length; i += 1) {
+    const arg = extraArgs[i];
+    if (typeof arg !== 'string' || arg.length === 0) {
+      continue;
+    }
+    if (arg === '--config' || arg === '-c') {
+      const value = extraArgs[i + 1];
+      if (typeof value === 'string' && value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('--config=')) {
+      const value = arg.slice('--config='.length);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('-c=')) {
+      const value = arg.slice('-c='.length);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+      continue;
+    }
+    if (arg.startsWith('-c') && arg.length > 2) {
+      const value = arg.slice(2);
+      if (value.includes(CODEX_REASONING_KEY)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function assertNoCodexReasoningExtraArgs(options: { agentId: string; extraArgs?: string[] }): void {
+  const { agentId, extraArgs } = options;
+  if (!extraArgs || extraArgs.length === 0) {
+    return;
+  }
+  if (hasCodexReasoningConfig(extraArgs)) {
+    throw new Error(
+      `agents[${agentId}].chat.config.extraArgs must not include codex model_reasoning_effort overrides when chat.thinking is set`,
+    );
+  }
+}
+
+function parseChatModels(options: { agentId: string; modelsRaw: unknown }): string[] | undefined {
+  const { agentId, modelsRaw } = options;
+  if (modelsRaw === undefined || modelsRaw === null) {
+    return undefined;
+  }
+  if (!Array.isArray(modelsRaw)) {
+    throw new Error(
+      `agents[${agentId}].chat.models must be an array of non-empty strings, null, or omitted`,
+    );
+  }
+  const collected: string[] = [];
+  for (let i = 0; i < modelsRaw.length; i += 1) {
+    const value = modelsRaw[i];
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(
+        `agents[${agentId}].chat.models[${i}] must be a non-empty string when provided`,
+      );
+    }
+    collected.push(value.trim());
+  }
+  if (collected.length === 0) {
+    throw new Error(`agents[${agentId}].chat.models must contain at least one model when provided`);
+  }
+  return collected;
+}
+
+function parseChatThinking(options: { agentId: string; thinkingRaw: unknown }): string[] | undefined {
+  const { agentId, thinkingRaw } = options;
+  if (thinkingRaw === undefined || thinkingRaw === null) {
+    return undefined;
+  }
+  if (!Array.isArray(thinkingRaw)) {
+    throw new Error(
+      `agents[${agentId}].chat.thinking must be an array of non-empty strings, null, or omitted`,
+    );
+  }
+  const collected: string[] = [];
+  for (let i = 0; i < thinkingRaw.length; i += 1) {
+    const value = thinkingRaw[i];
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error(
+        `agents[${agentId}].chat.thinking[${i}] must be a non-empty string when provided`,
+      );
+    }
+    collected.push(value.trim());
+  }
+  if (collected.length === 0) {
+    throw new Error(
+      `agents[${agentId}].chat.thinking must contain at least one entry when provided`,
+    );
+  }
+  return collected;
 }
 
 const AgentTypeSchema = z.enum(['chat', 'external']);
@@ -147,10 +251,15 @@ const ChatConfigSchema = z.object({
   provider: ChatProviderSchema.optional().nullable(),
   config: z.unknown().optional().nullable(),
   /**
-   * For provider "openai": list of allowed model ids. The first
-   * model is used as the default for new sessions.
+   * For provider "openai" and CLI providers: list of allowed model ids.
+   * The first model is used as the default for new sessions.
    */
   models: z.array(NonEmptyTrimmedStringSchema).optional().nullable(),
+  /**
+   * For providers "pi-cli" and "codex-cli": list of allowed thinking levels.
+   * The first level is used as the default for new sessions.
+   */
+  thinking: z.array(NonEmptyTrimmedStringSchema).optional().nullable(),
 });
 
 const RawAgentConfigSchema = z.object({
@@ -283,16 +392,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         );
       }
 
-      const modelsList =
-        rawChat.models && Array.isArray(rawChat.models)
-          ? rawChat.models.filter((m) => typeof m === 'string' && m.trim().length > 0)
-          : [];
-
-      if (rawChat.models && modelsList.length === 0) {
-        throw new Error(
-          `agents[${agentId}].chat.models must contain at least one non-empty string when provided`,
-        );
-      }
+      const modelsList = parseChatModels({ agentId, modelsRaw: rawChat.models }) ?? [];
 
       if (providerRaw === 'openai') {
         base.chat = {
@@ -301,21 +401,30 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         };
       }
     } else if (provider === 'claude-cli' || provider === 'codex-cli') {
+      const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
+      const thinking =
+        provider === 'codex-cli'
+          ? parseChatThinking({ agentId, thinkingRaw: rawChat.thinking })
+          : undefined;
       const config =
         rawChat.config !== undefined && rawChat.config !== null
           ? CliChatConfigSchema.parse(rawChat.config)
           : undefined;
       if (provider === 'claude-cli') {
         if (config?.extraArgs) {
+          const reservedArgs = models
+            ? [...CLAUDE_CLI_RESERVED_ARGS, '--model']
+            : CLAUDE_CLI_RESERVED_ARGS;
           assertNoReservedArgs({
             agentId,
             provider: 'claude-cli',
             extraArgs: config.extraArgs,
-            reservedArgs: CLAUDE_CLI_RESERVED_ARGS,
+            reservedArgs,
           });
         }
         base.chat = {
           provider: 'claude-cli',
+          ...(models ? { models } : {}),
           ...(config
             ? {
                 config: {
@@ -335,15 +444,23 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         };
       } else {
         if (config?.extraArgs) {
+          const reservedArgs = models
+            ? [...CODEX_CLI_RESERVED_ARGS, '--model']
+            : CODEX_CLI_RESERVED_ARGS;
           assertNoReservedArgs({
             agentId,
             provider: 'codex-cli',
             extraArgs: config.extraArgs,
-            reservedArgs: CODEX_CLI_RESERVED_ARGS,
+            reservedArgs,
           });
+          if (thinking) {
+            assertNoCodexReasoningExtraArgs({ agentId, extraArgs: config.extraArgs });
+          }
         }
         base.chat = {
           provider: 'codex-cli',
+          ...(models ? { models } : {}),
+          ...(thinking ? { thinking } : {}),
           ...(config
             ? {
                 config: {
@@ -363,22 +480,33 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         };
       }
     } else if (provider === 'pi-cli') {
+      const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
+      const thinking = parseChatThinking({ agentId, thinkingRaw: rawChat.thinking });
       const config =
         rawChat.config !== undefined && rawChat.config !== null
           ? PiCliChatConfigSchema.parse(rawChat.config)
           : undefined;
 
       if (config?.extraArgs) {
+        const reservedArgs = models || thinking
+          ? [
+              ...PI_CLI_RESERVED_ARGS,
+              ...(models ? ['--model', '--provider'] : []),
+              ...(thinking ? ['--thinking'] : []),
+            ]
+          : PI_CLI_RESERVED_ARGS;
         assertNoReservedArgs({
           agentId,
           provider: 'pi-cli',
           extraArgs: config.extraArgs,
-          reservedArgs: PI_CLI_RESERVED_ARGS,
+          reservedArgs,
         });
       }
 
       base.chat = {
         provider: 'pi-cli',
+        ...(models ? { models } : {}),
+        ...(thinking ? { thinking } : {}),
         ...(config
           ? {
               config: {

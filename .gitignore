@@ -5,6 +5,7 @@ coverage
 *.log
 .symgrep/
 .codemap/
+.lumen/
 npm-debug.log*
 pnpm-lock.yaml
 *.tsbuildinfo

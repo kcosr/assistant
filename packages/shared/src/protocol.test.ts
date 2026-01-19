@@ -62,6 +62,17 @@ describe('client message validation', () => {
     const parsed = validateClientMessage(message);
     expect(parsed).toEqual(message);
   });
+
+  it('accepts a set_session_thinking message', () => {
+    const message: ClientMessage = {
+      type: 'set_session_thinking',
+      sessionId: 'session-1',
+      thinking: 'medium',
+    };
+
+    const parsed = validateClientMessage(message);
+    expect(parsed).toEqual(message);
+  });
 });
 
 describe('server message validation', () => {

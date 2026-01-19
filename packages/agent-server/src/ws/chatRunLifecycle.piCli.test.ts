@@ -41,7 +41,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
         agentId: 'pi',
         displayName: 'Pi',
         description: 'Pi CLI',
-        chat: { provider: 'pi-cli' },
+        chat: { provider: 'pi-cli', models: ['pi-model'] },
       },
     ]);
 
@@ -102,6 +102,12 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       log: () => undefined,
       eventStore,
     });
+
+    expect(runPiCliChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'pi-model',
+      }),
+    );
 
     const textDelta = broadcast.filter((message) => message.type === 'text_delta');
     const textDone = broadcast.filter((message) => message.type === 'text_done');

@@ -66,6 +66,26 @@ function isStringWithLength(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
+function splitPiModel(modelRaw?: string): { provider?: string; model?: string } {
+  if (!modelRaw) {
+    return {};
+  }
+  const trimmed = modelRaw.trim();
+  if (!trimmed) {
+    return {};
+  }
+  const slashIndex = trimmed.indexOf('/');
+  if (slashIndex <= 0 || slashIndex === trimmed.length - 1) {
+    return { model: trimmed };
+  }
+  const provider = trimmed.slice(0, slashIndex).trim();
+  const model = trimmed.slice(slashIndex + 1).trim();
+  if (!provider || !model) {
+    return { model: trimmed };
+  }
+  return { provider, model };
+}
+
 function extractTextDelta(event: PiCliEvent): string | undefined {
   const type = event['type'];
 
@@ -196,6 +216,8 @@ export async function runPiCliChat(options: {
   sessionId: string;
   piSessionId?: string;
   userText: string;
+  model?: string;
+  thinking?: string;
   config?: PiCliChatConfig;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
@@ -240,6 +262,16 @@ export async function runPiCliChat(options: {
   const args: string[] = ['--mode', 'json'];
   if (piSessionId) {
     args.push('--session', piSessionId);
+  }
+  const { provider: modelProvider, model: modelId } = splitPiModel(options.model);
+  if (modelProvider) {
+    args.push('--provider', modelProvider);
+  }
+  if (modelId) {
+    args.push('--model', modelId);
+  }
+  if (options.thinking) {
+    args.push('--thinking', options.thinking);
   }
 
   if (config?.extraArgs?.length) {

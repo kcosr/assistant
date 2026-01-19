@@ -575,13 +575,14 @@ All CLI providers share the same config shape:
 {
   "chat": {
     "provider": "pi-cli",
+    "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
+    "thinking": ["off", "low", "medium", "high", "xhigh"],
     "config": {
-      "workdir": "/path/to/workspace",
-      "extraArgs": ["--provider", "anthropic", "--model", "claude-opus-4-5"],
       "wrapper": {
-        "path": "/path/to/container/run.sh",
+        "path": "/home/kevin/devtools/container/run.sh",
         "env": {
           "PERSISTENT": "1",
+          "PROXY": "1",
           "CONTAINER_NAME": "assistant"
         }
       }
@@ -590,6 +591,8 @@ All CLI providers share the same config shape:
 }
 ```
 
+- `models`: optional list of allowed model ids for CLI providers (first is default). For `pi-cli`, entries may be `provider/model` and are split into `--provider` + `--model`. When set, do not include `--model` in `extraArgs` (and for `pi-cli`, do not include `--provider`).
+- `thinking`: optional list of allowed thinking levels for `pi-cli` and `codex-cli` (first is default). For `codex-cli`, the selected level maps to `--config model_reasoning_effort=<level>`. When set, do not include `--thinking` in `extraArgs` (pi) or `model_reasoning_effort` overrides in `extraArgs` (codex).
 - `workdir`: optional working directory for the CLI process
 - `extraArgs`: optional extra CLI flags (reserved flags are managed by the server)
 - `wrapper.path`: optional wrapper executable used to run the CLI (for containerized runs)
@@ -614,7 +617,9 @@ Reserved flags (must not be in `extraArgs`):
 
 - `claude-cli`: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`
 - `codex-cli`: `--json`, `resume`
-- `pi-cli`: `--mode`, `--session`, `--continue`, `-p`
+- `pi-cli`: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`
+
+When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `pi-cli`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `codex-cli`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
 
 ## Security Notes
 

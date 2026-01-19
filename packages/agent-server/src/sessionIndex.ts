@@ -52,6 +52,12 @@ export interface SessionSummary {
    */
   model?: string;
   /**
+   * Currently selected thinking level for this session (when applicable).
+   * When omitted, the default thinking level for the associated agent
+   * will be used.
+   */
+  thinking?: string;
+  /**
    * @deprecated Pinned sessions are no longer used for routing and
    * may be removed in a future version.
    */
@@ -166,6 +172,7 @@ export class SessionIndex {
     sessionId?: string;
     agentId: string;
     model?: string;
+    thinking?: string;
   }): Promise<SessionSummary> {
     await this.ensureLoaded();
     const sessionId = options?.sessionId;
@@ -174,6 +181,7 @@ export class SessionIndex {
       throw new Error('agentId is required to create a session');
     }
     const model = options?.model;
+    const thinking = options?.thinking;
     const existing = sessionId ? this.sessions.get(sessionId) : undefined;
     if (existing && !existing.deleted) {
       if (existing.agentId && existing.agentId !== agentId) {
@@ -200,6 +208,7 @@ export class SessionIndex {
       sessionId: id,
       agentId,
       ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -211,6 +220,7 @@ export class SessionIndex {
       timestamp,
       agentId,
       ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
     };
     await this.append(record);
 
@@ -406,6 +416,36 @@ export class SessionIndex {
       sessionId,
       timestamp,
       model,
+    };
+    await this.append(record);
+
+    return { ...existing };
+  }
+
+  async setSessionThinking(
+    sessionId: string,
+    thinking: string | null,
+  ): Promise<SessionSummary | undefined> {
+    await this.ensureLoaded();
+    const existing = this.sessions.get(sessionId);
+    if (!existing || existing.deleted) {
+      return undefined;
+    }
+
+    const timestamp = new Date().toISOString();
+    existing.updatedAt = timestamp;
+    if (thinking === null) {
+      delete existing.thinking;
+    } else {
+      existing.thinking = thinking;
+    }
+    this.sessions.set(sessionId, existing);
+
+    const record: SessionIndexRecord = {
+      type: 'session_thinking_set',
+      sessionId,
+      timestamp,
+      thinking,
     };
     await this.append(record);
 

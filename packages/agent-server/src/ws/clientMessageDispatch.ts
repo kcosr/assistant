@@ -6,6 +6,7 @@ import type {
   ClientPingMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
+  ClientSetSessionThinkingMessage,
   ClientSubscribeMessage,
   ClientTextInputMessage,
   ClientUnsubscribeMessage,
@@ -34,6 +35,7 @@ export function handleClientTextMessage(options: {
   onSubscribe: (message: ClientSubscribeMessage) => void | Promise<void>;
   onUnsubscribe: (message: ClientUnsubscribeMessage) => void | Promise<void>;
   onSetSessionModel: (message: ClientSetSessionModelMessage) => void | Promise<void>;
+  onSetSessionThinking: (message: ClientSetSessionThinkingMessage) => void | Promise<void>;
   onCancelQueuedMessage: (message: ClientCancelQueuedMessage) => void | Promise<void>;
 }): void {
   const {
@@ -51,6 +53,7 @@ export function handleClientTextMessage(options: {
     onSubscribe,
     onUnsubscribe,
     onSetSessionModel,
+    onSetSessionThinking,
     onCancelQueuedMessage,
   } = options;
 
@@ -122,6 +125,9 @@ export function handleClientTextMessage(options: {
       break;
     case 'set_session_model':
       void onSetSessionModel(message);
+      break;
+    case 'set_session_thinking':
+      void onSetSessionThinking(message);
       break;
   }
 }

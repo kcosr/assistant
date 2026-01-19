@@ -8,7 +8,7 @@ import type { SessionHub } from '../sessionHub';
 import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { ToolHost } from '../tools';
 import { startSessionMessage } from '../sessionMessages';
-import { getDefaultModelForNewSession } from '../sessionModel';
+import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
@@ -541,8 +541,11 @@ export class ScheduledSessionService {
 
     const agent = this.options.agentRegistry.getAgent(agentId);
     const model = getDefaultModelForNewSession(agent);
+    const thinking = getDefaultThinkingForNewSession(agent);
     const summary = await sessionIndex.createSession(
-      model ? { agentId, model } : { agentId },
+      model || thinking
+        ? { agentId, ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) }
+        : { agentId },
     );
     sessionHub.broadcastSessionCreated(summary);
 

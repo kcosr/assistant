@@ -27,6 +27,7 @@ export interface ChatPanelDom {
   runtimeElements: ChatRuntimeElements;
   sessionLabelEl: HTMLButtonElement | null;
   modelSelectEl: HTMLSelectElement | null;
+  thinkingSelectEl: HTMLSelectElement | null;
   refreshButtonEl: HTMLButtonElement | null;
   inputElements: InputRuntimeElements;
   chromeController?: PanelChromeController;
@@ -88,6 +89,7 @@ function getChatPanelDom(container: HTMLElement): ChatPanelDom {
     runtimeElements,
     sessionLabelEl: container.querySelector<HTMLButtonElement>('[data-role="chat-session-label"]'),
     modelSelectEl: container.querySelector<HTMLSelectElement>('[data-role="chat-model-select"]'),
+    thinkingSelectEl: container.querySelector<HTMLSelectElement>('[data-role="chat-thinking-select"]'),
     refreshButtonEl: container.querySelector<HTMLButtonElement>(
       '[data-role="chat-refresh-history"]',
     ),

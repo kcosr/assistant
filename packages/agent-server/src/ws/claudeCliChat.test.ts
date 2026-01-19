@@ -56,6 +56,39 @@ describe('runClaudeCliChat', () => {
     expect(calls[0]?.args).toContain('hello');
   });
 
+  it('adds model to claude args when provided', async () => {
+    const child = new FakeClaudeProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: ClaudeCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      model: 'sonnet',
+      config: { extraArgs: ['--agent', 'test-agent'] },
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).toContain('--model');
+    expect(args).toContain('sonnet');
+    expect(args).toContain('--agent');
+    expect(args).toContain('test-agent');
+  });
+
   it('spawns claude with resume for subsequent messages and passes extra args', async () => {
     const child = new FakeClaudeProcess();
     const calls: Array<{ command: string; args: readonly string[] }> = [];

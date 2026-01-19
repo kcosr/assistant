@@ -103,6 +103,12 @@ export const ClientSetSessionModelMessageSchema = z.object({
   model: z.string(),
 });
 
+export const ClientSetSessionThinkingMessageSchema = z.object({
+  type: z.literal('set_session_thinking'),
+  sessionId: z.string(),
+  thinking: z.string(),
+});
+
 export const FilterOpSchema = z.enum([
   'eq',
   'neq',
@@ -261,6 +267,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   ClientSubscribeMessageSchema,
   ClientUnsubscribeMessageSchema,
   ClientSetSessionModelMessageSchema,
+  ClientSetSessionThinkingMessageSchema,
 ]);
 
 export type ClientHelloMessage = z.infer<typeof ClientHelloMessageSchema>;
@@ -273,6 +280,7 @@ export type ClientPanelEventMessage = z.infer<typeof PanelEventEnvelopeSchema>;
 export type ClientSubscribeMessage = z.infer<typeof ClientSubscribeMessageSchema>;
 export type ClientUnsubscribeMessage = z.infer<typeof ClientUnsubscribeMessageSchema>;
 export type ClientSetSessionModelMessage = z.infer<typeof ClientSetSessionModelMessageSchema>;
+export type ClientSetSessionThinkingMessage = z.infer<typeof ClientSetSessionThinkingMessageSchema>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 export const ServerSessionReadyMessageSchema = z.object({
@@ -283,6 +291,8 @@ export const ServerSessionReadyMessageSchema = z.object({
   outputMode: OutputModeSchema,
   availableModels: z.array(z.string()).optional(),
   currentModel: z.string().optional(),
+  availableThinking: z.array(z.string()).optional(),
+  currentThinking: z.string().optional(),
   activeArtifact: z
     .object({
       type: z.string(),

@@ -330,6 +330,66 @@ describe('loadConfig', () => {
     });
   });
 
+  it('supports codex-cli thinking config', async () => {
+    const filePath = createTempFile('config-codex-cli-thinking');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'codex-cli',
+          displayName: 'Codex CLI',
+          description: 'Codex via CLI',
+          chat: {
+            provider: 'codex-cli',
+            thinking: ['low', 'high'],
+            config: {
+              extraArgs: ['--full-auto'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents).toHaveLength(1);
+    const [agent] = config.agents;
+    if (!agent) {
+      throw new Error('Expected agent to be defined');
+    }
+    expect(agent.chat).toEqual({
+      provider: 'codex-cli',
+      thinking: ['low', 'high'],
+      config: {
+        extraArgs: ['--full-auto'],
+      },
+    });
+  });
+
+  it('rejects codex-cli model_reasoning_effort extraArgs when thinking is configured', async () => {
+    const filePath = createTempFile('config-codex-cli-thinking-conflict');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'codex-cli',
+          displayName: 'Codex CLI',
+          description: 'Codex via CLI',
+          chat: {
+            provider: 'codex-cli',
+            thinking: ['high'],
+            config: {
+              extraArgs: ['--config', 'model_reasoning_effort=high'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/model_reasoning_effort/);
+  });
+
   it('supports pi-cli chat provider config', async () => {
     const filePath = createTempFile('config-pi-cli');
     const configJson = {
@@ -340,14 +400,10 @@ describe('loadConfig', () => {
           description: 'Pi via CLI',
           chat: {
             provider: 'pi-cli',
+            models: ['pi-model'],
+            thinking: ['medium'],
             config: {
               extraArgs: [
-                '--provider',
-                'google',
-                '--model',
-                'pi-model',
-                '--thinking',
-                'medium',
                 '--tools',
                 'bash,fs',
               ],
@@ -367,14 +423,10 @@ describe('loadConfig', () => {
     }
     expect(agent.chat).toEqual({
       provider: 'pi-cli',
+      models: ['pi-model'],
+      thinking: ['medium'],
       config: {
         extraArgs: [
-          '--provider',
-          'google',
-          '--model',
-          'pi-model',
-          '--thinking',
-          'medium',
           '--tools',
           'bash,fs',
         ],
@@ -460,6 +512,78 @@ describe('loadConfig', () => {
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
     expect(() => loadConfig(filePath)).toThrow(/extraArgs must not include reserved/i);
+  });
+
+  it('rejects pi-cli --model extraArgs when models are configured', async () => {
+    const filePath = createTempFile('config-pi-cli-models-conflict');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'pi-cli',
+          displayName: 'Pi CLI',
+          description: 'Pi via CLI',
+          chat: {
+            provider: 'pi-cli',
+            models: ['pi-model'],
+            config: {
+              extraArgs: ['--model', 'pi-model'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/reserved pi-cli flags: --model/);
+  });
+
+  it('rejects pi-cli --provider extraArgs when models are configured', async () => {
+    const filePath = createTempFile('config-pi-cli-provider-conflict');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'pi-cli',
+          displayName: 'Pi CLI',
+          description: 'Pi via CLI',
+          chat: {
+            provider: 'pi-cli',
+            models: ['pi-model'],
+            config: {
+              extraArgs: ['--provider', 'google'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/reserved pi-cli flags: --provider/);
+  });
+
+  it('rejects pi-cli --thinking extraArgs when thinking is configured', async () => {
+    const filePath = createTempFile('config-pi-cli-thinking-conflict');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'pi-cli',
+          displayName: 'Pi CLI',
+          description: 'Pi via CLI',
+          chat: {
+            provider: 'pi-cli',
+            thinking: ['medium'],
+            config: {
+              extraArgs: ['--thinking', 'high'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/reserved pi-cli flags: --thinking/);
   });
 
   it('rejects invalid cron expressions in schedules', async () => {
