@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed release script to include desktop version files in the release commit. ([#14](https://github.com/kcosr/assistant/pull/14))
 
 ### Removed
 
