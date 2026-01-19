@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed session list updates for sessions created via the sessions plugin. ([#12](https://github.com/kcosr/assistant/pull/12))
 
 ### Removed
 
