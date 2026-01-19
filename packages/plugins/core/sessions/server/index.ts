@@ -127,6 +127,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(model ? { model } : {}),
           });
           await sessionHub.ensureSessionState(summary.sessionId, summary, true);
+          sessionHub.broadcastSessionCreated(summary);
           return summary;
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to create session';
