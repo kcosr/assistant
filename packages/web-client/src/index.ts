@@ -931,6 +931,13 @@ async function main(): Promise<void> {
       entry.inputRuntime.updateContextAvailability();
       if (previousSessionId && previousSessionId !== sessionId) {
         loadedChatTranscripts.delete(previousSessionId);
+        // Reset panel state when switching sessions to prevent lingering state from previous session
+        entry.runtime.chatRenderer.hideTypingIndicator();
+        entry.inputRuntime.speechAudioController?.syncMicButtonState();
+        // Set panel to idle immediately; will update to correct state after transcript loads
+        if (panelHostController && sessionId) {
+          panelHostController.setPanelMetadata(panelId, { status: 'idle' });
+        }
       }
       if (sessionId) {
         chatPanelIdBySession.set(sessionId, panelId);
