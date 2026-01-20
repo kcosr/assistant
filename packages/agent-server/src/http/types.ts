@@ -24,7 +24,6 @@ export interface HttpContext {
   httpToolContext: ToolContext;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
-  safeSlugifyArtifactId: (raw: string) => string | null;
   webClientPublicDir: string;
   webClientDistDir: string;
   preferencesStore: PreferencesStore;

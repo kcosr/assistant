@@ -267,6 +267,33 @@ When `manifest.json` includes `operations`, the server generates tools + HTTP ro
 `operations` map for handlers. Legacy `tools` and `httpRoutes` are ignored for plugins that declare
 operations. CLI bundles call the same routes and can pass `--session-id` for session-scoped tools.
 
+### Extra HTTP Routes
+
+Plugins using operations can still define additional HTTP routes for endpoints that need raw
+response handling (such as binary file downloads). Use `extraHttpRoutes` in the module export:
+
+```ts
+export function createPlugin(): PluginModule {
+  return {
+    operations: { /* ... */ },
+    extraHttpRoutes: [
+      async (context, req, res, url, segments, helpers) => {
+        if (req.method === 'GET' && segments[3] === 'files') {
+          // Serve binary file
+          res.setHeader('Content-Type', 'application/octet-stream');
+          res.end(fileBuffer);
+          return true;
+        }
+        return false;
+      },
+    ],
+  };
+}
+```
+
+`extraHttpRoutes` are processed alongside operations-generated routes. Use them for binary
+endpoints that can't return JSON responses.
+
 ## Plugin Instances (Config)
 
 Plugins can optionally scope their data into multiple instances using configuration. Instance

@@ -157,6 +157,11 @@ export interface PluginModule {
   searchProvider?: SearchProvider;
   panelEventHandlers?: Record<string, PanelEventHandler>;
   httpRoutes?: HttpRouteHandler[];
+  /**
+   * Additional HTTP routes that are always included alongside operations routes.
+   * Use for binary endpoints (file downloads) that can't be handled by JSON operations.
+   */
+  extraHttpRoutes?: HttpRouteHandler[];
   initialize?: (dataDir: string, pluginConfig?: PluginConfig) => Promise<void>;
   shutdown?: () => Promise<void>;
   prepareGitSnapshot?: (options: { instanceId: string }) => Promise<void> | void;

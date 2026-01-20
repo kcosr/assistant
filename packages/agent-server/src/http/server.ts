@@ -68,19 +68,6 @@ export function createHttpServer(options: {
     path.join(config.dataDir, 'plugin-settings.json'),
   );
 
-  const ARTIFACT_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-  const slugifyArtifactId = (raw: string): string => {
-    const normalized = raw.normalize('NFKD').toLowerCase();
-    return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  };
-  const safeSlugifyArtifactId = (raw: string): string | null => {
-    const slug = slugifyArtifactId(raw);
-    if (!slug || !ARTIFACT_ID_PATTERN.test(slug)) {
-      return null;
-    }
-    return slug;
-  };
-
   const server = http.createServer(async (req, res) => {
     if (!req.url || !req.method) {
       res.statusCode = 400;
@@ -174,7 +161,6 @@ export function createHttpServer(options: {
         httpToolContext,
         eventStore,
         ...(scheduledSessionService ? { scheduledSessionService } : {}),
-        safeSlugifyArtifactId,
         webClientPublicDir: WEB_CLIENT_PUBLIC_DIR,
         webClientDistDir: WEB_CLIENT_DIST_DIR,
         preferencesStore,

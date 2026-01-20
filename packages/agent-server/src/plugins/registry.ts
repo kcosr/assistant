@@ -220,11 +220,12 @@ export class DefaultPluginRegistry implements PluginRegistry {
       : Array.isArray(module?.tools)
         ? module?.tools
         : [];
-    const httpRoutes = hasOperations
-      ? operations.httpRoutes
-      : Array.isArray(module?.httpRoutes)
-        ? module?.httpRoutes
-        : [];
+    // Collect HTTP routes: operations routes + extra routes (for binary endpoints)
+    const operationRoutes = hasOperations ? operations.httpRoutes : [];
+    const extraRoutes = Array.isArray(module?.extraHttpRoutes) ? module.extraHttpRoutes : [];
+    const legacyRoutes =
+      !hasOperations && Array.isArray(module?.httpRoutes) ? module.httpRoutes : [];
+    const httpRoutes = [...operationRoutes, ...extraRoutes, ...legacyRoutes];
     if (hasOperations) {
       if (module?.tools && module.tools.length > 0) {
         console.warn(
@@ -233,7 +234,7 @@ export class DefaultPluginRegistry implements PluginRegistry {
       }
       if (module?.httpRoutes && module.httpRoutes.length > 0) {
         console.warn(
-          `[plugins] Plugin "${manifest.id}" provided legacy HTTP routes; operations are used instead.`,
+          `[plugins] Plugin "${manifest.id}" provided legacy HTTP routes; use extraHttpRoutes for additional endpoints.`,
         );
       }
     }

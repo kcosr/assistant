@@ -357,6 +357,21 @@ async function buildCliBundle(manifest, outputPath) {
   await fs.chmod(outputPath, 0o755);
 }
 
+async function buildCustomCliBundle(entryPath, outputPath) {
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await build({
+    entryPoints: [entryPath],
+    outfile: outputPath,
+    bundle: true,
+    format: 'cjs',
+    platform: 'node',
+    target: 'node20',
+    banner: { js: '#!/usr/bin/env node' },
+  });
+
+  await fs.chmod(outputPath, 0o755);
+}
+
 async function buildPlugin({ pluginId, sourceDir }) {
   const extraSkillsDirs = parseSkillsDirs(process.argv.slice(2));
 
@@ -401,7 +416,13 @@ async function buildPlugin({ pluginId, sourceDir }) {
   const sourceBinDir = path.join(sourceDir, 'bin');
   const outputBinDir = path.join(outputDir, 'bin');
   const sourceBinExists = await pathExists(sourceBinDir);
-  if (sourceBinExists) {
+
+  // Check for custom CLI entry point (TypeScript)
+  const customCliEntry = path.join(sourceDir, 'bin', 'cli.ts');
+  const hasCustomCliEntry = await pathExists(customCliEntry);
+
+  if (sourceBinExists && !hasCustomCliEntry) {
+    // Copy pre-built bin directory (legacy behavior)
     await copyDirIfExists(sourceBinDir, outputBinDir);
   }
 
@@ -409,10 +430,17 @@ async function buildPlugin({ pluginId, sourceDir }) {
   const surfaces = manifest.surfaces || {};
   const enableCli = surfaces.cli !== false;
   const enableHttp = surfaces.http !== false;
-  const shouldBuildCli = !sourceBinExists && operations.length > 0 && enableCli && enableHttp;
-  if (shouldBuildCli) {
+
+  if (hasCustomCliEntry && enableCli) {
+    // Build custom CLI from TypeScript entry
     const cliPath = path.join(outputDir, 'bin', getSkillCliName(manifest.id));
-    await buildCliBundle(manifest, cliPath);
+    await buildCustomCliBundle(customCliEntry, cliPath);
+  } else {
+    const shouldBuildCli = !sourceBinExists && operations.length > 0 && enableCli && enableHttp;
+    if (shouldBuildCli) {
+      const cliPath = path.join(outputDir, 'bin', getSkillCliName(manifest.id));
+      await buildCliBundle(manifest, cliPath);
+    }
   }
 
   await writeSkillsBundles({ manifest, sourceDir, outputDir, extraSkillsDirs });

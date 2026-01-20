@@ -6,10 +6,16 @@
 
 ### Added
 - Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds.
+- Added artifacts plugin for sharing files between agents and users, including panel UI, CLI, and server operations.
+- Added custom plugin CLI bundling support for plugins that ship a `bin/cli.ts` entry point.
 
 ### Changed
+- Added `extraHttpRoutes` for operations-based plugins to support binary download endpoints alongside JSON operations.
+- Artifacts file download endpoint now supports inline viewing by default with `?download=1` to force attachment.
+- Added Tauri native save dialog and Capacitor filesystem/share support for artifact downloads.
 
 ### Fixed
+- Fixed artifacts panel theme colors to use shared `--color-*` variables for light/dark themes.
 
 ### Removed
 
