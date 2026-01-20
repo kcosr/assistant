@@ -14,7 +14,7 @@ function loadConfig(): Config | null {
   }
 
   // Try loading from config file
-  const configNames = ['assistant.config.json', 'assistant.config.yaml', 'assistant.config.yml'];
+  const configNames = ['assistant.config.json'];
   for (const name of configNames) {
     const configPath = path.resolve(process.cwd(), name);
     if (fs.existsSync(configPath)) {

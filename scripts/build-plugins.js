@@ -421,8 +421,8 @@ async function buildPlugin({ pluginId, sourceDir }) {
   const customCliEntry = path.join(sourceDir, 'bin', 'cli.ts');
   const hasCustomCliEntry = await pathExists(customCliEntry);
 
-  if (sourceBinExists && !hasCustomCliEntry) {
-    // Copy pre-built bin directory (legacy behavior)
+  if (sourceBinExists) {
+    // Copy pre-built bin directory (legacy behavior and auxiliary assets)
     await copyDirIfExists(sourceBinDir, outputBinDir);
   }
 

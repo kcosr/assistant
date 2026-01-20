@@ -31,7 +31,11 @@ export type ClientAudioCapabilities = z.infer<typeof ClientAudioCapabilitiesSche
 export const ControlActionSchema = z.enum(['start', 'stop', 'cancel', 'clear']);
 export type ControlAction = z.infer<typeof ControlActionSchema>;
 
-export const PanelDisplayModeSchema = z.enum(['browser', 'item', 'view']);
+export const PanelDisplayModeSchema = z
+  .enum(['browser', 'item', 'view', 'artifact'])
+  .transform((value): 'browser' | 'item' | 'view' =>
+    value === 'artifact' ? 'item' : value,
+  );
 export type PanelDisplayMode = z.infer<typeof PanelDisplayModeSchema>;
 
 export const ProtocolVersionFieldSchema = z
