@@ -598,6 +598,14 @@ async function main(): Promise<void> {
     );
   }
 
+  function hasChatPanelActiveOutput(panelId: string): boolean {
+    const entry = chatPanelsById.get(panelId);
+    if (!entry) {
+      return false;
+    }
+    return entry.runtime.chatRenderer.hasActiveOutput();
+  }
+
   function getChatPanelSessionIds(): Set<string> {
     const ids = new Set<string>();
     for (const entry of chatPanelsById.values()) {
@@ -1504,6 +1512,7 @@ async function main(): Promise<void> {
       getAvailablePanelTypes,
       openPanelLauncher,
       openSessionPicker,
+      hasChatPanelActiveOutput,
       onLayoutChange: (layout) => {
         panelHostControllerInstance.setContext('panel.layout', layout);
         updateSessionSubscriptions();
