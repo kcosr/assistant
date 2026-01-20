@@ -139,7 +139,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     }
   });
 
-  it('starts dragging only when menu trigger is used', () => {
+  it('starts dragging when the row body is used', () => {
     const controller = new ListPanelTableController({
       icons: { moreVertical: '' },
       renderTags: () => null,
@@ -152,12 +152,10 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
     const { tbody } = controller.renderTable(baseRenderOptions);
     const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
-    const menuTrigger = row?.querySelector<HTMLElement>('.list-item-menu-trigger');
     expect(row).not.toBeNull();
-    expect(menuTrigger).not.toBeNull();
 
     expect(row?.draggable).toBe(false);
-    menuTrigger?.dispatchEvent(
+    row?.dispatchEvent(
       new PointerEvent('pointerdown', {
         bubbles: true,
         button: 0,
@@ -190,7 +188,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     );
   });
 
-  it('does not start dragging from non-handle cells', () => {
+  it('does not start dragging from title text', () => {
     const controller = new ListPanelTableController({
       icons: { moreVertical: '' },
       renderTags: () => null,
@@ -203,11 +201,11 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
     const { tbody } = controller.renderTable(baseRenderOptions);
     const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
-    const titleCell = row?.querySelector<HTMLTableCellElement>('.list-item-title');
+    const titleText = row?.querySelector<HTMLElement>('.list-item-title span');
     expect(row).not.toBeNull();
-    expect(titleCell).not.toBeNull();
+    expect(titleText).not.toBeNull();
 
-    titleCell?.dispatchEvent(
+    titleText?.dispatchEvent(
       new PointerEvent('pointerdown', {
         bubbles: true,
         button: 0,

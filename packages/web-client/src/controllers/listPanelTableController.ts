@@ -1156,15 +1156,29 @@ export class ListPanelTableController {
         return;
       }
 
-      const newPosition =
-        typeof targetItem.position === 'number'
-          ? targetItem.position
-          : typeof item.position === 'number'
-            ? item.position
-            : index;
+      const draggedIndex = sortedItems.findIndex((it) => it.id === draggedId);
+      const targetIndex = sortedItems.findIndex((it) => it.id === targetItemId);
+      if (draggedIndex === -1 || targetIndex === -1) {
+        onDragEnd?.();
+        return;
+      }
 
-      const originalPosition = draggedItem.position ?? 0;
-      draggedItem.position = newPosition;
+      const insertIndex = draggedIndex > targetIndex ? targetIndex + 1 : targetIndex;
+      const orderedItems = [...sortedItems];
+      const [movedItem] = orderedItems.splice(draggedIndex, 1);
+      if (!movedItem) {
+        onDragEnd?.();
+        return;
+      }
+      orderedItems.splice(insertIndex, 0, movedItem);
+
+      const originalPositions = new Map<ListPanelItem, number | undefined>();
+      orderedItems.forEach((entry, idx) => {
+        originalPositions.set(entry, entry.position);
+        entry.position = idx;
+      });
+
+      const newPosition = insertIndex;
 
       rerender();
 
@@ -1177,7 +1191,14 @@ export class ListPanelTableController {
         position: newPosition,
       });
       if (!success) {
-        draggedItem.position = originalPosition;
+        orderedItems.forEach((entry) => {
+          const original = originalPositions.get(entry);
+          if (typeof original === 'number') {
+            entry.position = original;
+          } else {
+            delete entry.position;
+          }
+        });
         rerender();
       }
 
