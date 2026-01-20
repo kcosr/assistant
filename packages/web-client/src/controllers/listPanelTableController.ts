@@ -1118,6 +1118,7 @@ export class ListPanelTableController {
 
     let onDragStartFromHandle: ((e: DragEvent | null) => void) | null = null;
     let onDragEnd: (() => void) | null = null;
+    let touchDragActive = false;
 
     const reorderDraggedItem = async (
       targetRow: HTMLTableRowElement | null,
@@ -1248,7 +1249,6 @@ export class ListPanelTableController {
       let touchStartX = 0;
       let touchStartY = 0;
       let touchSelectionBlocked = false;
-      let touchDragActive = false;
       const LONG_PRESS_THRESHOLD_MS = 500;
       const TOUCH_MOVE_THRESHOLD = 10;
 
