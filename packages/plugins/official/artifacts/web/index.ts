@@ -295,6 +295,8 @@ function buildArtifactUrl(options: {
       let instances: Instance[] = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
       let selectedInstanceId = DEFAULT_INSTANCE_ID;
       let editingId: string | null = null;
+      let selectedArtifactIds = new Set<string>();
+      let lastSelectedIndex: number | null = null;
       let chromeController: PanelChromeController | null = null;
 
       // Restore persisted state
@@ -307,11 +309,41 @@ function buildArtifactUrl(options: {
         host.persistPanelState({ instanceId: selectedInstanceId });
       };
 
+      const getInstanceLabel = (instanceId: string): string => {
+        return instances.find((instance) => instance.id === instanceId)?.label ?? instanceId;
+      };
+
+      const getSelectedArtifactIds = (): string[] => {
+        return artifacts
+          .filter((artifact) => selectedArtifactIds.has(artifact.id))
+          .map((artifact) => artifact.id);
+      };
+
+      const getSelectedItems = (): { id: string; title: string }[] => {
+        return artifacts
+          .filter((artifact) => selectedArtifactIds.has(artifact.id))
+          .map((artifact) => ({ id: artifact.id, title: artifact.title }))
+          .filter((item) => item.title.trim().length > 0);
+      };
+
       const updatePanelContext = (): void => {
+        const selectedItemIds = getSelectedArtifactIds();
+        const selectedItems = getSelectedItems();
+        const contextAttributes: Record<string, string> = {
+          'instance-id': selectedInstanceId,
+        };
         host.setContext(contextKey, {
+          type: 'artifacts',
+          id: selectedInstanceId,
+          name: getInstanceLabel(selectedInstanceId),
           instance_id: selectedInstanceId,
           artifactCount: artifacts.length,
+          selectedItemIds,
+          selectedItems,
+          selectedItemCount: selectedItemIds.length,
+          contextAttributes,
         });
+        services?.notifyContextAvailabilityChange?.();
       };
 
       // Build UI
@@ -461,6 +493,52 @@ function buildArtifactUrl(options: {
       fileInput.multiple = true;
       container.appendChild(fileInput);
 
+      const applySelectionStyles = (targetIds?: Set<string>): void => {
+        const ids = targetIds ?? selectedArtifactIds;
+        listEl.querySelectorAll<HTMLElement>('.artifacts-item').forEach((row) => {
+          const id = row.dataset['id'];
+          if (!id) {
+            return;
+          }
+          row.classList.toggle('artifacts-item-selected', ids.has(id));
+        });
+      };
+
+      const syncSelection = (): void => {
+        const available = new Set(artifacts.map((artifact) => artifact.id));
+        let changed = false;
+        for (const id of selectedArtifactIds) {
+          if (!available.has(id)) {
+            selectedArtifactIds.delete(id);
+            changed = true;
+          }
+        }
+        if (lastSelectedIndex !== null && (lastSelectedIndex < 0 || lastSelectedIndex >= artifacts.length)) {
+          lastSelectedIndex = null;
+        }
+        if (changed) {
+          applySelectionStyles();
+          updatePanelContext();
+        }
+      };
+
+      const clearSelection = (): void => {
+        if (selectedArtifactIds.size === 0) {
+          return;
+        }
+        selectedArtifactIds.clear();
+        lastSelectedIndex = null;
+        applySelectionStyles();
+        updatePanelContext();
+      };
+
+      const shouldIgnoreSelectionTarget = (target: EventTarget | null): boolean => {
+        if (!(target instanceof Element)) {
+          return false;
+        }
+        return Boolean(target.closest('button, input, textarea, select, a'));
+      };
+
       // Initialize chrome controller
       chromeController = new PanelChromeController({
         root: container,
@@ -468,6 +546,10 @@ function buildArtifactUrl(options: {
         title: 'Artifacts',
         onInstanceChange: (instanceId) => {
           selectedInstanceId = instanceId;
+          selectedArtifactIds.clear();
+          lastSelectedIndex = null;
+          applySelectionStyles();
+          updatePanelContext();
           persistState();
           void refreshList();
         },
@@ -475,6 +557,7 @@ function buildArtifactUrl(options: {
 
       const renderList = (): void => {
         listEl.innerHTML = '';
+        syncSelection();
 
         if (artifacts.length === 0) {
           emptyState.classList.remove('hidden');
@@ -485,10 +568,16 @@ function buildArtifactUrl(options: {
         emptyState.classList.add('hidden');
         listEl.classList.remove('hidden');
 
-        for (const artifact of artifacts) {
+        for (let index = 0; index < artifacts.length; index += 1) {
+          const artifact = artifacts[index]!;
           const item = document.createElement('div');
           item.className = 'artifacts-item';
           item.dataset['id'] = artifact.id;
+          item.dataset['index'] = String(index);
+
+          if (selectedArtifactIds.has(artifact.id)) {
+            item.classList.add('artifacts-item-selected');
+          }
 
           const info = document.createElement('div');
           info.className = 'artifacts-item-info';
@@ -563,6 +652,101 @@ function buildArtifactUrl(options: {
 
           const actions = document.createElement('div');
           actions.className = 'artifacts-item-actions';
+
+          item.addEventListener('click', (e) => {
+            if (isEditing) {
+              return;
+            }
+            if (shouldIgnoreSelectionTarget(e.target)) {
+              return;
+            }
+            if (e.shiftKey && lastSelectedIndex !== null) {
+              e.preventDefault();
+              e.stopPropagation();
+              const start = Math.min(lastSelectedIndex, index);
+              const end = Math.max(lastSelectedIndex, index);
+              const nextSelected = new Set<string>();
+              for (let i = start; i <= end; i += 1) {
+                const id = artifacts[i]?.id;
+                if (id) {
+                  nextSelected.add(id);
+                }
+              }
+              selectedArtifactIds = nextSelected;
+              applySelectionStyles(selectedArtifactIds);
+              updatePanelContext();
+              return;
+            }
+            if (e.ctrlKey || e.metaKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (selectedArtifactIds.has(artifact.id)) {
+                selectedArtifactIds.delete(artifact.id);
+              } else {
+                selectedArtifactIds.add(artifact.id);
+              }
+              lastSelectedIndex = index;
+              item.classList.toggle('artifacts-item-selected', selectedArtifactIds.has(artifact.id));
+              updatePanelContext();
+            }
+          });
+
+          let touchStartTime = 0;
+          let touchStartX = 0;
+          let touchStartY = 0;
+          let touchSelectionBlocked = false;
+          const LONG_PRESS_THRESHOLD_MS = 500;
+          const TOUCH_MOVE_THRESHOLD = 10;
+
+          item.addEventListener(
+            'touchstart',
+            (e) => {
+              touchSelectionBlocked = shouldIgnoreSelectionTarget(e.target);
+              if (touchSelectionBlocked) {
+                return;
+              }
+              touchStartTime = Date.now();
+              const touch = e.touches[0];
+              if (touch) {
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+              }
+            },
+            { passive: true },
+          );
+
+          item.addEventListener('touchend', (e) => {
+            if (touchSelectionBlocked) {
+              touchSelectionBlocked = false;
+              return;
+            }
+
+            const touchDuration = Date.now() - touchStartTime;
+            const touch = e.changedTouches[0];
+            if (!touch) {
+              return;
+            }
+            if (touchDuration >= LONG_PRESS_THRESHOLD_MS) {
+              const dx = Math.abs(touch.clientX - touchStartX);
+              const dy = Math.abs(touch.clientY - touchStartY);
+              if (dx < TOUCH_MOVE_THRESHOLD && dy < TOUCH_MOVE_THRESHOLD) {
+                e.preventDefault();
+                if (selectedArtifactIds.has(artifact.id)) {
+                  selectedArtifactIds.delete(artifact.id);
+                } else {
+                  selectedArtifactIds.add(artifact.id);
+                }
+                lastSelectedIndex = index;
+                item.classList.toggle(
+                  'artifacts-item-selected',
+                  selectedArtifactIds.has(artifact.id),
+                );
+                updatePanelContext();
+              }
+            }
+
+            touchSelectionBlocked = false;
+          });
 
           if (!isEditing) {
             const openBtn = document.createElement('button');
@@ -643,11 +827,13 @@ function buildArtifactUrl(options: {
             persistState();
             await refreshList();
           }
+          updatePanelContext();
         } catch (error) {
           services?.setStatus?.('Failed to load instances');
           console.error('Failed to load instances', error);
           instances = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
           chromeController?.setInstances(instances, selectedInstanceId);
+          updatePanelContext();
         }
       };
 
@@ -814,6 +1000,11 @@ function buildArtifactUrl(options: {
         }
       });
 
+      const handleClearContextSelection = (): void => {
+        clearSelection();
+      };
+      document.addEventListener('assistant:clear-context-selection', handleClearContextSelection);
+
       // Initial data fetch
       void refreshInstances();
       void refreshList();
@@ -843,6 +1034,7 @@ function buildArtifactUrl(options: {
                 persistState();
                 void refreshList();
               }
+              updatePanelContext();
             }
           } else if (eventType === 'panel_update') {
             const instanceId = payload['instance_id'] as string;
@@ -862,12 +1054,14 @@ function buildArtifactUrl(options: {
                 if (idx >= 0) {
                   artifacts[idx] = artifact;
                   renderList();
+                  updatePanelContext();
                 }
               } else if (action === 'artifact_renamed' && artifact) {
                 const idx = artifacts.findIndex((a) => a.id === artifact.id);
                 if (idx >= 0) {
                   artifacts[idx] = artifact;
                   renderList();
+                  updatePanelContext();
                 }
               } else if (action === 'artifact_deleted' && artifactId) {
                 artifacts = artifacts.filter((a) => a.id !== artifactId);
@@ -898,6 +1092,10 @@ function buildArtifactUrl(options: {
         },
 
         unmount() {
+          document.removeEventListener(
+            'assistant:clear-context-selection',
+            handleClearContextSelection,
+          );
           chromeController?.destroy();
           chromeController = null;
           host.setContext(contextKey, null);

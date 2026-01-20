@@ -9,6 +9,7 @@ Share files between agents and users. Agents can upload artifacts for users to d
 - **Drag and drop**: Drop files onto the panel to upload
 - **Inline rename**: Click the edit icon to rename artifacts
 - **Download**: Click artifact title or download icon to download
+- **Selection context**: Cmd/Ctrl-click or long-press to select artifacts and include them in chat context
 
 ## Configuration
 

@@ -88,6 +88,11 @@
   background-color: var(--color-bg-hover);
 }
 
+.artifacts-item.artifacts-item-selected {
+  background-color: var(--color-bg-active);
+  box-shadow: inset 0 0 0 1px var(--color-accent, #3b82f6);
+}
+
 .artifacts-item:last-child {
   border-bottom: none;
 }

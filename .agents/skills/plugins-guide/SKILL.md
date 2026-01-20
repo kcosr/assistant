@@ -197,7 +197,42 @@ Avoid custom fallbacks like `--text-primary` or `prefers-color-scheme` blocks.
 
 ---
 
-## 11. Recommended Panel Lifecycle
+## 11. Panel Context for Chat Input
+
+Panels can provide context that is injected into user chat messages and shown in the
+context preview above the input. Use the panel context key and include selection data.
+
+### Required pattern
+
+```ts
+const contextKey = getPanelContextKey(host.panelId());
+host.setContext(contextKey, {
+  type: 'list', // or 'artifacts', 'note', etc.
+  id: activeContainerId,
+  name: activeContainerName,
+  description: activeContainerDescription ?? '',
+  selectedItemIds,
+  selectedItems, // [{ id, title }]
+  selectedItemCount: selectedItemIds.length,
+  contextAttributes: {
+    'instance-id': selectedInstanceId,
+    // add custom attributes like 'selected-text' for text selections
+  },
+});
+services.notifyContextAvailabilityChange();
+```
+
+### Notes
+
+- `type`, `id`, and `name` are used to build the `<context ... />` line in chat.
+- `selectedItemIds`/`selectedItems` populate selection context (e.g., list rows).
+- `contextAttributes` is a key/value bag for extra metadata (keys should be kebab-case).
+- Call `services.notifyContextAvailabilityChange()` after updates so the preview refreshes.
+- Listen for `assistant:clear-context-selection` if you support selection clearing.
+
+---
+
+## 12. Recommended Panel Lifecycle
 
 On mount:
 - fetch instances via HTTP
