@@ -1,6 +1,6 @@
 [package]
 name = "assistant-desktop"
-version = "0.3.1"
+version = "0.3.2"
 description = "AI Assistant Desktop"
 authors = ["Assistant"]
 edition = "2021"
