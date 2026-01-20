@@ -381,28 +381,38 @@ export class NotesStore {
         continue;
       }
 
+      const title = metadata.title ?? this.paths.titleFromSlug(slug);
+      const lowerTitle = title.toLowerCase();
       const lowerContent = content.toLowerCase();
-      const index = lowerContent.indexOf(query);
-      if (index === -1) {
+
+      // Check if query matches title or content
+      const titleMatches = lowerTitle.includes(query);
+      const contentIndex = lowerContent.indexOf(query);
+      const contentMatches = contentIndex !== -1;
+
+      if (!titleMatches && !contentMatches) {
         continue;
       }
 
-      const context = 40;
-      const start = Math.max(0, index - context);
-      const end = Math.min(content.length, index + query.length + context);
-      let snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
+      let snippet: string | undefined;
+      if (contentMatches) {
+        const context = 40;
+        const start = Math.max(0, contentIndex - context);
+        const end = Math.min(content.length, contentIndex + query.length + context);
+        snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
 
-      if (start > 0) {
-        snippet = `…${snippet}`;
-      }
-      if (end < content.length) {
-        snippet = `${snippet}…`;
+        if (start > 0) {
+          snippet = `…${snippet}`;
+        }
+        if (end < content.length) {
+          snippet = `${snippet}…`;
+        }
       }
 
       results.push({
-        title: metadata.title ?? this.paths.titleFromSlug(slug),
+        title,
         tags,
-        snippet,
+        ...(snippet ? { snippet } : {}),
       });
     }
 
