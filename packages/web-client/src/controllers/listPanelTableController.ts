@@ -1351,7 +1351,7 @@ export class ListPanelTableController {
     menuTrigger.setAttribute('aria-label', 'Item actions');
 
     if (itemId) {
-      menuTrigger.title = 'Drag to reorder, click for actions';
+      menuTrigger.title = 'Item actions';
       menuTrigger.draggable = false;
       let lastDragStartAt = 0;
       const isCoarsePointer =
@@ -1492,9 +1492,15 @@ export class ListPanelTableController {
         void finishPointerDrag(pointerEvent);
       };
 
+      // Attach drag handlers to the row instead of menu trigger
       if (!isCoarsePointer) {
-        menuTrigger.addEventListener('pointerdown', (event: PointerEvent) => {
+        row.addEventListener('pointerdown', (event: PointerEvent) => {
           if (event.button !== 0 || event.pointerType === 'touch') {
+            return;
+          }
+
+          // Ignore drag on text, tags, and interactive elements
+          if (this.shouldIgnoreDragStart(event.target)) {
             return;
           }
 
@@ -1513,12 +1519,16 @@ export class ListPanelTableController {
       }
 
       if (isCoarsePointer) {
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchstart',
           (e) => {
-            e.stopPropagation();
             const touch = e.touches[0];
             if (!touch || !itemId) return;
+
+            // Ignore drag on text, tags, and interactive elements
+            if (this.shouldIgnoreDragStart(e.target)) {
+              return;
+            }
 
             touchStartX = touch.clientX;
             touchStartY = touch.clientY;
@@ -1537,10 +1547,9 @@ export class ListPanelTableController {
           { passive: true },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchmove',
           (e) => {
-            e.stopPropagation();
             const touch = e.touches[0];
             if (!touch) return;
 
@@ -1575,11 +1584,9 @@ export class ListPanelTableController {
           { passive: false },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchend',
           async (e) => {
-            e.stopPropagation();
-
             if (touchLongPressTimer !== null && typeof window !== 'undefined') {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
@@ -1606,11 +1613,9 @@ export class ListPanelTableController {
           { passive: false },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchcancel',
           (e) => {
-            e.stopPropagation();
-
             if (touchLongPressTimer !== null && typeof window !== 'undefined') {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
@@ -1939,6 +1944,29 @@ export class ListPanelTableController {
 
     const ignoredSelector =
       '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+    return Boolean(target.closest(ignoredSelector));
+  }
+
+  private shouldIgnoreDragStart(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    // Allow text selection in title text and links
+    if (
+      target.matches('span, a') ||
+      target.closest('.list-item-title span, .list-item-title a')
+    ) {
+      return true;
+    }
+
+    // Allow interaction with tags
+    if (target.matches('.collection-tag') || target.closest('.collection-tag')) {
+      return true;
+    }
+
+    // Ignore other interactive elements
+    const ignoredSelector = 'input, button, select, textarea, .list-item-notes-expand-trigger';
     return Boolean(target.closest(ignoredSelector));
   }
 

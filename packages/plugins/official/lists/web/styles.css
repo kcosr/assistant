@@ -1631,6 +1631,7 @@
   border: 1px solid var(--tag-border, var(--color-border-subtle));
   font-size: var(--font-size-xs);
   color: var(--tag-fg, var(--color-text-secondary));
+  cursor: default;
 }
 
 table.collection-list-table {
@@ -1837,6 +1838,11 @@ table.collection-list-table td {
     opacity var(--transition-fast);
   /* Prevent tap highlight on mobile */
   -webkit-tap-highlight-color: transparent;
+  cursor: grab;
+}
+
+.list-item-row:active {
+  cursor: grabbing;
 }
 
 .list-item-row:hover {
@@ -1945,6 +1951,11 @@ table.collection-list-table td {
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
+}
+
+.list-item-title-main span,
+.list-item-title-main a {
+  cursor: text;
 }
 
 .list-item-actions {
