@@ -7,8 +7,12 @@
 ### Added
 
 ### Changed
+- List rows can now be dragged from the row surface while keeping title text and tag badges selectable.
 
 ### Fixed
+- Chat panel model/thinking selectors now wrap with other header controls in compact layouts.
+- Prevented text selection during list row drag and avoided touch selection when dragging.
+- List drag reorder now inserts correctly when dragging upward and keeps client positions aligned.
 
 ### Removed
 
