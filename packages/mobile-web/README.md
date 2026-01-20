@@ -19,6 +19,7 @@ This package contains the Capacitor scaffolding to build the AI Assistant web cl
 - `mobile-web/` – Capacitor project root
 - `mobile-web/android/` – Generated Android native project (not committed)
 - `mobile-web/ios/` – Generated iOS native project (not committed)
+- `mobile-web/resources/` – Mobile icon sources for Capacitor asset generation
 
 ## Source files
 
@@ -154,6 +155,12 @@ WEBVIEW_TEXT_ZOOM=120 npm run android:sync
 ```
 
 Valid values are 50-300, where 100 is normal size.
+
+## Icons
+
+Capacitor app icons are generated from `resources/icon.svg` (copied from the desktop icon).
+Run `npm run icons:generate` after updating the source. Icon generation runs automatically
+as part of `android:add`, `android:sync`, `ios:add`, and `ios:sync`.
 
 ## Notes
 

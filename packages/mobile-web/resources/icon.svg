@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#4f46e5"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded square background -->
+  <rect x="32" y="32" width="448" height="448" rx="80" ry="80" fill="url(#bg)"/>
+  
+  <!-- Note/document shape -->
+  <rect x="120" y="96" width="272" height="320" rx="24" ry="24" fill="#ffffff" opacity="0.95"/>
+  
+  <!-- Folded corner -->
+  <path d="M340 96 L392 96 L392 148 L340 148 Z" fill="#e0e7ff"/>
+  <path d="M340 96 L340 148 L392 148 Z" fill="#c7d2fe"/>
+  
+  <!-- Checkbox lines - completed tasks -->
+  <rect x="152" y="144" width="28" height="28" rx="6" fill="#4f46e5"/>
+  <path d="M158 158 L166 166 L176 152" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect x="196" y="152" width="160" height="12" rx="6" fill="#c7d2fe"/>
+  
+  <rect x="152" y="200" width="28" height="28" rx="6" fill="#4f46e5"/>
+  <path d="M158 214 L166 222 L176 208" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <rect x="196" y="208" width="140" height="12" rx="6" fill="#c7d2fe"/>
+  
+  <!-- Checkbox lines - pending tasks -->
+  <rect x="152" y="256" width="28" height="28" rx="6" fill="none" stroke="#a5b4fc" stroke-width="3"/>
+  <rect x="196" y="264" width="120" height="12" rx="6" fill="#e0e7ff"/>
+  
+  <rect x="152" y="312" width="28" height="28" rx="6" fill="none" stroke="#a5b4fc" stroke-width="3"/>
+  <rect x="196" y="320" width="150" height="12" rx="6" fill="#e0e7ff"/>
+  
+  <!-- AI sparkle accent -->
+  <circle cx="380" cy="380" r="48" fill="#fbbf24"/>
+  <path d="M380 348 L380 412 M348 380 L412 380 M358 358 L402 402 M402 358 L358 402" 
+        stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+</svg>

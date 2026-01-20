@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds.
 
 ### Changed
 
