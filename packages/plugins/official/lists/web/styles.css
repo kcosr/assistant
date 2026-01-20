@@ -1841,6 +1841,12 @@ table.collection-list-table td {
   cursor: grab;
 }
 
+body.list-row-dragging .list-item-row,
+body.list-row-dragging .list-item-row * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .list-item-row:active {
   cursor: grabbing;
 }

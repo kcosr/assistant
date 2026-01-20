@@ -1080,6 +1080,13 @@ export class ListPanelTableController {
 
     row.className = rowClass;
 
+    const setDragSelectionSuppressed = (active: boolean): void => {
+      if (typeof document === 'undefined') {
+        return;
+      }
+      document.body.classList.toggle('list-row-dragging', active);
+    };
+
     const searchParts: string[] = [item.title];
     if (item.url) {
       searchParts.push(item.url);
@@ -1180,6 +1187,7 @@ export class ListPanelTableController {
     if (itemId) {
       row.dataset['itemId'] = itemId;
       row.draggable = false;
+
       onDragStartFromHandle = (e: DragEvent | null): void => {
         this.draggedItemId = itemId;
         row.classList.add('dragging');
@@ -1193,6 +1201,7 @@ export class ListPanelTableController {
         this.draggedItemId = null;
         row.classList.remove('dragging');
         tbody.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        setDragSelectionSuppressed(false);
       };
 
       row.addEventListener('click', (e) => {
@@ -1391,6 +1400,7 @@ export class ListPanelTableController {
           return;
         }
         lastDragStartAt = Date.now();
+        setDragSelectionSuppressed(true);
         onDragStartFromHandle?.(e);
       };
 
@@ -1446,6 +1456,7 @@ export class ListPanelTableController {
           return;
         }
         pointerDragActive = false;
+        setDragSelectionSuppressed(false);
         cleanupPointerListeners();
 
         if (!pointerDragStarted) {
@@ -1516,6 +1527,9 @@ export class ListPanelTableController {
           if (this.shouldIgnoreDragStart(event.target)) {
             return;
           }
+
+          event.preventDefault();
+          setDragSelectionSuppressed(true);
 
           pointerDragActive = true;
           pointerDragStarted = false;
