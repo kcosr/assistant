@@ -5,17 +5,17 @@
 ### Breaking Changes
 
 ### Added
-- Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds.
-- Added artifacts plugin for sharing files between agents and users, including panel UI, CLI, and server operations.
-- Added custom plugin CLI bundling support for plugins that ship a `bin/cli.ts` entry point.
+- Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds. ([#17](https://github.com/kcosr/assistant/pull/17))
+- Added artifacts plugin for sharing files between agents and users, including panel UI, CLI, and server operations. ([#17](https://github.com/kcosr/assistant/pull/17))
+- Added custom plugin CLI bundling support for plugins that ship a `bin/cli.ts` entry point. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ### Changed
-- Added `extraHttpRoutes` for operations-based plugins to support binary download endpoints alongside JSON operations.
-- Artifacts file download endpoint now supports inline viewing by default with `?download=1` to force attachment.
-- Added Tauri native save dialog and Capacitor filesystem/share support for artifact downloads.
+- Added `extraHttpRoutes` for operations-based plugins to support binary download endpoints alongside JSON operations. ([#17](https://github.com/kcosr/assistant/pull/17))
+- Artifacts file download endpoint now supports inline viewing by default with `?download=1` to force attachment. ([#17](https://github.com/kcosr/assistant/pull/17))
+- Added Tauri native save dialog and Capacitor filesystem/share support for artifact downloads. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ### Fixed
-- Fixed artifacts panel theme colors to use shared `--color-*` variables for light/dark themes.
+- Fixed artifacts panel theme colors to use shared `--color-*` variables for light/dark themes. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ### Removed
 
