@@ -1080,6 +1080,13 @@ export class ListPanelTableController {
 
     row.className = rowClass;
 
+    const setDragSelectionSuppressed = (active: boolean): void => {
+      if (typeof document === 'undefined') {
+        return;
+      }
+      document.body.classList.toggle('list-row-dragging', active);
+    };
+
     const searchParts: string[] = [item.title];
     if (item.url) {
       searchParts.push(item.url);
@@ -1118,6 +1125,7 @@ export class ListPanelTableController {
 
     let onDragStartFromHandle: ((e: DragEvent | null) => void) | null = null;
     let onDragEnd: (() => void) | null = null;
+    let touchDragActive = false;
 
     const reorderDraggedItem = async (
       targetRow: HTMLTableRowElement | null,
@@ -1148,15 +1156,29 @@ export class ListPanelTableController {
         return;
       }
 
-      const newPosition =
-        typeof targetItem.position === 'number'
-          ? targetItem.position
-          : typeof item.position === 'number'
-            ? item.position
-            : index;
+      const draggedIndex = sortedItems.findIndex((it) => it.id === draggedId);
+      const targetIndex = sortedItems.findIndex((it) => it.id === targetItemId);
+      if (draggedIndex === -1 || targetIndex === -1) {
+        onDragEnd?.();
+        return;
+      }
 
-      const originalPosition = draggedItem.position ?? 0;
-      draggedItem.position = newPosition;
+      const insertIndex = draggedIndex > targetIndex ? targetIndex + 1 : targetIndex;
+      const orderedItems = [...sortedItems];
+      const [movedItem] = orderedItems.splice(draggedIndex, 1);
+      if (!movedItem) {
+        onDragEnd?.();
+        return;
+      }
+      orderedItems.splice(insertIndex, 0, movedItem);
+
+      const originalPositions = new Map<ListPanelItem, number | undefined>();
+      orderedItems.forEach((entry, idx) => {
+        originalPositions.set(entry, entry.position);
+        entry.position = idx;
+      });
+
+      const newPosition = insertIndex;
 
       rerender();
 
@@ -1169,7 +1191,14 @@ export class ListPanelTableController {
         position: newPosition,
       });
       if (!success) {
-        draggedItem.position = originalPosition;
+        orderedItems.forEach((entry) => {
+          const original = originalPositions.get(entry);
+          if (typeof original === 'number') {
+            entry.position = original;
+          } else {
+            delete entry.position;
+          }
+        });
         rerender();
       }
 
@@ -1179,6 +1208,7 @@ export class ListPanelTableController {
     if (itemId) {
       row.dataset['itemId'] = itemId;
       row.draggable = false;
+
       onDragStartFromHandle = (e: DragEvent | null): void => {
         this.draggedItemId = itemId;
         row.classList.add('dragging');
@@ -1192,6 +1222,7 @@ export class ListPanelTableController {
         this.draggedItemId = null;
         row.classList.remove('dragging');
         tbody.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        setDragSelectionSuppressed(false);
       };
 
       row.addEventListener('click', (e) => {
@@ -1247,12 +1278,18 @@ export class ListPanelTableController {
       let touchStartTime = 0;
       let touchStartX = 0;
       let touchStartY = 0;
+      let touchSelectionBlocked = false;
       const LONG_PRESS_THRESHOLD_MS = 500;
       const TOUCH_MOVE_THRESHOLD = 10;
 
       row.addEventListener(
         'touchstart',
         (e) => {
+          touchSelectionBlocked = this.shouldIgnoreRowSelection(e.target);
+          if (touchSelectionBlocked) {
+            return;
+          }
+
           touchStartTime = Date.now();
           const touch = e.touches[0];
           if (touch) {
@@ -1264,6 +1301,11 @@ export class ListPanelTableController {
       );
 
       row.addEventListener('touchend', (e) => {
+        if (touchSelectionBlocked || touchDragActive) {
+          touchSelectionBlocked = false;
+          return;
+        }
+
         const touchDuration = Date.now() - touchStartTime;
         const touch = e.changedTouches[0];
 
@@ -1279,6 +1321,8 @@ export class ListPanelTableController {
             this.updateSelectionButtons();
           }
         }
+
+        touchSelectionBlocked = false;
       });
 
       row.addEventListener('dragend', () => onDragEnd?.());
@@ -1351,7 +1395,7 @@ export class ListPanelTableController {
     menuTrigger.setAttribute('aria-label', 'Item actions');
 
     if (itemId) {
-      menuTrigger.title = 'Drag to reorder, click for actions';
+      menuTrigger.title = 'Item actions';
       menuTrigger.draggable = false;
       let lastDragStartAt = 0;
       const isCoarsePointer =
@@ -1360,9 +1404,8 @@ export class ListPanelTableController {
         window.matchMedia('(pointer: coarse)').matches;
 
       let touchLongPressTimer: ReturnType<typeof setTimeout> | null = null;
-      let touchStartX = 0;
-      let touchStartY = 0;
-      let touchDragActive = false;
+      let touchDragStartX = 0;
+      let touchDragStartY = 0;
       let touchCurrentDropRow: HTMLTableRowElement | null = null;
       let touchDraggedItemId: string | null = null;
 
@@ -1378,6 +1421,7 @@ export class ListPanelTableController {
           return;
         }
         lastDragStartAt = Date.now();
+        setDragSelectionSuppressed(true);
         onDragStartFromHandle?.(e);
       };
 
@@ -1433,6 +1477,7 @@ export class ListPanelTableController {
           return;
         }
         pointerDragActive = false;
+        setDragSelectionSuppressed(false);
         cleanupPointerListeners();
 
         if (!pointerDragStarted) {
@@ -1492,11 +1537,20 @@ export class ListPanelTableController {
         void finishPointerDrag(pointerEvent);
       };
 
+      // Attach drag handlers to the row instead of menu trigger
       if (!isCoarsePointer) {
-        menuTrigger.addEventListener('pointerdown', (event: PointerEvent) => {
+        row.addEventListener('pointerdown', (event: PointerEvent) => {
           if (event.button !== 0 || event.pointerType === 'touch') {
             return;
           }
+
+          // Ignore drag on text, tags, and interactive elements
+          if (this.shouldIgnoreDragStart(event.target)) {
+            return;
+          }
+
+          event.preventDefault();
+          setDragSelectionSuppressed(true);
 
           pointerDragActive = true;
           pointerDragStarted = false;
@@ -1513,15 +1567,19 @@ export class ListPanelTableController {
       }
 
       if (isCoarsePointer) {
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchstart',
           (e) => {
-            e.stopPropagation();
             const touch = e.touches[0];
             if (!touch || !itemId) return;
 
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
+            // Ignore drag on text, tags, and interactive elements
+            if (this.shouldIgnoreDragStart(e.target)) {
+              return;
+            }
+
+            touchDragStartX = touch.clientX;
+            touchDragStartY = touch.clientY;
             touchDragActive = false;
             touchDraggedItemId = itemId;
 
@@ -1537,15 +1595,14 @@ export class ListPanelTableController {
           { passive: true },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchmove',
           (e) => {
-            e.stopPropagation();
             const touch = e.touches[0];
             if (!touch) return;
 
-            const dx = Math.abs(touch.clientX - touchStartX);
-            const dy = Math.abs(touch.clientY - touchStartY);
+            const dx = Math.abs(touch.clientX - touchDragStartX);
+            const dy = Math.abs(touch.clientY - touchDragStartY);
             if (!touchDragActive && (dx > 8 || dy > 8)) {
               if (touchLongPressTimer !== null && typeof window !== 'undefined') {
                 clearTimeout(touchLongPressTimer);
@@ -1575,11 +1632,9 @@ export class ListPanelTableController {
           { passive: false },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchend',
           async (e) => {
-            e.stopPropagation();
-
             if (touchLongPressTimer !== null && typeof window !== 'undefined') {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
@@ -1606,11 +1661,9 @@ export class ListPanelTableController {
           { passive: false },
         );
 
-        menuTrigger.addEventListener(
+        row.addEventListener(
           'touchcancel',
           (e) => {
-            e.stopPropagation();
-
             if (touchLongPressTimer !== null && typeof window !== 'undefined') {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
@@ -1939,6 +1992,39 @@ export class ListPanelTableController {
 
     const ignoredSelector =
       '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+    return Boolean(target.closest(ignoredSelector));
+  }
+
+  private shouldIgnoreRowSelection(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    const ignoredSelector =
+      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+    return Boolean(target.closest(ignoredSelector));
+  }
+
+  private shouldIgnoreDragStart(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    // Allow text selection in title text and links
+    if (
+      target.matches('span, a') ||
+      target.closest('.list-item-title span, .list-item-title a')
+    ) {
+      return true;
+    }
+
+    // Allow interaction with tags
+    if (target.matches('.collection-tag') || target.closest('.collection-tag')) {
+      return true;
+    }
+
+    // Ignore other interactive elements
+    const ignoredSelector = 'input, button, select, textarea, .list-item-notes-expand-trigger';
     return Boolean(target.closest(ignoredSelector));
   }
 
