@@ -1247,12 +1247,19 @@ export class ListPanelTableController {
       let touchStartTime = 0;
       let touchStartX = 0;
       let touchStartY = 0;
+      let touchSelectionBlocked = false;
+      let touchDragActive = false;
       const LONG_PRESS_THRESHOLD_MS = 500;
       const TOUCH_MOVE_THRESHOLD = 10;
 
       row.addEventListener(
         'touchstart',
         (e) => {
+          touchSelectionBlocked = this.shouldIgnoreRowSelection(e.target);
+          if (touchSelectionBlocked) {
+            return;
+          }
+
           touchStartTime = Date.now();
           const touch = e.touches[0];
           if (touch) {
@@ -1264,6 +1271,11 @@ export class ListPanelTableController {
       );
 
       row.addEventListener('touchend', (e) => {
+        if (touchSelectionBlocked || touchDragActive) {
+          touchSelectionBlocked = false;
+          return;
+        }
+
         const touchDuration = Date.now() - touchStartTime;
         const touch = e.changedTouches[0];
 
@@ -1279,6 +1291,8 @@ export class ListPanelTableController {
             this.updateSelectionButtons();
           }
         }
+
+        touchSelectionBlocked = false;
       });
 
       row.addEventListener('dragend', () => onDragEnd?.());
@@ -1360,9 +1374,8 @@ export class ListPanelTableController {
         window.matchMedia('(pointer: coarse)').matches;
 
       let touchLongPressTimer: ReturnType<typeof setTimeout> | null = null;
-      let touchStartX = 0;
-      let touchStartY = 0;
-      let touchDragActive = false;
+      let touchDragStartX = 0;
+      let touchDragStartY = 0;
       let touchCurrentDropRow: HTMLTableRowElement | null = null;
       let touchDraggedItemId: string | null = null;
 
@@ -1530,8 +1543,8 @@ export class ListPanelTableController {
               return;
             }
 
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
+            touchDragStartX = touch.clientX;
+            touchDragStartY = touch.clientY;
             touchDragActive = false;
             touchDraggedItemId = itemId;
 
@@ -1553,8 +1566,8 @@ export class ListPanelTableController {
             const touch = e.touches[0];
             if (!touch) return;
 
-            const dx = Math.abs(touch.clientX - touchStartX);
-            const dy = Math.abs(touch.clientY - touchStartY);
+            const dx = Math.abs(touch.clientX - touchDragStartX);
+            const dy = Math.abs(touch.clientY - touchDragStartY);
             if (!touchDragActive && (dx > 8 || dy > 8)) {
               if (touchLongPressTimer !== null && typeof window !== 'undefined') {
                 clearTimeout(touchLongPressTimer);
@@ -1938,6 +1951,16 @@ export class ListPanelTableController {
   }
 
   private shouldIgnoreRowDoubleClick(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+
+    const ignoredSelector =
+      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+    return Boolean(target.closest(ignoredSelector));
+  }
+
+  private shouldIgnoreRowSelection(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) {
       return false;
     }
