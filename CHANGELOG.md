@@ -7,8 +7,12 @@
 ### Added
 
 ### Changed
+- ESC now stops streaming in chat header/modals before closing panels. ([#15](https://github.com/kcosr/assistant/pull/15))
 
 ### Fixed
+- Notes search now matches note titles as well as content. ([#15](https://github.com/kcosr/assistant/pull/15))
+- Chat panels auto-scroll to the most recent messages when opened. ([#15](https://github.com/kcosr/assistant/pull/15))
+- Chat panels reset busy indicators when switching sessions. ([#15](https://github.com/kcosr/assistant/pull/15))
 - Fixed release script to include desktop version files in the release commit. ([#14](https://github.com/kcosr/assistant/pull/14))
 
 ### Removed
