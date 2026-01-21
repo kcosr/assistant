@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added cross-list drag-and-drop moves for list items. ([#18](https://github.com/kcosr/assistant/pull/18))
 
 ### Changed
 

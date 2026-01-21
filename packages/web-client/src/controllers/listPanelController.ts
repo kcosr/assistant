@@ -199,6 +199,8 @@ export class ListPanelController {
         this.showListItemMenu(trigger, listId, item, itemId, row);
       },
       updateListItem: (listId, itemId, updates) => this.updateListItem(listId, itemId, updates),
+      onMoveItemsToList: (sourceListId, itemIds, targetListId, targetPosition) =>
+        this.moveItemsToListFromDrag(sourceListId, itemIds, targetListId, targetPosition),
       onEditItem: (listId, item) => {
         this.showListItemEditorDialog('edit', listId, item);
       },
@@ -1024,7 +1026,11 @@ export class ListPanelController {
   private async bulkMoveItems(
     itemIds: string[],
     targetListId: string,
-    options?: { clearSelection?: boolean; sourceListId?: string | null },
+    options?: {
+      clearSelection?: boolean;
+      sourceListId?: string | null;
+      targetPosition?: number | null;
+    },
   ): Promise<void> {
     if (itemIds.length === 0) {
       return;
@@ -1035,8 +1041,16 @@ export class ListPanelController {
       return;
     }
     try {
+      const basePosition =
+        typeof options?.targetPosition === 'number' && Number.isFinite(options.targetPosition)
+          ? Math.max(0, Math.floor(options.targetPosition))
+          : null;
       const result = await this.runOperation('items-bulk-move', {
-        operations: itemIds.map((id) => ({ id, targetListId })),
+        operations: itemIds.map((id, index) => ({
+          id,
+          targetListId,
+          ...(basePosition !== null ? { position: basePosition + index } : {}),
+        })),
       });
       const { okCount, totalCount } = this.countBulkResults({ result }, itemIds.length);
 
@@ -1061,6 +1075,26 @@ export class ListPanelController {
       console.error('Error performing bulk move:', err);
       this.options.setStatus('Failed to move items');
     }
+  }
+
+  private async moveItemsToListFromDrag(
+    sourceListId: string,
+    itemIds: string[],
+    targetListId: string,
+    targetPosition: number | null,
+  ): Promise<void> {
+    if (itemIds.length === 0) {
+      return;
+    }
+    const trimmedTargetId = targetListId.trim();
+    if (!trimmedTargetId || trimmedTargetId === sourceListId) {
+      return;
+    }
+    await this.bulkMoveItems(itemIds, trimmedTargetId, {
+      clearSelection: true,
+      sourceListId,
+      targetPosition,
+    });
   }
 
   private async moveItemToList(
