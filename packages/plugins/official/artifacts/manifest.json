@@ -1,0 +1,176 @@
+{
+  "id": "artifacts",
+  "version": "0.1.0",
+  "description": "Share files between agents and users. Agents can upload artifacts for users to download, and users can upload files for agents to access.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "artifacts",
+      "title": "Artifacts",
+      "icon": "fileText",
+      "description": "Shared files between agents and users.",
+      "multiInstance": true,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "defaultPlacement": { "region": "right", "size": { "width": 320 } },
+      "capabilities": ["artifacts.read", "artifacts.write"]
+    }
+  ],
+  "server": {
+    "provides": ["artifacts"],
+    "capabilities": ["artifacts.read", "artifacts.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/artifacts/bundle.js",
+    "stylesPath": "/plugins/artifacts/styles.css"
+  },
+  "operations": [
+    {
+      "id": "instance_list",
+      "summary": "List configured instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["artifacts.read"]
+    },
+    {
+      "id": "list",
+      "summary": "List artifacts.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          }
+        }
+      },
+      "capabilities": ["artifacts.read"]
+    },
+    {
+      "id": "upload",
+      "summary": "Upload a file as an artifact.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "title": {
+            "type": "string",
+            "description": "Display title for the artifact."
+          },
+          "filename": {
+            "type": "string",
+            "description": "Original filename."
+          },
+          "content": {
+            "type": "string",
+            "description": "Base64-encoded file content."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME type of the file."
+          }
+        },
+        "required": ["title", "filename", "content"]
+      },
+      "http": { "successStatus": 201 },
+      "capabilities": ["artifacts.write"]
+    },
+    {
+      "id": "get",
+      "summary": "Get an artifact's content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": {
+            "type": "string",
+            "description": "Artifact id."
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["artifacts.read"]
+    },
+    {
+      "id": "update",
+      "summary": "Replace an artifact's file content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": {
+            "type": "string",
+            "description": "Artifact id."
+          },
+          "filename": {
+            "type": "string",
+            "description": "New filename."
+          },
+          "content": {
+            "type": "string",
+            "description": "Base64-encoded file content."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME type of the file."
+          }
+        },
+        "required": ["id", "filename", "content"]
+      },
+      "capabilities": ["artifacts.write"]
+    },
+    {
+      "id": "rename",
+      "summary": "Rename an artifact's title.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": {
+            "type": "string",
+            "description": "Artifact id."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          }
+        },
+        "required": ["id", "title"]
+      },
+      "capabilities": ["artifacts.write"]
+    },
+    {
+      "id": "delete",
+      "summary": "Delete an artifact.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "id": {
+            "type": "string",
+            "description": "Artifact id."
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["artifacts.write"]
+    }
+  ]
+}

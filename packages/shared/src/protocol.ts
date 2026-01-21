@@ -31,7 +31,11 @@ export type ClientAudioCapabilities = z.infer<typeof ClientAudioCapabilitiesSche
 export const ControlActionSchema = z.enum(['start', 'stop', 'cancel', 'clear']);
 export type ControlAction = z.infer<typeof ControlActionSchema>;
 
-export const PanelDisplayModeSchema = z.enum(['browser', 'artifact', 'view']);
+export const PanelDisplayModeSchema = z
+  .enum(['browser', 'item', 'view', 'artifact'])
+  .transform((value): 'browser' | 'item' | 'view' =>
+    value === 'artifact' ? 'item' : value,
+  );
 export type PanelDisplayMode = z.infer<typeof PanelDisplayModeSchema>;
 
 export const ProtocolVersionFieldSchema = z
@@ -240,21 +244,7 @@ export const SelectedViewItemSchema = z.object({
   itemId: z.string(),
 });
 
-export const ArtifactsPanelStateSchema = z.object({
-  version: z.number().int().nonnegative(),
-  updatedAt: z.string(),
-  displayMode: PanelDisplayModeSchema,
-  selectedArtifactId: z.string().optional(),
-  selectedViewItem: SelectedViewItemSchema.nullable().optional(),
-  view: ViewStateSchema.nullable().optional(),
-});
 
-export const ArtifactsPanelStateUpdateSchema = z.object({
-  displayMode: PanelDisplayModeSchema.optional(),
-  selectedArtifactId: z.string().nullable().optional(),
-  selectedViewItem: SelectedViewItemSchema.nullable().optional(),
-  view: ViewStateSchema.nullable().optional(),
-});
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   ClientHelloMessageSchema,
@@ -293,12 +283,6 @@ export const ServerSessionReadyMessageSchema = z.object({
   currentModel: z.string().optional(),
   availableThinking: z.array(z.string()).optional(),
   currentThinking: z.string().optional(),
-  activeArtifact: z
-    .object({
-      type: z.string(),
-      id: z.string(),
-    })
-    .optional(),
 });
 
 export const ServerTextDeltaMessageSchema = z.object({
@@ -682,8 +666,6 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 export type SavedView = z.infer<typeof SavedViewSchema>;
 export type ViewState = z.infer<typeof ViewStateSchema>;
-export type ArtifactsPanelState = z.infer<typeof ArtifactsPanelStateSchema>;
-export type ArtifactsPanelStateUpdate = z.infer<typeof ArtifactsPanelStateUpdateSchema>;
 
 export function validateClientMessage(data: unknown): ClientMessage {
   return ClientMessageSchema.parse(data);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_PROTOCOL_VERSION,
+  PanelDisplayModeSchema,
   safeValidateClientMessage,
   safeValidateServerMessage,
   validateClientMessage,
@@ -180,5 +181,11 @@ describe('server message validation', () => {
       text: 'hello',
     };
     expect(validateServerMessage(message)).toEqual(message);
+  });
+});
+
+describe('panel display mode validation', () => {
+  it('accepts legacy artifact display mode and normalizes it', () => {
+    expect(PanelDisplayModeSchema.parse('artifact')).toBe('item');
   });
 });

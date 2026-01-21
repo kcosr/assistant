@@ -5,11 +5,12 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::async_runtime::Mutex;
@@ -538,6 +539,18 @@ async fn get_ws_proxy_port(state: State<'_, AppState>) -> Result<u16, String> {
     }
 }
 
+/// Save artifact content to a local path (base64 payload).
+#[tauri::command]
+async fn save_artifact_file(path: String, content_base64: String) -> Result<(), String> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(content_base64)
+        .map_err(|e| e.to_string())?;
+    if let Some(parent) = Path::new(&path).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, decoded).map_err(|e| e.to_string())
+}
+
 /// Restart the proxy with current settings.
 async fn restart_proxy_internal(state: &AppState) -> Result<(), String> {
     // Stop existing proxies
@@ -623,6 +636,7 @@ pub fn run() {
             update_settings,
             get_proxy_url,
             get_ws_proxy_port,
+            save_artifact_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

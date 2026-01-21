@@ -132,8 +132,9 @@ by `npm run build:plugins`. Some core panels are still bundled from
 `packages/web-client/src/plugins/` into `packages/web-client/public/plugins/` by
 `npm run bundle` (which runs `npm run bundle:plugins`).
 
-This repo ships core plugins (`agents`, `sessions`, `panels`), official plugins (`diff`,
-`lists`, `notes`, `terminal`, `links`, `url-fetch`), and examples (`hello`, `session-info`).
+This repo ships core plugins (`agents`, `sessions`, `panels`), official plugins (`artifacts`,
+`diff`, `files`, `links`, `lists`, `notes`, `terminal`, `time-tracker`, `url-fetch`), and
+examples (`hello`, `session-info`).
 Enable them with:
 
 ```json
@@ -266,6 +267,33 @@ module.exports = {
 When `manifest.json` includes `operations`, the server generates tools + HTTP routes and uses the
 `operations` map for handlers. Legacy `tools` and `httpRoutes` are ignored for plugins that declare
 operations. CLI bundles call the same routes and can pass `--session-id` for session-scoped tools.
+
+### Extra HTTP Routes
+
+Plugins using operations can still define additional HTTP routes for endpoints that need raw
+response handling (such as binary file downloads). Use `extraHttpRoutes` in the module export:
+
+```ts
+export function createPlugin(): PluginModule {
+  return {
+    operations: { /* ... */ },
+    extraHttpRoutes: [
+      async (context, req, res, url, segments, helpers) => {
+        if (req.method === 'GET' && segments[3] === 'files') {
+          // Serve binary file
+          res.setHeader('Content-Type', 'application/octet-stream');
+          res.end(fileBuffer);
+          return true;
+        }
+        return false;
+      },
+    ],
+  };
+}
+```
+
+`extraHttpRoutes` are processed alongside operations-generated routes. Use them for binary
+endpoints that can't return JSON responses.
 
 ## Plugin Instances (Config)
 

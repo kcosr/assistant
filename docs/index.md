@@ -67,6 +67,7 @@ This index maps the repository documentation into predictable categories so it i
 
 ### Official Plugins
 
+- [Artifacts Plugin](../packages/plugins/official/artifacts/README.md)
 - [Diff Plugin](../packages/plugins/official/diff/README.md)
 - [Files Plugin](../packages/plugins/official/files/README.md)
 - [Links Plugin](../packages/plugins/official/links/README.md)
