@@ -1961,7 +1961,16 @@ body.list-row-dragging .list-item-row * {
 
 .list-item-title-main span,
 .list-item-title-main a {
-  cursor: text;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.list-item-title-main span {
+  cursor: default;
+}
+
+.list-item-title-main a {
+  cursor: pointer;
 }
 
 .list-item-actions {

@@ -7,6 +7,8 @@ import type { SortState } from '../utils/listSorting';
 import { parseFieldValueToDate, toggleSort } from '../utils/listSorting';
 
 const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11h6M9 15h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
+const LIST_ITEMS_DRAG_TYPE = 'application/x-list-items';
 
 export interface ListPanelTableControllerOptions {
   icons: {
@@ -29,6 +31,12 @@ export interface ListPanelTableControllerOptions {
     itemId: string,
     updates: Record<string, unknown>,
   ) => Promise<boolean>;
+  onMoveItemsToList?: (
+    sourceListId: string,
+    itemIds: string[],
+    targetListId: string,
+    targetPosition: number | null,
+  ) => Promise<void>;
   onEditItem?: (listId: string, item: ListPanelItem) => void;
   onColumnResize?: (listId: string, columnKey: string, width: number) => void;
 }
@@ -106,6 +114,8 @@ type ListPanelRowRenderOptions = {
 
 export class ListPanelTableController {
   private draggedItemId: string | null = null;
+  private draggedItemIds: string[] | null = null;
+  private draggedListId: string | null = null;
   private lastSelectedRowIndex: number | null = null;
   private activeColumnMenu: HTMLElement | null = null;
   private notesPopup: HTMLElement | null = null;
@@ -347,6 +357,7 @@ export class ListPanelTableController {
 
     const table = document.createElement('table');
     table.className = 'collection-list-table';
+    table.dataset['listId'] = listId;
 
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
@@ -477,6 +488,7 @@ export class ListPanelTableController {
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
+    tbody.dataset['listId'] = listId;
 
     const colCount =
       1 +
@@ -899,7 +911,7 @@ export class ListPanelTableController {
         if (focusMarkerItemId && onFocusMarkerMove && itemId) {
           row.addEventListener('dragover', (e) => {
             const dt = e.dataTransfer;
-            if (!dt || dt.types.indexOf('text/plain') === -1) return;
+            if (!dt || dt.getData('text/plain') !== 'focus-marker') return;
             e.preventDefault();
             e.stopPropagation();
             if (dt) dt.dropEffect = 'move';
@@ -1005,7 +1017,7 @@ export class ListPanelTableController {
     if (focusMarkerItemId && onFocusMarkerMove) {
       newRow.addEventListener('dragover', (e) => {
         const dt = e.dataTransfer;
-        if (!dt || dt.types.indexOf('text/plain') === -1) return;
+        if (!dt || dt.getData('text/plain') !== 'focus-marker') return;
         e.preventDefault();
         e.stopPropagation();
         dt.dropEffect = 'move';
@@ -1079,6 +1091,11 @@ export class ListPanelTableController {
     }
 
     row.className = rowClass;
+    row.dataset['listId'] = listId;
+    row.dataset['itemIndex'] = String(index);
+    if (typeof item.position === 'number') {
+      row.dataset['itemPosition'] = String(item.position);
+    }
 
     const setDragSelectionSuppressed = (active: boolean): void => {
       if (typeof document === 'undefined') {
@@ -1122,6 +1139,211 @@ export class ListPanelTableController {
     }
 
     row.dataset['search'] = searchParts.join(' ').toLowerCase();
+
+    const getSelectedItemIds = (): string[] => {
+      if (!itemId) {
+        return [];
+      }
+      const selectedIds = new Set<string>();
+      tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row.list-item-selected').forEach(
+        (selectedRow) => {
+          const selectedId = selectedRow.dataset['itemId'];
+          if (selectedId) {
+            selectedIds.add(selectedId);
+          }
+        },
+      );
+      if (!selectedIds.has(itemId)) {
+        return [itemId];
+      }
+      const orderedSelected: string[] = [];
+      for (const entry of sortedItems) {
+        const entryId = entry?.id;
+        if (entryId && selectedIds.has(entryId)) {
+          orderedSelected.push(entryId);
+        }
+      }
+      return orderedSelected.length > 0 ? orderedSelected : [itemId];
+    };
+
+    const parseDragPayload = (
+      value: string,
+    ): { sourceListId: string; itemIds: string[] } | null => {
+      try {
+        const parsed = JSON.parse(value) as {
+          sourceListId?: unknown;
+          itemIds?: unknown;
+          itemId?: unknown;
+        };
+        const sourceListId = typeof parsed.sourceListId === 'string' ? parsed.sourceListId : null;
+        if (!sourceListId) {
+          return null;
+        }
+        const itemIds: string[] = [];
+        if (Array.isArray(parsed.itemIds)) {
+          for (const id of parsed.itemIds) {
+            if (typeof id === 'string' && id.trim()) {
+              itemIds.push(id);
+            }
+          }
+        } else if (typeof parsed.itemId === 'string' && parsed.itemId.trim()) {
+          itemIds.push(parsed.itemId);
+        }
+        if (itemIds.length === 0) {
+          return null;
+        }
+        return { sourceListId, itemIds };
+      } catch {
+        return null;
+      }
+    };
+
+    const getDragPayloadFromDataTransfer = (
+      dataTransfer: DataTransfer | null,
+    ): { sourceListId: string; itemIds: string[] } | null => {
+      if (!dataTransfer) {
+        return null;
+      }
+      const types = Array.from(dataTransfer.types);
+      let raw: string | null = null;
+      if (types.includes(LIST_ITEMS_DRAG_TYPE)) {
+        raw = dataTransfer.getData(LIST_ITEMS_DRAG_TYPE);
+      } else if (types.includes(LIST_ITEM_DRAG_TYPE)) {
+        raw = dataTransfer.getData(LIST_ITEM_DRAG_TYPE);
+      }
+      if (!raw) {
+        return null;
+      }
+      return parseDragPayload(raw);
+    };
+
+    const getStoredDragPayload = (): { sourceListId: string; itemIds: string[] } | null => {
+      if (!this.draggedListId || !this.draggedItemIds || this.draggedItemIds.length === 0) {
+        return null;
+      }
+      return { sourceListId: this.draggedListId, itemIds: this.draggedItemIds };
+    };
+
+    const getDragPayload = (
+      dataTransfer: DataTransfer | null,
+    ): { sourceListId: string; itemIds: string[] } | null => {
+      return getDragPayloadFromDataTransfer(dataTransfer) ?? getStoredDragPayload();
+    };
+
+    const parseRowPosition = (rowEl: HTMLTableRowElement): number | null => {
+      const rawPosition = rowEl.dataset['itemPosition'];
+      if (rawPosition) {
+        const position = Number(rawPosition);
+        if (!Number.isNaN(position)) {
+          return Math.floor(position);
+        }
+      }
+      const rawIndex = rowEl.dataset['itemIndex'];
+      if (rawIndex) {
+        const indexValue = Number(rawIndex);
+        if (!Number.isNaN(indexValue)) {
+          return Math.floor(indexValue);
+        }
+      }
+      return null;
+    };
+
+    const parseRowInsertPosition = (rowEl: HTMLTableRowElement): number | null => {
+      const basePosition = parseRowPosition(rowEl);
+      if (basePosition === null) {
+        return null;
+      }
+      return basePosition + 1;
+    };
+
+    const getPointFromEvent = (event?: Event): { x: number; y: number } | null => {
+      if (!event) {
+        return null;
+      }
+      const withCoords = event as { clientX?: number; clientY?: number };
+      if (typeof withCoords.clientX === 'number' && typeof withCoords.clientY === 'number') {
+        return { x: withCoords.clientX, y: withCoords.clientY };
+      }
+      const touchEvent = event as TouchEvent;
+      const touch = touchEvent.changedTouches?.[0] ?? touchEvent.touches?.[0];
+      if (touch) {
+        return { x: touch.clientX, y: touch.clientY };
+      }
+      return null;
+    };
+
+    const resolveDropTarget = (
+      targetRow: HTMLTableRowElement | null,
+      event?: Event,
+    ): { listId: string; position: number | null } | null => {
+      if (targetRow) {
+        const targetListId = targetRow.dataset['listId'];
+        if (!targetListId) {
+          return null;
+        }
+        return { listId: targetListId, position: parseRowInsertPosition(targetRow) };
+      }
+
+      if (typeof document === 'undefined') {
+        return null;
+      }
+
+      let element: Element | null = null;
+      const point = getPointFromEvent(event);
+      if (point && typeof document.elementFromPoint === 'function') {
+        element = document.elementFromPoint(point.x, point.y);
+      } else if (event && 'target' in event) {
+        element = event.target instanceof Element ? event.target : null;
+      }
+
+      if (!element) {
+        return null;
+      }
+
+      const rowEl = element.closest<HTMLTableRowElement>('.list-item-row');
+      if (rowEl) {
+        const targetListId = rowEl.dataset['listId'];
+        if (!targetListId) {
+          return null;
+        }
+        return { listId: targetListId, position: parseRowInsertPosition(rowEl) };
+      }
+
+      const listHost = element.closest<HTMLElement>('[data-list-id]');
+      const targetListId = listHost?.dataset?.['listId'];
+      if (!targetListId) {
+        return null;
+      }
+
+      const tbodyEl =
+        listHost.tagName === 'TBODY'
+          ? (listHost as HTMLTableSectionElement)
+          : listHost.querySelector('tbody');
+      const rowCount = tbodyEl ? tbodyEl.querySelectorAll('.list-item-row').length : 0;
+      const position = rowCount === 0 ? 0 : rowCount;
+      return { listId: targetListId, position };
+    };
+
+    const handleCrossListDrop = async (
+      targetRow: HTMLTableRowElement | null,
+      event?: Event,
+    ): Promise<boolean> => {
+      const onMoveItemsToList = this.options.onMoveItemsToList;
+      if (!onMoveItemsToList) {
+        return false;
+      }
+      const dataTransfer = event && 'dataTransfer' in event ? (event as DragEvent).dataTransfer : null;
+      const payload = getDragPayload(dataTransfer);
+      if (!payload) {
+        return false;
+      }
+      const target = resolveDropTarget(targetRow, event);
+      if (!target || payload.sourceListId === target.listId) {
+        return false;
+      }
+      await onMoveItemsToList(payload.sourceListId, payload.itemIds, target.listId, target.position);
+      return true;
+    };
 
     let onDragStartFromHandle: ((e: DragEvent | null) => void) | null = null;
     let onDragEnd: (() => void) | null = null;
@@ -1205,21 +1427,55 @@ export class ListPanelTableController {
       onDragEnd?.();
     };
 
+    const handleDrop = async (
+      targetRow: HTMLTableRowElement | null,
+      draggedId: string | null,
+      event?: Event,
+    ): Promise<void> => {
+      if (await handleCrossListDrop(targetRow, event)) {
+        onDragEnd?.();
+        return;
+      }
+      await reorderDraggedItem(targetRow, draggedId);
+    };
+
     if (itemId) {
       row.dataset['itemId'] = itemId;
       row.draggable = false;
 
       onDragStartFromHandle = (e: DragEvent | null): void => {
+        const dragItemIds = getSelectedItemIds();
         this.draggedItemId = itemId;
+        this.draggedItemIds = dragItemIds;
+        this.draggedListId = listId;
         row.classList.add('dragging');
         if (e && e.dataTransfer) {
           e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', itemId);
+          const primaryId = dragItemIds[0] ?? itemId;
+          e.dataTransfer.setData(
+            LIST_ITEMS_DRAG_TYPE,
+            JSON.stringify({
+              sourceListId: listId,
+              itemIds: dragItemIds,
+            }),
+          );
+          if (dragItemIds.length === 1) {
+            e.dataTransfer.setData(
+              LIST_ITEM_DRAG_TYPE,
+              JSON.stringify({
+                sourceListId: listId,
+                itemId,
+              }),
+            );
+          }
+          e.dataTransfer.setData('text/plain', primaryId);
           e.dataTransfer.setDragImage(row, 0, 0);
         }
       };
       onDragEnd = (): void => {
         this.draggedItemId = null;
+        this.draggedItemIds = null;
+        this.draggedListId = null;
         row.classList.remove('dragging');
         tbody.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
         setDragSelectionSuppressed(false);
@@ -1329,15 +1585,26 @@ export class ListPanelTableController {
 
       row.addEventListener('dragover', (e) => {
         e.preventDefault();
-        if (!this.draggedItemId || this.draggedItemId === itemId) return;
+        if (this.draggedItemId && this.draggedItemId !== itemId) {
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'move';
+          }
+          const draggedItem = sortedItems.find((it) => it.id === this.draggedItemId);
+          if (!draggedItem) return;
+          const draggedIsCompleted = draggedItem.completed ?? false;
+          if (draggedIsCompleted !== isCompleted) return;
+
+          row.classList.add('drag-over');
+          return;
+        }
+
+        const payload = getDragPayload(e.dataTransfer ?? null);
+        if (!payload || payload.sourceListId === listId) {
+          return;
+        }
         if (e.dataTransfer) {
           e.dataTransfer.dropEffect = 'move';
         }
-        const draggedItem = sortedItems.find((it) => it.id === this.draggedItemId);
-        if (!draggedItem) return;
-        const draggedIsCompleted = draggedItem.completed ?? false;
-        if (draggedIsCompleted !== isCompleted) return;
-
         row.classList.add('drag-over');
       });
 
@@ -1348,37 +1615,7 @@ export class ListPanelTableController {
       row.addEventListener('drop', async (e) => {
         e.preventDefault();
         row.classList.remove('drag-over');
-        if (!this.draggedItemId || !itemId || this.draggedItemId === itemId) return;
-
-        const draggedItem = sortedItems.find((it) => it.id === this.draggedItemId);
-        if (!draggedItem) return;
-        const draggedIsCompleted = draggedItem.completed ?? false;
-        if (draggedIsCompleted !== isCompleted) return;
-
-        const newPosition = item.position ?? index;
-
-        const originalPosition = draggedItem.position ?? 0;
-        draggedItem.position = newPosition;
-
-        rerender();
-
-        const draggedId = this.draggedItemId;
-        if (!draggedId) {
-          return;
-        }
-
-        this.options.recentUserItemUpdates.add(draggedId);
-        window.setTimeout(() => {
-          this.options.recentUserItemUpdates.delete(draggedId);
-        }, this.options.userUpdateTimeoutMs);
-
-        const success = await this.options.updateListItem(listId, draggedId, {
-          position: newPosition,
-        });
-        if (!success) {
-          draggedItem.position = originalPosition;
-          rerender();
-        }
+        await handleDrop(row, this.draggedItemId, e);
       });
     }
 
@@ -1496,7 +1733,7 @@ export class ListPanelTableController {
           targetRow.classList.remove('drag-over');
         }
 
-        await reorderDraggedItem(targetRow ?? null, draggedId ?? null);
+        await handleDrop(targetRow ?? null, draggedId ?? null, event);
       };
 
       const handlePointerMove = (event: Event): void => {
@@ -1656,7 +1893,7 @@ export class ListPanelTableController {
               targetRow.classList.remove('drag-over');
             }
 
-            await reorderDraggedItem(targetRow ?? null, draggedId ?? null);
+            await handleDrop(targetRow ?? null, draggedId ?? null, e);
           },
           { passive: false },
         );
