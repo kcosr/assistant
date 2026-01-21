@@ -1,6 +1,6 @@
 {
   "name": "@assistant/push-cli",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "CLI to send push notifications via Firebase Cloud Messaging",
   "type": "module",
   "main": "dist/index.js",
