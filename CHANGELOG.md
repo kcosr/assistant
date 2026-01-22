@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.0] - 2026-01-22
 
 ### Breaking Changes
 
@@ -19,6 +19,7 @@
 - Fixed list/note browser focus to stay on the active item when returning from detail view. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Removed
+
 
 ## [0.6.0] - 2026-01-22
 
