@@ -3404,8 +3404,8 @@ button.tag-chip-remove {
     align-items: flex-start;
     padding: var(--spacing-lg) var(--spacing-sm);
     /* Use a modest dynamic top inset so the modal isn't top-anchored. */
-    padding-top: clamp(12px, 4vh, 40px);
-    padding-top: clamp(12px, 4dvh, 40px);
+    padding-top: clamp(22px, 5vh, 50px);
+    padding-top: clamp(22px, 5dvh, 50px);
   }
 
   .list-item-dialog,
