@@ -364,6 +364,10 @@ export class ListPanelController {
       void this.moveFocusedItemToBoundary('bottom');
       return true;
     }
+    if (lowerKey === 'n') {
+      this.openAddItemDialog(this.currentListId);
+      return true;
+    }
 
     return false;
   }

@@ -5,7 +5,7 @@
 ### Breaking Changes
 
 ### Added
-- Added list keyboard navigation and shortcuts (selection, edit, complete, move, delete, search focus). ([#20](https://github.com/kcosr/assistant/pull/20))
+- Added list keyboard navigation and shortcuts (selection, edit, complete, add, move, delete, search focus). ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Changed
 - Added global setting for list single-click selection and refined click behavior. ([#20](https://github.com/kcosr/assistant/pull/20))

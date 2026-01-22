@@ -963,12 +963,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!canHandlePanelShortcuts(event, { requireListMode: true })) {
           return;
         }
-        if (event.ctrlKey && event.metaKey && event.shiftKey && event.key.toLowerCase() === 'n') {
-          event.preventDefault();
-          event.stopPropagation();
-          listPanelController.openAddItemDialog(activeListId);
-          return;
-        }
         const handled = listPanelController.handleKeyboardEvent(event);
         if (handled) {
           event.preventDefault();

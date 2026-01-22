@@ -114,7 +114,6 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) | Header panel navigation |
 | `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) | Close panel (replace with placeholder) |
 | `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) | Remove panel from layout |
-| `Ctrl + Shift + Cmd + N` (macOS) / `Ctrl + Shift + Alt + N` (others) | Create new item (lists panel must be focused) |
 | `Shift + Enter` | Submit modal form (e.g., from tags input in notes/lists) |
 | `Cmd + Click` (macOS) / `Ctrl + Click` (others) | Focus a non-chat panel (chat panels focus on regular click) |
 
@@ -130,6 +129,7 @@ In layout navigation mode: arrows move between siblings, `Enter` descends or foc
 - `Shift + Arrow Up/Down` – Extend selection
 - `Enter` – Edit focused item
 - `Space` – Toggle completed for selection
+- `n` – Add item
 - `t` / `b` – Move focused item to top/bottom
 - `d` – Delete selection (with confirmation)
 - `Esc` – Clear selection
