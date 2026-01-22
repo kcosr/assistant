@@ -1602,6 +1602,9 @@ export class ListPanelTableController {
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
         } else if (singleClickEnabled) {
+          if (e.ctrlKey || e.metaKey || e.altKey) {
+            return;
+          }
           const isSelectedPanel =
             Boolean(row.closest('.panel-frame.is-active')) ||
             Boolean(row.closest('.panel-modal')) ||

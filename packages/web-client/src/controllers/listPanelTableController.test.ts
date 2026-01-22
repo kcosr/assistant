@@ -313,8 +313,8 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(firstRow?.classList.contains('list-item-selected')).toBe(true);
 
     secondRow?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
-    expect(firstRow?.classList.contains('list-item-selected')).toBe(false);
-    expect(secondRow?.classList.contains('list-item-selected')).toBe(true);
+    expect(firstRow?.classList.contains('list-item-selected')).toBe(true);
+    expect(secondRow?.classList.contains('list-item-selected')).toBe(false);
   });
 
   it('does not select a row on click when the panel is not active', () => {
