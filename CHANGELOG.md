@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2026-01-22
 
 ### Breaking Changes
 
@@ -14,6 +14,7 @@
 - Fixed notes/lists context to use the active item instance id. ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Removed
+
 
 ## [0.5.0] - 2026-01-22
 
