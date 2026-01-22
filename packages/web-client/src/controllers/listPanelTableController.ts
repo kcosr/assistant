@@ -44,6 +44,7 @@ export interface ListPanelTableControllerOptions {
 export interface ListPanelTableRenderOptions {
   listId: string;
   sortedItems: ListPanelItem[];
+  enableSingleClickSelection?: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -117,6 +118,8 @@ export class ListPanelTableController {
   private draggedItemIds: string[] | null = null;
   private draggedListId: string | null = null;
   private lastSelectedRowIndex: number | null = null;
+  private keyboardSelectionAnchorIndex: number | null = null;
+  private enableSingleClickSelection = true;
   private activeColumnMenu: HTMLElement | null = null;
   private notesPopup: HTMLElement | null = null;
   private notesPopupHideTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -320,6 +323,8 @@ export class ListPanelTableController {
   }
 
   renderTable(renderOptions: ListPanelTableRenderOptions): ListPanelTableRenderResult {
+    this.keyboardSelectionAnchorIndex = null;
+    this.enableSingleClickSelection = renderOptions.enableSingleClickSelection ?? true;
     const {
       listId,
       sortedItems,
@@ -1055,6 +1060,96 @@ export class ListPanelTableController {
     return true;
   }
 
+  getFocusedItemId(): string | null {
+    const rows = this.getAllItemRows();
+    if (rows.length === 0) {
+      return null;
+    }
+    if (this.lastSelectedRowIndex !== null) {
+      const row = rows[this.lastSelectedRowIndex];
+      if (row && row.classList.contains('list-item-selected')) {
+        return row.dataset['itemId'] ?? null;
+      }
+    }
+    const selectedRow = rows.find((row) => row.classList.contains('list-item-selected')) ?? null;
+    return selectedRow?.dataset['itemId'] ?? null;
+  }
+
+  moveSelectionByOffset(
+    offset: number,
+    options?: { extend?: boolean; wrap?: boolean },
+  ): string | null {
+    const allRows = this.getAllItemRows();
+    if (allRows.length === 0) {
+      return null;
+    }
+    const visibleRows = allRows.filter((row) => this.isRowVisible(row));
+    if (visibleRows.length === 0) {
+      return null;
+    }
+
+    const extend = options?.extend ?? false;
+    const wrap = options?.wrap ?? true;
+    const selectedVisibleRows = visibleRows.filter((row) =>
+      row.classList.contains('list-item-selected'),
+    );
+    const hasSelection = selectedVisibleRows.length > 0;
+
+    let targetRow: HTMLTableRowElement | null = null;
+    if (!hasSelection) {
+      const startIndex = offset < 0 ? visibleRows.length - 1 : 0;
+      targetRow = visibleRows[startIndex] ?? null;
+    } else {
+      const focusRow = this.resolveFocusedRow(allRows, visibleRows, selectedVisibleRows);
+      if (!focusRow) {
+        targetRow = visibleRows[0] ?? null;
+      } else {
+        const currentIndex = visibleRows.indexOf(focusRow);
+        let nextIndex = currentIndex + offset;
+        if (nextIndex < 0) {
+          nextIndex = wrap ? visibleRows.length - 1 : 0;
+        } else if (nextIndex >= visibleRows.length) {
+          nextIndex = wrap ? 0 : visibleRows.length - 1;
+        }
+        targetRow = visibleRows[nextIndex] ?? null;
+      }
+    }
+
+    if (!targetRow) {
+      return null;
+    }
+
+    const targetAllIndex = allRows.indexOf(targetRow);
+    if (extend) {
+      const anchorIndex = this.resolveKeyboardAnchorIndex(
+        allRows,
+        visibleRows,
+        selectedVisibleRows,
+      );
+      this.keyboardSelectionAnchorIndex = anchorIndex;
+      this.applyRangeSelection(allRows, visibleRows, anchorIndex, targetAllIndex);
+    } else {
+      this.keyboardSelectionAnchorIndex = null;
+      this.applySingleSelection(allRows, targetRow);
+    }
+
+    this.lastSelectedRowIndex = targetAllIndex >= 0 ? targetAllIndex : null;
+    this.updateSelectionButtons();
+    if (typeof targetRow.scrollIntoView === 'function') {
+      targetRow.scrollIntoView({ block: 'nearest' });
+    }
+    return targetRow.dataset['itemId'] ?? null;
+  }
+
+  clearSelectionCurrent(): boolean {
+    const state = this.renderState;
+    if (!state) {
+      return false;
+    }
+    this.clearSelection(state.tbody);
+    return true;
+  }
+
   private buildItemRow(options: ListPanelRowRenderOptions): HTMLTableRowElement {
     const {
       listId,
@@ -1482,6 +1577,10 @@ export class ListPanelTableController {
       };
 
       row.addEventListener('click', (e) => {
+        if (this.shouldIgnoreRowSelection(e.target)) {
+          return;
+        }
+        this.keyboardSelectionAnchorIndex = null;
         if (e.shiftKey && this.lastSelectedRowIndex !== null) {
           e.preventDefault();
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
@@ -1501,6 +1600,19 @@ export class ListPanelTableController {
           e.preventDefault();
           row.classList.toggle('list-item-selected');
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+          this.lastSelectedRowIndex = rows.indexOf(row);
+          this.updateSelectionButtons();
+        } else if (this.enableSingleClickSelection) {
+          const isSelectedPanel =
+            Boolean(row.closest('.panel-frame.is-active')) ||
+            Boolean(row.closest('.panel-modal')) ||
+            Boolean(row.closest('.panel-dock-popover'));
+          if (!isSelectedPanel) {
+            return;
+          }
+          const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+          rows.forEach((r) => r.classList.remove('list-item-selected'));
+          row.classList.add('list-item-selected');
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
         }
@@ -1571,6 +1683,7 @@ export class ListPanelTableController {
 
           if (dx < TOUCH_MOVE_THRESHOLD && dy < TOUCH_MOVE_THRESHOLD) {
             e.preventDefault();
+            this.keyboardSelectionAnchorIndex = null;
             row.classList.toggle('list-item-selected');
             const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
             this.lastSelectedRowIndex = rows.indexOf(row);
@@ -2191,6 +2304,7 @@ export class ListPanelTableController {
       row.classList.remove('list-item-selected');
     });
     this.lastSelectedRowIndex = null;
+    this.keyboardSelectionAnchorIndex = null;
     this.updateSelectionButtons();
   }
 
@@ -2210,6 +2324,7 @@ export class ListPanelTableController {
 
     this.lastSelectedRowIndex =
       visibleRows.length > 0 ? rows.indexOf(visibleRows[visibleRows.length - 1]!) : null;
+    this.keyboardSelectionAnchorIndex = null;
     this.updateSelectionButtons();
   }
 
@@ -2219,7 +2334,90 @@ export class ListPanelTableController {
       row.classList.add('list-item-selected');
     }
     this.lastSelectedRowIndex = rows.length > 0 ? rows.length - 1 : null;
+    this.keyboardSelectionAnchorIndex = null;
     this.updateSelectionButtons();
+  }
+
+  private getAllItemRows(): HTMLTableRowElement[] {
+    const state = this.renderState;
+    if (!state) {
+      return [];
+    }
+    return Array.from(
+      state.tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row[data-item-id]'),
+    );
+  }
+
+  private isRowVisible(row: HTMLTableRowElement): boolean {
+    if (row.classList.contains('focus-marker-hidden')) {
+      return false;
+    }
+    if (row.style.display === 'none') {
+      return false;
+    }
+    return true;
+  }
+
+  private resolveFocusedRow(
+    allRows: HTMLTableRowElement[],
+    visibleRows: HTMLTableRowElement[],
+    selectedVisibleRows: HTMLTableRowElement[],
+  ): HTMLTableRowElement | null {
+    if (this.lastSelectedRowIndex !== null) {
+      const candidate = allRows[this.lastSelectedRowIndex];
+      if (candidate && this.isRowVisible(candidate)) {
+        return candidate;
+      }
+    }
+    if (selectedVisibleRows.length > 0) {
+      return selectedVisibleRows[selectedVisibleRows.length - 1] ?? null;
+    }
+    return visibleRows[0] ?? null;
+  }
+
+  private resolveKeyboardAnchorIndex(
+    allRows: HTMLTableRowElement[],
+    visibleRows: HTMLTableRowElement[],
+    selectedVisibleRows: HTMLTableRowElement[],
+  ): number {
+    if (this.keyboardSelectionAnchorIndex !== null) {
+      return this.keyboardSelectionAnchorIndex;
+    }
+    const focusRow = this.resolveFocusedRow(allRows, visibleRows, selectedVisibleRows);
+    if (!focusRow) {
+      return 0;
+    }
+    const index = allRows.indexOf(focusRow);
+    return index >= 0 ? index : 0;
+  }
+
+  private applySingleSelection(
+    allRows: HTMLTableRowElement[],
+    targetRow: HTMLTableRowElement,
+  ): void {
+    for (const row of allRows) {
+      row.classList.remove('list-item-selected');
+    }
+    targetRow.classList.add('list-item-selected');
+  }
+
+  private applyRangeSelection(
+    allRows: HTMLTableRowElement[],
+    visibleRows: HTMLTableRowElement[],
+    anchorIndex: number,
+    targetIndex: number,
+  ): void {
+    const start = Math.min(anchorIndex, targetIndex);
+    const end = Math.max(anchorIndex, targetIndex);
+    for (const row of allRows) {
+      row.classList.remove('list-item-selected');
+    }
+    for (const row of visibleRows) {
+      const rowIndex = allRows.indexOf(row);
+      if (rowIndex >= start && rowIndex <= end) {
+        row.classList.add('list-item-selected');
+      }
+    }
   }
 
   private shouldIgnoreRowDoubleClick(target: EventTarget | null): boolean {

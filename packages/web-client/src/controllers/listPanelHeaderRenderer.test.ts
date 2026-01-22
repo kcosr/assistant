@@ -38,6 +38,8 @@ describe('renderListPanelHeader', () => {
       onEditMetadata,
       onTimelineFieldChange: vi.fn(),
       onFocusViewToggle: vi.fn(),
+      singleClickSelection: true,
+      onSingleClickSelectionToggle: vi.fn(),
       getMoveTargetLists: () => [],
       onMoveSelectedToList: vi.fn(),
       onCopySelectedToList: vi.fn(),

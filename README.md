@@ -121,9 +121,18 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 In layout navigation mode: arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages.
 
 **Lists panel item selection:**
+- `Click` – Select item (when enabled in Actions menu)
 - `Shift + Click` – Range select from last selected item to clicked item
 - `Cmd + Click` (macOS) / `Ctrl + Click` (others) – Toggle individual item selection
 - `Double-click` – Edit item
+- `Cmd + Alt + F` (macOS) / `Ctrl + Alt + F` (others) – Focus list search
+- `Arrow Up/Down` – Move selection (wraps at top/bottom)
+- `Shift + Arrow Up/Down` – Extend selection
+- `Enter` – Edit focused item
+- `Space` – Toggle completed for selection
+- `t` / `b` – Move focused item to top/bottom
+- `d` – Delete selection (with confirmation)
+- `Esc` – Clear selection
 
 **Notes panel:** Drag to select text, then release with `Shift` held to add selection to agent context.
 

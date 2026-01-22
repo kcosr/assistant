@@ -16,6 +16,7 @@ export interface ListViewPreferences {
   timelineField?: string | null;
   focusMarkerItemId?: string | null;
   focusMarkerExpanded?: boolean | null;
+  singleClickSelection?: boolean | null;
 }
 
 export interface ViewDisplayPreferences {
@@ -80,6 +81,11 @@ function normalizeFocusMarkerItemId(value: unknown): string | null | undefined {
 }
 
 function normalizeFocusMarkerExpanded(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value;
+  return undefined;
+}
+
+function normalizeSingleClickSelection(value: unknown): boolean | undefined {
   if (typeof value === 'boolean') return value;
   return undefined;
 }
@@ -170,6 +176,12 @@ export class ListColumnPreferencesClient {
     if (!listId) return false;
     const viewPrefs = this.listViewPrefs[listId];
     return viewPrefs?.focusMarkerExpanded ?? false;
+  }
+
+  getSingleClickSelection(listId: string): boolean {
+    if (!listId) return true;
+    const viewPrefs = this.listViewPrefs[listId];
+    return viewPrefs?.singleClickSelection ?? true;
   }
 
   async updateColumn(
@@ -372,6 +384,32 @@ export class ListColumnPreferencesClient {
     }
   }
 
+  async updateSingleClickSelection(listId: string, singleClickSelection: boolean): Promise<void> {
+    const trimmedListId = listId.trim();
+    if (!trimmedListId) return;
+
+    const localPrefs = (this.listViewPrefs[trimmedListId] ??= {});
+    localPrefs.singleClickSelection = singleClickSelection;
+
+    const body: PreferencesResponse = {
+      listViewPrefs: {
+        [trimmedListId]: {
+          singleClickSelection,
+        },
+      },
+    };
+
+    try {
+      await apiFetch('/preferences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // Ignore network errors while updating preferences; local optimistic state remains.
+    }
+  }
+
   getViewDisplayPreferences(viewId: string): ViewDisplayPreferences | null {
     if (!viewId) return null;
     const prefs = this.viewPrefs[viewId];
@@ -501,6 +539,13 @@ export class ListColumnPreferencesClient {
         const focusMarkerExpanded = normalizeFocusMarkerExpanded(rawPrefs['focusMarkerExpanded']);
         if (focusMarkerExpanded !== undefined) {
           viewPrefs.focusMarkerExpanded = focusMarkerExpanded;
+        }
+
+        const singleClickSelection = normalizeSingleClickSelection(
+          rawPrefs['singleClickSelection'],
+        );
+        if (singleClickSelection !== undefined) {
+          viewPrefs.singleClickSelection = singleClickSelection;
         }
 
         if (Object.keys(viewPrefs).length > 0) {

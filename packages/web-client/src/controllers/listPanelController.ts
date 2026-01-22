@@ -90,12 +90,14 @@ export interface ListPanelControllerOptions {
   updateTimelineField: (listId: string, timelineField: string | null) => void;
   getFocusMarkerItemId: (listId: string) => string | null;
   getFocusMarkerExpanded: (listId: string) => boolean;
+  getSingleClickSelection: (listId: string) => boolean;
   updateFocusMarker: (
     listId: string,
     focusMarkerItemId: string | null,
     focusMarkerExpanded?: boolean,
   ) => void;
   updateFocusMarkerExpanded: (listId: string, focusMarkerExpanded: boolean) => void;
+  updateSingleClickSelection: (listId: string, singleClickSelection: boolean) => void;
   setRightControls: (elements: HTMLElement[]) => void;
 }
 
@@ -133,6 +135,7 @@ export class ListPanelController {
   private currentTimelineField: string | null = null;
   private currentFocusMarkerItemId: string | null = null;
   private currentFocusMarkerExpanded: boolean = false;
+  private currentSingleClickSelection = true;
   private currentListId: string | null = null;
   private currentData: ListPanelData | null = null;
   private currentSortedItems: ListPanelItem[] = [];
@@ -303,6 +306,71 @@ export class ListPanelController {
     this.showListItemEditorDialog('add', listId);
   }
 
+  handleKeyboardEvent(event: KeyboardEvent): boolean {
+    if (!this.currentListId || !this.currentData) {
+      return false;
+    }
+    const key = event.key;
+    const hasModifier = event.ctrlKey || event.metaKey || event.altKey;
+
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return false;
+      }
+      const offset = key === 'ArrowUp' ? -1 : 1;
+      const handled = this.tableController.moveSelectionByOffset(offset, {
+        extend: event.shiftKey,
+        wrap: true,
+      });
+      return Boolean(handled);
+    }
+
+    if (key === 'Escape') {
+      if (this.options.getSelectedItemCount() === 0) {
+        return false;
+      }
+      this.clearListSelection();
+      return true;
+    }
+
+    if (hasModifier) {
+      return false;
+    }
+
+    if (key === 'Enter') {
+      return this.openEditForFocusedItem();
+    }
+
+    if (key === ' ' || key === 'Spacebar') {
+      if (this.options.getSelectedItemCount() === 0) {
+        return false;
+      }
+      void this.toggleSelectedItemsCompleted();
+      return true;
+    }
+
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === 'd') {
+      return this.requestDeleteSelectedItems();
+    }
+    if (lowerKey === 't') {
+      if (this.options.getSelectedItemCount() !== 1) {
+        return false;
+      }
+      void this.moveFocusedItemToBoundary('top');
+      return true;
+    }
+    if (lowerKey === 'b') {
+      if (this.options.getSelectedItemCount() !== 1) {
+        return false;
+      }
+      void this.moveFocusedItemToBoundary('bottom');
+      return true;
+    }
+
+    return false;
+  }
+
   render(listId: string, data: ListPanelData): ListPanelHeaderControls {
     const bodyEl = this.options.bodyEl;
     if (!bodyEl) {
@@ -317,6 +385,7 @@ export class ListPanelController {
       this.currentTimelineField = this.options.getTimelineField(listId);
       this.currentFocusMarkerItemId = this.options.getFocusMarkerItemId(listId);
       this.currentFocusMarkerExpanded = this.options.getFocusMarkerExpanded(listId);
+      this.currentSingleClickSelection = this.options.getSingleClickSelection(listId);
     }
 
     // Get custom fields early for the header
@@ -394,6 +463,13 @@ export class ListPanelController {
             this.options.updateFocusMarker(listId, firstItem.id, false);
           }
         }
+        const newControls = this.render(listId, data);
+        this.options.setRightControls(newControls.rightControls);
+      },
+      singleClickSelection: this.currentSingleClickSelection,
+      onSingleClickSelectionToggle: (enabled: boolean) => {
+        this.currentSingleClickSelection = enabled;
+        this.options.updateSingleClickSelection(listId, enabled);
         const newControls = this.render(listId, data);
         this.options.setRightControls(newControls.rightControls);
       },
@@ -562,6 +638,7 @@ export class ListPanelController {
     const { table, tbody, colCount, hasAnyItems } = this.tableController.renderTable({
       listId,
       sortedItems,
+      enableSingleClickSelection: this.currentSingleClickSelection,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -947,7 +1024,7 @@ export class ListPanelController {
     });
   }
 
-  private clearListSelection(): void {
+  clearListSelection(): void {
     const bodyEl = this.options.bodyEl;
     if (bodyEl) {
       this.tableController.clearSelection(bodyEl);
@@ -1310,5 +1387,130 @@ export class ListPanelController {
         tbody.appendChild(noMatchRow);
       }
     }
+  }
+
+  private getSelectedItems(): ListPanelItem[] {
+    const selectedIds = this.options.getSelectedItemIds();
+    if (!this.currentData || selectedIds.length === 0) {
+      return [];
+    }
+    const items = this.currentData.items ?? [];
+    const byId = new Map(items.map((item) => [item.id, item]));
+    return selectedIds.map((id) => byId.get(id)).filter((item): item is ListPanelItem => !!item);
+  }
+
+  private openEditForFocusedItem(): boolean {
+    const listId = this.currentListId;
+    if (!listId || !this.currentData) {
+      return false;
+    }
+    const itemId = this.tableController.getFocusedItemId();
+    if (!itemId) {
+      return false;
+    }
+    const item = this.currentData.items?.find((entry) => entry.id === itemId);
+    if (!item) {
+      return false;
+    }
+    this.showListItemEditorDialog('edit', listId, item);
+    return true;
+  }
+
+  private requestDeleteSelectedItems(): boolean {
+    if (!this.currentListId) {
+      return false;
+    }
+    const count = this.options.getSelectedItemCount();
+    if (count === 0) {
+      return false;
+    }
+    this.showDeleteSelectedItemsConfirmation(this.currentListId);
+    return true;
+  }
+
+  private applyOptimisticCompletion(item: ListPanelItem, completed: boolean): void {
+    const updated: ListPanelItem = { ...item, completed };
+    if (completed) {
+      updated.completedAt = new Date().toISOString();
+    } else {
+      delete updated.completedAt;
+    }
+    this.applyItemUpdate(updated);
+  }
+
+  private async toggleSelectedItemsCompleted(): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId) {
+      return false;
+    }
+    const selectedItems = this.getSelectedItems();
+    if (selectedItems.length === 0) {
+      return false;
+    }
+
+    const shouldComplete = selectedItems.some((item) => !item.completed);
+    for (const item of selectedItems) {
+      if (item.id) {
+        this.applyOptimisticCompletion(item, shouldComplete);
+      }
+    }
+
+    if (selectedItems.length === 1) {
+      const itemId = selectedItems[0]?.id;
+      if (!itemId) {
+        return false;
+      }
+      const ok = await this.updateListItem(listId, itemId, { completed: shouldComplete });
+      if (!ok) {
+        this.options.setStatus('Failed to update item');
+      }
+      return ok;
+    }
+
+    if (!this.options.callOperation) {
+      this.options.setStatus('Lists tool is unavailable');
+      return false;
+    }
+    try {
+      await this.runOperation('items-bulk-update-completed', {
+        listId,
+        itemIds: selectedItems
+          .map((item) => item.id)
+          .filter((id): id is string => typeof id === 'string'),
+        completed: shouldComplete,
+      });
+      return true;
+    } catch (err) {
+      console.error('Error updating completed items:', err);
+      this.options.setStatus('Failed to update selected items');
+      return false;
+    }
+  }
+
+  private async moveFocusedItemToBoundary(
+    boundary: 'top' | 'bottom',
+  ): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId) {
+      return false;
+    }
+    const selectedIds = this.options.getSelectedItemIds();
+    if (selectedIds.length !== 1) {
+      return false;
+    }
+    const itemId = selectedIds[0];
+    if (!itemId) {
+      return false;
+    }
+    this.options.recentUserItemUpdates.add(itemId);
+    window.setTimeout(() => {
+      this.options.recentUserItemUpdates.delete(itemId);
+    }, this.options.userUpdateTimeoutMs);
+    const position = boundary === 'top' ? 0 : Number.MAX_SAFE_INTEGER;
+    const ok = await this.updateListItem(listId, itemId, { position });
+    if (!ok) {
+      this.options.setStatus('Failed to move item');
+    }
+    return ok;
   }
 }

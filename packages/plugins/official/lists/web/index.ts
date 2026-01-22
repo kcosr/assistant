@@ -641,16 +641,29 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeListData: ListPanelData | null = null;
       let mode: ViewMode = 'browser';
       let isVisible = false;
-      let isFocused = false;
       let panelKeydownAttached = false;
+      let isPanelSelected = false;
       let refreshToken = 0;
       let refreshInFlight = false;
       let loadToken = 0;
       let browserController: CollectionBrowserController | null = null;
       let dropdownController: CollectionDropdownController | null = null;
       let chromeController: PanelChromeController | null = null;
+      let unsubscribePanelActive: (() => void) | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
+      const panelId = host.panelId();
+
+      const updatePanelSelection = (value: unknown): void => {
+        if (!value || typeof value !== 'object') {
+          isPanelSelected = false;
+          return;
+        }
+        const raw = value as { panelId?: unknown };
+        isPanelSelected = typeof raw.panelId === 'string' && raw.panelId === panelId;
+      };
+      updatePanelSelection(host.getContext('panel.active'));
+      unsubscribePanelActive = host.subscribeContext('panel.active', updatePanelSelection);
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -858,25 +871,108 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         services.notifyContextAvailabilityChange();
       };
 
-      const handlePanelKeydown = (event: KeyboardEvent): void => {
-        if (!isVisible || !isFocused) {
-          return;
+      const isEditableTarget = (target: EventTarget | null): boolean => {
+        if (!(target instanceof Element)) {
+          return false;
+        }
+        if ((target as HTMLElement).isContentEditable) {
+          return true;
+        }
+        return Boolean(
+          target.closest(
+            'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+          ),
+        );
+      };
+
+      const hasBlockingOverlay = (): boolean => {
+        const modalOverlay = document.querySelector<HTMLElement>('.panel-modal-overlay.open');
+        if (modalOverlay && !modalOverlay.contains(root)) {
+          return true;
+        }
+        const dockPopover = document.querySelector<HTMLElement>('.panel-dock-popover.open');
+        if (dockPopover && !dockPopover.contains(root)) {
+          return true;
+        }
+        return false;
+      };
+
+      const hasOpenDropdowns = (): boolean => {
+        if (
+          root.querySelector('.collection-search-dropdown-container.open') ||
+          root.querySelector('.collection-list-actions-menu.open') ||
+          root.querySelector('.collection-list-actions-submenu.open') ||
+          root.querySelector('.panel-chrome-instance-menu.open')
+        ) {
+          return true;
+        }
+        return false;
+      };
+
+      const isPanelOverlay = (): boolean =>
+        Boolean(root.closest('.panel-modal')) || Boolean(root.closest('.panel-dock-popover'));
+
+      const canHandlePanelShortcuts = (
+        event: KeyboardEvent,
+        options?: { requireListMode?: boolean },
+      ): boolean => {
+        if (!isVisible) {
+          return false;
         }
         if (services.dialogManager.hasOpenDialog) {
+          return false;
+        }
+        if (hasBlockingOverlay()) {
+          return false;
+        }
+        if (!isPanelSelected && !isPanelOverlay()) {
+          return false;
+        }
+        if (document.querySelector('.context-menu')) {
+          return false;
+        }
+        if (hasOpenDropdowns()) {
+          return false;
+        }
+        if (isEditableTarget(event.target) || isEditableTarget(document.activeElement)) {
+          return false;
+        }
+        const requireListMode = options?.requireListMode ?? true;
+        if (requireListMode && (mode !== 'list' || !activeListId)) {
+          return false;
+        }
+        return true;
+      };
+
+      const handlePanelKeydown = (event: KeyboardEvent): void => {
+        const isSearchShortcut =
+          (event.metaKey || event.ctrlKey) &&
+          event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 'f';
+        if (isSearchShortcut) {
+          if (!canHandlePanelShortcuts(event, { requireListMode: false })) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          sharedSearchController.focus(true);
           return;
         }
-        if (mode !== 'list' || !activeListId) {
+        if (!canHandlePanelShortcuts(event, { requireListMode: true })) {
           return;
         }
-        if (!event.ctrlKey || !event.metaKey || !event.shiftKey) {
+        if (event.ctrlKey && event.metaKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+          event.preventDefault();
+          event.stopPropagation();
+          listPanelController.openAddItemDialog(activeListId);
           return;
         }
-        if (event.key.toLowerCase() !== 'n') {
-          return;
+        const handled = listPanelController.handleKeyboardEvent(event);
+        if (handled) {
+          event.preventDefault();
+          event.stopPropagation();
         }
-        event.preventDefault();
-        event.stopPropagation();
-        listPanelController.openAddItemDialog(activeListId);
       };
 
       const attachPanelShortcuts = (): void => {
@@ -953,6 +1049,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           services.listColumnPreferencesClient.getFocusMarkerItemId(listId),
         getFocusMarkerExpanded: (listId) =>
           services.listColumnPreferencesClient.getFocusMarkerExpanded(listId),
+        getSingleClickSelection: (listId) =>
+          services.listColumnPreferencesClient.getSingleClickSelection(listId),
         updateFocusMarker: (listId, focusMarkerItemId, focusMarkerExpanded) => {
           void services.listColumnPreferencesClient.updateFocusMarker(
             listId,
@@ -964,6 +1062,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           void services.listColumnPreferencesClient.updateFocusMarkerExpanded(
             listId,
             focusMarkerExpanded,
+          );
+        },
+        updateSingleClickSelection: (listId, singleClickSelection) => {
+          void services.listColumnPreferencesClient.updateSingleClickSelection(
+            listId,
+            singleClickSelection,
           );
         },
         setRightControls: (elements) => {
@@ -1627,6 +1731,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
+      attachPanelShortcuts();
 
       const stored = host.loadPanelState();
       let initialListId: string | null = null;
@@ -1700,13 +1805,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
         },
         onFocus: () => {
-          isFocused = true;
-          attachPanelShortcuts();
           void refreshLists({ silent: true });
         },
         onBlur: () => {
-          isFocused = false;
-          detachPanelShortcuts();
         },
         onEvent: (event: PanelEventEnvelope) => {
           const payload = event.payload as Record<string, unknown> | null;
@@ -1741,6 +1842,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         unmount() {
           detachPanelShortcuts();
           chromeController?.destroy();
+          unsubscribePanelActive?.();
           host.setContext(contextKey, null);
           if (highlightTimeout) {
             window.clearTimeout(highlightTimeout);
