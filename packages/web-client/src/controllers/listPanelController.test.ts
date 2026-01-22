@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ListPanelController } from './listPanelController';
+import { ContextMenuManager } from './contextMenu';
+import { DialogManager } from './dialogManager';
 
 describe('ListPanelController keyboard shortcuts', () => {
   beforeEach(() => {
@@ -15,7 +17,6 @@ describe('ListPanelController keyboard shortcuts', () => {
       bodyEl,
       getSearchQuery: () => '',
       getSearchTagController: () => null,
-      callOperation: undefined,
       icons: {
         copy: '',
         duplicate: '',
@@ -32,8 +33,14 @@ describe('ListPanelController keyboard shortcuts', () => {
       },
       renderTags: () => null,
       setStatus: () => undefined,
-      dialogManager: { hasOpenDialog: false } as { hasOpenDialog: boolean },
-      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
       getSelectedItemIds: () => [],
