@@ -1,123 +1,191 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PanelHandle, PanelHost, PanelModule } from '../../../../web-client/src/controllers/panelRegistry';
-import type { PanelEventEnvelope } from '@assistant/shared';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const apiFetch = vi.fn();
-
-vi.mock('../../../../web-client/src/utils/api', () => ({
-  apiFetch,
-}));
-
-type FetchCall = {
-  operation: string;
-  body: Record<string, unknown>;
+type PanelFactory = () => {
+  mount: (container: HTMLElement, host: {
+    panelId: () => string;
+    getContext: (key: string) => unknown | null;
+    subscribeContext: (key: string, handler: (value: unknown) => void) => () => void;
+    setContext: (key: string, value: unknown) => void;
+    persistPanelState: (state: unknown) => void;
+    loadPanelState: () => unknown | null;
+    setPanelMetadata: (meta: Record<string, unknown>) => void;
+    openPanel: (panelType: string, options?: { focus?: boolean }) => string | null;
+    closePanel: (panelId: string) => void;
+    openPanelMenu?: (panelId: string, anchor: HTMLElement) => void;
+    startPanelDrag?: (panelId: string, event: PointerEvent) => void;
+    startPanelReorder?: (panelId: string, event: PointerEvent) => void;
+  }) => {
+    onVisibilityChange?: (visible: boolean) => void;
+    unmount: () => void;
+  };
 };
 
-describe('notes panel search launch', () => {
-  let panelFactory: (() => PanelModule) | null = null;
-  let fetchCalls: FetchCall[] = [];
-
-  const flushPromises = async (): Promise<void> => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  };
-
-  const makeResponse = (result: unknown) => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ result }),
-  });
+describe('notes panel context', () => {
+  const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
+    .ASSISTANT_PANEL_REGISTRY;
+  let factories: Record<string, PanelFactory>;
 
   beforeEach(() => {
-    fetchCalls = [];
-    apiFetch.mockReset();
-    apiFetch.mockImplementation(async (url: string, options?: RequestInit) => {
-      const match = /\/api\/plugins\/notes\/operations\/(.+)$/.exec(url);
-      const operation = match?.[1] ?? '';
-      const body = options?.body ? (JSON.parse(options.body.toString()) as Record<string, unknown>) : {};
-      fetchCalls.push({ operation, body });
-
-      if (operation === 'instance_list') {
-        return makeResponse([
-          { id: 'default', label: 'Default' },
-          { id: 'work', label: 'Work' },
-        ]);
-      }
-      if (operation === 'list') {
-        return makeResponse([]);
-      }
-      if (operation === 'read') {
-        const title = typeof body['title'] === 'string' ? body['title'] : 'Unknown';
-        return makeResponse({ title, content: '', tags: [], created: '', updated: '' });
-      }
-      return makeResponse(null);
-    });
-
-    panelFactory = null;
-    (window as typeof window & { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
-      registerPanel: (_panelType: string, factory: () => PanelModule) => {
-        panelFactory = factory;
+    factories = {};
+    (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
+      registerPanel: (panelType: string, factory: PanelFactory) => {
+        factories[panelType] = factory;
       },
     };
+    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      return new Response(JSON.stringify({ ok: true, result: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+    document.body.innerHTML = '';
   });
 
-  it('switches instance when opening a note from search results', async () => {
+  afterEach(() => {
+    if (originalRegistry === undefined) {
+      delete (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY;
+    } else {
+      (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY =
+        originalRegistry;
+    }
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('uses the active note instance in context attributes', async () => {
+    vi.resetModules();
     await import('./index');
 
-    expect(panelFactory).not.toBeNull();
-    const panelModule = panelFactory?.();
-    expect(panelModule).toBeDefined();
+    const factory = factories['notes'];
+    expect(factory).toBeDefined();
 
-    const contextStore = new Map<string, unknown>();
-    let persistedState: unknown = null;
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
 
-    const host: PanelHost = {
-      panelId: () => 'panel-1',
-      getBinding: () => null,
-      setBinding: () => undefined,
-      onBindingChange: () => () => undefined,
-      setContext: (key, value) => {
-        contextStore.set(key, value);
-      },
-      getContext: (key) => contextStore.get(key) ?? null,
-      subscribeContext: () => () => undefined,
-      sendEvent: () => undefined,
-      getSessionContext: () => null,
-      subscribeSessionContext: () => () => undefined,
-      updateSessionAttributes: async () => undefined,
-      setPanelMetadata: () => undefined,
-      persistPanelState: (state) => {
-        persistedState = state;
-      },
-      loadPanelState: () => persistedState,
-      openPanel: (_panelType, _options) => null,
-      closePanel: (_panelId) => undefined,
-      activatePanel: (_panelId) => undefined,
-      movePanel: (_panelId, _placement, _targetPanelId) => undefined,
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
     };
 
-    const container = document.createElement('div');
-    const handle = panelModule?.mount(container, host, {}) as PanelHandle;
+    const panelId = 'notes-ctx';
+    const contextKey = `panel.context.${panelId}`;
+    let latestContext: Record<string, unknown> | null = null;
 
-    await flushPromises();
-
-    handle.onEvent?.({
-      type: 'panel_event',
-      panelId: 'panel-1',
-      panelType: 'notes',
-      payload: {
-        type: 'notes_show',
-        instance_id: 'work',
-        title: 'Work Note',
+    const host = {
+      panelId: () => panelId,
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
       },
-    } as PanelEventEnvelope);
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        if (key === contextKey && value && typeof value === 'object') {
+          latestContext = value as Record<string, unknown>;
+        }
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedNoteTitle: 'Dev Note',
+        selectedNoteInstanceId: 'default',
+        mode: 'note',
+        instanceIds: ['work', 'default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
 
-    await flushPromises();
-    await flushPromises();
+    const jsonResponse = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-    const readCall = fetchCalls.find((call) => call.operation === 'read');
-    expect(readCall?.body.instance_id).toBe('work');
-    expect(readCall?.body.title).toBe('Work Note');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (!url.includes('/api/plugins/notes/operations/')) {
+          return jsonResponse({});
+        }
+        const operation = url.split('/').pop() ?? '';
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+
+        if (operation === 'instance_list') {
+          return jsonResponse([
+            { id: 'work', label: 'Work' },
+            { id: 'default', label: 'Default' },
+          ]);
+        }
+        if (operation === 'list') {
+          if (body.instance_id === 'default') {
+            return jsonResponse([
+              { title: 'Dev Note', tags: [], created: '2024-01-01', updated: '2024-01-02' },
+            ]);
+          }
+          return jsonResponse([]);
+        }
+        if (operation === 'read') {
+          return jsonResponse({
+            title: 'Dev Note',
+            content: 'Hello',
+            tags: [],
+            created: '2024-01-01',
+            updated: '2024-01-02',
+          });
+        }
+        return jsonResponse([]);
+      }),
+    );
+
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const waitFor = async (predicate: () => boolean) => {
+      const start = Date.now();
+      while (Date.now() - start < 2000) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('Timed out waiting for note context');
+    };
+
+    await waitFor(() => latestContext?.type === 'note');
+
+    const contextAttributes = latestContext?.contextAttributes as Record<string, string> | undefined;
+    expect(latestContext?.instance_id).toBe('default');
+    expect(contextAttributes?.['instance-id']).toBe('default');
+    expect(contextAttributes?.['instance-ids']).toBe('work,default');
 
     handle.unmount();
   });
