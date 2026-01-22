@@ -2632,7 +2632,15 @@ export class ListPanelTableController {
 
     const minWidth = columnKey === 'title' ? 150 : 80;
 
+    const ensureFixedTableLayout = () => {
+      const table = headerCell.closest('table');
+      if (table && table instanceof HTMLTableElement && table.style.tableLayout !== 'fixed') {
+        table.style.tableLayout = 'fixed';
+      }
+    };
+
     const applyWidthToColumn = (width: number) => {
+      ensureFixedTableLayout();
       const px = `${Math.max(minWidth, Math.round(width))}px`;
       const headerCells = Array.from(
         headerCell.parentElement?.querySelectorAll<HTMLTableCellElement>('th') ?? [],
@@ -2656,24 +2664,36 @@ export class ListPanelTableController {
       applyWidthToColumn(initialWidth);
     }
 
-    resizeHandle.addEventListener('mousedown', (event) => {
+    resizeHandle.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
+      ensureFixedTableLayout();
 
       const rect = headerCell.getBoundingClientRect();
       const startX = event.clientX;
       const startWidth = rect.width;
 
-      const handleMouseMove = (moveEvent: MouseEvent) => {
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        if (moveEvent.pointerId !== event.pointerId) {
+          return;
+        }
         const delta = moveEvent.clientX - startX;
         const newWidth = Math.max(minWidth, startWidth + delta);
         applyWidthToColumn(newWidth);
       };
 
-      const handleMouseUp = (upEvent: MouseEvent) => {
+      const handlePointerUp = (upEvent: PointerEvent) => {
+        if (upEvent.pointerId !== event.pointerId) {
+          return;
+        }
         upEvent.preventDefault();
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
+        resizeHandle.releasePointerCapture(event.pointerId);
+        resizeHandle.removeEventListener('pointermove', handlePointerMove);
+        resizeHandle.removeEventListener('pointerup', handlePointerUp);
+        resizeHandle.removeEventListener('pointercancel', handlePointerUp);
 
         const finalRect = headerCell.getBoundingClientRect();
         const finalWidth = Math.max(minWidth, Math.round(finalRect.width));
@@ -2685,8 +2705,10 @@ export class ListPanelTableController {
         }
       };
 
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
+      resizeHandle.setPointerCapture(event.pointerId);
+      resizeHandle.addEventListener('pointermove', handlePointerMove);
+      resizeHandle.addEventListener('pointerup', handlePointerUp);
+      resizeHandle.addEventListener('pointercancel', handlePointerUp);
     });
   }
 

@@ -23,7 +23,10 @@ import type { ListCustomFieldDefinition } from '../../../../web-client/src/contr
 import type { ListMetadataDialogPayload } from '../../../../web-client/src/controllers/listMetadataDialog';
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
 import { DialogManager } from '../../../../web-client/src/controllers/dialogManager';
-import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
+import {
+  ListColumnPreferencesClient,
+  type ListColumnPreferences,
+} from '../../../../web-client/src/utils/listColumnPreferences';
 import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
@@ -653,6 +656,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
       let activeListData: ListPanelData | null = null;
+      let panelColumnWidths: Record<string, Record<string, number>> = {};
       let mode: ViewMode = 'browser';
       let isVisible = false;
       let panelKeydownAttached = false;
@@ -685,7 +689,81 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           selectedListInstanceId: activeListInstanceId,
           mode,
           instanceIds: selectedInstanceIds,
+          columnWidths: panelColumnWidths,
         });
+      };
+
+      const normalizeColumnWidths = (
+        value: unknown,
+      ): Record<string, Record<string, number>> => {
+        if (!value || typeof value !== 'object') {
+          return {};
+        }
+        const result: Record<string, Record<string, number>> = {};
+        for (const [listId, rawWidths] of Object.entries(value as Record<string, unknown>)) {
+          if (!rawWidths || typeof rawWidths !== 'object' || Array.isArray(rawWidths)) {
+            continue;
+          }
+          const widths: Record<string, number> = {};
+          for (const [columnKey, rawWidth] of Object.entries(
+            rawWidths as Record<string, unknown>,
+          )) {
+            if (typeof rawWidth !== 'number' || !Number.isFinite(rawWidth)) {
+              continue;
+            }
+            const rounded = Math.round(rawWidth);
+            if (rounded <= 0) {
+              continue;
+            }
+            widths[columnKey] = rounded;
+          }
+          if (Object.keys(widths).length > 0) {
+            result[listId] = widths;
+          }
+        }
+        return result;
+      };
+
+      const getListColumnPreferences = (listId: string): ListColumnPreferences | null => {
+        const basePrefs = services.listColumnPreferencesClient.getListPreferences(listId);
+        const widths = panelColumnWidths[listId];
+        const merged: ListColumnPreferences = {};
+
+        for (const [columnKey, config] of Object.entries(basePrefs ?? {})) {
+          if (config?.visibility) {
+            merged[columnKey] = { visibility: config.visibility };
+          }
+        }
+
+        if (widths) {
+          for (const [columnKey, width] of Object.entries(widths)) {
+            merged[columnKey] = {
+              ...(merged[columnKey] ?? {}),
+              width,
+            };
+          }
+        }
+
+        return Object.keys(merged).length > 0 ? merged : null;
+      };
+
+      const updatePanelColumnWidth = (listId: string, columnKey: string, width: number): void => {
+        if (!listId || !columnKey || !Number.isFinite(width)) {
+          return;
+        }
+        const normalizedWidth = Math.round(width);
+        if (normalizedWidth <= 0) {
+          return;
+        }
+        const current = panelColumnWidths[listId] ?? {};
+        panelColumnWidths = {
+          ...panelColumnWidths,
+          [listId]: {
+            ...current,
+            [columnKey]: normalizedWidth,
+          },
+        };
+        persistState();
       };
 
       const updateFabVisibility = (): void => {
@@ -1050,10 +1128,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         openListMetadataDialog: (listId, data) => {
           browserController?.openListMetadataEditor(listId, data);
         },
-        getListColumnPreferences: (listId) =>
-          services.listColumnPreferencesClient.getListPreferences(listId),
+        getListColumnPreferences,
         updateListColumnPreferences: (listId, columnKey, patch) => {
-          void services.listColumnPreferencesClient.updateColumn(listId, columnKey, patch);
+          if (patch.width !== undefined) {
+            updatePanelColumnWidth(listId, columnKey, patch.width);
+          }
+          if (patch.visibility !== undefined) {
+            void services.listColumnPreferencesClient.updateColumn(listId, columnKey, {
+              visibility: patch.visibility,
+            });
+          }
         },
         getSortState: (listId) => services.listColumnPreferencesClient.getSortState(listId),
         updateSortState: (listId, sortState) => {
@@ -1768,6 +1852,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         if (data['mode'] === 'browser' || data['mode'] === 'list') {
           initialMode = data['mode'] as ViewMode;
+        }
+        if (data['columnWidths']) {
+          panelColumnWidths = normalizeColumnWidths(data['columnWidths']);
         }
         if (Array.isArray(data['instanceIds'])) {
           selectedInstanceIds = data['instanceIds'].filter(

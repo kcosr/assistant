@@ -1764,6 +1764,7 @@ table.collection-list-table td {
   display: flex;
   align-items: stretch;
   justify-content: center;
+  touch-action: none;
 }
 
 .collection-list-table th .list-column-resize-handle::before {
