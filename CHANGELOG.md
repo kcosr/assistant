@@ -7,8 +7,10 @@
 ### Added
 - Added Capacitor-only floating add-item button in lists view. ([#000](<pr-url>))
 - Added browser-mode keyboard navigation for list/note collections (arrow keys/Enter, Escape to return). ([#000](<pr-url>))
+- Added sticky list column headers during list scrolling. ([#000](<pr-url>))
 
 ### Changed
+- Changed list arrow-key navigation to stop at the first/last item. ([#000](<pr-url>))
 
 ### Fixed
 - Fixed list column resize dragging and panel-scoped column width persistence. ([#000](<pr-url>))

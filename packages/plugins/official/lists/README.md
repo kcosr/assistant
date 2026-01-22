@@ -32,6 +32,7 @@ operations.
   drop position.
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
+- Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
 - Capacitor Android builds show a floating add-item button in list view.
 

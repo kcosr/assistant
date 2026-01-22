@@ -317,7 +317,7 @@ export class ListPanelController {
       const offset = key === 'ArrowUp' ? -1 : 1;
       const handled = this.tableController.moveSelectionByOffset(offset, {
         extend: event.shiftKey,
-        wrap: true,
+        wrap: false,
       });
       return Boolean(handled);
     }
