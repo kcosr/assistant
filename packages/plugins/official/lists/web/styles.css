@@ -288,6 +288,10 @@
   overflow: hidden;
 }
 
+.lists-panel {
+  position: relative;
+}
+
 .collection-panel.hidden {
   width: 0 !important;
   min-width: 0 !important;
@@ -1614,6 +1618,41 @@
 .collection-list-add-button:hover {
   background-color: var(--color-bg-hover);
   color: var(--color-text-primary);
+}
+
+.lists-fab-add {
+  position: absolute;
+  right: var(--spacing-lg);
+  bottom: calc(var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px));
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+  z-index: 5;
+}
+
+.lists-fab-add.is-visible {
+  display: inline-flex;
+}
+
+.lists-fab-add:hover {
+  background-color: var(--color-accent-hover);
+  box-shadow: var(--shadow-lg);
+}
+
+.lists-fab-add:active {
+  transform: translateY(1px);
 }
 
 .collection-list-view-toggle {

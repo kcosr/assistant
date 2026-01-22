@@ -24,6 +24,7 @@ import type { ListMetadataDialogPayload } from '../../../../web-client/src/contr
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
 import { DialogManager } from '../../../../web-client/src/controllers/dialogManager';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
+import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
 import {
@@ -234,6 +235,13 @@ const LISTS_PANEL_TEMPLATE = `
     <div class="panel-body collection-panel-body" data-role="lists-panel-body">
       <div class="collection-panel-content" data-role="lists-panel-content"></div>
     </div>
+    <button
+      type="button"
+      class="lists-fab-add"
+      data-role="lists-fab-add"
+      aria-label="Add item"
+      title="Add item"
+    ></button>
   </aside>
 `;
 
@@ -591,14 +599,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const dropdownList = root.querySelector<HTMLElement>('[data-role="lists-dropdown-list"]');
       const sharedSearchEl = root.querySelector<HTMLElement>('[data-role="lists-shared-search"]');
       const panelContent = root.querySelector<HTMLElement>('[data-role="lists-panel-content"]');
+      const fabAddButton = root.querySelector<HTMLButtonElement>('[data-role="lists-fab-add"]');
 
       const services = resolveServices(host);
       const preferencesLoaded = services.listColumnPreferencesClient.load();
+      const isCapacitor = isCapacitorAndroid();
 
       const sharedSearchController = new CollectionPanelSearchController({
         containerEl: sharedSearchEl,
         icons: { x: ICONS.x },
       });
+
+      if (fabAddButton) {
+        fabAddButton.innerHTML = ICONS.plus;
+      }
 
       const bodyManager = new CollectionPanelBodyManager(panelContent);
       let highlightTimeout: number | null = null;
@@ -672,6 +686,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           mode,
           instanceIds: selectedInstanceIds,
         });
+      };
+
+      const updateFabVisibility = (): void => {
+        if (!fabAddButton) {
+          return;
+        }
+        const shouldShow = isCapacitor && mode === 'list' && !!activeListId;
+        fabAddButton.classList.toggle('is-visible', shouldShow);
       };
 
       const callInstanceOperation = async <T>(
@@ -1063,6 +1085,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         },
       });
 
+      if (fabAddButton) {
+        fabAddButton.addEventListener('click', () => {
+          if (!activeListId) {
+            return;
+          }
+          listPanelController.openAddItemDialog(activeListId);
+        });
+      }
+
       const buildListArgs = (
         payload: ListMetadataDialogPayload,
         options?: { includeEmpty?: boolean },
@@ -1336,6 +1367,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         sharedSearchController.setVisible(true);
         applySearch(sharedSearchController.getQuery());
+        updateFabVisibility();
         persistState();
       }
 
