@@ -253,6 +253,70 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(row?.classList.contains('list-item-selected')).toBe(true);
   });
 
+  it('clears selection when clicking the selected row in single-click mode', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(row?.classList.contains('list-item-selected')).toBe(true);
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(row?.classList.contains('list-item-selected')).toBe(false);
+  });
+
+  it('ignores modifier-toggle selection when single-click mode is enabled', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [
+        { id: 'item1', title: 'Item 1' },
+        { id: 'item2', title: 'Item 2' },
+      ],
+    });
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const rows = tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row');
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+
+    firstRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow?.classList.contains('list-item-selected')).toBe(true);
+
+    secondRow?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    expect(firstRow?.classList.contains('list-item-selected')).toBe(false);
+    expect(secondRow?.classList.contains('list-item-selected')).toBe(true);
+  });
+
   it('does not select a row on click when the panel is not active', () => {
     const controller = new ListPanelTableController({
       icons: { moreVertical: '' },

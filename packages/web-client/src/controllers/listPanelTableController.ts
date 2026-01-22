@@ -1579,6 +1579,7 @@ export class ListPanelTableController {
           return;
         }
         this.keyboardSelectionAnchorIndex = null;
+        const singleClickEnabled = this.isSingleClickSelectionEnabled();
         if (e.shiftKey && this.lastSelectedRowIndex !== null) {
           e.preventDefault();
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
@@ -1594,13 +1595,13 @@ export class ListPanelTableController {
             rows[j]?.classList.add('list-item-selected');
           }
           this.updateSelectionButtons();
-        } else if (e.ctrlKey || e.metaKey) {
+        } else if (!singleClickEnabled && (e.ctrlKey || e.metaKey || e.altKey)) {
           e.preventDefault();
           row.classList.toggle('list-item-selected');
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
-        } else if (this.isSingleClickSelectionEnabled()) {
+        } else if (singleClickEnabled) {
           const isSelectedPanel =
             Boolean(row.closest('.panel-frame.is-active')) ||
             Boolean(row.closest('.panel-modal')) ||
@@ -1609,6 +1610,12 @@ export class ListPanelTableController {
             return;
           }
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+          if (row.classList.contains('list-item-selected')) {
+            rows.forEach((r) => r.classList.remove('list-item-selected'));
+            this.lastSelectedRowIndex = null;
+            this.updateSelectionButtons();
+            return;
+          }
           rows.forEach((r) => r.classList.remove('list-item-selected'));
           row.classList.add('list-item-selected');
           this.lastSelectedRowIndex = rows.indexOf(row);
