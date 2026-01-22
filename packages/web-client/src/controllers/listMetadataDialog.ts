@@ -7,6 +7,8 @@ export interface ListMetadataDialogPayload {
   tags: string[];
   defaultTags: string[];
   customFields: ListCustomFieldDefinition[];
+  instanceId?: string;
+  sourceInstanceId?: string;
 }
 
 export interface ListMetadataDialogInitialData {
@@ -16,6 +18,17 @@ export interface ListMetadataDialogInitialData {
   tags?: string[];
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
+  instanceId?: string;
+}
+
+export interface ListMetadataDialogInstanceOption {
+  id: string;
+  label?: string;
+}
+
+export interface ListMetadataDialogInstanceSelection {
+  options: ListMetadataDialogInstanceOption[];
+  preferredInstanceId?: string;
 }
 
 export interface ListMetadataDialogOptions {
@@ -24,6 +37,7 @@ export interface ListMetadataDialogOptions {
   createList: (payload: ListMetadataDialogPayload) => Promise<boolean>;
   updateList: (listId: string, payload: ListMetadataDialogPayload) => Promise<boolean>;
   deleteList: (listId: string) => Promise<boolean>;
+  getInstanceSelection?: () => ListMetadataDialogInstanceSelection | null;
 }
 
 export class ListMetadataDialog {
@@ -329,6 +343,41 @@ export class ListMetadataDialog {
     nameLabel.appendChild(nameInput);
     form.appendChild(nameLabel);
 
+    const instanceSelection = this.options.getInstanceSelection?.() ?? null;
+    const instanceOptions = instanceSelection?.options ?? [];
+    const shouldShowInstanceSelect = instanceOptions.length > 1;
+    const sourceInstanceId = data?.instanceId;
+    let selectedInstanceId = data?.instanceId;
+
+    if (shouldShowInstanceSelect) {
+      const optionIds = new Set(instanceOptions.map((option) => option.id));
+      if (!selectedInstanceId || !optionIds.has(selectedInstanceId)) {
+        selectedInstanceId =
+          instanceSelection?.preferredInstanceId ?? instanceOptions[0]?.id ?? selectedInstanceId;
+      }
+
+      const instanceRow = document.createElement('label');
+      instanceRow.className = 'list-item-form-label';
+      instanceRow.textContent = 'Profile';
+
+      const instanceSelect = document.createElement('select');
+      instanceSelect.className = 'list-item-form-select';
+      for (const option of instanceOptions) {
+        const optionEl = document.createElement('option');
+        optionEl.value = option.id;
+        optionEl.textContent = option.label ?? option.id;
+        instanceSelect.appendChild(optionEl);
+      }
+      if (selectedInstanceId) {
+        instanceSelect.value = selectedInstanceId;
+      }
+      instanceSelect.addEventListener('change', () => {
+        selectedInstanceId = instanceSelect.value;
+      });
+
+      instanceRow.appendChild(instanceSelect);
+      form.appendChild(instanceRow);
+    }
     const descriptionLabel = document.createElement('label');
     descriptionLabel.className = 'list-item-form-label';
     descriptionLabel.textContent = 'Description';
@@ -686,6 +735,8 @@ export class ListMetadataDialog {
         tags,
         defaultTags,
         customFields,
+        ...(selectedInstanceId ? { instanceId: selectedInstanceId } : {}),
+        ...(sourceInstanceId ? { sourceInstanceId } : {}),
       };
 
       if (mode === 'create') {

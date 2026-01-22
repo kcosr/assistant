@@ -848,6 +848,35 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return `${labels[0]} + ${labels.length - 1}`;
       };
 
+      const getInstanceSelectionOptions = (): {
+        options: Instance[];
+        preferredInstanceId?: string;
+      } | null => {
+        if (selectedInstanceIds.length <= 1) {
+          return null;
+        }
+        const selected = selectedInstanceIds
+          .map((id) => instances.find((instance) => instance.id === id))
+          .filter((instance): instance is Instance => !!instance);
+        if (selected.length <= 1) {
+          return null;
+        }
+        const sorted = [...selected].sort((a, b) => {
+          const aDefault = a.id === DEFAULT_INSTANCE_ID;
+          const bDefault = b.id === DEFAULT_INSTANCE_ID;
+          if (aDefault !== bDefault) {
+            return aDefault ? -1 : 1;
+          }
+          return getInstanceLabel(a.id).localeCompare(getInstanceLabel(b.id), undefined, {
+            sensitivity: 'base',
+          });
+        });
+        const preferredInstanceId = selectedInstanceIds.includes(DEFAULT_INSTANCE_ID)
+          ? DEFAULT_INSTANCE_ID
+          : sorted[0]?.id;
+        return { options: sorted, preferredInstanceId };
+      };
+
       const updatePanelMetadata = (): void => {
         if (selectedInstanceIds.length === 1 && selectedInstanceIds[0] === DEFAULT_INSTANCE_ID) {
           host.setPanelMetadata({ title: 'Notes' });
@@ -1412,6 +1441,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const form = document.createElement('form');
         form.className = 'list-item-form';
+        const instanceSelection = getInstanceSelectionOptions();
+        let selectedInstanceId = isNew
+          ? (instanceSelection?.preferredInstanceId ?? activeInstanceId)
+          : (activeNoteInstanceId ?? activeInstanceId);
 
         const titleLabel = document.createElement('label');
         titleLabel.className = 'list-item-form-label';
@@ -1427,6 +1460,36 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         titleLabel.appendChild(titleInput);
         form.appendChild(titleLabel);
+
+        if (instanceSelection?.options.length) {
+          const optionIds = new Set(instanceSelection.options.map((option) => option.id));
+          if (!selectedInstanceId || !optionIds.has(selectedInstanceId)) {
+            selectedInstanceId =
+              instanceSelection.preferredInstanceId ?? instanceSelection.options[0]?.id;
+          }
+
+          const instanceRow = document.createElement('label');
+          instanceRow.className = 'list-item-form-label';
+          instanceRow.textContent = 'Profile';
+
+          const instanceSelect = document.createElement('select');
+          instanceSelect.className = 'list-item-form-select';
+          for (const option of instanceSelection.options) {
+            const optionEl = document.createElement('option');
+            optionEl.value = option.id;
+            optionEl.textContent = option.label ?? getInstanceLabel(option.id);
+            instanceSelect.appendChild(optionEl);
+          }
+          if (selectedInstanceId) {
+            instanceSelect.value = selectedInstanceId;
+          }
+          instanceSelect.addEventListener('change', () => {
+            selectedInstanceId = instanceSelect.value;
+          });
+
+          instanceRow.appendChild(instanceSelect);
+          form.appendChild(instanceRow);
+        }
 
         const tagsRow = document.createElement('div');
         tagsRow.className = 'list-item-form-label';
@@ -1481,7 +1544,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           saveButton.disabled = true;
           cancelButton.disabled = true;
           try {
-            const targetInstanceId = activeNoteInstanceId ?? activeInstanceId;
+            const sourceInstanceId = activeNoteInstanceId ?? activeInstanceId;
+            const targetInstanceId = selectedInstanceId ?? sourceInstanceId;
+            if (!isNew && sourceInstanceId !== targetInstanceId) {
+              await callInstanceOperation(sourceInstanceId, 'move', {
+                title,
+                target_instance_id: targetInstanceId,
+              });
+            }
             const result = await callInstanceOperation<unknown>(targetInstanceId, 'write', {
               title,
               content: contentInput.value,
@@ -1579,7 +1649,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       };
 
-      const openNewNoteEditor = (instanceId = activeInstanceId): void => {
+      const openNewNoteEditor = (instanceId?: string): void => {
+        const resolvedInstanceId =
+          instanceId ?? getInstanceSelectionOptions()?.preferredInstanceId ?? activeInstanceId;
         const draft: Note = {
           title: '',
           content: '',
@@ -1589,7 +1661,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         };
         activeNote = null;
         activeNoteTitle = null;
-        activeNoteInstanceId = instanceId;
+        activeNoteInstanceId = resolvedInstanceId;
         updatePanelContext();
         updateDropdownSelection(null);
         renderNoteEditor(draft, true);
@@ -1661,11 +1733,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         viewModeStorageKey: 'aiAssistantNotesBrowserViewMode',
         sortModeStorageKey: 'aiAssistantNotesBrowserSortMode',
         openNoteEditor: (mode, noteId, instanceId) => {
-          const targetInstanceId = instanceId ?? activeInstanceId;
           if (mode === 'create') {
-            openNewNoteEditor(targetInstanceId);
+            openNewNoteEditor(instanceId);
             return;
           }
+          const targetInstanceId = instanceId ?? activeInstanceId;
           if (noteId) {
             void openExistingNoteEditor(noteId, targetInstanceId);
           }

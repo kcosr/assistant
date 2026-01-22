@@ -750,6 +750,35 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return `${labels[0]} + ${labels.length - 1}`;
       };
 
+      const getInstanceSelectionOptions = (): {
+        options: Instance[];
+        preferredInstanceId?: string;
+      } | null => {
+        if (selectedInstanceIds.length <= 1) {
+          return null;
+        }
+        const selected = selectedInstanceIds
+          .map((id) => instances.find((instance) => instance.id === id))
+          .filter((instance): instance is Instance => !!instance);
+        if (selected.length <= 1) {
+          return null;
+        }
+        const sorted = [...selected].sort((a, b) => {
+          const aDefault = a.id === DEFAULT_INSTANCE_ID;
+          const bDefault = b.id === DEFAULT_INSTANCE_ID;
+          if (aDefault !== bDefault) {
+            return aDefault ? -1 : 1;
+          }
+          return getInstanceLabel(a.id).localeCompare(getInstanceLabel(b.id), undefined, {
+            sensitivity: 'base',
+          });
+        });
+        const preferredInstanceId = selectedInstanceIds.includes(DEFAULT_INSTANCE_ID)
+          ? DEFAULT_INSTANCE_ID
+          : sorted[0]?.id;
+        return { options: sorted, preferredInstanceId };
+      };
+
       const updatePanelMetadata = (): void => {
         if (selectedInstanceIds.length === 1 && selectedInstanceIds[0] === DEFAULT_INSTANCE_ID) {
           host.setPanelMetadata({ title: 'Lists' });
@@ -1000,8 +1029,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           list: ICONS.list,
         },
         listApi: {
-          getList: async (listId) => {
-            const targetInstanceId = activeListInstanceId ?? activeInstanceId;
+          getList: async (listId, instanceId) => {
+            const targetInstanceId = instanceId ?? activeListInstanceId ?? activeInstanceId;
             const raw = await callInstanceOperation<unknown>(targetInstanceId, 'get', {
               id: listId,
             });
@@ -1016,23 +1045,39 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               tags: list.tags ?? [],
               defaultTags: list.defaultTags ?? [],
               customFields: list.customFields ?? [],
+              instanceId: targetInstanceId,
             };
           },
           createList: async (payload) => {
+            const targetInstanceId = payload.instanceId ?? activeInstanceId;
             const result = await callInstanceOperation<unknown>(
-              activeInstanceId,
+              targetInstanceId,
               'create',
               buildListArgs(payload),
             );
-            const list = parseListSummary(result, activeInstanceId);
+            const list = parseListSummary(result, targetInstanceId);
             return list?.id ?? null;
           },
           updateList: async (listId, payload) => {
-            const targetInstanceId = activeListInstanceId ?? activeInstanceId;
+            const sourceInstanceId = payload.sourceInstanceId ?? activeListInstanceId ?? activeInstanceId;
+            const targetInstanceId = payload.instanceId ?? sourceInstanceId;
+            if (targetInstanceId !== sourceInstanceId) {
+              await callInstanceOperation(sourceInstanceId, 'move', {
+                id: listId,
+                target_instance_id: targetInstanceId,
+              });
+            }
             await callInstanceOperation(targetInstanceId, 'update', {
               id: listId,
               ...buildListArgs(payload, { includeEmpty: true }),
             });
+            if (
+              targetInstanceId !== sourceInstanceId &&
+              activeListId === listId &&
+              activeListInstanceId === sourceInstanceId
+            ) {
+              await selectList(listId, targetInstanceId, { focus: false });
+            }
             return true;
           },
           deleteList: async (listId) => {
@@ -1059,6 +1104,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         sortModeStorageKey: 'aiAssistantListsBrowserSortMode',
         openNoteEditor: () => undefined,
         shouldShowInstanceBadge: () => selectedInstanceIds.length > 1,
+        getListInstanceSelection: () => {
+          const selection = getInstanceSelectionOptions();
+          if (!selection) {
+            return null;
+          }
+          return {
+            options: selection.options.map((instance) => ({
+              id: instance.id,
+              label: instance.label ?? getInstanceLabel(instance.id),
+            })),
+            preferredInstanceId: selection.preferredInstanceId,
+          };
+        },
         onSortModeChanged: () => {
           dropdownController?.populate(getAvailableItems());
           dropdownController?.refreshFilter();

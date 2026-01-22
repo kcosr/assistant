@@ -183,6 +183,26 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     return normalized;
   };
 
+  const resolveTargetInstanceId = (value: unknown): string => {
+    if (value === undefined) {
+      throw new ToolError('invalid_arguments', 'target_instance_id is required');
+    }
+    if (typeof value !== 'string') {
+      throw new ToolError('invalid_arguments', 'target_instance_id must be a string');
+    }
+    const normalized = normalizePluginInstanceId(value);
+    if (!normalized) {
+      throw new ToolError(
+        'invalid_arguments',
+        'target_instance_id must be a slug (letters, numbers, hyphens, underscores)',
+      );
+    }
+    if (!instanceById.has(normalized)) {
+      throw new ToolError('invalid_arguments', `Unknown target_instance_id: ${normalized}`);
+    }
+    return normalized;
+  };
+
   const getStore = async (instanceId: string): Promise<ListsStore> => {
     const existing = stores.get(instanceId);
     if (existing) {
@@ -436,6 +456,71 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           list: result,
         });
         return result;
+      },
+      move: async (args, ctx): Promise<ListDefinition> => {
+        const parsed = asObject(args);
+        const instanceId = resolveInstanceId(parsed['instance_id']);
+        const targetInstanceId = resolveTargetInstanceId(parsed['target_instance_id']);
+        if (targetInstanceId === instanceId) {
+          throw new ToolError(
+            'invalid_arguments',
+            'target_instance_id must be different from instance_id',
+          );
+        }
+        const id = requireNonEmptyString(parsed['id'], 'id');
+        const overwriteRaw = parsed['overwrite'];
+        let overwrite = false;
+        if (overwriteRaw !== undefined) {
+          if (typeof overwriteRaw !== 'boolean') {
+            throw new ToolError('invalid_arguments', 'overwrite must be a boolean');
+          }
+          overwrite = overwriteRaw;
+        }
+
+        const sourceStore = await getStore(instanceId);
+        let snapshot: { list: ListDefinition; items: ListItem[] };
+        try {
+          snapshot = await sourceStore.getListWithItems(id);
+        } catch (err) {
+          const error = err as NodeJS.ErrnoException;
+          if (error.message?.includes('List not found')) {
+            throw new ToolError('list_not_found', `List not found: ${id}`);
+          }
+          throw err;
+        }
+
+        const targetStore = await getStore(targetInstanceId);
+        if (!overwrite) {
+          const existing = await targetStore.getList(id);
+          if (existing) {
+            throw new ToolError(
+              'invalid_arguments',
+              `List already exists in target instance: ${id}`,
+            );
+          }
+        }
+
+        const moved = await targetStore.replaceListWithItems({
+          list: snapshot.list,
+          items: snapshot.items,
+          overwrite,
+        });
+
+        await sourceStore.deleteList(id);
+
+        broadcastListsUpdate(ctx, {
+          instance_id: targetInstanceId,
+          listId: id,
+          action: 'list_created',
+          list: moved,
+        });
+        broadcastListsUpdate(ctx, {
+          instance_id: instanceId,
+          listId: id,
+          action: 'list_deleted',
+        });
+
+        return moved;
       },
       delete: async (args, ctx): Promise<{ ok: true }> => {
         const parsed = asObject(args);

@@ -13,6 +13,7 @@ import type { DialogManager } from './dialogManager';
 import {
   ListMetadataDialog,
   type ListMetadataDialogInitialData,
+  type ListMetadataDialogInstanceSelection,
   type ListMetadataDialogPayload,
 } from './listMetadataDialog';
 import type { ListCustomFieldDefinition } from './listCustomFields';
@@ -45,7 +46,10 @@ export interface CollectionBrowserControllerOptions {
     instanceId?: string,
   ) => Promise<CollectionPreviewCacheEntry | null>;
   listApi?: {
-    getList?: (listId: string) => Promise<ListMetadataDialogInitialData | null>;
+    getList?: (
+      listId: string,
+      instanceId?: string,
+    ) => Promise<ListMetadataDialogInitialData | null>;
     createList?: (payload: ListMetadataDialogPayload) => Promise<string | null>;
     updateList?: (listId: string, payload: ListMetadataDialogPayload) => Promise<boolean>;
     deleteList?: (listId: string) => Promise<boolean>;
@@ -55,6 +59,7 @@ export interface CollectionBrowserControllerOptions {
   openNoteEditor: (mode: 'create' | 'edit', noteId?: string, instanceId?: string) => void;
   onSortModeChanged?: (mode: CollectionBrowserSortMode) => void;
   shouldShowInstanceBadge?: () => boolean;
+  getListInstanceSelection?: () => ListMetadataDialogInstanceSelection | null;
 }
 
 export class CollectionBrowserController {
@@ -457,6 +462,9 @@ export class CollectionBrowserController {
       createList: (payload) => this.createList(payload),
       updateList: (listId, payload) => this.updateList(listId, payload),
       deleteList: (listId) => this.deleteList(listId),
+      ...(this.options.getListInstanceSelection
+        ? { getInstanceSelection: this.options.getListInstanceSelection }
+        : {}),
     });
 
     this.ensureSearchControllers();
@@ -470,6 +478,7 @@ export class CollectionBrowserController {
       tags?: string[] | undefined;
       defaultTags?: string[] | undefined;
       customFields?: ListCustomFieldDefinition[] | undefined;
+      instanceId?: string | undefined;
     },
   ): void {
     this.ensureUi();
@@ -484,6 +493,7 @@ export class CollectionBrowserController {
       tags: Array.isArray(data.tags) ? data.tags : [],
       defaultTags: Array.isArray(data.defaultTags) ? data.defaultTags : [],
       customFields: Array.isArray(data.customFields) ? data.customFields : [],
+      ...(data.instanceId ? { instanceId: data.instanceId } : {}),
     });
   }
 
@@ -583,12 +593,14 @@ export class CollectionBrowserController {
       return;
     }
     const listId = item.id;
+    const listInstanceId = item.instanceId ?? undefined;
     const fallback = (): void => {
       dialog.open('edit', {
         id: listId,
         name: item.name,
         tags: item.tags ?? [],
         defaultTags: [],
+        ...(listInstanceId ? { instanceId: listInstanceId } : {}),
       });
     };
 
@@ -598,19 +610,24 @@ export class CollectionBrowserController {
       return;
     }
     try {
-      const data = await listApi.getList(listId);
+      const data = await listApi.getList(listId, listInstanceId);
       if (!data) {
         fallback();
         return;
       }
-      dialog.open('edit', {
+      const dialogData: ListMetadataDialogInitialData = {
         id: listId,
         name: data.name ?? item.name,
         description: data.description ?? '',
         tags: Array.isArray(data.tags) ? data.tags : (item.tags ?? []),
         defaultTags: Array.isArray(data.defaultTags) ? data.defaultTags : [],
         customFields: Array.isArray(data.customFields) ? data.customFields : [],
-      });
+      };
+      const resolvedInstanceId = data.instanceId ?? listInstanceId;
+      if (resolvedInstanceId) {
+        dialogData.instanceId = resolvedInstanceId;
+      }
+      dialog.open('edit', dialogData);
     } catch (err) {
       console.error('Failed to load list metadata', err);
       fallback();
@@ -635,6 +652,7 @@ export class CollectionBrowserController {
       await this.options.selectItem({
         type: 'list',
         id: listId,
+        ...(payload.instanceId ? { instanceId: payload.instanceId } : {}),
       });
       return true;
     } catch (err) {

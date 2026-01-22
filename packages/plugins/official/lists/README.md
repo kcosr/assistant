@@ -22,6 +22,8 @@ operations.
 - Panel type: `lists` (multi-instance, global scope).
 - Instance selection comes from config (`plugins.lists.instances`); the default instance id is
   `default`.
+- When multiple instances are selected, the list metadata dialog includes a Profile selector and
+  uses the `move` operation to relocate lists between instances.
 - Default instance data lives under `data/plugins/lists/default/`; additional instances use
   `data/plugins/lists/<instanceId>/`.
 - Server operations: defined in `manifest.json` and implemented in `server/index.ts`.
