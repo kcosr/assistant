@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-01-22
 
 ### Breaking Changes
 - Require non-default plugin instances to be declared in `profiles`. ([#19](https://github.com/kcosr/assistant/pull/19))
@@ -23,6 +23,7 @@
 - Fixed lists edit modal not removing custom field values when cleared (select set to "Select...", text/number cleared, checkbox unchecked).
 
 ### Removed
+
 
 ## [0.4.1] - 2026-01-21
 
