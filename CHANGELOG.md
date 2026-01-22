@@ -7,8 +7,10 @@
 ### Added
 
 ### Changed
+- Added global setting for list single-click selection and refined click behavior. ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Fixed
+- Fixed notes/lists context to use the active item instance id. ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Removed
 
