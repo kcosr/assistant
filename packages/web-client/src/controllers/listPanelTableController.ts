@@ -2632,11 +2632,48 @@ export class ListPanelTableController {
 
     const minWidth = columnKey === 'title' ? 150 : 80;
 
-    const ensureFixedTableLayout = () => {
+    const ensureFixedTableLayout = (lockExistingWidths = false) => {
       const table = headerCell.closest('table');
-      if (table && table instanceof HTMLTableElement && table.style.tableLayout !== 'fixed') {
-        table.style.tableLayout = 'fixed';
+      if (!table || !(table instanceof HTMLTableElement)) {
+        return;
       }
+      const computedLayout =
+        typeof window !== 'undefined' && typeof window.getComputedStyle === 'function'
+          ? window.getComputedStyle(table).tableLayout
+          : null;
+      const isFixed = table.style.tableLayout === 'fixed' || computedLayout === 'fixed';
+      if (isFixed) {
+        return;
+      }
+
+      const headerCells = Array.from(
+        headerCell.parentElement?.querySelectorAll<HTMLTableCellElement>('th') ?? [],
+      );
+      const widths = lockExistingWidths
+        ? headerCells.map((cell) => Math.round(cell.getBoundingClientRect().width))
+        : null;
+
+      table.style.tableLayout = 'fixed';
+
+      if (!widths) {
+        return;
+      }
+
+      const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
+      headerCells.forEach((cell, index) => {
+        const width = widths[index];
+        if (!width || !Number.isFinite(width)) {
+          return;
+        }
+        const px = `${width}px`;
+        cell.style.width = px;
+        for (const row of rows) {
+          const tableCell = row.children[index] as HTMLTableCellElement | undefined;
+          if (tableCell) {
+            tableCell.style.width = px;
+          }
+        }
+      });
     };
 
     const applyWidthToColumn = (width: number) => {
@@ -2670,7 +2707,7 @@ export class ListPanelTableController {
       }
       event.preventDefault();
       event.stopPropagation();
-      ensureFixedTableLayout();
+      ensureFixedTableLayout(true);
 
       const rect = headerCell.getBoundingClientRect();
       const startX = event.clientX;
