@@ -3403,13 +3403,13 @@ button.tag-chip-remove {
     align-items: flex-start;
     padding: var(--spacing-lg) var(--spacing-sm);
     /* Use a modest dynamic top inset so the modal isn't top-anchored. */
-    padding-top: clamp(24px, 8vh, 64px);
-    padding-top: clamp(24px, 8dvh, 64px);
+    padding-top: clamp(16px, 6vh, 48px);
+    padding-top: clamp(16px, 6dvh, 48px);
   }
 
   .list-item-dialog,
   .note-editor-dialog {
-    max-height: 50dvh;
+    max-height: 60dvh;
     overflow-y: auto;
   }
 
