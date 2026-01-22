@@ -5,10 +5,15 @@
 ### Breaking Changes
 
 ### Added
+- Added temporary pinned behavior for lists, list items, and notes using the pinned tag (icons, shortcuts, /pinned palette entry). ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Changed
+- Changed command palette to open with the command list (no auto `/`) and added tag-only search syntax for lists/notes. ([#22](https://github.com/kcosr/assistant/pull/22))
+- Changed palette-launched lists/notes to avoid auto-focusing the panel search input. ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Fixed
+- Fixed palette-launched list items to select the target row and open the correct profile. ([#22](https://github.com/kcosr/assistant/pull/22))
+- Fixed pinned shortcut updates to avoid reloading the entire list view. ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Removed
 
