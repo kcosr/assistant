@@ -84,6 +84,7 @@ function normalizeFocusMarkerExpanded(value: unknown): boolean | undefined {
   return undefined;
 }
 
+
 export class ListColumnPreferencesClient {
   private listColumns: Record<string, ListColumnPreferences> = {};
   private listViewPrefs: Record<string, ListViewPreferences> = {};
@@ -171,6 +172,7 @@ export class ListColumnPreferencesClient {
     const viewPrefs = this.listViewPrefs[listId];
     return viewPrefs?.focusMarkerExpanded ?? false;
   }
+
 
   async updateColumn(
     listId: string,
@@ -372,6 +374,7 @@ export class ListColumnPreferencesClient {
     }
   }
 
+
   getViewDisplayPreferences(viewId: string): ViewDisplayPreferences | null {
     if (!viewId) return null;
     const prefs = this.viewPrefs[viewId];
@@ -502,6 +505,7 @@ export class ListColumnPreferencesClient {
         if (focusMarkerExpanded !== undefined) {
           viewPrefs.focusMarkerExpanded = focusMarkerExpanded;
         }
+
 
         if (Object.keys(viewPrefs).length > 0) {
           safeListViewPrefs[listId] = viewPrefs;

@@ -283,6 +283,7 @@ async function main(): Promise<void> {
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
+    listSingleClickSelectionCheckbox: listSingleClickSelectionCheckboxEl,
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
@@ -348,6 +349,7 @@ async function main(): Promise<void> {
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
+  const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
 
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
@@ -371,6 +373,7 @@ async function main(): Promise<void> {
   updateShowContextFlag(showContextEnabled);
   let briefModeEnabled = false;
   let listInsertAtTopEnabled = false;
+  let listSingleClickSelectionEnabled = true;
 
   try {
     const storedIncludeContext = localStorage.getItem(INCLUDE_PANEL_CONTEXT_STORAGE_KEY);
@@ -390,6 +393,14 @@ async function main(): Promise<void> {
       listInsertAtTopEnabled = true;
     } else if (storedInsertAtTop === 'false') {
       listInsertAtTopEnabled = false;
+    }
+    const storedSingleClickSelection = localStorage.getItem(
+      LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY,
+    );
+    if (storedSingleClickSelection === 'true') {
+      listSingleClickSelectionEnabled = true;
+    } else if (storedSingleClickSelection === 'false') {
+      listSingleClickSelectionEnabled = false;
     }
   } catch {
     // Ignore localStorage errors
@@ -2247,6 +2258,20 @@ async function main(): Promise<void> {
         localStorage.setItem(
           LIST_INSERT_AT_TOP_STORAGE_KEY,
           listInsertAtTopEnabled ? 'true' : 'false',
+        );
+      } catch {
+        // Ignore localStorage errors.
+      }
+    });
+  }
+  if (listSingleClickSelectionCheckboxEl) {
+    listSingleClickSelectionCheckboxEl.checked = listSingleClickSelectionEnabled;
+    listSingleClickSelectionCheckboxEl.addEventListener('change', () => {
+      listSingleClickSelectionEnabled = listSingleClickSelectionCheckboxEl.checked;
+      try {
+        localStorage.setItem(
+          LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY,
+          listSingleClickSelectionEnabled ? 'true' : 'false',
         );
       } catch {
         // Ignore localStorage errors.

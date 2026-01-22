@@ -21,7 +21,7 @@ type PanelFactory = () => {
   };
 };
 
-describe('notes panel context', () => {
+describe('lists panel keyboard shortcuts', () => {
   const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
     .ASSISTANT_PANEL_REGISTRY;
   let factories: Record<string, PanelFactory>;
@@ -55,11 +55,11 @@ describe('notes panel context', () => {
     document.body.innerHTML = '';
   });
 
-  it('uses the active note instance in context attributes', async () => {
+  it('focuses the shared search input on Cmd/Ctrl + Alt + F', async () => {
     vi.resetModules();
     await import('./index');
 
-    const factory = factories['notes'];
+    const factory = factories['lists'];
     expect(factory).toBeDefined();
 
     const panelModule = factory!();
@@ -76,7 +76,100 @@ describe('notes panel context', () => {
       }
     };
 
-    const panelId = 'notes-ctx';
+    const host = {
+      panelId: () => 'lists-1',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => null,
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const pendingPreferences = new Promise<void>(() => {});
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => pendingPreferences,
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '.collection-list-search-input',
+    );
+    expect(searchInput).not.toBeNull();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'f',
+        altKey: true,
+        metaKey: true,
+        bubbles: true,
+      }),
+    );
+
+    expect(document.activeElement).toBe(searchInput);
+
+    handle.unmount();
+  });
+
+  it('uses the active list instance in context attributes', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const panelId = 'lists-ctx';
     const contextKey = `panel.context.${panelId}`;
     let latestContext: Record<string, unknown> | null = null;
 
@@ -100,9 +193,9 @@ describe('notes panel context', () => {
       },
       persistPanelState: () => undefined,
       loadPanelState: () => ({
-        selectedNoteTitle: 'Dev Note',
-        selectedNoteInstanceId: 'default',
-        mode: 'note',
+        selectedListId: 'devtools',
+        selectedListInstanceId: 'default',
+        mode: 'list',
         instanceIds: ['work', 'default'],
       }),
       setPanelMetadata: () => undefined,
@@ -123,7 +216,7 @@ describe('notes panel context', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
-        if (!url.includes('/api/plugins/notes/operations/')) {
+        if (!url.includes('/api/plugins/lists/operations/')) {
           return jsonResponse({});
         }
         const operation = url.split('/').pop() ?? '';
@@ -138,19 +231,26 @@ describe('notes panel context', () => {
         if (operation === 'list') {
           if (body.instance_id === 'default') {
             return jsonResponse([
-              { title: 'Dev Note', tags: [], created: '2024-01-01', updated: '2024-01-02' },
+              {
+                id: 'devtools',
+                name: 'Devtools',
+                description: 'Tasks, bugs and ideas for existing development tools.',
+              },
             ]);
           }
           return jsonResponse([]);
         }
-        if (operation === 'read') {
+        if (operation === 'get') {
           return jsonResponse({
-            title: 'Dev Note',
-            content: 'Hello',
-            tags: [],
-            created: '2024-01-01',
-            updated: '2024-01-02',
+            id: 'devtools',
+            name: 'Devtools',
+            description: 'Tasks, bugs and ideas for existing development tools.',
           });
+        }
+        if (operation === 'items-list') {
+          return jsonResponse([
+            { id: 'item-1', title: 'Deploy updated assistant skills', position: 0 },
+          ]);
         }
         return jsonResponse([]);
       }),
@@ -161,6 +261,16 @@ describe('notes panel context', () => {
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
       listColumnPreferencesClient: {
         load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
       },
       focusInput: () => undefined,
       setStatus: () => undefined,
@@ -177,10 +287,10 @@ describe('notes panel context', () => {
         if (predicate()) return;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      throw new Error('Timed out waiting for note context');
+      throw new Error('Timed out waiting for list context');
     };
 
-    await waitFor(() => latestContext?.type === 'note');
+    await waitFor(() => latestContext?.type === 'list');
 
     const contextAttributes = latestContext?.contextAttributes as Record<string, string> | undefined;
     expect(latestContext?.instance_id).toBe('default');

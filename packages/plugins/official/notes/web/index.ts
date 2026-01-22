@@ -916,13 +916,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const updatePanelContext = (): void => {
+        const contextInstanceId = activeNoteInstanceId ?? activeInstanceId;
         const contextAttributes: Record<string, string> = {
-          'instance-id': activeInstanceId,
+          'instance-id': contextInstanceId,
           'instance-ids': selectedInstanceIds.join(','),
         };
         if (!activeNote || !activeNoteInstanceId) {
           host.setContext(contextKey, {
-            instance_id: activeInstanceId,
+            instance_id: contextInstanceId,
             instance_ids: selectedInstanceIds,
             contextAttributes,
           });

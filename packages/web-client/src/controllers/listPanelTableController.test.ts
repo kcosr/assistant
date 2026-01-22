@@ -228,6 +228,149 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(row?.classList.contains('dragging')).toBe(false);
   });
 
+  it('selects a row on click when the panel is active', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(row?.classList.contains('list-item-selected')).toBe(true);
+  });
+
+  it('clears selection when clicking the selected row in single-click mode', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(row?.classList.contains('list-item-selected')).toBe(true);
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(row?.classList.contains('list-item-selected')).toBe(false);
+  });
+
+  it('ignores modifier-toggle selection when single-click mode is enabled', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [
+        { id: 'item1', title: 'Item 1' },
+        { id: 'item2', title: 'Item 2' },
+      ],
+    });
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const rows = tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row');
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+
+    firstRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow?.classList.contains('list-item-selected')).toBe(true);
+
+    secondRow?.dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    expect(firstRow?.classList.contains('list-item-selected')).toBe(true);
+    expect(secondRow?.classList.contains('list-item-selected')).toBe(false);
+  });
+
+  it('does not select a row on click when the panel is not active', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(row?.classList.contains('list-item-selected')).toBe(false);
+  });
+
+  it('does not select a row on click when single-click selection is disabled', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'false');
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(row?.classList.contains('list-item-selected')).toBe(false);
+
+    window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
+  });
+
   it('moves selected items to another list on pointer drop', async () => {
     const onMoveItemsToList = vi.fn(async () => {});
     const sourceController = new ListPanelTableController({
@@ -434,6 +577,91 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(moveButton.classList.contains('visible')).toBe(false);
     expect(copyButton.classList.contains('visible')).toBe(false);
     expect(onSelectionChange).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ListPanelTableController keyboard selection', () => {
+  const listId = 'list1';
+  const recentUserItemUpdates = new Set<string>();
+
+  const baseRenderOptions = {
+    listId,
+    sortedItems: [
+      { id: 'item1', title: 'Item 1' },
+      { id: 'item2', title: 'Item 2' },
+      { id: 'item3', title: 'Item 3' },
+    ],
+    showUrlColumn: false,
+    showNotesColumn: false,
+    showTagsColumn: false,
+    showAddedColumn: false,
+    showUpdatedColumn: false,
+    showTouchedColumn: false,
+    rerender: () => {},
+  };
+
+  const getSelectedCount = () =>
+    document.querySelectorAll('.list-item-row.list-item-selected').length;
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('selects and wraps with arrow navigation', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: getSelectedCount,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable(baseRenderOptions);
+    expect(tbody.querySelectorAll('.list-item-row').length).toBe(3);
+
+    controller.moveSelectionByOffset(1, { wrap: true });
+    expect(controller.getFocusedItemId()).toBe('item1');
+
+    controller.moveSelectionByOffset(1, { wrap: true });
+    expect(controller.getFocusedItemId()).toBe('item2');
+
+    controller.moveSelectionByOffset(1, { wrap: true });
+    expect(controller.getFocusedItemId()).toBe('item3');
+
+    controller.moveSelectionByOffset(1, { wrap: true });
+    expect(controller.getFocusedItemId()).toBe('item1');
+  });
+
+  it('extends and contracts selection with shift navigation', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: getSelectedCount,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable(baseRenderOptions);
+
+    controller.moveSelectionByOffset(1, { wrap: true });
+    controller.moveSelectionByOffset(1, { wrap: true });
+    expect(controller.getFocusedItemId()).toBe('item2');
+
+    controller.moveSelectionByOffset(1, { extend: true, wrap: true });
+    const selectedAfterExtend = Array.from(
+      tbody.querySelectorAll('.list-item-row.list-item-selected'),
+    ).map((row) => (row as HTMLElement).dataset['itemId']);
+    expect(selectedAfterExtend).toEqual(['item2', 'item3']);
+
+    controller.moveSelectionByOffset(-1, { extend: true, wrap: true });
+    const selectedAfterContract = Array.from(
+      tbody.querySelectorAll('.list-item-row.list-item-selected'),
+    ).map((row) => (row as HTMLElement).dataset['itemId']);
+    expect(selectedAfterContract).toEqual(['item2']);
   });
 });
 
