@@ -1137,19 +1137,20 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
               const removeNormalized = normalizeTags(removeTags as string[]);
               nextTags = nextTags.filter((tag) => !removeNormalized.includes(tag));
             }
-            await listsStore.updateItem({ id: itemId, tags: nextTags });
+            const updated = await listsStore.updateItem({ id: itemId, tags: nextTags });
             results.push({ index, itemId, ok: true });
+            broadcastListsUpdate(ctx, {
+              instance_id: instanceId,
+              listId,
+              action: 'item_updated',
+              item: updated,
+              itemId: updated.id,
+            });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             results.push({ index, ok: false, error: message });
           }
         }
-        broadcastListsUpdate(ctx, {
-          instance_id: instanceId,
-          listId,
-          action: 'item_updated',
-          refresh: true,
-        });
         return { results };
       },
       'items-bulk-move': async (args, ctx): Promise<unknown> => {
