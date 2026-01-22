@@ -6,8 +6,8 @@
   "scripts": {
     "icons:generate": "node scripts/generate-icons.mjs && node scripts/generate-icns.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
-    "pretauri:dev": "npm run build -w @assistant/shared && npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
-    "pretauri:build": "npm run build -w @assistant/shared && npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "pretauri:dev": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "pretauri:build": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
