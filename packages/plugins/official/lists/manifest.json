@@ -170,6 +170,30 @@
       "capabilities": ["lists.write"]
     },
     {
+      "id": "move",
+      "summary": "Move a list to another instance.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "target_instance_id": {
+            "type": "string",
+            "description": "Target instance id."
+          },
+          "id": { "type": "string", "description": "List id." },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Overwrite existing list in the target instance."
+          }
+        },
+        "required": ["id", "target_instance_id"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
       "id": "delete",
       "summary": "Delete a list and its items.",
       "inputSchema": {

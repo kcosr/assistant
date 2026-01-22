@@ -588,4 +588,27 @@ describe('CollectionBrowserController list CRUD UI', () => {
     ).map((el) => el.textContent);
     expect(l2Preview).toEqual(['Keep me']);
   });
+
+  it('renders instance badges when enabled', () => {
+    const { controller, containerEl } = makeController({
+      getSupportedTypes: () => ['list'],
+      getAvailableItems: () => [
+        {
+          type: 'list',
+          id: 'l1',
+          name: 'Work list',
+          instanceId: 'work',
+          instanceLabel: 'Work',
+        },
+      ],
+      shouldShowInstanceBadge: () => true,
+    });
+
+    controller.show(false);
+
+    const badge = containerEl.querySelector<HTMLElement>(
+      '.collection-search-dropdown-item[data-collection-id="l1"] .collection-browser-item-badge',
+    );
+    expect(badge?.textContent).toBe('Work');
+  });
 });

@@ -204,4 +204,55 @@ describe('ListMetadataDialog tag chips', () => {
       },
     ]);
   });
+
+  it('includes the selected instance when instance options are provided', async () => {
+    const dialogManager = new DialogManager();
+    const getAllKnownTags = vi.fn(() => []);
+    const createList = vi.fn(async () => true);
+
+    const controller = new ListMetadataDialog({
+      dialogManager,
+      getAllKnownTags,
+      createList,
+      updateList: vi.fn(async () => true),
+      deleteList: vi.fn(async () => true),
+      getInstanceSelection: () => ({
+        options: [
+          { id: 'default', label: 'Default' },
+          { id: 'work', label: 'Work' },
+        ],
+        preferredInstanceId: 'default',
+      }),
+    });
+
+    controller.open('create');
+
+    const nameInput = document.querySelector<HTMLInputElement>(
+      '.list-metadata-dialog input.list-item-form-input',
+    );
+    expect(nameInput).not.toBeNull();
+    if (!nameInput) return;
+    nameInput.value = 'Instance List';
+
+    const instanceSelect = document.querySelector<HTMLSelectElement>(
+      '.list-metadata-dialog select.list-item-form-select',
+    );
+    expect(instanceSelect).not.toBeNull();
+    if (instanceSelect) {
+      instanceSelect.value = 'work';
+      instanceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const form = document.querySelector<HTMLFormElement>('.list-metadata-dialog form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(createList).toHaveBeenCalledTimes(1);
+    const calls = createList.mock.calls as ListMetadataDialogPayload[][];
+    const payload = calls[0]?.[0];
+    expect(payload).toBeDefined();
+    if (!payload) return;
+    expect(payload.instanceId).toBe('work');
+  });
 });

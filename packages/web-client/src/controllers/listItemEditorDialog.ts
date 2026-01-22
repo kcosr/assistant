@@ -180,12 +180,17 @@ export class ListItemEditorDialog {
         if (type === 'checkbox') {
           if (input instanceof HTMLInputElement && input.checked) {
             result[key] = true;
+          } else {
+            // Unchecked checkbox: send null to remove any previous value
+            result[key] = null;
           }
           continue;
         }
 
         const raw = input.value.trim();
         if (!raw) {
+          // Empty value: send null to remove any previous value
+          result[key] = null;
           continue;
         }
 

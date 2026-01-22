@@ -3,31 +3,33 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Require non-default plugin instances to be declared in `profiles`. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Added
+- Added shared profiles config plus multi-profile selection (with instance badges) in notes and lists panels. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Added search plugin wrapper exposing global search via tools/CLI. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Added profile selector to list and note editors when multiple profiles are selected. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Added lists move operation for moving lists between profiles. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Added "Open modal" option to panel Add dropdown for opening panels as modals. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Changed
+- Search API now accepts `profiles` and `plugin` query parameters. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Instance dropdown multi-select now keeps the menu open for additions and uses per-row clear/exclusive selection behavior. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Instance badges now sit inline with item titles and use a distinct style from tags. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Command palette `/search` flow now selects profile first, then plugin, with plugin lists filtered by profile. ([#19](https://github.com/kcosr/assistant/pull/19))
+- Command palette opens with Search preselected and "All" labels for profile/plugin pickers. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Fixed
+- Fixed lists edit modal not removing custom field values when cleared (select set to "Select...", text/number cleared, checkbox unchecked).
 
 ### Removed
 
 ## [0.4.1] - 2026-01-21
 
-### Breaking Changes
-
 ### Added
 - Added cross-list drag-and-drop moves for list items. ([#18](https://github.com/kcosr/assistant/pull/18))
 
-### Changed
-
-### Fixed
-
-### Removed
-
 ## [0.4.0] - 2026-01-21
-
-### Breaking Changes
 
 ### Added
 - Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds. ([#17](https://github.com/kcosr/assistant/pull/17))
@@ -44,13 +46,7 @@
 ### Fixed
 - Fixed artifacts panel theme colors to use shared `--color-*` variables for light/dark themes. ([#17](https://github.com/kcosr/assistant/pull/17))
 
-### Removed
-
 ## [0.3.2] - 2026-01-20
-
-### Breaking Changes
-
-### Added
 
 ### Changed
 - List rows can now be dragged from the row surface while keeping title text and tag badges selectable.
@@ -60,13 +56,7 @@
 - Prevented text selection during list row drag and avoided touch selection when dragging.
 - List drag reorder now inserts correctly when dragging upward and keeps client positions aligned.
 
-### Removed
-
 ## [0.3.1] - 2026-01-20
-
-### Breaking Changes
-
-### Added
 
 ### Changed
 - ESC now stops streaming in chat header/modals before closing panels. ([#15](https://github.com/kcosr/assistant/pull/15))
@@ -77,26 +67,15 @@
 - Chat panels reset busy indicators when switching sessions. ([#15](https://github.com/kcosr/assistant/pull/15))
 - Fixed release script to include desktop version files in the release commit. ([#14](https://github.com/kcosr/assistant/pull/14))
 
-### Removed
-
 ## [0.3.0] - 2026-01-19
-
-### Breaking Changes
 
 ### Added
 - Added CLI model selection plus thinking controls for Pi/Codex with provider-aware Pi model parsing. ([#13](https://github.com/kcosr/assistant/pull/13))
 
-### Changed
-
 ### Fixed
 - Fixed session list updates for sessions created via the sessions plugin. ([#12](https://github.com/kcosr/assistant/pull/12))
 
-### Removed
-
-
 ## [0.2.0] - 2026-01-18
-
-### Breaking Changes
 
 ### Added
 - Added Pi session history provider with chat replay/refresh support and default Pi session file lookup. ([#9](https://github.com/kcosr/assistant/pull/9))
@@ -106,7 +85,6 @@
 - Changed history persistence routing to be provider-agnostic for external history providers. ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ### Fixed
-
 - Fixed notes search launches to switch instances before opening a note. ([#11](https://github.com/kcosr/assistant/pull/11))
 - Fixed Pi history tool call extraction to show tool names and inputs from Pi session logs. ([#9](https://github.com/kcosr/assistant/pull/9))
 - Fixed Pi tool output streaming to surface incremental tool updates in chat. ([#9](https://github.com/kcosr/assistant/pull/9))
@@ -120,85 +98,46 @@
 
 ## [0.1.3] - 2026-01-16
 
-### Breaking Changes
-
 ### Added
-
 - Global search command palette with scoped search and modal/pin launch actions. ([#7](https://github.com/kcosr/assistant/pull/7))
 - Search providers for notes and lists, including list name matches and scoped title browse. ([#7](https://github.com/kcosr/assistant/pull/7))
 - Modal panel overlay support. ([#7](https://github.com/kcosr/assistant/pull/7))
 
-### Changed
-
-### Fixed
-
-### Removed
-
 ## [0.1.2] - 2026-01-15
 
-### Breaking Changes
-
-### Added
-
 ### Changed
-
 - Time tracker "Stop & Save" button now uses red styling to indicate a destructive action. ([#5](https://github.com/kcosr/assistant/pull/5))
 - Time tracker entries now display creation timestamp (MM/YY HH:mm) alongside notes. ([#5](https://github.com/kcosr/assistant/pull/5))
 - Roll out shared panel chrome rows across panels and plugins. ([#6](https://github.com/kcosr/assistant/pull/6))
 
-### Fixed
-
-### Removed
-
 ## [0.1.1] - 2026-01-13
 
-### Breaking Changes
-
-### Added
 ### Changed
-
 - Start continuous listening as soon as the long-press threshold is reached. ([#4](https://github.com/kcosr/assistant/pull/4))
 
 ### Fixed
-
 - Reduce TTS scheduling churn by sending larger PCM frames to clients. ([#4](https://github.com/kcosr/assistant/pull/4))
 - Stream TTS playback through an AudioWorklet ring buffer to avoid long-response choppiness. ([#4](https://github.com/kcosr/assistant/pull/4))
 - Delay continuous listening re-arm until TTS playback completes (with a short grace window). ([#4](https://github.com/kcosr/assistant/pull/4))
 - Avoid blocking Tauri startup on proxy config and add HTTP proxy timeouts. ([#4](https://github.com/kcosr/assistant/pull/4))
 - Set the API host during mobile sync so Capacitor builds do not fall back to localhost. ([#4](https://github.com/kcosr/assistant/pull/4))
 
-### Removed
-
 ## [0.1.0] - 2026-01-13
 
-### Breaking Changes
-
 ### Added
-
 - Support environment variable substitution (`${VAR}`) in all config string values, not just specific fields. ([#1](https://github.com/kcosr/assistant/pull/1))
 - Add scheduled sessions for cron-driven agent runs with plugin UI, API, and configurable auto titles. ([#2](https://github.com/kcosr/assistant/pull/2))
 - Added the desktop/Tauri package with local proxy and plugin asset sync support. ([#3](https://github.com/kcosr/assistant/pull/3))
 
 ### Changed
-
 - Updated web-client proxy normalization and plugin bundle loading for desktop/Tauri. ([#3](https://github.com/kcosr/assistant/pull/3))
-### Fixed
 
+### Fixed
 - Fixed drag/drop drop-target indicators and focus marker reordering in desktop webviews. ([#3](https://github.com/kcosr/assistant/pull/3))
 - Fixed speech recognition permission errors to disable input cleanly on desktop. ([#3](https://github.com/kcosr/assistant/pull/3))
 - Fixed sessions panel rendering when mounted as a standard panel in web/Tauri layouts. ([#2](https://github.com/kcosr/assistant/pull/2))
-### Removed
 
 ## [0.0.1] - 2026-01-11
 
-### Breaking Changes
-
 ### Added
-
 - Added multi-instance support for the lists plugin.
-
-### Changed
-
-### Fixed
-
-### Removed

@@ -1,5 +1,23 @@
 import type { HttpRouteHandler } from '../types';
 
+const parseProfiles = (params: URLSearchParams): string[] => {
+  const collected: string[] = [];
+  const values = [...params.getAll('profiles'), ...params.getAll('profile')];
+  for (const value of values) {
+    if (!value) {
+      continue;
+    }
+    const parts = value.split(',');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (trimmed.length > 0) {
+        collected.push(trimmed);
+      }
+    }
+  }
+  return collected;
+};
+
 export const handleSearchRoutes: HttpRouteHandler = async (
   context,
   req,
@@ -32,9 +50,12 @@ export const handleSearchRoutes: HttpRouteHandler = async (
   if (segments.length === 2) {
     const rawQuery = url.searchParams.get('q');
     const query = rawQuery?.trim() ?? '';
+    const plugin = url.searchParams.get('plugin')?.trim() ?? '';
     const scope = url.searchParams.get('scope')?.trim() ?? '';
     const instance = url.searchParams.get('instance')?.trim() ?? '';
-    if (!query && !scope) {
+    const profiles = parseProfiles(url.searchParams);
+
+    if (!query && !plugin && !scope && profiles.length === 0) {
       sendJson(400, { error: 'q is required' });
       return true;
     }
@@ -51,6 +72,8 @@ export const handleSearchRoutes: HttpRouteHandler = async (
 
     const response = await searchService.search({
       query,
+      ...(profiles.length > 0 ? { profiles } : {}),
+      ...(plugin ? { plugin } : {}),
       ...(scope ? { scope } : {}),
       ...(instance ? { instance } : {}),
       ...(limit !== undefined ? { limit } : {}),

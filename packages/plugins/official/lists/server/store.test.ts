@@ -627,4 +627,83 @@ describe('customFields merge behavior', () => {
 
     expect(updated.customFields).toEqual({ priority: 'high' });
   });
+
+  it('filters out null values when adding items', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'tasks', name: 'Tasks' });
+
+    // When adding an item with null custom field values (e.g., from edit dialog clearing fields),
+    // the null values should be filtered out and not stored
+    const item = await store.addItem({
+      listId: 'tasks',
+      title: 'Test item',
+      customFields: { priority: 'high', duration: null, status: null },
+    });
+
+    // Only non-null values should be stored
+    expect(item.customFields).toEqual({ priority: 'high' });
+  });
+
+  it('omits customFields entirely when all values are null', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'tasks', name: 'Tasks' });
+
+    // When all custom field values are null, customFields should not be set
+    const item = await store.addItem({
+      listId: 'tasks',
+      title: 'Test item',
+      customFields: { priority: null, duration: null },
+    });
+
+    expect(item.customFields).toBeUndefined();
+  });
+
+  it('exports and replaces lists with items', async () => {
+    const sourcePath = createTempFilePath();
+    const targetPath = createTempFilePath();
+    const source = createStore(sourcePath);
+    const target = createStore(targetPath);
+
+    vi.setSystemTime(new Date('2024-02-01T00:00:00.000Z'));
+    await source.createList({
+      id: 'alpha',
+      name: 'Alpha',
+      tags: ['Work'],
+      defaultTags: ['base'],
+    });
+
+    const item = await source.addItem({
+      listId: 'alpha',
+      title: 'Task',
+      notes: 'details',
+      tags: ['Urgent'],
+      customFields: { priority: 'high' },
+    });
+
+    await source.updateItem({
+      id: item.id,
+      completed: true,
+      touchedAt: '2024-02-02T00:00:00.000Z',
+    });
+
+    const snapshot = await source.getListWithItems('alpha');
+    await target.replaceListWithItems({ list: snapshot.list, items: snapshot.items });
+
+    const list = await target.getList('alpha');
+    expect(list?.name).toBe('Alpha');
+    expect(list?.tags).toEqual(['work']);
+    expect(list?.defaultTags).toEqual(['base']);
+
+    const items = await target.listItems({ listId: 'alpha', limit: 0 });
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe('Task');
+    expect(items[0]?.tags.sort()).toEqual(['base', 'urgent'].sort());
+    expect(items[0]?.completed).toBe(true);
+    expect(items[0]?.touchedAt).toBe('2024-02-02T00:00:00.000Z');
+    expect(items[0]?.customFields).toEqual({ priority: 'high' });
+  });
 });

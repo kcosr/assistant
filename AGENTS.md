@@ -22,6 +22,7 @@ Use these sections under `## [Unreleased]`:
 - New entries ALWAYS go under `## [Unreleased]`
 - Append to existing subsections (e.g., `### Fixed`), do not create duplicates
 - NEVER modify already-released version sections (e.g., `## [0.0.3]`)
+- For released versions, omit empty subsections (only keep headings that contain entries)
 - Use inline PR links: `([#123](<pr-url>))`
 
 ### Attribution

@@ -15,6 +15,8 @@ Markdown notes with tags, search, and a dedicated notes panel.
 
 - Panel type: `notes` (multi-instance, global scope).
 - Instance selection comes from config (`plugins.notes.instances`); the default instance id is `default`.
+- When multiple instances are selected, the note editor includes a Profile selector; new notes
+  default to the `default` instance when it is part of the selection.
 - Default view renders markdown; use **Edit** to modify a note.
 - Default instance data lives under `data/plugins/notes/default/`; additional instances use
   `data/plugins/notes/<instanceId>/`.

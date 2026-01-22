@@ -13,6 +13,7 @@ import type { DialogManager } from './dialogManager';
 import {
   ListMetadataDialog,
   type ListMetadataDialogInitialData,
+  type ListMetadataDialogInstanceSelection,
   type ListMetadataDialogPayload,
 } from './listMetadataDialog';
 import type { ListCustomFieldDefinition } from './listCustomFields';
@@ -42,17 +43,23 @@ export interface CollectionBrowserControllerOptions {
   fetchPreview?: (
     itemType: 'note' | 'list',
     itemId: string,
+    instanceId?: string,
   ) => Promise<CollectionPreviewCacheEntry | null>;
   listApi?: {
-    getList?: (listId: string) => Promise<ListMetadataDialogInitialData | null>;
+    getList?: (
+      listId: string,
+      instanceId?: string,
+    ) => Promise<ListMetadataDialogInitialData | null>;
     createList?: (payload: ListMetadataDialogPayload) => Promise<string | null>;
     updateList?: (listId: string, payload: ListMetadataDialogPayload) => Promise<boolean>;
     deleteList?: (listId: string) => Promise<boolean>;
   };
   viewModeStorageKey: string;
   sortModeStorageKey: string;
-  openNoteEditor: (mode: 'create' | 'edit', noteId?: string) => void;
+  openNoteEditor: (mode: 'create' | 'edit', noteId?: string, instanceId?: string) => void;
   onSortModeChanged?: (mode: CollectionBrowserSortMode) => void;
+  shouldShowInstanceBadge?: () => boolean;
+  getListInstanceSelection?: () => ListMetadataDialogInstanceSelection | null;
 }
 
 export class CollectionBrowserController {
@@ -133,7 +140,7 @@ export class CollectionBrowserController {
     if (itemType !== 'note' && itemType !== 'list') {
       return;
     }
-    const key = this.getPreviewKey(itemType, reference.id);
+    const key = this.getPreviewKey(itemType, reference.id, reference.instanceId);
     this.previewCache.delete(key);
 
     const listEl = this.listEl;
@@ -455,6 +462,9 @@ export class CollectionBrowserController {
       createList: (payload) => this.createList(payload),
       updateList: (listId, payload) => this.updateList(listId, payload),
       deleteList: (listId) => this.deleteList(listId),
+      ...(this.options.getListInstanceSelection
+        ? { getInstanceSelection: this.options.getListInstanceSelection }
+        : {}),
     });
 
     this.ensureSearchControllers();
@@ -468,6 +478,7 @@ export class CollectionBrowserController {
       tags?: string[] | undefined;
       defaultTags?: string[] | undefined;
       customFields?: ListCustomFieldDefinition[] | undefined;
+      instanceId?: string | undefined;
     },
   ): void {
     this.ensureUi();
@@ -482,6 +493,7 @@ export class CollectionBrowserController {
       tags: Array.isArray(data.tags) ? data.tags : [],
       defaultTags: Array.isArray(data.defaultTags) ? data.defaultTags : [],
       customFields: Array.isArray(data.customFields) ? data.customFields : [],
+      ...(data.instanceId ? { instanceId: data.instanceId } : {}),
     });
   }
 
@@ -513,6 +525,39 @@ export class CollectionBrowserController {
     if (this.newNoteBtn) {
       this.newNoteBtn.style.display = notesSupported ? '' : 'none';
       this.newNoteBtn.disabled = false;
+    }
+  }
+
+  private decorateItemInstanceBadge(itemEl: HTMLElement, item: CollectionItemSummary): void {
+    if (!item.instanceId) {
+      return;
+    }
+    if (this.options.shouldShowInstanceBadge && !this.options.shouldShowInstanceBadge()) {
+      return;
+    }
+    const label = item.instanceLabel ?? item.instanceId;
+    const badge = document.createElement('span');
+    badge.className = 'collection-browser-item-badge';
+    badge.textContent = label;
+    badge.dataset['instanceId'] = item.instanceId;
+
+    const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
+    if (labelEl) {
+      let titleRow: HTMLElement | null = null;
+      if (
+        labelEl.parentElement &&
+        labelEl.parentElement.classList.contains('collection-browser-item-title')
+      ) {
+        titleRow = labelEl.parentElement;
+      } else {
+        titleRow = document.createElement('div');
+        titleRow.className = 'collection-browser-item-title';
+        labelEl.insertAdjacentElement('beforebegin', titleRow);
+        titleRow.appendChild(labelEl);
+      }
+      titleRow.appendChild(badge);
+    } else {
+      itemEl.appendChild(badge);
     }
   }
 
@@ -548,12 +593,14 @@ export class CollectionBrowserController {
       return;
     }
     const listId = item.id;
+    const listInstanceId = item.instanceId ?? undefined;
     const fallback = (): void => {
       dialog.open('edit', {
         id: listId,
         name: item.name,
         tags: item.tags ?? [],
         defaultTags: [],
+        ...(listInstanceId ? { instanceId: listInstanceId } : {}),
       });
     };
 
@@ -563,19 +610,24 @@ export class CollectionBrowserController {
       return;
     }
     try {
-      const data = await listApi.getList(listId);
+      const data = await listApi.getList(listId, listInstanceId);
       if (!data) {
         fallback();
         return;
       }
-      dialog.open('edit', {
+      const dialogData: ListMetadataDialogInitialData = {
         id: listId,
         name: data.name ?? item.name,
         description: data.description ?? '',
         tags: Array.isArray(data.tags) ? data.tags : (item.tags ?? []),
         defaultTags: Array.isArray(data.defaultTags) ? data.defaultTags : [],
         customFields: Array.isArray(data.customFields) ? data.customFields : [],
-      });
+      };
+      const resolvedInstanceId = data.instanceId ?? listInstanceId;
+      if (resolvedInstanceId) {
+        dialogData.instanceId = resolvedInstanceId;
+      }
+      dialog.open('edit', dialogData);
     } catch (err) {
       console.error('Failed to load list metadata', err);
       fallback();
@@ -600,6 +652,7 @@ export class CollectionBrowserController {
       await this.options.selectItem({
         type: 'list',
         id: listId,
+        ...(payload.instanceId ? { instanceId: payload.instanceId } : {}),
       });
       return true;
     } catch (err) {
@@ -785,6 +838,7 @@ export class CollectionBrowserController {
       getGroupLabel: this.options.getGroupLabel,
       onSelectItem: (itemEl) => this.selectItem(itemEl),
       renderItemContent: (itemEl, item) => {
+        this.decorateItemInstanceBadge(itemEl, item);
         this.decorateListItem(itemEl, item);
         this.decorateItemPreview(itemEl, item);
         this.decorateItemTags(itemEl, item);
@@ -817,7 +871,7 @@ export class CollectionBrowserController {
     const previewEl = document.createElement('div');
     previewEl.className = 'collection-browser-item-preview';
     previewEl.setAttribute('aria-hidden', 'true');
-    previewEl.dataset['previewKey'] = this.getPreviewKey(item.type, item.id);
+    previewEl.dataset['previewKey'] = this.getPreviewKey(item.type, item.id, item.instanceId);
     itemEl.appendChild(previewEl);
   }
 
@@ -865,27 +919,31 @@ export class CollectionBrowserController {
       if (!previewEl) continue;
       if (previewEl.dataset['previewLoaded'] === 'true') continue;
 
+      const instanceId = itemEl.dataset['collectionInstanceId']?.trim() || undefined;
       void this.populatePreviewForElement({
         itemType,
         itemId,
+        ...(instanceId ? { instanceId } : {}),
         itemEl,
         previewEl,
       });
     }
   }
 
-  private getPreviewKey(type: string, id: string): string {
-    return `${type.toLowerCase().trim()}:${id}`;
+  private getPreviewKey(type: string, id: string, instanceId?: string): string {
+    const base = `${type.toLowerCase().trim()}:${id}`;
+    return instanceId ? `${type.toLowerCase().trim()}:${instanceId}:${id}` : base;
   }
 
   private async populatePreviewForElement(args: {
     itemType: 'note' | 'list';
     itemId: string;
+    instanceId?: string;
     itemEl: HTMLElement;
     previewEl: HTMLElement;
   }): Promise<void> {
-    const { itemType, itemId, itemEl, previewEl } = args;
-    const key = this.getPreviewKey(itemType, itemId);
+    const { itemType, itemId, instanceId, itemEl, previewEl } = args;
+    const key = this.getPreviewKey(itemType, itemId, instanceId);
     const filterState = this.getSearchFilterState(this.lastFilterQuery);
 
     const cached = this.previewCache.has(key) ? this.previewCache.get(key) : undefined;
@@ -907,7 +965,7 @@ export class CollectionBrowserController {
       return;
     }
 
-    const request = this.fetchPreview(itemType, itemId);
+    const request = this.fetchPreview(itemType, itemId, instanceId);
     this.previewRequests.set(key, request);
 
     const entry = await request;
@@ -999,11 +1057,12 @@ export class CollectionBrowserController {
   private async fetchPreview(
     itemType: 'note' | 'list',
     itemId: string,
+    instanceId?: string,
   ): Promise<CollectionPreviewCacheEntry | null> {
     if (!this.options.fetchPreview) {
       return null;
     }
-    return this.options.fetchPreview(itemType, itemId);
+    return this.options.fetchPreview(itemType, itemId, instanceId);
   }
 
   private filter(query: string): void {
@@ -1072,8 +1131,9 @@ export class CollectionBrowserController {
         continue;
       }
       const itemId = itemEl.dataset['collectionId']?.trim();
+      const instanceId = itemEl.dataset['collectionInstanceId']?.trim();
       if (!itemId) continue;
-      const key = this.getPreviewKey('list', itemId);
+      const key = this.getPreviewKey('list', itemId, instanceId);
       const entry = this.previewCache.get(key);
       if (!entry || entry.kind !== 'list') continue;
       const previewEl = itemEl.querySelector<HTMLElement>('.collection-browser-item-preview');
@@ -1154,10 +1214,11 @@ export class CollectionBrowserController {
     for (const itemEl of Array.from(items)) {
       const itemType = itemEl.dataset['collectionType']?.toLowerCase().trim();
       const itemId = itemEl.dataset['collectionId']?.trim();
+      const instanceId = itemEl.dataset['collectionInstanceId']?.trim();
       if (!itemType || !itemId) continue;
       if (itemType !== 'note' && itemType !== 'list') continue;
 
-      const key = this.getPreviewKey(itemType, itemId);
+      const key = this.getPreviewKey(itemType, itemId, instanceId);
       const cached = this.previewCache.has(key) ? this.previewCache.get(key) : undefined;
       if (cached !== undefined) {
         this.applySearchIndexToItemElement(itemEl, cached);
@@ -1167,7 +1228,7 @@ export class CollectionBrowserController {
         continue;
       }
 
-      const request = this.fetchPreview(itemType, itemId);
+      const request = this.fetchPreview(itemType, itemId, instanceId);
       this.previewRequests.set(key, request);
       void request.then((entry) => {
         this.previewRequests.delete(key);
@@ -1200,9 +1261,14 @@ export class CollectionBrowserController {
     if (!active) {
       return;
     }
-    const item = listEl.querySelector(
-      `.collection-search-dropdown-item[data-collection-type="${active.type}"][data-collection-id="${active.id}"]`,
-    );
+    const selectorParts = [
+      `.collection-search-dropdown-item[data-collection-type="${active.type}"]` +
+        `[data-collection-id="${active.id}"]`,
+    ];
+    if (active.instanceId) {
+      selectorParts.push(`[data-collection-instance-id="${active.instanceId}"]`);
+    }
+    const item = listEl.querySelector(selectorParts.join(''));
     if (item) {
       item.classList.add('selected');
     }
@@ -1255,12 +1321,14 @@ export class CollectionBrowserController {
   private selectItem(item: HTMLElement): void {
     const itemType = item.dataset['collectionType'];
     const itemId = item.dataset['collectionId'];
+    const instanceId = item.dataset['collectionInstanceId'];
     if (!itemType || !itemId) {
       return;
     }
     void this.options.selectItem({
       type: itemType,
       id: itemId,
+      ...(instanceId ? { instanceId } : {}),
     });
   }
 
@@ -1293,6 +1361,7 @@ export class CollectionBrowserController {
     if (!noteId) {
       return;
     }
+    const instanceId = itemEl.dataset['collectionInstanceId'];
 
     const actionsEl = document.createElement('span');
     actionsEl.className = 'collection-browser-item-actions';
@@ -1307,7 +1376,7 @@ export class CollectionBrowserController {
     const openEditor = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
-      this.options.openNoteEditor('edit', noteId);
+      this.options.openNoteEditor('edit', noteId, instanceId ?? undefined);
     };
     editAction.addEventListener('click', openEditor);
     editAction.addEventListener('keydown', (e: KeyboardEvent) => {

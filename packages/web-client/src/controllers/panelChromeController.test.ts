@@ -118,7 +118,7 @@ describe('PanelChromeController', () => {
       title: 'Test',
       onInstanceChange: () => undefined,
     });
-    controller.setInstances([{ id: 'default', label: 'Default' }], 'default');
+    controller.setInstances([{ id: 'default', label: 'Default' }], ['default']);
 
     expect(instanceDropdownRoot.style.display).toBe('none');
 

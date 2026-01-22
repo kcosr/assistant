@@ -555,6 +555,9 @@ export class PanelLauncherController {
     addItem('Pin to header', (button) => {
       this.openPanelWithPlacement(panelType, null, undefined, button, { pinToHeader: true });
     });
+    addItem('Open modal', (button) => {
+      this.openPanelWithPlacement(panelType, null, undefined, button, { openAsModal: true });
+    });
 
     document.body.appendChild(menu);
     this.placementMenu = menu;
@@ -619,7 +622,7 @@ export class PanelLauncherController {
     placement: PanelPlacement | null,
     targetPanelId?: string | null,
     anchor?: HTMLElement,
-    options?: { replacePanelId?: string | null; pinToHeader?: boolean },
+    options?: { replacePanelId?: string | null; pinToHeader?: boolean; openAsModal?: boolean },
   ): void {
     const manifest = this.options.panelRegistry.getManifest(panelType);
     const supportsSessionBinding = manifest?.type ? isSessionBoundPanelType(manifest.type) : false;
@@ -640,6 +643,7 @@ export class PanelLauncherController {
       Boolean(this.options.openSessionPicker) && sessionScope === 'required';
     const shouldPin = options?.pinToHeader ?? this.pinToHeader;
     const replacePanelId = options?.replacePanelId ?? null;
+    const openAsModal = options?.openAsModal ?? false;
 
     const openPanel = (binding?: PanelBinding) => {
       if (replacePanelId) {
@@ -647,6 +651,18 @@ export class PanelLauncherController {
           ...(binding ? { binding } : {}),
         });
         if (replaced) {
+          this.close();
+        } else {
+          this.render();
+        }
+        return;
+      }
+      if (openAsModal) {
+        const panelId = this.options.panelWorkspace.openModalPanel(panelType, {
+          focus: true,
+          ...(binding ? { binding } : {}),
+        });
+        if (panelId) {
           this.close();
         } else {
           this.render();

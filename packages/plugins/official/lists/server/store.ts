@@ -143,6 +143,65 @@ export class ListsStore {
     return this.data.lists.find((l) => l.id === id);
   }
 
+  async getListWithItems(id: string): Promise<{ list: ListDefinition; items: ListItem[] }> {
+    await this.ensureLoaded();
+    const list = this.data.lists.find((l) => l.id === id);
+    if (!list) {
+      throw new Error(`List not found: ${id}`);
+    }
+    const items = this.data.items.filter((item) => item.listId === id);
+    return {
+      list: { ...list, tags: [...(list.tags ?? [])], defaultTags: [...(list.defaultTags ?? [])] },
+      items: items.map((item) => ({
+        ...item,
+        tags: [...(item.tags ?? [])],
+        ...(item.customFields ? { customFields: { ...item.customFields } } : {}),
+      })),
+    };
+  }
+
+  async replaceListWithItems(params: {
+    list: ListDefinition;
+    items: ListItem[];
+    overwrite?: boolean;
+  }): Promise<ListDefinition> {
+    await this.ensureLoaded();
+
+    const listId = params.list.id;
+    this.validateListId(listId);
+
+    const existingIndex = this.data.lists.findIndex((l) => l.id === listId);
+    if (existingIndex !== -1) {
+      if (!params.overwrite) {
+        throw new Error(`List already exists: ${listId}`);
+      }
+      this.data.lists.splice(existingIndex, 1);
+      this.data.items = this.data.items.filter((item) => item.listId !== listId);
+    }
+
+    const normalizedList: ListDefinition = {
+      ...params.list,
+      tags: this.normalizeTags(params.list.tags),
+      defaultTags: this.normalizeTags(params.list.defaultTags),
+    };
+
+    this.data.lists.push(normalizedList);
+
+    for (const item of params.items) {
+      const normalizedItem: ListItem = {
+        ...item,
+        listId,
+        tags: this.normalizeTags(item.tags),
+        ...(item.customFields ? { customFields: { ...item.customFields } } : {}),
+      };
+      this.data.items.push(normalizedItem);
+    }
+
+    this.reflowPositions(listId);
+    await this.save();
+    return normalizedList;
+  }
+
   async listLists(params?: {
     tags?: string[];
     tagMatch?: TagMatchMode;
@@ -241,6 +300,21 @@ export class ListsStore {
     const defaultTags = this.normalizeTags(list.defaultTags);
     const itemTags = this.normalizeTags(params.tags);
     const combinedTags = this.normalizeTags([...defaultTags, ...itemTags]);
+
+    // Filter out null values from customFields (null is used for removal in updates)
+    let filteredCustomFields: Record<string, unknown> | undefined;
+    if (params.customFields) {
+      const filtered: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(params.customFields)) {
+        if (value !== null) {
+          filtered[key] = value;
+        }
+      }
+      if (Object.keys(filtered).length > 0) {
+        filteredCustomFields = filtered;
+      }
+    }
+
     const item: ListItem = {
       id: randomUUID(),
       listId: params.listId,
@@ -250,7 +324,7 @@ export class ListsStore {
       tags: combinedTags,
       addedAt: now,
       updatedAt: now,
-      ...(params.customFields ? { customFields: params.customFields } : {}),
+      ...(filteredCustomFields ? { customFields: filteredCustomFields } : {}),
       position: 0,
     };
 

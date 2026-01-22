@@ -91,8 +91,30 @@ function updateChangelogForRelease(version) {
   );
   content = content.replace(/## \[Unreleased\]/, releaseHeading);
 
+  content = stripEmptyReleaseSections(content, version);
+
   writeFileSync(changelogPath, content);
   console.log(`  Updated CHANGELOG.md: [Unreleased] -> [${version}] - ${date}`);
+}
+
+function stripEmptyReleaseSections(content, version) {
+  const versionEscaped = version.replace(/\./g, '\\.');
+  const sectionRegex = new RegExp(
+    `(## \\[${versionEscaped}\\][^\\n]*\\n)([\\s\\S]*?)(?=\\n## \\[|$)`
+  );
+  const match = content.match(sectionRegex);
+  if (!match) {
+    return content;
+  }
+
+  const heading = match[1];
+  let body = match[2];
+  body = body.replace(/### [^\\n]+\\n(?:\\s*\\n)*(?=###|##|$)/g, '');
+  body = body.replace(/\\n{3,}/g, '\\n\\n');
+  const trimmed = body.trimEnd();
+  const rebuilt = `${heading}${trimmed ? trimmed : ''}`.trimEnd();
+
+  return content.replace(sectionRegex, `${rebuilt}\n\n`);
 }
 
 function extractReleaseNotes(version) {

@@ -111,6 +111,7 @@ async function startTestServer(workspaceRoot: string): Promise<{
   const pluginRegistry = createFilesPluginRegistry();
   const appConfig: AppConfig = {
     agents: [],
+    profiles: [],
     plugins: {
       files: { enabled: true, workspaceRoot },
     },

@@ -9,6 +9,7 @@ import { openaiConfigured } from './envConfig';
 import type { EventStore } from './events';
 import type { SessionHub } from './sessionHub';
 import type { SessionIndex, SessionSummary } from './sessionIndex';
+import type { SearchService } from './search/searchService';
 import { ToolError, createScopedToolHost } from './tools';
 import type { ToolHost } from './tools';
 import { resolveAgentToolExposureForHost } from './toolExposure';
@@ -158,6 +159,7 @@ export async function startSessionMessage(options: {
   envConfig: EnvConfig;
   eventStore?: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  searchService?: SearchService;
 }): Promise<SessionMessageStartResult> {
   const { input, sessionIndex, sessionHub, toolHost, envConfig, eventStore } = options;
 
@@ -215,6 +217,7 @@ export async function startSessionMessage(options: {
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
+      ...(options.searchService ? { searchService: options.searchService } : {}),
       ...(options.scheduledSessionService
         ? { scheduledSessionService: options.scheduledSessionService }
         : {}),

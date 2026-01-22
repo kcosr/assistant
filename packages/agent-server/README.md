@@ -467,6 +467,23 @@ These are required only when using built-in OpenAI chat or TTS backends. The ser
 
 If `plugins` is omitted or empty in `config.json`, no plugins are enabled. Add explicit entries for `sessions` and `agents` to keep the core UI working, plus `lists` and `notes` for data features (and any optional plugins you need).
 
+### Profiles (Shared Instances)
+
+You can define shared profile ids in `config.json` to align instance scopes across plugins (for example, `work` or `personal`). Plugin instance ids must match one of the configured profiles (the built-in `default` profile is always available).
+
+```json
+{
+  "profiles": [
+    { "id": "default", "label": "Global" },
+    { "id": "work", "label": "Work" }
+  ],
+  "plugins": {
+    "notes": { "enabled": true, "instances": ["default", "work"] },
+    "lists": { "enabled": true, "instances": ["default", "work"] }
+  }
+}
+```
+
 ### Git Versioning (Plugin Data)
 
 Plugins can opt into periodic git snapshots of their data directories:

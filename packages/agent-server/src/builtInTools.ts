@@ -16,6 +16,7 @@ import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chat
 import type { SkillSummary } from './skills';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
+import type { SearchService } from './search/searchService';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -201,6 +202,7 @@ interface AsyncAgentMessageContext {
   openaiClient?: OpenAI;
   eventStore?: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  searchService?: SearchService;
   handleChatToolCalls: (
     runSessionId: string,
     runState: Awaited<ReturnType<SessionHub['ensureSessionState']>>,
@@ -371,6 +373,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
         sessionHub,
         envConfig,
         ...(eventStore ? { eventStore } : {}),
+        ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
         ...(ctx.scheduledSessionService
           ? { scheduledSessionService: ctx.scheduledSessionService }
           : {}),
@@ -601,6 +604,7 @@ export async function handleAgentMessage(
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
+      ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
       ...(forwardChunksTo ? { forwardChunksTo } : {}),
       ...(ctx.scheduledSessionService
         ? { scheduledSessionService: ctx.scheduledSessionService }
@@ -645,6 +649,7 @@ export async function handleAgentMessage(
       envConfig,
       ...(eventStore ? { eventStore } : {}),
       ...(openaiClient ? { openaiClient } : {}),
+      ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
       ...(ctx.scheduledSessionService
         ? { scheduledSessionService: ctx.scheduledSessionService }
         : {}),
@@ -707,6 +712,7 @@ export async function handleAgentMessage(
       envConfig,
       ...(eventStore ? { eventStore } : {}),
       ...(openaiClient ? { openaiClient } : {}),
+      ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
       ...(ctx.scheduledSessionService
         ? { scheduledSessionService: ctx.scheduledSessionService }
         : {}),

@@ -33,6 +33,7 @@ import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import { getAgentAvailableModels, getAgentAvailableThinkingLevels } from '../sessionModel';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
+import type { SearchService } from '../search/searchService';
 import type { TtsBackendFactory } from '../tts/types';
 import { selectTtsBackendFactory } from '../tts/selectTtsBackendFactory';
 import { updatePanelInventory } from '../panels/panelInventoryStore';
@@ -63,6 +64,7 @@ export interface SessionRuntimeOptions {
   openaiClient?: OpenAI;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  searchService?: SearchService;
 }
 
 export class SessionRuntime {
@@ -77,6 +79,7 @@ export class SessionRuntime {
   private readonly sessionHub: SessionHub;
   private readonly eventStore: EventStore;
   private readonly scheduledSessionService: ScheduledSessionService | undefined;
+  private readonly searchService: SearchService | undefined;
   private sessionState: LogicalSessionState | undefined;
   private readonly activeRunStates = new Map<
     string,
@@ -111,6 +114,7 @@ export class SessionRuntime {
     this.openaiClient = options.openaiClient;
     this.eventStore = options.eventStore;
     this.scheduledSessionService = options.scheduledSessionService;
+    this.searchService = options.searchService;
 
     this.messageRateLimiter =
       this.config.maxMessagesPerMinute > 0
@@ -938,6 +942,7 @@ export class SessionRuntime {
       maxToolCallsPerMinute: this.config.maxToolCallsPerMinute,
       rateLimitWindowMs: this.rateLimitWindowMs,
       envConfig: this.config,
+      ...(this.searchService ? { searchService: this.searchService } : {}),
       ...(this.scheduledSessionService
         ? { scheduledSessionService: this.scheduledSessionService }
         : {}),

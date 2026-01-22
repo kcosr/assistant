@@ -6,6 +6,8 @@ export interface SearchableScope {
 
 export interface GlobalSearchOptions {
   query: string;
+  profiles?: string[];
+  plugin?: string;
   scope?: string;
   instance?: string;
   limit?: number;
@@ -56,15 +58,15 @@ export interface CommandPaletteControllerOptions {
   isMobileViewport?: () => boolean;
 }
 
-type PaletteMode = 'idle' | 'global' | 'command' | 'scope' | 'instance' | 'query';
+type PaletteMode = 'idle' | 'global' | 'command' | 'profile' | 'scope' | 'query';
 
 type ParsedState = {
   mode: PaletteMode;
   commandQuery?: string;
+  profileId?: string | null;
+  profileQuery?: string;
   scopeId?: string | null;
   scopeQuery?: string;
-  instanceId?: string | null;
-  instanceQuery?: string;
   query?: string;
 };
 
@@ -72,8 +74,8 @@ type OptionItem = {
   id: string;
   label: string;
   description?: string;
-  type: 'command' | 'scope' | 'instance';
-  scopeId?: string | null;
+  type: 'command' | 'profile' | 'scope';
+  profileId?: string | null;
 };
 
 type MenuState = {
@@ -84,7 +86,7 @@ type MenuState = {
 const COMMAND_OPTIONS: OptionItem[] = [
   {
     id: 'search',
-    label: 'search',
+    label: 'Search',
     description: 'Search notes, lists, and more',
     type: 'command',
   },
@@ -150,8 +152,8 @@ export class CommandPaletteController {
   private scopes: SearchableScope[] = [];
   private results: SearchApiResult[] = [];
   private loading = false;
-  private scopeSkipped = false;
-  private instanceSkipped = false;
+  private profileSkipped = false;
+  private pluginSkipped = false;
   private activeMode: PaletteMode = 'idle';
   private activeOptions: OptionItem[] = [];
   private optionIndex = 0;
@@ -208,9 +210,9 @@ export class CommandPaletteController {
     this.isOpen = true;
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
-    input.value = '';
-    this.scopeSkipped = false;
-    this.instanceSkipped = false;
+    input.value = '/';
+    this.profileSkipped = false;
+    this.pluginSkipped = false;
     this.activeMode = 'idle';
     this.optionIndex = 0;
     this.resultIndex = 0;
@@ -218,7 +220,7 @@ export class CommandPaletteController {
     this.loading = false;
     this.cachedState = { mode: 'idle' };
     this.loadScopes();
-    this.render();
+    this.handleInput();
     input.focus();
   }
 
@@ -271,12 +273,31 @@ export class CommandPaletteController {
     }
     const value = input.value;
     if (!value.startsWith('/search')) {
-      this.scopeSkipped = false;
-      this.instanceSkipped = false;
+      this.profileSkipped = false;
+      this.pluginSkipped = false;
     }
     const state = this.parseInput(value);
     this.cachedState = state;
+    const previousMode = this.activeMode;
     this.activeMode = state.mode;
+    if (previousMode !== this.activeMode) {
+      if (
+        this.activeMode === 'command' ||
+        this.activeMode === 'profile' ||
+        this.activeMode === 'scope'
+      ) {
+        this.optionIndex = 0;
+      }
+      if (this.activeMode === 'global' || this.activeMode === 'query') {
+        this.resultIndex = 0;
+      }
+    }
+    if (this.activeMode === 'profile' && !(state.profileQuery ?? '').trim()) {
+      this.optionIndex = 0;
+    }
+    if (this.activeMode === 'scope' && !(state.scopeQuery ?? '').trim()) {
+      this.optionIndex = 0;
+    }
     this.moveCaretToEnd();
     this.render();
     this.scheduleSearch(state);
@@ -290,16 +311,16 @@ export class CommandPaletteController {
       return;
     }
     const query = state.query?.trim() ?? '';
+    const profileId = state.mode === 'query' ? state.profileId ?? undefined : undefined;
     const scopeId = state.mode === 'query' ? state.scopeId ?? undefined : undefined;
-    const instanceId = state.mode === 'query' ? state.instanceId ?? undefined : undefined;
-    const allowEmptyQuery = state.mode === 'query' && Boolean(scopeId);
+    const allowEmptyQuery = state.mode === 'query' && Boolean(scopeId || profileId);
     if (!query && !allowEmptyQuery) {
       this.loading = false;
       this.results = [];
       this.lastQueryKey = '';
       return;
     }
-    const key = `${query}::${scopeId ?? ''}::${instanceId ?? ''}`;
+    const key = `${query}::${profileId ?? ''}::${scopeId ?? ''}`;
     if (key === this.lastQueryKey) {
       return;
     }
@@ -317,8 +338,8 @@ export class CommandPaletteController {
       try {
         const response = await this.options.fetchResults({
           query,
-          ...(scopeId ? { scope: scopeId } : {}),
-          ...(instanceId ? { instance: instanceId } : {}),
+          ...(profileId ? { profiles: [profileId] } : {}),
+          ...(scopeId ? { plugin: scopeId } : {}),
         });
         if (token !== this.searchToken) {
           return;
@@ -364,62 +385,102 @@ export class CommandPaletteController {
       return { mode: 'command', commandQuery: commandToken };
     }
 
-    if (this.scopeSkipped) {
-      return { mode: 'query', scopeId: null, instanceId: null, query: rest.trimStart() };
+    if (this.profileSkipped) {
+      return { mode: 'query', profileId: null, scopeId: null, query: rest.trimStart() };
     }
 
     const { tokens, hasTrailingSpace: restTrailing } = splitTokens(rest);
     if (tokens.length === 0) {
-      return { mode: 'scope', scopeQuery: '' };
+      return { mode: 'profile', profileQuery: '' };
     }
-    const scopeToken = tokens[0] ?? '';
-    const scope = this.findScope(scopeToken);
-    const scopeConfirmed = scope && (tokens.length > 1 || restTrailing);
-    if (!scopeConfirmed) {
-      return { mode: 'scope', scopeQuery: scopeToken };
+    const profileToken = tokens[0] ?? '';
+    const profile = this.findProfile(profileToken);
+    const profileConfirmed = profile && (tokens.length > 1 || restTrailing);
+    if (!profileConfirmed) {
+      return { mode: 'profile', profileQuery: profileToken };
     }
 
-    if (this.instanceSkipped) {
+    if (this.pluginSkipped) {
       return {
         mode: 'query',
-        scopeId: scope.pluginId,
-        instanceId: null,
+        profileId: profile.id,
+        scopeId: null,
         query: stripLeadingToken(rest).trimStart(),
       };
     }
 
-    const restAfterScope = stripLeadingToken(rest);
-    const instanceInfo = splitTokens(restAfterScope);
-    if (instanceInfo.tokens.length === 0) {
-      return { mode: 'instance', scopeId: scope.pluginId, instanceQuery: '' };
+    const restAfterProfile = stripLeadingToken(rest);
+    const scopeInfo = splitTokens(restAfterProfile);
+    if (scopeInfo.tokens.length === 0) {
+      return { mode: 'scope', profileId: profile.id, scopeQuery: '' };
     }
-    const instanceToken = instanceInfo.tokens[0] ?? '';
-    const instance = scope.instances.find(
-      (entry) => entry.id.toLowerCase() === instanceToken.toLowerCase(),
-    );
-    const instanceConfirmed =
-      instance && (instanceInfo.tokens.length > 1 || instanceInfo.hasTrailingSpace);
-    if (!instanceConfirmed) {
+    const scopeToken = scopeInfo.tokens[0] ?? '';
+    const scope = this.findScopeForProfile(profile.id, scopeToken);
+    const scopeConfirmed =
+      scope && (scopeInfo.tokens.length > 1 || scopeInfo.hasTrailingSpace);
+    if (!scopeConfirmed) {
       return {
-        mode: 'instance',
-        scopeId: scope.pluginId,
-        instanceQuery: instanceToken,
+        mode: 'scope',
+        profileId: profile.id,
+        scopeQuery: scopeToken,
       };
     }
     return {
       mode: 'query',
+      profileId: profile.id,
       scopeId: scope.pluginId,
-      instanceId: instance.id,
-      query: instanceInfo.tokens.slice(1).join(' '),
+      query: scopeInfo.tokens.slice(1).join(' '),
     };
   }
 
-  private findScope(token: string): SearchableScope | null {
+  private getProfiles(): Array<{ id: string; label: string }> {
+    const entries = new Map<string, string>();
+    for (const scope of this.scopes) {
+      for (const instance of scope.instances ?? []) {
+        if (!instance.id) {
+          continue;
+        }
+        const normalized = instance.id.trim();
+        if (!normalized) {
+          continue;
+        }
+        if (!entries.has(normalized)) {
+          entries.set(normalized, instance.label || normalized);
+        }
+      }
+    }
+    const profiles = Array.from(entries.entries()).map(([id, label]) => ({ id, label }));
+    profiles.sort((a, b) => {
+      if (a.id === 'default') return -1;
+      if (b.id === 'default') return 1;
+      return a.id.localeCompare(b.id);
+    });
+    return profiles;
+  }
+
+  private findProfile(token: string): { id: string; label: string } | null {
     const normalized = token.trim().toLowerCase();
     if (!normalized) {
       return null;
     }
-    return this.scopes.find((scope) => scope.pluginId.toLowerCase() === normalized) ?? null;
+    return this.getProfiles().find((profile) => profile.id.toLowerCase() === normalized) ?? null;
+  }
+
+  private findScopeForProfile(profileId: string, token: string): SearchableScope | null {
+    const normalized = token.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    return (
+      this.scopes.find((scope) => {
+        if (scope.pluginId.toLowerCase() !== normalized) {
+          return false;
+        }
+        return scope.instances.some(
+          (instance) => instance.id.toLowerCase() === profileId.toLowerCase(),
+        );
+      }) ?? null
+    );
   }
 
   private render(): void {
@@ -439,17 +500,17 @@ export class CommandPaletteController {
       this.renderOptionList(results, this.activeOptions, this.optionIndex);
       return;
     }
-    if (this.activeMode === 'scope') {
-      const scopeQuery = this.cachedState.scopeQuery ?? '';
-      this.activeOptions = this.buildScopeOptions(scopeQuery);
+    if (this.activeMode === 'profile') {
+      const profileQuery = this.cachedState.profileQuery ?? '';
+      this.activeOptions = this.buildProfileOptions(profileQuery);
       this.optionIndex = this.clampIndex(this.optionIndex, this.activeOptions.length);
       this.renderOptionList(results, this.activeOptions, this.optionIndex);
       return;
     }
-    if (this.activeMode === 'instance') {
-      const scopeId = this.cachedState.scopeId ?? null;
-      const instanceQuery = this.cachedState.instanceQuery ?? '';
-      this.activeOptions = this.buildInstanceOptions(scopeId, instanceQuery);
+    if (this.activeMode === 'scope') {
+      const profileId = this.cachedState.profileId ?? null;
+      const scopeQuery = this.cachedState.scopeQuery ?? '';
+      this.activeOptions = this.buildScopeOptions(profileId, scopeQuery);
       this.optionIndex = this.clampIndex(this.optionIndex, this.activeOptions.length);
       this.renderOptionList(results, this.activeOptions, this.optionIndex);
       return;
@@ -468,10 +529,10 @@ export class CommandPaletteController {
     const value = input.value;
     let html = escapeHtml(value);
     let placeholder = '';
-    if (this.activeMode === 'scope' && !(this.cachedState.scopeQuery ?? '').trim()) {
-      placeholder = '<scope>';
-    } else if (this.activeMode === 'instance' && !(this.cachedState.instanceQuery ?? '').trim()) {
-      placeholder = '<instance>';
+    if (this.activeMode === 'profile' && !(this.cachedState.profileQuery ?? '').trim()) {
+      placeholder = '<profile>';
+    } else if (this.activeMode === 'scope' && !(this.cachedState.scopeQuery ?? '').trim()) {
+      placeholder = '<plugin>';
     } else if (this.activeMode === 'query' && !(this.cachedState.query ?? '').trim()) {
       placeholder = '<query>';
     }
@@ -627,56 +688,61 @@ export class CommandPaletteController {
     return COMMAND_OPTIONS.filter((option) => option.id.startsWith(normalized));
   }
 
-  private buildScopeOptions(query: string): OptionItem[] {
+  private buildProfileOptions(query: string): OptionItem[] {
     const normalized = query.trim().toLowerCase();
     const options: OptionItem[] = [
       {
         id: '__all__',
-        label: '(all)',
-        description: 'Search everything',
-        type: 'scope',
+        label: 'All',
+        description: 'All profiles',
+        type: 'profile',
       },
     ];
-    for (const scope of this.scopes) {
-      const idMatch = scope.pluginId.toLowerCase().includes(normalized);
-      const labelMatch = scope.label.toLowerCase().includes(normalized);
+    for (const profile of this.getProfiles()) {
+      const idMatch = profile.id.toLowerCase().includes(normalized);
+      const labelMatch = profile.label.toLowerCase().includes(normalized);
       if (!normalized || idMatch || labelMatch) {
+        const label = profile.label?.trim() || profile.id;
         options.push({
-          id: scope.pluginId,
-          label: scope.pluginId,
-          description: scope.label,
-          type: 'scope',
+          id: profile.id,
+          label,
+          type: 'profile',
         });
       }
     }
     return options;
   }
 
-  private buildInstanceOptions(scopeId: string | null, query: string): OptionItem[] {
+  private buildScopeOptions(profileId: string | null, query: string): OptionItem[] {
     const normalized = query.trim().toLowerCase();
     const options: OptionItem[] = [
       {
         id: '__all__',
-        label: '(all)',
-        description: 'All instances',
-        type: 'instance',
-        scopeId,
+        label: 'All',
+        description: 'All plugins',
+        type: 'scope',
+        profileId,
       },
     ];
-    const scope = this.scopes.find((entry) => entry.pluginId === scopeId);
-    if (!scope) {
-      return options;
-    }
-    for (const instance of scope.instances) {
-      const idMatch = instance.id.toLowerCase().includes(normalized);
-      const labelMatch = instance.label.toLowerCase().includes(normalized);
+    const normalizedProfile = profileId?.toLowerCase() ?? null;
+    for (const scope of this.scopes) {
+      if (
+        normalizedProfile &&
+        !scope.instances.some(
+          (instance) => instance.id.toLowerCase() === normalizedProfile,
+        )
+      ) {
+        continue;
+      }
+      const idMatch = scope.pluginId.toLowerCase().includes(normalized);
+      const labelMatch = scope.label.toLowerCase().includes(normalized);
       if (!normalized || idMatch || labelMatch) {
+        const label = scope.label?.trim() || scope.pluginId;
         options.push({
-          id: instance.id,
-          label: instance.id,
-          description: instance.label,
-          type: 'instance',
-          scopeId: scope.pluginId,
+          id: scope.pluginId,
+          label,
+          type: 'scope',
+          profileId,
         });
       }
     }
@@ -690,34 +756,34 @@ export class CommandPaletteController {
     }
     if (option.type === 'command') {
       this.setInputValue('/search ');
-      this.scopeSkipped = false;
-      this.instanceSkipped = false;
+      this.profileSkipped = false;
+      this.pluginSkipped = false;
       return;
     }
-    if (option.type === 'scope') {
+    if (option.type === 'profile') {
       if (option.id === '__all__') {
-        this.scopeSkipped = true;
-        this.instanceSkipped = false;
+        this.profileSkipped = true;
+        this.pluginSkipped = false;
         this.setInputValue('/search ');
         return;
       }
-      this.scopeSkipped = false;
-      this.instanceSkipped = false;
+      this.profileSkipped = false;
+      this.pluginSkipped = false;
       this.setInputValue(`/search ${option.id} `);
       return;
     }
-    if (option.type === 'instance') {
-      const scopeId = option.scopeId ?? this.cachedState.scopeId ?? '';
-      if (!scopeId) {
+    if (option.type === 'scope') {
+      const profileId = option.profileId ?? this.cachedState.profileId ?? '';
+      if (!profileId) {
         return;
       }
       if (option.id === '__all__') {
-        this.instanceSkipped = true;
-        this.setInputValue(`/search ${scopeId} `);
+        this.pluginSkipped = true;
+        this.setInputValue(`/search ${profileId} `);
         return;
       }
-      this.instanceSkipped = false;
-      this.setInputValue(`/search ${scopeId} ${option.id} `);
+      this.pluginSkipped = false;
+      this.setInputValue(`/search ${profileId} ${option.id} `);
     }
   }
 
@@ -792,7 +858,11 @@ export class CommandPaletteController {
         this.executeMenuSelection();
         return;
       }
-      if (this.activeMode === 'command' || this.activeMode === 'scope' || this.activeMode === 'instance') {
+      if (
+        this.activeMode === 'command' ||
+        this.activeMode === 'profile' ||
+        this.activeMode === 'scope'
+      ) {
         this.handleOptionSelection();
         return;
       }
@@ -821,25 +891,26 @@ export class CommandPaletteController {
     }
 
     if (this.activeMode === 'query' && !(this.cachedState.query ?? '').trim()) {
-      if (this.instanceSkipped || this.cachedState.instanceId) {
-        this.instanceSkipped = false;
-        const scopeId = this.cachedState.scopeId ?? '';
-        this.setInputValue(scopeId ? `/search ${scopeId} ` : '/search ');
+      if (this.pluginSkipped || this.cachedState.scopeId) {
+        this.pluginSkipped = false;
+        const profileId = this.cachedState.profileId ?? '';
+        this.setInputValue(profileId ? `/search ${profileId} ` : '/search ');
         return true;
       }
-      if (this.scopeSkipped) {
-        this.scopeSkipped = false;
+      if (this.profileSkipped) {
+        this.profileSkipped = false;
         this.setInputValue('/search ');
         return true;
       }
     }
-    if (this.activeMode === 'instance' && !(this.cachedState.instanceQuery ?? '').trim()) {
-      this.instanceSkipped = false;
+    if (this.activeMode === 'scope' && !(this.cachedState.scopeQuery ?? '').trim()) {
+      this.pluginSkipped = false;
+      this.profileSkipped = false;
       this.setInputValue('/search ');
       return true;
     }
-    if (this.activeMode === 'scope' && !(this.cachedState.scopeQuery ?? '').trim()) {
-      this.scopeSkipped = false;
+    if (this.activeMode === 'profile' && !(this.cachedState.profileQuery ?? '').trim()) {
+      this.profileSkipped = false;
       this.setInputValue('/');
       return true;
     }
@@ -867,7 +938,11 @@ export class CommandPaletteController {
   }
 
   private moveFocus(delta: number): void {
-    if (this.activeMode === 'command' || this.activeMode === 'scope' || this.activeMode === 'instance') {
+    if (
+      this.activeMode === 'command' ||
+      this.activeMode === 'profile' ||
+      this.activeMode === 'scope'
+    ) {
       if (this.activeOptions.length === 0) {
         this.optionIndex = 0;
         return;

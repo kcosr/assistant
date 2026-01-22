@@ -18,7 +18,8 @@ export type PanelChromeControllerOptions = {
   root: HTMLElement;
   host: PanelHost;
   title?: string;
-  onInstanceChange?: (instanceId: string) => void;
+  onInstanceChange?: (instanceIds: string[]) => void;
+  instanceSelectionMode?: 'single' | 'multi';
   buffer?: number;
   hysteresis?: number;
 };
@@ -79,6 +80,7 @@ export class PanelChromeController {
       this.instanceDropdown = new InstanceDropdownController({
         root: this.elements.instanceDropdownRoot,
         onSelect: options.onInstanceChange,
+        selectionMode: options.instanceSelectionMode ?? 'single',
       });
     } else {
       this.instanceDropdown = null;
@@ -101,11 +103,11 @@ export class PanelChromeController {
     this.scheduleLayoutCheck();
   }
 
-  setInstances(instances: InstanceOption[], selectedId: string | null): void {
+  setInstances(instances: InstanceOption[], selectedIds: string[]): void {
     if (!this.elements.instanceActions || !this.instanceDropdown) {
       return;
     }
-    this.instanceDropdown.setInstances(instances, selectedId);
+    this.instanceDropdown.setInstances(instances, selectedIds);
     this.instanceDropdown.setVisible(instances.length > 1);
     this.scheduleLayoutCheck();
   }

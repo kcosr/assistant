@@ -46,7 +46,7 @@ describe('InstanceDropdownController', () => {
         { id: 'alpha', label: 'Alpha' },
         { id: 'beta', label: 'Beta' },
       ],
-      'alpha',
+      ['alpha'],
     );
 
     controller.open();
@@ -54,7 +54,7 @@ describe('InstanceDropdownController', () => {
     expect(items.length).toBe(2);
     items[1]?.click();
 
-    expect(onSelect).toHaveBeenCalledWith('beta');
+    expect(onSelect).toHaveBeenCalledWith(['beta']);
     expect(root.querySelector('[data-role="instance-menu"]')?.classList.contains('open')).toBe(
       false,
     );
@@ -73,7 +73,7 @@ describe('InstanceDropdownController', () => {
         { id: 'alpha', label: 'Alpha' },
         { id: 'beta', label: 'Beta' },
       ],
-      'alpha',
+      ['alpha'],
     );
 
     controller.open();
@@ -87,6 +87,95 @@ describe('InstanceDropdownController', () => {
     const items = root.querySelectorAll<HTMLElement>('.panel-chrome-instance-item');
     expect(items.length).toBe(1);
     expect(items[0]?.textContent).toBe('Beta');
+
+    controller.destroy();
+  });
+
+  it('supports multi-select without closing the menu', () => {
+    const root = createDropdownRoot();
+    const onSelect = vi.fn();
+    const controller = new InstanceDropdownController({
+      root,
+      onSelect,
+      selectionMode: 'multi',
+    });
+    controller.setInstances(
+      [
+        { id: 'alpha', label: 'Alpha' },
+        { id: 'beta', label: 'Beta' },
+        { id: 'gamma', label: 'Gamma' },
+      ],
+      ['alpha'],
+    );
+
+    controller.open();
+    const items = root.querySelectorAll<HTMLElement>('.panel-chrome-instance-item');
+    items[1]?.click();
+
+    expect(onSelect).toHaveBeenCalledWith(['beta', 'alpha']);
+    expect(root.querySelector('[data-role="instance-menu"]')?.classList.contains('open')).toBe(
+      true,
+    );
+
+    controller.destroy();
+  });
+
+  it('makes an exclusive selection when clicking a selected item in multi mode', () => {
+    const root = createDropdownRoot();
+    const onSelect = vi.fn();
+    const controller = new InstanceDropdownController({
+      root,
+      onSelect,
+      selectionMode: 'multi',
+    });
+    controller.setInstances(
+      [
+        { id: 'alpha', label: 'Alpha' },
+        { id: 'beta', label: 'Beta' },
+        { id: 'gamma', label: 'Gamma' },
+      ],
+      ['alpha', 'beta'],
+    );
+
+    controller.open();
+    const items = root.querySelectorAll<HTMLElement>('.panel-chrome-instance-item');
+    items[1]?.click();
+
+    expect(onSelect).toHaveBeenCalledWith(['beta']);
+    expect(root.querySelector('[data-role="instance-menu"]')?.classList.contains('open')).toBe(
+      false,
+    );
+
+    controller.destroy();
+  });
+
+  it('deselects an item via the row clear control', () => {
+    const root = createDropdownRoot();
+    const onSelect = vi.fn();
+    const controller = new InstanceDropdownController({
+      root,
+      onSelect,
+      selectionMode: 'multi',
+    });
+    controller.setInstances(
+      [
+        { id: 'alpha', label: 'Alpha' },
+        { id: 'beta', label: 'Beta' },
+      ],
+      ['alpha', 'beta'],
+    );
+
+    controller.open();
+    const clearButtons = root.querySelectorAll<HTMLButtonElement>(
+      '.panel-chrome-instance-item-clear',
+    );
+    expect(clearButtons.length).toBeGreaterThan(0);
+    clearButtons[0]?.click();
+
+    expect(onSelect).toHaveBeenCalledWith(['beta']);
+    expect(root.querySelector('[data-role="instance-menu"]')?.classList.contains('open')).toBe(
+      true,
+    );
 
     controller.destroy();
   });

@@ -806,6 +806,11 @@ describe('loadConfig', () => {
   it('substitutes env vars in plugin instance workspaceRoot', async () => {
     const filePath = createTempFile('config-plugin-instances');
     const configJson = {
+      profiles: [
+        { id: 'default' },
+        { id: 'simple-instance' },
+        { id: 'custom' },
+      ],
       plugins: {
         diff: {
           enabled: true,
@@ -838,6 +843,48 @@ describe('loadConfig', () => {
       label: 'Custom Workspace',
       workspaceRoot: '/home/testuser/custom-workspace',
     });
+  });
+
+  it('adds default profile when missing', async () => {
+    const filePath = createTempFile('config-profiles-default');
+    const configJson = {
+      profiles: [{ id: 'work', label: 'Work' }],
+      plugins: {},
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.profiles.map((profile) => profile.id)).toEqual(['default', 'work']);
+    expect(config.profiles.find((profile) => profile.id === 'work')?.label).toBe('Work');
+  });
+
+  it('rejects duplicate profile ids', async () => {
+    const filePath = createTempFile('config-profiles-duplicate');
+    const configJson = {
+      profiles: [{ id: 'work' }, { id: 'Work' }],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/Duplicate profile id/);
+  });
+
+  it('rejects instances that are not defined in profiles', async () => {
+    const filePath = createTempFile('config-profiles-missing-instance');
+    const configJson = {
+      profiles: [{ id: 'work' }],
+      plugins: {
+        notes: {
+          enabled: true,
+          instances: ['work', 'personal'],
+        },
+      },
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/not defined in profiles/);
   });
 
   it('substitutes env vars in agent CLI workdir and wrapper path', async () => {

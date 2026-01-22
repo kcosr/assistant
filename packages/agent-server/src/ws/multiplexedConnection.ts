@@ -10,6 +10,7 @@ import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import { openaiConfigured, type EnvConfig } from '../envConfig';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
+import type { SearchService } from '../search/searchService';
 
 import type { SessionConnection } from './sessionConnection';
 import { SessionRuntime } from './sessionRuntime';
@@ -22,6 +23,7 @@ export interface MultiplexedConnectionOptions {
   sessionHub: SessionHub;
   eventStore: EventStore;
   scheduledSessionService?: ScheduledSessionService;
+  searchService?: SearchService;
   connectionId?: string;
 }
 
@@ -54,6 +56,7 @@ export class MultiplexedConnection implements SessionConnection {
       toolHost: options.toolHost,
       sessionHub: options.sessionHub,
       eventStore: options.eventStore,
+      ...(options.searchService ? { searchService: options.searchService } : {}),
       ...(options.scheduledSessionService
         ? { scheduledSessionService: options.scheduledSessionService }
         : {}),

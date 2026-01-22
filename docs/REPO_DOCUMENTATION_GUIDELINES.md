@@ -42,6 +42,7 @@ Keep these minimal and stable:
 - `CONTRIBUTING.md`: contributor workflow, coding standards, tests.
 - `CODE_OF_CONDUCT.md`: expected behavior.
 - `CHANGELOG.md`: user-facing changes (optional if release notes exist elsewhere).
+  - For released versions, omit empty subsections (keep only headings with entries).
 
 ### Documentation tree (docs/)
 

@@ -156,4 +156,123 @@ describe('ListItemEditorDialog tag chips', () => {
       urgent: true,
     });
   });
+
+  it('sends null for cleared select/text fields to remove previous values', async () => {
+    const updateListItem = vi.fn(async () => true);
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem,
+    });
+
+    // Open in edit mode with existing custom field values
+    dialog.open(
+      'edit',
+      'list1',
+      { id: 'item1', title: 'Existing Item', tags: [] },
+      {
+        customFields: [
+          { key: 'priority', label: 'Priority', type: 'select', options: ['High', 'Low'] },
+          { key: 'comment', label: 'Comment', type: 'text' },
+        ],
+        initialCustomFieldValues: { priority: 'High', comment: 'Some comment' },
+      },
+    );
+
+    // Clear the select by choosing "Select..."
+    const prioritySelect = document.querySelector<HTMLSelectElement>(
+      '.list-item-custom-field-row .list-item-form-select',
+    );
+    expect(prioritySelect).not.toBeNull();
+    if (!prioritySelect) return;
+    prioritySelect.value = ''; // "Select..." placeholder
+    prioritySelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // Clear the text field
+    const commentInput = document.querySelector<HTMLInputElement>(
+      '.list-item-custom-field-row input[type="text"]',
+    );
+    expect(commentInput).not.toBeNull();
+    if (!commentInput) return;
+    commentInput.value = '';
+
+    const form = document.querySelector<HTMLFormElement>('.list-item-form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+    const calls = updateListItem.mock.calls as unknown as [
+      string,
+      string,
+      { customFields?: Record<string, unknown> },
+    ][];
+    const args = calls[0]?.[2];
+    expect(args).toBeDefined();
+    // Cleared fields should be null to signal removal
+    expect(args?.customFields?.['priority']).toBeNull();
+    expect(args?.customFields?.['comment']).toBeNull();
+  });
+
+  it('sends null for unchecked checkbox fields', async () => {
+    const updateListItem = vi.fn(async () => true);
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem,
+    });
+
+    // Open in edit mode with checkbox previously checked
+    dialog.open(
+      'edit',
+      'list1',
+      { id: 'item1', title: 'Existing Item', tags: [] },
+      {
+        customFields: [{ key: 'urgent', label: 'Urgent', type: 'checkbox' }],
+        initialCustomFieldValues: { urgent: true },
+      },
+    );
+
+    // Uncheck the checkbox
+    const urgentCheckbox = document.querySelector<HTMLInputElement>(
+      '.list-item-custom-field-row input[type="checkbox"]',
+    );
+    expect(urgentCheckbox).not.toBeNull();
+    if (!urgentCheckbox) return;
+    urgentCheckbox.checked = false;
+
+    const form = document.querySelector<HTMLFormElement>('.list-item-form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+    const calls = updateListItem.mock.calls as unknown as [
+      string,
+      string,
+      { customFields?: Record<string, unknown> },
+    ][];
+    const args = calls[0]?.[2];
+    expect(args).toBeDefined();
+    // Unchecked checkbox should be null to signal removal
+    expect(args?.customFields?.['urgent']).toBeNull();
+  });
 });

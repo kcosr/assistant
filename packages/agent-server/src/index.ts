@@ -153,6 +153,9 @@ export async function startServer(
 
   const toolHost = toolHosts.length === 1 ? baseToolHost : new CompositeToolHost(toolHosts);
 
+  const searchService = new SearchService(pluginRegistry);
+  searchService.syncFromRegistry();
+
   const scheduledSessionService = new ScheduledSessionService({
     agentRegistry: registry,
     logger: console,
@@ -162,6 +165,7 @@ export async function startServer(
     envConfig: config,
     toolHost,
     eventStore: chatEventStore,
+    searchService,
     broadcast: (event) => {
       sessionHub.broadcastToAll({
         type: 'panel_event',
@@ -173,9 +177,6 @@ export async function startServer(
     },
   });
   await scheduledSessionService.initialize();
-
-  const searchService = new SearchService(pluginRegistry);
-  searchService.syncFromRegistry();
 
   const httpServer = createHttpServer({
     config,
@@ -214,6 +215,7 @@ export async function startServer(
       sessionHub,
       eventStore: chatEventStore,
       scheduledSessionService,
+      searchService,
       connectionId,
     });
   });

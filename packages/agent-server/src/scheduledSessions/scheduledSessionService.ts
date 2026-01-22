@@ -7,6 +7,7 @@ import type { EventStore } from '../events';
 import type { SessionHub } from '../sessionHub';
 import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { ToolHost } from '../tools';
+import type { SearchService } from '../search/searchService';
 import { startSessionMessage } from '../sessionMessages';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
 import { buildCliEnv } from '../ws/cliEnv';
@@ -51,6 +52,7 @@ export interface ScheduledSessionServiceOptions {
   envConfig?: EnvConfig;
   toolHost?: ToolHost;
   eventStore?: EventStore;
+  searchService?: SearchService;
   defaultSessionTimeoutSeconds?: number;
   broadcast?: (event: ScheduleStatusEvent) => void;
   spawnFn?: typeof spawn;
@@ -490,6 +492,7 @@ export class ScheduledSessionService {
       toolHost,
       envConfig,
       ...(this.options.eventStore ? { eventStore: this.options.eventStore } : {}),
+      ...(this.options.searchService ? { searchService: this.options.searchService } : {}),
       scheduledSessionService: this,
     });
 

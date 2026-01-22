@@ -4,6 +4,7 @@ import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { HistoryProviderRegistry } from '../history/historyProvider';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
+import type { SearchService } from '../search/searchService';
 
 export interface Tool {
   name: string;
@@ -93,6 +94,10 @@ export interface ToolContext {
    * Optional scheduled sessions service.
    */
   scheduledSessionService?: ScheduledSessionService;
+  /**
+   * Optional search service for global search operations.
+   */
+  searchService?: SearchService;
   /**
    * Optional callback for tools to stream incremental updates (for example,
    * bash output). Tools should still return a final result as usual.

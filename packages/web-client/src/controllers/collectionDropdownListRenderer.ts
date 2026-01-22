@@ -54,6 +54,12 @@ export function renderCollectionDropdownList(
       itemEl.appendChild(labelEl);
       itemEl.dataset['collectionType'] = item.type;
       itemEl.dataset['collectionId'] = item.id;
+      if (item.instanceId) {
+        itemEl.dataset['collectionInstanceId'] = item.instanceId;
+      }
+      if (item.instanceLabel) {
+        itemEl.dataset['collectionInstanceLabel'] = item.instanceLabel;
+      }
       itemEl.dataset['group'] = String(gi);
       itemEl.dataset['searchTextBase'] = item.name.toLowerCase();
       itemEl.dataset['searchText'] = item.name.toLowerCase();
