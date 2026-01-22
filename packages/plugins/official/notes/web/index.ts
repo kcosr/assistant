@@ -726,6 +726,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let selectedNoteText: string | null = null;
       let expandCollapseToggle: HTMLButtonElement | null = null;
       let chromeController: PanelChromeController | null = null;
+      let panelKeydownAttached = false;
+      let isPanelSelected = false;
+      let unsubscribePanelActive: (() => void) | null = null;
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -767,7 +770,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         updateExpandCollapseToggleLabel();
       };
 
-      const contextKey = getPanelContextKey(host.panelId());
+      const panelId = host.panelId();
+      const contextKey = getPanelContextKey(panelId);
+
+      const updatePanelSelection = (value: unknown): void => {
+        if (!value || typeof value !== 'object') {
+          isPanelSelected = false;
+          return;
+        }
+        const raw = value as { panelId?: unknown };
+        isPanelSelected = typeof raw.panelId === 'string' && raw.panelId === panelId;
+      };
+      updatePanelSelection(host.getContext('panel.active'));
+      unsubscribePanelActive = host.subscribeContext('panel.active', updatePanelSelection);
 
       const getAvailableItems = (): CollectionItemSummary[] =>
         availableNotes.map((note) => ({
@@ -948,6 +963,112 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         host.setContext(contextKey, context);
         // Notify chat inputs to update their context preview
         services.notifyContextAvailabilityChange();
+      };
+
+      const isEditableTarget = (target: EventTarget | null): boolean => {
+        if (!(target instanceof Element)) {
+          return false;
+        }
+        if ((target as HTMLElement).isContentEditable) {
+          return true;
+        }
+        return Boolean(
+          target.closest(
+            'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+          ),
+        );
+      };
+
+      const hasBlockingOverlay = (): boolean => {
+        const modalOverlay = document.querySelector<HTMLElement>('.panel-modal-overlay.open');
+        if (modalOverlay && !modalOverlay.contains(root)) {
+          return true;
+        }
+        const dockPopover = document.querySelector<HTMLElement>('.panel-dock-popover.open');
+        if (dockPopover && !dockPopover.contains(root)) {
+          return true;
+        }
+        return false;
+      };
+
+      const hasOpenDropdowns = (): boolean => {
+        if (
+          root.querySelector('.collection-search-dropdown-container.open') ||
+          root.querySelector('.panel-chrome-instance-menu.open')
+        ) {
+          return true;
+        }
+        return false;
+      };
+
+      const isPanelOverlay = (): boolean =>
+        Boolean(root.closest('.panel-modal')) || Boolean(root.closest('.panel-dock-popover'));
+
+      const canHandlePanelShortcuts = (
+        event: KeyboardEvent,
+        options?: { requireNoteMode?: boolean },
+      ): boolean => {
+        if (!isVisible) {
+          return false;
+        }
+        if (services.dialogManager.hasOpenDialog) {
+          return false;
+        }
+        if (hasBlockingOverlay()) {
+          return false;
+        }
+        if (!isPanelSelected && !isPanelOverlay()) {
+          return false;
+        }
+        if (document.querySelector('.context-menu')) {
+          return false;
+        }
+        if (hasOpenDropdowns()) {
+          return false;
+        }
+        if (isEditableTarget(event.target) || isEditableTarget(document.activeElement)) {
+          return false;
+        }
+        const requireNoteMode = options?.requireNoteMode ?? true;
+        if (requireNoteMode && mode !== 'note') {
+          return false;
+        }
+        return true;
+      };
+
+      const handlePanelKeydown = (event: KeyboardEvent): void => {
+        if (!canHandlePanelShortcuts(event, { requireNoteMode: mode === 'note' })) {
+          return;
+        }
+        if (mode === 'note' && event.key === 'Escape') {
+          setMode('browser');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (mode === 'browser') {
+          const handled = browserController?.handleKeyboardEvent(event) ?? false;
+          if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }
+      };
+
+      const attachPanelShortcuts = (): void => {
+        if (panelKeydownAttached) {
+          return;
+        }
+        document.addEventListener('keydown', handlePanelKeydown, true);
+        panelKeydownAttached = true;
+      };
+
+      const detachPanelShortcuts = (): void => {
+        if (!panelKeydownAttached) {
+          return;
+        }
+        document.removeEventListener('keydown', handlePanelKeydown, true);
+        panelKeydownAttached = false;
       };
 
       const refreshInstances = async (options?: { silent?: boolean }): Promise<void> => {
@@ -1864,6 +1985,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         sharedSearchController.setVisible(true);
         applySearch(sharedSearchController.getQuery());
+        if (mode === 'browser') {
+          browserController?.focusActiveItem();
+        }
         if (modeChanged) {
           persistState();
         }
@@ -2075,6 +2199,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
+      attachPanelShortcuts();
 
       const stored = host.loadPanelState();
       let initialTitle: string | null = null;
@@ -2173,6 +2298,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             'assistant:clear-context-selection',
             handleClearContextSelectionEvent,
           );
+          detachPanelShortcuts();
+          unsubscribePanelActive?.();
           chromeController?.destroy();
           host.setContext(contextKey, null);
           container.innerHTML = '';

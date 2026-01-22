@@ -124,7 +124,7 @@ In layout navigation mode: arrows move between siblings, `Enter` descends or foc
 - `Shift + Click` – Range select from last selected item to clicked item
 - `Cmd + Click` (macOS) / `Ctrl + Click` (others) – Toggle individual item selection
 - `Double-click` – Edit item
-- `Cmd + Alt + F` (macOS) / `Ctrl + Alt + F` (others) – Focus list search
+- `f` – Focus list search
 - `Arrow Up/Down` – Move selection (wraps at top/bottom)
 - `Shift + Arrow Up/Down` – Extend selection
 - `Enter` – Edit focused item

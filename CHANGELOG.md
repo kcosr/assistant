@@ -5,10 +5,18 @@
 ### Breaking Changes
 
 ### Added
+- Added floating add-item button in lists view for Capacitor builds and small viewports. ([#21](https://github.com/kcosr/assistant/pull/21))
+- Added browser-mode keyboard navigation for list/note collections (arrow keys/Enter, Escape to return). ([#21](https://github.com/kcosr/assistant/pull/21))
+- Added sticky list column headers during list scrolling. ([#21](https://github.com/kcosr/assistant/pull/21))
+- Added list column resizing with per-panel column width persistence. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Changed
+- Changed list arrow-key navigation to stop at the first/last item. ([#21](https://github.com/kcosr/assistant/pull/21))
+- Changed list and note dialog sizing to sit higher and allow taller content before scrolling. ([#21](https://github.com/kcosr/assistant/pull/21))
+- Changed list/note browser list view selection to show an outline on the active item. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Fixed
+- Fixed list/note browser focus to stay on the active item when returning from detail view. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Removed
 

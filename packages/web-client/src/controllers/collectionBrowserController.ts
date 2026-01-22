@@ -1257,9 +1257,31 @@ export class CollectionBrowserController {
       .querySelectorAll('.collection-search-dropdown-item.selected')
       .forEach((el) => el.classList.remove('selected'));
 
+    const item = this.getActiveItemElement();
+    if (item) {
+      item.classList.add('selected');
+    }
+  }
+
+  focusActiveItem(): void {
+    if (!this.itemFocusController) {
+      return;
+    }
+    const item = this.getActiveItemElement();
+    if (!item) {
+      return;
+    }
+    this.itemFocusController.setFocusedItem(item);
+  }
+
+  private getActiveItemElement(): HTMLElement | null {
+    const listEl = this.listEl;
+    if (!listEl) {
+      return null;
+    }
     const active = this.options.getActiveItemReference();
     if (!active) {
-      return;
+      return null;
     }
     const selectorParts = [
       `.collection-search-dropdown-item[data-collection-type="${active.type}"]` +
@@ -1269,9 +1291,7 @@ export class CollectionBrowserController {
       selectorParts.push(`[data-collection-instance-id="${active.instanceId}"]`);
     }
     const item = listEl.querySelector(selectorParts.join(''));
-    if (item) {
-      item.classList.add('selected');
-    }
+    return item instanceof HTMLElement ? item : null;
   }
 
   private moveFocus(delta: number): void {
@@ -1354,6 +1374,178 @@ export class CollectionBrowserController {
       },
     });
     return true;
+  }
+
+  handleKeyboardEvent(event: KeyboardEvent): boolean {
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return false;
+    }
+
+    switch (event.key) {
+      case 'ArrowUp':
+        this.moveFocusInGrid('up');
+        return true;
+      case 'ArrowDown':
+        this.moveFocusInGrid('down');
+        return true;
+      case 'ArrowLeft':
+        this.moveFocusInGrid('left');
+        return true;
+      case 'ArrowRight':
+        this.moveFocusInGrid('right');
+        return true;
+      case 'Enter':
+        return this.selectFocusedItem();
+      default:
+        return false;
+    }
+  }
+
+  private selectFocusedItem(): boolean {
+    const itemFocusController = this.itemFocusController;
+    if (!itemFocusController) {
+      return false;
+    }
+    const focused = itemFocusController.getFocusedItem();
+    if (focused) {
+      this.selectItem(focused);
+      return true;
+    }
+    const items = itemFocusController.getVisibleItems();
+    if (items.length === 0) {
+      return false;
+    }
+    if (items.length === 1 && items[0]) {
+      this.selectItem(items[0]);
+      return true;
+    }
+    itemFocusController.setFocusedItem(items[0] ?? null);
+    return true;
+  }
+
+  private moveFocusInGrid(direction: 'up' | 'down' | 'left' | 'right'): void {
+    const itemFocusController = this.itemFocusController;
+    if (!itemFocusController) {
+      return;
+    }
+    const items = itemFocusController.getVisibleItems();
+    if (items.length === 0) {
+      this.searchInput?.focus();
+      return;
+    }
+
+    const positioned = items
+      .map((item) => ({ item, rect: item.getBoundingClientRect() }))
+      .sort((a, b) => {
+        if (a.rect.top === b.rect.top) {
+          return a.rect.left - b.rect.left;
+        }
+        return a.rect.top - b.rect.top;
+      });
+
+    const rows: Array<{ top: number; items: Array<{ item: HTMLElement; rect: DOMRect }> }> = [];
+    const rowThreshold = 6;
+    for (const entry of positioned) {
+      const currentRow = rows[rows.length - 1];
+      if (!currentRow || Math.abs(entry.rect.top - currentRow.top) > rowThreshold) {
+        rows.push({ top: entry.rect.top, items: [entry] });
+      } else {
+        currentRow.items.push(entry);
+      }
+    }
+    for (const row of rows) {
+      row.items.sort((a, b) => a.rect.left - b.rect.left);
+    }
+
+    const focused = itemFocusController.getFocusedItem();
+    if (!focused) {
+      const fallback = direction === 'left' || direction === 'up'
+        ? positioned[positioned.length - 1]
+        : positioned[0];
+      itemFocusController.setFocusedItem(fallback?.item ?? null);
+      return;
+    }
+
+    let currentRowIndex = -1;
+    let currentColIndex = -1;
+    let currentRect: DOMRect | null = null;
+
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
+      if (!row) {
+        continue;
+      }
+      const colIndex = row.items.findIndex((entry) => entry.item === focused);
+      if (colIndex >= 0) {
+        currentRowIndex = rowIndex;
+        currentColIndex = colIndex;
+        currentRect = row.items[colIndex]?.rect ?? null;
+        break;
+      }
+    }
+
+    if (currentRowIndex < 0) {
+      itemFocusController.setFocusedItem(positioned[0]?.item ?? null);
+      return;
+    }
+
+    const currentRow = rows[currentRowIndex];
+    if (!currentRow) {
+      itemFocusController.setFocusedItem(positioned[0]?.item ?? null);
+      return;
+    }
+
+    const findClosestInRow = (rowIndex: number): HTMLElement | null => {
+      const row = rows[rowIndex];
+      const firstItem = row?.items[0];
+      if (!row || !firstItem) {
+        return null;
+      }
+      const baseLeft = currentRect?.left ?? firstItem.rect.left;
+      let closest = firstItem;
+      let closestDistance = Math.abs(firstItem.rect.left - baseLeft);
+      for (const entry of row.items) {
+        const distance = Math.abs(entry.rect.left - baseLeft);
+        if (distance < closestDistance) {
+          closest = entry;
+          closestDistance = distance;
+        }
+      }
+      return closest.item;
+    };
+
+    let nextItem: HTMLElement | null = null;
+    if (direction === 'left') {
+      if (currentColIndex > 0) {
+        nextItem = currentRow.items[currentColIndex - 1]?.item ?? null;
+      } else if (currentRowIndex > 0) {
+        const previousRow = rows[currentRowIndex - 1];
+        if (previousRow) {
+          nextItem = previousRow.items[previousRow.items.length - 1]?.item ?? null;
+        }
+      }
+    } else if (direction === 'right') {
+      if (currentColIndex < currentRow.items.length - 1) {
+        nextItem = currentRow.items[currentColIndex + 1]?.item ?? null;
+      } else if (currentRowIndex < rows.length - 1) {
+        const nextRow = rows[currentRowIndex + 1];
+        if (nextRow) {
+          nextItem = nextRow.items[0]?.item ?? null;
+        }
+      }
+    } else if (direction === 'up') {
+      if (currentRowIndex > 0) {
+        nextItem = findClosestInRow(currentRowIndex - 1);
+      }
+    } else if (direction === 'down') {
+      if (currentRowIndex < rows.length - 1) {
+        nextItem = findClosestInRow(currentRowIndex + 1);
+      }
+    }
+
+    if (nextItem) {
+      itemFocusController.setFocusedItem(nextItem);
+    }
   }
 
   private addNoteItemActions(itemEl: HTMLElement): void {

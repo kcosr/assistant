@@ -1160,6 +1160,10 @@
   box-shadow: 0 0 0 1px var(--color-accent-primary);
 }
 
+.collection-browser.view-list .collection-search-dropdown-item.selected {
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+
 .collection-browser .collection-search-dropdown-item {
   position: relative;
   padding-right: 34px;
@@ -3399,17 +3403,20 @@ button.tag-chip-remove {
 
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */
   .confirm-dialog-overlay.list-item-dialog-overlay,
-  .confirm-dialog-overlay.note-editor-dialog-overlay {
+  .confirm-dialog-overlay.note-editor-dialog-overlay,
+  .confirm-dialog-overlay.list-metadata-dialog-overlay {
     align-items: flex-start;
     padding: var(--spacing-lg) var(--spacing-sm);
     /* Use a modest dynamic top inset so the modal isn't top-anchored. */
-    padding-top: clamp(24px, 8vh, 64px);
-    padding-top: clamp(24px, 8dvh, 64px);
+    padding-top: clamp(32px, 6vh, 60px);
+    padding-top: clamp(32px, 6dvh, 60px);
   }
 
   .list-item-dialog,
-  .note-editor-dialog {
-    max-height: 50dvh;
+  .note-editor-dialog,
+  .list-metadata-dialog {
+    margin-top: 0;
+    max-height: 70dvh;
     overflow-y: auto;
   }
 

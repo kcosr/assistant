@@ -55,7 +55,7 @@ describe('lists panel keyboard shortcuts', () => {
     document.body.innerHTML = '';
   });
 
-  it('focuses the shared search input on Cmd/Ctrl + Alt + F', async () => {
+  it('focuses the shared search input on "f"', async () => {
     vi.resetModules();
     await import('./index');
 
@@ -137,8 +137,6 @@ describe('lists panel keyboard shortcuts', () => {
     document.dispatchEvent(
       new KeyboardEvent('keydown', {
         key: 'f',
-        altKey: true,
-        metaKey: true,
         bubbles: true,
       }),
     );

@@ -288,6 +288,10 @@
   overflow: hidden;
 }
 
+.lists-panel {
+  position: relative;
+}
+
 .collection-panel.hidden {
   width: 0 !important;
   min-width: 0 !important;
@@ -1150,6 +1154,10 @@
   box-shadow: 0 0 0 1px var(--color-accent-primary);
 }
 
+.collection-browser.view-list .collection-search-dropdown-item.selected {
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+
 .collection-browser .collection-search-dropdown-item {
   position: relative;
   padding-right: 34px;
@@ -1248,6 +1256,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  padding-bottom: var(--spacing-sm);
 }
 
 .collection-list-title-row {
@@ -1616,6 +1625,41 @@
   color: var(--color-text-primary);
 }
 
+.lists-fab-add {
+  position: absolute;
+  right: var(--spacing-lg);
+  bottom: calc(var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px));
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+  z-index: 5;
+}
+
+.lists-fab-add.is-visible {
+  display: inline-flex;
+}
+
+.lists-fab-add:hover {
+  background-color: var(--color-accent-hover);
+  box-shadow: var(--shadow-lg);
+}
+
+.lists-fab-add:active {
+  transform: translateY(1px);
+}
+
 .collection-list-view-toggle {
   padding: 2px var(--spacing-sm);
   font-size: var(--font-size-xs);
@@ -1693,6 +1737,14 @@ table.collection-list-table td {
   position: relative;
   user-select: none;
   border-bottom: 2px solid var(--color-border-subtle);
+  border-radius: 0;
+}
+
+.collection-list-table thead th {
+  position: sticky;
+  top: calc(var(--spacing-md) * -1);
+  z-index: 2;
+  background-color: var(--color-bg-surface);
 }
 
 /* Title column needs reasonable min-width (second column now, after checkbox) */
@@ -1725,6 +1777,7 @@ table.collection-list-table td {
   display: flex;
   align-items: stretch;
   justify-content: center;
+  touch-action: none;
 }
 
 .collection-list-table th .list-column-resize-handle::before {
@@ -1790,7 +1843,7 @@ table.collection-list-table td {
   transition:
     color var(--transition-fast),
     background-color var(--transition-fast);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
 }
 
 .collection-list-table th.sortable-header:hover {
@@ -2862,8 +2915,8 @@ button.list-item-menu-checkbox {
 
 .list-item-dialog {
   max-width: 440px;
-  margin-top: 60px;
-  max-height: calc(100vh - 120px);
+  margin-top: 40px;
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
 }
 
@@ -3401,6 +3454,10 @@ button.tag-chip-remove {
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 
+  .lists-fab-add {
+    position: fixed;
+  }
+
   .panel-frame.is-active {
     outline: none;
     box-shadow: none;
@@ -3434,17 +3491,20 @@ button.tag-chip-remove {
 
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */
   .confirm-dialog-overlay.list-item-dialog-overlay,
-  .confirm-dialog-overlay.note-editor-dialog-overlay {
+  .confirm-dialog-overlay.note-editor-dialog-overlay,
+  .confirm-dialog-overlay.list-metadata-dialog-overlay {
     align-items: flex-start;
     padding: var(--spacing-lg) var(--spacing-sm);
     /* Use a modest dynamic top inset so the modal isn't top-anchored. */
-    padding-top: clamp(24px, 8vh, 64px);
-    padding-top: clamp(24px, 8dvh, 64px);
+    padding-top: clamp(32px, 6vh, 60px);
+    padding-top: clamp(32px, 6dvh, 60px);
   }
 
   .list-item-dialog,
-  .note-editor-dialog {
-    max-height: 50dvh;
+  .note-editor-dialog,
+  .list-metadata-dialog {
+    margin-top: 0;
+    max-height: 70dvh;
     overflow-y: auto;
   }
 

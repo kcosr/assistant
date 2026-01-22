@@ -23,7 +23,11 @@ import type { ListCustomFieldDefinition } from '../../../../web-client/src/contr
 import type { ListMetadataDialogPayload } from '../../../../web-client/src/controllers/listMetadataDialog';
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
 import { DialogManager } from '../../../../web-client/src/controllers/dialogManager';
-import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
+import {
+  ListColumnPreferencesClient,
+  type ListColumnPreferences,
+} from '../../../../web-client/src/utils/listColumnPreferences';
+import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
 import {
@@ -234,6 +238,13 @@ const LISTS_PANEL_TEMPLATE = `
     <div class="panel-body collection-panel-body" data-role="lists-panel-body">
       <div class="collection-panel-content" data-role="lists-panel-content"></div>
     </div>
+    <button
+      type="button"
+      class="lists-fab-add"
+      data-role="lists-fab-add"
+      aria-label="Add item"
+      title="Add item"
+    ></button>
   </aside>
 `;
 
@@ -591,14 +602,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const dropdownList = root.querySelector<HTMLElement>('[data-role="lists-dropdown-list"]');
       const sharedSearchEl = root.querySelector<HTMLElement>('[data-role="lists-shared-search"]');
       const panelContent = root.querySelector<HTMLElement>('[data-role="lists-panel-content"]');
+      const fabAddButton = root.querySelector<HTMLButtonElement>('[data-role="lists-fab-add"]');
 
       const services = resolveServices(host);
       const preferencesLoaded = services.listColumnPreferencesClient.load();
+      const isCapacitor = isCapacitorAndroid();
 
       const sharedSearchController = new CollectionPanelSearchController({
         containerEl: sharedSearchEl,
         icons: { x: ICONS.x },
       });
+
+      if (fabAddButton) {
+        fabAddButton.innerHTML = ICONS.plus;
+      }
 
       const bodyManager = new CollectionPanelBodyManager(panelContent);
       let highlightTimeout: number | null = null;
@@ -639,6 +656,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
       let activeListData: ListPanelData | null = null;
+      let panelColumnWidths: Record<string, Record<string, number>> = {};
       let mode: ViewMode = 'browser';
       let isVisible = false;
       let panelKeydownAttached = false;
@@ -650,6 +668,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let dropdownController: CollectionDropdownController | null = null;
       let chromeController: PanelChromeController | null = null;
       let unsubscribePanelActive: (() => void) | null = null;
+      let unsubscribeViewportResize: (() => void) | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
@@ -671,8 +690,101 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           selectedListInstanceId: activeListInstanceId,
           mode,
           instanceIds: selectedInstanceIds,
+          columnWidths: panelColumnWidths,
         });
       };
+
+      const normalizeColumnWidths = (
+        value: unknown,
+      ): Record<string, Record<string, number>> => {
+        if (!value || typeof value !== 'object') {
+          return {};
+        }
+        const result: Record<string, Record<string, number>> = {};
+        for (const [listId, rawWidths] of Object.entries(value as Record<string, unknown>)) {
+          if (!rawWidths || typeof rawWidths !== 'object' || Array.isArray(rawWidths)) {
+            continue;
+          }
+          const widths: Record<string, number> = {};
+          for (const [columnKey, rawWidth] of Object.entries(
+            rawWidths as Record<string, unknown>,
+          )) {
+            if (typeof rawWidth !== 'number' || !Number.isFinite(rawWidth)) {
+              continue;
+            }
+            const rounded = Math.round(rawWidth);
+            if (rounded <= 0) {
+              continue;
+            }
+            widths[columnKey] = rounded;
+          }
+          if (Object.keys(widths).length > 0) {
+            result[listId] = widths;
+          }
+        }
+        return result;
+      };
+
+      const getListColumnPreferences = (listId: string): ListColumnPreferences | null => {
+        const basePrefs = services.listColumnPreferencesClient.getListPreferences(listId);
+        const widths = panelColumnWidths[listId];
+        const merged: ListColumnPreferences = {};
+
+        for (const [columnKey, config] of Object.entries(basePrefs ?? {})) {
+          if (config?.visibility) {
+            merged[columnKey] = { visibility: config.visibility };
+          }
+        }
+
+        if (widths) {
+          for (const [columnKey, width] of Object.entries(widths)) {
+            merged[columnKey] = {
+              ...(merged[columnKey] ?? {}),
+              width,
+            };
+          }
+        }
+
+        return Object.keys(merged).length > 0 ? merged : null;
+      };
+
+      const updatePanelColumnWidth = (listId: string, columnKey: string, width: number): void => {
+        if (!listId || !columnKey || !Number.isFinite(width)) {
+          return;
+        }
+        const normalizedWidth = Math.round(width);
+        if (normalizedWidth <= 0) {
+          return;
+        }
+        const current = panelColumnWidths[listId] ?? {};
+        panelColumnWidths = {
+          ...panelColumnWidths,
+          [listId]: {
+            ...current,
+            [columnKey]: normalizedWidth,
+          },
+        };
+        persistState();
+      };
+
+      const updateFabVisibility = (): void => {
+        if (!fabAddButton) {
+          return;
+        }
+        const shouldShow =
+          mode === 'list' &&
+          !!activeListId &&
+          (isCapacitor || services.isMobileViewport());
+        fabAddButton.classList.toggle('is-visible', shouldShow);
+      };
+
+      if (typeof window !== 'undefined') {
+        const handleResize = () => updateFabVisibility();
+        window.addEventListener('resize', handleResize);
+        unsubscribeViewportResize = () => {
+          window.removeEventListener('resize', handleResize);
+        };
+      }
 
       const callInstanceOperation = async <T>(
         instanceId: string,
@@ -947,8 +1059,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const handlePanelKeydown = (event: KeyboardEvent): void => {
         const isSearchShortcut =
-          (event.metaKey || event.ctrlKey) &&
-          event.altKey &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
           !event.shiftKey &&
           event.key.toLowerCase() === 'f';
         if (isSearchShortcut) {
@@ -960,7 +1073,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sharedSearchController.focus(true);
           return;
         }
-        if (!canHandlePanelShortcuts(event, { requireListMode: true })) {
+        if (!canHandlePanelShortcuts(event, { requireListMode: mode === 'list' })) {
+          return;
+        }
+        if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
+          setMode('browser');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (mode === 'browser') {
+          const handled = browserController?.handleKeyboardEvent(event) ?? false;
+          if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
           return;
         }
         const handled = listPanelController.handleKeyboardEvent(event);
@@ -1027,10 +1154,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         openListMetadataDialog: (listId, data) => {
           browserController?.openListMetadataEditor(listId, data);
         },
-        getListColumnPreferences: (listId) =>
-          services.listColumnPreferencesClient.getListPreferences(listId),
+        getListColumnPreferences,
         updateListColumnPreferences: (listId, columnKey, patch) => {
-          void services.listColumnPreferencesClient.updateColumn(listId, columnKey, patch);
+          if (patch.width !== undefined) {
+            updatePanelColumnWidth(listId, columnKey, patch.width);
+          }
+          if (patch.visibility !== undefined) {
+            void services.listColumnPreferencesClient.updateColumn(listId, columnKey, {
+              visibility: patch.visibility,
+            });
+          }
         },
         getSortState: (listId) => services.listColumnPreferencesClient.getSortState(listId),
         updateSortState: (listId, sortState) => {
@@ -1061,6 +1194,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sharedSearchController.setRightControls(elements);
         },
       });
+
+      if (fabAddButton) {
+        fabAddButton.addEventListener('click', () => {
+          if (!activeListId) {
+            return;
+          }
+          listPanelController.openAddItemDialog(activeListId);
+        });
+      }
 
       const buildListArgs = (
         payload: ListMetadataDialogPayload,
@@ -1335,6 +1477,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         sharedSearchController.setVisible(true);
         applySearch(sharedSearchController.getQuery());
+        if (mode === 'browser') {
+          browserController?.focusActiveItem();
+        }
+        updateFabVisibility();
         persistState();
       }
 
@@ -1736,6 +1882,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (data['mode'] === 'browser' || data['mode'] === 'list') {
           initialMode = data['mode'] as ViewMode;
         }
+        if (data['columnWidths']) {
+          panelColumnWidths = normalizeColumnWidths(data['columnWidths']);
+        }
         if (Array.isArray(data['instanceIds'])) {
           selectedInstanceIds = data['instanceIds'].filter(
             (id): id is string => typeof id === 'string',
@@ -1830,6 +1979,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           detachPanelShortcuts();
           chromeController?.destroy();
           unsubscribePanelActive?.();
+          unsubscribeViewportResize?.();
           host.setContext(contextKey, null);
           if (highlightTimeout) {
             window.clearTimeout(highlightTimeout);
