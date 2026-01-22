@@ -1684,7 +1684,7 @@
 .collection-section-subtitle {
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
-  margin: 0;
+  margin: 0 0 var(--spacing-sm);
 }
 
 .collection-tags {
@@ -1732,6 +1732,7 @@ table.collection-list-table td {
   position: relative;
   user-select: none;
   border-bottom: 2px solid var(--color-border-subtle);
+  border-radius: 0;
 }
 
 .collection-list-table thead th {
@@ -1837,7 +1838,7 @@ table.collection-list-table td {
   transition:
     color var(--transition-fast),
     background-color var(--transition-fast);
-  border-radius: var(--radius-sm);
+  border-radius: 0;
 }
 
 .collection-list-table th.sortable-header:hover {

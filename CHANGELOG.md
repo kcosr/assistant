@@ -14,8 +14,11 @@
 
 ### Fixed
 - Fixed list column resize dragging and panel-scoped column width persistence. ([#000](<pr-url>))
+- Fixed initial column resize drag jump by locking current widths. ([#000](<pr-url>))
 - Fixed lists floating add button positioning on narrow screens. ([#000](<pr-url>))
 - Fixed sticky list headers to remove the gap under the search bar. ([#000](<pr-url>))
+- Fixed list header row styling to remove rounded edge gaps. ([#000](<pr-url>))
+- Fixed list header description spacing so it doesn't crowd the table. ([#000](<pr-url>))
 
 ### Removed
 
