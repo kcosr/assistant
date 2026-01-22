@@ -1,5 +1,11 @@
 import type { DialogManager } from './dialogManager';
 import type { ListCustomFieldDefinition, ListCustomFieldType } from './listCustomFields';
+import {
+  applyPinnedTag,
+  hasPinnedTag,
+  isPinnedTag,
+  withoutPinnedTag,
+} from '../utils/pinnedTag';
 
 export interface ListMetadataDialogPayload {
   name: string;
@@ -390,7 +396,7 @@ export class ListMetadataDialog {
     const canonicalTagByLower = new Map<string, string>();
     for (const t of this.options.getAllKnownTags()) {
       const trimmed = t.trim();
-      if (!trimmed) continue;
+      if (!trimmed || isPinnedTag(trimmed)) continue;
       const lower = trimmed.toLowerCase();
       if (!canonicalTagByLower.has(lower)) {
         canonicalTagByLower.set(lower, trimmed);
@@ -573,11 +579,32 @@ export class ListMetadataDialog {
       };
     };
 
-    const initialTags = Array.isArray(data?.tags) ? data.tags : [];
+    const initialTagsSource = Array.isArray(data?.tags) ? data.tags : [];
+    const initialPinned = hasPinnedTag(initialTagsSource);
+    const initialTags = withoutPinnedTag(initialTagsSource);
     const tagsInput = createTagChipsInput('Tags', 'list-tags', initialTags);
     form.appendChild(tagsInput.container);
 
-    const initialDefaultTags = Array.isArray(data?.defaultTags) ? data.defaultTags : [];
+    const pinnedRow = document.createElement('div');
+    pinnedRow.className = 'list-item-form-checkbox-row';
+
+    const pinnedCheckbox = document.createElement('input');
+    pinnedCheckbox.type = 'checkbox';
+    pinnedCheckbox.id = `list-pinned-${Math.random().toString(36).slice(2)}`;
+    pinnedCheckbox.className = 'list-item-form-checkbox';
+    pinnedCheckbox.checked = initialPinned;
+
+    const pinnedLabel = document.createElement('label');
+    pinnedLabel.htmlFor = pinnedCheckbox.id;
+    pinnedLabel.textContent = 'Pinned';
+
+    pinnedRow.appendChild(pinnedCheckbox);
+    pinnedRow.appendChild(pinnedLabel);
+    form.appendChild(pinnedRow);
+
+    const initialDefaultTags = Array.isArray(data?.defaultTags)
+      ? withoutPinnedTag(data.defaultTags)
+      : [];
     const defaultTagsInput = createTagChipsInput(
       'Default tags for new items',
       'list-default-tags',
@@ -721,7 +748,7 @@ export class ListMetadataDialog {
       }
 
       const description = descriptionInput.value.trim();
-      const tags = tagsInput.getTags();
+      const tags = applyPinnedTag(tagsInput.getTags(), pinnedCheckbox.checked);
       const defaultTags = defaultTagsInput.getTags();
 
       const customFields = customFieldsSection.getCustomFields();

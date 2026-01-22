@@ -97,6 +97,33 @@ function safeSlugify(raw: string): string | null {
   return slug;
 }
 
+const TAG_QUERY_PATTERN = /^(?:tag|tags):(.+)$/i;
+
+function parseTagQuery(query: string): string | null {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('#')) {
+    const normalized = normalizeTags([trimmed.slice(1)])[0];
+    return normalized ?? null;
+  }
+  const match = TAG_QUERY_PATTERN.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+  const normalized = normalizeTags([match[1] ?? ''])[0];
+  return normalized ?? null;
+}
+
+function toScore(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function requireSessionHub(ctx: ToolContext) {
   const sessionHub = ctx.sessionHub;
   if (!sessionHub) {
@@ -233,6 +260,74 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const { instanceId, limit = 10 } = options;
       const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
       const results: SearchResult[] = [];
+      const tagQuery = parseTagQuery(trimmed);
+
+      if (tagQuery) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const allLists = await store.listLists();
+          const listLookup = new Map(allLists.map((list) => [list.id, list.name]));
+          const listResults = allLists
+            .filter((list) => normalizeTags(list.tags).includes(tagQuery))
+            .map<SearchResult>((list) => ({
+              id: `list:${list.id}`,
+              title: list.name,
+              subtitle: list.id,
+              snippet: list.description ? truncateSnippet(list.description) : undefined,
+              score: toScore(list.updatedAt),
+              launch: {
+                panelType: 'lists',
+                payload: {
+                  type: 'lists_show',
+                  instance_id: instId,
+                  listId: list.id,
+                },
+              },
+            }));
+
+          const itemResults: SearchResult[] = [];
+          for (const list of allLists) {
+            const items = await store.listItems({
+              listId: list.id,
+              tags: [tagQuery],
+              tagMatch: 'all',
+              limit: 0,
+            });
+            for (const item of items) {
+              const subtitle = listLookup.get(item.listId) ?? item.listId;
+              const snippetSource = item.notes?.trim() || item.url?.trim() || '';
+              itemResults.push({
+                id: item.id,
+                title: item.title,
+                subtitle,
+                snippet: snippetSource ? truncateSnippet(snippetSource) : undefined,
+                score: toScore(item.updatedAt ?? item.addedAt),
+                launch: {
+                  panelType: 'lists',
+                  payload: {
+                    type: 'lists_show',
+                    instance_id: instId,
+                    listId: item.listId,
+                    itemId: item.id,
+                  },
+                },
+              });
+            }
+          }
+          results.push(...listResults, ...itemResults);
+        }
+
+        results.sort((a, b) => {
+          const scoreA = typeof a.score === 'number' ? a.score : 0;
+          const scoreB = typeof b.score === 'number' ? b.score : 0;
+          return scoreB - scoreA;
+        });
+
+        return results.slice(0, limit);
+      }
 
       if (!trimmed) {
         for (const instId of targetInstances) {

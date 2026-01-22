@@ -1,4 +1,5 @@
 import { applyMarkdownToElement } from '../utils/markdown';
+import { hasPinnedTag } from '../utils/pinnedTag';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import type { ColumnVisibility } from '../utils/listColumnPreferences';
@@ -14,6 +15,7 @@ const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelec
 export interface ListPanelTableControllerOptions {
   icons: {
     moreVertical: string;
+    pin: string;
   };
   renderTags: (tags: string[] | undefined) => HTMLElement | null;
   recentUserItemUpdates: Set<string>;
@@ -2075,6 +2077,14 @@ export class ListPanelTableController {
     const titleMain = document.createElement('div');
     titleMain.className = 'list-item-title-main';
 
+    if (hasPinnedTag(item.tags)) {
+      const pin = document.createElement('span');
+      pin.className = 'list-item-pin';
+      pin.innerHTML = this.options.icons.pin;
+      pin.setAttribute('aria-hidden', 'true');
+      titleMain.appendChild(pin);
+    }
+
     if (!showUrlColumn && item.url) {
       const link = document.createElement('a');
       link.href = item.url;
@@ -2314,6 +2324,32 @@ export class ListPanelTableController {
     this.lastSelectedRowIndex = null;
     this.keyboardSelectionAnchorIndex = null;
     this.updateSelectionButtons();
+  }
+
+  selectItemById(
+    bodyEl: HTMLElement,
+    itemId: string,
+    options?: { scroll?: boolean },
+  ): boolean {
+    if (!itemId) {
+      return false;
+    }
+    const rows = Array.from(bodyEl.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const target = rows.find((row) => row.dataset['itemId'] === itemId);
+    if (!target) {
+      return false;
+    }
+    for (const row of rows) {
+      row.classList.remove('list-item-selected');
+    }
+    target.classList.add('list-item-selected');
+    this.lastSelectedRowIndex = rows.indexOf(target);
+    this.keyboardSelectionAnchorIndex = null;
+    this.updateSelectionButtons();
+    if (options?.scroll !== false) {
+      target.scrollIntoView({ block: 'center' });
+    }
+    return true;
   }
 
   selectVisible(bodyEl: HTMLElement): void {

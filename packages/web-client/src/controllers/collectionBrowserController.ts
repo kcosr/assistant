@@ -9,6 +9,7 @@ import { CollectionDropdownFilterController } from './collectionDropdownFilterCo
 import { handleCollectionSearchKeyDown } from '../utils/collectionSearchKeyboard';
 import { applyMarkdownToElement } from '../utils/markdown';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
+import { hasPinnedTag, isPinnedTag } from '../utils/pinnedTag';
 import type { DialogManager } from './dialogManager';
 import {
   ListMetadataDialog,
@@ -39,7 +40,9 @@ export interface CollectionBrowserControllerOptions {
     sortAlpha: string;
     fileText: string;
     list: string;
+    pin: string;
   };
+  onTogglePinned?: (item: CollectionReference, isPinned: boolean) => void;
   fetchPreview?: (
     itemType: 'note' | 'list',
     itemId: string,
@@ -239,7 +242,7 @@ export class CollectionBrowserController {
     for (const raw of this.options.getAllTags()) {
       if (typeof raw !== 'string') continue;
       const t = raw.trim().toLowerCase();
-      if (!t) continue;
+      if (!t || isPinnedTag(t)) continue;
       tags.add(t);
     }
 
@@ -252,7 +255,7 @@ export class CollectionBrowserController {
         const datasetTags = (itemEl.dataset['tags'] ?? '').split(',');
         for (const rawTag of datasetTags) {
           const t = rawTag.trim().toLowerCase();
-          if (!t) continue;
+          if (!t || isPinnedTag(t)) continue;
           tags.add(t);
         }
       }
@@ -526,6 +529,33 @@ export class CollectionBrowserController {
       this.newNoteBtn.style.display = notesSupported ? '' : 'none';
       this.newNoteBtn.disabled = false;
     }
+  }
+
+  private decorateItemPinned(itemEl: HTMLElement, item: CollectionItemSummary): void {
+    if (!hasPinnedTag(item.tags)) {
+      return;
+    }
+    const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
+    if (!labelEl) {
+      return;
+    }
+    let titleRow: HTMLElement | null = null;
+    if (
+      labelEl.parentElement &&
+      labelEl.parentElement.classList.contains('collection-browser-item-title')
+    ) {
+      titleRow = labelEl.parentElement as HTMLElement;
+    } else {
+      titleRow = document.createElement('div');
+      titleRow.className = 'collection-browser-item-title';
+      labelEl.insertAdjacentElement('beforebegin', titleRow);
+      titleRow.appendChild(labelEl);
+    }
+    const pin = document.createElement('span');
+    pin.className = 'collection-browser-item-pin';
+    pin.innerHTML = this.options.icons.pin;
+    pin.setAttribute('aria-hidden', 'true');
+    titleRow.insertBefore(pin, labelEl);
   }
 
   private decorateItemInstanceBadge(itemEl: HTMLElement, item: CollectionItemSummary): void {
@@ -838,6 +868,7 @@ export class CollectionBrowserController {
       getGroupLabel: this.options.getGroupLabel,
       onSelectItem: (itemEl) => this.selectItem(itemEl),
       renderItemContent: (itemEl, item) => {
+        this.decorateItemPinned(itemEl, item);
         this.decorateItemInstanceBadge(itemEl, item);
         this.decorateListItem(itemEl, item);
         this.decorateItemPreview(itemEl, item);
@@ -880,6 +911,7 @@ export class CollectionBrowserController {
       ? item.tags
           .filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
           .map((tag) => tag.trim())
+          .filter((tag) => !isPinnedTag(tag))
       : [];
 
     if (tags.length === 0) {
@@ -1338,18 +1370,26 @@ export class CollectionBrowserController {
     }
   }
 
-  private selectItem(item: HTMLElement): void {
+  private getReferenceFromElement(item: HTMLElement): CollectionReference | null {
     const itemType = item.dataset['collectionType'];
     const itemId = item.dataset['collectionId'];
-    const instanceId = item.dataset['collectionInstanceId'];
     if (!itemType || !itemId) {
-      return;
+      return null;
     }
-    void this.options.selectItem({
+    const instanceId = item.dataset['collectionInstanceId'];
+    return {
       type: itemType,
       id: itemId,
       ...(instanceId ? { instanceId } : {}),
-    });
+    };
+  }
+
+  private selectItem(item: HTMLElement): void {
+    const reference = this.getReferenceFromElement(item);
+    if (!reference) {
+      return;
+    }
+    void this.options.selectItem(reference);
   }
 
   handleSharedSearchKeyDown(e: KeyboardEvent): boolean {
@@ -1376,6 +1416,34 @@ export class CollectionBrowserController {
     return true;
   }
 
+  private togglePinnedForFocusedItem(): boolean {
+    const handler = this.options.onTogglePinned;
+    if (!handler) {
+      return false;
+    }
+    const itemFocusController = this.itemFocusController;
+    if (!itemFocusController) {
+      return false;
+    }
+    const focused = itemFocusController.getFocusedItem();
+    if (!focused) {
+      return false;
+    }
+    const reference = this.getReferenceFromElement(focused);
+    if (!reference) {
+      return false;
+    }
+    const tagSource =
+      focused.dataset['collectionTags'] ?? focused.dataset['tags'] ?? '';
+    const tags = tagSource
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const isPinned = tags.some((tag) => isPinnedTag(tag));
+    handler(reference, isPinned);
+    return true;
+  }
+
   handleKeyboardEvent(event: KeyboardEvent): boolean {
     if (event.metaKey || event.ctrlKey || event.altKey) {
       return false;
@@ -1397,8 +1465,14 @@ export class CollectionBrowserController {
       case 'Enter':
         return this.selectFocusedItem();
       default:
-        return false;
+        break;
     }
+
+    if (event.key.toLowerCase() === 'p') {
+      return this.togglePinnedForFocusedItem();
+    }
+
+    return false;
   }
 
   private selectFocusedItem(): boolean {

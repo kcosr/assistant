@@ -19,6 +19,13 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import { MarkdownViewerController } from '../../../../web-client/src/controllers/markdownViewerController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
+import {
+  applyPinnedTag,
+  hasPinnedTag,
+  isPinnedTag,
+  withoutPinnedTag,
+  PINNED_TAG,
+} from '../../../../web-client/src/utils/pinnedTag';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
@@ -360,7 +367,7 @@ function renderNoteTags(tags: string[] | undefined): HTMLElement | null {
   wrapper.className = 'collection-tags';
   for (const rawTag of tags) {
     const tag = rawTag.trim();
-    if (!tag) {
+    if (!tag || isPinnedTag(tag)) {
       continue;
     }
     const pill = document.createElement('span');
@@ -729,6 +736,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let panelKeydownAttached = false;
       let isPanelSelected = false;
       let unsubscribePanelActive: (() => void) | null = null;
+      let pendingShowEvent: { title: string; instanceId: string } | null = null;
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -783,6 +791,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
       updatePanelSelection(host.getContext('panel.active'));
       unsubscribePanelActive = host.subscribeContext('panel.active', updatePanelSelection);
+
+      const isKnownInstance = (instanceId: string): boolean =>
+        instances.some((instance) => instance.id === instanceId);
+
+      const applyPendingShowEvent = (): void => {
+        if (!pendingShowEvent) {
+          return;
+        }
+        const { title, instanceId } = pendingShowEvent;
+        if (!isKnownInstance(instanceId)) {
+          return;
+        }
+        pendingShowEvent = null;
+        if (!selectedInstanceIds.includes(instanceId)) {
+          setActiveInstances([instanceId, ...selectedInstanceIds]);
+        }
+        void selectNote(title, instanceId, { focus: true });
+      };
 
       const getAvailableItems = (): CollectionItemSummary[] =>
         availableNotes.map((note) => ({
@@ -1097,6 +1123,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           updatePanelContext();
           renderInstanceSelect();
           updatePanelMetadata();
+          applyPendingShowEvent();
         } catch (error) {
           if (!options?.silent) {
             services.setStatus('Failed to load instances');
@@ -1619,15 +1646,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const tagsLabel = document.createElement('label');
         tagsLabel.textContent = 'Tags';
 
+        const initialTags = withoutPinnedTag(note.tags);
+        const initialPinned = hasPinnedTag(note.tags);
         const tagInput = createTagChipsInput({
-          availableTags: getAllNoteTags(),
-          initialTags: note.tags,
+          availableTags: withoutPinnedTag(getAllNoteTags()),
+          initialTags,
         });
         tagsLabel.htmlFor = tagInput.inputId;
 
         tagsRow.appendChild(tagsLabel);
         tagsRow.appendChild(tagInput.wrapper);
         form.appendChild(tagsRow);
+
+        const pinnedRow = document.createElement('div');
+        pinnedRow.className = 'list-item-form-checkbox-row';
+
+        const pinnedCheckbox = document.createElement('input');
+        pinnedCheckbox.type = 'checkbox';
+        pinnedCheckbox.id = `note-pinned-${Math.random().toString(36).slice(2)}`;
+        pinnedCheckbox.className = 'list-item-form-checkbox';
+        pinnedCheckbox.checked = initialPinned;
+
+        const pinnedLabel = document.createElement('label');
+        pinnedLabel.htmlFor = pinnedCheckbox.id;
+        pinnedLabel.textContent = 'Pinned';
+
+        pinnedRow.appendChild(pinnedCheckbox);
+        pinnedRow.appendChild(pinnedLabel);
+        form.appendChild(pinnedRow);
 
         const contentLabel = document.createElement('label');
         contentLabel.className = 'list-item-form-label';
@@ -1674,13 +1720,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                 target_instance_id: targetInstanceId,
               });
             }
+            const nextTags = applyPinnedTag(tagInput.getTags(), pinnedCheckbox.checked);
             const result = await callInstanceOperation<unknown>(targetInstanceId, 'write', {
               title,
               content: contentInput.value,
-              tags: tagInput.getTags(),
+              tags: nextTags,
             });
             const metadata = parseNoteMetadata(result);
-            const savedTags = metadata?.tags ?? tagInput.getTags();
+            const savedTags = metadata?.tags ?? nextTags;
             const updatedNote: Note = {
               title,
               content: contentInput.value,
@@ -1832,6 +1879,25 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sortAlpha: ICONS.sortAlpha,
           fileText: ICONS.fileText,
           list: ICONS.list,
+          pin: ICONS.pin,
+        },
+        onTogglePinned: (item, isPinned) => {
+          if (item.type !== 'note') {
+            return;
+          }
+          const targetInstanceId = item.instanceId ?? activeInstanceId;
+          const operation = isPinned ? 'tags-remove' : 'tags-add';
+          void (async () => {
+            try {
+              await callInstanceOperation(targetInstanceId, operation, {
+                title: item.id,
+                tags: [PINNED_TAG],
+              });
+            } catch (err) {
+              console.error('Failed to toggle pinned note', err);
+              services.setStatus('Failed to update pinned note');
+            }
+          })();
         },
         fetchPreview: async (itemType, itemId, instanceId) => {
           if (itemType !== 'note') {
@@ -2163,6 +2229,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           : DEFAULT_INSTANCE_ID;
       };
 
+      const handleShowEvent = (title: string, instanceId: string): void => {
+        if (!isKnownInstance(instanceId)) {
+          pendingShowEvent = { title, instanceId };
+          void refreshInstances({ silent: true });
+          return;
+        }
+        if (!selectedInstanceIds.includes(instanceId)) {
+          setActiveInstances([instanceId, ...selectedInstanceIds]);
+        }
+        void selectNote(title, instanceId, { focus: true });
+      };
+
       if (browserButton) {
         browserButton.addEventListener('click', () => {
           setMode('browser');
@@ -2276,14 +2354,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const type = payload['type'];
           if (type === 'notes_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
-            if (!selectedInstanceIds.includes(eventInstanceId)) {
-              setActiveInstances([eventInstanceId, ...selectedInstanceIds]);
-            }
             const title = typeof payload['title'] === 'string' ? payload['title'].trim() : '';
             if (!title) {
               return;
             }
-            void selectNote(title, eventInstanceId, { focus: true });
+            handleShowEvent(title, eventInstanceId);
             return;
           }
           if (type === 'panel_update') {

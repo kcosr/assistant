@@ -17,6 +17,7 @@ import type {
 import { arraysEqualBy, syncArrayContents } from '../utils/arrayUtils';
 import { getListColumnPresence, getVisibleCustomFields } from '../utils/listColumnVisibility';
 import { sortItems, type SortState } from '../utils/listSorting';
+import { PINNED_TAG, hasPinnedTag, withoutPinnedTag } from '../utils/pinnedTag';
 
 export interface ListMoveTarget {
   id: string;
@@ -66,6 +67,7 @@ export interface ListPanelControllerOptions {
     clockOff: string;
     moveTop: string;
     moveBottom: string;
+    pin: string;
   };
   renderTags: (tags: string[] | undefined) => HTMLElement | null;
   setStatus: (text: string) => void;
@@ -190,7 +192,7 @@ export class ListPanelController {
     });
 
     const tableOptions: ListPanelTableControllerOptions = {
-      icons: { moreVertical: options.icons.moreVertical },
+      icons: { moreVertical: options.icons.moreVertical, pin: options.icons.pin },
       renderTags: options.renderTags,
       recentUserItemUpdates: options.recentUserItemUpdates,
       userUpdateTimeoutMs: options.userUpdateTimeoutMs,
@@ -296,7 +298,7 @@ export class ListPanelController {
   }
 
   getAvailableTags(): string[] {
-    return [...this.currentAvailableTags];
+    return withoutPinnedTag(this.currentAvailableTags);
   }
 
   openAddItemDialog(listId: string): void {
@@ -366,6 +368,11 @@ export class ListPanelController {
     }
     if (lowerKey === 'n') {
       this.openAddItemDialog(this.currentListId);
+      return true;
+    }
+
+    if (lowerKey === 'p') {
+      void this.togglePinnedForSelection();
       return true;
     }
 
@@ -918,7 +925,7 @@ export class ListPanelController {
     item?: ListPanelItem,
   ): void {
     const openOptions: ListItemEditorDialogOpenOptions = {
-      availableTags: this.currentAvailableTags,
+      availableTags: withoutPinnedTag(this.currentAvailableTags),
       customFields: this.currentCustomFields,
     };
 
@@ -938,13 +945,15 @@ export class ListPanelController {
       };
 
       for (const tag of this.currentDefaultTags) {
-        if (typeof tag === 'string') {
+        if (typeof tag === 'string' && !hasPinnedTag([tag])) {
           addTag(tag);
         }
       }
 
       for (const tag of this.getAppliedTagFilters()) {
-        addTag(tag);
+        if (!hasPinnedTag([tag])) {
+          addTag(tag);
+        }
       }
 
       openOptions.defaultTags = collected;
@@ -1021,6 +1030,14 @@ export class ListPanelController {
     if (bodyEl) {
       this.tableController.clearSelection(bodyEl);
     }
+  }
+
+  selectItemById(itemId: string, options?: { scroll?: boolean }): boolean {
+    const bodyEl = this.options.bodyEl;
+    if (!bodyEl) {
+      return false;
+    }
+    return this.tableController.selectItemById(bodyEl, itemId, options);
   }
 
   private selectVisibleItems(): void {
@@ -1475,6 +1492,58 @@ export class ListPanelController {
     } catch (err) {
       console.error('Error updating completed items:', err);
       this.options.setStatus('Failed to update selected items');
+      return false;
+    }
+  }
+
+  private async togglePinnedForSelection(): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId || !this.currentData) {
+      return false;
+    }
+
+    let selectedItems = this.getSelectedItems();
+    if (selectedItems.length === 0) {
+      const focusedId = this.tableController.getFocusedItemId();
+      if (!focusedId) {
+        return false;
+      }
+      const focused = this.currentData.items?.find((item) => item.id === focusedId);
+      if (focused) {
+        selectedItems = [focused];
+      }
+    }
+
+    if (selectedItems.length === 0) {
+      return false;
+    }
+
+    const shouldPin = !selectedItems.every((item) => hasPinnedTag(item.tags));
+    const itemIds = selectedItems
+      .map((item) => item.id)
+      .filter((id): id is string => typeof id === 'string');
+
+    if (itemIds.length === 0) {
+      return false;
+    }
+
+    if (!this.options.callOperation) {
+      this.options.setStatus('Lists tool is unavailable');
+      return false;
+    }
+
+    try {
+      await this.runOperation('items-bulk-update-tags', {
+        listId,
+        items: itemIds.map((id) => ({
+          id,
+          ...(shouldPin ? { addTags: [PINNED_TAG] } : { removeTags: [PINNED_TAG] }),
+        })),
+      });
+      return true;
+    } catch (err) {
+      console.error('Error updating pinned items:', err);
+      this.options.setStatus('Failed to update pinned items');
       return false;
     }
   }

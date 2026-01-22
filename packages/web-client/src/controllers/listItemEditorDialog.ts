@@ -2,6 +2,12 @@ import type { DialogManager } from './dialogManager';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
+import {
+  applyPinnedTag,
+  hasPinnedTag,
+  isPinnedTag,
+  withoutPinnedTag,
+} from '../utils/pinnedTag';
 
 export interface ListItemEditorDialogOptions {
   dialogManager: DialogManager;
@@ -303,6 +309,34 @@ export class ListItemEditorDialog {
     tagsRow.appendChild(tagInputWrap);
     form.appendChild(tagsRow);
 
+    const initialTagsSource =
+      mode === 'edit'
+        ? Array.isArray(item?.tags)
+          ? item.tags
+          : []
+        : Array.isArray(openOptions?.defaultTags)
+          ? openOptions.defaultTags
+          : [];
+    const initialPinned = hasPinnedTag(initialTagsSource);
+    const initialTags = withoutPinnedTag(initialTagsSource);
+
+    const pinnedRow = document.createElement('div');
+    pinnedRow.className = 'list-item-form-checkbox-row';
+
+    const pinnedCheckbox = document.createElement('input');
+    pinnedCheckbox.type = 'checkbox';
+    pinnedCheckbox.id = `list-item-pinned-${Math.random().toString(36).slice(2)}`;
+    pinnedCheckbox.className = 'list-item-form-checkbox';
+    pinnedCheckbox.checked = initialPinned;
+
+    const pinnedLabel = document.createElement('label');
+    pinnedLabel.htmlFor = pinnedCheckbox.id;
+    pinnedLabel.textContent = 'Pinned';
+
+    pinnedRow.appendChild(pinnedCheckbox);
+    pinnedRow.appendChild(pinnedLabel);
+    form.appendChild(pinnedRow);
+
     // Insert at top checkbox (only shown in add mode)
     let insertAtTopCheckbox: HTMLInputElement | null = null;
     if (mode === 'add') {
@@ -336,7 +370,7 @@ export class ListItemEditorDialog {
     for (const t of openOptions?.availableTags ?? []) {
       if (typeof t !== 'string') continue;
       const trimmed = t.trim();
-      if (!trimmed) continue;
+      if (!trimmed || isPinnedTag(trimmed)) continue;
       const lower = trimmed.toLowerCase();
       if (!canonicalTagByLower.has(lower)) {
         canonicalTagByLower.set(lower, trimmed);
@@ -502,14 +536,6 @@ export class ListItemEditorDialog {
       }
     });
 
-    const initialTags =
-      mode === 'edit'
-        ? Array.isArray(item?.tags)
-          ? item.tags
-          : []
-        : Array.isArray(openOptions?.defaultTags)
-          ? openOptions.defaultTags
-          : [];
     for (const tag of initialTags) {
       if (typeof tag === 'string') {
         addTag(tag);
@@ -614,7 +640,7 @@ export class ListItemEditorDialog {
 
       const url = urlInput.value.trim();
       const notes = notesInput.value.trim();
-      const tags = selectedTags.length > 0 ? [...selectedTags] : [];
+      const tags = applyPinnedTag(selectedTags, pinnedCheckbox.checked);
 
       const customFieldValues = customFieldsSection.getValues();
 

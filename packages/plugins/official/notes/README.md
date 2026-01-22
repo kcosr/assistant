@@ -20,6 +20,8 @@ Markdown notes with tags, search, and a dedicated notes panel.
 - Default view renders markdown; use **Edit** to modify a note.
 - Browser mode supports arrow-key grid navigation with Enter to open a note; Escape returns to the
   browser view from note mode.
+- Press **p** in browser mode to toggle pinned notes. Pinned notes show a pin icon and appear in the
+  command palette via `/pinned`.
 - Default instance data lives under `data/plugins/notes/default/`; additional instances use
   `data/plugins/notes/<instanceId>/`.
 
