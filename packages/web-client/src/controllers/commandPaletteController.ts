@@ -218,7 +218,7 @@ export class CommandPaletteController {
     this.isOpen = true;
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
-    input.value = '/';
+    input.value = '';
     this.profileSkipped = false;
     this.pluginSkipped = false;
     this.activeMode = 'idle';
@@ -372,7 +372,7 @@ export class CommandPaletteController {
 
   private parseInput(value: string): ParsedState {
     if (!value) {
-      return { mode: 'idle' };
+      return { mode: 'command', commandQuery: '' };
     }
     if (!value.startsWith('/')) {
       return { mode: 'global', query: value };

@@ -807,7 +807,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!selectedInstanceIds.includes(instanceId)) {
           setActiveInstances([instanceId, ...selectedInstanceIds]);
         }
-        void selectNote(title, instanceId, { focus: true });
+        void selectNote(title, instanceId, { focus: false });
       };
 
       const getAvailableItems = (): CollectionItemSummary[] =>
@@ -2238,7 +2238,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!selectedInstanceIds.includes(instanceId)) {
           setActiveInstances([instanceId, ...selectedInstanceIds]);
         }
-        void selectNote(title, instanceId, { focus: true });
+        void selectNote(title, instanceId, { focus: false });
       };
 
       if (browserButton) {

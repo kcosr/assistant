@@ -702,7 +702,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!selectedInstanceIds.includes(instanceId)) {
           setActiveInstances([instanceId, ...selectedInstanceIds]);
         }
-        void selectList(listId, instanceId, { focus: true }).then(() => {
+        void selectList(listId, instanceId, { focus: false }).then(() => {
           if (itemId) {
             highlightListItem(itemId);
           }
@@ -1887,7 +1887,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!selectedInstanceIds.includes(instanceId)) {
           setActiveInstances([instanceId, ...selectedInstanceIds]);
         }
-        void selectList(listId, instanceId, { focus: true }).then(() => {
+        void selectList(listId, instanceId, { focus: false }).then(() => {
           if (itemId) {
             highlightListItem(itemId);
           }
