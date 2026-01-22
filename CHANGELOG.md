@@ -5,10 +5,13 @@
 ### Breaking Changes
 
 ### Added
+- Added Capacitor-only floating add-item button in lists view. ([#000](<pr-url>))
+- Added browser-mode keyboard navigation for list/note collections (arrow keys/Enter, Escape to return). ([#000](<pr-url>))
 
 ### Changed
 
 ### Fixed
+- Fixed list column resize dragging and panel-scoped column width persistence. ([#000](<pr-url>))
 
 ### Removed
 
