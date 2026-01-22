@@ -15,7 +15,7 @@
 - Changed list and note dialog sizing to sit higher and allow taller content before scrolling. ([#000](<pr-url>))
 
 ### Fixed
-- Fixed list browser focus to stay on the active list when returning from list view. ([#000](<pr-url>))
+- Fixed list/note browser focus to stay on the active item when returning from detail view. ([#000](<pr-url>))
 
 ### Removed
 

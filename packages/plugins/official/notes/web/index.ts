@@ -1985,6 +1985,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         sharedSearchController.setVisible(true);
         applySearch(sharedSearchController.getQuery());
+        if (mode === 'browser') {
+          browserController?.focusActiveItem();
+        }
         if (modeChanged) {
           persistState();
         }
