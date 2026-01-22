@@ -1061,7 +1061,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sharedSearchController.focus(true);
           return;
         }
-        if (!canHandlePanelShortcuts(event, { requireListMode: true })) {
+        if (!canHandlePanelShortcuts(event, { requireListMode: mode === 'list' })) {
+          return;
+        }
+        if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
+          setMode('browser');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (mode === 'browser') {
+          const handled = browserController?.handleKeyboardEvent(event) ?? false;
+          if (handled) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
           return;
         }
         const handled = listPanelController.handleKeyboardEvent(event);
