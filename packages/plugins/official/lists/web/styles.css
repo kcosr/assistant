@@ -3441,6 +3441,10 @@ button.tag-chip-remove {
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 
+  .lists-fab-add {
+    position: fixed;
+  }
+
   .panel-frame.is-active {
     outline: none;
     box-shadow: none;

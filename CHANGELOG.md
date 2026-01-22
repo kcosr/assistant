@@ -12,6 +12,7 @@
 
 ### Fixed
 - Fixed list column resize dragging and panel-scoped column width persistence. ([#000](<pr-url>))
+- Fixed lists floating add button positioning on narrow screens. ([#000](<pr-url>))
 
 ### Removed
 
