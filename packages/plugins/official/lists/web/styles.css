@@ -1154,6 +1154,10 @@
   box-shadow: 0 0 0 1px var(--color-accent-primary);
 }
 
+.collection-browser.view-list .collection-search-dropdown-item.selected {
+  box-shadow: inset 0 0 0 1px var(--color-accent-primary);
+}
+
 .collection-browser .collection-search-dropdown-item {
   position: relative;
   padding-right: 34px;

@@ -13,6 +13,7 @@
 ### Changed
 - Changed list arrow-key navigation to stop at the first/last item. ([#000](<pr-url>))
 - Changed list and note dialog sizing to sit higher and allow taller content before scrolling. ([#000](<pr-url>))
+- Changed list/note browser list view selection to show an outline on the active item. ([#000](<pr-url>))
 
 ### Fixed
 - Fixed list/note browser focus to stay on the active item when returning from detail view. ([#000](<pr-url>))
