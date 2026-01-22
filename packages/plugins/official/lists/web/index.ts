@@ -1467,6 +1467,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             : [];
           sharedSearchController.setRightControls(controls.length > 0 ? controls : null);
           browserController?.show(false);
+          browserController?.focusActiveItem();
         } else {
           if (!activeListData) {
             sharedSearchController.setRightControls(null);

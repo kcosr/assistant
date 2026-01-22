@@ -1257,9 +1257,31 @@ export class CollectionBrowserController {
       .querySelectorAll('.collection-search-dropdown-item.selected')
       .forEach((el) => el.classList.remove('selected'));
 
+    const item = this.getActiveItemElement();
+    if (item) {
+      item.classList.add('selected');
+    }
+  }
+
+  focusActiveItem(): void {
+    if (!this.itemFocusController) {
+      return;
+    }
+    const item = this.getActiveItemElement();
+    if (!item) {
+      return;
+    }
+    this.itemFocusController.setFocusedItem(item);
+  }
+
+  private getActiveItemElement(): HTMLElement | null {
+    const listEl = this.listEl;
+    if (!listEl) {
+      return null;
+    }
     const active = this.options.getActiveItemReference();
     if (!active) {
-      return;
+      return null;
     }
     const selectorParts = [
       `.collection-search-dropdown-item[data-collection-type="${active.type}"]` +
@@ -1269,9 +1291,7 @@ export class CollectionBrowserController {
       selectorParts.push(`[data-collection-instance-id="${active.instanceId}"]`);
     }
     const item = listEl.querySelector(selectorParts.join(''));
-    if (item) {
-      item.classList.add('selected');
-    }
+    return item instanceof HTMLElement ? item : null;
   }
 
   private moveFocus(delta: number): void {
