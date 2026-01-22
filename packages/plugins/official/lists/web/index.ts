@@ -947,8 +947,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const handlePanelKeydown = (event: KeyboardEvent): void => {
         const isSearchShortcut =
-          (event.metaKey || event.ctrlKey) &&
-          event.altKey &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
           !event.shiftKey &&
           event.key.toLowerCase() === 'f';
         if (isSearchShortcut) {
