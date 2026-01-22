@@ -30,6 +30,11 @@ operations.
 - Web UI: implemented in `web/index.ts` using shared controllers from `packages/web-client/src`.
 - Drag within a list to reorder, or drag selected items across list panels to move them to the
   drop position.
+- Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
+  browser view from list mode.
+- Column widths can be resized per panel and persist for the panel session.
+- Capacitor Android builds show a floating add-item button in list view.
+
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.
 
