@@ -3399,17 +3399,20 @@ button.tag-chip-remove {
 
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */
   .confirm-dialog-overlay.list-item-dialog-overlay,
-  .confirm-dialog-overlay.note-editor-dialog-overlay {
+  .confirm-dialog-overlay.note-editor-dialog-overlay,
+  .confirm-dialog-overlay.list-metadata-dialog-overlay {
     align-items: flex-start;
     padding: var(--spacing-lg) var(--spacing-sm);
     /* Use a modest dynamic top inset so the modal isn't top-anchored. */
-    padding-top: clamp(16px, 6vh, 48px);
-    padding-top: clamp(16px, 6dvh, 48px);
+    padding-top: clamp(12px, 4vh, 40px);
+    padding-top: clamp(12px, 4dvh, 40px);
   }
 
   .list-item-dialog,
-  .note-editor-dialog {
-    max-height: 60dvh;
+  .note-editor-dialog,
+  .list-metadata-dialog {
+    margin-top: 0;
+    max-height: 70dvh;
     overflow-y: auto;
   }
 

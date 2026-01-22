@@ -12,7 +12,7 @@
 
 ### Changed
 - Changed list arrow-key navigation to stop at the first/last item. ([#000](<pr-url>))
-- Changed list and note editor dialog sizing to sit higher and allow taller content before scrolling. ([#000](<pr-url>))
+- Changed list and note dialog sizing to sit higher and allow taller content before scrolling. ([#000](<pr-url>))
 
 ### Fixed
 
