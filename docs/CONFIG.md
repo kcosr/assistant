@@ -164,6 +164,7 @@ Examples:
 | --- | ---- | ----------- |
 | `sessions` | object | Session cache settings. |
 | `agents` | array | Agent persona definitions and chat provider config. |
+| `profiles` | array | Shared profile (instance) definitions for cross-plugin scoping. |
 | `plugins` | object | Plugin enablement and per-plugin config. |
 | `mcpServers` | array | External MCP servers launched over stdio. |
 
@@ -199,6 +200,32 @@ Defines agent personas and chat providers.
 ```
 
 See the **Agents** section below for the full schema and provider-specific config.
+
+#### `profiles`
+
+Defines shared profile identifiers that can be reused across plugin instances. Instance ids must
+match an entry in this list (the built-in `default` profile is always available).
+
+```json
+{
+  "profiles": [
+    { "id": "default", "label": "Global" },
+    { "id": "work", "label": "Work" },
+    { "id": "personal", "label": "Personal" }
+  ]
+}
+```
+
+Use these ids in plugin instance configuration:
+
+```json
+{
+  "profiles": [{ "id": "default" }, { "id": "work" }],
+  "plugins": {
+    "notes": { "enabled": true, "instances": ["default", "work"] }
+  }
+}
+```
 
 #### `plugins`
 

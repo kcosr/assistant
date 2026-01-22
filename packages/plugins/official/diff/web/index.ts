@@ -57,14 +57,32 @@ const DIFF_PANEL_TEMPLATE = `
               role="listbox"
               aria-label="Instances"
             >
-              <input
-                type="text"
-                class="panel-chrome-instance-search"
-                data-role="instance-search"
-                placeholder="Search instances..."
-                aria-label="Search instances"
-                autocomplete="off"
-              />
+              <div class="panel-chrome-instance-search-row">
+                <input
+                  type="text"
+                  class="panel-chrome-instance-search"
+                  data-role="instance-search"
+                  placeholder="Search instances..."
+                  aria-label="Search instances"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="panel-chrome-instance-clear"
+                  data-role="instance-clear"
+                  aria-label="Clear selection"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6l-12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
               <div class="panel-chrome-instance-list" data-role="instance-list"></div>
             </div>
           </div>
@@ -1036,15 +1054,16 @@ if (registry && typeof registry.registerPanel === 'function') {
       };
 
       const renderInstanceSelect = () => {
-        chromeController?.setInstances(instances, selectedInstanceId);
+        chromeController?.setInstances(instances, [selectedInstanceId]);
       };
 
       chromeController = new PanelChromeController({
         root: container,
         host,
         title: 'Diff',
-        onInstanceChange: (instanceId) => {
-          setActiveInstance(instanceId);
+        onInstanceChange: (instanceIds) => {
+          const next = instanceIds[0] ?? DEFAULT_INSTANCE_ID;
+          setActiveInstance(next);
         },
       });
       renderInstanceSelect();

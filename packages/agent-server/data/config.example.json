@@ -168,6 +168,12 @@
       }
     }
   ],
+  "profiles": [
+    { "id": "default", "label": "Global" },
+    { "id": "work", "label": "Work" },
+    { "id": "oss", "label": "Open Source" },
+    { "id": "personal", "label": "Personal" }
+  ],
   "plugins": {
     "hello": { "enabled": false },
     "chat": { "enabled": true },
@@ -188,6 +194,7 @@
     },
     "lists": { "enabled": true },
     "notes": { "enabled": true },
+    "search": { "enabled": true },
     "time-tracker": {
       "enabled": false,
       "instances": ["work", { "id": "personal", "label": "Personal" }]

@@ -1449,6 +1449,12 @@ async function main(): Promise<void> {
     options: GlobalSearchOptions,
   ): Promise<SearchApiResponse> => {
     const params = new URLSearchParams({ q: options.query });
+    if (options.profiles && options.profiles.length > 0) {
+      params.set('profiles', options.profiles.join(','));
+    }
+    if (options.plugin) {
+      params.set('plugin', options.plugin);
+    }
     if (options.scope) {
       params.set('scope', options.scope);
     }

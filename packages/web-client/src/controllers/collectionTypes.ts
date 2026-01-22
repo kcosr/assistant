@@ -1,6 +1,7 @@
 export type CollectionReference = {
   type: string;
   id: string;
+  instanceId?: string;
 };
 
 export type CollectionItemSummary = {
@@ -9,4 +10,6 @@ export type CollectionItemSummary = {
   name: string;
   tags?: string[];
   updatedAt?: string;
+  instanceId?: string;
+  instanceLabel?: string;
 };

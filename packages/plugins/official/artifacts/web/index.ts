@@ -389,14 +389,32 @@ function buildArtifactUrl(options: {
             role="listbox"
             aria-label="Instances"
           >
-            <input
-              type="text"
-              class="panel-chrome-instance-search"
-              data-role="instance-search"
-              placeholder="Search instances..."
-              aria-label="Search instances"
-              autocomplete="off"
-            />
+              <div class="panel-chrome-instance-search-row">
+                <input
+                  type="text"
+                  class="panel-chrome-instance-search"
+                  data-role="instance-search"
+                  placeholder="Search instances..."
+                  aria-label="Search instances"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="panel-chrome-instance-clear"
+                  data-role="instance-clear"
+                  aria-label="Clear selection"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6l-12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             <div class="panel-chrome-instance-list" data-role="instance-list"></div>
           </div>
         </div>
@@ -544,8 +562,8 @@ function buildArtifactUrl(options: {
         root: container,
         host,
         title: 'Artifacts',
-        onInstanceChange: (instanceId) => {
-          selectedInstanceId = instanceId;
+        onInstanceChange: (instanceIds) => {
+          selectedInstanceId = instanceIds[0] ?? DEFAULT_INSTANCE_ID;
           selectedArtifactIds.clear();
           lastSelectedIndex = null;
           applySelectionStyles();
@@ -821,7 +839,7 @@ function buildArtifactUrl(options: {
         try {
           const list = await callOperation<Instance[]>('instance_list', {});
           instances = list.length > 0 ? list : [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
-          chromeController?.setInstances(instances, selectedInstanceId);
+          chromeController?.setInstances(instances, [selectedInstanceId]);
           if (!instances.some((instance) => instance.id === selectedInstanceId)) {
             selectedInstanceId = DEFAULT_INSTANCE_ID;
             persistState();
@@ -832,7 +850,7 @@ function buildArtifactUrl(options: {
           services?.setStatus?.('Failed to load instances');
           console.error('Failed to load instances', error);
           instances = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
-          chromeController?.setInstances(instances, selectedInstanceId);
+          chromeController?.setInstances(instances, [selectedInstanceId]);
           updatePanelContext();
         }
       };
@@ -1027,7 +1045,7 @@ function buildArtifactUrl(options: {
             const newInstances = (payload['instances'] as Instance[]) || [];
             if (newInstances.length > 0) {
               instances = newInstances;
-              chromeController?.setInstances(instances, selectedInstanceId);
+              chromeController?.setInstances(instances, [selectedInstanceId]);
               // If current instance no longer exists, switch to default
               if (!instances.some((i) => i.id === selectedInstanceId)) {
                 selectedInstanceId = DEFAULT_INSTANCE_ID;

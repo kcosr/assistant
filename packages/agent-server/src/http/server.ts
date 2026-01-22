@@ -62,6 +62,7 @@ export function createHttpServer(options: {
     baseToolHost: toolHost,
     ...(historyProvider ? { historyProvider } : {}),
     ...(scheduledSessionService ? { scheduledSessionService } : {}),
+    ...(searchService ? { searchService } : {}),
   };
   const preferencesStore = new PreferencesStore(path.join(config.dataDir, 'preferences.json'));
   const pluginSettingsStore = new PluginSettingsStore(

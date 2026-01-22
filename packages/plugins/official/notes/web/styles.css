@@ -988,10 +988,40 @@
 .collection-browser.view-cards .collection-search-dropdown-item-label,
 .collection-browser.view-cards-single .collection-search-dropdown-item-label {
   font-weight: 600;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.collection-browser-item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.collection-browser-item-title .collection-search-dropdown-item-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.collection-browser-item-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  background-color: transparent;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .collection-browser-item-tags {
@@ -1095,6 +1125,8 @@
 
 .collection-browser.view-list .collection-search-dropdown-item-label {
   display: block;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

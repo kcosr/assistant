@@ -289,6 +289,7 @@ export class CollectionDropdownController {
   private selectDropdownItem(item: HTMLElement): void {
     const itemType = item.dataset['collectionType'];
     const itemId = item.dataset['collectionId'];
+    const instanceId = item.dataset['collectionInstanceId'];
     if (!itemType || !itemId) {
       return;
     }
@@ -296,6 +297,7 @@ export class CollectionDropdownController {
     void this.options.selectItem({
       type: itemType,
       id: itemId,
+      ...(instanceId ? { instanceId } : {}),
     });
   }
 

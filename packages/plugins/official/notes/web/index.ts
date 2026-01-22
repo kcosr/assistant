@@ -52,14 +52,32 @@ const NOTES_PANEL_TEMPLATE = `
               role="listbox"
               aria-label="Instances"
             >
-              <input
-                type="text"
-                class="panel-chrome-instance-search"
-                data-role="instance-search"
-                placeholder="Search instances..."
-                aria-label="Search instances"
-                autocomplete="off"
-              />
+              <div class="panel-chrome-instance-search-row">
+                <input
+                  type="text"
+                  class="panel-chrome-instance-search"
+                  data-role="instance-search"
+                  placeholder="Search instances..."
+                  aria-label="Search instances"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="panel-chrome-instance-clear"
+                  data-role="instance-clear"
+                  aria-label="Clear selection"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6l-12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
               <div class="panel-chrome-instance-list" data-role="instance-list"></div>
             </div>
           </div>
@@ -218,6 +236,11 @@ type NoteMetadata = {
   updated: string;
 };
 
+type NoteSummary = NoteMetadata & {
+  instanceId: string;
+  instanceLabel?: string;
+};
+
 type Note = NoteMetadata & {
   content: string;
 };
@@ -286,15 +309,15 @@ function parseNoteMetadata(value: unknown): NoteMetadata | null {
   };
 }
 
-function parseNoteMetadataList(value: unknown): NoteMetadata[] {
+function parseNoteMetadataList(value: unknown, instanceId: string): NoteSummary[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const result: NoteMetadata[] = [];
+  const result: NoteSummary[] = [];
   for (const entry of value) {
     const parsed = parseNoteMetadata(entry);
     if (parsed) {
-      result.push(parsed);
+      result.push({ ...parsed, instanceId });
     }
   }
   return result;
@@ -316,7 +339,7 @@ function parseNote(value: unknown): Note | null {
   };
 }
 
-function sortNotes(entries: NoteMetadata[]): NoteMetadata[] {
+function sortNotes<T extends NoteMetadata>(entries: T[]): T[] {
   return entries.slice().sort((a, b) => {
     const aDate = Date.parse(a.updated || a.created || '');
     const bDate = Date.parse(b.updated || b.created || '');
@@ -685,9 +708,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const bodyManager = new CollectionPanelBodyManager(panelContent);
 
       let instances: Instance[] = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
-      let selectedInstanceId = DEFAULT_INSTANCE_ID;
-      let availableNotes: NoteMetadata[] = [];
+      let selectedInstanceIds: string[] = [DEFAULT_INSTANCE_ID];
+      let activeInstanceId = DEFAULT_INSTANCE_ID;
+      let availableNotes: NoteSummary[] = [];
       let activeNoteTitle: string | null = null;
+      let activeNoteInstanceId: string | null = null;
       let activeNote: Note | null = null;
       let mode: ViewMode = 'browser';
       let isVisible = false;
@@ -705,18 +730,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const persistState = (): void => {
         host.persistPanelState({
           selectedNoteTitle: activeNoteTitle,
+          selectedNoteInstanceId: activeNoteInstanceId,
           mode,
-          instanceId: selectedInstanceId,
+          instanceIds: selectedInstanceIds,
         });
       };
 
       const callInstanceOperation = async <T>(
+        instanceId: string,
         operation: string,
         body: Record<string, unknown>,
       ): Promise<T> =>
         callOperation(operation, {
           ...body,
-          instance_id: selectedInstanceId,
+          instance_id: instanceId,
         });
 
       /**
@@ -749,10 +776,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           name: note.title,
           tags: note.tags,
           updatedAt: note.updated,
+          instanceId: note.instanceId,
+          instanceLabel: note.instanceLabel ?? getInstanceLabel(note.instanceId),
         }));
 
       const getActiveReference = (): CollectionReference | null =>
-        activeNoteTitle ? { type: 'note', id: activeNoteTitle } : null;
+        activeNoteTitle && activeNoteInstanceId
+          ? { type: 'note', id: activeNoteTitle, instanceId: activeNoteInstanceId }
+          : null;
 
       const updateDropdownSelection = (reference: CollectionReference | null): void => {
         if (!dropdownTriggerText) {
@@ -761,8 +792,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!reference) {
           dropdownTriggerText.textContent = 'Select a note...';
         } else {
-          const note = availableNotes.find((entry) => entry.title === reference.id) ?? activeNote;
-          dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
+          const note =
+            availableNotes.find(
+              (entry) =>
+                entry.title === reference.id && entry.instanceId === reference.instanceId,
+            ) ?? activeNote;
+          const noteInstanceId = note?.instanceId ?? activeNoteInstanceId;
+          if (note && noteInstanceId && selectedInstanceIds.length > 1) {
+            dropdownTriggerText.textContent = `${note.title} (${getInstanceLabel(
+              noteInstanceId,
+            )})`;
+          } else {
+            dropdownTriggerText.textContent = note?.title ?? 'Select a note...';
+          }
         }
         chromeController?.scheduleLayoutCheck();
       };
@@ -772,25 +814,64 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return match?.label ?? formatInstanceLabel(instanceId);
       };
 
+      const normalizeInstanceSelection = (instanceIds: string[]): string[] => {
+        const unique: string[] = [];
+        for (const id of instanceIds) {
+          if (typeof id !== 'string') {
+            continue;
+          }
+          const trimmed = id.trim();
+          if (!trimmed || unique.includes(trimmed)) {
+            continue;
+          }
+          unique.push(trimmed);
+        }
+        const known = new Set(instances.map((instance) => instance.id));
+        const filtered = unique.filter((id) => known.has(id));
+        if (filtered.length > 0) {
+          return filtered;
+        }
+        return [DEFAULT_INSTANCE_ID];
+      };
+
+      const formatInstanceSelectionLabel = (instanceIds: string[]): string => {
+        const labels = instanceIds.map((id) => getInstanceLabel(id));
+        if (labels.length === 0) {
+          return getInstanceLabel(DEFAULT_INSTANCE_ID);
+        }
+        if (labels.length === 1) {
+          return labels[0] ?? getInstanceLabel(DEFAULT_INSTANCE_ID);
+        }
+        if (labels.length === 2) {
+          return `${labels[0]} + ${labels[1]}`;
+        }
+        return `${labels[0]} + ${labels.length - 1}`;
+      };
+
       const updatePanelMetadata = (): void => {
-        if (selectedInstanceId === DEFAULT_INSTANCE_ID) {
+        if (selectedInstanceIds.length === 1 && selectedInstanceIds[0] === DEFAULT_INSTANCE_ID) {
           host.setPanelMetadata({ title: 'Notes' });
           return;
         }
-        host.setPanelMetadata({ title: `Notes (${getInstanceLabel(selectedInstanceId)})` });
+        host.setPanelMetadata({
+          title: `Notes (${formatInstanceSelectionLabel(selectedInstanceIds)})`,
+        });
       };
 
       const renderInstanceSelect = (): void => {
-        chromeController?.setInstances(instances, selectedInstanceId);
+        chromeController?.setInstances(instances, selectedInstanceIds);
       };
 
-      const setActiveInstance = (instanceId: string): void => {
-        if (instanceId === selectedInstanceId) {
+      const setActiveInstances = (instanceIds: string[]): void => {
+        const normalized = normalizeInstanceSelection(instanceIds);
+        if (normalized.join('|') === selectedInstanceIds.join('|')) {
           return;
         }
-        selectedInstanceId = instanceId;
+        selectedInstanceIds = normalized;
+        activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
         availableNotes = [];
         activeNoteTitle = null;
+        activeNoteInstanceId = null;
         activeNote = null;
         loadToken += 1;
         refreshInFlight = false;
@@ -807,11 +888,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const updatePanelContext = (): void => {
         const contextAttributes: Record<string, string> = {
-          'instance-id': selectedInstanceId,
+          'instance-id': activeInstanceId,
+          'instance-ids': selectedInstanceIds.join(','),
         };
-        if (!activeNote) {
+        if (!activeNote || !activeNoteInstanceId) {
           host.setContext(contextKey, {
-            instance_id: selectedInstanceId,
+            instance_id: activeInstanceId,
+            instance_ids: selectedInstanceIds,
             contextAttributes,
           });
           services.notifyContextAvailabilityChange();
@@ -828,7 +911,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           tags: activeNote.tags,
           created: activeNote.created,
           updated: activeNote.updated,
-          instance_id: selectedInstanceId,
+          instance_id: activeNoteInstanceId,
+          instance_ids: selectedInstanceIds,
           contextAttributes,
         };
         host.setContext(contextKey, context);
@@ -845,11 +929,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               ? (list as Instance[])
               : [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
           instances = resolved;
-          const hasSelected = instances.some((instance) => instance.id === selectedInstanceId);
-          if (!hasSelected) {
-            selectedInstanceId = DEFAULT_INSTANCE_ID;
+          const normalized = normalizeInstanceSelection(selectedInstanceIds);
+          if (normalized.join('|') !== selectedInstanceIds.join('|')) {
+            selectedInstanceIds = normalized;
+            activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
             availableNotes = [];
             activeNoteTitle = null;
+            activeNoteInstanceId = null;
             activeNote = null;
             updatePanelContext();
             updateDropdownSelection(null);
@@ -970,8 +1056,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return Array.from(tags).sort();
       };
 
-      const updateAvailableNote = (note: NoteMetadata): void => {
-        const index = availableNotes.findIndex((entry) => entry.title === note.title);
+      const updateAvailableNote = (note: NoteSummary): void => {
+        const index = availableNotes.findIndex(
+          (entry) => entry.title === note.title && entry.instanceId === note.instanceId,
+        );
         if (index >= 0) {
           availableNotes[index] = note;
         } else {
@@ -980,8 +1068,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         availableNotes = sortNotes(availableNotes);
       };
 
-      const removeAvailableNote = (title: string): void => {
-        availableNotes = availableNotes.filter((entry) => entry.title !== title);
+      const removeAvailableNote = (title: string, instanceId: string): void => {
+        availableNotes = availableNotes.filter(
+          (entry) => !(entry.title === title && entry.instanceId === instanceId),
+        );
       };
 
       const refreshBrowser = (): void => {
@@ -1163,13 +1253,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           try {
-            await callInstanceOperation('delete', { title: note.title });
+            const targetInstanceId = activeNoteInstanceId ?? activeInstanceId;
+            await callInstanceOperation(targetInstanceId, 'delete', { title: note.title });
             activeNote = null;
             activeNoteTitle = null;
+            activeNoteInstanceId = null;
             updatePanelContext();
             updateDropdownSelection(null);
             setMode('browser');
-            removeAvailableNote(note.title);
+            removeAvailableNote(note.title, targetInstanceId);
             refreshBrowser();
           } catch (err) {
             console.error('Failed to delete note', err);
@@ -1389,7 +1481,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           saveButton.disabled = true;
           cancelButton.disabled = true;
           try {
-            const result = await callInstanceOperation<unknown>('write', {
+            const targetInstanceId = activeNoteInstanceId ?? activeInstanceId;
+            const result = await callInstanceOperation<unknown>(targetInstanceId, 'write', {
               title,
               content: contentInput.value,
               tags: tagInput.getTags(),
@@ -1405,13 +1498,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             };
             activeNote = updatedNote;
             activeNoteTitle = title;
+            activeNoteInstanceId = targetInstanceId;
             updatePanelContext();
-            updateDropdownSelection({ type: 'note', id: title });
+            updateDropdownSelection({ type: 'note', id: title, instanceId: targetInstanceId });
             if (metadata) {
-              updateAvailableNote(metadata);
+              updateAvailableNote({
+                ...metadata,
+                instanceId: targetInstanceId,
+                instanceLabel: getInstanceLabel(targetInstanceId),
+              });
               refreshBrowser();
             }
-            browserController?.invalidatePreview({ type: 'note', id: title });
+            browserController?.invalidatePreview({
+              type: 'note',
+              id: title,
+              instanceId: targetInstanceId,
+            });
             renderNoteView(updatedNote);
             setMode('note');
           } catch (err) {
@@ -1477,7 +1579,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       };
 
-      const openNewNoteEditor = (): void => {
+      const openNewNoteEditor = (instanceId = activeInstanceId): void => {
         const draft: Note = {
           title: '',
           content: '',
@@ -1487,18 +1589,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         };
         activeNote = null;
         activeNoteTitle = null;
+        activeNoteInstanceId = instanceId;
         updatePanelContext();
         updateDropdownSelection(null);
         renderNoteEditor(draft, true);
         setMode('note');
       };
 
-      const openExistingNoteEditor = async (title: string): Promise<void> => {
-        if (!title) {
+      const openExistingNoteEditor = async (
+        title: string,
+        instanceId: string,
+      ): Promise<void> => {
+        if (!title || !instanceId) {
           return;
         }
-        if (activeNoteTitle !== title || !activeNote) {
-          await loadNote(title, { silent: true, editAfterLoad: true });
+        if (activeNoteTitle !== title || activeNoteInstanceId !== instanceId || !activeNote) {
+          await loadNote(title, instanceId, { silent: true, editAfterLoad: true });
           return;
         }
         renderNoteEditor(activeNote, false);
@@ -1517,7 +1623,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             setMode('browser');
             return;
           }
-          void selectNote(item.id, { focus: false });
+          const instanceId = item.instanceId ?? activeInstanceId;
+          void selectNote(item.id, instanceId, { focus: false });
         },
         refreshItems: async () => {
           await refreshNotes({ silent: true });
@@ -1532,12 +1639,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           fileText: ICONS.fileText,
           list: ICONS.list,
         },
-        fetchPreview: async (itemType, itemId) => {
+        fetchPreview: async (itemType, itemId, instanceId) => {
           if (itemType !== 'note') {
             return null;
           }
+          const targetInstanceId = instanceId ?? activeInstanceId;
           try {
-            const raw = await callInstanceOperation<unknown>('read', { title: itemId });
+            const raw = await callInstanceOperation<unknown>(targetInstanceId, 'read', {
+              title: itemId,
+            });
             const note = parseNote(raw);
             if (!note) {
               return null;
@@ -1550,15 +1660,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         },
         viewModeStorageKey: 'aiAssistantNotesBrowserViewMode',
         sortModeStorageKey: 'aiAssistantNotesBrowserSortMode',
-        openNoteEditor: (mode, noteId) => {
+        openNoteEditor: (mode, noteId, instanceId) => {
+          const targetInstanceId = instanceId ?? activeInstanceId;
           if (mode === 'create') {
-            openNewNoteEditor();
+            openNewNoteEditor(targetInstanceId);
             return;
           }
           if (noteId) {
-            void openExistingNoteEditor(noteId);
+            void openExistingNoteEditor(noteId, targetInstanceId);
           }
         },
+        shouldShowInstanceBadge: () => selectedInstanceIds.length > 1,
         onSortModeChanged: () => {
           dropdownController?.populate(getAvailableItems());
           dropdownController?.refreshFilter();
@@ -1595,7 +1707,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!item) {
             return;
           }
-          void selectNote(item.id, { focus: false });
+          const instanceId = item.instanceId ?? activeInstanceId;
+          void selectNote(item.id, instanceId, { focus: false });
         },
       });
       dropdownController?.attach();
@@ -1690,21 +1803,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         refreshInFlight = true;
         const currentToken = ++refreshToken;
         try {
-          const raw = await callInstanceOperation<unknown>('list', {});
+          const results = await Promise.all(
+            selectedInstanceIds.map(async (instanceId) => {
+              const raw = await callInstanceOperation<unknown>(instanceId, 'list', {});
+              const notes = parseNoteMetadataList(raw, instanceId).map((note) => ({
+                ...note,
+                instanceLabel: getInstanceLabel(instanceId),
+              }));
+              return notes;
+            }),
+          );
           if (currentToken !== refreshToken) {
             return;
           }
-          availableNotes = sortNotes(parseNoteMetadataList(raw));
+          availableNotes = sortNotes(results.flat());
           refreshBrowser();
 
-          if (activeNoteTitle) {
-            const updated = availableNotes.find((entry) => entry.title === activeNoteTitle);
+          if (activeNoteTitle && activeNoteInstanceId) {
+            const updated = availableNotes.find(
+              (entry) =>
+                entry.title === activeNoteTitle && entry.instanceId === activeNoteInstanceId,
+            );
             if (updated && activeNote) {
               activeNote = { ...activeNote, ...updated };
               updatePanelContext();
             }
             if (!updated) {
               activeNoteTitle = null;
+              activeNoteInstanceId = null;
               activeNote = null;
               updatePanelContext();
               setMode('browser');
@@ -1722,6 +1848,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       async function loadNote(
         title: string,
+        instanceId: string,
         options?: { silent?: boolean; editAfterLoad?: boolean },
       ): Promise<void> {
         const currentToken = ++loadToken;
@@ -1734,7 +1861,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           bodyManager.renderLoading({ type: 'note', id: title });
         }
         try {
-          const raw = await callInstanceOperation<unknown>('read', { title });
+          const raw = await callInstanceOperation<unknown>(instanceId, 'read', { title });
           if (currentToken !== loadToken) {
             return;
           }
@@ -1743,8 +1870,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             throw new Error('Note not found');
           }
           activeNoteTitle = note.title;
+          activeNoteInstanceId = instanceId;
           activeNote = note;
-          updateDropdownSelection({ type: 'note', id: note.title });
+          updateDropdownSelection({ type: 'note', id: note.title, instanceId });
           updatePanelContext();
           if (options?.editAfterLoad) {
             renderNoteEditor(note, false);
@@ -1762,12 +1890,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      async function selectNote(title: string, options?: { focus?: boolean }): Promise<void> {
+      async function selectNote(
+        title: string,
+        instanceId: string,
+        options?: { focus?: boolean },
+      ): Promise<void> {
         if (!title) {
           return;
         }
-        if (activeNoteTitle === title && activeNote && !isEditing) {
-          updateDropdownSelection({ type: 'note', id: title });
+        if (activeNoteTitle === title && activeNoteInstanceId === instanceId && activeNote && !isEditing) {
+          updateDropdownSelection({ type: 'note', id: title, instanceId });
           renderNoteView(activeNote);
           setMode('note');
           if (options?.focus) {
@@ -1775,7 +1907,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           return;
         }
-        await loadNote(title);
+        await loadNote(title, instanceId);
         if (options?.focus) {
           sharedSearchController.focus(false);
         }
@@ -1787,26 +1919,35 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!action) {
           return;
         }
+        const instanceId = resolveEventInstanceId(payload);
+        if (!selectedInstanceIds.includes(instanceId)) {
+          return;
+        }
 
         const noteSummary = parseNoteMetadata(payload['note']);
         if (noteSummary) {
-          updateAvailableNote(noteSummary);
+          updateAvailableNote({
+            ...noteSummary,
+            instanceId,
+            instanceLabel: getInstanceLabel(instanceId),
+          });
         }
         if (action === 'note_deleted' && title) {
-          removeAvailableNote(title);
+          removeAvailableNote(title, instanceId);
         }
         refreshBrowser();
 
         if (title && action !== 'note_deleted') {
-          browserController?.invalidatePreview({ type: 'note', id: title });
+          browserController?.invalidatePreview({ type: 'note', id: title, instanceId });
         }
 
-        if (!title || activeNoteTitle !== title) {
+        if (!title || activeNoteTitle !== title || activeNoteInstanceId !== instanceId) {
           return;
         }
 
         if (action === 'note_deleted') {
           activeNoteTitle = null;
+          activeNoteInstanceId = null;
           activeNote = null;
           updatePanelContext();
           setMode('browser');
@@ -1814,7 +1955,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
 
         if (!isEditing) {
-          await loadNote(title, { silent: true });
+          await loadNote(title, instanceId, { silent: true });
         }
       }
 
@@ -1832,8 +1973,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
       if (noteButton) {
         noteButton.addEventListener('click', () => {
-          if (activeNoteTitle) {
-            void selectNote(activeNoteTitle, { focus: false });
+          if (activeNoteTitle && activeNoteInstanceId) {
+            void selectNote(activeNoteTitle, activeNoteInstanceId, { focus: false });
             return;
           }
           if (isEditing) {
@@ -1852,11 +1993,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         root,
         host,
         title: 'Notes',
-        onInstanceChange: (instanceId) => {
-          setActiveInstance(instanceId);
+        instanceSelectionMode: 'multi',
+        onInstanceChange: (instanceIds) => {
+          setActiveInstances(instanceIds);
         },
       });
-      chromeController.setInstances(instances, selectedInstanceId);
+      chromeController.setInstances(instances, selectedInstanceIds);
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
@@ -1864,28 +2006,49 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const stored = host.loadPanelState();
       let initialTitle: string | null = null;
       let initialMode: ViewMode | null = null;
-      let initialInstanceId: string | null = null;
+      let initialInstanceIds: string[] | null = null;
+      let initialNoteInstanceId: string | null = null;
       if (stored && typeof stored === 'object') {
         const data = stored as Record<string, unknown>;
         if (typeof data['selectedNoteTitle'] === 'string') {
           initialTitle = data['selectedNoteTitle'];
         }
+        if (typeof data['selectedNoteInstanceId'] === 'string') {
+          initialNoteInstanceId = data['selectedNoteInstanceId'];
+        }
         if (data['mode'] === 'browser' || data['mode'] === 'note') {
           initialMode = data['mode'] as ViewMode;
         }
-        if (typeof data['instanceId'] === 'string') {
-          selectedInstanceId = data['instanceId'];
-          initialInstanceId = data['instanceId'];
+        if (Array.isArray(data['instanceIds'])) {
+          selectedInstanceIds = data['instanceIds'].filter(
+            (id): id is string => typeof id === 'string',
+          );
+          initialInstanceIds = [...selectedInstanceIds];
+        } else if (typeof data['instanceId'] === 'string') {
+          selectedInstanceIds = [data['instanceId']];
+          initialInstanceIds = [...selectedInstanceIds];
         }
+        if (selectedInstanceIds.length === 0) {
+          selectedInstanceIds = [DEFAULT_INSTANCE_ID];
+        }
+        activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
       }
 
       void refreshInstances({ silent: true }).then(() => {
-        if (initialInstanceId && initialInstanceId !== selectedInstanceId) {
+        if (
+          initialInstanceIds &&
+          initialInstanceIds.join('|') !== selectedInstanceIds.join('|')
+        ) {
           initialTitle = null;
+          initialNoteInstanceId = null;
         }
         void refreshNotes().then(() => {
           if (initialTitle) {
-            void selectNote(initialTitle).then(() => {
+            const resolvedInstanceId =
+              initialNoteInstanceId ??
+              availableNotes.find((entry) => entry.title === initialTitle)?.instanceId ??
+              activeInstanceId;
+            void selectNote(initialTitle, resolvedInstanceId).then(() => {
               if (initialMode) {
                 setMode(initialMode);
               }
@@ -1915,21 +2078,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const type = payload['type'];
           if (type === 'notes_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
-            if (eventInstanceId !== selectedInstanceId) {
-              setActiveInstance(eventInstanceId);
+            if (!selectedInstanceIds.includes(eventInstanceId)) {
+              setActiveInstances([eventInstanceId, ...selectedInstanceIds]);
             }
             const title = typeof payload['title'] === 'string' ? payload['title'].trim() : '';
             if (!title) {
               return;
             }
-            void selectNote(title, { focus: true });
+            void selectNote(title, eventInstanceId, { focus: true });
             return;
           }
           if (type === 'panel_update') {
-            const eventInstanceId = resolveEventInstanceId(payload);
-            if (eventInstanceId !== selectedInstanceId) {
-              return;
-            }
             void handlePanelUpdate(payload);
           }
         },

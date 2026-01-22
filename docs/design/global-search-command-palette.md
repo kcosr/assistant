@@ -36,7 +36,7 @@
 A global search and command palette that allows users to quickly find content across all plugins (notes, lists, etc.) and navigate to results. The palette supports:
 
 - **Plain text search**: Instant global search across everything
-- **Scoped search**: `/search notes work meeting` for targeted queries
+- **Scoped search**: `/search work notes meeting` for targeted queries
 - **Staged input**: Guided flow with `<placeholder>` prompts and Enter-to-skip
 - **Flexible launch**: Open modal (default), open workspace, pin to header, or replace selected panel
 
@@ -67,7 +67,7 @@ A unified command palette (Cmd+K / Ctrl+K) that:
 ## Goals
 
 1. **Fast global search**: Plain text query searches everything instantly
-2. **Scoped search**: `/search notes work meeting` for power users
+2. **Scoped search**: `/search work notes meeting` for power users
 3. **Discoverable**: Staged input with placeholders guides users
 4. **Flexible launch**: Multiple options for where to open results
 5. **Keyboard-first**: Full keyboard navigation, mouse optional
@@ -81,8 +81,8 @@ A unified command palette (Cmd+K / Ctrl+K) that:
 
 | Trigger | Action |
 |---------|--------|
-| `Cmd+K` / `Ctrl+K` | Open command palette |
-| Click search icon | Open command palette |
+| `Cmd+K` / `Ctrl+K` | Open command palette (search preselected) |
+| Click search icon | Open command palette (search preselected) |
 | `Escape` | Close palette |
 
 ### Input Modes
@@ -133,44 +133,45 @@ The `/search` command uses staged input with placeholders. Each stage can be ski
 
 User types `/search` or selects from list.
 
-#### Stage 2: Scope Selection
+Tip: the palette opens with **Search** highlighted, so pressing Enter immediately enters `/search`.
+
+#### Stage 2: Profile Selection
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search <scope>|                            │
+│ /search <profile>|                          │
 ├─────────────────────────────────────────────┤
-│ ▶ (all) — Search everything                 │
-│   notes — Search notes                      │
-│   lists — Search lists                      │
+│ ▶ (all) — Search all profiles               │
+│   default — Global                          │
+│   work — Work                               │
 └─────────────────────────────────────────────┘
 ```
 
-- **Enter**: Skip (search all scopes) → go to query stage
-- **Type/Select**: Choose scope → go to instance stage
+- **Enter**: Skip (search all profiles) → go to query stage
+- **Type/Select**: Choose profile → go to plugin stage
 
-#### Stage 3: Instance Selection
+#### Stage 3: Plugin Selection
 
-Only shown if a specific scope was selected:
+Only shown if a specific profile was selected:
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search notes <instance>|                   │
+│ /search work <plugin>|                      │
 ├─────────────────────────────────────────────┤
-│ ▶ (all) — All instances                     │
-│   default                                   │
-│   work                                      │
-│   personal                                  │
+│ ▶ (all) — All plugins                       │
+│   notes                                     │
+│   lists                                     │
 └─────────────────────────────────────────────┘
 ```
 
-- **Enter**: Skip (search all instances) → go to query stage
-- **Type/Select**: Choose instance → go to query stage
+- **Enter**: Skip (search all plugins) → go to query stage
+- **Type/Select**: Choose plugin → go to query stage
 
 #### Stage 4: Query Input
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search notes work <query>|                 │
+│ /search work notes <query>|                 │
 ├─────────────────────────────────────────────┤
 │ ▶ 📝 Release plan                           │
 │   📝 Weekly sync                            │
@@ -184,7 +185,7 @@ When the query is empty, show items by title for the selected scope (notes title
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search notes work meeting|                 │
+│ /search work notes meeting|                 │
 ├─────────────────────────────────────────────┤
 │ ▶ 📝 Meeting notes Q4                       │
 │   📝 Weekly meeting agenda                  │
@@ -197,14 +198,17 @@ When the query is empty, show items by title for the selected scope (notes title
 Placeholders are visually distinct from user input:
 
 ```
-/search notes <instance>
-              └─────────── dimmed, italic style
+/search <profile>
+        └───────── dimmed, italic style
 
-/search notes work <query>
-                   └────── dimmed placeholder
+/search work <plugin>
+             └──── dimmed placeholder
 
-/search notes work meeting
-                   └────── normal text (user input)
+/search work notes <query>
+                  └────── dimmed placeholder
+
+/search work notes meeting
+                  └────── normal text (user input)
 ```
 
 CSS styling:
@@ -250,7 +254,7 @@ Default launch behavior:
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search notes work meeting                  │
+│ /search work notes meeting                  │
 ├─────────────────────────────────────────────┤
 │   📝 Meeting notes Q4 — notes:work          │
 │   ┌─────────────────────┐                   │
@@ -266,7 +270,7 @@ Default launch behavior:
 
 ```
 ┌─────────────────────────────────────────────┐
-│ /search notes work meeting                  │
+│ /search work notes meeting                  │
 ├─────────────────────────────────────────────┤
 │   📝 Meeting notes Q4 — notes:work          │
 │   ┌─────────────────────┐                   │
@@ -299,10 +303,10 @@ plain_query  = <any text not starting with />
 command      = "/" command_name args*
 
 # Search command
-/search [scope] [instance] query
+/search [profile] [plugin] query
 
-scope        = "notes" | "lists" | ... (plugin IDs)
-instance     = plugin instance ID (e.g., "work", "default")
+profile      = shared profile ID (e.g., "work", "default")
+plugin       = plugin ID (e.g., "notes", "lists")
 query        = free-form search text
 ```
 
@@ -312,24 +316,24 @@ query        = free-form search text
 |-------|----------------|
 | `meeting` | Global search for "meeting" |
 | `/search` | Enter scoped search flow |
-| `/search notes meeting` | Search all notes instances for "meeting" |
-| `/search notes work meeting` | Search notes:work for "meeting" |
-| `/search lists reading book` | Search lists:reading for "book" |
+| `/search work meeting` | Search all plugins in the work profile for "meeting" |
+| `/search work notes meeting` | Search notes in work for "meeting" |
+| `/search personal lists book` | Search lists in personal for "book" |
 
 ### Fast Path
 
 Users can type the full command without pausing at stages:
 
 ```
-/search notes work meeting
+/search work notes meeting
         │     │    └─ query
-        │     └─ instance (exact match)
-        └─ scope (exact match)
+        │     └─ plugin (exact match)
+        └─ profile (exact match)
 ```
 
 The parser greedily matches tokens:
-1. After `/search`, next token matched against scope names
-2. If scope matched, next token matched against that scope's instances
+1. After `/search`, next token matched against profile IDs
+2. If profile matched, next token matched against plugins with that profile
 3. Remaining tokens are the query
 
 If a token doesn't match (e.g., typo), the staged UI shows filtered options.
@@ -394,8 +398,10 @@ GET /api/search
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `q` | string | Yes | Search query (empty allowed when scoped to list titles) |
-| `scope` | string | No | Plugin ID to search (omit for all) |
-| `instance` | string | No | Instance ID (omit for all instances) |
+| `profiles` | string | No | Comma-separated profile/instance ids to include |
+| `plugin` | string | No | Plugin ID to search (omit for all) |
+| `scope` | string | No | Deprecated alias for `plugin` |
+| `instance` | string | No | Instance ID (legacy; prefer `profiles`) |
 | `limit` | number | No | Max results per plugin (default: 10) |
 
 #### Example Requests
@@ -404,11 +410,11 @@ GET /api/search
 # Global search
 GET /api/search?q=meeting
 
-# Scoped to notes plugin
-GET /api/search?q=meeting&scope=notes
+# Scoped to work profile
+GET /api/search?q=meeting&profiles=work
 
-# Scoped to notes:work instance
-GET /api/search?q=meeting&scope=notes&instance=work
+# Scoped to notes in work
+GET /api/search?q=meeting&profiles=work&plugin=notes
 ```
 
 ### Response Format
@@ -534,11 +540,11 @@ interface SearchableScope {
 #### Search Execution Flow
 
 ```
-1. Client calls GET /api/search?q=meeting&scope=notes
+1. Client calls GET /api/search?q=meeting&profiles=work&plugin=notes
 
 2. Server resolves which providers to query:
-   - If scope specified: just that plugin
-   - If no scope: all registered providers
+   - If plugin specified: just that plugin
+   - If no plugin: all registered providers
 
 3. Server calls provider.search() in parallel for each plugin
 

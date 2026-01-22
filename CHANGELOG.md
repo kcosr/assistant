@@ -3,10 +3,18 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Require non-default plugin instances to be declared in `profiles`. ([#000](<pr-url>))
 
 ### Added
+- Added shared profiles config plus multi-profile selection (with instance badges) in notes and lists panels. ([#000](<pr-url>))
+- Added search plugin wrapper exposing global search via tools/CLI. ([#000](<pr-url>))
 
 ### Changed
+- Search API now accepts `profiles` and `plugin` query parameters. ([#000](<pr-url>))
+- Instance dropdown multi-select now keeps the menu open for additions and uses per-row clear/exclusive selection behavior. ([#000](<pr-url>))
+- Instance badges now sit inline with item titles and use a distinct style from tags. ([#000](<pr-url>))
+- Command palette `/search` flow now selects profile first, then plugin, with plugin lists filtered by profile. ([#000](<pr-url>))
+- Command palette opens with Search preselected and "All" labels for profile/plugin pickers. ([#000](<pr-url>))
 
 ### Fixed
 

@@ -1,9 +1,16 @@
 import type { PluginRegistry } from '../plugins/registry';
-import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstances } from '../plugins/instances';
+import {
+  DEFAULT_PLUGIN_INSTANCE_ID,
+  normalizePluginInstanceId,
+  resolvePluginInstances,
+} from '../plugins/instances';
 import type { SearchProvider, SearchResult } from '../plugins/types';
 
 export interface GlobalSearchOptions {
   query: string;
+  profiles?: string[];
+  plugin?: string;
+  /** @deprecated Use plugin instead. */
   scope?: string;
   instance?: string;
   limit?: number;
@@ -112,21 +119,22 @@ export class SearchService {
 
   async search(options: GlobalSearchOptions): Promise<SearchApiResponse> {
     const query = options.query.trim();
-    const scope = options.scope?.trim() ?? '';
+    const plugin = options.plugin?.trim() ?? options.scope?.trim() ?? '';
     const instance = options.instance?.trim() ?? '';
-    if (!query && !scope) {
-      return { results: [] };
-    }
     const limit =
       typeof options.limit === 'number' && Number.isFinite(options.limit)
         ? options.limit
         : undefined;
+    const profiles = this.normalizeProfiles(options.profiles);
+    if (!query && !plugin && profiles.length === 0) {
+      return { results: [] };
+    }
 
-    const providers = this.resolveProviders(scope);
+    const providers = this.resolveProviders(plugin);
     const started = Date.now();
     const tasks = providers.map(async ({ pluginId, provider }) => {
       const pluginStart = Date.now();
-      const instanceIds = this.resolveInstanceIds(pluginId, instance);
+      const instanceIds = this.resolveInstanceIds(pluginId, instance, profiles);
       if (instanceIds.length === 0) {
         return { pluginId, results: [] as SearchApiResult[], duration: 0 };
       }
@@ -176,10 +184,10 @@ export class SearchService {
     };
   }
 
-  private resolveProviders(scope: string): ProviderEntry[] {
-    if (scope) {
-      const provider = this.providers.get(scope);
-      return provider ? [{ pluginId: scope, provider }] : [];
+  private resolveProviders(plugin: string): ProviderEntry[] {
+    if (plugin) {
+      const provider = this.providers.get(plugin);
+      return provider ? [{ pluginId: plugin, provider }] : [];
     }
     return Array.from(this.providers.entries()).map(([pluginId, provider]) => ({
       pluginId,
@@ -187,18 +195,56 @@ export class SearchService {
     }));
   }
 
-  private resolveInstanceIds(pluginId: string, requestedInstance: string): string[] {
+  private resolveInstanceIds(
+    pluginId: string,
+    requestedInstance: string,
+    profiles: string[],
+  ): string[] {
+    const known = this.scopes.get(pluginId)?.instances ?? [];
+    const profilesSet = profiles.length > 0 ? new Set(profiles) : null;
+
     if (requestedInstance) {
-      const known = this.scopes.get(pluginId)?.instances ?? [];
-      if (known.some((entry) => entry.id === requestedInstance)) {
-        return [requestedInstance];
+      const normalized = normalizePluginInstanceId(requestedInstance) ?? requestedInstance.trim();
+      if (!normalized) {
+        return [];
+      }
+      if (profilesSet && !profilesSet.has(normalized)) {
+        return [];
+      }
+      if (known.some((entry) => entry.id === normalized)) {
+        return [normalized];
       }
       return [];
     }
-    const known = this.scopes.get(pluginId)?.instances ?? [];
-    if (known.length === 0) {
-      return [DEFAULT_PLUGIN_INSTANCE_ID];
+
+    const candidates = profilesSet
+      ? known.filter((entry) => profilesSet.has(entry.id))
+      : known;
+
+    if (candidates.length === 0) {
+      return profilesSet ? [] : [DEFAULT_PLUGIN_INSTANCE_ID];
     }
-    return known.map((entry) => entry.id);
+
+    return candidates.map((entry) => entry.id);
+  }
+
+  private normalizeProfiles(raw?: string[]): string[] {
+    if (!raw || raw.length === 0) {
+      return [];
+    }
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of raw) {
+      if (typeof entry !== 'string') {
+        continue;
+      }
+      const candidate = normalizePluginInstanceId(entry);
+      if (!candidate || seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      normalized.push(candidate);
+    }
+    return normalized;
   }
 }

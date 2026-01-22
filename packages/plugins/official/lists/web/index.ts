@@ -73,14 +73,32 @@ const LISTS_PANEL_TEMPLATE = `
               role="listbox"
               aria-label="Instances"
             >
-              <input
-                type="text"
-                class="panel-chrome-instance-search"
-                data-role="instance-search"
-                placeholder="Search instances..."
-                aria-label="Search instances"
-                autocomplete="off"
-              />
+              <div class="panel-chrome-instance-search-row">
+                <input
+                  type="text"
+                  class="panel-chrome-instance-search"
+                  data-role="instance-search"
+                  placeholder="Search instances..."
+                  aria-label="Search instances"
+                  autocomplete="off"
+                />
+                <button
+                  type="button"
+                  class="panel-chrome-instance-clear"
+                  data-role="instance-clear"
+                  aria-label="Clear selection"
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">
+                    <path
+                      d="M6 6l12 12M18 6l-12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
               <div class="panel-chrome-instance-list" data-role="instance-list"></div>
             </div>
           </div>
@@ -237,6 +255,8 @@ type ListSummary = {
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
   updatedAt?: string;
+  instanceId: string;
+  instanceLabel?: string;
 };
 
 type OperationResponse<T> = { ok: true; result: T } | { error: string };
@@ -304,7 +324,7 @@ function parseCustomFields(value: unknown): ListCustomFieldDefinition[] | undefi
   return result.length > 0 ? result : undefined;
 }
 
-function parseListSummary(value: unknown): ListSummary | null {
+function parseListSummary(value: unknown, instanceId: string): ListSummary | null {
   if (!value || typeof value !== 'object') {
     return null;
   }
@@ -328,16 +348,17 @@ function parseListSummary(value: unknown): ListSummary | null {
     defaultTags: defaultTags.length > 0 ? defaultTags : undefined,
     customFields,
     updatedAt,
+    instanceId,
   };
 }
 
-function parseListSummaries(value: unknown): ListSummary[] {
+function parseListSummaries(value: unknown, instanceId: string): ListSummary[] {
   if (!Array.isArray(value)) {
     return [];
   }
   const result: ListSummary[] = [];
   for (const entry of value) {
-    const parsed = parseListSummary(entry);
+    const parsed = parseListSummary(entry, instanceId);
     if (parsed) {
       result.push(parsed);
     }
@@ -611,9 +632,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const recentUserItemUpdates = new Set<string>();
 
       let instances: Instance[] = [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
-      let selectedInstanceId = DEFAULT_INSTANCE_ID;
+      let selectedInstanceIds: string[] = [DEFAULT_INSTANCE_ID];
+      let activeInstanceId = DEFAULT_INSTANCE_ID;
       let availableLists: ListSummary[] = [];
       let activeListId: string | null = null;
+      let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
       let activeListData: ListPanelData | null = null;
       let mode: ViewMode = 'browser';
@@ -632,18 +655,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const persistState = (): void => {
         host.persistPanelState({
           selectedListId: activeListId,
+          selectedListInstanceId: activeListInstanceId,
           mode,
-          instanceId: selectedInstanceId,
+          instanceIds: selectedInstanceIds,
         });
       };
 
       const callInstanceOperation = async <T>(
+        instanceId: string,
         operation: string,
         body: Record<string, unknown>,
       ): Promise<T> =>
         callOperation(operation, {
           ...body,
-          instance_id: selectedInstanceId,
+          instance_id: instanceId,
         });
 
       const getAvailableItems = (): CollectionItemSummary[] =>
@@ -653,10 +678,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           name: list.name,
           tags: list.tags,
           updatedAt: list.updatedAt,
+          instanceId: list.instanceId,
+          instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
         }));
 
       const getActiveReference = (): CollectionReference | null =>
-        activeListId ? { type: 'list', id: activeListId } : null;
+        activeListId && activeListInstanceId
+          ? { type: 'list', id: activeListId, instanceId: activeListInstanceId }
+          : null;
 
       const updateDropdownSelection = (reference: CollectionReference | null): void => {
         if (!dropdownTriggerText) {
@@ -667,8 +696,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           chromeController?.scheduleLayoutCheck();
           return;
         }
-        const list = availableLists.find((entry) => entry.id === reference.id) ?? activeListSummary;
-        dropdownTriggerText.textContent = list?.name ?? 'Select a list...';
+        const list =
+          availableLists.find(
+            (entry) =>
+              entry.id === reference.id && entry.instanceId === reference.instanceId,
+          ) ?? activeListSummary;
+        if (list && selectedInstanceIds.length > 1) {
+          dropdownTriggerText.textContent = `${list.name} (${getInstanceLabel(
+            list.instanceId,
+          )})`;
+        } else {
+          dropdownTriggerText.textContent = list?.name ?? 'Select a list...';
+        }
         chromeController?.scheduleLayoutCheck();
       };
 
@@ -677,25 +716,64 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return match?.label ?? formatInstanceLabel(instanceId);
       };
 
+      const normalizeInstanceSelection = (instanceIds: string[]): string[] => {
+        const unique: string[] = [];
+        for (const id of instanceIds) {
+          if (typeof id !== 'string') {
+            continue;
+          }
+          const trimmed = id.trim();
+          if (!trimmed || unique.includes(trimmed)) {
+            continue;
+          }
+          unique.push(trimmed);
+        }
+        const known = new Set(instances.map((instance) => instance.id));
+        const filtered = unique.filter((id) => known.has(id));
+        if (filtered.length > 0) {
+          return filtered;
+        }
+        return [DEFAULT_INSTANCE_ID];
+      };
+
+      const formatInstanceSelectionLabel = (instanceIds: string[]): string => {
+        const labels = instanceIds.map((id) => getInstanceLabel(id));
+        if (labels.length === 0) {
+          return getInstanceLabel(DEFAULT_INSTANCE_ID);
+        }
+        if (labels.length === 1) {
+          return labels[0] ?? getInstanceLabel(DEFAULT_INSTANCE_ID);
+        }
+        if (labels.length === 2) {
+          return `${labels[0]} + ${labels[1]}`;
+        }
+        return `${labels[0]} + ${labels.length - 1}`;
+      };
+
       const updatePanelMetadata = (): void => {
-        if (selectedInstanceId === DEFAULT_INSTANCE_ID) {
+        if (selectedInstanceIds.length === 1 && selectedInstanceIds[0] === DEFAULT_INSTANCE_ID) {
           host.setPanelMetadata({ title: 'Lists' });
           return;
         }
-        host.setPanelMetadata({ title: `Lists (${getInstanceLabel(selectedInstanceId)})` });
+        host.setPanelMetadata({
+          title: `Lists (${formatInstanceSelectionLabel(selectedInstanceIds)})`,
+        });
       };
 
       const renderInstanceSelect = (): void => {
-        chromeController?.setInstances(instances, selectedInstanceId);
+        chromeController?.setInstances(instances, selectedInstanceIds);
       };
 
-      const setActiveInstance = (instanceId: string): void => {
-        if (instanceId === selectedInstanceId) {
+      const setActiveInstances = (instanceIds: string[]): void => {
+        const normalized = normalizeInstanceSelection(instanceIds);
+        if (normalized.join('|') === selectedInstanceIds.join('|')) {
           return;
         }
-        selectedInstanceId = instanceId;
+        selectedInstanceIds = normalized;
+        activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
         availableLists = [];
         activeListId = null;
+        activeListInstanceId = null;
         activeListSummary = null;
         activeListData = null;
         loadToken += 1;
@@ -713,11 +791,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const updatePanelContext = (): void => {
         const contextAttributes: Record<string, string> = {
-          'instance-id': selectedInstanceId,
+          'instance-id': activeInstanceId,
+          'instance-ids': selectedInstanceIds.join(','),
         };
-        if (!activeListSummary) {
+        if (!activeListSummary || !activeListInstanceId) {
           host.setContext(contextKey, {
-            instance_id: selectedInstanceId,
+            instance_id: activeInstanceId,
+            instance_ids: selectedInstanceIds,
             contextAttributes,
           });
           services.notifyContextAvailabilityChange();
@@ -737,7 +817,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           type: 'list',
           id: activeListSummary.id,
           name: activeListSummary.name,
-          instance_id: selectedInstanceId,
+          instance_id: activeListInstanceId,
+          instance_ids: selectedInstanceIds,
           description: activeListSummary.description ?? activeListData?.description ?? '',
           tags: activeListSummary.tags ?? [],
           selectedItemIds,
@@ -789,7 +870,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         bodyEl: panelContent,
         getSearchQuery: () => sharedSearchController.getQuery(),
         getSearchTagController: () => sharedSearchController.getTagController(),
-        callOperation: (operation, args) => callInstanceOperation(operation, args),
+        callOperation: (operation, args) =>
+          callInstanceOperation(activeListInstanceId ?? activeInstanceId, operation, args),
         icons: {
           copy: ICONS.copy,
           duplicate: ICONS.duplicate,
@@ -813,11 +895,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getSelectedItemIds: () => bodyManager.getSelectedItemIds(),
         getSelectedItemCount: () => bodyManager.getSelectedItemCount(),
         onSelectionChange: updatePanelContext,
-        getMoveTargetLists: () =>
-          availableLists.map((list) => ({
-            id: list.id,
-            name: list.name,
-          })),
+        getMoveTargetLists: () => {
+          const instanceId = activeListInstanceId ?? activeInstanceId;
+          return availableLists
+            .filter((list) => list.instanceId === instanceId)
+            .map((list) => ({
+              id: list.id,
+              name: list.name,
+            }));
+        },
         openListMetadataDialog: (listId, data) => {
           browserController?.openListMetadataEditor(listId, data);
         },
@@ -897,7 +983,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             setMode('browser');
             return;
           }
-          void selectList(item.id, { focus: false });
+          const instanceId = item.instanceId ?? activeInstanceId;
+          void selectList(item.id, instanceId, { focus: false });
         },
         refreshItems: async () => {
           await refreshLists({ silent: true });
@@ -914,8 +1001,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         },
         listApi: {
           getList: async (listId) => {
-            const raw = await callInstanceOperation<unknown>('get', { id: listId });
-            const list = parseListSummary(raw);
+            const targetInstanceId = activeListInstanceId ?? activeInstanceId;
+            const raw = await callInstanceOperation<unknown>(targetInstanceId, 'get', {
+              id: listId,
+            });
+            const list = parseListSummary(raw, targetInstanceId);
             if (!list) {
               return null;
             }
@@ -929,28 +1019,37 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             };
           },
           createList: async (payload) => {
-            const result = await callInstanceOperation<unknown>('create', buildListArgs(payload));
-            const list = parseListSummary(result);
+            const result = await callInstanceOperation<unknown>(
+              activeInstanceId,
+              'create',
+              buildListArgs(payload),
+            );
+            const list = parseListSummary(result, activeInstanceId);
             return list?.id ?? null;
           },
           updateList: async (listId, payload) => {
-            await callInstanceOperation('update', {
+            const targetInstanceId = activeListInstanceId ?? activeInstanceId;
+            await callInstanceOperation(targetInstanceId, 'update', {
               id: listId,
               ...buildListArgs(payload, { includeEmpty: true }),
             });
             return true;
           },
           deleteList: async (listId) => {
-            await callInstanceOperation('delete', { id: listId });
+            const targetInstanceId = activeListInstanceId ?? activeInstanceId;
+            await callInstanceOperation(targetInstanceId, 'delete', { id: listId });
             return true;
           },
         },
-        fetchPreview: async (itemType, itemId) => {
+        fetchPreview: async (itemType, itemId, instanceId) => {
           if (itemType !== 'list') {
             return null;
           }
           try {
-            return await fetchListPreview(itemId, callInstanceOperation);
+            const targetInstanceId = instanceId ?? activeInstanceId;
+            return await fetchListPreview(itemId, (operation, args) =>
+              callInstanceOperation(targetInstanceId, operation, args),
+            );
           } catch (err) {
             console.error('Failed to load list preview', err);
             return null;
@@ -959,6 +1058,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         viewModeStorageKey: 'aiAssistantListsBrowserViewMode',
         sortModeStorageKey: 'aiAssistantListsBrowserSortMode',
         openNoteEditor: () => undefined,
+        shouldShowInstanceBadge: () => selectedInstanceIds.length > 1,
         onSortModeChanged: () => {
           dropdownController?.populate(getAvailableItems());
           dropdownController?.refreshFilter();
@@ -1003,7 +1103,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!item) {
             return;
           }
-          void selectList(item.id, { focus: false });
+          const instanceId = item.instanceId ?? activeInstanceId;
+          void selectList(item.id, instanceId, { focus: false });
         },
       });
       dropdownController?.attach();
@@ -1022,12 +1123,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const type = item.dataset['collectionType'];
           const listId = item.dataset['collectionId'];
+          const instanceId = item.dataset['collectionInstanceId'] ?? activeInstanceId;
           if (type !== 'list' || !listId) {
             return;
           }
           event.preventDefault();
           event.stopPropagation();
-          void selectList(listId, { focus: false });
+          void selectList(listId, instanceId, { focus: false });
         });
       }
 
@@ -1096,11 +1198,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               ? (list as Instance[])
               : [{ id: DEFAULT_INSTANCE_ID, label: 'Default' }];
           instances = resolved;
-          const hasSelected = instances.some((instance) => instance.id === selectedInstanceId);
-          if (!hasSelected) {
-            selectedInstanceId = DEFAULT_INSTANCE_ID;
+          const normalized = normalizeInstanceSelection(selectedInstanceIds);
+          if (normalized.join('|') !== selectedInstanceIds.join('|')) {
+            selectedInstanceIds = normalized;
+            activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
             availableLists = [];
             activeListId = null;
+            activeListInstanceId = null;
             activeListSummary = null;
             activeListData = null;
             updatePanelContext();
@@ -1131,22 +1235,41 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         refreshInFlight = true;
         const currentToken = ++refreshToken;
         try {
-          const raw = await callInstanceOperation<unknown>('list', {});
+          const results = await Promise.all(
+            selectedInstanceIds.map(async (instanceId) => {
+              const raw = await callInstanceOperation<unknown>(instanceId, 'list', {});
+              return parseListSummaries(raw, instanceId).map((list) => ({
+                ...list,
+                instanceLabel: getInstanceLabel(instanceId),
+              }));
+            }),
+          );
           if (currentToken !== refreshToken) {
             return;
           }
-          availableLists = parseListSummaries(raw);
+          availableLists = results.flat();
           dropdownController?.populate(getAvailableItems());
           browserController?.refresh();
-          if (activeListId) {
-            const updated = availableLists.find((list) => list.id === activeListId);
+          if (activeListId && activeListInstanceId) {
+            const updated = availableLists.find(
+              (list) =>
+                list.id === activeListId && list.instanceId === activeListInstanceId,
+            );
             if (updated) {
               activeListSummary = updated;
               updatePanelContext();
             }
           }
-          if (activeListId && !availableLists.some((list) => list.id === activeListId)) {
+          if (
+            activeListId &&
+            activeListInstanceId &&
+            !availableLists.some(
+              (list) =>
+                list.id === activeListId && list.instanceId === activeListInstanceId,
+            )
+          ) {
             activeListId = null;
+            activeListInstanceId = null;
             activeListSummary = null;
             activeListData = null;
             updatePanelContext();
@@ -1163,16 +1286,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      async function loadList(listId: string, options?: { silent?: boolean }): Promise<void> {
+      async function loadList(
+        listId: string,
+        instanceId: string,
+        options?: { silent?: boolean },
+      ): Promise<void> {
         const currentToken = ++loadToken;
         bodyManager.renderLoading({ type: 'list', id: listId });
         try {
-          const rawList = await callInstanceOperation<unknown>('get', { id: listId });
-          const list = parseListSummary(rawList);
+          const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
+          const list = parseListSummary(rawList, instanceId);
           if (!list) {
             throw new Error('List not found');
           }
-          const rawItems = await callInstanceOperation<unknown>('items-list', {
+          const rawItems = await callInstanceOperation<unknown>(instanceId, 'items-list', {
             listId,
             limit: 0,
             sort: 'position',
@@ -1191,9 +1318,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             items,
           };
           activeListId = list.id;
+          activeListInstanceId = instanceId;
           activeListSummary = list;
           activeListData = data;
-          updateDropdownSelection({ type: 'list', id: list.id });
+          updateDropdownSelection({ type: 'list', id: list.id, instanceId });
           const controls = listPanelController.render(list.id, data);
           sharedSearchController.setRightControls(controls.rightControls);
           updatePanelContext();
@@ -1207,26 +1335,32 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      async function selectList(listId: string, options?: { focus?: boolean }): Promise<void> {
-        if (!listId) {
+      async function selectList(
+        listId: string,
+        instanceId: string,
+        options?: { focus?: boolean },
+      ): Promise<void> {
+        if (!listId || !instanceId) {
           return;
         }
-        if (activeListId === listId && activeListData) {
-          updateDropdownSelection({ type: 'list', id: listId });
+        if (activeListId === listId && activeListInstanceId === instanceId && activeListData) {
+          updateDropdownSelection({ type: 'list', id: listId, instanceId });
           const controls = listPanelController.render(listId, activeListData);
           sharedSearchController.setRightControls(controls.rightControls);
           updatePanelContext();
           setMode('list');
           return;
         }
-        await loadList(listId);
+        await loadList(listId, instanceId);
         if (options?.focus) {
           sharedSearchController.focus(false);
         }
       }
 
       const updateAvailableList = (list: ListSummary): void => {
-        const index = availableLists.findIndex((entry) => entry.id === list.id);
+        const index = availableLists.findIndex(
+          (entry) => entry.id === list.id && entry.instanceId === list.instanceId,
+        );
         if (index >= 0) {
           availableLists[index] = list;
         } else {
@@ -1234,8 +1368,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       };
 
-      const removeAvailableList = (listId: string): void => {
-        availableLists = availableLists.filter((entry) => entry.id !== listId);
+      const removeAvailableList = (listId: string, instanceId: string): void => {
+        availableLists = availableLists.filter(
+          (entry) => !(entry.id === listId && entry.instanceId === instanceId),
+        );
       };
 
       const refreshListBrowser = (): void => {
@@ -1245,11 +1381,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         updateDropdownSelection(getActiveReference());
       };
 
-      const updateListUpdatedAt = (listId: string, updatedAt: string | undefined): void => {
+      const updateListUpdatedAt = (
+        listId: string,
+        instanceId: string,
+        updatedAt: string | undefined,
+      ): void => {
         if (!updatedAt) {
           return;
         }
-        const index = availableLists.findIndex((entry) => entry.id === listId);
+        const index = availableLists.findIndex(
+          (entry) => entry.id === listId && entry.instanceId === instanceId,
+        );
         if (index === -1) {
           return;
         }
@@ -1260,7 +1402,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const updateActiveListMetadata = (list: ListSummary): void => {
-        if (activeListId !== list.id) {
+        if (activeListId !== list.id || activeListInstanceId !== list.instanceId) {
           return;
         }
         activeListSummary = list;
@@ -1292,9 +1434,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!listId || !action) {
           return;
         }
+        const instanceId = resolveEventInstanceId(payload);
+        if (!selectedInstanceIds.includes(instanceId)) {
+          return;
+        }
 
         const refresh = payload['refresh'] === true;
-        const listSummary = parseListSummary(payload['list']);
+        const listSummary = parseListSummary(payload['list'], instanceId);
         const item = parseListItem(payload['item']);
         const itemId = typeof payload['itemId'] === 'string' ? payload['itemId'].trim() : '';
 
@@ -1305,17 +1451,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           updateActiveListMetadata(listSummary);
           listsChanged = true;
         } else if (action === 'list_deleted') {
-          removeAvailableList(listId);
+          removeAvailableList(listId, instanceId);
           listsChanged = true;
         }
 
         if (item?.updatedAt) {
-          updateListUpdatedAt(listId, item.updatedAt);
+          updateListUpdatedAt(listId, instanceId, item.updatedAt);
           listsChanged = true;
         }
 
-        if (action === 'list_deleted' && activeListId === listId) {
+        if (
+          action === 'list_deleted' &&
+          activeListId === listId &&
+          activeListInstanceId === instanceId
+        ) {
           activeListId = null;
+          activeListInstanceId = null;
           activeListSummary = null;
           activeListData = null;
           updatePanelContext();
@@ -1330,10 +1481,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
 
         if (action.startsWith('item_')) {
-          browserController?.invalidatePreview({ type: 'list', id: listId });
+          browserController?.invalidatePreview({ type: 'list', id: listId, instanceId });
         }
 
-        if (activeListId !== listId || !activeListData) {
+        if (
+          activeListId !== listId ||
+          activeListInstanceId !== instanceId ||
+          !activeListData
+        ) {
           return;
         }
 
@@ -1346,14 +1501,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         if (action.startsWith('item_')) {
           if (refresh) {
-            await loadList(listId, { silent: true });
+            await loadList(listId, instanceId, { silent: true });
             return;
           }
           if (action === 'item_updated' && item) {
             if (mode === 'list') {
               const handled = listPanelController.applyItemUpdate(item);
               if (!handled) {
-                await loadList(listId, { silent: true });
+                await loadList(listId, instanceId, { silent: true });
               }
             } else {
               updateActiveListItem(item);
@@ -1365,11 +1520,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           if (action === 'item_removed' && itemId) {
-            await loadList(listId, { silent: true });
+            await loadList(listId, instanceId, { silent: true });
             return;
           }
           if (action === 'item_added' && item) {
-            await loadList(listId, { silent: true });
+            await loadList(listId, instanceId, { silent: true });
             return;
           }
         }
@@ -1389,8 +1544,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
       if (listButton) {
         listButton.addEventListener('click', () => {
-          if (activeListId) {
-            void selectList(activeListId, { focus: true });
+          if (activeListId && activeListInstanceId) {
+            void selectList(activeListId, activeListInstanceId, { focus: true });
           } else {
             setMode('browser');
           }
@@ -1405,11 +1560,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         root,
         host,
         title: 'Lists',
-        onInstanceChange: (instanceId) => {
-          setActiveInstance(instanceId);
+        instanceSelectionMode: 'multi',
+        onInstanceChange: (instanceIds) => {
+          setActiveInstances(instanceIds);
         },
       });
-      chromeController.setInstances(instances, selectedInstanceId);
+      chromeController.setInstances(instances, selectedInstanceIds);
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
@@ -1417,26 +1573,43 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const stored = host.loadPanelState();
       let initialListId: string | null = null;
       let initialMode: ViewMode | null = null;
-      let initialInstanceId: string | null = null;
+      let initialInstanceIds: string[] | null = null;
+      let initialListInstanceId: string | null = null;
       if (stored && typeof stored === 'object') {
         const data = stored as Record<string, unknown>;
         if (typeof data['selectedListId'] === 'string') {
           initialListId = data['selectedListId'];
         }
+        if (typeof data['selectedListInstanceId'] === 'string') {
+          initialListInstanceId = data['selectedListInstanceId'];
+        }
         if (data['mode'] === 'browser' || data['mode'] === 'list') {
           initialMode = data['mode'] as ViewMode;
         }
-        if (typeof data['instanceId'] === 'string') {
-          selectedInstanceId = data['instanceId'];
-          initialInstanceId = data['instanceId'];
+        if (Array.isArray(data['instanceIds'])) {
+          selectedInstanceIds = data['instanceIds'].filter(
+            (id): id is string => typeof id === 'string',
+          );
+          initialInstanceIds = [...selectedInstanceIds];
+        } else if (typeof data['instanceId'] === 'string') {
+          selectedInstanceIds = [data['instanceId']];
+          initialInstanceIds = [...selectedInstanceIds];
         }
+        if (selectedInstanceIds.length === 0) {
+          selectedInstanceIds = [DEFAULT_INSTANCE_ID];
+        }
+        activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
       }
 
       // Wait for preferences to load before initializing list view
       void preferencesLoaded.then(() => {
         void refreshInstances({ silent: true }).then(() => {
-          if (initialInstanceId && initialInstanceId !== selectedInstanceId) {
+          if (
+            initialInstanceIds &&
+            initialInstanceIds.join('|') !== selectedInstanceIds.join('|')
+          ) {
             initialListId = null;
+            initialListInstanceId = null;
           }
           void refreshLists().then(() => {
             if (activeListId) {
@@ -1444,7 +1617,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               return;
             }
             if (initialListId) {
-              void selectList(initialListId).then(() => {
+              const resolvedInstanceId =
+                initialListInstanceId ??
+                availableLists.find((list) => list.id === initialListId)?.instanceId ??
+                activeInstanceId;
+              void selectList(initialListId, resolvedInstanceId).then(() => {
                 if (initialMode) {
                   setMode(initialMode);
                 }
@@ -1481,15 +1658,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const type = payload['type'];
           if (type === 'lists_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
-            if (eventInstanceId !== selectedInstanceId) {
-              setActiveInstance(eventInstanceId);
+            if (!selectedInstanceIds.includes(eventInstanceId)) {
+              setActiveInstances([eventInstanceId, ...selectedInstanceIds]);
             }
             const listId = typeof payload['listId'] === 'string' ? payload['listId'].trim() : '';
             const itemId = typeof payload['itemId'] === 'string' ? payload['itemId'].trim() : '';
             if (!listId) {
               return;
             }
-            void selectList(listId, { focus: true }).then(() => {
+            void selectList(listId, eventInstanceId, { focus: true }).then(() => {
               if (itemId) {
                 highlightListItem(itemId);
               }
@@ -1497,10 +1674,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           if (type === 'panel_update') {
-            const eventInstanceId = resolveEventInstanceId(payload);
-            if (eventInstanceId !== selectedInstanceId) {
-              return;
-            }
             void handlePanelUpdate(payload);
           }
         },

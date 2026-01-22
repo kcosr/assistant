@@ -61,6 +61,7 @@ describe('DefaultPluginRegistry', () => {
 
     const config: AppConfig = {
       agents: [],
+      profiles: [],
       plugins: {
         fixture: { enabled: true, source: { path: pluginRoot } },
       },
@@ -82,6 +83,7 @@ describe('DefaultPluginRegistry', () => {
 
     const config: AppConfig = {
       agents: [],
+      profiles: [],
       plugins: {},
       mcpServers: [],
     };
@@ -115,6 +117,7 @@ describe('DefaultPluginRegistry', () => {
 
     const config: AppConfig = {
       agents: [],
+      profiles: [],
       plugins: {
         lists: { enabled: false },
         notes: { enabled: false },
@@ -157,6 +160,7 @@ describe('DefaultPluginRegistry', () => {
 
     const config: AppConfig = {
       agents: [],
+      profiles: [],
       plugins: {
         broken: { enabled: true },
       },
@@ -187,6 +191,7 @@ describe('PluginToolHost', () => {
 
     const config: AppConfig = {
       agents: [],
+      profiles: [],
       plugins: {
         fixture: { enabled: true, source: { path: pluginRoot } },
       },

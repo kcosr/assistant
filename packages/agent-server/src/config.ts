@@ -618,6 +618,26 @@ export const GitVersioningConfigSchema = z.object({
 
 export type GitVersioningConfig = z.infer<typeof GitVersioningConfigSchema>;
 
+const PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/i;
+const DEFAULT_PROFILE_ID = 'default';
+
+const ProfileConfigSchema = z.object({
+  id: NonEmptyTrimmedStringSchema,
+  label: NonEmptyTrimmedStringSchema.optional(),
+});
+
+export type ProfileConfig = z.infer<typeof ProfileConfigSchema>;
+
+const ProfilesConfigSchema = z
+  .array(ProfileConfigSchema)
+  .optional()
+  .transform((value) => value ?? []);
+
+export type ProfileDefinition = {
+  id: string;
+  label: string;
+};
+
 export const PluginConfigSchema = z
   .object({
     enabled: z.boolean(),
@@ -690,23 +710,145 @@ export const SessionsConfigSchema = z.object({
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
 
-export const AppConfigSchema = z.object({
-  agents: z
-    .array(AgentConfigSchema)
-    .optional()
-    .transform((value) => value ?? []),
-  plugins: z
-    .record(PluginConfigSchema)
-    .optional()
-    .transform<PluginsConfig>((value) => value ?? {}),
-  mcpServers: z
-    .array(McpServerConfigSchema)
-    .optional()
-    .transform((value) => value ?? []),
-  sessions: SessionsConfigSchema.optional(),
-});
+export const AppConfigSchema = z
+  .object({
+    agents: z
+      .array(AgentConfigSchema)
+      .optional()
+      .transform((value) => value ?? []),
+    profiles: ProfilesConfigSchema,
+    plugins: z
+      .record(PluginConfigSchema)
+      .optional()
+      .transform<PluginsConfig>((value) => value ?? {}),
+    mcpServers: z
+      .array(McpServerConfigSchema)
+      .optional()
+      .transform((value) => value ?? []),
+    sessions: SessionsConfigSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const profileIds = new Set<string>();
+    const seenProfiles = new Set<string>();
+
+    value.profiles.forEach((profile, index) => {
+      const normalized = normalizeProfileId(profile.id);
+      if (!normalized) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['profiles', index, 'id'],
+          message: `Invalid profile id "${profile.id}"`,
+        });
+        return;
+      }
+      if (seenProfiles.has(normalized)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['profiles', index, 'id'],
+          message: `Duplicate profile id "${normalized}"`,
+        });
+        return;
+      }
+      seenProfiles.add(normalized);
+      profileIds.add(normalized);
+    });
+
+    profileIds.add(DEFAULT_PROFILE_ID);
+
+    for (const [pluginId, pluginConfig] of Object.entries(value.plugins)) {
+      const rawInstances = pluginConfig.instances;
+      if (!Array.isArray(rawInstances)) {
+        continue;
+      }
+      rawInstances.forEach((entry, index) => {
+        const rawId = typeof entry === 'string' ? entry : entry?.id;
+        if (typeof rawId !== 'string') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['plugins', pluginId, 'instances', index],
+            message: `Instance id for plugin "${pluginId}" must be a string`,
+          });
+          return;
+        }
+        const normalized = normalizeProfileId(rawId);
+        if (!normalized) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['plugins', pluginId, 'instances', index],
+            message: `Invalid instance id "${rawId}" for plugin "${pluginId}"`,
+          });
+          return;
+        }
+        if (!profileIds.has(normalized)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['plugins', pluginId, 'instances', index],
+            message: `Instance id "${normalized}" for plugin "${pluginId}" is not defined in profiles`,
+          });
+        }
+      });
+    }
+  });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
+
+function formatProfileLabel(id: string): string {
+  return id
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function normalizeProfileId(value: string): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = trimmed.toLowerCase();
+  if (!PROFILE_ID_PATTERN.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeProfiles(profiles: ProfileConfig[]): ProfileDefinition[] {
+  const map = new Map<string, ProfileDefinition>();
+  for (const profile of profiles) {
+    const normalized = normalizeProfileId(profile.id);
+    if (!normalized) {
+      throw new Error(`Invalid profile id "${profile.id}"`);
+    }
+    if (map.has(normalized)) {
+      throw new Error(`Duplicate profile id "${normalized}"`);
+    }
+    const label = profile.label?.trim() || formatProfileLabel(normalized);
+    map.set(normalized, { id: normalized, label });
+  }
+
+  if (!map.has(DEFAULT_PROFILE_ID)) {
+    map.set(DEFAULT_PROFILE_ID, {
+      id: DEFAULT_PROFILE_ID,
+      label: 'Default',
+    });
+  }
+
+  const entries = Array.from(map.values());
+  if (entries.length === 0) {
+    return entries;
+  }
+  if (entries[0]?.id === DEFAULT_PROFILE_ID) {
+    return entries;
+  }
+  const defaultProfile = map.get(DEFAULT_PROFILE_ID);
+  if (!defaultProfile) {
+    return entries;
+  }
+  return [defaultProfile, ...entries.filter((profile) => profile.id !== DEFAULT_PROFILE_ID)];
+}
 
 function substituteEnvVars(value: string): string {
   return value.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, name: string) => {
@@ -766,6 +908,10 @@ export function loadConfig(configPath: string): AppConfig {
     );
   }
 
-  const config = AppConfigSchema.parse(parsedJson);
-  return applyEnvSubstitution(config);
+  const config = applyEnvSubstitution(AppConfigSchema.parse(parsedJson));
+  const profiles = normalizeProfiles(config.profiles ?? []);
+  return {
+    ...config,
+    profiles,
+  };
 }

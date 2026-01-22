@@ -315,6 +315,10 @@ objects with labels:
 }
 ```
 
+When `profiles` are defined at the top level of `config.json`, instance ids must match one of the
+profile ids (the built-in `default` profile is always available). This enables shared, cross-plugin
+scoping labels such as `work` or `personal`.
+
 ## Plugin Lifecycle Hooks
 
 Server plugins can provide optional lifecycle hooks in their module export:
@@ -685,14 +689,31 @@ const chrome = new PanelChromeController({
   root,
   host,
   title: 'Notes',
-  onInstanceChange: (instanceId) => setActiveInstance(instanceId),
+  onInstanceChange: (instanceIds) => setActiveInstance(instanceIds[0] ?? 'default'),
 });
 
-chrome.setInstances(instances, selectedInstanceId);
+chrome.setInstances(instances, selectedInstanceIds);
 ```
 
 If your panel does not support instances, omit the instance dropdown markup and the controller
 will hide the slot automatically.
+
+For multi‑profile selection, opt in explicitly:
+
+```ts
+const chrome = new PanelChromeController({
+  root,
+  host,
+  title: 'Notes',
+  instanceSelectionMode: 'multi',
+  onInstanceChange: (instanceIds) => {
+    selectedInstanceIds = instanceIds;
+    activeInstanceId = instanceIds[0] ?? 'default';
+  },
+});
+
+chrome.setInstances(instances, selectedInstanceIds);
+```
 
 ### Core Services Context
 
@@ -731,6 +752,12 @@ host.setContext(contextKey, {
   description: 'Optional description',
   selectedItemIds: ['item-1', 'item-2'],
   selectedItems: [{ id: 'item-1', title: 'First item' }],
+  instance_id: 'default',
+  instance_ids: ['default', 'work'],
+  contextAttributes: {
+    'instance-id': 'default',
+    'instance-ids': 'default,work',
+  },
 });
 ```
 

@@ -1,0 +1,60 @@
+{
+  "id": "search",
+  "version": "0.1.0",
+  "description": "Global search across plugins.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["search"],
+    "capabilities": ["search.read"]
+  },
+  "operations": [
+    {
+      "id": "search",
+      "summary": "Run global search across plugins.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query."
+          },
+          "profiles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Profile/instance ids to include (defaults to all)."
+          },
+          "plugin": {
+            "type": "string",
+            "description": "Limit results to a specific plugin id."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Deprecated alias for plugin."
+          },
+          "instance": {
+            "type": "string",
+            "description": "Limit results to a specific instance id."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return."
+          }
+        },
+        "required": ["query"]
+      },
+      "capabilities": ["search.read"],
+      "tool": {
+        "description": "Search across all plugins that provide search results."
+      }
+    },
+    {
+      "id": "scopes",
+      "summary": "List searchable plugin scopes and instances.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["search.read"]
+    }
+  ]
+}
