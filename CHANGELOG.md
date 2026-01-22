@@ -5,20 +5,15 @@
 ### Breaking Changes
 
 ### Added
-- Added Capacitor-only floating add-item button in lists view. ([#000](<pr-url>))
+- Added floating add-item button in lists view for Capacitor builds and small viewports. ([#000](<pr-url>))
 - Added browser-mode keyboard navigation for list/note collections (arrow keys/Enter, Escape to return). ([#000](<pr-url>))
 - Added sticky list column headers during list scrolling. ([#000](<pr-url>))
+- Added list column resizing with per-panel column width persistence. ([#000](<pr-url>))
 
 ### Changed
 - Changed list arrow-key navigation to stop at the first/last item. ([#000](<pr-url>))
 
 ### Fixed
-- Fixed list column resize dragging and panel-scoped column width persistence. ([#000](<pr-url>))
-- Fixed initial column resize drag jump by locking current widths. ([#000](<pr-url>))
-- Fixed lists floating add button positioning on narrow screens. ([#000](<pr-url>))
-- Fixed sticky list headers to remove the gap under the search bar. ([#000](<pr-url>))
-- Fixed list header row styling to remove rounded edge gaps. ([#000](<pr-url>))
-- Fixed list header description spacing so it doesn't crowd the table. ([#000](<pr-url>))
 
 ### Removed
 

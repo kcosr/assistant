@@ -668,6 +668,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let dropdownController: CollectionDropdownController | null = null;
       let chromeController: PanelChromeController | null = null;
       let unsubscribePanelActive: (() => void) | null = null;
+      let unsubscribeViewportResize: (() => void) | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
@@ -770,9 +771,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!fabAddButton) {
           return;
         }
-        const shouldShow = isCapacitor && mode === 'list' && !!activeListId;
+        const shouldShow =
+          mode === 'list' &&
+          !!activeListId &&
+          (isCapacitor || services.isMobileViewport());
         fabAddButton.classList.toggle('is-visible', shouldShow);
       };
+
+      if (typeof window !== 'undefined') {
+        const handleResize = () => updateFabVisibility();
+        window.addEventListener('resize', handleResize);
+        unsubscribeViewportResize = () => {
+          window.removeEventListener('resize', handleResize);
+        };
+      }
 
       const callInstanceOperation = async <T>(
         instanceId: string,
@@ -1964,6 +1976,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           detachPanelShortcuts();
           chromeController?.destroy();
           unsubscribePanelActive?.();
+          unsubscribeViewportResize?.();
           host.setContext(contextKey, null);
           if (highlightTimeout) {
             window.clearTimeout(highlightTimeout);
