@@ -30,6 +30,7 @@ import {
 import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
+import { PINNED_TAG, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
 import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
   type PanelCoreServices,
@@ -410,7 +411,7 @@ function renderListTags(tags: string[] | undefined): HTMLElement | null {
   wrapper.className = 'collection-tags';
   for (const rawTag of tags) {
     const tag = rawTag.trim();
-    if (!tag) {
+    if (!tag || isPinnedTag(tag)) {
       continue;
     }
     const pill = document.createElement('span');
@@ -624,6 +625,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!bodyEl) {
           return;
         }
+        listPanelController.selectItemById(itemId, { scroll: false });
         const safeId =
           typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
             ? CSS.escape(itemId)
@@ -669,6 +671,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let chromeController: PanelChromeController | null = null;
       let unsubscribePanelActive: (() => void) | null = null;
       let unsubscribeViewportResize: (() => void) | null = null;
+      let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
@@ -683,6 +686,28 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
       updatePanelSelection(host.getContext('panel.active'));
       unsubscribePanelActive = host.subscribeContext('panel.active', updatePanelSelection);
+
+      const isKnownInstance = (instanceId: string): boolean =>
+        instances.some((instance) => instance.id === instanceId);
+
+      const applyPendingShowEvent = (): void => {
+        if (!pendingShowEvent) {
+          return;
+        }
+        const { listId, instanceId, itemId } = pendingShowEvent;
+        if (!isKnownInstance(instanceId)) {
+          return;
+        }
+        pendingShowEvent = null;
+        if (!selectedInstanceIds.includes(instanceId)) {
+          setActiveInstances([instanceId, ...selectedInstanceIds]);
+        }
+        void selectList(listId, instanceId, { focus: false }).then(() => {
+          if (itemId) {
+            highlightListItem(itemId);
+          }
+        });
+      };
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -1132,6 +1157,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           clockOff: ICONS.clockOff,
           moveTop: ICONS.chevronUp,
           moveBottom: ICONS.chevronDown,
+          pin: ICONS.pin,
         },
         renderTags: renderListTags,
         setStatus: services.setStatus,
@@ -1260,6 +1286,25 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sortAlpha: ICONS.sortAlpha,
           fileText: ICONS.fileText,
           list: ICONS.list,
+          pin: ICONS.pin,
+        },
+        onTogglePinned: (item, isPinned) => {
+          if (item.type !== 'list') {
+            return;
+          }
+          const targetInstanceId = item.instanceId ?? activeInstanceId;
+          const operation = isPinned ? 'tags-remove' : 'tags-add';
+          void (async () => {
+            try {
+              await callInstanceOperation(targetInstanceId, operation, {
+                id: item.id,
+                tags: [PINNED_TAG],
+              });
+            } catch (err) {
+              console.error('Failed to toggle pinned list', err);
+              services.setStatus('Failed to update pinned list');
+            }
+          })();
         },
         listApi: {
           getList: async (listId, instanceId) => {
@@ -1511,6 +1556,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           updatePanelContext();
           renderInstanceSelect();
           updatePanelMetadata();
+          applyPendingShowEvent();
         } catch (error) {
           if (!options?.silent) {
             services.setStatus('Failed to load instances');
@@ -1832,6 +1878,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           : DEFAULT_INSTANCE_ID;
       };
 
+      const handleShowEvent = (listId: string, instanceId: string, itemId?: string): void => {
+        if (!isKnownInstance(instanceId)) {
+          pendingShowEvent = { listId, instanceId, ...(itemId ? { itemId } : {}) };
+          void refreshInstances({ silent: true });
+          return;
+        }
+        if (!selectedInstanceIds.includes(instanceId)) {
+          setActiveInstances([instanceId, ...selectedInstanceIds]);
+        }
+        void selectList(listId, instanceId, { focus: false }).then(() => {
+          if (itemId) {
+            highlightListItem(itemId);
+          }
+        });
+      };
+
       if (browserButton) {
         browserButton.addEventListener('click', () => {
           setMode('browser');
@@ -1953,19 +2015,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const type = payload['type'];
           if (type === 'lists_show') {
             const eventInstanceId = resolveEventInstanceId(payload);
-            if (!selectedInstanceIds.includes(eventInstanceId)) {
-              setActiveInstances([eventInstanceId, ...selectedInstanceIds]);
-            }
             const listId = typeof payload['listId'] === 'string' ? payload['listId'].trim() : '';
             const itemId = typeof payload['itemId'] === 'string' ? payload['itemId'].trim() : '';
             if (!listId) {
               return;
             }
-            void selectList(listId, eventInstanceId, { focus: true }).then(() => {
-              if (itemId) {
-                highlightListItem(itemId);
-              }
-            });
+            handleShowEvent(listId, eventInstanceId, itemId || undefined);
             return;
           }
           if (type === 'panel_update') {

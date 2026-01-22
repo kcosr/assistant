@@ -90,7 +90,15 @@ const COMMAND_OPTIONS: OptionItem[] = [
     description: 'Search notes, lists, and more',
     type: 'command',
   },
+  {
+    id: 'pinned',
+    label: 'Pinned',
+    description: 'Show pinned notes and lists',
+    type: 'command',
+  },
 ];
+
+const PINNED_QUERY = 'tag:pinned';
 
 const MAIN_MENU_ITEMS: Array<{
   id: string;
@@ -210,7 +218,7 @@ export class CommandPaletteController {
     this.isOpen = true;
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
-    input.value = '/';
+    input.value = '';
     this.profileSkipped = false;
     this.pluginSkipped = false;
     this.activeMode = 'idle';
@@ -364,7 +372,7 @@ export class CommandPaletteController {
 
   private parseInput(value: string): ParsedState {
     if (!value) {
-      return { mode: 'idle' };
+      return { mode: 'command', commandQuery: '' };
     }
     if (!value.startsWith('/')) {
       return { mode: 'global', query: value };
@@ -376,8 +384,16 @@ export class CommandPaletteController {
       return { mode: 'command', commandQuery: '' };
     }
     const normalizedCommand = commandToken.toLowerCase();
-    if (!'search'.startsWith(normalizedCommand)) {
+    const isSearchCommand = 'search'.startsWith(normalizedCommand);
+    const isPinnedCommand = 'pinned'.startsWith(normalizedCommand);
+    if (!isSearchCommand && !isPinnedCommand) {
       return { mode: 'command', commandQuery: commandToken };
+    }
+    if (isPinnedCommand) {
+      if (normalizedCommand !== 'pinned') {
+        return { mode: 'command', commandQuery: commandToken };
+      }
+      return { mode: 'global', query: PINNED_QUERY };
     }
     const commandConfirmed =
       normalizedCommand === 'search' && (hasTrailingSpace || rest.trim().length > 0);
@@ -755,6 +771,12 @@ export class CommandPaletteController {
       return;
     }
     if (option.type === 'command') {
+      if (option.id === 'pinned') {
+        this.setInputValue('/pinned');
+        this.profileSkipped = false;
+        this.pluginSkipped = false;
+        return;
+      }
       this.setInputValue('/search ');
       this.profileSkipped = false;
       this.pluginSkipped = false;

@@ -55,7 +55,7 @@ describe('ListPanelTableController double-click edit', () => {
   it('calls onEditItem when double-clicking a row', () => {
     const onEditItem = vi.fn();
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -81,7 +81,7 @@ describe('ListPanelTableController double-click edit', () => {
   it('does not call onEditItem when double-clicking the menu trigger', () => {
     const onEditItem = vi.fn();
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -141,7 +141,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('starts dragging when the row body is used', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -190,7 +190,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('does not start dragging from title text', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -230,7 +230,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('selects a row on click when the panel is active', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -255,7 +255,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('clears selection when clicking the selected row in single-click mode', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -282,7 +282,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('ignores modifier-toggle selection when single-click mode is enabled', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -319,7 +319,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('does not select a row on click when the panel is not active', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -344,7 +344,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('does not select a row on click when single-click selection is disabled', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -374,7 +374,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
   it('moves selected items to another list on pointer drop', async () => {
     const onMoveItemsToList = vi.fn(async () => {});
     const sourceController = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -385,7 +385,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     });
 
     const targetController = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -483,7 +483,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
 
   it('selects only visible rows when selecting visible', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -523,7 +523,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
   it('updates bulk action visibility when selection changes', () => {
     const onSelectionChange = vi.fn();
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -609,7 +609,7 @@ describe('ListPanelTableController keyboard selection', () => {
 
   it('selects and wraps with arrow navigation', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -636,7 +636,7 @@ describe('ListPanelTableController keyboard selection', () => {
 
   it('extends and contracts selection with shift navigation', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -681,7 +681,7 @@ describe('ListPanelTableController notes column', () => {
   it('renders markdown in the notes cell without inline editing', async () => {
     const updateListItem = vi.fn(async () => true);
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -729,7 +729,7 @@ describe('ListPanelTableController notes column', () => {
 
   it('renders custom field columns when data exists', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -789,7 +789,7 @@ describe('ListPanelTableController column preferences', () => {
 
   it('applies columnWidths to headers and cells when provided', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,
@@ -839,7 +839,7 @@ describe('ListPanelTableController column preferences', () => {
 
   it('invokes onColumnVisibilityChange when selecting a visibility option', () => {
     const controller = new ListPanelTableController({
-      icons: { moreVertical: '' },
+      icons: { moreVertical: '', pin: '' },
       renderTags: () => null,
       recentUserItemUpdates,
       userUpdateTimeoutMs: 1000,

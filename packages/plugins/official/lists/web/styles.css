@@ -1002,6 +1002,16 @@
   min-width: 0;
 }
 
+.collection-browser-item-pin {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.collection-browser-item-pin .icon {
+  width: 14px;
+  height: 14px;
+}
+
 .collection-browser-item-badge {
   display: inline-flex;
   align-items: center;
@@ -2042,6 +2052,16 @@ body.list-row-dragging .list-item-row * {
   align-items: center;
   gap: var(--spacing-xs);
   min-width: 0;
+}
+
+.list-item-pin {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.list-item-pin .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .list-item-title-main span,

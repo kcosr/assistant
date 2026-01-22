@@ -81,8 +81,8 @@ A unified command palette (Cmd+K / Ctrl+K) that:
 
 | Trigger | Action |
 |---------|--------|
-| `Cmd+K` / `Ctrl+K` | Open command palette (search preselected) |
-| Click search icon | Open command palette (search preselected) |
+| `Cmd+K` / `Ctrl+K` | Open command palette (commands list preselected) |
+| Click search icon | Open command palette (commands list preselected) |
 | `Escape` | Close palette |
 
 ### Input Modes
@@ -105,6 +105,9 @@ Typing without `/` prefix triggers instant global search:
 
 #### Command Mode (Scoped Search)
 
+The palette opens with the command list visible. Typing `/` keeps the command list, while
+starting to type normal text switches to global search.
+
 Typing `/` enters command mode with staged input:
 
 ```
@@ -112,10 +115,13 @@ Typing `/` enters command mode with staged input:
 │ /|                                          │
 ├─────────────────────────────────────────────┤
 │ ▶ search — Search notes, lists, ...         │
+│   pinned — Show pinned notes and lists      │
 └─────────────────────────────────────────────┘
 ```
 
-For v1, `/search` is the only supported command. Additional commands remain future work.
+Supported commands:
+- `/search` – guided scoped search flow
+- `/pinned` – show all items tagged `pinned`
 
 ### Staged Input Flow
 
@@ -305,6 +311,9 @@ command      = "/" command_name args*
 # Search command
 /search [profile] [plugin] query
 
+# Pinned command
+/pinned
+
 profile      = shared profile ID (e.g., "work", "default")
 plugin       = plugin ID (e.g., "notes", "lists")
 query        = free-form search text
@@ -319,6 +328,7 @@ query        = free-form search text
 | `/search work meeting` | Search all plugins in the work profile for "meeting" |
 | `/search work notes meeting` | Search notes in work for "meeting" |
 | `/search personal lists book` | Search lists in personal for "book" |
+| `/pinned` | Show all pinned notes and lists |
 
 ### Fast Path
 

@@ -61,6 +61,33 @@ function parseRequiredTags(value: unknown): string[] {
   return normalized;
 }
 
+const TAG_QUERY_PATTERN = /^(?:tag|tags):(.+)$/i;
+
+function parseTagQuery(query: string): string | null {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.startsWith('#')) {
+    const normalized = normalizeTags([trimmed.slice(1)])[0];
+    return normalized ?? null;
+  }
+  const match = TAG_QUERY_PATTERN.exec(trimmed);
+  if (!match) {
+    return null;
+  }
+  const normalized = normalizeTags([match[1] ?? ''])[0];
+  return normalized ?? null;
+}
+
+function toScore(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function requireSessionHub(ctx: ToolContext) {
   const sessionHub = ctx.sessionHub;
   if (!sessionHub) {
@@ -180,6 +207,39 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const { instanceId, limit = 10 } = options;
       const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
       const results: SearchResult[] = [];
+      const tagQuery = parseTagQuery(trimmed);
+
+      if (tagQuery) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const notes = await store.list({ tags: [tagQuery] });
+          const sorted = notes.slice().sort((a, b) => {
+            const scoreA = toScore(a.updated ?? a.created);
+            const scoreB = toScore(b.updated ?? b.created);
+            return scoreB - scoreA;
+          });
+          for (const note of sorted) {
+            results.push({
+              id: note.title,
+              title: note.title,
+              subtitle: note.tags?.join(', '),
+              score: toScore(note.updated ?? note.created),
+              launch: {
+                panelType: 'notes',
+                payload: {
+                  type: 'notes_show',
+                  instance_id: instId,
+                  title: note.title,
+                },
+              },
+            });
+          }
+        }
+        return results.slice(0, limit);
+      }
 
       if (!trimmed) {
         for (const instId of targetInstances) {
