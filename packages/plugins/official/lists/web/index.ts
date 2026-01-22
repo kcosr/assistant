@@ -1049,8 +1049,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           services.listColumnPreferencesClient.getFocusMarkerItemId(listId),
         getFocusMarkerExpanded: (listId) =>
           services.listColumnPreferencesClient.getFocusMarkerExpanded(listId),
-        getSingleClickSelection: (listId) =>
-          services.listColumnPreferencesClient.getSingleClickSelection(listId),
         updateFocusMarker: (listId, focusMarkerItemId, focusMarkerExpanded) => {
           void services.listColumnPreferencesClient.updateFocusMarker(
             listId,
@@ -1062,12 +1060,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           void services.listColumnPreferencesClient.updateFocusMarkerExpanded(
             listId,
             focusMarkerExpanded,
-          );
-        },
-        updateSingleClickSelection: (listId, singleClickSelection) => {
-          void services.listColumnPreferencesClient.updateSingleClickSelection(
-            listId,
-            singleClickSelection,
           );
         },
         setRightControls: (elements) => {

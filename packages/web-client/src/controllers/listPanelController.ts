@@ -90,14 +90,12 @@ export interface ListPanelControllerOptions {
   updateTimelineField: (listId: string, timelineField: string | null) => void;
   getFocusMarkerItemId: (listId: string) => string | null;
   getFocusMarkerExpanded: (listId: string) => boolean;
-  getSingleClickSelection: (listId: string) => boolean;
   updateFocusMarker: (
     listId: string,
     focusMarkerItemId: string | null,
     focusMarkerExpanded?: boolean,
   ) => void;
   updateFocusMarkerExpanded: (listId: string, focusMarkerExpanded: boolean) => void;
-  updateSingleClickSelection: (listId: string, singleClickSelection: boolean) => void;
   setRightControls: (elements: HTMLElement[]) => void;
 }
 
@@ -135,7 +133,6 @@ export class ListPanelController {
   private currentTimelineField: string | null = null;
   private currentFocusMarkerItemId: string | null = null;
   private currentFocusMarkerExpanded: boolean = false;
-  private currentSingleClickSelection = true;
   private currentListId: string | null = null;
   private currentData: ListPanelData | null = null;
   private currentSortedItems: ListPanelItem[] = [];
@@ -385,7 +382,6 @@ export class ListPanelController {
       this.currentTimelineField = this.options.getTimelineField(listId);
       this.currentFocusMarkerItemId = this.options.getFocusMarkerItemId(listId);
       this.currentFocusMarkerExpanded = this.options.getFocusMarkerExpanded(listId);
-      this.currentSingleClickSelection = this.options.getSingleClickSelection(listId);
     }
 
     // Get custom fields early for the header
@@ -463,13 +459,6 @@ export class ListPanelController {
             this.options.updateFocusMarker(listId, firstItem.id, false);
           }
         }
-        const newControls = this.render(listId, data);
-        this.options.setRightControls(newControls.rightControls);
-      },
-      singleClickSelection: this.currentSingleClickSelection,
-      onSingleClickSelectionToggle: (enabled: boolean) => {
-        this.currentSingleClickSelection = enabled;
-        this.options.updateSingleClickSelection(listId, enabled);
         const newControls = this.render(listId, data);
         this.options.setRightControls(newControls.rightControls);
       },
@@ -638,7 +627,6 @@ export class ListPanelController {
     const { table, tbody, colCount, hasAnyItems } = this.tableController.renderTable({
       listId,
       sortedItems,
-      enableSingleClickSelection: this.currentSingleClickSelection,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,

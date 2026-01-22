@@ -121,7 +121,7 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 In layout navigation mode: arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages.
 
 **Lists panel item selection:**
-- `Click` – Select item (when enabled in Actions menu)
+- `Click` – Select item (when enabled in Settings menu)
 - `Shift + Click` – Range select from last selected item to clicked item
 - `Cmd + Click` (macOS) / `Ctrl + Click` (others) – Toggle individual item selection
 - `Double-click` – Edit item

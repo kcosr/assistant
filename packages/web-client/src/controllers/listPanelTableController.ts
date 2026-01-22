@@ -9,6 +9,7 @@ import { parseFieldValueToDate, toggleSort } from '../utils/listSorting';
 const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11h6M9 15h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
 const LIST_ITEMS_DRAG_TYPE = 'application/x-list-items';
+const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
 
 export interface ListPanelTableControllerOptions {
   icons: {
@@ -44,7 +45,6 @@ export interface ListPanelTableControllerOptions {
 export interface ListPanelTableRenderOptions {
   listId: string;
   sortedItems: ListPanelItem[];
-  enableSingleClickSelection?: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -119,7 +119,6 @@ export class ListPanelTableController {
   private draggedListId: string | null = null;
   private lastSelectedRowIndex: number | null = null;
   private keyboardSelectionAnchorIndex: number | null = null;
-  private enableSingleClickSelection = true;
   private activeColumnMenu: HTMLElement | null = null;
   private notesPopup: HTMLElement | null = null;
   private notesPopupHideTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -324,7 +323,6 @@ export class ListPanelTableController {
 
   renderTable(renderOptions: ListPanelTableRenderOptions): ListPanelTableRenderResult {
     this.keyboardSelectionAnchorIndex = null;
-    this.enableSingleClickSelection = renderOptions.enableSingleClickSelection ?? true;
     const {
       listId,
       sortedItems,
@@ -1602,7 +1600,7 @@ export class ListPanelTableController {
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
-        } else if (this.enableSingleClickSelection) {
+        } else if (this.isSingleClickSelectionEnabled()) {
           const isSelectedPanel =
             Boolean(row.closest('.panel-frame.is-active')) ||
             Boolean(row.closest('.panel-modal')) ||
@@ -2356,6 +2354,17 @@ export class ListPanelTableController {
       return false;
     }
     return true;
+  }
+
+  private isSingleClickSelectionEnabled(): boolean {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    try {
+      return window.localStorage.getItem(LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY) !== 'false';
+    } catch {
+      return true;
+    }
   }
 
   private resolveFocusedRow(

@@ -29,8 +29,6 @@ export interface ListPanelHeaderRendererOptions {
   onEditMetadata: () => void;
   onTimelineFieldChange: (fieldKey: string | null) => void;
   onFocusViewToggle: () => void;
-  singleClickSelection: boolean;
-  onSingleClickSelectionToggle: (enabled: boolean) => void;
   getMoveTargetLists: () => ListMoveTarget[];
   onMoveSelectedToList: (targetListId: string) => void;
   onCopySelectedToList: (targetListId: string) => void;
@@ -376,19 +374,6 @@ export function renderListPanelHeader(
   addMenuItem(toggleLabel, options.onToggleView, {
     className: 'collection-list-actions-menu-item',
   });
-
-  const singleClickLabel = options.singleClickSelection
-    ? '✓ Single-click selects items'
-    : 'Single-click selects items';
-  addMenuItem(
-    singleClickLabel,
-    () => options.onSingleClickSelectionToggle(!options.singleClickSelection),
-    {
-      className:
-        'collection-list-actions-menu-item' +
-        (options.singleClickSelection ? ' collection-list-actions-menu-item-selected' : ''),
-    },
-  );
 
   // Focus View toggle - only available when sorted by position and no timeline view active
   const focusViewEnabled = options.isSortedByPosition && !options.timelineField;

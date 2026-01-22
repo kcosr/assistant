@@ -289,10 +289,9 @@ describe('ListPanelTableController drag reorder and selection', () => {
       updateListItem: vi.fn(async () => true),
     });
 
-    const { table, tbody } = controller.renderTable({
-      ...baseRenderOptions,
-      enableSingleClickSelection: false,
-    });
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'false');
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.appendChild(table);
@@ -304,6 +303,8 @@ describe('ListPanelTableController drag reorder and selection', () => {
     row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(row?.classList.contains('list-item-selected')).toBe(false);
+
+    window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
   });
 
   it('moves selected items to another list on pointer drop', async () => {
