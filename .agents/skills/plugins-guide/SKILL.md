@@ -70,6 +70,46 @@ chromeController = new PanelChromeController({
 });
 ```
 
+### Multi‑profile selection (shared profiles)
+
+Instance IDs now map to **shared profiles** declared at the top level `profiles` config.
+When you want multi‑profile selection in a panel, opt into it explicitly:
+
+```ts
+chromeController = new PanelChromeController({
+  root: container,
+  host,
+  title: 'Notes',
+  instanceSelectionMode: 'multi',
+  onInstanceChange: (instanceIds) => {
+    selectedInstanceIds = instanceIds;
+    activeInstanceId = instanceIds[0] ?? 'default';
+    persistState();
+    void refreshList();
+  },
+});
+
+chromeController.setInstances(instances, selectedInstanceIds);
+```
+
+**Context:** include both the active instance and the full selection:
+
+```ts
+host.setContext(contextKey, {
+  instance_id: activeInstanceId,
+  instance_ids: selectedInstanceIds,
+  contextAttributes: {
+    'instance-id': activeInstanceId,
+    'instance-ids': selectedInstanceIds.join(','),
+  },
+});
+```
+
+Notes:
+- `default` is always available (implicit).
+- Non‑default instance ids must match a configured profile id.
+- Items still belong to a single instance/profile (edits happen in one profile).
+
 ---
 
 ## 3. Icons and Header Dock
