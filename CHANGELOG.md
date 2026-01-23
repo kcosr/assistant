@@ -7,6 +7,7 @@
 ### Added
 - Added inline editing for select and checkbox custom fields in list rows. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Added custom field reorder controls in the list metadata dialog. ([#24](https://github.com/kcosr/assistant/pull/24))
+- Added mobile lists search FAB that opens the command palette. ([#25](https://github.com/kcosr/assistant/pull/25))
 
 ### Changed
 - Changed command palette list item results to use a check icon distinct from list titles. ([#24](https://github.com/kcosr/assistant/pull/24))
