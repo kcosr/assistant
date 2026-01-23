@@ -275,6 +275,86 @@ describe('ListMetadataDialog tag chips', () => {
     ]);
   });
 
+  it('submits custom fields in the reordered order', async () => {
+    const dialogManager = new DialogManager();
+    const getAllKnownTags = vi.fn(() => []);
+    const createList = vi.fn(async () => true);
+
+    const controller = new ListMetadataDialog({
+      dialogManager,
+      getAllKnownTags,
+      createList,
+      updateList: vi.fn(async () => true),
+      deleteList: vi.fn(async () => true),
+    });
+
+    controller.open('create');
+
+    const nameInput = document.querySelector<HTMLInputElement>(
+      '.list-metadata-dialog input.list-item-form-input',
+    );
+    expect(nameInput).not.toBeNull();
+    if (!nameInput) return;
+    nameInput.value = 'Reordered Fields';
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '.list-metadata-custom-field-add-button',
+    );
+    expect(addButton).not.toBeNull();
+    addButton?.click();
+    addButton?.click();
+
+    const rows = Array.from(
+      document.querySelectorAll<HTMLElement>('.list-metadata-custom-field-row'),
+    );
+    expect(rows).toHaveLength(2);
+    if (rows.length < 2) return;
+
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    const firstLabel = firstRow?.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-label-input',
+    );
+    const firstKey = firstRow?.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-key-input',
+    );
+    const secondLabel = secondRow?.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-label-input',
+    );
+    const secondKey = secondRow?.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-key-input',
+    );
+    expect(firstLabel).not.toBeNull();
+    expect(firstKey).not.toBeNull();
+    expect(secondLabel).not.toBeNull();
+    expect(secondKey).not.toBeNull();
+    if (!firstLabel || !firstKey || !secondLabel || !secondKey) return;
+
+    firstLabel.value = 'Priority';
+    firstKey.value = 'priority';
+    secondLabel.value = 'Status';
+    secondKey.value = 'status';
+
+    const moveUpButton = secondRow?.querySelector<HTMLButtonElement>(
+      '.list-metadata-custom-field-move-up',
+    );
+    expect(moveUpButton).not.toBeNull();
+    moveUpButton?.click();
+
+    const form = document.querySelector<HTMLFormElement>('.list-metadata-dialog form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(createList).toHaveBeenCalledTimes(1);
+    const calls = createList.mock.calls as ListMetadataDialogPayload[][];
+    const payload = calls[0]?.[0];
+    expect(payload).toBeDefined();
+    if (!payload) return;
+
+    expect(payload.customFields.map((field) => field.key)).toEqual(['status', 'priority']);
+  });
+
   it('includes the selected instance when instance options are provided', async () => {
     const dialogManager = new DialogManager();
     const getAllKnownTags = vi.fn(() => []);

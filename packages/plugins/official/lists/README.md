@@ -39,6 +39,7 @@ operations.
 - Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
 - Capacitor Android builds show a floating add-item button in list view.
+- Custom fields can be reordered in the list metadata dialog.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.

@@ -75,6 +75,41 @@ export class ListMetadataDialog {
     section.appendChild(list);
 
     const fieldRows: HTMLElement[] = [];
+    const updateMoveButtons = (): void => {
+      fieldRows.forEach((row, index) => {
+        const moveUpButton = row.querySelector<HTMLButtonElement>(
+          '.list-metadata-custom-field-move-up',
+        );
+        const moveDownButton = row.querySelector<HTMLButtonElement>(
+          '.list-metadata-custom-field-move-down',
+        );
+        if (moveUpButton) {
+          moveUpButton.disabled = index === 0;
+        }
+        if (moveDownButton) {
+          moveDownButton.disabled = index === fieldRows.length - 1;
+        }
+      });
+    };
+    const moveRow = (row: HTMLElement, offset: number): void => {
+      const index = fieldRows.indexOf(row);
+      if (index === -1) return;
+      const targetIndex = index + offset;
+      if (targetIndex < 0 || targetIndex >= fieldRows.length) return;
+      const targetRow = fieldRows[targetIndex];
+      if (!targetRow) return;
+
+      fieldRows.splice(index, 1);
+      fieldRows.splice(targetIndex, 0, row);
+
+      if (offset > 0) {
+        list.insertBefore(row, targetRow.nextSibling);
+      } else {
+        list.insertBefore(row, targetRow);
+      }
+
+      updateMoveButtons();
+    };
 
     const ensureOptionsVisibility = (row: HTMLElement, type: ListCustomFieldType): void => {
       const optionsWrapper = row.querySelector<HTMLElement>(
@@ -183,6 +218,30 @@ export class ListMetadataDialog {
 
       const actions = document.createElement('div');
       actions.className = 'list-metadata-custom-field-actions';
+      const moveUpButton = document.createElement('button');
+      moveUpButton.type = 'button';
+      moveUpButton.className =
+        'list-metadata-custom-field-move-button list-metadata-custom-field-move-up';
+      moveUpButton.textContent = 'Up';
+      moveUpButton.setAttribute('aria-label', 'Move custom field up');
+      moveUpButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        moveRow(row, -1);
+      });
+      actions.appendChild(moveUpButton);
+
+      const moveDownButton = document.createElement('button');
+      moveDownButton.type = 'button';
+      moveDownButton.className =
+        'list-metadata-custom-field-move-button list-metadata-custom-field-move-down';
+      moveDownButton.textContent = 'Down';
+      moveDownButton.setAttribute('aria-label', 'Move custom field down');
+      moveDownButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        moveRow(row, 1);
+      });
+      actions.appendChild(moveDownButton);
+
       const removeButton = document.createElement('button');
       removeButton.type = 'button';
       removeButton.className = 'list-metadata-custom-field-remove-button';
@@ -194,6 +253,7 @@ export class ListMetadataDialog {
         if (index >= 0) {
           fieldRows.splice(index, 1);
         }
+        updateMoveButtons();
       });
       actions.appendChild(removeButton);
       row.appendChild(actions);
@@ -208,6 +268,7 @@ export class ListMetadataDialog {
 
       list.appendChild(row);
       fieldRows.push(row);
+      updateMoveButtons();
     };
 
     for (const field of initialFields) {

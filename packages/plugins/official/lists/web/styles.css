@@ -3060,8 +3060,10 @@ button.list-item-menu-checkbox {
 .list-metadata-custom-field-actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--spacing-xs);
 }
 
+.list-metadata-custom-field-move-button,
 .list-metadata-custom-field-remove-button,
 .list-metadata-custom-field-add-button {
   border-radius: var(--radius-sm);
@@ -3073,6 +3075,12 @@ button.list-item-menu-checkbox {
   cursor: pointer;
 }
 
+.list-metadata-custom-field-move-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.list-metadata-custom-field-move-button:hover,
 .list-metadata-custom-field-remove-button:hover,
 .list-metadata-custom-field-add-button:hover {
   background-color: var(--color-bg-hover);
