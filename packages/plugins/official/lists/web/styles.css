@@ -1644,7 +1644,7 @@
   height: 52px;
   border: none;
   border-radius: 999px;
-  background-color: var(--color-accent-primary);
+  background-color: var(--color-accent-primary-hover);
   color: var(--color-text-on-accent);
   display: none;
   align-items: center;
@@ -1671,13 +1671,21 @@
 
 .lists-fab-add:hover,
 .lists-fab-search:hover {
-  background-color: var(--color-accent-hover);
+  background-color: var(--color-accent-primary-hover);
   box-shadow: var(--shadow-lg);
 }
 
 .lists-fab-add:active,
 .lists-fab-search:active {
+  background-color: var(--color-accent-primary-hover);
   transform: translateY(1px);
+}
+
+.lists-fab-add:focus,
+.lists-fab-search:focus,
+.lists-fab-add:focus-visible,
+.lists-fab-search:focus-visible {
+  background-color: var(--color-accent-primary-hover);
 }
 
 .collection-list-view-toggle {
