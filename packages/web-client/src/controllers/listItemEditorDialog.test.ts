@@ -157,6 +157,59 @@ describe('ListItemEditorDialog tag chips', () => {
     });
   });
 
+  it('uses a textarea for markdown text custom fields', async () => {
+    const createListItem = vi.fn(async () => true);
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('add', 'list1', undefined, {
+      customFields: [{ key: 'details', label: 'Details', type: 'text', markdown: true }],
+      initialCustomFieldValues: { details: 'Initial text' },
+    });
+
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '.list-item-custom-field-row textarea.list-item-form-textarea',
+    );
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+    expect(textarea.value).toBe('Initial text');
+    textarea.value = 'Updated text';
+
+    const titleInput = document.querySelector<HTMLInputElement>(
+      '.list-item-form input.list-item-form-input',
+    );
+    expect(titleInput).not.toBeNull();
+    if (!titleInput) return;
+    titleInput.value = 'Item with markdown field';
+
+    const form = document.querySelector<HTMLFormElement>('.list-item-form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(createListItem).toHaveBeenCalledTimes(1);
+    const calls = createListItem.mock.calls as unknown as [
+      string,
+      { customFields?: Record<string, unknown> },
+    ][];
+    const args = calls[0]?.[1];
+    expect(args?.customFields).toEqual({
+      details: 'Updated text',
+    });
+  });
+
   it('sends null for cleared select/text fields to remove previous values', async () => {
     const updateListItem = vi.fn(async () => true);
 

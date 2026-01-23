@@ -85,6 +85,21 @@ export class ListMetadataDialog {
       optionsWrapper.style.display = isSelect ? '' : 'none';
     };
 
+    const ensureMarkdownVisibility = (row: HTMLElement, type: ListCustomFieldType): void => {
+      const markdownWrapper = row.querySelector<HTMLElement>(
+        '.list-metadata-custom-field-markdown',
+      );
+      if (!markdownWrapper) return;
+      const markdownInput = markdownWrapper.querySelector<HTMLInputElement>(
+        '.list-metadata-custom-field-markdown-input',
+      );
+      const isText = type === 'text';
+      markdownWrapper.style.display = isText ? '' : 'none';
+      if (!isText && markdownInput) {
+        markdownInput.checked = false;
+      }
+    };
+
     const addFieldRow = (field?: ListCustomFieldDefinition): void => {
       const row = document.createElement('div');
       row.className = 'list-metadata-custom-field-row';
@@ -153,6 +168,19 @@ export class ListMetadataDialog {
       optionsWrapper.appendChild(optionsLabel);
       row.appendChild(optionsWrapper);
 
+      const markdownWrapper = document.createElement('div');
+      markdownWrapper.className = 'list-metadata-custom-field-markdown';
+      const markdownLabel = document.createElement('label');
+      markdownLabel.className = 'list-metadata-custom-field-markdown-label';
+      const markdownInput = document.createElement('input');
+      markdownInput.type = 'checkbox';
+      markdownInput.className = 'list-item-form-checkbox list-metadata-custom-field-markdown-input';
+      markdownInput.checked = field?.markdown === true;
+      markdownLabel.appendChild(markdownInput);
+      markdownLabel.appendChild(document.createTextNode('Render as markdown'));
+      markdownWrapper.appendChild(markdownLabel);
+      row.appendChild(markdownWrapper);
+
       const actions = document.createElement('div');
       actions.className = 'list-metadata-custom-field-actions';
       const removeButton = document.createElement('button');
@@ -172,9 +200,11 @@ export class ListMetadataDialog {
 
       typeSelect.addEventListener('change', () => {
         ensureOptionsVisibility(row, typeSelect.value as ListCustomFieldType);
+        ensureMarkdownVisibility(row, typeSelect.value as ListCustomFieldType);
       });
 
       ensureOptionsVisibility(row, typeSelect.value as ListCustomFieldType);
+      ensureMarkdownVisibility(row, typeSelect.value as ListCustomFieldType);
 
       list.appendChild(row);
       fieldRows.push(row);
@@ -212,6 +242,9 @@ export class ListMetadataDialog {
         );
         const optionsInput = row.querySelector<HTMLInputElement>(
           '.list-metadata-custom-field-options-input',
+        );
+        const markdownInput = row.querySelector<HTMLInputElement>(
+          '.list-metadata-custom-field-markdown-input',
         );
 
         if (!labelInput || !keyInput || !typeSelect || !optionsInput) {
@@ -287,11 +320,14 @@ export class ListMetadataDialog {
           }
         }
 
+        const markdown = type === 'text' && markdownInput?.checked === true;
+
         result.push({
           key,
           label: rawLabel,
           type,
           ...(options ? { options } : {}),
+          ...(markdown ? { markdown: true } : {}),
         });
       }
 

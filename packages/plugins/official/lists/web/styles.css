@@ -3029,6 +3029,21 @@ button.list-item-menu-checkbox {
   width: 100%;
 }
 
+.list-metadata-custom-field-markdown {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.list-metadata-custom-field-markdown-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  cursor: pointer;
+}
+
 .list-metadata-custom-field-actions {
   display: flex;
   justify-content: flex-end;

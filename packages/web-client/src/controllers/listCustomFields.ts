@@ -12,4 +12,5 @@ export interface ListCustomFieldDefinition {
   label: string;
   type: ListCustomFieldType;
   options?: string[];
+  markdown?: boolean;
 }

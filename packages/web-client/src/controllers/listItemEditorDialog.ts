@@ -63,7 +63,7 @@ export class ListItemEditorDialog {
 
     const fieldInputs: Array<{
       definition: ListCustomFieldDefinition;
-      input: HTMLInputElement | HTMLSelectElement;
+      input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     }> = [];
 
     for (const def of normalized) {
@@ -82,7 +82,7 @@ export class ListItemEditorDialog {
       const fieldLabel = document.createElement('label');
       fieldLabel.textContent = label;
 
-      let input: HTMLInputElement | HTMLSelectElement;
+      let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
       const type = def.type;
 
       if (type === 'checkbox') {
@@ -125,6 +125,11 @@ export class ListItemEditorDialog {
           }
         }
         input = select;
+      } else if (type === 'text' && def.markdown === true) {
+        const textarea = document.createElement('textarea');
+        textarea.className = 'list-item-form-textarea';
+        textarea.rows = 3;
+        input = textarea;
       } else {
         input = document.createElement('input');
         input.type = 'text';

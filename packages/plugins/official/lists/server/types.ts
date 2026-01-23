@@ -59,6 +59,10 @@ export interface ListCustomFieldDefinition {
    * For select fields, the list of allowed option values.
    */
   options?: string[];
+  /**
+   * For text fields, whether values should render as markdown.
+   */
+  markdown?: boolean;
 }
 
 export interface ListsData {

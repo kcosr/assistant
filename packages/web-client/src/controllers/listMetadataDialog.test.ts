@@ -205,6 +205,76 @@ describe('ListMetadataDialog tag chips', () => {
     ]);
   });
 
+  it('includes markdown flag for text custom fields', async () => {
+    const dialogManager = new DialogManager();
+    const getAllKnownTags = vi.fn(() => []);
+    const createList = vi.fn(async () => true);
+
+    const controller = new ListMetadataDialog({
+      dialogManager,
+      getAllKnownTags,
+      createList,
+      updateList: vi.fn(async () => true),
+      deleteList: vi.fn(async () => true),
+    });
+
+    controller.open('create');
+
+    const nameInput = document.querySelector<HTMLInputElement>(
+      '.list-metadata-dialog input.list-item-form-input',
+    );
+    expect(nameInput).not.toBeNull();
+    if (!nameInput) return;
+    nameInput.value = 'Markdown Fields';
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '.list-metadata-custom-field-add-button',
+    );
+    expect(addButton).not.toBeNull();
+    addButton?.click();
+
+    const row = document.querySelector<HTMLElement>('.list-metadata-custom-field-row');
+    expect(row).not.toBeNull();
+    if (!row) return;
+
+    const labelInput = row.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-label-input',
+    );
+    const keyInput = row.querySelector<HTMLInputElement>('.list-metadata-custom-field-key-input');
+    const markdownInput = row.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-markdown-input',
+    );
+
+    expect(labelInput).not.toBeNull();
+    expect(keyInput).not.toBeNull();
+    expect(markdownInput).not.toBeNull();
+    if (!labelInput || !keyInput || !markdownInput) return;
+
+    labelInput.value = 'Details';
+    keyInput.value = 'details';
+    markdownInput.checked = true;
+
+    const form = document.querySelector<HTMLFormElement>('.list-metadata-dialog form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(createList).toHaveBeenCalledTimes(1);
+    const calls = createList.mock.calls as ListMetadataDialogPayload[][];
+    const payload = calls[0]?.[0];
+    expect(payload).toBeDefined();
+    if (!payload) return;
+
+    expect(payload.customFields).toEqual([
+      {
+        key: 'details',
+        label: 'Details',
+        type: 'text',
+        markdown: true,
+      },
+    ]);
+  });
+
   it('includes the selected instance when instance options are provided', async () => {
     const dialogManager = new DialogManager();
     const getAllKnownTags = vi.fn(() => []);

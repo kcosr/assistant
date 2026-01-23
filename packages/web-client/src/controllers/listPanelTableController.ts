@@ -2133,12 +2133,22 @@ export class ListPanelTableController {
 
     for (const field of visibleCustomFields) {
       const customCell = document.createElement('td');
-      customCell.className = isCompleted ? 'list-item-completed-text' : '';
       const key = field.key;
       const value = item.customFields ? item.customFields[key] : undefined;
       const text = this.formatCustomFieldValue(value, field.type);
-      if (text.trim().length > 0) {
-        customCell.textContent = text;
+      const isMarkdown = field.type === 'text' && field.markdown === true;
+      if (isMarkdown) {
+        this.renderMarkdownPreviewCell(
+          customCell,
+          text,
+          isCompleted,
+          'list-item-notes-cell list-item-custom-field-markdown-cell',
+        );
+      } else {
+        customCell.className = isCompleted ? 'list-item-completed-text' : '';
+        if (text.trim().length > 0) {
+          customCell.textContent = text;
+        }
       }
       row.appendChild(customCell);
     }
@@ -2196,17 +2206,28 @@ export class ListPanelTableController {
     itemId: string | undefined,
     isCompleted: boolean,
   ): void {
-    notesCell.className = isCompleted
-      ? 'list-item-notes-cell list-item-completed-text'
-      : 'list-item-notes-cell';
     const notes = typeof item.notes === 'string' ? item.notes : '';
-    notesCell.innerHTML = '';
+    this.renderMarkdownPreviewCell(notesCell, notes, isCompleted, 'list-item-notes-cell');
+  }
 
-    if (notes.trim().length > 0) {
+  private renderMarkdownPreviewCell(
+    cell: HTMLTableCellElement,
+    markdown: string,
+    isCompleted: boolean,
+    cellClass: string,
+  ): void {
+    const baseClass = cellClass.trim();
+    cell.className = isCompleted
+      ? `${baseClass} list-item-completed-text`.trim()
+      : baseClass;
+    const content = typeof markdown === 'string' ? markdown : '';
+    cell.innerHTML = '';
+
+    if (content.trim().length > 0) {
       const display = document.createElement('div');
       display.className = 'list-item-notes-display';
-      applyMarkdownToElement(display, notes);
-      notesCell.appendChild(display);
+      applyMarkdownToElement(display, content);
+      cell.appendChild(display);
 
       // Add fade effect if content overflows, and enable hover popup trigger
       setTimeout(() => {
@@ -2222,11 +2243,11 @@ export class ListPanelTableController {
             trigger.innerHTML = NOTES_EXPAND_ICON_SVG;
             trigger.title = 'View full notes';
             trigger.setAttribute('aria-label', 'View full notes');
-            notesCell.style.position = 'relative';
-            notesCell.appendChild(trigger);
+            cell.style.position = 'relative';
+            cell.appendChild(trigger);
 
             trigger.addEventListener('mouseenter', (e: MouseEvent) => {
-              this.scheduleShowNotesPopup(notes, e.clientX, e.clientY);
+              this.scheduleShowNotesPopup(content, e.clientX, e.clientY);
             });
             trigger.addEventListener('mouseleave', () => {
               this.cancelShowNotesPopup();

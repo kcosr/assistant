@@ -237,7 +237,19 @@ Avoid custom fallbacks like `--text-primary` or `prefers-color-scheme` blocks.
 
 ---
 
-## 11. Panel Context for Chat Input
+## 11. Shared Dialog Styling Duplication
+
+Some dialogs are rendered by shared web-client controllers but styled in multiple plugin bundles.
+For example, list metadata dialog styles live in both:
+- `packages/plugins/official/lists/web/styles.css`
+- `packages/plugins/official/notes/web/styles.css`
+
+When adjusting `.list-metadata-*` rules (or similar shared dialog styles), update both files to keep
+Lists and Notes consistent.
+
+---
+
+## 12. Panel Context for Chat Input
 
 Panels can provide context that is injected into user chat messages and shown in the
 context preview above the input. Use the panel context key and include selection data.
@@ -272,7 +284,7 @@ services.notifyContextAvailabilityChange();
 
 ---
 
-## 12. Recommended Panel Lifecycle
+## 13. Recommended Panel Lifecycle
 
 On mount:
 - fetch instances via HTTP

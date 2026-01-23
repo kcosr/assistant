@@ -331,7 +331,14 @@ function parseCustomFields(value: unknown): ListCustomFieldDefinition[] | undefi
         options = undefined;
       }
     }
-    result.push({ key, label, type: type as ListCustomFieldDefinition['type'], options });
+    const markdown = type === 'text' && obj['markdown'] === true;
+    result.push({
+      key,
+      label,
+      type: type as ListCustomFieldDefinition['type'],
+      options,
+      ...(markdown ? { markdown: true } : {}),
+    });
   }
   return result.length > 0 ? result : undefined;
 }

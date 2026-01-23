@@ -772,6 +772,47 @@ describe('ListPanelTableController notes column', () => {
     expect(cells[2]?.textContent).toBe('High');
     expect(cells[3]?.textContent).toBe('✓');
   });
+
+  it('renders markdown in custom text fields when enabled', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [
+        {
+          id: 'item1',
+          title: 'Item 1',
+          customFields: { details: '# Heading' },
+        },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [{ key: 'details', label: 'Details', type: 'text', markdown: true }],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+    if (!row) return;
+
+    const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
+    // checkbox, title, details
+    const detailsCell = cells[2];
+    expect(detailsCell).toBeDefined();
+    if (!detailsCell) return;
+    expect(detailsCell.querySelector('h1')).not.toBeNull();
+  });
 });
 
 describe('ListPanelTableController column preferences', () => {
