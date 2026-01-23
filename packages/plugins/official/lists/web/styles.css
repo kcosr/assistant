@@ -1644,7 +1644,7 @@
   height: 52px;
   border: none;
   border-radius: 999px;
-  background-color: var(--color-accent-primary-hover);
+  background-color: var(--color-accent-primary);
   color: var(--color-text-on-accent);
   display: none;
   align-items: center;
@@ -1671,13 +1671,13 @@
 
 .lists-fab-add:hover,
 .lists-fab-search:hover {
-  background-color: var(--color-accent-primary-hover);
+  background-color: var(--color-accent-primary);
   box-shadow: var(--shadow-lg);
 }
 
 .lists-fab-add:active,
 .lists-fab-search:active {
-  background-color: var(--color-accent-primary-hover);
+  background-color: var(--color-accent-primary);
   transform: translateY(1px);
 }
 
@@ -1685,7 +1685,13 @@
 .lists-fab-search:focus,
 .lists-fab-add:focus-visible,
 .lists-fab-search:focus-visible {
-  background-color: var(--color-accent-primary-hover);
+  background-color: var(--color-accent-primary);
+}
+
+.lists-fab-add .icon-sm,
+.lists-fab-search .icon-sm {
+  width: 18px;
+  height: 18px;
 }
 
 .collection-list-view-toggle {
