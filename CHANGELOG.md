@@ -5,8 +5,10 @@
 ### Breaking Changes
 
 ### Added
+- Added inline editing for select and checkbox custom fields in list rows. ([#24](https://github.com/kcosr/assistant/pull/24))
 
 ### Changed
+- Changed command palette list item results to use a check icon distinct from list titles. ([#24](https://github.com/kcosr/assistant/pull/24))
 
 ### Fixed
 
