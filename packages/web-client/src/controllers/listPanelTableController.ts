@@ -2323,32 +2323,12 @@ export class ListPanelTableController {
       display.className = 'list-item-notes-display';
       applyMarkdownToElement(display, content);
       cell.appendChild(display);
+      cell.dataset['markdown'] = content;
 
       // Add fade effect if content overflows, and enable hover popup trigger
       setTimeout(() => {
         if (display.isConnected) {
-          const shouldFade = display.scrollHeight > display.clientHeight + 1;
-          display.classList.toggle('list-item-notes-display--fade', shouldFade);
-
-          if (shouldFade) {
-            // Add a small trigger area in the bottom-right corner
-            const trigger = document.createElement('button');
-            trigger.type = 'button';
-            trigger.className = 'list-item-notes-expand-trigger';
-            trigger.innerHTML = NOTES_EXPAND_ICON_SVG;
-            trigger.title = 'View full notes';
-            trigger.setAttribute('aria-label', 'View full notes');
-            cell.style.position = 'relative';
-            cell.appendChild(trigger);
-
-            trigger.addEventListener('mouseenter', (e: MouseEvent) => {
-              this.scheduleShowNotesPopup(content, e.clientX, e.clientY);
-            });
-            trigger.addEventListener('mouseleave', () => {
-              this.cancelShowNotesPopup();
-              this.hideNotesPopup();
-            });
-          }
+          this.updateNotesOverflowState(cell, display, content);
         }
       }, 0);
     }
@@ -2430,6 +2410,60 @@ export class ListPanelTableController {
       return value.trim();
     }
     return '';
+  }
+
+  private updateNotesOverflowState(
+    cell: HTMLTableCellElement,
+    display: HTMLElement,
+    markdown: string,
+  ): void {
+    const shouldFade = display.scrollHeight > display.clientHeight + 1;
+    display.classList.toggle('list-item-notes-display--fade', shouldFade);
+
+    const existingTrigger = cell.querySelector<HTMLButtonElement>('.list-item-notes-expand-trigger');
+    if (!shouldFade) {
+      if (existingTrigger) {
+        existingTrigger.remove();
+        this.cancelShowNotesPopup();
+        this.hideNotesPopup();
+      }
+      return;
+    }
+
+    if (existingTrigger) {
+      return;
+    }
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'list-item-notes-expand-trigger';
+    trigger.innerHTML = NOTES_EXPAND_ICON_SVG;
+    trigger.title = 'View full notes';
+    trigger.setAttribute('aria-label', 'View full notes');
+    cell.style.position = 'relative';
+    cell.appendChild(trigger);
+
+    trigger.addEventListener('mouseenter', (e: MouseEvent) => {
+      this.scheduleShowNotesPopup(markdown, e.clientX, e.clientY);
+    });
+    trigger.addEventListener('mouseleave', () => {
+      this.cancelShowNotesPopup();
+      this.hideNotesPopup();
+    });
+  }
+
+  private updateMarkdownOverflowStates(tbody: HTMLTableSectionElement): void {
+    const cells = Array.from(
+      tbody.querySelectorAll<HTMLTableCellElement>('.list-item-notes-cell'),
+    );
+    for (const cell of cells) {
+      const display = cell.querySelector<HTMLElement>('.list-item-notes-display');
+      if (!display) {
+        continue;
+      }
+      const markdown = cell.dataset['markdown'] ?? '';
+      this.updateNotesOverflowState(cell, display, markdown);
+    }
   }
 
   clearSelection(bodyEl: HTMLElement): void {
@@ -2905,6 +2939,7 @@ export class ListPanelTableController {
         if (onColumnResize) {
           onColumnResize(columnKey, finalWidth);
         }
+        this.updateMarkdownOverflowStates(tbody);
       };
 
       resizeHandle.setPointerCapture(event.pointerId);

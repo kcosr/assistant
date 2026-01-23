@@ -837,6 +837,58 @@ describe('ListPanelTableController notes column', () => {
     expect(cells[3]?.querySelector('input[type=\"checkbox\"]')).toBeNull();
   });
 
+  it('recomputes markdown overflow after column resize', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable({
+      listId,
+      sortedItems: [{ id: 'item1', title: 'Item 1', notes: '# Heading' }],
+      showUrlColumn: false,
+      showNotesColumn: true,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      rerender: () => {},
+    });
+
+    document.body.appendChild(table);
+
+    const cell = tbody.querySelector<HTMLTableCellElement>('.list-item-notes-cell');
+    expect(cell).not.toBeNull();
+    if (!cell) return;
+
+    const display = cell.querySelector<HTMLElement>('.list-item-notes-display');
+    expect(display).not.toBeNull();
+    if (!display) return;
+
+    expect(cell.querySelector('.list-item-notes-expand-trigger')).toBeNull();
+
+    Object.defineProperty(display, 'scrollHeight', { value: 200, configurable: true });
+    Object.defineProperty(display, 'clientHeight', { value: 50, configurable: true });
+
+    (controller as unknown as {
+      updateMarkdownOverflowStates: (tbody: HTMLTableSectionElement) => void;
+    }).updateMarkdownOverflowStates(tbody);
+
+    expect(cell.querySelector('.list-item-notes-expand-trigger')).not.toBeNull();
+
+    Object.defineProperty(display, 'scrollHeight', { value: 40, configurable: true });
+    Object.defineProperty(display, 'clientHeight', { value: 50, configurable: true });
+
+    (controller as unknown as {
+      updateMarkdownOverflowStates: (tbody: HTMLTableSectionElement) => void;
+    }).updateMarkdownOverflowStates(tbody);
+
+    expect(cell.querySelector('.list-item-notes-expand-trigger')).toBeNull();
+  });
+
   it('updates inline select and checkbox custom fields without optimistic UI', () => {
     const updateListItem = vi.fn(async () => true);
     const controller = new ListPanelTableController({
