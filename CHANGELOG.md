@@ -8,25 +8,26 @@
 - Added inline editing for select and checkbox custom fields in list rows. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Added custom field reorder controls in the list metadata dialog. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Added mobile lists search FAB that opens the command palette. ([#25](https://github.com/kcosr/assistant/pull/25))
-- Added optional description field for notes with UI support and search matching. ([#000](<pr-url>))
-- Added list item move up/down shortcuts (w/s) in list view. ([#000](<pr-url>))
-- Added command palette sort/group modes for search results. ([#000](<pr-url>))
+- Added optional description field for notes with UI support and search matching. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Added list item move up/down shortcuts (w/s) in list view. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Added command palette sort/group modes for search results. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Changed
 - Changed command palette list item results to use a check icon distinct from list titles. ([#24](https://github.com/kcosr/assistant/pull/24))
-- Changed pinned icon to 📍. ([#000](<pr-url>))
-- Changed list title sorting to prioritize pinned items. ([#000](<pr-url>))
-- Changed panel navigation shortcuts to Ctrl+P / Ctrl+H. ([#000](<pr-url>))
-- Changed Ctrl+P/Ctrl+H to work even when no panel is active. ([#000](<pr-url>))
-- Changed command palette shortcut to support Ctrl+K on macOS alongside Cmd+K. ([#000](<pr-url>))
-- Changed header panel navigation so ArrowDown confirms selection. ([#000](<pr-url>))
+- Changed pinned icon to 📍. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed list title sorting to prioritize pinned items. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed panel navigation shortcuts to Ctrl+P / Ctrl+H. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed Ctrl+P/Ctrl+H to work even when no panel is active. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed command palette shortcut to support Ctrl+K on macOS alongside Cmd+K. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed header panel navigation so ArrowDown confirms selection. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Changed notes panel to support `f` as a search focus shortcut. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Fixed
 - Fixed markdown fade/preview affordance not recalculating after list column resize. ([#24](https://github.com/kcosr/assistant/pull/24))
-- Fixed notes search input not blurring on Escape when empty. ([#000](<pr-url>))
-- Fixed Ctrl+P/Ctrl+H not toggling while panel navigation mode is active. ([#000](<pr-url>))
-- Fixed shared search input arrow keys moving list/note items while focused. ([#000](<pr-url>))
-- Fixed command palette Escape handling to prevent closing underlying modal panels. ([#000](<pr-url>))
+- Fixed notes search input not blurring on Escape when empty. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Fixed Ctrl+P/Ctrl+H not toggling while panel navigation mode is active. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Fixed shared search input arrow keys moving list/note items while focused. ([#26](https://github.com/kcosr/assistant/pull/26))
+- Fixed command palette Escape handling to prevent closing underlying modal panels. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Removed
 
