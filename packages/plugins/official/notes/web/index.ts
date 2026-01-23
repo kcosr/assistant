@@ -241,6 +241,7 @@ type NoteMetadata = {
   tags: string[];
   created: string;
   updated: string;
+  description?: string;
 };
 
 type NoteSummary = NoteMetadata & {
@@ -308,11 +309,13 @@ function parseNoteMetadata(value: unknown): NoteMetadata | null {
   const tags = parseStringArray(obj['tags']);
   const created = typeof obj['created'] === 'string' ? obj['created'] : '';
   const updated = typeof obj['updated'] === 'string' ? obj['updated'] : '';
+  const description = typeof obj['description'] === 'string' ? obj['description'] : '';
   return {
     title,
     tags,
     created,
     updated,
+    ...(description.trim().length > 0 ? { description } : {}),
   };
 }
 
@@ -1010,6 +1013,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (modalOverlay && !modalOverlay.contains(root)) {
           return true;
         }
+        if (document.querySelector('.command-palette-overlay.open')) {
+          return true;
+        }
         const dockPopover = document.querySelector<HTMLElement>('.panel-dock-popover.open');
         if (dockPopover && !dockPopover.contains(root)) {
           return true;
@@ -1063,6 +1069,37 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const handlePanelKeydown = (event: KeyboardEvent): void => {
+        if (event.key === 'Escape') {
+          const searchInput = sharedSearchController.getSearchInputEl();
+          if (searchInput && document.activeElement === searchInput) {
+            const tagController = sharedSearchController.getTagController();
+            const hasFilters =
+              searchInput.value.trim().length > 0 ||
+              (tagController?.getActiveTagFilters().length ?? 0) > 0 ||
+              (tagController?.getActiveExcludedTagFilters().length ?? 0) > 0;
+            if (!hasFilters) {
+              event.preventDefault();
+              event.stopPropagation();
+              searchInput.blur();
+              return;
+            }
+          }
+        }
+        const isSearchShortcut =
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 'f';
+        if (isSearchShortcut) {
+          if (!canHandlePanelShortcuts(event, { requireNoteMode: false })) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          sharedSearchController.focus(true);
+          return;
+        }
         if (!canHandlePanelShortcuts(event, { requireNoteMode: mode === 'note' })) {
           return;
         }
@@ -1480,6 +1517,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         header.appendChild(titleRow);
 
         const tagsEl = renderNoteTags(note.tags);
+        const descriptionText = note.description?.trim();
+        if (descriptionText) {
+          const descriptionEl = document.createElement('div');
+          descriptionEl.className = 'collection-note-description';
+          descriptionEl.textContent = descriptionText;
+          header.appendChild(descriptionEl);
+        }
+
         if (tagsEl) {
           header.appendChild(tagsEl);
         }
@@ -1640,6 +1685,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           form.appendChild(instanceRow);
         }
 
+        const descriptionLabel = document.createElement('label');
+        descriptionLabel.className = 'list-item-form-label';
+        descriptionLabel.textContent = 'Description';
+        const descriptionInput = document.createElement('textarea');
+        descriptionInput.className = 'list-item-form-textarea note-description-textarea';
+        descriptionInput.value = note.description ?? '';
+        descriptionLabel.appendChild(descriptionInput);
+        form.appendChild(descriptionLabel);
+
         const tagsRow = document.createElement('div');
         tagsRow.className = 'list-item-form-label';
 
@@ -1697,6 +1751,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const title = titleInput.value.trim();
           const content = contentInput.value.trim();
+          const description = descriptionInput.value.trim();
           if (!title) {
             services.setStatus('Title is required');
             titleInput.focus();
@@ -1724,16 +1779,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             const result = await callInstanceOperation<unknown>(targetInstanceId, 'write', {
               title,
               content: contentInput.value,
+              description,
               tags: nextTags,
             });
             const metadata = parseNoteMetadata(result);
             const savedTags = metadata?.tags ?? nextTags;
+            const savedDescription =
+              metadata?.description ?? (description.length > 0 ? description : undefined);
             const updatedNote: Note = {
               title,
               content: contentInput.value,
               tags: savedTags,
               created: metadata?.created ?? note.created,
               updated: metadata?.updated ?? note.updated,
+              ...(savedDescription ? { description: savedDescription } : {}),
             };
             activeNote = updatedNote;
             activeNoteTitle = title;

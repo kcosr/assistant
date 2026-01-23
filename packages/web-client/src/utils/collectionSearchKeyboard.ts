@@ -7,6 +7,7 @@ export interface CollectionSearchKeyboardOptions {
   tagController: CollectionTagFilterController;
   itemFocusController: CollectionDropdownItemFocusController;
   tagsContainer: HTMLElement | null;
+  allowItemNavigation?: boolean;
   moveFocus: (delta: number) => void;
   selectItem: (itemEl: HTMLElement) => void;
   filter: (query: string) => void;
@@ -20,6 +21,7 @@ export function handleCollectionSearchKeyDown(options: CollectionSearchKeyboardO
     tagController,
     itemFocusController,
     tagsContainer,
+    allowItemNavigation = true,
     moveFocus,
     selectItem,
     filter,
@@ -81,6 +83,9 @@ export function handleCollectionSearchKeyDown(options: CollectionSearchKeyboardO
   }
 
   if (key === 'arrowdown') {
+    if (!allowItemNavigation) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (tagsContainer?.classList.contains('visible')) {
@@ -93,6 +98,9 @@ export function handleCollectionSearchKeyDown(options: CollectionSearchKeyboardO
     }
     moveFocus(1);
   } else if (key === 'arrowup') {
+    if (!allowItemNavigation) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     moveFocus(-1);

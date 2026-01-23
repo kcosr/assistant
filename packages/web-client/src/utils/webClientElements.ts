@@ -32,6 +32,7 @@ export interface WebClientElements {
   commandPaletteInput: HTMLInputElement | null;
   commandPaletteGhost: HTMLElement | null;
   commandPaletteResults: HTMLElement | null;
+  commandPaletteSortButton: HTMLButtonElement | null;
   commandPaletteCloseButton: HTMLButtonElement | null;
 }
 
@@ -104,6 +105,7 @@ export function getWebClientElements(): WebClientElements | null {
     commandPaletteInput: getElement<HTMLInputElement>('command-palette-input'),
     commandPaletteGhost: getElement<HTMLElement>('command-palette-ghost'),
     commandPaletteResults: getElement<HTMLElement>('command-palette-results'),
+    commandPaletteSortButton: getElement<HTMLButtonElement>('command-palette-sort'),
     commandPaletteCloseButton: getElement<HTMLButtonElement>('command-palette-close'),
   };
 }

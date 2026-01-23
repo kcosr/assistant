@@ -189,4 +189,385 @@ describe('notes panel context', () => {
 
     handle.unmount();
   });
+
+  it('renders and saves note descriptions', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['notes'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const panelId = 'notes-desc';
+    const host = {
+      panelId: () => panelId,
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedNoteTitle: 'Dev Note',
+        selectedNoteInstanceId: 'default',
+        mode: 'note',
+        instanceIds: ['default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const jsonResponse = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    let writePayload: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (!url.includes('/api/plugins/notes/operations/')) {
+          return jsonResponse({});
+        }
+        const operation = url.split('/').pop() ?? '';
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+
+        if (operation === 'instance_list') {
+          return jsonResponse([{ id: 'default', label: 'Default' }]);
+        }
+        if (operation === 'list') {
+          return jsonResponse([
+            {
+              title: 'Dev Note',
+              tags: [],
+              created: '2024-01-01',
+              updated: '2024-01-02',
+              description: 'Short description',
+            },
+          ]);
+        }
+        if (operation === 'read') {
+          return jsonResponse({
+            title: 'Dev Note',
+            content: 'Hello',
+            tags: [],
+            created: '2024-01-01',
+            updated: '2024-01-02',
+            description: 'Short description',
+          });
+        }
+        if (operation === 'write') {
+          writePayload = body;
+          return jsonResponse({
+            title: body.title,
+            tags: body.tags ?? [],
+            created: '2024-01-01',
+            updated: '2024-01-03',
+            description: body.description ?? '',
+          });
+        }
+        return jsonResponse([]);
+      }),
+    );
+
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const waitFor = async (predicate: () => boolean) => {
+      const start = Date.now();
+      while (Date.now() - start < 2000) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('Timed out waiting for description UI');
+    };
+
+    await waitFor(
+      () => container.querySelector<HTMLElement>('.collection-note-description') !== null,
+    );
+
+    const descriptionEl = container.querySelector<HTMLElement>('.collection-note-description');
+    expect(descriptionEl?.textContent).toBe('Short description');
+
+    const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
+    editButton?.click();
+
+    const descriptionInput = container.querySelector<HTMLTextAreaElement>(
+      '.note-description-textarea',
+    );
+    expect(descriptionInput).toBeTruthy();
+    if (!descriptionInput) {
+      throw new Error('Expected description input');
+    }
+    descriptionInput.value = 'Updated description';
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Save',
+    );
+    saveButton?.click();
+
+    await waitFor(() => writePayload !== null);
+    expect(writePayload?.description).toBe('Updated description');
+
+    handle.unmount();
+  });
+});
+
+describe('notes panel keyboard shortcuts', () => {
+  const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
+    .ASSISTANT_PANEL_REGISTRY;
+  let factories: Record<string, PanelFactory>;
+
+  beforeEach(() => {
+    factories = {};
+    (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY = {
+      registerPanel: (panelType: string, factory: PanelFactory) => {
+        factories[panelType] = factory;
+      },
+    };
+    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      return new Response(JSON.stringify({ ok: true, result: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    if (originalRegistry === undefined) {
+      delete (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY;
+    } else {
+      (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY =
+        originalRegistry;
+    }
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+  });
+
+  it('focuses the shared search input on "f"', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['notes'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'notes-1',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => null,
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const pendingPreferences = new Promise<void>(() => {});
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => pendingPreferences,
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '.collection-list-search-input',
+    );
+    expect(searchInput).not.toBeNull();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'f',
+        bubbles: true,
+      }),
+    );
+
+    expect(document.activeElement).toBe(searchInput);
+
+    handle.unmount();
+  });
+
+  it('blurs the shared search input on Escape when empty', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['notes'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'notes-1',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => null,
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const pendingPreferences = new Promise<void>(() => {});
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => pendingPreferences,
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '.collection-list-search-input',
+    );
+    expect(searchInput).not.toBeNull();
+
+    searchInput?.focus();
+    expect(document.activeElement).toBe(searchInput);
+
+    searchInput?.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+      }),
+    );
+
+    expect(document.activeElement).not.toBe(searchInput);
+
+    handle.unmount();
+  });
 });

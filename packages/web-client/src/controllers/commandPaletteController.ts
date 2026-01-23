@@ -47,6 +47,7 @@ export interface CommandPaletteControllerOptions {
   input: HTMLInputElement | null;
   ghost: HTMLElement | null;
   results: HTMLElement | null;
+  sortButton?: HTMLButtonElement | null;
   closeButton: HTMLButtonElement | null;
   triggerButton: HTMLButtonElement | null;
   fetchScopes: () => Promise<SearchableScope[]>;
@@ -78,9 +79,28 @@ type OptionItem = {
   profileId?: string | null;
 };
 
+type SortMode = 'relevance' | 'items' | 'plugin';
+type GroupMode = 'none' | 'plugin' | 'type';
+type ResultCategory = 'listItem' | 'list' | 'note' | 'other';
+type MenuKind = 'action' | 'sort';
+
+type MenuEntry = {
+  id: string;
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  selected?: boolean;
+  section?: string;
+};
+
+type DisplayEntry =
+  | { type: 'header'; label: string }
+  | { type: 'result'; result: SearchApiResult };
+
 type MenuState = {
   index: number;
   anchor: HTMLElement;
+  kind: MenuKind;
 };
 
 const COMMAND_OPTIONS: OptionItem[] = [
@@ -111,6 +131,18 @@ const MAIN_MENU_ITEMS: Array<{
   { id: 'pin', label: 'Pin to header', action: { type: 'pin' } },
   { id: 'replace', label: 'Replace', action: { type: 'replace' }, requiresSelection: true },
 ];
+
+const SORT_MODE_STORAGE_KEY = 'aiAssistantCommandPaletteSortMode';
+const GROUP_MODE_STORAGE_KEY = 'aiAssistantCommandPaletteGroupMode';
+const DEFAULT_SORT_MODE: SortMode = 'relevance';
+const DEFAULT_GROUP_MODE: GroupMode = 'none';
+const RESULT_CATEGORY_ORDER: ResultCategory[] = ['listItem', 'list', 'note', 'other'];
+const RESULT_CATEGORY_LABELS: Record<ResultCategory, string> = {
+  listItem: 'List items',
+  list: 'Lists',
+  note: 'Notes',
+  other: 'Other',
+};
 
 const SEARCH_DEBOUNCE_MS = 150;
 
@@ -169,15 +201,21 @@ export class CommandPaletteController {
   private menuState: MenuState | null = null;
   private menuEl: HTMLElement | null = null;
   private menuItems: HTMLButtonElement[] = [];
+  private menuEntries: MenuEntry[] = [];
   private searchTimer: number | null = null;
   private searchToken = 0;
   private lastQueryKey = '';
   private cachedState: ParsedState = { mode: 'idle' };
+  private sortMode: SortMode = DEFAULT_SORT_MODE;
+  private groupMode: GroupMode = DEFAULT_GROUP_MODE;
+  private orderedResults: SearchApiResult[] = [];
 
-  constructor(private readonly options: CommandPaletteControllerOptions) {}
+  constructor(private readonly options: CommandPaletteControllerOptions) {
+    this.loadPreferences();
+  }
 
   attach(): void {
-    const { triggerButton, closeButton, input, overlay } = this.options;
+    const { triggerButton, closeButton, input, overlay, sortButton } = this.options;
     triggerButton?.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -185,6 +223,9 @@ export class CommandPaletteController {
     });
     closeButton?.addEventListener('click', () => {
       this.close();
+    });
+    sortButton?.addEventListener('click', () => {
+      this.toggleSortMenu();
     });
     input?.addEventListener('input', () => {
       this.handleInput();
@@ -214,6 +255,7 @@ export class CommandPaletteController {
     if (!overlay || !input) {
       return;
     }
+    this.loadPreferences();
     this.closeMenus();
     this.isOpen = true;
     overlay.classList.add('open');
@@ -225,6 +267,7 @@ export class CommandPaletteController {
     this.optionIndex = 0;
     this.resultIndex = 0;
     this.results = [];
+    this.orderedResults = [];
     this.loading = false;
     this.cachedState = { mode: 'idle' };
     this.loadScopes();
@@ -268,6 +311,43 @@ export class CommandPaletteController {
       this.options.setStatus?.('Failed to load search scopes');
       console.error('Failed to load search scopes', err);
     }
+  }
+
+  private loadPreferences(): void {
+    try {
+      this.sortMode = this.normalizeSortMode(localStorage.getItem(SORT_MODE_STORAGE_KEY));
+      this.groupMode = this.normalizeGroupMode(localStorage.getItem(GROUP_MODE_STORAGE_KEY));
+    } catch {
+      this.sortMode = DEFAULT_SORT_MODE;
+      this.groupMode = DEFAULT_GROUP_MODE;
+    }
+  }
+
+  private persistPreferences(): void {
+    try {
+      localStorage.setItem(SORT_MODE_STORAGE_KEY, this.sortMode);
+      localStorage.setItem(GROUP_MODE_STORAGE_KEY, this.groupMode);
+    } catch {
+      // Ignore localStorage errors
+    }
+  }
+
+  private normalizeSortMode(value: string | null): SortMode {
+    if (value === 'relevance' || value === 'items' || value === 'plugin') {
+      return value;
+    }
+    return DEFAULT_SORT_MODE;
+  }
+
+  private normalizeGroupMode(value: string | null): GroupMode {
+    if (value === 'none' || value === 'plugin' || value === 'type') {
+      return value;
+    }
+    return DEFAULT_GROUP_MODE;
+  }
+
+  private isSearchMode(): boolean {
+    return this.activeMode === 'global' || this.activeMode === 'query';
   }
 
   private handleInput(): void {
@@ -315,6 +395,7 @@ export class CommandPaletteController {
     if (state.mode !== 'global' && state.mode !== 'query') {
       this.loading = false;
       this.results = [];
+      this.orderedResults = [];
       this.lastQueryKey = '';
       return;
     }
@@ -325,6 +406,7 @@ export class CommandPaletteController {
     if (!query && !allowEmptyQuery) {
       this.loading = false;
       this.results = [];
+      this.orderedResults = [];
       this.lastQueryKey = '';
       return;
     }
@@ -340,6 +422,7 @@ export class CommandPaletteController {
     this.loading = true;
     if (!query) {
       this.results = [];
+      this.orderedResults = [];
       this.render();
     }
     this.searchTimer = window.setTimeout(async () => {
@@ -353,12 +436,14 @@ export class CommandPaletteController {
           return;
         }
         this.results = Array.isArray(response.results) ? response.results : [];
+        this.orderedResults = [];
         this.resultIndex = 0;
       } catch (err) {
         if (token !== this.searchToken) {
           return;
         }
         this.results = [];
+        this.orderedResults = [];
         this.options.setStatus?.('Search failed');
         console.error('Search failed', err);
       } finally {
@@ -509,6 +594,7 @@ export class CommandPaletteController {
       return;
     }
     results.innerHTML = '';
+    this.updateSortControl();
 
     if (this.activeMode === 'command') {
       this.activeOptions = this.filterCommandOptions(this.cachedState.commandQuery ?? '');
@@ -533,7 +619,8 @@ export class CommandPaletteController {
     }
 
     this.activeOptions = [];
-    this.resultIndex = this.clampIndex(this.resultIndex, this.results.length);
+    this.orderedResults = this.buildOrderedResults();
+    this.resultIndex = this.clampIndex(this.resultIndex, this.orderedResults.length);
     this.renderResultsList(results);
   }
 
@@ -609,7 +696,8 @@ export class CommandPaletteController {
 
   private renderResultsList(container: HTMLElement): void {
     const query = this.cachedState.query?.trim() ?? '';
-    if (!query && this.results.length === 0) {
+    const orderedResults = this.orderedResults;
+    if (!query && orderedResults.length === 0) {
       return;
     }
 
@@ -621,7 +709,7 @@ export class CommandPaletteController {
       return;
     }
 
-    if (this.results.length === 0 && query) {
+    if (orderedResults.length === 0 && query) {
       const empty = document.createElement('div');
       empty.className = 'command-palette-empty';
       empty.textContent = 'No results';
@@ -629,10 +717,23 @@ export class CommandPaletteController {
       return;
     }
 
-    this.results.forEach((result, index) => {
+    const entries = this.buildGroupedEntries(orderedResults);
+    let renderIndex = 0;
+    entries.forEach((entry) => {
+      if (entry.type === 'header') {
+        const header = document.createElement('div');
+        header.className = 'command-palette-group';
+        header.textContent = entry.label;
+        container.appendChild(header);
+        return;
+      }
+
+      const result = entry.result;
       const row = document.createElement('div');
       row.className = 'command-palette-item';
-      if (index === this.resultIndex) {
+      const entryIndex = renderIndex;
+      renderIndex += 1;
+      if (entryIndex === this.resultIndex) {
         row.classList.add('focused');
       }
 
@@ -676,7 +777,7 @@ export class CommandPaletteController {
       row.appendChild(content);
 
       row.addEventListener('click', (event) => {
-        this.resultIndex = index;
+        this.resultIndex = entryIndex;
         if (this.options.isMobileViewport?.()) {
           event.preventDefault();
           event.stopPropagation();
@@ -688,12 +789,128 @@ export class CommandPaletteController {
         this.handleDefaultLaunch(false);
       });
       row.addEventListener('dblclick', () => {
-        this.resultIndex = index;
+        this.resultIndex = entryIndex;
         this.handleDefaultLaunch(false);
       });
 
       container.appendChild(row);
     });
+  }
+
+  private buildOrderedResults(): SearchApiResult[] {
+    if (this.results.length === 0) {
+      return [];
+    }
+    if (this.sortMode === 'items') {
+      return this.sortItemsFirst(this.results);
+    }
+    if (this.sortMode === 'plugin') {
+      return this.sortByPlugin(this.results);
+    }
+    return [...this.results];
+  }
+
+  private getActiveResults(): SearchApiResult[] {
+    if (this.orderedResults.length === this.results.length) {
+      return this.orderedResults;
+    }
+    return this.buildOrderedResults();
+  }
+
+  private sortItemsFirst(results: SearchApiResult[]): SearchApiResult[] {
+    const buckets: Record<ResultCategory, SearchApiResult[]> = {
+      listItem: [],
+      list: [],
+      note: [],
+      other: [],
+    };
+    results.forEach((result) => {
+      buckets[this.getResultCategory(result)].push(result);
+    });
+    return [
+      ...buckets.listItem,
+      ...buckets.list,
+      ...buckets.note,
+      ...buckets.other,
+    ];
+  }
+
+  private sortByPlugin(results: SearchApiResult[]): SearchApiResult[] {
+    const indexed = results.map((result, index) => ({
+      result,
+      index,
+      pluginKey: result.pluginId.toLowerCase(),
+    }));
+    indexed.sort((a, b) => {
+      if (a.pluginKey < b.pluginKey) return -1;
+      if (a.pluginKey > b.pluginKey) return 1;
+      return a.index - b.index;
+    });
+    return indexed.map((entry) => entry.result);
+  }
+
+  private buildGroupedEntries(results: SearchApiResult[]): DisplayEntry[] {
+    if (this.groupMode === 'none') {
+      return results.map((result) => ({ type: 'result', result }));
+    }
+    if (this.groupMode === 'plugin') {
+      const order: string[] = [];
+      const grouped = new Map<string, SearchApiResult[]>();
+      results.forEach((result) => {
+        const key = result.pluginId || 'unknown';
+        if (!grouped.has(key)) {
+          grouped.set(key, []);
+          order.push(key);
+        }
+        grouped.get(key)?.push(result);
+      });
+      const entries: DisplayEntry[] = [];
+      order.forEach((key) => {
+        entries.push({ type: 'header', label: key });
+        grouped.get(key)?.forEach((result) => {
+          entries.push({ type: 'result', result });
+        });
+      });
+      return entries;
+    }
+
+    const grouped = new Map<ResultCategory, SearchApiResult[]>(
+      RESULT_CATEGORY_ORDER.map((category) => [category, []]),
+    );
+    results.forEach((result) => {
+      grouped.get(this.getResultCategory(result))?.push(result);
+    });
+    const entries: DisplayEntry[] = [];
+    RESULT_CATEGORY_ORDER.forEach((category) => {
+      const groupResults = grouped.get(category) ?? [];
+      if (groupResults.length === 0) {
+        return;
+      }
+      entries.push({ type: 'header', label: RESULT_CATEGORY_LABELS[category] });
+      groupResults.forEach((result) => {
+        entries.push({ type: 'result', result });
+      });
+    });
+    return entries;
+  }
+
+  private getResultCategory(result: SearchApiResult): ResultCategory {
+    const panelType = result.launch.panelType;
+    if (panelType === 'lists') {
+      const payload = result.launch.payload;
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        typeof (payload as Record<string, unknown>)['itemId'] === 'string'
+      ) {
+        return 'listItem';
+      }
+      return 'list';
+    }
+    if (panelType === 'notes') {
+      return 'note';
+    }
+    return 'other';
   }
 
   private filterCommandOptions(query: string): OptionItem[] {
@@ -810,7 +1027,7 @@ export class CommandPaletteController {
   }
 
   private handleDefaultLaunch(forceReplace: boolean): void {
-    const result = this.results[this.resultIndex];
+    const result = this.getActiveResults()[this.resultIndex];
     if (!result) {
       return;
     }
@@ -831,9 +1048,14 @@ export class CommandPaletteController {
     if (!this.isOpen) {
       return;
     }
+    const consumeEvent = () => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
 
     if (event.key === 'Escape') {
-      event.preventDefault();
+      consumeEvent();
       if (this.menuState) {
         this.closeMenus();
         return;
@@ -843,7 +1065,7 @@ export class CommandPaletteController {
     }
 
     if (event.key === 'ArrowDown') {
-      event.preventDefault();
+      consumeEvent();
       if (this.menuState) {
         this.moveMenuFocus(1);
         return;
@@ -853,7 +1075,7 @@ export class CommandPaletteController {
     }
 
     if (event.key === 'ArrowUp') {
-      event.preventDefault();
+      consumeEvent();
       if (this.menuState) {
         this.moveMenuFocus(-1);
         return;
@@ -864,18 +1086,18 @@ export class CommandPaletteController {
 
     if (event.key === 'ArrowRight') {
       if (this.menuState) {
-        event.preventDefault();
+        consumeEvent();
         return;
       }
-      if (this.activeMode === 'global' || this.activeMode === 'query') {
-        event.preventDefault();
+      if (this.isSearchMode()) {
+        consumeEvent();
         this.openActionMenu();
       }
       return;
     }
 
     if (event.key === 'Enter') {
-      event.preventDefault();
+      consumeEvent();
       if (this.menuState) {
         this.executeMenuSelection();
         return;
@@ -888,7 +1110,7 @@ export class CommandPaletteController {
         this.handleOptionSelection();
         return;
       }
-      if (this.activeMode === 'global' || this.activeMode === 'query') {
+      if (this.isSearchMode()) {
         this.handleDefaultLaunch(event.shiftKey);
         return;
       }
@@ -897,7 +1119,7 @@ export class CommandPaletteController {
 
     if (event.key === 'Backspace') {
       if (this.handleBackspace()) {
-        event.preventDefault();
+        consumeEvent();
       }
       return;
     }
@@ -974,11 +1196,12 @@ export class CommandPaletteController {
       this.scrollFocusedItem();
       return;
     }
-    if (this.results.length === 0) {
+    const resultsLength = this.getActiveResults().length;
+    if (resultsLength === 0) {
       this.resultIndex = 0;
       return;
     }
-    this.resultIndex = this.wrapIndex(this.resultIndex + delta, this.results.length);
+    this.resultIndex = this.wrapIndex(this.resultIndex + delta, resultsLength);
     this.render();
     this.scrollFocusedItem();
   }
@@ -1020,6 +1243,115 @@ export class CommandPaletteController {
     ghost.scrollLeft = input.scrollLeft;
   }
 
+  private updateSortControl(): void {
+    const button = this.options.sortButton;
+    if (!button) {
+      return;
+    }
+    const shouldShow = this.isSearchMode();
+    button.classList.toggle('is-hidden', !shouldShow);
+    button.disabled = !shouldShow;
+    const isActive =
+      this.sortMode !== DEFAULT_SORT_MODE || this.groupMode !== DEFAULT_GROUP_MODE;
+    button.classList.toggle('is-active', isActive);
+    if (!shouldShow) {
+      this.setSortButtonExpanded(false);
+    }
+  }
+
+  private setSortButtonExpanded(expanded: boolean): void {
+    const button = this.options.sortButton;
+    if (!button) {
+      return;
+    }
+    button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+
+  private toggleSortMenu(): void {
+    if (!this.isSearchMode()) {
+      return;
+    }
+    if (this.menuState?.kind === 'sort') {
+      this.closeMenus();
+      return;
+    }
+    this.closeMenus();
+    this.openSortMenu();
+  }
+
+  private openSortMenu(): void {
+    const button = this.options.sortButton;
+    if (!button) {
+      return;
+    }
+    const { entries, initialIndex } = this.buildSortMenuEntries();
+    if (entries.length === 0) {
+      return;
+    }
+    this.menuEntries = entries;
+    this.menuState = { index: initialIndex, anchor: button, kind: 'sort' };
+    this.renderMenu();
+    this.setSortButtonExpanded(true);
+  }
+
+  private buildSortMenuEntries(): { entries: MenuEntry[]; initialIndex: number } {
+    const entries: MenuEntry[] = [];
+    const sortEntries: Array<{ id: SortMode; label: string }> = [
+      { id: 'relevance', label: 'Relevance' },
+      { id: 'items', label: 'Items first' },
+      { id: 'plugin', label: 'Plugin A-Z' },
+    ];
+    const groupEntries: Array<{ id: GroupMode; label: string }> = [
+      { id: 'none', label: 'None' },
+      { id: 'plugin', label: 'By plugin' },
+      { id: 'type', label: 'By result type' },
+    ];
+
+    sortEntries.forEach((entry) => {
+      entries.push({
+        id: `sort:${entry.id}`,
+        label: entry.label,
+        section: 'Sort',
+        selected: entry.id === this.sortMode,
+        onSelect: () => {
+          this.setSortMode(entry.id);
+        },
+      });
+    });
+
+    groupEntries.forEach((entry) => {
+      entries.push({
+        id: `group:${entry.id}`,
+        label: entry.label,
+        section: 'Group',
+        selected: entry.id === this.groupMode,
+        onSelect: () => {
+          this.setGroupMode(entry.id);
+        },
+      });
+    });
+
+    let initialIndex = entries.findIndex((entry) => entry.selected);
+    if (initialIndex < 0) {
+      initialIndex = 0;
+    }
+    return { entries, initialIndex };
+  }
+
+  private setSortMode(mode: SortMode): void {
+    this.sortMode = mode;
+    this.persistPreferences();
+    this.closeMenus();
+    this.render();
+  }
+
+  private setGroupMode(mode: GroupMode): void {
+    this.groupMode = mode;
+    this.persistPreferences();
+    this.closeMenus();
+    this.render();
+  }
+
   private openActionMenu(): void {
     if (this.menuState) {
       return;
@@ -1033,12 +1365,18 @@ export class CommandPaletteController {
       return;
     }
     const hasSelection = Boolean(this.options.getSelectedPanelId());
-    let index = 0;
-    if (!hasSelection) {
-      const fallback = MAIN_MENU_ITEMS.findIndex((item) => !item.requiresSelection);
-      index = fallback >= 0 ? fallback : 0;
+    const entries = MAIN_MENU_ITEMS.map((item) => ({
+      id: item.id,
+      label: item.label,
+      disabled: Boolean(item.requiresSelection && !hasSelection),
+      onSelect: () => this.executeAction(item.action),
+    }));
+    let index = entries.findIndex((entry) => !entry.disabled);
+    if (index < 0) {
+      index = 0;
     }
-    this.menuState = { index, anchor: focused };
+    this.menuEntries = entries;
+    this.menuState = { index, anchor: focused, kind: 'action' };
     this.renderMenu();
   }
 
@@ -1048,24 +1386,41 @@ export class CommandPaletteController {
     if (!state) {
       return;
     }
-    const hasSelection = Boolean(this.options.getSelectedPanelId());
     const menu = document.createElement('div');
     menu.className = 'command-palette-menu';
 
     const items: HTMLButtonElement[] = [];
-    MAIN_MENU_ITEMS.forEach((entry, index) => {
+    let currentSection: string | undefined;
+    this.menuEntries.forEach((entry, index) => {
+      if (entry.section && entry.section !== currentSection) {
+        currentSection = entry.section;
+        const heading = document.createElement('div');
+        heading.className = 'command-palette-menu-heading';
+        heading.textContent = entry.section;
+        menu.appendChild(heading);
+      }
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'command-palette-menu-item';
       button.textContent = entry.label;
-      if (entry.requiresSelection && !hasSelection) {
+      if (entry.selected) {
+        button.classList.add('selected');
+        const check = document.createElement('span');
+        check.className = 'command-palette-menu-check';
+        check.textContent = '✓';
+        button.appendChild(check);
+      }
+      if (entry.disabled) {
         button.disabled = true;
       }
       if (index === state.index) {
         button.classList.add('focused');
       }
       button.addEventListener('click', () => {
-        this.executeAction(entry.action);
+        if (entry.disabled) {
+          return;
+        }
+        entry.onSelect();
       });
       items.push(button);
       menu.appendChild(button);
@@ -1092,18 +1447,15 @@ export class CommandPaletteController {
     if (!this.menuState) {
       return;
     }
-    const item = MAIN_MENU_ITEMS[this.menuState.index];
-    if (!item) {
+    const entry = this.menuEntries[this.menuState.index];
+    if (!entry || entry.disabled) {
       return;
     }
-    if (item.requiresSelection && !this.options.getSelectedPanelId()) {
-      return;
-    }
-    this.executeAction(item.action);
+    entry.onSelect();
   }
 
   private executeAction(action: LaunchAction): void {
-    const result = this.results[this.resultIndex];
+    const result = this.getActiveResults()[this.resultIndex];
     if (!result) {
       return;
     }
@@ -1142,6 +1494,8 @@ export class CommandPaletteController {
   private closeMenus(): void {
     this.removeMenuElements();
     this.menuState = null;
+    this.menuEntries = [];
+    this.setSortButtonExpanded(false);
   }
 
   private removeMenuElements(): void {

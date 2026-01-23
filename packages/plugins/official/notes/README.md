@@ -17,6 +17,7 @@ Markdown notes with tags, search, and a dedicated notes panel.
 - Instance selection comes from config (`plugins.notes.instances`); the default instance id is `default`.
 - When multiple instances are selected, the note editor includes a Profile selector; new notes
   default to the `default` instance when it is part of the selection.
+- Notes support an optional Description field, shown under the title and editable in the note editor.
 - Default view renders markdown; use **Edit** to modify a note.
 - Browser mode supports arrow-key grid navigation with Enter to open a note; Escape returns to the
   browser view from note mode.

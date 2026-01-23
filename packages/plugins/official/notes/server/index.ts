@@ -40,6 +40,16 @@ function requireNonEmptyString(value: unknown, field: string): string {
   return trimmed;
 }
 
+function parseOptionalString(value: unknown, field: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new ToolError('invalid_arguments', `${field} must be a string`);
+  }
+  return value;
+}
+
 function parseOptionalTags(value: unknown): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -226,6 +236,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
               id: note.title,
               title: note.title,
               subtitle: note.tags?.join(', '),
+              ...(note.description ? { snippet: note.description } : {}),
               score: toScore(note.updated ?? note.created),
               launch: {
                 panelType: 'notes',
@@ -253,6 +264,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
               id: note.title,
               title: note.title,
               subtitle: note.tags?.join(', '),
+              ...(note.description ? { snippet: note.description } : {}),
               launch: {
                 panelType: 'notes',
                 payload: {
@@ -281,7 +293,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             id: note.title,
             title: note.title,
             subtitle: note.tags?.join(', '),
-            snippet: note.snippet,
+            snippet: note.snippet ?? note.description,
             launch: {
               panelType: 'notes',
               payload: {
@@ -351,11 +363,13 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const title = requireNonEmptyString(parsed['title'], 'title');
         const content = requireNonEmptyString(parsed['content'], 'content');
         const tags = parseOptionalTags(parsed['tags']);
+        const description = parseOptionalString(parsed['description'], 'description');
         const store = await getStore(instanceId);
         const result = await store.write({
           title,
           content,
           ...(tags !== undefined ? { tags } : {}),
+          ...(description !== undefined ? { description } : {}),
         });
         broadcastNotesUpdate(ctx, {
           instance_id: instanceId,

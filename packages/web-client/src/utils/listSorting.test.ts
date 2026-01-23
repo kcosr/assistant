@@ -81,6 +81,21 @@ describe('listSorting', () => {
       expect(sorted.map((i) => i.title)).toEqual(['Cherry', 'Banana', 'Apple']);
     });
 
+    it('sorts by title with pinned items first', () => {
+      const items: ListItem[] = [
+        { id: '1', title: 'Banana', tags: ['pinned'] },
+        { id: '2', title: 'Apple' },
+        { id: '3', title: 'Cherry', tags: ['pinned'] },
+        { id: '4', title: 'Date' },
+      ];
+
+      const asc = sortItems(items, { column: 'title', direction: 'asc' }, []);
+      expect(asc.map((i) => i.title)).toEqual(['Banana', 'Cherry', 'Apple', 'Date']);
+
+      const desc = sortItems(items, { column: 'title', direction: 'desc' }, []);
+      expect(desc.map((i) => i.title)).toEqual(['Cherry', 'Banana', 'Date', 'Apple']);
+    });
+
     it('sorts by number custom field', () => {
       const items: ListItem[] = [
         { id: '1', title: 'A', customFields: { priority: 3 } },

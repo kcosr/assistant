@@ -310,8 +310,13 @@ async function main(): Promise<void> {
     commandPaletteInput,
     commandPaletteGhost,
     commandPaletteResults,
+    commandPaletteSortButton,
     commandPaletteCloseButton,
   } = elements;
+
+  if (commandPaletteSortButton) {
+    commandPaletteSortButton.innerHTML = ICONS.sortAlpha;
+  }
 
   const builtInPanels = new Map<string, { manifest: PanelTypeManifest; factory: PanelFactory }>();
   const registerBuiltInPanel = (manifest: PanelTypeManifest, factory: PanelFactory): void => {
@@ -2455,6 +2460,7 @@ async function main(): Promise<void> {
           input: commandPaletteInput,
           ghost: commandPaletteGhost,
           results: commandPaletteResults,
+          sortButton: commandPaletteSortButton,
           closeButton: commandPaletteCloseButton,
           triggerButton: commandPaletteButton,
           fetchScopes: fetchSearchScopes,

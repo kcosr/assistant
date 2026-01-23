@@ -34,6 +34,7 @@ export function parseFrontmatter(fileContent: string): {
       tags?: unknown;
       created?: unknown;
       updated?: unknown;
+      description?: unknown;
     };
 
     if (typeof obj.title === 'string') {
@@ -52,18 +53,28 @@ export function parseFrontmatter(fileContent: string): {
     if (typeof obj.updated === 'string') {
       meta.updated = obj.updated;
     }
+
+    if (typeof obj.description === 'string') {
+      const trimmed = obj.description.trim();
+      if (trimmed) {
+        meta.description = trimmed;
+      }
+    }
   }
 
   return { metadata: meta, content: cleanedBody };
 }
 
 export function serializeFrontmatter(metadata: NoteMetadata, content: string): string {
-  const frontmatter = {
+  const frontmatter: Record<string, unknown> = {
     title: metadata.title,
     tags: normalizeTags(metadata.tags),
     created: metadata.created,
     updated: metadata.updated,
   };
+  if (metadata.description && metadata.description.trim()) {
+    frontmatter.description = metadata.description;
+  }
 
   const yamlText = stringifyYaml(frontmatter).trimEnd();
   return `---\n${yamlText}\n---\n\n${content}`;
