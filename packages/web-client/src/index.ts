@@ -284,6 +284,7 @@ async function main(): Promise<void> {
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
     listSingleClickSelectionCheckbox: listSingleClickSelectionCheckboxEl,
+    listInlineCustomFieldEditingCheckbox: listInlineCustomFieldEditingCheckboxEl,
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
@@ -350,6 +351,8 @@ async function main(): Promise<void> {
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
   const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+  const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
+    'aiAssistantListInlineCustomFieldEditingEnabled';
 
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
@@ -374,6 +377,7 @@ async function main(): Promise<void> {
   let briefModeEnabled = false;
   let listInsertAtTopEnabled = false;
   let listSingleClickSelectionEnabled = true;
+  let listInlineCustomFieldEditingEnabled = true;
 
   try {
     const storedIncludeContext = localStorage.getItem(INCLUDE_PANEL_CONTEXT_STORAGE_KEY);
@@ -401,6 +405,14 @@ async function main(): Promise<void> {
       listSingleClickSelectionEnabled = true;
     } else if (storedSingleClickSelection === 'false') {
       listSingleClickSelectionEnabled = false;
+    }
+    const storedInlineCustomFields = localStorage.getItem(
+      LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY,
+    );
+    if (storedInlineCustomFields === 'true') {
+      listInlineCustomFieldEditingEnabled = true;
+    } else if (storedInlineCustomFields === 'false') {
+      listInlineCustomFieldEditingEnabled = false;
     }
   } catch {
     // Ignore localStorage errors
@@ -2278,6 +2290,23 @@ async function main(): Promise<void> {
       }
     });
   }
+  if (listInlineCustomFieldEditingCheckboxEl) {
+    listInlineCustomFieldEditingCheckboxEl.checked = listInlineCustomFieldEditingEnabled;
+    listInlineCustomFieldEditingCheckboxEl.addEventListener('change', () => {
+      listInlineCustomFieldEditingEnabled = listInlineCustomFieldEditingCheckboxEl.checked;
+      try {
+        localStorage.setItem(
+          LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY,
+          listInlineCustomFieldEditingEnabled ? 'true' : 'false',
+        );
+      } catch {
+        // Ignore localStorage errors.
+      }
+      document.dispatchEvent(
+        new CustomEvent('assistant:list-inline-custom-field-editing-updated'),
+      );
+    });
+  }
 
   applyTagColorsToRoot(document.body);
   window.addEventListener('assistant:tag-colors-updated', () => {
@@ -2339,7 +2368,18 @@ async function main(): Promise<void> {
     : null;
   panelLauncherController?.attach();
 
-  const resolveCommandPaletteIcon = (panelType: string): string | null => {
+  const resolveCommandPaletteIcon = (result: SearchApiResult): string | null => {
+    const panelType = result.launch.panelType;
+    const payload = result.launch.payload;
+    if (
+      panelType === 'lists' &&
+      payload &&
+      typeof payload === 'object' &&
+      typeof (payload as Record<string, unknown>)['itemId'] === 'string'
+    ) {
+      return ICONS.check;
+    }
+
     const manifest = panelRegistry.getManifest(panelType);
     const iconName = manifest?.icon;
     if (iconName && iconName in ICONS) {

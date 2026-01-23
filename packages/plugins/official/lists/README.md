@@ -30,6 +30,8 @@ operations.
 - Web UI: implemented in `web/index.ts` using shared controllers from `packages/web-client/src`.
 - Drag within a list to reorder, or drag selected items across list panels to move them to the
   drop position.
+- Select and checkbox custom fields can be edited inline from list rows without opening the edit
+  dialog (toggle in settings, default on).
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.

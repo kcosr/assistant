@@ -6,6 +6,7 @@ export interface WebClientElements {
   showContextCheckbox: HTMLInputElement | null;
   listInsertAtTopCheckbox: HTMLInputElement | null;
   listSingleClickSelectionCheckbox: HTMLInputElement | null;
+  listInlineCustomFieldEditingCheckbox: HTMLInputElement | null;
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
@@ -48,6 +49,9 @@ export function getWebClientElements(): WebClientElements | null {
   const listSingleClickSelectionCheckbox = getElement<HTMLInputElement>(
     'list-single-click-selection-checkbox',
   );
+  const listInlineCustomFieldEditingCheckbox = getElement<HTMLInputElement>(
+    'list-inline-custom-field-editing-checkbox',
+  );
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
@@ -74,6 +78,7 @@ export function getWebClientElements(): WebClientElements | null {
     showContextCheckbox,
     listInsertAtTopCheckbox,
     listSingleClickSelectionCheckbox,
+    listInlineCustomFieldEditingCheckbox,
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,

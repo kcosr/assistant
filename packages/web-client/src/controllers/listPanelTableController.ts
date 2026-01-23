@@ -11,6 +11,8 @@ const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" ari
 const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
 const LIST_ITEMS_DRAG_TYPE = 'application/x-list-items';
 const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
+  'aiAssistantListInlineCustomFieldEditingEnabled';
 
 export interface ListPanelTableControllerOptions {
   icons: {
@@ -127,7 +129,13 @@ export class ListPanelTableController {
   private notesPopupShowTimeout: ReturnType<typeof setTimeout> | null = null;
   private renderState: ListPanelTableRenderState | null = null;
 
-  constructor(private readonly options: ListPanelTableControllerOptions) {}
+  constructor(private readonly options: ListPanelTableControllerOptions) {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('assistant:list-inline-custom-field-editing-updated', () => {
+        this.renderState?.rerender();
+      });
+    }
+  }
 
   private getOrCreateNotesPopup(): HTMLElement {
     if (this.notesPopup && this.notesPopup.isConnected) {
@@ -2131,13 +2139,100 @@ export class ListPanelTableController {
       row.appendChild(notesCell);
     }
 
+    const inlineCustomFieldEditingEnabled = this.isInlineCustomFieldEditingEnabled();
     for (const field of visibleCustomFields) {
       const customCell = document.createElement('td');
       const key = field.key;
       const value = item.customFields ? item.customFields[key] : undefined;
       const text = this.formatCustomFieldValue(value, field.type);
       const isMarkdown = field.type === 'text' && field.markdown === true;
-      if (isMarkdown) {
+      const itemIdValue = itemId ?? '';
+      const updateCustomField = async (
+        nextValue: unknown | null,
+        revert: () => void,
+        control: HTMLInputElement | HTMLSelectElement,
+      ): Promise<void> => {
+        if (!itemIdValue) {
+          return;
+        }
+        control.disabled = true;
+        const ok = await this.options.updateListItem(listId, itemIdValue, {
+          customFields: { [key]: nextValue },
+        });
+        if (!ok) {
+          control.disabled = false;
+          revert();
+        }
+      };
+
+      if (inlineCustomFieldEditingEnabled && field.type === 'checkbox') {
+        customCell.className = isCompleted ? 'list-item-completed-text' : '';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'list-item-form-checkbox list-item-inline-checkbox';
+        const wasChecked = value === true;
+        checkbox.checked = wasChecked;
+        if (!itemIdValue) {
+          checkbox.disabled = true;
+        } else {
+          checkbox.addEventListener('change', () => {
+            const nextChecked = checkbox.checked;
+            const revert = () => {
+              checkbox.checked = wasChecked;
+            };
+            revert();
+            void updateCustomField(nextChecked ? true : null, revert, checkbox);
+          });
+        }
+        customCell.appendChild(checkbox);
+      } else if (inlineCustomFieldEditingEnabled && field.type === 'select') {
+        customCell.className = isCompleted ? 'list-item-completed-text' : '';
+        const select = document.createElement('select');
+        select.className = 'list-item-form-select list-item-inline-select';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select…';
+        select.appendChild(placeholder);
+
+        const options: string[] = [];
+        if (Array.isArray(field.options)) {
+          for (const raw of field.options) {
+            if (typeof raw !== 'string') continue;
+            const trimmed = raw.trim();
+            if (!trimmed) continue;
+            if (!options.includes(trimmed)) {
+              options.push(trimmed);
+            }
+          }
+        }
+
+        const currentValue = typeof value === 'string' ? value.trim() : '';
+        if (currentValue && !options.includes(currentValue)) {
+          options.push(currentValue);
+        }
+
+        for (const optionValue of options) {
+          const option = document.createElement('option');
+          option.value = optionValue;
+          option.textContent = optionValue;
+          select.appendChild(option);
+        }
+        select.value = currentValue;
+
+        if (!itemIdValue) {
+          select.disabled = true;
+        } else {
+          select.addEventListener('change', () => {
+            const nextValue = select.value.trim();
+            const revert = () => {
+              select.value = currentValue;
+            };
+            revert();
+            void updateCustomField(nextValue ? nextValue : null, revert, select);
+          });
+        }
+        customCell.appendChild(select);
+      } else if (isMarkdown) {
         this.renderMarkdownPreviewCell(
           customCell,
           text,
@@ -2429,6 +2524,19 @@ export class ListPanelTableController {
     }
     try {
       return window.localStorage.getItem(LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  }
+
+  private isInlineCustomFieldEditingEnabled(): boolean {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    try {
+      return (
+        window.localStorage.getItem(LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY) !== 'false'
+      );
     } catch {
       return true;
     }

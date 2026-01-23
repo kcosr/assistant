@@ -242,7 +242,7 @@ Each result displays:
 ```
 
 Result row structure:
-- **Icon**: Plugin-specific (📝 for notes, 📋 for lists)
+- **Icon**: Plugin-specific (📝 for notes, 📋 for lists, ✅ for list items)
 - **Title**: Item title/name
 - **Location**: `plugin:instance` label
 - **Snippet**: Optional matched text preview

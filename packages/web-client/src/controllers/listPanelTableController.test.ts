@@ -667,15 +667,26 @@ describe('ListPanelTableController keyboard selection', () => {
 
 describe('ListPanelTableController notes column', () => {
   const listId = 'list1';
+  const inlineEditingStorageKey = 'aiAssistantListInlineCustomFieldEditingEnabled';
 
   const recentUserItemUpdates = new Set<string>();
 
   beforeEach(() => {
     document.body.innerHTML = '';
+    try {
+      localStorage.removeItem(inlineEditingStorageKey);
+    } catch {
+      // Ignore localStorage errors in tests.
+    }
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    try {
+      localStorage.removeItem(inlineEditingStorageKey);
+    } catch {
+      // Ignore localStorage errors in tests.
+    }
   });
 
   it('renders markdown in the notes cell without inline editing', async () => {
@@ -769,8 +780,153 @@ describe('ListPanelTableController notes column', () => {
 
     const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
     // checkbox, title, priority, urgent
+    const prioritySelect = cells[2]?.querySelector<HTMLSelectElement>('select');
+    const urgentCheckbox = cells[3]?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(prioritySelect).not.toBeNull();
+    expect(urgentCheckbox).not.toBeNull();
+    expect(prioritySelect?.value).toBe('High');
+    expect(urgentCheckbox?.checked).toBe(true);
+  });
+
+  it('renders custom field values when inline editing is disabled', () => {
+    try {
+      localStorage.setItem(inlineEditingStorageKey, 'false');
+    } catch {
+      // Ignore localStorage errors in tests.
+    }
+
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [
+        {
+          id: 'item1',
+          title: 'Item 1',
+          customFields: { priority: 'High', urgent: true },
+        },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [
+        { key: 'priority', label: 'Priority', type: 'select', options: ['High', 'Low'] },
+        { key: 'urgent', label: 'Urgent', type: 'checkbox' },
+      ],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+    if (!row) return;
+
+    const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
     expect(cells[2]?.textContent).toBe('High');
     expect(cells[3]?.textContent).toBe('✓');
+    expect(cells[2]?.querySelector('select')).toBeNull();
+    expect(cells[3]?.querySelector('input[type=\"checkbox\"]')).toBeNull();
+  });
+
+  it('updates inline select and checkbox custom fields without optimistic UI', () => {
+    const updateListItem = vi.fn(async () => true);
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem,
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [
+        {
+          id: 'item1',
+          title: 'Item 1',
+          customFields: { priority: 'Low', urgent: false },
+        },
+        {
+          id: 'item2',
+          title: 'Item 2',
+          customFields: { priority: 'High', urgent: true },
+        },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [
+        { key: 'priority', label: 'Priority', type: 'select', options: ['High', 'Low'] },
+        { key: 'urgent', label: 'Urgent', type: 'checkbox' },
+      ],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    expect(rows.length).toBe(2);
+
+    const firstRowCells = Array.from(rows[0]!.querySelectorAll<HTMLTableCellElement>('td'));
+    const secondRowCells = Array.from(rows[1]!.querySelectorAll<HTMLTableCellElement>('td'));
+
+    const select1 = firstRowCells[2]?.querySelector<HTMLSelectElement>('select');
+    const select2 = secondRowCells[2]?.querySelector<HTMLSelectElement>('select');
+    const checkbox1 = firstRowCells[3]?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const checkbox2 = secondRowCells[3]?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+    expect(select1).not.toBeNull();
+    expect(select2).not.toBeNull();
+    expect(checkbox1).not.toBeNull();
+    expect(checkbox2).not.toBeNull();
+
+    if (!select1 || !select2 || !checkbox1 || !checkbox2) return;
+
+    select1.value = 'High';
+    select1.dispatchEvent(new Event('change', { bubbles: true }));
+
+    select2.value = '';
+    select2.dispatchEvent(new Event('change', { bubbles: true }));
+
+    checkbox1.checked = true;
+    checkbox1.dispatchEvent(new Event('change', { bubbles: true }));
+
+    checkbox2.checked = false;
+    checkbox2.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(updateListItem).toHaveBeenNthCalledWith(1, listId, 'item1', {
+      customFields: { priority: 'High' },
+    });
+    expect(updateListItem).toHaveBeenNthCalledWith(2, listId, 'item2', {
+      customFields: { priority: null },
+    });
+    expect(updateListItem).toHaveBeenNthCalledWith(3, listId, 'item1', {
+      customFields: { urgent: true },
+    });
+    expect(updateListItem).toHaveBeenNthCalledWith(4, listId, 'item2', {
+      customFields: { urgent: null },
+    });
+
+    expect(select1.value).toBe('Low');
+    expect(select2.value).toBe('High');
+    expect(checkbox1.checked).toBe(false);
+    expect(checkbox2.checked).toBe(true);
+
+    expect(select1.disabled).toBe(true);
+    expect(select2.disabled).toBe(true);
+    expect(checkbox1.disabled).toBe(true);
+    expect(checkbox2.disabled).toBe(true);
   });
 
   it('renders markdown in custom text fields when enabled', () => {

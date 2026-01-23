@@ -2032,6 +2032,19 @@ body.list-row-dragging .list-item-row * {
   padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm) var(--spacing-md);
 }
 
+.list-item-inline-select {
+  width: 100%;
+  max-width: 220px;
+  padding: 2px 8px;
+}
+
+.list-item-inline-checkbox {
+  margin: 0;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+}
+
 .list-item-checkbox-header {
   width: 1px; /* Shrink to fit content */
   padding: var(--spacing-xs);

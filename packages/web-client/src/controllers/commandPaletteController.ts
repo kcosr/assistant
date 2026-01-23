@@ -53,7 +53,7 @@ export interface CommandPaletteControllerOptions {
   fetchResults: (options: GlobalSearchOptions) => Promise<SearchApiResponse>;
   getSelectedPanelId: () => string | null;
   onLaunch: (result: SearchApiResult, action: LaunchAction) => boolean | void;
-  resolveIcon?: (panelType: string) => string | null;
+  resolveIcon?: (result: SearchApiResult) => string | null;
   setStatus?: (message: string) => void;
   isMobileViewport?: () => boolean;
 }
@@ -638,7 +638,7 @@ export class CommandPaletteController {
 
       const icon = document.createElement('div');
       icon.className = 'command-palette-item-icon';
-      const iconSvg = this.options.resolveIcon?.(result.launch.panelType) ?? null;
+      const iconSvg = this.options.resolveIcon?.(result) ?? null;
       if (iconSvg) {
         icon.innerHTML = iconSvg;
       } else {
