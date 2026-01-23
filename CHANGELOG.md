@@ -6,6 +6,7 @@
 
 ### Added
 - Added temporary pinned behavior for lists, list items, and notes using the pinned tag (icons, shortcuts, /pinned palette entry). ([#22](https://github.com/kcosr/assistant/pull/22))
+- Added markdown rendering for text custom fields (metadata toggle, multiline editor input, notes-style preview popup). ([#23](https://github.com/kcosr/assistant/pull/23))
 
 ### Changed
 - Changed command palette to open with the command list (no auto `/`) and added tag-only search syntax for lists/notes. ([#22](https://github.com/kcosr/assistant/pull/22))
