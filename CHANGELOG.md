@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.0] - 2026-01-23
 
 ### Breaking Changes
 
@@ -17,6 +17,7 @@
 - Fixed pinned shortcut updates to avoid reloading the entire list view. ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Removed
+
 
 ## [0.7.0] - 2026-01-22
 
