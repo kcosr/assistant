@@ -1,10 +1,10 @@
 # Lists mobile search quick access button
 
 ## Summary
-Add a floating search action to the lists panel on mobile/narrow viewports. The search button sits at the bottom-right (same styling as the existing add FAB), while the add (+) button moves up to make room. Tapping search focuses the shared search input.
+Add a floating search action to the lists panel on mobile/narrow viewports. The search button sits at the bottom-right (same styling as the existing add FAB), while the add (+) button moves up to make room. Tapping search opens the command palette (matching the header search button).
 
 ## Goals
-- Provide a one-tap search affordance on mobile/narrow screens for list items.
+- Provide a one-tap search affordance on mobile/narrow screens that opens the command palette.
 - Preserve existing add FAB behavior while repositioning it above the new search button.
 - Reuse existing styles and icon conventions for a consistent look.
 
@@ -27,7 +27,7 @@ Add a floating search action to the lists panel on mobile/narrow viewports. The 
 ## Behavior
 - Search FAB is visible under the same conditions as the add FAB:
   - `mode === 'list'`, `activeListId` set, and `(isCapacitor || isMobileViewport)`.
-- Clicking the search FAB calls `sharedSearchController.focus(true)`.
+- Clicking the search FAB opens the command palette (same as the top header search button).
 - Clicking the add FAB continues to open the add item dialog.
 
 ## Implementation notes

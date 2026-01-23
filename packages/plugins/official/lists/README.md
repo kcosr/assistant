@@ -38,7 +38,7 @@ operations.
   Pinned entries show a pin icon and appear in the command palette via `/pinned`.
 - Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
-- Capacitor Android builds and narrow viewports show floating add/search buttons in list view.
+- Capacitor Android builds and narrow viewports show floating add/search buttons in list view; search opens the command palette.
 - Custom fields can be reordered in the list metadata dialog.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports

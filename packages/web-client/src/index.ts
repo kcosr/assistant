@@ -1517,6 +1517,9 @@ async function main(): Promise<void> {
         entry.inputRuntime.updateContextAvailability();
       }
     },
+    openCommandPalette: () => {
+      commandPaletteController?.open();
+    },
     clearContextSelection: () => {
       // Broadcast a custom event that panels can listen for to clear their selection
       document.dispatchEvent(new CustomEvent('assistant:clear-context-selection'));

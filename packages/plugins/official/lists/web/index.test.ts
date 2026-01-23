@@ -298,7 +298,7 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   });
 
-  it('shows mobile fabs and focuses search on click', async () => {
+  it('shows mobile fabs and opens the command palette on search click', async () => {
     vi.resetModules();
     await import('./index');
 
@@ -396,6 +396,7 @@ describe('lists panel keyboard shortcuts', () => {
       }),
     );
 
+    const openCommandPalette = vi.fn();
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -416,6 +417,7 @@ describe('lists panel keyboard shortcuts', () => {
       setStatus: () => undefined,
       isMobileViewport: () => true,
       notifyContextAvailabilityChange: () => undefined,
+      openCommandPalette,
     });
 
     host.setContext('panel.active', { panelId: host.panelId() });
@@ -438,17 +440,12 @@ describe('lists panel keyboard shortcuts', () => {
         !!container.querySelector('.lists-fab-search.is-visible'),
     );
 
-    const searchInput = container.querySelector<HTMLInputElement>(
-      '.collection-list-search-input',
-    );
-    expect(searchInput).not.toBeNull();
-
     const searchButton = container.querySelector<HTMLButtonElement>('.lists-fab-search');
     expect(searchButton).not.toBeNull();
 
     searchButton?.click();
 
-    expect(document.activeElement).toBe(searchInput);
+    expect(openCommandPalette).toHaveBeenCalledTimes(1);
 
     handle.unmount();
   });

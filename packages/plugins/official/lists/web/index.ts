@@ -1253,7 +1253,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
       if (fabSearchButton) {
         fabSearchButton.addEventListener('click', () => {
-          sharedSearchController.focus(true);
+          if (services.openCommandPalette) {
+            services.openCommandPalette();
+            return;
+          }
+          const trigger = document.getElementById('command-palette-button');
+          if (trigger instanceof HTMLButtonElement) {
+            trigger.click();
+          }
         });
       }
 
