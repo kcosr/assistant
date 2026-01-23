@@ -297,4 +297,156 @@ describe('lists panel keyboard shortcuts', () => {
 
     handle.unmount();
   });
+
+  it('shows mobile fabs and opens the command palette on search click', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'lists-mobile',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'devtools',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const jsonResponse = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (!url.includes('/api/plugins/lists/operations/')) {
+          return jsonResponse({});
+        }
+        const operation = url.split('/').pop() ?? '';
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+
+        if (operation === 'instance_list') {
+          return jsonResponse([{ id: 'default', label: 'Default' }]);
+        }
+        if (operation === 'list') {
+          if (body.instance_id === 'default') {
+            return jsonResponse([
+              {
+                id: 'devtools',
+                name: 'Devtools',
+                description: 'Tasks, bugs and ideas for existing development tools.',
+              },
+            ]);
+          }
+          return jsonResponse([]);
+        }
+        if (operation === 'get') {
+          return jsonResponse({
+            id: 'devtools',
+            name: 'Devtools',
+            description: 'Tasks, bugs and ideas for existing development tools.',
+          });
+        }
+        if (operation === 'items-list') {
+          return jsonResponse([
+            { id: 'item-1', title: 'Deploy updated assistant skills', position: 0 },
+          ]);
+        }
+        return jsonResponse([]);
+      }),
+    );
+
+    const openCommandPalette = vi.fn();
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => true,
+      notifyContextAvailabilityChange: () => undefined,
+      openCommandPalette,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const waitFor = async (predicate: () => boolean) => {
+      const start = Date.now();
+      while (Date.now() - start < 2000) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('Timed out waiting for fabs');
+    };
+
+    await waitFor(
+      () =>
+        !!container.querySelector('.lists-fab-add.is-visible') &&
+        !!container.querySelector('.lists-fab-search.is-visible'),
+    );
+
+    const searchButton = container.querySelector<HTMLButtonElement>('.lists-fab-search');
+    expect(searchButton).not.toBeNull();
+
+    searchButton?.click();
+
+    expect(openCommandPalette).toHaveBeenCalledTimes(1);
+
+    handle.unmount();
+  });
 });

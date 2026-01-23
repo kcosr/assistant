@@ -13,6 +13,7 @@ export interface PanelCoreServices {
   setStatus: (text: string) => void;
   isMobileViewport: () => boolean;
   notifyContextAvailabilityChange: () => void;
+  openCommandPalette?: () => void;
   /** Request the active panel to clear any text/item selection */
   clearContextSelection?: () => void;
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;

@@ -246,6 +246,13 @@ const LISTS_PANEL_TEMPLATE = `
       aria-label="Add item"
       title="Add item"
     ></button>
+    <button
+      type="button"
+      class="lists-fab-search"
+      data-role="lists-fab-search"
+      aria-label="Search items"
+      title="Search items"
+    ></button>
   </aside>
 `;
 
@@ -611,6 +618,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const sharedSearchEl = root.querySelector<HTMLElement>('[data-role="lists-shared-search"]');
       const panelContent = root.querySelector<HTMLElement>('[data-role="lists-panel-content"]');
       const fabAddButton = root.querySelector<HTMLButtonElement>('[data-role="lists-fab-add"]');
+      const fabSearchButton = root.querySelector<HTMLButtonElement>(
+        '[data-role="lists-fab-search"]',
+      );
 
       const services = resolveServices(host);
       const preferencesLoaded = services.listColumnPreferencesClient.load();
@@ -623,6 +633,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       if (fabAddButton) {
         fabAddButton.innerHTML = ICONS.plus;
+      }
+      if (fabSearchButton) {
+        fabSearchButton.innerHTML = ICONS.search;
       }
 
       const bodyManager = new CollectionPanelBodyManager(panelContent);
@@ -800,14 +813,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const updateFabVisibility = (): void => {
-        if (!fabAddButton) {
-          return;
-        }
         const shouldShow =
           mode === 'list' &&
           !!activeListId &&
           (isCapacitor || services.isMobileViewport());
-        fabAddButton.classList.toggle('is-visible', shouldShow);
+        if (fabAddButton) {
+          fabAddButton.classList.toggle('is-visible', shouldShow);
+        }
+        if (fabSearchButton) {
+          fabSearchButton.classList.toggle('is-visible', shouldShow);
+        }
       };
 
       if (typeof window !== 'undefined') {
@@ -1234,6 +1249,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           listPanelController.openAddItemDialog(activeListId);
+        });
+      }
+      if (fabSearchButton) {
+        fabSearchButton.addEventListener('click', () => {
+          if (services.openCommandPalette) {
+            services.openCommandPalette();
+            return;
+          }
+          const trigger = document.getElementById('command-palette-button');
+          if (trigger instanceof HTMLButtonElement) {
+            trigger.click();
+          }
         });
       }
 
