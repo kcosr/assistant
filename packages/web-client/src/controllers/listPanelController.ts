@@ -369,14 +369,17 @@ export class ListPanelController {
     if (isCommand && !event.altKey && !event.shiftKey) {
       if (lowerKey === 'c') {
         void this.copySelectionToClipboard('copy');
+        this.focusListBody();
         return true;
       }
       if (lowerKey === 'x') {
         void this.copySelectionToClipboard('cut');
+        this.focusListBody();
         return true;
       }
       if (lowerKey === 'v') {
         void this.pasteClipboardToCurrentList();
+        this.focusListBody();
         return true;
       }
     }
@@ -459,6 +462,13 @@ export class ListPanelController {
     }
 
     return false;
+  }
+
+  private focusListBody(): void {
+    const bodyEl = this.options.bodyEl;
+    if (bodyEl && typeof bodyEl.focus === 'function') {
+      bodyEl.focus();
+    }
   }
 
   private buildListItemExportText(itemIds: string[]): string | null {
@@ -596,6 +606,7 @@ export class ListPanelController {
     }
 
     bodyEl.innerHTML = '';
+    bodyEl.tabIndex = -1;
 
     // Load saved preferences for this list (only on first render for this list)
     if (this.currentListId !== listId) {
