@@ -1546,6 +1546,10 @@ export class KeyboardNavigationController {
       }
 
       if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        const target = event.target as Element | null;
+        if (target?.closest('.interaction-questionnaire')) {
+          return;
+        }
         const inputEl = this.options.getInputEl();
         if (!inputEl || document.activeElement !== inputEl || inputEl.value === '') {
           event.preventDefault();

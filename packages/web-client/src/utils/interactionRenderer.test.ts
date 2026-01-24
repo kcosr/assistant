@@ -116,4 +116,72 @@ describe('interactionRenderer', () => {
     const summary = element.querySelector<HTMLElement>('.interaction-summary');
     expect(summary?.textContent).toBe('Timed out');
   });
+
+  it('submits on Enter even inside textarea', () => {
+    const request: InteractionRequestPayload = {
+      toolCallId: 'tc5',
+      toolName: 'questions_ask',
+      interactionId: 'i5',
+      interactionType: 'input',
+      inputSchema: {
+        title: 'Details',
+        fields: [{ id: 'notes', type: 'textarea', label: 'Notes' }],
+      },
+    };
+    const onSubmit = vi.fn();
+    const element = createInteractionElement({ request, enabled: true, onSubmit });
+    document.body.appendChild(element);
+
+    const form = element.querySelector<HTMLFormElement>('form');
+    expect(form).not.toBeNull();
+    if (!form) return;
+    form.reportValidity = () => true;
+    form.requestSubmit = () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    };
+
+    const textarea = element.querySelector<HTMLTextAreaElement>('[data-field-id="notes"]');
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+    textarea.value = 'hello';
+
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(onSubmit).toHaveBeenCalledWith({ action: 'submit', input: { notes: 'hello' } });
+  });
+
+  it('does not submit on Shift+Enter in textarea', () => {
+    const request: InteractionRequestPayload = {
+      toolCallId: 'tc6',
+      toolName: 'questions_ask',
+      interactionId: 'i6',
+      interactionType: 'input',
+      inputSchema: {
+        title: 'Details',
+        fields: [{ id: 'notes', type: 'textarea', label: 'Notes' }],
+      },
+    };
+    const onSubmit = vi.fn();
+    const element = createInteractionElement({ request, enabled: true, onSubmit });
+    document.body.appendChild(element);
+
+    const form = element.querySelector<HTMLFormElement>('form');
+    expect(form).not.toBeNull();
+    if (!form) return;
+    form.reportValidity = () => true;
+    form.requestSubmit = () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    };
+
+    const textarea = element.querySelector<HTMLTextAreaElement>('[data-field-id="notes"]');
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+    textarea.value = 'hello';
+
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }),
+    );
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

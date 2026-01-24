@@ -173,6 +173,9 @@ interface InteractionRequest {
 - Disabled interactive clients render questionnaires read‑only with a hint:
   “Interactive mode disabled — enable to respond”
 - Completed questionnaires show submitted values read‑only
+- Desktop chat panels auto-focus the first pending questionnaire input when it renders. Enter
+  submits the form (Shift+Enter inserts a newline in textareas), and focus returns to the main
+  input on submit/cancel. Tab/Shift+Tab remain native for navigation.
 
 ## A2UI Inspiration Mapping
 

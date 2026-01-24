@@ -21,6 +21,7 @@ export interface ChatRuntimeOptions {
   autoScrollEnabled: boolean;
   getAgentDisplayName: (agentId: string) => string;
   getInteractionEnabled?: () => boolean;
+  isMobileViewport?: () => boolean;
   sendInteractionResponse?: (options: {
     sessionId: string;
     callId: string;
@@ -130,6 +131,8 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
     ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
+    getShouldAutoFocusQuestionnaire: () => !(options.isMobileViewport?.() ?? false),
+    getShouldRestoreFocusAfterInteraction: () => !(options.isMobileViewport?.() ?? false),
     ...(options.sendInteractionResponse
       ? { sendInteractionResponse: options.sendInteractionResponse }
       : {}),

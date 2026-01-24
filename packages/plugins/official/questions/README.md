@@ -46,6 +46,9 @@ Enable the plugin in `config.json`:
 - When `validate` is `true` (default), the plugin validates the response against the schema and
   reprompts with `fieldErrors` and `initialValues` when needed.
 - `schema.initialValues` is the supported way to prefill fields; per-field `initialValue` is ignored.
+- In the chat UI, pending questionnaires auto-focus on desktop when they render. Enter submits
+  the form (Shift+Enter inserts a newline in textareas), and focus returns to the main input on
+  submit/cancel.
 
 ## Pre-populating fields
 

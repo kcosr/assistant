@@ -244,6 +244,27 @@ function createQuestionnaireInteraction(options: {
     onSubmit({ action: 'submit', input });
   });
 
+  form.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.isComposing || event.key !== 'Enter') {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (target instanceof HTMLButtonElement && target.type === 'button') {
+      return;
+    }
+    if (target instanceof HTMLTextAreaElement && event.shiftKey) {
+      return;
+    }
+    if (!enabled) {
+      return;
+    }
+    event.preventDefault();
+    requestFormSubmit(form);
+  });
+
   if (!enabled) {
     form.classList.add('disabled');
     disableButtons(form);
@@ -259,21 +280,31 @@ function createQuestionnaireInteraction(options: {
   return wrapper;
 }
 
+function requestFormSubmit(form: HTMLFormElement): void {
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit();
+    return;
+  }
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}
+
 function appendFields(
   container: HTMLElement,
   fields: QuestionnaireField[],
   request: InteractionRequestPayload,
 ): void {
   for (const field of fields) {
+    const isCheckbox = field.type === 'checkbox' || field.type === 'boolean';
     const fieldRow = document.createElement('div');
     fieldRow.className = 'interaction-field';
 
     const label = document.createElement('label');
-    label.className = 'interaction-field-label';
+    label.className = isCheckbox
+      ? 'interaction-field-label interaction-checkbox-row'
+      : 'interaction-field-label';
     const labelText = document.createElement('span');
     labelText.className = 'interaction-field-label-text';
     labelText.textContent = field.label;
-    label.appendChild(labelText);
 
     if (field.required) {
       const required = document.createElement('span');
@@ -283,7 +314,13 @@ function appendFields(
     }
 
     const input = createInputForField(field);
-    label.appendChild(input);
+    if (isCheckbox) {
+      label.appendChild(input);
+      label.appendChild(labelText);
+    } else {
+      label.appendChild(labelText);
+      label.appendChild(input);
+    }
     fieldRow.appendChild(label);
 
     if (field.description) {
@@ -342,6 +379,11 @@ function createInputForField(
           optionEl.textContent = option.label;
           select.appendChild(optionEl);
         }
+      }
+      if (field.type === 'multiselect') {
+        const optionCount = field.options?.length ?? 0;
+        const size = Math.max(4, Math.min(8, optionCount || 4));
+        select.size = size;
       }
       return select;
     }
