@@ -825,6 +825,61 @@ describe('ChatRenderer', () => {
     expect(toolIndex).toBeLessThan(textIndex);
   });
 
+  it('ungroups questionnaire tool calls from preceding tool groups', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'bash',
+          args: { command: 'echo test' },
+        },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          args: { prompt: 'Ask?' },
+        },
+      }),
+    );
+
+    const grouped = container.querySelectorAll('.tool-call-group');
+    expect(grouped.length).toBeGreaterThan(0);
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+          },
+        },
+      }),
+    );
+
+    const groupContent = container.querySelector('.tool-call-group-content');
+    if (groupContent) {
+      expect(groupContent.querySelector('[data-tool-call-id="tc2"]')).toBeNull();
+    }
+    expect(container.querySelector('[data-tool-call-id="tc2"]')).not.toBeNull();
+  });
+
   it('inserts tool call containers before later text segments', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

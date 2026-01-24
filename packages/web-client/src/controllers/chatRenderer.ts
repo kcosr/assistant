@@ -1063,6 +1063,7 @@ export class ChatRenderer {
 
   private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
     const payload = event.payload;
+    this.ungroupToolBlockIfNeeded(payload.toolCallId);
     const responseId = this.getResponseId(event.responseId);
     const existingId = this.interactionByToolCall.get(payload.toolCallId);
     if (existingId) {
@@ -1117,6 +1118,41 @@ export class ChatRenderer {
       this.pendingInteractionResponses.delete(payload.interactionId);
       applyInteractionResponse(element, pendingResponse);
     }
+  }
+
+  private ungroupToolBlockIfNeeded(toolCallId: string): void {
+    const block = this.toolCallElements.get(toolCallId);
+    if (!block) {
+      return;
+    }
+    const group = block.closest<HTMLDivElement>('.tool-call-group');
+    if (!group) {
+      return;
+    }
+    const groupContent = group.querySelector<HTMLDivElement>('.tool-call-group-content');
+    const parent = group.parentElement;
+    if (!groupContent || !parent) {
+      return;
+    }
+
+    if (block.parentElement === groupContent) {
+      groupContent.removeChild(block);
+    }
+
+    const nextSibling = group.nextSibling;
+    const remainingBlocks = Array.from(
+      groupContent.querySelectorAll<HTMLDivElement>(':scope > .tool-output-block'),
+    );
+
+    if (remainingBlocks.length === 0) {
+      parent.removeChild(group);
+    } else if (remainingBlocks.length === 1) {
+      parent.replaceChild(remainingBlocks[0], group);
+    } else {
+      this.refreshToolCallGroup(group);
+    }
+
+    parent.insertBefore(block, nextSibling);
   }
 
   private getOrCreateInteractionDock(block: HTMLDivElement): HTMLDivElement {
