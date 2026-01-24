@@ -8,30 +8,18 @@
 - Added list item drag export blocks for external drop targets. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added Cmd/Ctrl+X/C/V cut/copy/paste shortcuts for list items across lists. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added interactive tool approvals and questionnaires with an interactive-mode toggle. ([#28](https://github.com/kcosr/assistant/pull/28))
-- Added questions plugin with questionnaire tool support. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added first-class interaction pending events for interactive tools. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added questions plugin with schema-driven questionnaires, including initial values and required indicators. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Added first-class interaction pending events for interactive tools. ([#30](https://github.com/kcosr/assistant/pull/30))
 
 ### Changed
-- Changed plugin CLIs to default `--session-id` from `ASSISTANT_SESSION_ID` when omitted. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed Codex/Claude/Pi CLI providers to inject `ASSISTANT_SESSION_ID` into spawned processes. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed questionnaire inputs to use themed styling and display required indicators. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed CLI providers to inject `ASSISTANT_SESSION_ID` and default plugin CLIs to read it when `--session-id` is omitted. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Changed questionnaire inputs to use themed styling. ([#30](https://github.com/kcosr/assistant/pull/30))
 
 ### Fixed
-- Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed tool calls and questionnaires rendering when response ids are missing. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed CLI questionnaire ordering and persistence across refresh. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed CLI questionnaire tool calls to rendezvous with HTTP interactions. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed typing indicator to hide while awaiting interactive tool input. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed questions plugin docs to include `initialValues` guidance. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed questionnaire tool calls to break out of grouped tool blocks. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed approval controls to render on refresh when only interaction events are replayed. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed questionnaire tool results from creating placeholder tool blocks on refresh. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed pending tool approvals to cancel when tool calls fail. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed approval tool calls to render outside grouped tool blocks. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed approval/questionnaire replay ordering for CLI interactions by carrying turn/response IDs. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed Codex CLI history loading on refresh by persisting session mappings early. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed CLI questionnaire/approval replay ordering by aligning overlay events to tool call timestamps. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed CLI questionnaire replay ordering for Codex by matching overlay interactions to CLI command tool calls. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Fixed interactive tool rendering/grouping/pending-state handling, including refresh replay for approvals/questionnaires. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Fixed CLI interactive tool replay ordering/persistence by aligning overlay interactions with CLI tool calls when response/turn ids are missing. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Fixed CLI questionnaire/approval rendezvous between HTTP interactions and CLI tool calls. ([#30](https://github.com/kcosr/assistant/pull/30))
 
 ### Removed
 
