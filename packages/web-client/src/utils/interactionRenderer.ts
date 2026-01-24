@@ -266,8 +266,8 @@ function appendFields(
     if (field.required) {
       const required = document.createElement('span');
       required.className = 'interaction-field-required';
-      required.textContent = 'Required';
-      label.appendChild(required);
+      required.textContent = '*';
+      labelText.appendChild(required);
     }
 
     const input = createInputForField(field);

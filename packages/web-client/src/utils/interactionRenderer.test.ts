@@ -85,7 +85,9 @@ describe('interactionRenderer', () => {
 
     const label = element.querySelector<HTMLLabelElement>('.interaction-field-label');
     expect(label).not.toBeNull();
-    expect(label?.querySelector('.interaction-field-required')).not.toBeNull();
+    const required = label?.querySelector('.interaction-field-required');
+    expect(required).not.toBeNull();
+    expect(required?.textContent).toBe('*');
 
     const input = element.querySelector<HTMLInputElement>('[data-field-id="email"]');
     expect(input).not.toBeNull();

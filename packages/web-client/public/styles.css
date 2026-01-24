@@ -3655,16 +3655,9 @@ body.panel-reordering {
 }
 
 .interaction-field-required {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-error) 15%, transparent);
   color: var(--color-error);
-  font-size: 0.75em;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  font-size: 0.9em;
+  font-weight: 700;
 }
 
 .interaction-field-description {
