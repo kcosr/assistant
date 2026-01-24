@@ -24,6 +24,7 @@
 - Fixed interactive tool rendering/grouping/pending-state handling, including refresh replay for approvals/questionnaires. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Fixed CLI interactive tool replay ordering/persistence by aligning overlay interactions with CLI tool calls when response/turn ids are missing. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Fixed CLI questionnaire/approval rendezvous between HTTP interactions and CLI tool calls. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Fixed mobile WebSocket reconnection getting stuck after backgrounding by forcing a resume reconnect. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 
