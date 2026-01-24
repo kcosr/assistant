@@ -89,6 +89,9 @@ the server now:
   replay can anchor approvals/questionnaires to the correct assistant response.
 - For Codex CLI, we persist the CLI session mapping as soon as the CLI emits its session id so
   refresh during a pending interaction still loads history.
+- Overlay interaction events are aligned to matching `tool_call` timestamps/turns on replay,
+  so questionnaires/approvals remain positioned next to their tool calls even when CLI history
+  uses different internal turn/response ids.
 
 This keeps CLI questionnaires visually identical to built-in agent flows without requiring a
 synthetic response id.

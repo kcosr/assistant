@@ -610,7 +610,67 @@ async function mergeOverlayEvents(
     return baseEvents;
   }
   const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayEvent);
-  return mergeEventsByTimestamp(baseEvents, overlayEvents);
+  const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
+  return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
+}
+
+function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return overlayEvents;
+  }
+
+  const toolCallAnchors = new Map<
+    string,
+    { turnId?: string; responseId?: string; timestamp: number }
+  >();
+  const toolResultAnchors = new Map<
+    string,
+    { turnId?: string; responseId?: string; timestamp: number }
+  >();
+
+  for (const event of baseEvents) {
+    if (event.type === 'tool_call') {
+      toolCallAnchors.set(event.payload.toolCallId, {
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+        timestamp: event.timestamp,
+      });
+    } else if (event.type === 'tool_result') {
+      toolResultAnchors.set(event.payload.toolCallId, {
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+        timestamp: event.timestamp,
+      });
+    }
+  }
+
+  return overlayEvents.map((event) => {
+    const payload = event.payload as { toolCallId?: string } | undefined;
+    const toolCallId = payload?.toolCallId;
+    if (!toolCallId) {
+      return event;
+    }
+
+    const anchor = toolCallAnchors.get(toolCallId) ?? toolResultAnchors.get(toolCallId);
+    if (!anchor) {
+      return event;
+    }
+
+    let timestamp = event.timestamp;
+    if (event.type === 'interaction_response') {
+      const resultAnchor = toolResultAnchors.get(toolCallId) ?? anchor;
+      timestamp = resultAnchor.timestamp + 1;
+    } else {
+      timestamp = anchor.timestamp + 1;
+    }
+
+    return {
+      ...event,
+      timestamp,
+      ...(anchor.turnId ? { turnId: anchor.turnId } : {}),
+      ...(anchor.responseId ? { responseId: anchor.responseId } : {}),
+    };
+  });
 }
 
 function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {
