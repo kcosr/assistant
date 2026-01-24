@@ -8,6 +8,7 @@
 - Added list item drag export blocks for external drop targets. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added Cmd/Ctrl+X/C/V cut/copy/paste shortcuts for list items across lists. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added interactive tool approvals and questionnaires with an interactive-mode toggle. ([#28](https://github.com/kcosr/assistant/pull/28))
+- Added Ctrl+S split placement shortcut for panels (arrows/WASD selection, empty placeholder). ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 
