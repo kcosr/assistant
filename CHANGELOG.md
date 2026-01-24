@@ -31,6 +31,7 @@
 - Fixed approval/questionnaire replay ordering for CLI interactions by carrying turn/response IDs. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed Codex CLI history loading on refresh by persisting session mappings early. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed CLI questionnaire/approval replay ordering by aligning overlay events to tool call timestamps. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed CLI questionnaire replay ordering for Codex by matching overlay interactions to CLI command tool calls. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

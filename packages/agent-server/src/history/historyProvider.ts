@@ -641,6 +641,14 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
     string,
     { turnId?: string; responseId?: string; timestamp: number }
   >();
+  const toolCallCandidates: Array<{
+    toolCallId: string;
+    toolName: string;
+    command?: string;
+    timestamp: number;
+    turnId?: string;
+    responseId?: string;
+  }> = [];
 
   for (const event of baseEvents) {
     if (event.type === 'tool_call') {
@@ -648,6 +656,19 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
         ...(event.turnId ? { turnId: event.turnId } : {}),
         ...(event.responseId ? { responseId: event.responseId } : {}),
         timestamp: event.timestamp,
+      });
+      const args = event.payload.args as Record<string, unknown>;
+      const command =
+        args && typeof args === 'object' && typeof args['command'] === 'string'
+          ? String(args['command'])
+          : undefined;
+      toolCallCandidates.push({
+        toolCallId: event.payload.toolCallId,
+        toolName: event.payload.toolName,
+        ...(command ? { command } : {}),
+        timestamp: event.timestamp,
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
       });
     } else if (event.type === 'tool_result') {
       toolResultAnchors.set(event.payload.toolCallId, {
@@ -671,7 +692,9 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
     }
 
     const anchor = toolCallAnchors.get(toolCallId) ?? toolResultAnchors.get(toolCallId);
-    if (!anchor) {
+    const fallbackAnchor =
+      anchor ?? matchOverlayToolCall(event, toolCallCandidates) ?? undefined;
+    if (!fallbackAnchor) {
       historyDebug('overlay event missing anchor', {
         toolCallId,
         type: event.type,
@@ -683,10 +706,10 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
 
     let timestamp = event.timestamp;
     if (event.type === 'interaction_response') {
-      const resultAnchor = toolResultAnchors.get(toolCallId) ?? anchor;
+      const resultAnchor = toolResultAnchors.get(toolCallId) ?? fallbackAnchor;
       timestamp = resultAnchor.timestamp + 1;
     } else {
-      timestamp = anchor.timestamp + 1;
+      timestamp = fallbackAnchor.timestamp + 1;
     }
 
     historyDebug('overlay event aligned', {
@@ -695,17 +718,79 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
       id: event.id,
       fromTimestamp: event.timestamp,
       toTimestamp: timestamp,
-      turnId: anchor.turnId ?? null,
-      responseId: anchor.responseId ?? null,
+      turnId: fallbackAnchor.turnId ?? null,
+      responseId: fallbackAnchor.responseId ?? null,
     });
 
     return {
       ...event,
       timestamp,
-      ...(anchor.turnId ? { turnId: anchor.turnId } : {}),
-      ...(anchor.responseId ? { responseId: anchor.responseId } : {}),
+      ...(fallbackAnchor.turnId ? { turnId: fallbackAnchor.turnId } : {}),
+      ...(fallbackAnchor.responseId
+        ? { responseId: fallbackAnchor.responseId }
+        : {}),
     };
   });
+}
+
+function matchOverlayToolCall(
+  event: ChatEvent,
+  candidates: Array<{
+    toolCallId: string;
+    toolName: string;
+    command?: string;
+    timestamp: number;
+    turnId?: string;
+    responseId?: string;
+  }>,
+): { turnId?: string; responseId?: string; timestamp: number } | undefined {
+  const payload = event.payload as { toolName?: string } | undefined;
+  const toolName = payload?.toolName ?? '';
+  if (!toolName || candidates.length === 0) {
+    return undefined;
+  }
+
+  const normalizedCommandMatch = (command: string, needle: string): boolean =>
+    command.toLowerCase().includes(needle.toLowerCase());
+
+  const operationName =
+    toolName.startsWith('interactive_tools_') ? toolName.replace('interactive_tools_', '') : '';
+
+  const filtered = candidates.filter((candidate) => {
+    if (!candidate.command) {
+      return false;
+    }
+    if (toolName === 'questions_ask') {
+      return normalizedCommandMatch(candidate.command, 'questions-cli') &&
+        normalizedCommandMatch(candidate.command, 'ask');
+    }
+    if (operationName) {
+      return normalizedCommandMatch(candidate.command, 'interactive-tools-cli') &&
+        normalizedCommandMatch(candidate.command, operationName);
+    }
+    return normalizedCommandMatch(candidate.command, toolName);
+  });
+
+  if (filtered.length === 0) {
+    return undefined;
+  }
+
+  const targetTimestamp = event.timestamp;
+  let best = filtered[0]!;
+  let bestDelta = Math.abs(targetTimestamp - best.timestamp);
+  for (const candidate of filtered) {
+    const delta = Math.abs(targetTimestamp - candidate.timestamp);
+    if (delta < bestDelta) {
+      best = candidate;
+      bestDelta = delta;
+    }
+  }
+
+  return {
+    ...(best.turnId ? { turnId: best.turnId } : {}),
+    ...(best.responseId ? { responseId: best.responseId } : {}),
+    timestamp: best.timestamp,
+  };
 }
 
 function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {

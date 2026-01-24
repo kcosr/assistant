@@ -92,6 +92,9 @@ the server now:
 - Overlay interaction events are aligned to matching `tool_call` timestamps/turns on replay,
   so questionnaires/approvals remain positioned next to their tool calls even when CLI history
   uses different internal turn/response ids.
+  - If the overlay tool call id does not match the CLI history (Codex CLI), we fall back to
+    matching by tool name and command signature (e.g., `questions-cli ask`) and choose the
+    closest tool call timestamp.
 
 This keeps CLI questionnaires visually identical to built-in agent flows without requiring a
 synthetic response id.
