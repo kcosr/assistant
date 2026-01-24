@@ -18,6 +18,8 @@
 - Changed questionnaire inputs to use themed styling. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Changed questionnaire blocks to match tool output width, improve checkbox alignment, and allow flexible input sizing. ([#32](https://github.com/kcosr/assistant/pull/32))
 - Changed questionnaire UX to auto-focus pending inputs on render (desktop), return focus to the main input on submit/cancel, and submit on Enter with Shift+Enter newline in textareas. ([#32](https://github.com/kcosr/assistant/pull/32))
+- Changed list item custom fields to use a responsive grid layout in the add/edit dialog. ([#000](<pr-url>))
+- Changed new unbound chat panels to auto-open the session picker. ([#000](<pr-url>))
 
 ### Fixed
 - Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#30](https://github.com/kcosr/assistant/pull/30))

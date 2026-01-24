@@ -87,6 +87,7 @@ Binding indicator behavior:
 - Chat panels show a session picker dropdown with search, keyboard navigation, and sections for Unbound (optional), Sessions, and New session
 - Panels do not implicitly follow a global "active session"; chat binding is explicit
 - Non-chat panels do not expose session binding controls
+- New unbound chat panels auto-open the session picker to prompt session selection
 
 ### Unavailable Panels
 

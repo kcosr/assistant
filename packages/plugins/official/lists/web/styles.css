@@ -3371,14 +3371,38 @@ button.list-item-menu-checkbox {
 }
 
 .list-item-custom-fields {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.list-item-custom-field-row {
   gap: var(--spacing-xs);
 }
 
-.list-item-custom-field-row label {
+.list-item-custom-field-row--wide {
+  grid-column: 1 / -1;
+}
+
+.list-item-custom-field-row--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.list-item-custom-field-row--checkbox .list-item-form-checkbox {
+  padding: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.list-item-custom-field-label-text {
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
+}
+
+.list-item-custom-field-row--checkbox .list-item-custom-field-label-text {
+  font-size: var(--font-size-sm);
 }
 
 .list-item-form-select,
@@ -3632,6 +3656,10 @@ button.tag-chip-remove {
     margin-top: 0;
     max-height: 70dvh;
     overflow-y: auto;
+  }
+
+  .list-item-custom-fields {
+    grid-template-columns: 1fr;
   }
 
   .message {
