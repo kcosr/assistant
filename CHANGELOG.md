@@ -27,6 +27,7 @@
 - Fixed approval controls to render on refresh when only interaction events are replayed. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed questionnaire tool results from creating placeholder tool blocks on refresh. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed pending tool approvals to cancel when tool calls fail. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed approval tool calls to render outside grouped tool blocks. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

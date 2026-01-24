@@ -84,6 +84,7 @@ export class ChatRenderer {
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
   private readonly questionnaireToolCalls = new Set<string>();
+  private readonly standaloneToolCalls = new Set<string>();
   private readonly pendingInteractionToolCalls = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
     string,
@@ -314,6 +315,7 @@ export class ChatRenderer {
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
     this.questionnaireToolCalls.clear();
+    this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
     this.suppressTypingIndicator = false;
   }
@@ -656,6 +658,10 @@ export class ChatRenderer {
       const pendingInteraction = this.pendingInteractionRequests.get(callId);
       if (pendingInteraction) {
         this.pendingInteractionRequests.delete(callId);
+        if (pendingInteraction.payload.interactionType === 'approval') {
+          this.standaloneToolCalls.add(callId);
+          this.ungroupToolBlockIfNeeded(callId);
+        }
         const enabled = this.options.getInteractionEnabled?.() ?? true;
         this.attachInteractionToToolBlock(
           block,
@@ -954,8 +960,14 @@ export class ChatRenderer {
 
     if (presentation === 'questionnaire') {
       this.questionnaireToolCalls.add(toolCallId);
+      this.standaloneToolCalls.add(toolCallId);
       this.renderStandaloneInteraction(event, enabled);
       return;
+    }
+
+    if (payload.interactionType === 'approval') {
+      this.standaloneToolCalls.add(toolCallId);
+      this.ungroupToolBlockIfNeeded(toolCallId);
     }
 
     let block = this.toolCallElements.get(toolCallId);
@@ -1185,27 +1197,86 @@ export class ChatRenderer {
       return;
     }
 
+    const blocks = Array.from(
+      groupContent.querySelectorAll<HTMLDivElement>(':scope > .tool-output-block'),
+    );
+    const index = blocks.indexOf(block);
+    if (index === -1) {
+      return;
+    }
+
+    const beforeBlocks = blocks.slice(0, index);
+    const afterBlocks = blocks.slice(index + 1);
+
     if (block.parentElement === groupContent) {
       groupContent.removeChild(block);
     }
 
-    const nextSibling = group.nextSibling;
-    const remainingBlocks = Array.from(
-      groupContent.querySelectorAll<HTMLDivElement>(':scope > .tool-output-block'),
-    );
-
-    if (remainingBlocks.length === 0) {
+    if (beforeBlocks.length === 0 && afterBlocks.length === 0) {
+      parent.insertBefore(block, group);
       parent.removeChild(group);
-    } else if (remainingBlocks.length === 1) {
-      const [onlyBlock] = remainingBlocks;
-      if (onlyBlock) {
-        parent.replaceChild(onlyBlock, group);
+      return;
+    }
+
+    if (beforeBlocks.length === 0) {
+      if (afterBlocks.length === 1) {
+        const remaining = afterBlocks[0];
+        if (remaining) {
+          parent.replaceChild(remaining, group);
+          parent.insertBefore(block, remaining);
+        }
+      } else {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group);
+      }
+      return;
+    }
+
+    if (afterBlocks.length === 0) {
+      if (beforeBlocks.length === 1) {
+        const remaining = beforeBlocks[0];
+        if (remaining) {
+          parent.replaceChild(remaining, group);
+          parent.insertBefore(block, remaining.nextSibling);
+        }
+      } else {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group.nextSibling);
+      }
+      return;
+    }
+
+    let afterContainer: HTMLElement;
+    if (afterBlocks.length === 1) {
+      const remaining = afterBlocks[0];
+      if (remaining.parentElement === groupContent) {
+        groupContent.removeChild(remaining);
+      }
+      afterContainer = remaining;
+    } else {
+      const newGroup = createToolCallGroup({ expanded: this.shouldExpandToolOutput() });
+      const newContent = newGroup.querySelector<HTMLDivElement>('.tool-call-group-content');
+      if (newContent) {
+        for (const afterBlock of afterBlocks) {
+          newContent.appendChild(afterBlock);
+        }
+      }
+      this.refreshToolCallGroup(newGroup);
+      afterContainer = newGroup;
+    }
+
+    if (beforeBlocks.length === 1) {
+      const remaining = beforeBlocks[0];
+      if (remaining) {
+        parent.replaceChild(remaining, group);
+        parent.insertBefore(block, remaining.nextSibling);
       }
     } else {
       this.refreshToolCallGroup(group);
+      parent.insertBefore(block, group.nextSibling);
     }
 
-    parent.insertBefore(block, nextSibling);
+    parent.insertBefore(afterContainer, block.nextSibling);
   }
 
   private getOrCreateInteractionDock(block: HTMLDivElement): HTMLDivElement {
@@ -1618,8 +1689,14 @@ export class ChatRenderer {
     toolName: string,
   ): void {
     const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId);
+    const callId = block.dataset['toolCallId'];
 
     if (!this.isGroupableToolCall(toolName)) {
+      toolCallsContainer.appendChild(block);
+      return;
+    }
+
+    if (callId && this.standaloneToolCalls.has(callId)) {
       toolCallsContainer.appendChild(block);
       return;
     }
@@ -1642,6 +1719,11 @@ export class ChatRenderer {
 
     if (lastChild.classList.contains('tool-output-block')) {
       const lastToolName = lastChild.dataset['toolName'] ?? '';
+      const lastCallId = lastChild.dataset['toolCallId'];
+      if (lastCallId && this.standaloneToolCalls.has(lastCallId)) {
+        toolCallsContainer.appendChild(block);
+        return;
+      }
       if (this.isGroupableToolCall(lastToolName)) {
         const group = createToolCallGroup({ expanded: this.shouldExpandToolOutput() });
         toolCallsContainer.replaceChild(group, lastChild);

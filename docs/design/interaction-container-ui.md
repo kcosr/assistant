@@ -62,6 +62,9 @@ CLI/HTTP tool calls to render without a response ID.
 - If `turnId` is missing, a deterministic fallback (event id) is used to create a turn container.
 - Tool-call containers are inserted at the point the event is processed, preserving event order
   during replay.
+- Tool calls that receive **approvals** or **questionnaires** are treated as standalone blocks:
+  they are ungrouped (or prevent grouping) so the interaction stays visually distinct and does
+  not collapse into adjacent tool-call groups.
 
 ### 4) CLI/HTTP Tool-Call Rendezvous (Server-Side)
 

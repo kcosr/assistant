@@ -242,7 +242,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc1"]');
     expect(toolBlock).not.toBeNull();
     if (!toolBlock) return;
 
@@ -587,7 +587,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc1"]');
     expect(toolBlock).not.toBeNull();
     expect(toolBlock?.classList.contains('pending')).toBe(true);
 
@@ -963,9 +963,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock.classList.contains('has-pending-approval')).toBe(true);
 
     const group = container.querySelector<HTMLDivElement>('.tool-call-group');
-    expect(group).not.toBeNull();
-    expect(group?.classList.contains('has-pending-interaction')).toBe(true);
-    expect(group?.classList.contains('has-pending-approval')).toBe(true);
+    expect(group).toBeNull();
 
     renderer.renderEvent(
       createBaseEvent('interaction_response', {
@@ -983,8 +981,7 @@ describe('ChatRenderer', () => {
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
     expect(toolBlock.classList.contains('has-pending-interaction')).toBe(false);
     expect(toolBlock.classList.contains('has-pending-approval')).toBe(false);
-    expect(group?.classList.contains('has-pending-interaction')).toBe(false);
-    expect(group?.classList.contains('has-pending-approval')).toBe(false);
+    expect(group).toBeNull();
   });
 
   it('cancels approval interaction when the tool fails', () => {
@@ -1058,6 +1055,59 @@ describe('ChatRenderer', () => {
     expect(toolBlock).not.toBeNull();
     expect(toolBlock?.dataset['toolCallId']).toBe('tc-approval');
     expect(toolBlock?.querySelector('.interaction-approval')).not.toBeNull();
+  });
+
+  it('keeps approval tool calls out of tool-call groups', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'primary_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'dangerous_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'dangerous_action',
+          interactionId: 'i-approval',
+          interactionType: 'approval',
+          prompt: 'Allow this action?',
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e4',
+        payload: {
+          toolCallId: 'tc3',
+          toolName: 'secondary_action',
+          args: { confirm: false },
+        },
+      }),
+    ]);
+
+    const approvalBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc2"]');
+    expect(approvalBlock).not.toBeNull();
+    expect(approvalBlock?.closest('.tool-call-group')).toBeNull();
+
+    const followUpBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc3"]');
+    expect(followUpBlock).not.toBeNull();
+    expect(followUpBlock?.closest('.tool-call-group')).toBeNull();
   });
 
   it('does not create a tool block for questionnaire tool_result without tool_call', () => {
