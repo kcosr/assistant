@@ -4,11 +4,13 @@ import type {
   ClientHelloMessage,
   ClientPanelEventMessage,
   ClientPingMessage,
+  ClientSetInteractionModeMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
   ClientSetSessionThinkingMessage,
   ClientSubscribeMessage,
   ClientTextInputMessage,
+  ClientToolInteractionResponseMessage,
   ClientUnsubscribeMessage,
 } from '@assistant/shared';
 import { safeValidateClientMessage } from '@assistant/shared';
@@ -36,6 +38,8 @@ export function handleClientTextMessage(options: {
   onUnsubscribe: (message: ClientUnsubscribeMessage) => void | Promise<void>;
   onSetSessionModel: (message: ClientSetSessionModelMessage) => void | Promise<void>;
   onSetSessionThinking: (message: ClientSetSessionThinkingMessage) => void | Promise<void>;
+  onSetInteractionMode: (message: ClientSetInteractionModeMessage) => void | Promise<void>;
+  onToolInteractionResponse: (message: ClientToolInteractionResponseMessage) => void | Promise<void>;
   onCancelQueuedMessage: (message: ClientCancelQueuedMessage) => void | Promise<void>;
 }): void {
   const {
@@ -54,6 +58,8 @@ export function handleClientTextMessage(options: {
     onUnsubscribe,
     onSetSessionModel,
     onSetSessionThinking,
+    onSetInteractionMode,
+    onToolInteractionResponse,
     onCancelQueuedMessage,
   } = options;
 
@@ -128,6 +134,12 @@ export function handleClientTextMessage(options: {
       break;
     case 'set_session_thinking':
       void onSetSessionThinking(message);
+      break;
+    case 'set_interaction_mode':
+      void onSetInteractionMode(message);
+      break;
+    case 'tool_interaction_response':
+      void onToolInteractionResponse(message);
       break;
   }
 }

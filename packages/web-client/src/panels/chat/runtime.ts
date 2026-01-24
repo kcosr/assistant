@@ -3,6 +3,7 @@ import { ChatRenderer } from '../../controllers/chatRenderer';
 import { getToolOutputToggleSymbol } from '../../utils/toolOutputRenderer';
 import type { ToolOutputPreferencesClient } from '../../utils/toolOutputPreferences';
 import type { ThinkingPreferencesClient } from '../../utils/thinkingPreferences';
+import type { InteractionResponseDraft } from '../../utils/interactionRenderer';
 
 export interface ChatRuntimeElements {
   chatPanel: HTMLElement | null;
@@ -19,6 +20,13 @@ export interface ChatRuntimeOptions {
   thinkingPreferencesClient: ThinkingPreferencesClient;
   autoScrollEnabled: boolean;
   getAgentDisplayName: (agentId: string) => string;
+  getInteractionEnabled?: () => boolean;
+  sendInteractionResponse?: (options: {
+    sessionId: string;
+    callId: string;
+    interactionId: string;
+    response: InteractionResponseDraft;
+  }) => void;
 }
 
 export interface ChatRuntime {
@@ -121,6 +129,10 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   const chatRenderer = new ChatRenderer(elements.chatLog, {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
+    ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
+    ...(options.sendInteractionResponse
+      ? { sendInteractionResponse: options.sendInteractionResponse }
+      : {}),
   });
 
   elements.chatLog.addEventListener('scroll', () => {

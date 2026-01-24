@@ -16,6 +16,7 @@ describe('client message validation', () => {
       type: 'hello',
       protocolVersion: CURRENT_PROTOCOL_VERSION,
       sessionId: 'session-1',
+      interaction: { supported: true, enabled: true },
     };
     const parsed = validateClientMessage(message);
     expect(parsed).toEqual(message);
@@ -69,6 +70,30 @@ describe('client message validation', () => {
       type: 'set_session_thinking',
       sessionId: 'session-1',
       thinking: 'medium',
+    };
+
+    const parsed = validateClientMessage(message);
+    expect(parsed).toEqual(message);
+  });
+
+  it('accepts a set_interaction_mode message', () => {
+    const message: ClientMessage = {
+      type: 'set_interaction_mode',
+      enabled: true,
+    };
+
+    const parsed = validateClientMessage(message);
+    expect(parsed).toEqual(message);
+  });
+
+  it('accepts a tool_interaction_response message', () => {
+    const message: ClientMessage = {
+      type: 'tool_interaction_response',
+      sessionId: 'session-1',
+      callId: 'call-1',
+      interactionId: 'interaction-1',
+      action: 'approve',
+      approvalScope: 'session',
     };
 
     const parsed = validateClientMessage(message);

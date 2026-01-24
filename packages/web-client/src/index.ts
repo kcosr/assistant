@@ -35,6 +35,7 @@ import {
 } from './controllers/commandPaletteController';
 import { PanelWorkspaceController } from './controllers/panelWorkspaceController';
 import { initShareTarget } from './controllers/shareTargetController';
+import type { InteractionResponseDraft } from './utils/interactionRenderer';
 import {
   SessionPickerController,
   type SessionPickerOpenOptions,
@@ -373,6 +374,7 @@ async function main(): Promise<void> {
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
+  let interactionEnabled = true;
 
   // Set global flag for stripContextLine to use
   const updateShowContextFlag = (enabled: boolean): void => {
@@ -1218,6 +1220,34 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify(message));
   }
 
+  function sendInteractionResponse(options: {
+    sessionId: string;
+    callId: string;
+    interactionId: string;
+    response: InteractionResponseDraft;
+  }): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const sessionId = options.sessionId.trim();
+    if (!sessionId) {
+      return;
+    }
+    const message = {
+      type: 'tool_interaction_response' as const,
+      sessionId,
+      callId: options.callId,
+      interactionId: options.interactionId,
+      action: options.response.action,
+      ...(options.response.approvalScope
+        ? { approvalScope: options.response.approvalScope }
+        : {}),
+      ...(options.response.input ? { input: options.response.input } : {}),
+      ...(options.response.reason ? { reason: options.response.reason } : {}),
+    };
+    socket.send(JSON.stringify(message));
+  }
+
   // Keyboard navigation state
   type FocusZone = 'sidebar' | 'input';
   let focusedSessionId: string | null = null;
@@ -1293,6 +1323,13 @@ async function main(): Promise<void> {
         }
         return Boolean(active.closest('.panel-chrome-row, .chat-header'));
       };
+      const isInteractionActive = (): boolean => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) {
+          return false;
+        }
+        return Boolean(active.closest('.interaction-block, .tool-interaction-dock'));
+      };
       panelWorkspace?.setActiveChatPanelId(panelId);
       const binding = panelHostControllerInstance.getPanelBinding(panelId);
       const boundSessionId =
@@ -1300,7 +1337,12 @@ async function main(): Promise<void> {
       if (boundSessionId && boundSessionId !== inputSessionId) {
         setInputSessionId(boundSessionId);
       }
-      if (focusSource !== 'chrome' && !isChromeActive() && !isMobileViewport()) {
+      if (
+        focusSource !== 'chrome' &&
+        !isChromeActive() &&
+        !isMobileViewport() &&
+        !isInteractionActive()
+      ) {
         window.setTimeout(() => {
           const inputRuntime = chatPanelsById.get(panelId)?.inputRuntime ?? null;
           inputRuntime?.focusInput();
@@ -1569,6 +1611,7 @@ async function main(): Promise<void> {
     },
     protocolVersion: PROTOCOL_VERSION,
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
+    getInteractionEnabled: () => interactionEnabled,
     onMessage: (data) => {
       void handleServerMessage(data);
     },
@@ -1748,6 +1791,8 @@ async function main(): Promise<void> {
       thinkingPreferencesClient,
       autoScrollEnabled,
       getAgentDisplayName,
+      getInteractionEnabled: () => interactionEnabled,
+      sendInteractionResponse,
     };
   }
 

@@ -14,6 +14,7 @@ export interface HandleHelloOptions {
   clientHelloReceived: boolean;
   setClientHelloReceived: (received: boolean) => void;
   setClientAudioCapabilities: (audio: ClientHelloMessage['audio']) => void;
+  setInteractionState?: (state: { supported: boolean; enabled: boolean }) => void;
   connection: SessionConnection;
   sessionHub: SessionHub;
   setSessionState: (state: LogicalSessionState) => void;
@@ -36,6 +37,7 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
     clientHelloReceived,
     setClientHelloReceived,
     setClientAudioCapabilities,
+    setInteractionState,
     connection,
     sessionHub,
     setSessionState,
@@ -54,6 +56,17 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
 
   setClientHelloReceived(true);
   setClientAudioCapabilities(message.audio);
+  if (setInteractionState) {
+    const interaction = message.interaction;
+    if (interaction && typeof interaction.supported === 'boolean') {
+      setInteractionState({
+        supported: interaction.supported,
+        enabled: interaction.supported ? interaction.enabled : false,
+      });
+    } else {
+      setInteractionState({ supported: false, enabled: false });
+    }
+  }
 
   const protocolVersion = message.protocolVersion;
 

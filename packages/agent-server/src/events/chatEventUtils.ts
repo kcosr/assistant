@@ -32,6 +32,40 @@ export interface EmitToolResultEventParams {
   error?: { code: string; message: string } | undefined;
 }
 
+export interface EmitInteractionRequestEventParams {
+  eventStore?: EventStore;
+  sessionHub: SessionHub;
+  sessionId: string;
+  turnId?: string;
+  responseId?: string;
+  toolCallId: string;
+  interactionId: string;
+  toolName: string;
+  interactionType: 'approval' | 'input';
+  presentation?: 'tool' | 'questionnaire';
+  prompt?: string;
+  approvalScopes?: Array<'once' | 'session' | 'always'>;
+  inputSchema?: unknown;
+  timeoutMs?: number;
+  completedView?: { showInputs?: boolean; summaryTemplate?: string };
+  errorSummary?: string;
+  fieldErrors?: Record<string, string>;
+}
+
+export interface EmitInteractionResponseEventParams {
+  eventStore?: EventStore;
+  sessionHub: SessionHub;
+  sessionId: string;
+  turnId?: string;
+  responseId?: string;
+  toolCallId: string;
+  interactionId: string;
+  action: 'approve' | 'deny' | 'submit' | 'cancel';
+  approvalScope?: 'once' | 'session' | 'always';
+  input?: Record<string, unknown>;
+  reason?: string;
+}
+
 export interface EmitToolOutputChunkParams {
   sessionHub: SessionHub;
   sessionId: string;
@@ -169,6 +203,112 @@ export function emitToolResultEvent(params: EmitToolResultEventParams): void {
   ];
 
   void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+}
+
+export function emitInteractionRequestEvent(params: EmitInteractionRequestEventParams): void {
+  const {
+    eventStore,
+    sessionHub,
+    sessionId,
+    turnId,
+    responseId,
+    toolCallId,
+    interactionId,
+    toolName,
+    interactionType,
+    presentation,
+    prompt,
+    approvalScopes,
+    inputSchema,
+    timeoutMs,
+    completedView,
+    errorSummary,
+    fieldErrors,
+  } = params;
+
+  const events: ChatEvent[] = [
+    {
+      ...createChatEventBase({
+        sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(responseId ? { responseId } : {}),
+      }),
+      type: 'interaction_request',
+      payload: {
+        toolCallId,
+        interactionId,
+        toolName,
+        interactionType,
+        ...(presentation ? { presentation } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(approvalScopes ? { approvalScopes } : {}),
+        ...(inputSchema ? { inputSchema } : {}),
+        ...(timeoutMs ? { timeoutMs } : {}),
+        ...(completedView ? { completedView } : {}),
+        ...(errorSummary ? { errorSummary } : {}),
+        ...(fieldErrors ? { fieldErrors } : {}),
+      },
+    },
+  ];
+
+  if (eventStore) {
+    void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+    return;
+  }
+
+  const message: ServerChatEventMessage = {
+    type: 'chat_event',
+    sessionId,
+    event: events[0]!,
+  };
+  sessionHub.broadcastToSession(sessionId, message);
+}
+
+export function emitInteractionResponseEvent(params: EmitInteractionResponseEventParams): void {
+  const {
+    eventStore,
+    sessionHub,
+    sessionId,
+    turnId,
+    responseId,
+    toolCallId,
+    interactionId,
+    action,
+    approvalScope,
+    input,
+    reason,
+  } = params;
+
+  const events: ChatEvent[] = [
+    {
+      ...createChatEventBase({
+        sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(responseId ? { responseId } : {}),
+      }),
+      type: 'interaction_response',
+      payload: {
+        toolCallId,
+        interactionId,
+        action,
+        ...(approvalScope ? { approvalScope } : {}),
+        ...(input ? { input } : {}),
+        ...(reason ? { reason } : {}),
+      },
+    },
+  ];
+
+  if (eventStore) {
+    void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+    return;
+  }
+
+  const message: ServerChatEventMessage = {
+    type: 'chat_event',
+    sessionId,
+    event: events[0]!,
+  };
+  sessionHub.broadcastToSession(sessionId, message);
 }
 
 export interface ChatEventContext {

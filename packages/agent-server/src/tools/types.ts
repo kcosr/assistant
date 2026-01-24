@@ -36,6 +36,48 @@ export interface ToolUpdate {
   details?: Record<string, unknown>;
 }
 
+export interface ToolApprovals {
+  get(key: string, sessionId?: string): Promise<'once' | 'session' | 'always' | null>;
+  set(key: string, scope: 'once' | 'session' | 'always', sessionId?: string): Promise<void>;
+  clearSession(sessionId: string): Promise<void>;
+}
+
+export interface InteractionRequest {
+  type: 'approval' | 'input';
+  prompt?: string;
+  approvalScopes?: Array<'once' | 'session' | 'always'>;
+  inputSchema?: unknown;
+  presentation?: 'tool' | 'questionnaire';
+  timeoutMs?: number;
+  completedView?: {
+    showInputs?: boolean;
+    summaryTemplate?: string;
+  };
+  errorSummary?: string;
+  fieldErrors?: Record<string, string>;
+  onResponse: (response: UserResponse) => InteractionOutcome | Promise<InteractionOutcome>;
+  onTimeout?: () => InteractionOutcome | Promise<InteractionOutcome>;
+  onCancel?: () => void;
+}
+
+export interface UserResponse {
+  action: 'approve' | 'deny' | 'submit' | 'cancel';
+  approvalScope?: 'once' | 'session' | 'always';
+  input?: Record<string, unknown>;
+  reason?: string;
+}
+
+export type InteractionOutcome =
+  | { complete: unknown }
+  | { reprompt: Omit<InteractionRequest, 'onResponse' | 'onTimeout' | 'onCancel'> }
+  | { pending: { message: string; queued?: boolean } };
+
+export interface InteractionAvailability {
+  supportedCount: number;
+  enabledCount: number;
+  available: boolean;
+}
+
 export interface ToolContext {
   /**
    * AbortSignal for the current chat run or tool invocation.
@@ -98,6 +140,18 @@ export interface ToolContext {
    * Optional search service for global search operations.
    */
   searchService?: SearchService;
+  /**
+   * Request user interaction from an interactive client.
+   */
+  requestInteraction?: (request: InteractionRequest) => Promise<unknown>;
+  /**
+   * Optional approval cache helper for tools that use approvals.
+   */
+  approvals?: ToolApprovals;
+  /**
+   * Interaction availability for the current session.
+   */
+  interaction?: InteractionAvailability;
   /**
    * Optional callback for tools to stream incremental updates (for example,
    * bash output). Tools should still return a final result as usual.

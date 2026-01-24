@@ -5,6 +5,7 @@ export interface ConnectionManagerOptions {
   setStatus: (text: string) => void;
   protocolVersion: number;
   supportsAudioOutput: () => boolean;
+  getInteractionEnabled?: () => boolean;
   onMessage: (data: MessageEvent['data']) => void | Promise<void>;
   onOpen?: () => void;
   getSocket: () => WebSocket | null;
@@ -89,6 +90,7 @@ export class ConnectionManager {
       const audioCapabilities: ClientAudioCapabilities | undefined = canAudioOut
         ? { audioOut: true }
         : undefined;
+      const interactionEnabled = this.options.getInteractionEnabled?.() ?? true;
       const subscriptions = Array.from(this.subscribedSessions);
       const useV2Hello = this.options.protocolVersion >= 2;
       const hello: ClientHelloMessage = {
@@ -96,6 +98,7 @@ export class ConnectionManager {
         protocolVersion: this.options.protocolVersion,
         userAgent: window.navigator.userAgent,
         audio: audioCapabilities,
+        interaction: { supported: true, enabled: interactionEnabled },
         ...(useV2Hello ? { subscriptions } : {}),
       };
       newSocket.send(JSON.stringify(hello));

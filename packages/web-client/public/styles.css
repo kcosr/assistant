@@ -3368,6 +3368,30 @@ body.panel-reordering {
   display: none;
 }
 
+.chat-panel.hide-tool-output .tool-output-block.has-pending-approval {
+  display: block;
+}
+
+.chat-panel.hide-tool-output .tool-call-group.has-pending-approval {
+  display: block;
+}
+
+.chat-panel.hide-tool-output .tool-call-group.has-pending-approval .tool-output-block {
+  display: none;
+}
+
+.chat-panel.hide-tool-output
+  .tool-call-group.has-pending-approval
+  .tool-output-block.has-pending-approval {
+  display: block;
+}
+
+.chat-panel.hide-tool-output .tool-output-block.has-pending-approval .tool-output-content {
+  max-height: 0;
+  padding: 0 var(--spacing-sm);
+  border-top-color: transparent;
+}
+
 .tool-call-group {
   margin-top: var(--spacing-md);
   margin-bottom: var(--spacing-md);
@@ -3554,6 +3578,160 @@ body.panel-reordering {
   overflow: hidden;
   font-size: 0.875em;
   max-width: 680px;
+}
+
+.tool-interaction-dock {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm);
+  background: var(--color-bg-elevated);
+}
+
+.tool-interaction-dock .interaction-block {
+  margin: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.interaction-block {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-info) 6%, transparent);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.interaction-standalone {
+  margin: var(--spacing-md) 0;
+}
+
+.interaction-prompt {
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+}
+
+.interaction-title {
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+}
+
+.interaction-description {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.interaction-summary {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+  margin-top: var(--spacing-xxs);
+}
+
+.interaction-error-summary {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+}
+
+.interaction-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xxs);
+  margin-bottom: var(--spacing-sm);
+}
+
+.interaction-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xxs);
+  font-weight: 500;
+}
+
+.interaction-field-description {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+}
+
+.interaction-field-error {
+  color: var(--color-error);
+  font-size: 0.85em;
+}
+
+.interaction-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.interaction-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xxs);
+}
+
+.interaction-radio-option {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-weight: 400;
+}
+
+.interaction-section {
+  padding: var(--spacing-xs) 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.interaction-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.interaction-section-title {
+  font-weight: 600;
+  margin-bottom: var(--spacing-xxs);
+}
+
+.interaction-section-description {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+  margin-bottom: var(--spacing-xs);
+}
+
+.interaction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+
+.interaction-action {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.interaction-action:hover {
+  background: var(--color-bg-hover);
+}
+
+.interaction-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.interaction-hint {
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+  margin-top: var(--spacing-xs);
+}
+
+.interaction-complete {
+  opacity: 0.85;
 }
 
 .tool-output-block.success {

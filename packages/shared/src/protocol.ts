@@ -51,6 +51,12 @@ export const ClientHelloMessageSchema = z.object({
   subscriptions: z.array(z.string()).optional(),
   userAgent: z.string().optional(),
   audio: ClientAudioCapabilitiesSchema.optional(),
+  interaction: z
+    .object({
+      supported: z.boolean(),
+      enabled: z.boolean(),
+    })
+    .optional(),
 });
 
 export const ClientTextInputMessageSchema = z.object({
@@ -111,6 +117,22 @@ export const ClientSetSessionThinkingMessageSchema = z.object({
   type: z.literal('set_session_thinking'),
   sessionId: z.string(),
   thinking: z.string(),
+});
+
+export const ClientSetInteractionModeMessageSchema = z.object({
+  type: z.literal('set_interaction_mode'),
+  enabled: z.boolean(),
+});
+
+export const ClientToolInteractionResponseMessageSchema = z.object({
+  type: z.literal('tool_interaction_response'),
+  sessionId: z.string(),
+  callId: z.string(),
+  interactionId: z.string(),
+  action: z.enum(['approve', 'deny', 'submit', 'cancel']),
+  approvalScope: z.enum(['once', 'session', 'always']).optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+  reason: z.string().optional(),
 });
 
 export const FilterOpSchema = z.enum([
@@ -253,6 +275,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   ClientControlMessageSchema,
   ClientPingMessageSchema,
   ClientCancelQueuedMessageSchema,
+  ClientSetInteractionModeMessageSchema,
+  ClientToolInteractionResponseMessageSchema,
   PanelEventEnvelopeSchema,
   ClientSubscribeMessageSchema,
   ClientUnsubscribeMessageSchema,
@@ -271,6 +295,10 @@ export type ClientSubscribeMessage = z.infer<typeof ClientSubscribeMessageSchema
 export type ClientUnsubscribeMessage = z.infer<typeof ClientUnsubscribeMessageSchema>;
 export type ClientSetSessionModelMessage = z.infer<typeof ClientSetSessionModelMessageSchema>;
 export type ClientSetSessionThinkingMessage = z.infer<typeof ClientSetSessionThinkingMessageSchema>;
+export type ClientSetInteractionModeMessage = z.infer<typeof ClientSetInteractionModeMessageSchema>;
+export type ClientToolInteractionResponseMessage = z.infer<
+  typeof ClientToolInteractionResponseMessageSchema
+>;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 export const ServerSessionReadyMessageSchema = z.object({

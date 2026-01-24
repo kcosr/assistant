@@ -633,6 +633,129 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming')).toBe(true);
   });
 
+  it('renders standalone questionnaire interactions and marks them complete', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+      createBaseEvent('interaction_response', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          action: 'submit',
+          input: { answer: 'hello' },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const interaction = container.querySelector<HTMLElement>('.interaction-standalone');
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+  });
+
+  it('attaches approval interactions to tool blocks and tracks pending state', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'secondary_action',
+          args: { confirm: false },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          interactionId: 'i1',
+          interactionType: 'approval',
+          prompt: 'Allow this action?',
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const dock = toolBlock.querySelector<HTMLDivElement>('.tool-interaction-dock');
+    expect(dock).not.toBeNull();
+    expect(dock?.querySelector('.interaction-approval')).not.toBeNull();
+    expect(toolBlock.classList.contains('has-pending-interaction')).toBe(true);
+    expect(toolBlock.classList.contains('has-pending-approval')).toBe(true);
+
+    const group = container.querySelector<HTMLDivElement>('.tool-call-group');
+    expect(group).not.toBeNull();
+    expect(group?.classList.contains('has-pending-interaction')).toBe(true);
+    expect(group?.classList.contains('has-pending-approval')).toBe(true);
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_response', {
+        id: 'e4',
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          action: 'approve',
+          approvalScope: 'once',
+        },
+      }),
+    );
+
+    const interaction = dock?.querySelector<HTMLElement>('.interaction-approval');
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(toolBlock.classList.contains('has-pending-interaction')).toBe(false);
+    expect(toolBlock.classList.contains('has-pending-approval')).toBe(false);
+    expect(group?.classList.contains('has-pending-interaction')).toBe(false);
+    expect(group?.classList.contains('has-pending-approval')).toBe(false);
+  });
+
   it('creates a new thinking block after tool calls', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
