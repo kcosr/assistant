@@ -949,8 +949,8 @@ export class ChatRenderer {
 
     let block = this.toolCallElements.get(toolCallId);
     if (!block) {
-      if (this._isReplaying && presentation !== 'questionnaire') {
-        block = this.createToolBlockForInteraction(event);
+      if (this._isReplaying) {
+        block = this.createToolBlockForInteraction(event) ?? undefined;
       }
       if (block) {
         this.toolCallElements.set(toolCallId, block);
