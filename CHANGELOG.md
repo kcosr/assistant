@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.0] - 2026-01-24
 
 ### Breaking Changes
 
@@ -30,6 +30,7 @@
 - Fixed command palette Escape handling to prevent closing underlying modal panels. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Removed
+
 
 ## [0.8.0] - 2026-01-23
 
