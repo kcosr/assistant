@@ -678,6 +678,136 @@ describe('ChatRenderer', () => {
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
   });
 
+  it('renders tool calls and questionnaires without responseId', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          args: { prompt: 'Question?' },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    expect(container.querySelector('.tool-output-block')).not.toBeNull();
+    expect(container.querySelector('.interaction-standalone')).not.toBeNull();
+  });
+
+  it('inserts questionnaires after tool blocks even when responseId is missing', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          args: { prompt: 'Question?' },
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e2',
+        payload: {
+          text: 'Thanks, I will ask a question.',
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const toolCalls = container.querySelector<HTMLDivElement>('.tool-calls');
+    const interaction = container.querySelector<HTMLDivElement>('.interaction-standalone');
+    const assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+
+    expect(toolCalls).not.toBeNull();
+    expect(interaction).not.toBeNull();
+    expect(assistantText).not.toBeNull();
+    expect(toolCalls?.contains(interaction!)).toBe(true);
+
+    if (!toolCalls || !assistantText) return;
+    const response = toolCalls.closest<HTMLDivElement>('.assistant-response');
+    expect(response).not.toBeNull();
+    if (!response) return;
+
+    const children = Array.from(response.children);
+    const toolIndex = children.indexOf(toolCalls);
+    const textIndex = children.indexOf(assistantText);
+    expect(toolIndex).toBeLessThan(textIndex);
+  });
+
+  it('inserts tool call containers before later text segments', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const responseEl = (renderer as any).getOrCreateAssistantResponseContainer('t1', 'e1', 'r1');
+
+    const text0 = document.createElement('div');
+    text0.className = 'assistant-text';
+    text0.dataset['segment'] = '0';
+    responseEl.appendChild(text0);
+
+    const text1 = document.createElement('div');
+    text1.className = 'assistant-text';
+    text1.dataset['segment'] = '1';
+    responseEl.appendChild(text1);
+
+    const toolCalls = (renderer as any).getOrCreateToolCallsContainer(responseEl, 'r1');
+
+    const children = Array.from(responseEl.children);
+    const toolIndex = children.indexOf(toolCalls);
+    const text0Index = children.indexOf(text0);
+    const text1Index = children.indexOf(text1);
+
+    expect(text0Index).toBeLessThan(toolIndex);
+    expect(toolIndex).toBeLessThan(text1Index);
+  });
+
   it('attaches approval interactions to tool blocks and tracks pending state', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

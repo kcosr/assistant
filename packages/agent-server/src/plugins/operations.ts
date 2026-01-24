@@ -434,6 +434,13 @@ export function createPluginOperationRoutes(options: {
           toolContext = {
             ...toolContext,
             requestInteraction: async (request) => {
+              console.log('[interaction] http request', {
+                sessionId,
+                callId: toolCallId,
+                toolName: route.toolName,
+                type: request.type,
+                presentation: request.presentation ?? 'tool',
+              });
               const availability = sessionHub.getInteractionAvailability(sessionId);
               if (!availability.available) {
                 throw interactionUnavailableError(request);

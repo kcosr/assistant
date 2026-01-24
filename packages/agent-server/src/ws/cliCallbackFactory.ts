@@ -69,6 +69,12 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> => {
+    console.log('[cli tools] tool_call_start', {
+      sessionId,
+      callId,
+      toolName,
+      provider: providerName,
+    });
     let argsJson = '{}';
     try {
       argsJson = JSON.stringify(args ?? {});

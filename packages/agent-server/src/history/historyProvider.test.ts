@@ -12,6 +12,7 @@ import {
   PiSessionHistoryProvider,
 } from './historyProvider';
 import type { AgentDefinition } from '../agents';
+import type { EventStore } from '../events';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
@@ -137,6 +138,82 @@ describe('PiSessionHistoryProvider', () => {
       | undefined;
     expect(toolResult?.payload.toolCallId).toBe('tool-1');
     expect(Array.isArray(toolResult?.payload.result)).toBe(true);
+  });
+
+  it('merges overlay interaction events from the event store', async () => {
+    const baseDir = await createTempDir('pi-session-history');
+    const sessionId = 'session-2';
+    const piSessionId = 'pi-session-2';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-19T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-1',
+          content: 'Hello there',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvent: ChatEvent = {
+      id: 'interaction-1',
+      timestamp: Date.now(),
+      sessionId,
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => [overlayEvent],
+      getEventsSince: async () => [overlayEvent],
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi CLI',
+      chat: {
+        provider: 'pi-cli',
+      },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.some((event) => event.type === 'interaction_request')).toBe(true);
   });
 
   it('treats sessions with provider metadata as external history', async () => {

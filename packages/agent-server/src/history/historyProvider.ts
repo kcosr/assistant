@@ -130,7 +130,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -149,7 +149,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromClaudeSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
@@ -214,7 +214,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -233,7 +233,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
@@ -313,7 +313,7 @@ export class CodexSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -332,7 +332,7 @@ export class CodexSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromCodexSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 
   private async resolveCodexSessionPath(
@@ -573,6 +573,40 @@ async function findCodexSessionFile(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isOverlayEvent(event: ChatEvent): boolean {
+  return event.type === 'interaction_request' || event.type === 'interaction_response';
+}
+
+function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return baseEvents;
+  }
+  const combined = [...baseEvents, ...overlayEvents].map((event, index) => ({
+    event,
+    order: index,
+  }));
+  combined.sort((a, b) => {
+    const diff = a.event.timestamp - b.event.timestamp;
+    if (diff !== 0) {
+      return diff;
+    }
+    return a.order - b.order;
+  });
+  return combined.map((item) => item.event);
+}
+
+async function mergeOverlayEvents(
+  baseEvents: ChatEvent[],
+  sessionId: string,
+  eventStore?: EventStore,
+): Promise<ChatEvent[]> {
+  if (!eventStore) {
+    return baseEvents;
+  }
+  const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayEvent);
+  return mergeEventsByTimestamp(baseEvents, overlayEvents);
 }
 
 function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {

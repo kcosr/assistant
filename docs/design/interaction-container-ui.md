@@ -1,110 +1,95 @@
-# Interaction Container UI (Response-Independent Rendering)
+# Interaction Container UI (Tool-Call Anchored Rendering)
 
 ## Overview
 
-CLI/HTTP-triggered interactions (e.g., questionnaires) currently emit `interaction_request` events
-without `turnId`/`responseId`. The web client renders standalone questionnaires only when a
-`responseId` is present, so these interactions never appear in the UI. This design introduces a
-**first-class interaction container** in the chat UI that is **not** tied to an assistant response
-ID, enabling questionnaires to render for CLI/HTTP tool calls while preserving existing behavior
-for normal chat tool calls.
+CLI/HTTP-triggered tool calls and interactions (approvals/questionnaires) can arrive without a
+`responseId`/`turnId`. The current chat renderer relies on `responseId` to place tool blocks and
+standalone questionnaires, so those interactions never appear in the UI. This design anchors
+rendering to the **toolCallId** when `responseId` is missing, ensuring CLI/HTTP tool calls and
+questionnaires look identical to built-in agent flows without inventing synthetic response IDs.
 
 ## Problem Statement
 
-- `interaction_request` events sent from HTTP/CLI paths lack `responseId` because there is no
-  active chat completion run.
-- The chat renderer currently uses `responseId` to place standalone questionnaire blocks, and
-  returns early when it is missing.
-- Result: tool call shows “running,” but the questionnaire UI never appears.
+- `tool_call`/`interaction_request` events from CLI/HTTP paths lack `responseId` because there is
+  no active chat completion run.
+- The renderer currently returns early for tool calls without `responseId`, and standalone
+  questionnaires only render when a response container exists.
+- Result: tool calls stall at “running,” and questionnaires never appear in the UI.
 
 ## Goals
 
-- Render questionnaire interactions even when `responseId` and `turnId` are missing.
-- Preserve the existing standalone questionnaire presentation for normal chat runs.
-- Maintain reprompt behavior (replace previous interaction for the same tool call).
-- Keep history replay deterministic.
+- Render tool blocks and interactions even when `responseId`/`turnId` are missing.
+- Keep the same UI/UX for tool approvals and questionnaires as built-in agents.
+- Preserve reprompt behavior (replace previous interaction for the same tool call).
+- Keep history replay deterministic without inventing server-side response IDs.
 
 ## Non‑Goals
 
-- Changing tool-call semantics or forcing HTTP/CLI to generate chat runs.
-- Replacing the tool block UI with questionnaires in normal tool flows.
-- Introducing a new server-side chat event type.
+- Generating synthetic `responseId` values on the server.
+- Changing tool-call semantics or enforcing chat-run creation for CLI/HTTP tools.
+- Replacing the standalone questionnaire UI with tool-block rendering.
 
 ## Proposed Design
 
-### 1) Interaction Containers (Client-Side)
+### 1) Tool-Call Containers (Client-Side)
 
-Add a new client-side container type for **standalone interactions** that is not tied to a
-response ID. When `interaction_request` has `presentation: 'questionnaire'` **and** `responseId`
-is missing:
+Introduce a **tool-call container** keyed by `toolCallId` for response-less events:
 
-- Create (or reuse) an **interaction container** keyed by `toolCallId`.
-- Insert it into the chat log (or within a synthetic turn container) at the time the event is
-  processed, preserving chronological order in replay.
-- Render the questionnaire inside this container using existing `createInteractionElement` logic.
-- On reprompt, replace the existing interaction element for that tool call.
+- If `responseId` is present → use the existing assistant response container (current behavior).
+- If `responseId` is missing → create a `tool-call-only` container under the current turn and
+  store it by `toolCallId`.
+- Tool blocks are appended to the tool-call container via the existing tool-call grouping logic.
 
-### 2) Placement and Ordering
+This preserves the familiar layout (assistant response container + tool group) while allowing
+CLI/HTTP tool calls to render without a response ID.
 
-To keep ordering consistent and avoid inventing server-side IDs:
+### 2) Interaction Rendering (Questionnaire + Approval)
 
-- If `turnId` is present, attach the interaction container inside that turn.
-- If `turnId` is missing, create a turn container using a deterministic fallback (e.g., `turnId`
-  derived from the chat event id) so the interaction still groups cleanly in the DOM.
-- The interaction container should appear **where the event is processed** in replay to preserve
-  event order.
+- **Questionnaire (presentation: `questionnaire`)**
+  - With `responseId`: render as a standalone interaction in the assistant response container
+    (unchanged).
+  - Without `responseId`: render as a standalone interaction in the tool-call container for the
+    same `toolCallId`.
+  - Reprompt replaces the prior interaction element for that tool call (unchanged).
 
-### 3) Interaction Lifecycle
+- **Approval (presentation: `tool`)**
+  - Attach to the tool block as today.
+  - Because tool blocks now render without `responseId`, approvals work for CLI/HTTP tool calls
+    as well.
 
-- `interaction_request` → create interaction container + render form.
-- `interaction_response` → update the interaction element to completed state (existing behavior).
-- Reprompt (`interaction_request` with same toolCallId) replaces the existing interaction element
-  in that container.
+### 3) Ordering and Replay
 
-### 4) Tool Block Coexistence
+- If `turnId` is missing, a deterministic fallback (event id) is used to create a turn container.
+- Tool-call containers are inserted at the point the event is processed, preserving event order
+  during replay.
 
-The tool output block can remain “running” while the questionnaire is visible. This is consistent
-with the current model where `requestInteraction()` pauses tool completion until the user responds.
-Optionally, a follow-up can add a “Waiting for input” status or badge in the tool block.
+## ResponseId Semantics
 
-## Rendering Rules
-
-- `presentation: 'questionnaire'` with **responseId present** → current standalone behavior (attach
-  to assistant response container).
-- `presentation: 'questionnaire'` with **responseId missing** → new interaction container path.
-- `presentation: 'tool'` or `interactionType: 'approval'` → unchanged.
-
-## History Replay
-
-Interaction containers are created deterministically from the event stream:
-
-- Replay processes events in order and will insert the interaction container at the same point in
-  the log.
-- `interaction_response` events still target the interaction element by `interactionId`.
+`responseId` remains useful for grouping assistant text/thinking with tool calls in normal chat
+runs. For CLI/HTTP flows, there is no native response ID, so the renderer uses `toolCallId` as the
+primary anchor instead of synthesizing OpenAI-specific identifiers.
 
 ## Alternatives Considered
 
-1) **Server-side synthetic responseId**: generates a responseId for HTTP/CLI tool calls.
-   - Pros: reuses existing UI path.
-   - Cons: invents response containers without real chat turns; could confuse transcript semantics.
+1) **Server-side synthetic responseId**
+   - Pros: reuses existing response container logic.
+   - Cons: introduces fake response containers and leaks provider-specific semantics into the
+     session layer.
 
-2) **Render questionnaires inside tool blocks**: avoids standalone containers entirely.
+2) **Render questionnaires inside tool blocks**
    - Pros: simpler to implement.
-   - Cons: changes the intended “standalone questionnaire” UX.
+   - Cons: changes the intended standalone questionnaire UX.
 
-The proposed design keeps questionnaire UX intact and avoids server-side synthetic IDs.
+The proposed design keeps the UI consistent across built-in and CLI/HTTP agents without adding
+synthetic response IDs.
 
 ## Files to Update
 
-- `packages/web-client/src/controllers/chatRenderer.ts` (new interaction container handling)
-- `packages/web-client/src/controllers/chatRenderer.test.ts` (new test for missing responseId)
-- `packages/web-client/public/styles.css` (styles for interaction container, if needed)
+- `packages/web-client/src/controllers/chatRenderer.ts`
+- `packages/web-client/src/controllers/chatRenderer.test.ts`
+- `packages/web-client/public/styles.css` (only if a `tool-call-only` container needs styling)
 
 ## Open Questions
 
-1) For missing `turnId`, should we attach interaction containers at the root level instead of
-   creating a synthetic turn container?
-2) Should the tool output block show a distinct “Waiting for input” status when a questionnaire is
-   pending?
-3) Do we want to persist an explicit container type in the event model long‑term, or keep it
-   client‑only?
+1) Do we want a subtle “Waiting for input” status on tool blocks when a questionnaire is pending?
+2) Should `tool-call-only` containers have any visual affordance to distinguish CLI/HTTP tool calls?
