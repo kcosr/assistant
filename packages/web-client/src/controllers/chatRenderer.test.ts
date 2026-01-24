@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 import { ChatRenderer } from './chatRenderer';
@@ -1427,5 +1427,100 @@ describe('ChatRenderer', () => {
     expect(summaryMessage?.dataset['eventId']).toBe('e-summary');
     expect(summaryMessage?.dataset['summaryType']).toBe('compaction');
     expect(summaryMessage?.textContent).toContain('Compaction summary');
+  });
+
+  it('focuses the latest pending questionnaire input when requested', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const complete = document.createElement('div');
+    complete.className = 'interaction-block interaction-questionnaire interaction-complete';
+    const completeInput = document.createElement('input');
+    completeInput.type = 'text';
+    complete.appendChild(completeInput);
+    container.appendChild(complete);
+
+    const pendingFirst = document.createElement('div');
+    pendingFirst.className = 'interaction-block interaction-questionnaire';
+    const pendingFirstInput = document.createElement('input');
+    pendingFirstInput.type = 'text';
+    pendingFirst.appendChild(pendingFirstInput);
+    container.appendChild(pendingFirst);
+
+    const pendingLast = document.createElement('div');
+    pendingLast.className = 'interaction-block interaction-questionnaire';
+    const pendingLastInput = document.createElement('input');
+    pendingLastInput.type = 'text';
+    pendingLast.appendChild(pendingLastInput);
+    container.appendChild(pendingLast);
+
+    const renderer = new ChatRenderer(container, {
+      getShouldAutoFocusQuestionnaire: () => true,
+    });
+
+    const didFocus = renderer.focusFirstQuestionnaireInput();
+
+    expect(didFocus).toBe(true);
+    expect(document.activeElement).toBe(pendingLastInput);
+  });
+
+  it('skips questionnaire auto-focus when disabled', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const pending = document.createElement('div');
+    pending.className = 'interaction-block interaction-questionnaire';
+    const input = document.createElement('input');
+    input.type = 'text';
+    pending.appendChild(input);
+    container.appendChild(pending);
+
+    const renderer = new ChatRenderer(container, {
+      getShouldAutoFocusQuestionnaire: () => false,
+    });
+
+    const didFocus = renderer.focusFirstQuestionnaireInput();
+
+    expect(didFocus).toBe(false);
+    expect(document.activeElement).not.toBe(input);
+  });
+
+  it('returns focus to the chat input after questionnaire submit', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getShouldRestoreFocusAfterInteraction: () => true,
+    });
+    const focusInput = vi.fn();
+    renderer.setFocusInputHandler(focusInput);
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+          },
+        },
+      }),
+    );
+
+    const form = container.querySelector<HTMLFormElement>('form');
+    expect(form).not.toBeNull();
+    if (!form) return;
+    form.reportValidity = () => true;
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(focusInput).toHaveBeenCalledTimes(1);
   });
 });

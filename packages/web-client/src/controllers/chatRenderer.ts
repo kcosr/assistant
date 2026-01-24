@@ -52,6 +52,8 @@ export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
   getExpandToolOutput?: () => boolean;
   getInteractionEnabled?: () => boolean;
+  getShouldAutoFocusQuestionnaire?: () => boolean;
+  getShouldRestoreFocusAfterInteraction?: () => boolean;
   sendInteractionResponse?: (options: {
     sessionId: string;
     callId: string;
@@ -99,6 +101,7 @@ export class ChatRenderer {
   private readonly needsNewTextSegment = new Set<string>();
   private debugEnabled: boolean | null = null;
   private suppressTypingIndicator = false;
+  private focusInputHandler: (() => void) | null = null;
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -318,6 +321,49 @@ export class ChatRenderer {
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
     this.suppressTypingIndicator = false;
+  }
+
+  setFocusInputHandler(handler: (() => void) | null): void {
+    this.focusInputHandler = handler;
+  }
+
+  focusFirstQuestionnaireInput(): boolean {
+    if (this.options.getShouldAutoFocusQuestionnaire?.() === false) {
+      return false;
+    }
+    if (typeof document === 'undefined') {
+      return false;
+    }
+    const active = document.activeElement;
+    const panelRoot = this.container.closest('.chat-panel');
+    if (active instanceof HTMLElement && panelRoot && !panelRoot.contains(active)) {
+      return false;
+    }
+    if (active instanceof HTMLElement && active.closest('.interaction-questionnaire')) {
+      return false;
+    }
+    const interactions = Array.from(
+      this.container.querySelectorAll<HTMLDivElement>('.interaction-questionnaire'),
+    ).filter((element) => !element.classList.contains('interaction-complete'));
+    const target = interactions.length > 0 ? interactions[interactions.length - 1] : null;
+    if (!target) {
+      return false;
+    }
+    const input = target.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])',
+    );
+    if (!input) {
+      return false;
+    }
+    input.focus();
+    return true;
+  }
+
+  private focusInputAfterInteraction(): void {
+    if (this.options.getShouldRestoreFocusAfterInteraction?.() === false) {
+      return;
+    }
+    this.focusInputHandler?.();
   }
 
   private handleTurnStart(event: TurnStartEvent): void {
@@ -1074,6 +1120,13 @@ export class ChatRenderer {
       enabled,
       onSubmit: (response) => {
         this.sendInteractionResponse(payload, response, sessionId);
+        if (
+          payload.presentation === 'questionnaire' &&
+          payload.interactionType === 'input' &&
+          (response.action === 'submit' || response.action === 'cancel')
+        ) {
+          this.focusInputAfterInteraction();
+        }
       },
     });
     element.classList.add('tool-interaction');
@@ -1140,6 +1193,13 @@ export class ChatRenderer {
       enabled,
       onSubmit: (response) => {
         this.sendInteractionResponse(payload, response, event.sessionId);
+        if (
+          payload.presentation === 'questionnaire' &&
+          payload.interactionType === 'input' &&
+          (response.action === 'submit' || response.action === 'cancel')
+        ) {
+          this.focusInputAfterInteraction();
+        }
       },
     });
     element.classList.add('interaction-standalone');
@@ -1179,6 +1239,9 @@ export class ChatRenderer {
     if (pendingResponse) {
       this.pendingInteractionResponses.delete(payload.interactionId);
       applyInteractionResponse(element, pendingResponse);
+    }
+    if (enabled) {
+      this.focusFirstQuestionnaireInput();
     }
   }
 

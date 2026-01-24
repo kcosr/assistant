@@ -3598,10 +3598,17 @@ body.panel-reordering {
   background: color-mix(in srgb, var(--color-info) 6%, transparent);
   padding: var(--spacing-sm);
   margin-bottom: var(--spacing-sm);
+  max-width: 680px;
+  width: 100%;
 }
 
 .interaction-standalone {
   margin: var(--spacing-md) 0;
+}
+
+.interaction-block ::selection {
+  background: color-mix(in srgb, var(--color-accent-primary) 35%, transparent);
+  color: var(--color-text-primary);
 }
 
 .interaction-prompt {
@@ -3648,6 +3655,12 @@ body.panel-reordering {
   font-weight: 500;
 }
 
+.interaction-checkbox-row {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
 .interaction-field-label-text {
   display: flex;
   align-items: center;
@@ -3683,10 +3696,16 @@ body.panel-reordering {
   color: var(--color-text-primary);
   padding: 6px 10px;
   font-size: 0.9em;
+  width: 100%;
   transition:
     border-color var(--transition-fast),
     box-shadow var(--transition-fast),
     background-color var(--transition-fast);
+}
+
+textarea.interaction-input {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .interaction-input::placeholder {
@@ -3708,6 +3727,7 @@ body.panel-reordering {
 
 .interaction-option-input {
   accent-color: var(--color-accent-primary);
+  margin: 0;
 }
 
 .interaction-radio-group {

@@ -957,6 +957,9 @@ async function main(): Promise<void> {
       dom,
       bindingSessionId: null,
     };
+    runtime.chatRenderer.setFocusInputHandler(() => {
+      inputRuntime.focusInput();
+    });
     chatPanelsById.set(panelId, entry);
     const abortController = new AbortController();
     if (dom.refreshButtonEl) {
@@ -1116,6 +1119,7 @@ async function main(): Promise<void> {
       abortController.abort();
       unsubBinding();
       unsubSessionContext();
+      runtime.chatRenderer.setFocusInputHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
         loadedChatTranscripts.delete(entry.bindingSessionId);
@@ -1848,6 +1852,7 @@ async function main(): Promise<void> {
       autoScrollEnabled,
       getAgentDisplayName,
       getInteractionEnabled: () => interactionEnabled,
+      isMobileViewport,
       sendInteractionResponse,
     };
   }
