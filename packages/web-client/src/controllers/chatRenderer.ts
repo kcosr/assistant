@@ -832,6 +832,7 @@ export class ChatRenderer {
     if (event.payload.error) {
       const message = event.payload.error.message;
       updateToolOutputBlockContent(block, toolName, message, { ok: false });
+      this.finalizeInteractionForFailedToolCall(callId, message);
       this.updateToolCallGroupForBlock(block);
       return;
     }
@@ -915,6 +916,10 @@ export class ChatRenderer {
         ...(rawJson ? { rawJson } : {}),
         state: resultOk ? 'complete' : 'error',
       });
+    }
+
+    if (!handledAgentAsync && !resultOk) {
+      this.finalizeInteractionForFailedToolCall(callId);
     }
 
     // For agents_message async mode, track the block for agent_callback updates
@@ -1235,6 +1240,36 @@ export class ChatRenderer {
     );
     group.classList.toggle('has-pending-interaction', groupHasPending);
     group.classList.toggle('has-pending-approval', groupHasPendingApproval);
+  }
+
+  private finalizeInteractionForFailedToolCall(toolCallId: string, reason?: string): void {
+    const interactionId = this.interactionByToolCall.get(toolCallId);
+    if (interactionId) {
+      const element = this.interactionElements.get(interactionId);
+      if (element && !element.classList.contains('interaction-complete')) {
+        applyInteractionResponse(element, {
+          toolCallId,
+          interactionId,
+          action: 'cancel',
+          ...(reason ? { reason } : {}),
+        });
+        const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
+        if (toolBlock) {
+          this.updateToolInteractionState(toolBlock);
+        }
+      }
+    }
+
+    this.pendingInteractionRequests.delete(toolCallId);
+
+    if (this.pendingInteractionToolCalls.delete(toolCallId)) {
+      if (!this._isReplaying) {
+        this.updateTypingSuppression();
+        if (this.pendingInteractionToolCalls.size === 0) {
+          this.showTypingIndicator();
+        }
+      }
+    }
   }
 
   private sendInteractionResponse(

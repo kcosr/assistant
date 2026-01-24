@@ -33,13 +33,25 @@ export function applyInteractionResponse(
     control.disabled = true;
   }
 
+  let summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
+  if (!summary) {
+    summary = element.querySelector<HTMLElement>('.interaction-summary');
+  }
+
   if (response.action === 'approve' || response.action === 'deny') {
-    const summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
     if (summary) {
       const scope = response.approvalScope ? ` (${response.approvalScope})` : '';
       summary.textContent =
         response.action === 'approve' ? `Approved${scope}` : 'Denied';
     }
+  } else if (response.action === 'cancel') {
+    if (!summary) {
+      summary = document.createElement('div');
+      summary.className = 'interaction-summary';
+      summary.dataset['role'] = 'interaction-summary';
+      element.appendChild(summary);
+    }
+    summary.textContent = response.reason ? response.reason : 'Cancelled';
   }
 
   if (response.input) {

@@ -987,6 +987,52 @@ describe('ChatRenderer', () => {
     expect(group?.classList.contains('has-pending-approval')).toBe(false);
   });
 
+  it('cancels approval interaction when the tool fails', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          interactionId: 'i1',
+          interactionType: 'approval',
+          prompt: 'Allow this action?',
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc1',
+          error: { code: 'tool_error', message: 'Timed out' },
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>('.interaction-approval');
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+
+    const summary = interaction?.querySelector<HTMLElement>('.interaction-summary');
+    expect(summary?.textContent).toBe('Timed out');
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock?.classList.contains('has-pending-approval')).toBe(false);
+  });
+
   it('renders approval interaction on replay even without tool_call event', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

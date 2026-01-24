@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { InteractionRequestPayload } from '@assistant/shared';
-import { createInteractionElement } from './interactionRenderer';
+import { applyInteractionResponse, createInteractionElement } from './interactionRenderer';
 
 describe('interactionRenderer', () => {
   it('submits questionnaire form values', () => {
@@ -92,5 +92,28 @@ describe('interactionRenderer', () => {
     const input = element.querySelector<HTMLInputElement>('[data-field-id="email"]');
     expect(input).not.toBeNull();
     expect(input?.classList.contains('interaction-input')).toBe(true);
+  });
+
+  it('shows a cancel reason when interactions are completed', () => {
+    const request: InteractionRequestPayload = {
+      toolCallId: 'tc4',
+      toolName: 'dangerous_action',
+      interactionId: 'i4',
+      interactionType: 'approval',
+      prompt: 'Allow this action?',
+    };
+    const onSubmit = vi.fn();
+    const element = createInteractionElement({ request, enabled: true, onSubmit });
+    document.body.appendChild(element);
+
+    applyInteractionResponse(element, {
+      toolCallId: 'tc4',
+      interactionId: 'i4',
+      action: 'cancel',
+      reason: 'Timed out',
+    });
+
+    const summary = element.querySelector<HTMLElement>('.interaction-summary');
+    expect(summary?.textContent).toBe('Timed out');
   });
 });

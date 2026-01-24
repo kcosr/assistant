@@ -524,6 +524,23 @@ export async function runChatCompletionCore(
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
     const model = resolveCliModelForRun({ agent, summary: state.summary });
 
+    if (resolvedSessionId && nextCwd) {
+      const currentSessionId = storedClaudeSession?.sessionId ?? '';
+      const currentCwd = storedClaudeSession?.cwd ?? undefined;
+      if (resolvedSessionId !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch('claude-cli', {
+            sessionId: resolvedSessionId,
+            cwd: nextCwd,
+          });
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedClaudeSession = { sessionId: resolvedSessionId, cwd: nextCwd };
+        } catch (err) {
+          log('failed to persist Claude session mapping (pre-run)', err);
+        }
+      }
+    }
+
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
