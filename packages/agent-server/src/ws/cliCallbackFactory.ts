@@ -69,11 +69,23 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
     toolName: string,
     args: Record<string, unknown>,
   ): Promise<void> => {
+    const command =
+      args && typeof args === 'object' && typeof (args as { command?: unknown }).command === 'string'
+        ? String((args as { command?: unknown }).command)
+        : undefined;
     console.log('[cli tools] tool_call_start', {
       sessionId,
       callId,
       toolName,
       provider: providerName,
+      ...(command ? { command } : {}),
+      args,
+    });
+    sessionHub.recordCliToolCall({
+      sessionId,
+      callId,
+      toolName,
+      args: args ?? {},
     });
     let argsJson = '{}';
     try {

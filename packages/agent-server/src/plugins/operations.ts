@@ -12,6 +12,7 @@ import type { HttpRouteHandler } from '../http/types';
 import type { ToolContext } from '../tools';
 import { ToolError } from '../tools';
 import { executeInteraction, interactionUnavailableError } from '../ws/toolCallHandling';
+import type { CliToolCallRecord } from '../ws/cliToolCallRendezvous';
 
 import type { PluginToolDefinition } from './types';
 
@@ -34,6 +35,7 @@ const DEFAULT_HTTP_METHOD = 'POST';
 const DEFAULT_HTTP_PREFIX = '/operations';
 const SESSION_ID_HEADER = 'x-session-id';
 const SESSION_ID_QUERY_PARAM = 'sessionId';
+const CLI_TOOL_MATCH_WAIT_MS = 1000;
 
 type ResolvedSurfaces = {
   tool: boolean;
@@ -75,6 +77,48 @@ function resolveSessionId(
   const raw = header ?? query ?? '';
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildCliToolSearchText(call: CliToolCallRecord): string {
+  let argsText = '';
+  try {
+    argsText = JSON.stringify(call.args ?? {});
+  } catch {
+    argsText = '';
+  }
+  return `${call.toolName} ${argsText}`.toLowerCase();
+}
+
+function scoreCliToolCall(
+  call: CliToolCallRecord,
+  options: { toolName: string; pluginId: string; operationId: string },
+): number {
+  const text = buildCliToolSearchText(call);
+  const toolName = options.toolName.toLowerCase();
+  const toolNameAlt = toolName.replace(/_/g, '-');
+  const pluginId = options.pluginId.toLowerCase();
+  const operationId = options.operationId.toLowerCase();
+  const operationAlt = operationId.replace(/_/g, '-');
+
+  let score = 0;
+  if (toolName && (text.includes(toolName) || (toolNameAlt && text.includes(toolNameAlt)))) {
+    score += 3;
+  }
+  if (pluginId && text.includes(pluginId)) {
+    score += 2;
+  }
+  if (
+    operationId &&
+    (text.includes(operationId) || (operationAlt && text.includes(operationAlt)))
+  ) {
+    score += 1;
+  }
+  return score;
+}
+
+function isFallbackCliTool(call: CliToolCallRecord): boolean {
+  const name = call.toolName.toLowerCase();
+  return name === 'bash' || name === 'shell' || name === 'terminal';
 }
 
 export function normalizeToolPrefix(pluginId: string): string {
@@ -429,17 +473,48 @@ export function createPluginOperationRoutes(options: {
           ? { ...context.httpToolContext, sessionId }
           : context.httpToolContext;
         if (sessionId && toolContext.sessionHub) {
-          const toolCallId = randomUUID();
           const sessionHub = toolContext.sessionHub;
+          let resolvedCallId: string | undefined;
+          let matchedCall: CliToolCallRecord | undefined;
+          const resolveToolCallId = async () => {
+            if (resolvedCallId) {
+              return { toolCallId: resolvedCallId, matchedCall };
+            }
+            matchedCall = await sessionHub.matchCliToolCall({
+              sessionId,
+              waitMs: CLI_TOOL_MATCH_WAIT_MS,
+              score: (call) =>
+                scoreCliToolCall(call, {
+                  toolName: route.toolName,
+                  pluginId: manifest.id,
+                  operationId: route.operation.id,
+                }),
+              fallback: isFallbackCliTool,
+            });
+            resolvedCallId = matchedCall?.callId ?? randomUUID();
+            return { toolCallId: resolvedCallId, matchedCall };
+          };
           toolContext = {
             ...toolContext,
             requestInteraction: async (request) => {
+              const { toolCallId, matchedCall: resolvedMatch } = await resolveToolCallId();
+              const matchedAgeMs =
+                resolvedMatch && typeof resolvedMatch.createdAt === 'number'
+                  ? Date.now() - resolvedMatch.createdAt
+                  : undefined;
               console.log('[interaction] http request', {
                 sessionId,
                 callId: toolCallId,
                 toolName: route.toolName,
+                pluginId: manifest.id,
+                operationId: route.operation.id,
                 type: request.type,
                 presentation: request.presentation ?? 'tool',
+                matched: Boolean(resolvedMatch),
+                matchedToolName: resolvedMatch?.toolName,
+                matchedAgeMs,
+                args,
+                rawArgs,
               });
               const availability = sessionHub.getInteractionAvailability(sessionId);
               if (!availability.available) {

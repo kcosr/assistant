@@ -227,6 +227,7 @@ describe('plugin operations', () => {
         enabledCount: 1,
         available: true,
       }),
+      matchCliToolCall: vi.fn().mockResolvedValue(undefined),
       getInteractionRegistry: () => ({ waitForResponse }),
       broadcastToSession: vi.fn(),
     };
@@ -269,6 +270,9 @@ describe('plugin operations', () => {
     expect(status).toBe(200);
     expect(payload).toEqual({ ok: true, result: { ok: true } });
     expect(sessionHub.getInteractionAvailability).toHaveBeenCalledWith('s1');
+    expect(sessionHub.matchCliToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 's1' }),
+    );
     expect(waitForResponse).toHaveBeenCalledTimes(1);
   });
 });

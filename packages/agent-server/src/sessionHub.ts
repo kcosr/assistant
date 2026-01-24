@@ -25,6 +25,11 @@ import type { SessionConnection } from './ws/sessionConnection';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
+import {
+  CliToolCallRendezvous,
+  type CliToolCallMatchOptions,
+  type CliToolCallRecord,
+} from './ws/cliToolCallRendezvous';
 
 export interface LogicalSessionState {
   summary: SessionSummary;
@@ -112,6 +117,7 @@ export class SessionHub {
   private readonly sessions = new Map<string, LogicalSessionState>();
   private readonly connections = new SessionConnectionRegistry();
   private readonly interactionRegistry = new InteractionRegistry();
+  private readonly cliToolCallRendezvous = new CliToolCallRendezvous();
   private readonly pluginRegistry: PluginRegistry | undefined;
   private readonly queuedMessageTasks = new Map<string, QueuedMessageTask>();
   private readonly maxCachedSessions: number;
@@ -170,6 +176,19 @@ export class SessionHub {
 
   getInteractionRegistry(): InteractionRegistry {
     return this.interactionRegistry;
+  }
+
+  recordCliToolCall(options: {
+    sessionId: string;
+    callId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+  }): void {
+    this.cliToolCallRendezvous.record(options);
+  }
+
+  matchCliToolCall(options: CliToolCallMatchOptions): Promise<CliToolCallRecord | undefined> {
+    return this.cliToolCallRendezvous.match(options);
   }
 
   setInteractionState(
@@ -335,6 +354,7 @@ export class SessionHub {
     console.log('[sessionHub] deleteSession', { sessionId });
     const summary = await this.sessionIndex.markSessionDeleted(sessionId);
     this.interactionRegistry.clearSession(sessionId);
+    this.cliToolCallRendezvous.clearSession(sessionId);
     try {
       if (this.eventStore) {
         await this.eventStore.deleteSession(sessionId);
@@ -399,6 +419,7 @@ export class SessionHub {
     if (this.eventStore) {
       await this.eventStore.clearSession(sessionId);
     }
+    this.cliToolCallRendezvous.clearSession(sessionId);
     const summary = await this.sessionIndex.clearSession(sessionId);
 
     const state = this.sessions.get(sessionId);

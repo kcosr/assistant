@@ -63,6 +63,20 @@ CLI/HTTP tool calls to render without a response ID.
 - Tool-call containers are inserted at the point the event is processed, preserving event order
   during replay.
 
+### 4) CLI/HTTP Tool-Call Rendezvous (Server-Side)
+
+CLI agents invoke plugins via a shell tool call (for example, `bash`), while the plugin HTTP
+request generates a new `callId`. To keep questionnaires attached to the originating tool block,
+the server now:
+
+- Records CLI tool calls (callId + args) in a short-lived per-session queue.
+- When an HTTP interaction request arrives, waits briefly (~1s) for a matching CLI tool call.
+- Scores candidates using plugin/tool tokens, with a `bash` fallback if no score matches.
+- Reuses the matched CLI `callId` so the UI can anchor interactions to the tool block.
+
+This keeps CLI questionnaires visually identical to built-in agent flows without requiring a
+synthetic response id.
+
 ## ResponseId Semantics
 
 `responseId` remains useful for grouping assistant text/thinking with tool calls in normal chat
@@ -87,6 +101,11 @@ synthetic response IDs.
 
 - `packages/web-client/src/controllers/chatRenderer.ts`
 - `packages/web-client/src/controllers/chatRenderer.test.ts`
+- `packages/agent-server/src/plugins/operations.ts`
+- `packages/agent-server/src/sessionHub.ts`
+- `packages/agent-server/src/ws/cliCallbackFactory.ts`
+- `packages/agent-server/src/ws/cliToolCallRendezvous.ts`
+- `packages/agent-server/src/ws/cliToolCallRendezvous.test.ts`
 - `packages/web-client/public/styles.css` (only if a `tool-call-only` container needs styling)
 
 ## Open Questions

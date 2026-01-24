@@ -18,6 +18,7 @@
 - Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed tool calls and questionnaires rendering when response ids are missing. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed CLI questionnaire ordering and persistence across refresh. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed CLI questionnaire tool calls to rendezvous with HTTP interactions. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 
