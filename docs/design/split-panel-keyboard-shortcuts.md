@@ -26,8 +26,6 @@ Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selectin
 
 ## Files to update
 - `packages/web-client/src/controllers/keyboardNavigationController.ts`
-- `packages/web-client/src/controllers/panelWorkspaceController.ts`
-- `packages/web-client/public/styles.css`
+- `packages/web-client/src/controllers/keyboardNavigationController.test.ts`
 - `docs/design/panel-layout-ui-spec.md`
 - `docs/UI_SPEC.md`
-- `packages/web-client/src/controllers/keyboardNavigationController.test.ts`

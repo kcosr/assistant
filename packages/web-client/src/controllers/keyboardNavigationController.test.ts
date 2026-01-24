@@ -71,6 +71,24 @@ function buildOptions(
   };
 }
 
+function attachShortcutRegistry(
+  controller: KeyboardNavigationController,
+  options?: { panelNavigation?: boolean },
+): { detach: () => void } {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (controller as any).registerShortcuts();
+  if (options?.panelNavigation) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).attachPanelNavigation();
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const registry = (controller as any).shortcutRegistry;
+  registry.attach();
+  return {
+    detach: () => registry.detach(),
+  };
+}
+
 describe('KeyboardNavigationController panel shortcuts', () => {
   beforeEach(() => {
     document.body.className = '';
@@ -197,6 +215,81 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
+  it('starts split placement on ctrl+s and inserts an empty panel on enter', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-split-placement-active')).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.openPanel).toHaveBeenCalledWith('empty', {
+      focus: true,
+      placement: { region: 'bottom' },
+      targetPanelId: 'panel-1',
+    });
+    expect(document.body.classList.contains('panel-split-placement-active')).toBe(false);
+    registry.detach();
+  });
+
+  it('changes split placement region with arrow keys', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+    );
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.openPanel).toHaveBeenCalledWith('empty', {
+      focus: true,
+      placement: { region: 'left' },
+      targetPanelId: 'panel-1',
+    });
+    registry.detach();
+  });
+
+  it('does not start split placement without an active panel', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    options.panelWorkspace.getActivePanelId = vi.fn(() => null);
+
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-split-placement-active')).toBe(false);
+    expect(options.panelWorkspace.openPanel).not.toHaveBeenCalled();
+    registry.detach();
+  });
+
   it('exits layout navigation on ctrl+p while active', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
@@ -204,7 +297,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     document.body.appendChild(panelFrame);
 
     const controller = new KeyboardNavigationController(buildOptions(panelFrame));
-    controller.attach();
+    const registry = attachShortcutRegistry(controller);
 
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
@@ -215,6 +308,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
     );
     expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+    registry.detach();
   });
 
   it('switches layout navigation to header navigation on ctrl+h', () => {
@@ -226,7 +320,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const controller = new KeyboardNavigationController(
       buildOptions(panelFrame, ['header-1', 'header-2'], null),
     );
-    controller.attach();
+    const registry = attachShortcutRegistry(controller);
 
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
@@ -243,6 +337,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
     );
     expect(document.body.classList.contains('panel-nav-header-active')).toBe(false);
+    registry.detach();
   });
 
   it('switches header navigation to layout navigation on ctrl+p', () => {
@@ -254,7 +349,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const controller = new KeyboardNavigationController(
       buildOptions(panelFrame, ['header-1', 'header-2'], null),
     );
-    controller.attach();
+    const registry = attachShortcutRegistry(controller);
 
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
@@ -271,6 +366,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
     );
     expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+    registry.detach();
   });
 
   it('cycles header panels with left/right and a/d', () => {
@@ -281,7 +377,6 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     const options = buildOptions(panelFrame, ['header-1', 'header-2', 'header-3'], 'header-1');
     const controller = new KeyboardNavigationController(options);
-    controller.attach();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (controller as any).startHeaderNavigation();
@@ -305,7 +400,6 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     const options = buildOptions(panelFrame, ['header-1', 'header-2'], null);
     const controller = new KeyboardNavigationController(options);
-    controller.attach();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (controller as any).startHeaderNavigation();
