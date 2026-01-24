@@ -1147,7 +1147,10 @@ export class ChatRenderer {
     if (remainingBlocks.length === 0) {
       parent.removeChild(group);
     } else if (remainingBlocks.length === 1) {
-      parent.replaceChild(remainingBlocks[0], group);
+      const [onlyBlock] = remainingBlocks;
+      if (onlyBlock) {
+        parent.replaceChild(onlyBlock, group);
+      }
     } else {
       this.refreshToolCallGroup(group);
     }
