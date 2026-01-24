@@ -56,6 +56,33 @@ describe('runClaudeCliChat', () => {
     expect(calls[0]?.args).toContain('hello');
   });
 
+  it('injects ASSISTANT_SESSION_ID into the claude environment', async () => {
+    const child = new FakeClaudeProcess();
+    let capturedEnv: SpawnOptionsWithoutStdio['env'] | undefined;
+
+    const spawnFn: ClaudeCliSpawn = (_command, _args, options) => {
+      capturedEnv = options.env;
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(capturedEnv?.['ASSISTANT_SESSION_ID']).toBe('session-123');
+  });
+
   it('adds model to claude args when provided', async () => {
     const child = new FakeClaudeProcess();
     const calls: Array<{ command: string; args: readonly string[] }> = [];

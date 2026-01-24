@@ -524,6 +524,23 @@ export async function runChatCompletionCore(
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
     const model = resolveCliModelForRun({ agent, summary: state.summary });
 
+    if (resolvedSessionId && nextCwd) {
+      const currentSessionId = storedClaudeSession?.sessionId ?? '';
+      const currentCwd = storedClaudeSession?.cwd ?? undefined;
+      if (resolvedSessionId !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch('claude-cli', {
+            sessionId: resolvedSessionId,
+            cwd: nextCwd,
+          });
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedClaudeSession = { sessionId: resolvedSessionId, cwd: nextCwd };
+        } catch (err) {
+          log('failed to persist Claude session mapping (pre-run)', err);
+        }
+      }
+    }
+
     const claudeCallbacks = createCliToolCallbacks({
       sessionId,
       responseId,
@@ -615,6 +632,44 @@ export async function runChatCompletionCore(
     const model = resolveCliModelForRun({ agent, summary: state.summary });
     const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
 
+    let syncedCodexSessionId = existingCodexSessionId;
+    const syncCodexSessionId = async (nextId: string): Promise<void> => {
+      const trimmed = nextId.trim();
+      if (!trimmed || trimmed === syncedCodexSessionId) {
+        return;
+      }
+      syncedCodexSessionId = trimmed;
+      try {
+        await codexSessionStore.set({
+          sessionId,
+          codexSessionId: trimmed,
+          ...(codexConfig?.workdir ? { workdir: codexConfig.workdir } : {}),
+        });
+      } catch (err) {
+        log('failed to persist Codex session mapping', err);
+      }
+
+      const nextCwd = codexConfig?.workdir?.trim() || undefined;
+      const currentSessionId = storedCodexSession?.sessionId ?? '';
+      const currentCwd = storedCodexSession?.cwd ?? undefined;
+      if (trimmed !== currentSessionId || nextCwd !== currentCwd) {
+        try {
+          const providerPatch = buildProviderAttributesPatch(
+            'codex-cli',
+            {
+              sessionId: trimmed,
+              ...(nextCwd ? { cwd: nextCwd } : {}),
+            },
+            ['codex'],
+          );
+          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
+          storedCodexSession = { sessionId: trimmed, ...(nextCwd ? { cwd: nextCwd } : {}) };
+        } catch (err) {
+          log('failed to persist Codex session mapping', err);
+        }
+      }
+    };
+
     const {
       text: codexText,
       aborted: cliAborted,
@@ -633,37 +688,12 @@ export async function runChatCompletionCore(
       onThinkingDone: streamHandlers.emitThinkingDone,
       onToolCallStart: codexCallbacks.onToolCallStart,
       onToolResult: codexCallbacks.onToolResult,
+      onSessionId: syncCodexSessionId,
       log,
     });
 
-    if (codexSessionId && codexSessionId !== existingCodexSessionId) {
-      try {
-        await codexSessionStore.set({
-          sessionId,
-          codexSessionId,
-          ...(codexConfig?.workdir ? { workdir: codexConfig.workdir } : {}),
-        });
-      } catch (err) {
-        log('failed to persist Codex session mapping', err);
-      }
-    }
-
     if (codexSessionId) {
-      const nextCwd = codexConfig?.workdir?.trim() || undefined;
-      const currentSessionId = storedCodexSession?.sessionId ?? '';
-      const currentCwd = storedCodexSession?.cwd ?? undefined;
-      if (codexSessionId !== currentSessionId || nextCwd !== currentCwd) {
-        try {
-          const providerPatch = buildProviderAttributesPatch('codex-cli', {
-            sessionId: codexSessionId,
-            ...(nextCwd ? { cwd: nextCwd } : {}),
-          }, ['codex']);
-          await sessionHub.updateSessionAttributes(sessionId, providerPatch);
-          storedCodexSession = { sessionId: codexSessionId, ...(nextCwd ? { cwd: nextCwd } : {}) };
-        } catch (err) {
-          log('failed to persist Codex session mapping', err);
-        }
-      }
+      await syncCodexSessionId(codexSessionId);
     }
 
     aborted = cliAborted;

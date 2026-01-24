@@ -11,6 +11,14 @@ import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
 import { getProviderAttributes } from './providerAttributes';
 
+const HISTORY_DEBUG = process.env['ASSISTANT_HISTORY_DEBUG'] === '1';
+const historyDebug = (...args: unknown[]): void => {
+  if (!HISTORY_DEBUG) {
+    return;
+  }
+  console.log('[history]', ...args);
+};
+
 export interface HistoryRequest {
   sessionId: string;
   agentId?: string;
@@ -130,7 +138,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -149,7 +157,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromClaudeSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
@@ -214,7 +222,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -233,7 +241,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
@@ -313,7 +321,7 @@ export class CodexSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return cached.events;
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -332,7 +340,7 @@ export class CodexSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromCodexSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return events;
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 
   private async resolveCodexSessionPath(
@@ -573,6 +581,216 @@ async function findCodexSessionFile(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isOverlayEvent(event: ChatEvent): boolean {
+  return (
+    event.type === 'interaction_request' ||
+    event.type === 'interaction_response' ||
+    event.type === 'interaction_pending'
+  );
+}
+
+function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return baseEvents;
+  }
+  const combined = [...baseEvents, ...overlayEvents].map((event, index) => ({
+    event,
+    order: index,
+  }));
+  combined.sort((a, b) => {
+    const diff = a.event.timestamp - b.event.timestamp;
+    if (diff !== 0) {
+      return diff;
+    }
+    return a.order - b.order;
+  });
+  return combined.map((item) => item.event);
+}
+
+async function mergeOverlayEvents(
+  baseEvents: ChatEvent[],
+  sessionId: string,
+  eventStore?: EventStore,
+): Promise<ChatEvent[]> {
+  if (!eventStore) {
+    return baseEvents;
+  }
+  const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayEvent);
+  const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
+  historyDebug('merge overlay events', {
+    sessionId,
+    baseCount: baseEvents.length,
+    overlayCount: overlayEvents.length,
+    alignedCount: alignedOverlayEvents.length,
+  });
+  return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
+}
+
+function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return overlayEvents;
+  }
+
+  const toolCallAnchors = new Map<
+    string,
+    { turnId?: string; responseId?: string; timestamp: number }
+  >();
+  const toolResultAnchors = new Map<
+    string,
+    { turnId?: string; responseId?: string; timestamp: number }
+  >();
+  const toolCallCandidates: Array<{
+    toolCallId: string;
+    toolName: string;
+    command?: string;
+    timestamp: number;
+    turnId?: string;
+    responseId?: string;
+  }> = [];
+
+  for (const event of baseEvents) {
+    if (event.type === 'tool_call') {
+      toolCallAnchors.set(event.payload.toolCallId, {
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+        timestamp: event.timestamp,
+      });
+      const args = event.payload.args as Record<string, unknown>;
+      const command =
+        args && typeof args === 'object' && typeof args['command'] === 'string'
+          ? String(args['command'])
+          : undefined;
+      toolCallCandidates.push({
+        toolCallId: event.payload.toolCallId,
+        toolName: event.payload.toolName,
+        ...(command ? { command } : {}),
+        timestamp: event.timestamp,
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+      });
+    } else if (event.type === 'tool_result') {
+      toolResultAnchors.set(event.payload.toolCallId, {
+        ...(event.turnId ? { turnId: event.turnId } : {}),
+        ...(event.responseId ? { responseId: event.responseId } : {}),
+        timestamp: event.timestamp,
+      });
+    }
+  }
+
+  return overlayEvents.map((event) => {
+    const payload = event.payload as { toolCallId?: string } | undefined;
+    const toolCallId = payload?.toolCallId;
+    if (!toolCallId) {
+      historyDebug('overlay event missing toolCallId', {
+        type: event.type,
+        id: event.id,
+        timestamp: event.timestamp,
+      });
+      return event;
+    }
+
+    const anchor = toolCallAnchors.get(toolCallId) ?? toolResultAnchors.get(toolCallId);
+    const fallbackAnchor =
+      anchor ?? matchOverlayToolCall(event, toolCallCandidates) ?? undefined;
+    if (!fallbackAnchor) {
+      historyDebug('overlay event missing anchor', {
+        toolCallId,
+        type: event.type,
+        id: event.id,
+        timestamp: event.timestamp,
+      });
+      return event;
+    }
+
+    let timestamp = event.timestamp;
+    if (event.type === 'interaction_response') {
+      const resultAnchor = toolResultAnchors.get(toolCallId) ?? fallbackAnchor;
+      timestamp = resultAnchor.timestamp + 1;
+    } else {
+      timestamp = fallbackAnchor.timestamp + 1;
+    }
+
+    historyDebug('overlay event aligned', {
+      toolCallId,
+      type: event.type,
+      id: event.id,
+      fromTimestamp: event.timestamp,
+      toTimestamp: timestamp,
+      turnId: fallbackAnchor.turnId ?? null,
+      responseId: fallbackAnchor.responseId ?? null,
+    });
+
+    return {
+      ...event,
+      timestamp,
+      ...(fallbackAnchor.turnId ? { turnId: fallbackAnchor.turnId } : {}),
+      ...(fallbackAnchor.responseId
+        ? { responseId: fallbackAnchor.responseId }
+        : {}),
+    };
+  });
+}
+
+function matchOverlayToolCall(
+  event: ChatEvent,
+  candidates: Array<{
+    toolCallId: string;
+    toolName: string;
+    command?: string;
+    timestamp: number;
+    turnId?: string;
+    responseId?: string;
+  }>,
+): { turnId?: string; responseId?: string; timestamp: number } | undefined {
+  const payload = event.payload as { toolName?: string } | undefined;
+  const toolName = payload?.toolName ?? '';
+  if (!toolName || candidates.length === 0) {
+    return undefined;
+  }
+
+  const normalizedCommandMatch = (command: string, needle: string): boolean =>
+    command.toLowerCase().includes(needle.toLowerCase());
+
+  const operationName =
+    toolName.startsWith('interactive_tools_') ? toolName.replace('interactive_tools_', '') : '';
+
+  const filtered = candidates.filter((candidate) => {
+    if (!candidate.command) {
+      return false;
+    }
+    if (toolName === 'questions_ask') {
+      return normalizedCommandMatch(candidate.command, 'questions-cli') &&
+        normalizedCommandMatch(candidate.command, 'ask');
+    }
+    if (operationName) {
+      return normalizedCommandMatch(candidate.command, 'interactive-tools-cli') &&
+        normalizedCommandMatch(candidate.command, operationName);
+    }
+    return normalizedCommandMatch(candidate.command, toolName);
+  });
+
+  if (filtered.length === 0) {
+    return undefined;
+  }
+
+  const targetTimestamp = event.timestamp;
+  let best = filtered[0]!;
+  let bestDelta = Math.abs(targetTimestamp - best.timestamp);
+  for (const candidate of filtered) {
+    const delta = Math.abs(targetTimestamp - candidate.timestamp);
+    if (delta < bestDelta) {
+      best = candidate;
+      bestDelta = delta;
+    }
+  }
+
+  return {
+    ...(best.turnId ? { turnId: best.turnId } : {}),
+    ...(best.responseId ? { responseId: best.responseId } : {}),
+    timestamp: best.timestamp,
+  };
 }
 
 function buildChatEventsFromClaudeSession(content: string, sessionId: string): ChatEvent[] {

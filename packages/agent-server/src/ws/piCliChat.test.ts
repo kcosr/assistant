@@ -79,6 +79,32 @@ describe('runPiCliChat', () => {
     expect(args[args.length - 1]).toBe('hello');
   });
 
+  it('injects ASSISTANT_SESSION_ID into the pi environment', async () => {
+    const child = new FakePiProcess();
+    let capturedEnv: SpawnOptionsWithoutStdio['env'] | undefined;
+
+    const spawnFn: PiCliSpawn = (_command, _args, options) => {
+      capturedEnv = options.env;
+      return child as unknown as ReturnType<PiCliSpawn>;
+    };
+
+    const promise = runPiCliChat({
+      sessionId: 'session-1',
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(capturedEnv?.['ASSISTANT_SESSION_ID']).toBe('session-1');
+  });
+
   it('streams message_update text_delta events as text deltas', async () => {
     const child = new FakePiProcess();
     const deltas: string[] = [];

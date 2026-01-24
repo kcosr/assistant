@@ -12,6 +12,7 @@ import {
   PiSessionHistoryProvider,
 } from './historyProvider';
 import type { AgentDefinition } from '../agents';
+import type { EventStore } from '../events';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
@@ -137,6 +138,95 @@ describe('PiSessionHistoryProvider', () => {
       | undefined;
     expect(toolResult?.payload.toolCallId).toBe('tool-1');
     expect(Array.isArray(toolResult?.payload.result)).toBe(true);
+  });
+
+  it('merges overlay interaction events from the event store', async () => {
+    const baseDir = await createTempDir('pi-session-history');
+    const sessionId = 'session-2';
+    const piSessionId = 'pi-session-2';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-19T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-1',
+          content: 'Hello there',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvent: ChatEvent = {
+      id: 'interaction-1',
+      timestamp: Date.now(),
+      sessionId,
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+    const pendingEvent: ChatEvent = {
+      id: 'interaction-pending-1',
+      timestamp: Date.now(),
+      sessionId,
+      type: 'interaction_pending',
+      payload: {
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        pending: true,
+        presentation: 'questionnaire',
+      },
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => [overlayEvent, pendingEvent],
+      getEventsSince: async () => [overlayEvent, pendingEvent],
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi CLI',
+      chat: {
+        provider: 'pi-cli',
+      },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.some((event) => event.type === 'interaction_request')).toBe(true);
+    expect(events.some((event) => event.type === 'interaction_pending')).toBe(true);
   });
 
   it('treats sessions with provider metadata as external history', async () => {
@@ -475,6 +565,201 @@ describe('CodexSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'assistant_done' }>
       | undefined;
     expect(assistant?.payload.text).toBe('Hi back');
+  });
+
+  it('aligns overlay interactions with matching tool calls', async () => {
+    const baseDir = await createTempDir('codex-session-overlay');
+    const sessionId = 'session-overlay';
+    const codexSessionId = 'codex-session-overlay';
+    const sessionDir = path.join(baseDir, '2026', '01', '19');
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(
+      sessionDir,
+      `rollout-2026-01-19T00-00-00-000Z-${codexSessionId}.jsonl`,
+    );
+    const lines = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'shell_command',
+          arguments: '{"command":"ls"}',
+          call_id: 'call-overlay',
+        },
+        timestamp: 1000,
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: 'Done',
+        },
+        timestamp: 2000,
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvent: ChatEvent = {
+      id: 'interaction-overlay',
+      timestamp: 3000,
+      sessionId,
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'call-overlay',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-overlay',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => [overlayEvent],
+      getEventsSince: async () => [overlayEvent],
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new CodexSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: codexSessionId,
+          },
+        },
+      },
+    });
+
+    const toolIndex = events.findIndex(
+      (event) => event.type === 'tool_call' && event.payload.toolCallId === 'call-overlay',
+    );
+    const interactionIndex = events.findIndex(
+      (event) => event.type === 'interaction_request' && event.payload.toolCallId === 'call-overlay',
+    );
+    const assistantIndex = events.findIndex((event) => event.type === 'assistant_done');
+
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(interactionIndex).toBeGreaterThanOrEqual(0);
+    expect(assistantIndex).toBeGreaterThanOrEqual(0);
+    expect(toolIndex).toBeLessThan(interactionIndex);
+    expect(interactionIndex).toBeLessThan(assistantIndex);
+
+    const toolCall = events[toolIndex] as Extract<ChatEvent, { type: 'tool_call' }>;
+    const interaction = events[interactionIndex] as Extract<
+      ChatEvent,
+      { type: 'interaction_request' }
+    >;
+    expect(interaction.turnId).toBe(toolCall.turnId);
+    expect(interaction.responseId).toBe(toolCall.responseId);
+  });
+
+  it('aligns overlay interactions by command when toolCallId differs', async () => {
+    const baseDir = await createTempDir('codex-session-overlay-command');
+    const sessionId = 'session-overlay-command';
+    const codexSessionId = 'codex-session-command';
+    const sessionDir = path.join(baseDir, '2026', '01', '24');
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(
+      sessionDir,
+      `rollout-2026-01-24T00-00-00-000Z-${codexSessionId}.jsonl`,
+    );
+    const lines = [
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'shell_command',
+          arguments: '{"command":"/home/kevin/skills/personal/private/assistant/questions/questions-cli ask --prompt \\"Test questionnaire\\" --schema \\"{}\\""}',
+          call_id: 'call-command',
+        },
+        timestamp: 1000,
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: 'Done',
+        },
+        timestamp: 2000,
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvent: ChatEvent = {
+      id: 'interaction-command',
+      timestamp: 3000,
+      sessionId,
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'overlay-id',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-command',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => [overlayEvent],
+      getEventsSince: async () => [overlayEvent],
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new CodexSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: codexSessionId,
+          },
+        },
+      },
+    });
+
+    const toolIndex = events.findIndex(
+      (event) => event.type === 'tool_call' && event.payload.toolCallId === 'call-command',
+    );
+    const interactionIndex = events.findIndex(
+      (event) =>
+        event.type === 'interaction_request' && event.payload.toolCallId === 'overlay-id',
+    );
+    const assistantIndex = events.findIndex((event) => event.type === 'assistant_done');
+
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    expect(interactionIndex).toBeGreaterThanOrEqual(0);
+    expect(assistantIndex).toBeGreaterThanOrEqual(0);
+    expect(toolIndex).toBeLessThan(interactionIndex);
+    expect(interactionIndex).toBeLessThan(assistantIndex);
+
+    const toolCall = events[toolIndex] as Extract<ChatEvent, { type: 'tool_call' }>;
+    const interaction = events[interactionIndex] as Extract<
+      ChatEvent,
+      { type: 'interaction_request' }
+    >;
+    expect(interaction.turnId).toBe(toolCall.turnId);
+    expect(interaction.responseId).toBe(toolCall.responseId);
   });
 
   it('treats sessions with provider metadata as external history', async () => {

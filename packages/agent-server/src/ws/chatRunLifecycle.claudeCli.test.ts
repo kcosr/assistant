@@ -32,7 +32,7 @@ function createTestEventStore(): EventStore {
 
 describe('handleTextInputWithChatCompletions (claude-cli)', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('streams claude deltas as text_delta and finishes with text_done', async () => {
@@ -54,6 +54,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes: async () => undefined,
       // Queue-related methods are not exercised in these tests.
       queueMessage: async () => {
@@ -124,6 +125,74 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     expect(sendError).not.toHaveBeenCalled();
   });
 
+  it('persists Claude session mapping before running', async () => {
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'claude',
+        displayName: 'Claude',
+        description: 'Claude CLI',
+        chat: { provider: 'claude-cli' },
+      },
+    ]);
+
+    const updateSessionAttributes = vi.fn(async () => undefined);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      recordCliToolCall: () => undefined,
+      updateSessionAttributes,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: { sessionId: 's1', title: 't', createdAt: '', updatedAt: '', deleted: false },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    (state.summary as unknown as { agentId?: string }).agentId = 'claude';
+
+    vi.mocked(runClaudeCliChat).mockResolvedValueOnce({ text: 'ok', aborted: false });
+
+    await handleTextInputWithChatCompletions({
+      ready: true,
+      message: { type: 'text_input', text: 'hi', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      openaiClient: {} as OpenAI,
+      config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: vi.fn(),
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(updateSessionAttributes).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        providers: {
+          'claude-cli': expect.objectContaining({
+            sessionId: 's1',
+            cwd: expect.any(String),
+          }),
+        },
+      }),
+    );
+  });
+
   it('uses --resume semantics after the first user message', async () => {
     const agentRegistry = new AgentRegistry([
       {
@@ -139,6 +208,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       broadcastToSession: () => undefined,
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes: async (_sessionId: string, patch: unknown) => {
         const summary = state.summary as unknown as { attributes?: Record<string, unknown> };
         const current = summary.attributes ?? {};
@@ -248,6 +318,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes: async (_sessionId: string, patch: unknown) => {
         const summary = state.summary as unknown as { attributes?: Record<string, unknown> };
         const current = summary.attributes ?? {};
@@ -368,6 +439,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       broadcastToSession,
       broadcastToSessionExcluding,
       recordSessionActivity,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes: async () => undefined,
       queueMessage,
       dequeueMessageById: async () => undefined,
@@ -459,6 +531,7 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
       },
       broadcastToSessionExcluding: () => undefined,
       recordSessionActivity: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes: async () => undefined,
       queueMessage: async () => {
         throw new Error('queueMessage should not be called in this test');

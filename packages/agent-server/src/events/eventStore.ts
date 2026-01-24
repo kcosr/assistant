@@ -264,12 +264,23 @@ export class SessionScopedEventStore implements EventStore {
     private readonly sessionHub: SessionHub,
   ) {}
 
+  private isOverlayEvent(event: ChatEvent): boolean {
+    return (
+      event.type === 'interaction_request' ||
+      event.type === 'interaction_response' ||
+      event.type === 'interaction_pending'
+    );
+  }
+
   async append(sessionId: string, event: ChatEvent): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
     if (await this.shouldPersist(trimmed)) {
       return this.base.append(trimmed, event);
     }
     this.validateEventForSession(trimmed, event);
+    if (this.isOverlayEvent(event)) {
+      return this.base.append(trimmed, event);
+    }
   }
 
   async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
@@ -283,22 +294,28 @@ export class SessionScopedEventStore implements EventStore {
     for (const event of events) {
       this.validateEventForSession(trimmed, event);
     }
+    const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
+    if (overlayEvents.length > 0) {
+      return this.base.appendBatch(trimmed, overlayEvents);
+    }
   }
 
   async getEvents(sessionId: string): Promise<ChatEvent[]> {
     const trimmed = this.normaliseSessionId(sessionId);
-    if (!(await this.shouldPersist(trimmed))) {
-      return [];
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.getEvents(trimmed);
     }
-    return this.base.getEvents(trimmed);
+    const events = await this.base.getEvents(trimmed);
+    return events.filter((event) => this.isOverlayEvent(event));
   }
 
   async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
     const trimmed = this.normaliseSessionId(sessionId);
-    if (!(await this.shouldPersist(trimmed))) {
-      return [];
+    if (await this.shouldPersist(trimmed)) {
+      return this.base.getEventsSince(trimmed, afterEventId);
     }
-    return this.base.getEventsSince(trimmed, afterEventId);
+    const events = await this.base.getEventsSince(trimmed, afterEventId);
+    return events.filter((event) => this.isOverlayEvent(event));
   }
 
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void {

@@ -22,6 +22,7 @@ const EXIT_UNKNOWN_ERROR = 1;
 
 const DEFAULT_HTTP_METHOD = 'POST';
 const DEFAULT_HTTP_PREFIX = '/operations';
+const SESSION_ID_ENV_VAR = 'ASSISTANT_SESSION_ID';
 
 const MISSING_CONFIG_MESSAGE =
   'AI assistant configuration not found. Set ASSISTANT_URL or create assistant.config.(json|yaml|yml).';
@@ -54,7 +55,7 @@ export async function runPluginCli(options: {
       .option('session-id', {
         alias: 's',
         type: 'string',
-        describe: 'Session id for session-scoped operations',
+        describe: `Session id for session-scoped operations (defaults to ${SESSION_ID_ENV_VAR}).`,
       })
       .exitProcess(false)
       .fail((msg: string, err: Error | undefined) => {
@@ -175,10 +176,12 @@ function createCommand(
       }
 
       const { path, method, query, body } = buildHttpRequest(operation, args, pluginId);
-      const sessionId =
+      const cliSessionId =
         typeof (argv as { sessionId?: string }).sessionId === 'string'
           ? (argv as { sessionId?: string }).sessionId?.trim()
           : '';
+      const envSessionId = process.env[SESSION_ID_ENV_VAR]?.trim() ?? '';
+      const sessionId = cliSessionId || envSessionId;
       const headers = sessionId ? { 'x-session-id': sessionId } : undefined;
       const result = await httpRequest<unknown>(config, {
         path,

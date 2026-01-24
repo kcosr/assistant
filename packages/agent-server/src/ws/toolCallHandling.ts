@@ -15,6 +15,7 @@ import {
   emitToolCallEvent,
   emitToolOutputChunkEvent,
   emitToolResultEvent,
+  emitInteractionPendingEvent,
   emitInteractionRequestEvent,
   emitInteractionResponseEvent,
 } from '../events/chatEventUtils';
@@ -148,7 +149,7 @@ function extractTruncationSummary(result: unknown): ToolTruncationSummary | null
 
 const DEFAULT_INTERACTION_TIMEOUT_MS = 5 * 60_000;
 
-function interactionUnavailableError(request: InteractionRequest): ToolError {
+export function interactionUnavailableError(request: InteractionRequest): ToolError {
   const message =
     request.type === 'approval'
       ? 'Approval required but no interactive client is available to respond.'
@@ -156,7 +157,7 @@ function interactionUnavailableError(request: InteractionRequest): ToolError {
   return new ToolError('interaction_unavailable', message);
 }
 
-async function executeInteraction(options: {
+export async function executeInteraction(options: {
   request: InteractionRequest;
   context: {
     sessionId: string;
@@ -176,9 +177,45 @@ async function executeInteraction(options: {
   const registry = sessionHub.getInteractionRegistry();
 
   let currentRequest: InteractionRequest = request;
+  let pendingActive = false;
+  const setPending = (pending: boolean, presentation?: 'tool' | 'questionnaire'): void => {
+    if (pendingActive === pending) {
+      return;
+    }
+    pendingActive = pending;
+    emitInteractionPendingEvent({
+      ...(eventStore ? { eventStore } : {}),
+      sessionHub,
+      sessionId,
+      ...(turnId ? { turnId } : {}),
+      ...(responseId ? { responseId } : {}),
+      toolCallId: callId,
+      toolName,
+      pending,
+      ...(presentation ? { presentation } : {}),
+    });
+  };
 
   while (true) {
     const interactionId = randomUUID();
+    const availability = sessionHub.getInteractionAvailability(sessionId);
+    setPending(true, currentRequest.presentation);
+
+    console.log('[interaction] request', {
+      sessionId,
+      callId,
+      toolName,
+      interactionId,
+      type: currentRequest.type,
+      presentation: currentRequest.presentation ?? 'tool',
+      hasInputSchema: Boolean(currentRequest.inputSchema),
+      timeoutMs: currentRequest.timeoutMs ?? DEFAULT_INTERACTION_TIMEOUT_MS,
+      turnId: turnId ?? null,
+      responseId: responseId ?? null,
+      available: availability.available,
+      supportedCount: availability.supportedCount,
+      enabledCount: availability.enabledCount,
+    });
 
     emitInteractionRequestEvent({
       ...(eventStore ? { eventStore } : {}),
@@ -202,6 +239,11 @@ async function executeInteraction(options: {
 
     let userResponse: UserResponse;
     try {
+      console.log('[interaction] awaiting response', {
+        sessionId,
+        callId,
+        interactionId,
+      });
       userResponse = await registry.waitForResponse({
         sessionId,
         callId,
@@ -215,6 +257,7 @@ async function executeInteraction(options: {
           if (currentRequest.onTimeout) {
             const outcome = await currentRequest.onTimeout();
             if ('complete' in outcome) {
+              setPending(false, currentRequest.presentation);
               return outcome.complete;
             }
             if ('reprompt' in outcome) {
@@ -227,6 +270,7 @@ async function executeInteraction(options: {
               continue;
             }
             if ('pending' in outcome) {
+              setPending(false, currentRequest.presentation);
               return {
                 pending: true,
                 message: outcome.pending.message,
@@ -234,13 +278,16 @@ async function executeInteraction(options: {
               };
             }
           }
+          setPending(false, currentRequest.presentation);
           throw new ToolError('interaction_timeout', 'Interaction timed out');
         }
         if (err.code === 'cancelled') {
           currentRequest.onCancel?.();
+          setPending(false, currentRequest.presentation);
           throw new ToolError('tool_aborted', 'Tool execution aborted');
         }
       }
+      setPending(false, currentRequest.presentation);
       throw err;
     }
 
@@ -258,13 +305,24 @@ async function executeInteraction(options: {
       ...(userResponse.reason ? { reason: userResponse.reason } : {}),
     });
 
+    console.log('[interaction] response received', {
+      sessionId,
+      callId,
+      interactionId,
+      action: userResponse.action,
+      hasInput: Boolean(userResponse.input),
+    });
+
     const outcome = await currentRequest.onResponse(userResponse);
 
     if ('complete' in outcome) {
+      console.log('[interaction] outcome complete', { sessionId, callId, interactionId });
+      setPending(false, currentRequest.presentation);
       return outcome.complete;
     }
 
     if ('reprompt' in outcome) {
+      console.log('[interaction] outcome reprompt', { sessionId, callId, interactionId });
       currentRequest = {
         ...outcome.reprompt,
         onResponse: currentRequest.onResponse,
@@ -275,6 +333,8 @@ async function executeInteraction(options: {
     }
 
     if ('pending' in outcome) {
+      console.log('[interaction] outcome pending', { sessionId, callId, interactionId });
+      setPending(false, currentRequest.presentation);
       return {
         pending: true,
         message: outcome.pending.message,

@@ -237,6 +237,14 @@ export const InteractionResponsePayloadSchema = z.object({
 });
 export type InteractionResponsePayload = z.infer<typeof InteractionResponsePayloadSchema>;
 
+export const InteractionPendingPayloadSchema = z.object({
+  toolCallId: z.string(),
+  toolName: z.string(),
+  pending: z.boolean(),
+  presentation: InteractionPresentationSchema.optional(),
+});
+export type InteractionPendingPayload = z.infer<typeof InteractionPendingPayloadSchema>;
+
 export const ToolOutputChunkStreamSchema = z.enum(['stdout', 'stderr', 'output']);
 export type ToolOutputChunkStream = z.infer<typeof ToolOutputChunkStreamSchema>;
 
@@ -416,6 +424,11 @@ export const InteractionResponseEventSchema = ChatEventBaseSchema.extend({
   payload: InteractionResponsePayloadSchema,
 });
 
+export const InteractionPendingEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('interaction_pending'),
+  payload: InteractionPendingPayloadSchema,
+});
+
 export const AgentMessageEventSchema = ChatEventBaseSchema.extend({
   type: z.literal('agent_message'),
   payload: AgentMessagePayloadSchema,
@@ -468,6 +481,7 @@ export const ChatEventSchema = z.discriminatedUnion('type', [
   ToolResultEventSchema,
   InteractionRequestEventSchema,
   InteractionResponseEventSchema,
+  InteractionPendingEventSchema,
   AgentMessageEventSchema,
   AgentCallbackEventSchema,
   AgentSwitchEventSchema,
@@ -495,6 +509,7 @@ export type ToolOutputChunkEvent = z.infer<typeof ToolOutputChunkEventSchema>;
 export type ToolResultEvent = z.infer<typeof ToolResultEventSchema>;
 export type InteractionRequestEvent = z.infer<typeof InteractionRequestEventSchema>;
 export type InteractionResponseEvent = z.infer<typeof InteractionResponseEventSchema>;
+export type InteractionPendingEvent = z.infer<typeof InteractionPendingEventSchema>;
 export type AgentMessageEvent = z.infer<typeof AgentMessageEventSchema>;
 export type AgentCallbackEvent = z.infer<typeof AgentCallbackEventSchema>;
 export type AgentSwitchEvent = z.infer<typeof AgentSwitchEventSchema>;

@@ -242,7 +242,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc1"]');
     expect(toolBlock).not.toBeNull();
     if (!toolBlock) return;
 
@@ -334,6 +334,52 @@ describe('ChatRenderer', () => {
       }),
     );
     expect(renderer.hasActiveOutput()).toBe(false);
+  });
+
+  it('suppresses typing indicator while interaction is pending', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.showTypingIndicator();
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_pending', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          pending: true,
+          presentation: 'questionnaire',
+        },
+      }),
+    );
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      false,
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_pending', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          pending: false,
+          presentation: 'questionnaire',
+        },
+      }),
+    );
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
   });
 
   it('shows agent attribution for user_message events from agents', () => {
@@ -541,7 +587,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc1"]');
     expect(toolBlock).not.toBeNull();
     expect(toolBlock?.classList.contains('pending')).toBe(true);
 
@@ -678,6 +724,191 @@ describe('ChatRenderer', () => {
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
   });
 
+  it('renders tool calls and questionnaires without responseId', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          args: { prompt: 'Question?' },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    expect(container.querySelector('.tool-output-block')).not.toBeNull();
+    expect(container.querySelector('.interaction-standalone')).not.toBeNull();
+  });
+
+  it('inserts questionnaires after tool blocks even when responseId is missing', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          args: { prompt: 'Question?' },
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e2',
+        payload: {
+          text: 'Thanks, I will ask a question.',
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'ask_user',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Quick question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const toolCalls = container.querySelector<HTMLDivElement>('.tool-calls');
+    const interaction = container.querySelector<HTMLDivElement>('.interaction-standalone');
+    const assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+
+    expect(toolCalls).not.toBeNull();
+    expect(interaction).not.toBeNull();
+    expect(assistantText).not.toBeNull();
+    expect(toolCalls?.contains(interaction!)).toBe(true);
+
+    if (!toolCalls || !assistantText) return;
+    const response = toolCalls.closest<HTMLDivElement>('.assistant-response');
+    expect(response).not.toBeNull();
+    if (!response) return;
+
+    const children = Array.from(response.children);
+    const toolIndex = children.indexOf(toolCalls);
+    const textIndex = children.indexOf(assistantText);
+    expect(toolIndex).toBeLessThan(textIndex);
+  });
+
+  it('ungroups questionnaire tool calls from preceding tool groups', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'bash',
+          args: { command: 'echo test' },
+        },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          args: { prompt: 'Ask?' },
+        },
+      }),
+    );
+
+    const grouped = container.querySelectorAll('.tool-call-group');
+    expect(grouped.length).toBeGreaterThan(0);
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+          },
+        },
+      }),
+    );
+
+    const groupContent = container.querySelector('.tool-call-group-content');
+    if (groupContent) {
+      expect(groupContent.querySelector('[data-tool-call-id="tc2"]')).toBeNull();
+    }
+    expect(container.querySelector('[data-tool-call-id="tc2"]')).not.toBeNull();
+  });
+
+  it('inserts tool call containers before later text segments', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const responseEl = (renderer as any).getOrCreateAssistantResponseContainer('t1', 'e1', 'r1');
+
+    const text0 = document.createElement('div');
+    text0.className = 'assistant-text';
+    text0.dataset['segment'] = '0';
+    responseEl.appendChild(text0);
+
+    const text1 = document.createElement('div');
+    text1.className = 'assistant-text';
+    text1.dataset['segment'] = '1';
+    responseEl.appendChild(text1);
+
+    const toolCalls = (renderer as any).getOrCreateToolCallsContainer(responseEl, 'r1');
+
+    const children = Array.from(responseEl.children);
+    const toolIndex = children.indexOf(toolCalls);
+    const text0Index = children.indexOf(text0);
+    const text1Index = children.indexOf(text1);
+
+    expect(text0Index).toBeLessThan(toolIndex);
+    expect(toolIndex).toBeLessThan(text1Index);
+  });
+
   it('attaches approval interactions to tool blocks and tracks pending state', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
@@ -732,9 +963,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock.classList.contains('has-pending-approval')).toBe(true);
 
     const group = container.querySelector<HTMLDivElement>('.tool-call-group');
-    expect(group).not.toBeNull();
-    expect(group?.classList.contains('has-pending-interaction')).toBe(true);
-    expect(group?.classList.contains('has-pending-approval')).toBe(true);
+    expect(group).toBeNull();
 
     renderer.renderEvent(
       createBaseEvent('interaction_response', {
@@ -752,8 +981,172 @@ describe('ChatRenderer', () => {
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
     expect(toolBlock.classList.contains('has-pending-interaction')).toBe(false);
     expect(toolBlock.classList.contains('has-pending-approval')).toBe(false);
-    expect(group?.classList.contains('has-pending-interaction')).toBe(false);
-    expect(group?.classList.contains('has-pending-approval')).toBe(false);
+    expect(group).toBeNull();
+  });
+
+  it('cancels approval interaction when the tool fails', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'dangerous_action',
+          interactionId: 'i1',
+          interactionType: 'approval',
+          prompt: 'Allow this action?',
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc1',
+          error: { code: 'tool_error', message: 'Timed out' },
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>('.interaction-approval');
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+
+    const summary = interaction?.querySelector<HTMLElement>('.interaction-summary');
+    expect(summary?.textContent).toBe('Timed out');
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock?.classList.contains('has-pending-approval')).toBe(false);
+  });
+
+  it('renders approval interaction on replay even without tool_call event', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-approval',
+          toolName: 'files_read',
+          interactionId: 'i-approval',
+          interactionType: 'approval',
+          presentation: 'tool',
+        },
+      }),
+    ]);
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock).not.toBeNull();
+    expect(toolBlock?.dataset['toolCallId']).toBe('tc-approval');
+    expect(toolBlock?.querySelector('.interaction-approval')).not.toBeNull();
+  });
+
+  it('keeps approval tool calls out of tool-call groups', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'primary_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'dangerous_action',
+          args: { confirm: true },
+        },
+      }),
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'dangerous_action',
+          interactionId: 'i-approval',
+          interactionType: 'approval',
+          prompt: 'Allow this action?',
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e4',
+        payload: {
+          toolCallId: 'tc3',
+          toolName: 'secondary_action',
+          args: { confirm: false },
+        },
+      }),
+    ]);
+
+    const approvalBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc2"]');
+    expect(approvalBlock).not.toBeNull();
+    expect(approvalBlock?.closest('.tool-call-group')).toBeNull();
+
+    const followUpBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc3"]');
+    expect(followUpBlock).not.toBeNull();
+    expect(followUpBlock?.closest('.tool-call-group')).toBeNull();
+  });
+
+  it('does not create a tool block for questionnaire tool_result without tool_call', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-question',
+          toolName: 'questions_ask',
+          interactionId: 'i-question',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-question',
+          result: { answers: { answer: 'ok' } },
+        },
+      }),
+    ]);
+
+    expect(
+      container.querySelector('.tool-output-block[data-tool-call-id="tc-question"]'),
+    ).toBeNull();
+    expect(container.querySelector('.interaction-standalone')).not.toBeNull();
   });
 
   it('creates a new thinking block after tool calls', () => {

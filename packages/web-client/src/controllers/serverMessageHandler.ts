@@ -90,6 +90,7 @@ export interface ServerMessageHandlerOptions {
 
 export class ServerMessageHandler {
   private readonly queuedMessageBubbles = new Map<string, HTMLDivElement>();
+  private readonly pendingInteractionsBySession = new Map<string, Set<string>>();
 
   constructor(private readonly options: ServerMessageHandlerOptions) {}
 
@@ -143,12 +144,28 @@ export class ServerMessageHandler {
         const event: ChatEvent = chatEventMessage.event;
 
         if (sessionId) {
-          if (
+          if (event.type === 'interaction_pending') {
+            const pendingSet =
+              this.pendingInteractionsBySession.get(sessionId) ?? new Set<string>();
+            if (event.payload.pending) {
+              pendingSet.add(event.payload.toolCallId);
+              this.pendingInteractionsBySession.set(sessionId, pendingSet);
+              this.options.hideSessionTypingIndicator(sessionId);
+            } else {
+              pendingSet.delete(event.payload.toolCallId);
+              if (pendingSet.size === 0) {
+                this.pendingInteractionsBySession.delete(sessionId);
+                this.options.hideSessionTypingIndicator(sessionId);
+              }
+            }
+          } else if (
             event.type === 'assistant_chunk' ||
             event.type === 'thinking_chunk' ||
             event.type === 'tool_call'
           ) {
-            this.options.showSessionTypingIndicator(sessionId);
+            if (!this.pendingInteractionsBySession.has(sessionId)) {
+              this.options.showSessionTypingIndicator(sessionId);
+            }
           } else if (
             event.type === 'assistant_done' ||
             event.type === 'turn_end' ||
@@ -173,13 +190,23 @@ export class ServerMessageHandler {
           break;
         }
 
-        if (
+        if (event.type === 'interaction_pending') {
+          if (event.payload.pending) {
+            runtime.chatRenderer.hideTypingIndicator();
+            this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+          } else {
+            runtime.chatRenderer.hideTypingIndicator();
+            this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+          }
+        } else if (
           event.type === 'assistant_chunk' ||
           event.type === 'thinking_chunk' ||
           event.type === 'tool_call'
         ) {
-          runtime.chatRenderer.showTypingIndicator();
-          this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
+          if (!this.pendingInteractionsBySession.has(sessionId)) {
+            runtime.chatRenderer.showTypingIndicator();
+            this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
+          }
         } else if (
           event.type === 'assistant_done' ||
           event.type === 'turn_end' ||

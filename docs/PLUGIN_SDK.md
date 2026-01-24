@@ -133,8 +133,8 @@ by `npm run build:plugins`. Some core panels are still bundled from
 `npm run bundle` (which runs `npm run bundle:plugins`).
 
 This repo ships core plugins (`agents`, `sessions`, `panels`), official plugins (`artifacts`,
-`diff`, `files`, `links`, `lists`, `notes`, `terminal`, `time-tracker`, `url-fetch`), and
-examples (`hello`, `session-info`).
+`diff`, `files`, `links`, `lists`, `notes`, `questions`, `terminal`, `time-tracker`, `url-fetch`),
+and examples (`hello`, `session-info`).
 Enable them with:
 
 ```json

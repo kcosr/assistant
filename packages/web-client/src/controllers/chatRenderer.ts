@@ -8,6 +8,7 @@ import type {
   ErrorEvent,
   InteractionRequestEvent,
   InteractionResponseEvent,
+  InteractionPendingEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
   ToolCallEvent,
@@ -73,6 +74,7 @@ export class ChatRenderer {
   private readonly thinkingElements = new Map<string, HTMLDivElement>();
   private readonly thinkingTextBuffers = new Map<string, string>();
   private readonly toolCallElements = new Map<string, HTMLDivElement>();
+  private readonly toolCallContainers = new Map<string, HTMLDivElement>();
   private readonly toolInputBuffers = new Map<string, string>();
   private readonly toolInputOffsets = new Map<string, number>();
   private readonly toolOutputBuffers = new Map<string, string>();
@@ -81,6 +83,9 @@ export class ChatRenderer {
   private readonly agentMessageElements = new Map<string, HTMLDivElement>();
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
+  private readonly questionnaireToolCalls = new Set<string>();
+  private readonly standaloneToolCalls = new Set<string>();
+  private readonly pendingInteractionToolCalls = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
     string,
     { payload: InteractionRequestEvent['payload']; sessionId: string }
@@ -92,6 +97,8 @@ export class ChatRenderer {
   // Track text segment index per response.
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
+  private debugEnabled: boolean | null = null;
+  private suppressTypingIndicator = false;
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -100,6 +107,31 @@ export class ChatRenderer {
 
   get isStreaming(): boolean {
     return this._isStreaming;
+  }
+
+  private isDebugEnabled(): boolean {
+    if (this.debugEnabled !== null) {
+      return this.debugEnabled;
+    }
+    if (typeof window === 'undefined') {
+      this.debugEnabled = false;
+      return this.debugEnabled;
+    }
+    try {
+      const stored = window.localStorage?.getItem('aiAssistantWsDebug');
+      this.debugEnabled = stored === '1' || stored === 'true';
+      return this.debugEnabled;
+    } catch {
+      this.debugEnabled = false;
+      return this.debugEnabled;
+    }
+  }
+
+  private debugLog(message: string, data: Record<string, unknown>): void {
+    if (!this.isDebugEnabled()) {
+      return;
+    }
+    console.log(`[ChatRenderer] ${message}`, data);
   }
 
   hasActiveOutput(): boolean {
@@ -133,6 +165,9 @@ export class ChatRenderer {
   }
 
   showTypingIndicator(): void {
+    if (this.suppressTypingIndicator) {
+      return;
+    }
     this._isStreaming = true;
     if (!this.typingIndicator) {
       this.typingIndicator = document.createElement('div');
@@ -153,6 +188,28 @@ export class ChatRenderer {
   }
 
   renderEvent(event: ChatEvent): void {
+    if (
+      event.type === 'tool_call' ||
+      event.type === 'assistant_chunk' ||
+      event.type === 'assistant_done' ||
+      event.type === 'interaction_request'
+    ) {
+      const toolCallId =
+        (event.type === 'tool_call' || event.type === 'interaction_request') &&
+        event.payload &&
+        typeof event.payload === 'object'
+          ? (event.payload as { toolCallId?: string }).toolCallId ?? null
+          : null;
+      this.debugLog('event', {
+        type: event.type,
+        id: event.id,
+        timestamp: event.timestamp,
+        turnId: event.turnId ?? null,
+        responseId: event.responseId ?? null,
+        toolCallId,
+      });
+    }
+
     switch (event.type) {
       case 'turn_start':
         this.handleTurnStart(event);
@@ -202,6 +259,9 @@ export class ChatRenderer {
       case 'interaction_response':
         this.handleInteractionResponse(event);
         break;
+      case 'interaction_pending':
+        this.handleInteractionPending(event);
+        break;
       case 'agent_message':
         this.handleAgentMessage(event);
         break;
@@ -242,6 +302,7 @@ export class ChatRenderer {
     this.thinkingElements.clear();
     this.thinkingTextBuffers.clear();
     this.toolCallElements.clear();
+    this.toolCallContainers.clear();
     this.toolInputBuffers.clear();
     this.toolInputOffsets.clear();
     this.toolOutputBuffers.clear();
@@ -253,6 +314,10 @@ export class ChatRenderer {
     this.pendingInteractionRequests.clear();
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
+    this.questionnaireToolCalls.clear();
+    this.standaloneToolCalls.clear();
+    this.pendingInteractionToolCalls.clear();
+    this.suppressTypingIndicator = false;
   }
 
   private handleTurnStart(event: TurnStartEvent): void {
@@ -475,10 +540,6 @@ export class ChatRenderer {
 
   private handleToolCall(event: ToolCallEvent): void {
     const responseId = this.getResponseId(event.responseId);
-    if (!responseId) {
-      return;
-    }
-
     const callId = event.payload.toolCallId;
     const toolName = event.payload.toolName;
     const args = event.payload.args ?? {};
@@ -536,11 +597,7 @@ export class ChatRenderer {
       }
     } else {
       // Create new block
-      const responseEl = this.getOrCreateAssistantResponseContainer(
-        event.turnId,
-        event.id,
-        responseId,
-      );
+      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
 
       // Use styled agent block for agents_message
       if (isAgentMessageTool) {
@@ -575,7 +632,7 @@ export class ChatRenderer {
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
 
-      this.appendToolCallBlock(responseEl, responseId, block, toolName);
+      this.appendToolCallBlock(responseEl, responseId ?? undefined, block, toolName);
       this.toolCallElements.set(callId, block);
     }
 
@@ -601,6 +658,10 @@ export class ChatRenderer {
       const pendingInteraction = this.pendingInteractionRequests.get(callId);
       if (pendingInteraction) {
         this.pendingInteractionRequests.delete(callId);
+        if (pendingInteraction.payload.interactionType === 'approval') {
+          this.standaloneToolCalls.add(callId);
+          this.ungroupToolBlockIfNeeded(callId);
+        }
         const enabled = this.options.getInteractionEnabled?.() ?? true;
         this.attachInteractionToToolBlock(
           block,
@@ -651,16 +712,7 @@ export class ChatRenderer {
     if (!block) {
       // Create the block early so we can show streaming input
       const responseId = this.getResponseId(event.responseId);
-      if (!responseId) {
-        // Can't create block without responseId - just buffer
-        return;
-      }
-
-      const responseEl = this.getOrCreateAssistantResponseContainer(
-        event.turnId,
-        event.id,
-        responseId,
-      );
+      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
 
       const headerLabel = extractToolCallLabel(toolName, '');
       block = createToolOutputBlock({
@@ -675,14 +727,16 @@ export class ChatRenderer {
       block.dataset['renderer'] = 'unified';
       block.classList.add('streaming-input');
 
-      this.appendToolCallBlock(responseEl, responseId, block, toolName);
+      this.appendToolCallBlock(responseEl, responseId ?? undefined, block, toolName);
       this.toolCallElements.set(callId, block);
 
       // Show initial pending state
       setToolOutputBlockPending(block, '', { state: 'running' });
 
       // Mark text segment break for the next assistant text
-      this.markTextSegmentBreak(responseId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
     }
 
     // Update the input section with streaming args
@@ -741,14 +795,13 @@ export class ChatRenderer {
     this.toolOutputOffsets.delete(callId);
     this.toolOutputToolNames.delete(callId);
 
-    // Prefer existing tool-call element; if missing and we have a response, create a minimal one.
+    // Prefer existing tool-call element; if missing, create a minimal one.
     let block = this.toolCallElements.get(callId) ?? null;
-    if (!block && responseId) {
-      const responseEl = this.getOrCreateAssistantResponseContainer(
-        event.turnId,
-        event.id,
-        responseId,
-      );
+    if (!block) {
+      if (this.questionnaireToolCalls.has(callId)) {
+        return;
+      }
+      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
 
       block = createToolOutputBlock({
         callId,
@@ -758,10 +811,12 @@ export class ChatRenderer {
       block.dataset['toolCallId'] = callId;
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
-      this.appendToolCallBlock(responseEl, responseId, block, block.dataset['toolName'] ?? '');
+      this.appendToolCallBlock(responseEl, responseId ?? undefined, block, block.dataset['toolName'] ?? '');
       this.toolCallElements.set(callId, block);
 
-      this.markTextSegmentBreak(responseId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
     }
 
     if (!block) {
@@ -783,6 +838,7 @@ export class ChatRenderer {
     if (event.payload.error) {
       const message = event.payload.error.message;
       updateToolOutputBlockContent(block, toolName, message, { ok: false });
+      this.finalizeInteractionForFailedToolCall(callId, message);
       this.updateToolCallGroupForBlock(block);
       return;
     }
@@ -868,6 +924,10 @@ export class ChatRenderer {
       });
     }
 
+    if (!handledAgentAsync && !resultOk) {
+      this.finalizeInteractionForFailedToolCall(callId);
+    }
+
     // For agents_message async mode, track the block for agent_callback updates
     if (
       typeof result === 'object' &&
@@ -899,11 +959,26 @@ export class ChatRenderer {
     const presentation = payload.presentation ?? 'tool';
 
     if (presentation === 'questionnaire') {
+      this.questionnaireToolCalls.add(toolCallId);
+      this.standaloneToolCalls.add(toolCallId);
       this.renderStandaloneInteraction(event, enabled);
       return;
     }
 
-    const block = this.toolCallElements.get(toolCallId);
+    if (payload.interactionType === 'approval') {
+      this.standaloneToolCalls.add(toolCallId);
+      this.ungroupToolBlockIfNeeded(toolCallId);
+    }
+
+    let block = this.toolCallElements.get(toolCallId);
+    if (!block) {
+      if (this._isReplaying) {
+        block = this.createToolBlockForInteraction(event) ?? undefined;
+      }
+      if (block) {
+        this.toolCallElements.set(toolCallId, block);
+      }
+    }
     if (!block) {
       this.pendingInteractionRequests.set(toolCallId, {
         payload,
@@ -941,6 +1016,36 @@ export class ChatRenderer {
       return;
     }
     this.pendingInteractionResponses.set(interactionId, payload);
+  }
+
+  private handleInteractionPending(event: InteractionPendingEvent): void {
+    if (this._isReplaying) {
+      return;
+    }
+    const payload = event.payload;
+    if (payload.pending) {
+      this.pendingInteractionToolCalls.add(payload.toolCallId);
+    } else {
+      this.pendingInteractionToolCalls.delete(payload.toolCallId);
+    }
+    this.updateTypingSuppression();
+    if (payload.pending) {
+      return;
+    }
+    if (this.pendingInteractionToolCalls.size === 0) {
+      this.showTypingIndicator();
+    }
+  }
+
+  private updateTypingSuppression(): void {
+    const shouldSuppress = this.pendingInteractionToolCalls.size > 0;
+    if (this.suppressTypingIndicator === shouldSuppress) {
+      return;
+    }
+    this.suppressTypingIndicator = shouldSuppress;
+    if (shouldSuppress) {
+      this.hideTypingIndicator();
+    }
   }
 
   private attachInteractionToToolBlock(
@@ -987,12 +1092,41 @@ export class ChatRenderer {
     this.updateToolInteractionState(block);
   }
 
-  private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
+  private createToolBlockForInteraction(event: InteractionRequestEvent): HTMLDivElement | null {
     const payload = event.payload;
     const responseId = this.getResponseId(event.responseId);
-    if (!responseId) {
-      return;
-    }
+    const responseEl = this.getOrCreateToolCallContainer(
+      event.id,
+      event.turnId,
+      payload.toolCallId,
+      responseId,
+    );
+    const block = createToolOutputBlock({
+      callId: payload.toolCallId,
+      toolName: payload.toolName,
+      expanded: this.shouldExpandToolOutput(),
+    });
+
+    block.dataset['toolCallId'] = payload.toolCallId;
+    block.dataset['toolName'] = payload.toolName;
+    block.dataset['eventId'] = event.id;
+    block.dataset['renderer'] = 'unified';
+
+    setToolOutputBlockPending(block, '{}', {
+      pendingText: 'Awaiting approval…',
+      statusLabel: 'Approval',
+      state: 'running',
+    });
+
+    this.appendToolCallBlock(responseEl, responseId ?? undefined, block, payload.toolName);
+    this.updateToolCallGroupForBlock(block);
+    return block;
+  }
+
+  private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
+    const payload = event.payload;
+    this.ungroupToolBlockIfNeeded(payload.toolCallId);
+    const responseId = this.getResponseId(event.responseId);
     const existingId = this.interactionByToolCall.get(payload.toolCallId);
     if (existingId) {
       const existing = this.interactionElements.get(existingId);
@@ -1001,7 +1135,6 @@ export class ChatRenderer {
       }
       this.interactionElements.delete(existingId);
     }
-    const container = this.getOrCreateAssistantResponseContainer(event.turnId, event.id, responseId);
     const element = createInteractionElement({
       request: payload,
       enabled,
@@ -1011,7 +1144,34 @@ export class ChatRenderer {
     });
     element.classList.add('interaction-standalone');
     element.dataset['sessionId'] = event.sessionId;
-    container.appendChild(element);
+    const toolBlock = this.toolCallElements.get(payload.toolCallId);
+    this.debugLog('interaction placement', {
+      interactionId: payload.interactionId,
+      toolCallId: payload.toolCallId,
+      responseId: responseId ?? null,
+      hasToolBlock: Boolean(toolBlock),
+    });
+    if (toolBlock?.parentElement) {
+      const nextSibling = toolBlock.nextSibling;
+      if (nextSibling) {
+        toolBlock.parentElement.insertBefore(element, nextSibling);
+      } else {
+        toolBlock.parentElement.appendChild(element);
+      }
+    } else {
+      const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
+      const container =
+        responseId
+          ? this.getOrCreateAssistantResponseContainer(event.turnId, event.id, responseId)
+          : fallbackContainer ??
+            this.getOrCreateToolCallContainer(
+              event.id,
+              event.turnId,
+              payload.toolCallId,
+              responseId,
+            );
+      container.appendChild(element);
+    }
     this.interactionElements.set(payload.interactionId, element);
     this.interactionByToolCall.set(payload.toolCallId, payload.interactionId);
 
@@ -1020,6 +1180,108 @@ export class ChatRenderer {
       this.pendingInteractionResponses.delete(payload.interactionId);
       applyInteractionResponse(element, pendingResponse);
     }
+  }
+
+  private ungroupToolBlockIfNeeded(toolCallId: string): void {
+    const block = this.toolCallElements.get(toolCallId);
+    if (!block) {
+      return;
+    }
+    const group = block.closest<HTMLDivElement>('.tool-call-group');
+    if (!group) {
+      return;
+    }
+    const groupContent = group.querySelector<HTMLDivElement>('.tool-call-group-content');
+    const parent = group.parentElement;
+    if (!groupContent || !parent) {
+      return;
+    }
+
+    const blocks = Array.from(
+      groupContent.querySelectorAll<HTMLDivElement>(':scope > .tool-output-block'),
+    );
+    const index = blocks.indexOf(block);
+    if (index === -1) {
+      return;
+    }
+
+    const beforeBlocks = blocks.slice(0, index);
+    const afterBlocks = blocks.slice(index + 1);
+
+    if (block.parentElement === groupContent) {
+      groupContent.removeChild(block);
+    }
+
+    if (beforeBlocks.length === 0 && afterBlocks.length === 0) {
+      parent.insertBefore(block, group);
+      parent.removeChild(group);
+      return;
+    }
+
+    if (beforeBlocks.length === 0) {
+      if (afterBlocks.length === 1) {
+        const remaining = afterBlocks[0];
+        if (remaining) {
+          parent.replaceChild(remaining, group);
+          parent.insertBefore(block, remaining);
+        }
+      } else {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group);
+      }
+      return;
+    }
+
+    if (afterBlocks.length === 0) {
+      if (beforeBlocks.length === 1) {
+        const remaining = beforeBlocks[0];
+        if (remaining) {
+          parent.replaceChild(remaining, group);
+          parent.insertBefore(block, remaining.nextSibling);
+        }
+      } else {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group.nextSibling);
+      }
+      return;
+    }
+
+    let afterContainer: HTMLElement;
+    if (afterBlocks.length === 1) {
+      const remaining = afterBlocks[0];
+      if (!remaining) {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group.nextSibling);
+        return;
+      }
+      if (remaining.parentElement === groupContent) {
+        groupContent.removeChild(remaining);
+      }
+      afterContainer = remaining;
+    } else {
+      const newGroup = createToolCallGroup({ expanded: this.shouldExpandToolOutput() });
+      const newContent = newGroup.querySelector<HTMLDivElement>('.tool-call-group-content');
+      if (newContent) {
+        for (const afterBlock of afterBlocks) {
+          newContent.appendChild(afterBlock);
+        }
+      }
+      this.refreshToolCallGroup(newGroup);
+      afterContainer = newGroup;
+    }
+
+    if (beforeBlocks.length === 1) {
+      const remaining = beforeBlocks[0];
+      if (remaining) {
+        parent.replaceChild(remaining, group);
+        parent.insertBefore(block, remaining.nextSibling);
+      }
+    } else {
+      this.refreshToolCallGroup(group);
+      parent.insertBefore(block, group.nextSibling);
+    }
+
+    parent.insertBefore(afterContainer, block.nextSibling);
   }
 
   private getOrCreateInteractionDock(block: HTMLDivElement): HTMLDivElement {
@@ -1054,6 +1316,36 @@ export class ChatRenderer {
     );
     group.classList.toggle('has-pending-interaction', groupHasPending);
     group.classList.toggle('has-pending-approval', groupHasPendingApproval);
+  }
+
+  private finalizeInteractionForFailedToolCall(toolCallId: string, reason?: string): void {
+    const interactionId = this.interactionByToolCall.get(toolCallId);
+    if (interactionId) {
+      const element = this.interactionElements.get(interactionId);
+      if (element && !element.classList.contains('interaction-complete')) {
+        applyInteractionResponse(element, {
+          toolCallId,
+          interactionId,
+          action: 'cancel',
+          ...(reason ? { reason } : {}),
+        });
+        const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
+        if (toolBlock) {
+          this.updateToolInteractionState(toolBlock);
+        }
+      }
+    }
+
+    this.pendingInteractionRequests.delete(toolCallId);
+
+    if (this.pendingInteractionToolCalls.delete(toolCallId)) {
+      if (!this._isReplaying) {
+        this.updateTypingSuppression();
+        if (this.pendingInteractionToolCalls.size === 0) {
+          this.showTypingIndicator();
+        }
+      }
+    }
   }
 
   private sendInteractionResponse(
@@ -1235,6 +1527,35 @@ export class ChatRenderer {
     return blockToolName;
   }
 
+  private getOrCreateToolCallContainer(
+    eventId: string,
+    turnIdRaw: string | undefined,
+    toolCallId: string,
+    responseId: string | null,
+  ): HTMLDivElement {
+    if (responseId) {
+      return this.getOrCreateAssistantResponseContainer(turnIdRaw, eventId, responseId);
+    }
+
+    const existing = this.toolCallContainers.get(toolCallId);
+    if (existing) {
+      return existing;
+    }
+
+    const turnId = this.getTurnId(turnIdRaw, eventId);
+    const turnEl = this.getOrCreateTurnContainer(turnId);
+
+    const responseEl = document.createElement('div');
+    responseEl.className = 'assistant-response tool-call-only';
+    responseEl.dataset['toolCallId'] = toolCallId;
+    responseEl.dataset['renderer'] = 'unified';
+
+    turnEl.appendChild(responseEl);
+    this.toolCallContainers.set(toolCallId, responseEl);
+
+    return responseEl;
+  }
+
   private getOrCreateAssistantResponseContainer(
     turnIdRaw: string | undefined,
     fallbackTurnKey: string,
@@ -1343,8 +1664,22 @@ export class ChatRenderer {
 
     const container = document.createElement('div');
     container.className = containerClass;
-    // Append at the end - text segments will be created after this
-    responseEl.appendChild(container);
+    // Insert before any later text segment so tool calls stay between segments.
+    let inserted = false;
+    const textSegments = responseEl.querySelectorAll<HTMLElement>('.assistant-text');
+    for (const textEl of textSegments) {
+      const segmentRaw = textEl.dataset['segment'];
+      const segment = segmentRaw ? Number(segmentRaw) : Number.NaN;
+      if (Number.isFinite(segment) && segment > segmentIdx) {
+        responseEl.insertBefore(container, textEl);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) {
+      // Append at the end - text segments will be created after this
+      responseEl.appendChild(container);
+    }
     return container;
   }
 
@@ -1354,13 +1689,19 @@ export class ChatRenderer {
 
   private appendToolCallBlock(
     responseEl: HTMLDivElement,
-    responseId: string,
+    responseId: string | undefined,
     block: HTMLDivElement,
     toolName: string,
   ): void {
     const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId);
+    const callId = block.dataset['toolCallId'];
 
     if (!this.isGroupableToolCall(toolName)) {
+      toolCallsContainer.appendChild(block);
+      return;
+    }
+
+    if (callId && this.standaloneToolCalls.has(callId)) {
       toolCallsContainer.appendChild(block);
       return;
     }
@@ -1383,6 +1724,11 @@ export class ChatRenderer {
 
     if (lastChild.classList.contains('tool-output-block')) {
       const lastToolName = lastChild.dataset['toolName'] ?? '';
+      const lastCallId = lastChild.dataset['toolCallId'];
+      if (lastCallId && this.standaloneToolCalls.has(lastCallId)) {
+        toolCallsContainer.appendChild(block);
+        return;
+      }
       if (this.isGroupableToolCall(lastToolName)) {
         const group = createToolCallGroup({ expanded: this.shouldExpandToolOutput() });
         toolCallsContainer.replaceChild(group, lastChild);

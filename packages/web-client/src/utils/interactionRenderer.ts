@@ -33,13 +33,25 @@ export function applyInteractionResponse(
     control.disabled = true;
   }
 
+  let summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
+  if (!summary) {
+    summary = element.querySelector<HTMLElement>('.interaction-summary');
+  }
+
   if (response.action === 'approve' || response.action === 'deny') {
-    const summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
     if (summary) {
       const scope = response.approvalScope ? ` (${response.approvalScope})` : '';
       summary.textContent =
         response.action === 'approve' ? `Approved${scope}` : 'Denied';
     }
+  } else if (response.action === 'cancel') {
+    if (!summary) {
+      summary = document.createElement('div');
+      summary.className = 'interaction-summary';
+      summary.dataset['role'] = 'interaction-summary';
+      element.appendChild(summary);
+    }
+    summary.textContent = response.reason ? response.reason : 'Cancelled';
   }
 
   if (response.input) {
@@ -258,7 +270,17 @@ function appendFields(
 
     const label = document.createElement('label');
     label.className = 'interaction-field-label';
-    label.textContent = field.label;
+    const labelText = document.createElement('span');
+    labelText.className = 'interaction-field-label-text';
+    labelText.textContent = field.label;
+    label.appendChild(labelText);
+
+    if (field.required) {
+      const required = document.createElement('span');
+      required.className = 'interaction-field-required';
+      required.textContent = ' *';
+      labelText.appendChild(required);
+    }
 
     const input = createInputForField(field);
     label.appendChild(input);
@@ -286,24 +308,31 @@ function appendFields(
 function createInputForField(
   field: QuestionnaireField,
 ): HTMLElement {
+  const shouldValidate = field.validateOnClient !== false;
   switch (field.type) {
     case 'textarea': {
       const textarea = document.createElement('textarea');
+      textarea.className = 'interaction-input';
       textarea.dataset['fieldId'] = field.id;
-      if (field.required) textarea.required = true;
+      if (shouldValidate && field.required) textarea.required = true;
       if (field.placeholder) textarea.placeholder = field.placeholder;
-      if (typeof field.minLength === 'number') textarea.minLength = field.minLength;
-      if (typeof field.maxLength === 'number') textarea.maxLength = field.maxLength;
+      if (shouldValidate && typeof field.minLength === 'number') {
+        textarea.minLength = field.minLength;
+      }
+      if (shouldValidate && typeof field.maxLength === 'number') {
+        textarea.maxLength = field.maxLength;
+      }
       return textarea;
     }
     case 'select':
     case 'multiselect': {
       const select = document.createElement('select');
+      select.className = 'interaction-input';
       select.dataset['fieldId'] = field.id;
       if (field.type === 'multiselect') {
         select.multiple = true;
       }
-      if (field.required) {
+      if (shouldValidate && field.required) {
         select.required = true;
       }
       if (field.options) {
@@ -324,11 +353,12 @@ function createInputForField(
           const optionLabel = document.createElement('label');
           optionLabel.className = 'interaction-radio-option';
           const input = document.createElement('input');
+          input.className = 'interaction-option-input';
           input.type = 'radio';
           input.name = field.id;
           input.value = option.value;
           input.dataset['fieldId'] = field.id;
-          if (field.required && index === 0) {
+          if (shouldValidate && field.required && index === 0) {
             input.required = true;
           }
           optionLabel.appendChild(input);
@@ -341,9 +371,10 @@ function createInputForField(
     case 'checkbox':
     case 'boolean': {
       const input = document.createElement('input');
+      input.className = 'interaction-option-input';
       input.type = 'checkbox';
       input.dataset['fieldId'] = field.id;
-      if (field.required) {
+      if (shouldValidate && field.required) {
         input.required = true;
       }
       return input;
@@ -355,6 +386,7 @@ function createInputForField(
     case 'text':
     default: {
       const input = document.createElement('input');
+      input.className = 'interaction-input';
       input.type =
         field.type === 'number'
           ? 'number'
@@ -367,22 +399,34 @@ function createInputForField(
                 : 'text';
 
       input.dataset['fieldId'] = field.id;
-      if (field.required) {
+      if (shouldValidate && field.required) {
         input.required = true;
       }
       if (field.placeholder) {
         input.placeholder = field.placeholder;
       }
       if (field.type === 'number') {
-        if (typeof field.min === 'number') input.min = String(field.min);
-        if (typeof field.max === 'number') input.max = String(field.max);
-        if (typeof field.step === 'number') input.step = String(field.step);
+        if (shouldValidate && typeof field.min === 'number') {
+          input.min = String(field.min);
+        }
+        if (shouldValidate && typeof field.max === 'number') {
+          input.max = String(field.max);
+        }
+        if (shouldValidate && typeof field.step === 'number') {
+          input.step = String(field.step);
+        }
       }
 
       if (field.type === 'text') {
-        if (typeof field.minLength === 'number') input.minLength = field.minLength;
-        if (typeof field.maxLength === 'number') input.maxLength = field.maxLength;
-        if (typeof field.pattern === 'string') input.pattern = field.pattern;
+        if (shouldValidate && typeof field.minLength === 'number') {
+          input.minLength = field.minLength;
+        }
+        if (shouldValidate && typeof field.maxLength === 'number') {
+          input.maxLength = field.maxLength;
+        }
+        if (shouldValidate && typeof field.pattern === 'string') {
+          input.pattern = field.pattern;
+        }
       }
 
       return input;

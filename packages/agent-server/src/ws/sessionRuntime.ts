@@ -350,6 +350,14 @@ export class SessionRuntime {
       }
     }
 
+    this.log('interaction response received', {
+      sessionId,
+      callId: message.callId,
+      interactionId: message.interactionId,
+      action: message.action,
+      hasInput: Boolean(message.input),
+    });
+
     const handled = this.sessionHub.getInteractionRegistry().resolveResponse({
       sessionId,
       callId: message.callId,
@@ -363,6 +371,11 @@ export class SessionRuntime {
     });
 
     if (!handled) {
+      this.log('interaction response not found', {
+        sessionId,
+        callId: message.callId,
+        interactionId: message.interactionId,
+      });
       this.sendError('interaction_not_found', 'Interaction response did not match a pending request');
     }
   }

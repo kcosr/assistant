@@ -2,7 +2,7 @@ import { type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { runCodexCliChat, type CodexCliSpawn } from './codexCliChat';
 
@@ -60,6 +60,33 @@ describe('runCodexCliChat', () => {
     expect(args).toContain('--config');
     expect(args).toContain('model_reasoning_effort=xhigh');
     expect(args[args.length - 1]).toBe('hello');
+  });
+
+  it('injects ASSISTANT_SESSION_ID into the codex environment', async () => {
+    const child = new FakeCodexProcess();
+    let capturedEnv: SpawnOptionsWithoutStdio['env'] | undefined;
+
+    const spawnFn: CodexCliSpawn = (_command, _args, options) => {
+      capturedEnv = options.env;
+      return child as unknown as ReturnType<CodexCliSpawn>;
+    };
+
+    const promise = runCodexCliChat({
+      ourSessionId: 'session-123',
+      existingCodexSessionId: undefined,
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(capturedEnv?.['ASSISTANT_SESSION_ID']).toBe('session-123');
   });
 
   it('adds model to codex args when provided', async () => {
@@ -249,6 +276,7 @@ describe('runCodexCliChat', () => {
   it('captures codex session_id from session_configured', async () => {
     const child = new FakeCodexProcess();
     const spawnFn: CodexCliSpawn = () => child as unknown as ReturnType<CodexCliSpawn>;
+    const onSessionId = vi.fn();
 
     const promise = runCodexCliChat({
       ourSessionId: 'session-123',
@@ -256,6 +284,7 @@ describe('runCodexCliChat', () => {
       existingCodexSessionId: undefined,
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
+      onSessionId,
       log: () => undefined,
       spawnFn,
     });
@@ -282,11 +311,13 @@ describe('runCodexCliChat', () => {
 
     const result = await promise;
     expect(result.codexSessionId).toBe('codex-session-xyz');
+    expect(onSessionId).toHaveBeenCalledWith('codex-session-xyz');
   });
 
   it('captures codex session_id from session_meta output', async () => {
     const child = new FakeCodexProcess();
     const spawnFn: CodexCliSpawn = () => child as unknown as ReturnType<CodexCliSpawn>;
+    const onSessionId = vi.fn();
 
     const promise = runCodexCliChat({
       ourSessionId: 'session-123',
@@ -294,6 +325,7 @@ describe('runCodexCliChat', () => {
       existingCodexSessionId: undefined,
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
+      onSessionId,
       log: () => undefined,
       spawnFn,
     });
@@ -321,6 +353,7 @@ describe('runCodexCliChat', () => {
 
     const result = await promise;
     expect(result.codexSessionId).toBe('codex-session-meta');
+    expect(onSessionId).toHaveBeenCalledWith('codex-session-meta');
   });
 
   it('decodes exec_command_output_delta stdout as base64 and appends to text', async () => {

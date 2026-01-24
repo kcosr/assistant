@@ -289,6 +289,9 @@ export async function runPiCliChat(options: {
       }
     }
   }
+  if (sessionId.trim().length > 0) {
+    spawnEnv['ASSISTANT_SESSION_ID'] = sessionId.trim();
+  }
   const spawnOptions: SpawnOptionsWithoutStdio = { env: spawnEnv };
   if (workdir) {
     spawnOptions.cwd = workdir;
