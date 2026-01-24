@@ -53,6 +53,7 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
         broadcast.push(message);
       },
       broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
       recordSessionActivity: () => undefined,
       updateSessionAttributes: async () => state.summary,
       queueMessage: async () => {

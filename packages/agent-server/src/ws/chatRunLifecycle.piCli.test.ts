@@ -54,6 +54,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
         broadcast.push(message);
       },
       broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes,
       recordSessionActivity: () => undefined,
       queueMessage: async () => {
@@ -144,6 +145,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       getAgentRegistry: () => agentRegistry,
       broadcastToSession: () => undefined,
       broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes,
       recordSessionActivity: () => undefined,
       queueMessage: async () => {
@@ -217,6 +219,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
         broadcast.push(message);
       },
       broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
       updateSessionAttributes,
       recordSessionActivity: () => undefined,
       queueMessage: async () => {
