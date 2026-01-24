@@ -38,7 +38,9 @@ Add a quick-add (+) button to each list row in the dropdown:
 - The dropdown closes after clicking +
 - The + button click stops propagation (doesn't also select the list)
 - The list panel remains on the current list (doesn't switch to the target list)
+- The + button is always visible on all platforms
 - On hover, the + button shows a subtle highlight
+- No keyboard focus/activation for the + button (mouse/touch only)
 
 ## Implementation
 
@@ -97,8 +99,7 @@ this.dropdownGroupsMeta = renderCollectionDropdownList({
   renderItemActions: (actionsEl, item) => {
     if (item.type !== 'list') return;  // Only for lists, not notes
     
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
+    const addBtn = document.createElement('span');
     addBtn.className = 'collection-search-dropdown-item-add';
     addBtn.title = 'Add item to this list';
     addBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -107,7 +108,14 @@ this.dropdownGroupsMeta = renderCollectionDropdownList({
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       dropdownController?.close(false);
-      listPanelController.openAddItemDialog(item.id);
+      listPanelController.openAddItemDialog(item.id, {
+        instanceId: item.instanceId,
+        openOptions: {
+          availableTags: [],
+          defaultTags: listSummary?.defaultTags ?? [],
+          customFields: listSummary?.customFields ?? [],
+        },
+      });
     });
     actionsEl.appendChild(addBtn);
   },
@@ -117,54 +125,46 @@ this.dropdownGroupsMeta = renderCollectionDropdownList({
 ### 3. Add CSS styling
 
 ```css
-.collection-search-dropdown-item {
+.collection-search-dropdown .collection-search-dropdown-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.collection-search-dropdown-item-label {
+.collection-search-dropdown .collection-search-dropdown-item-label {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collection-search-dropdown-item-actions {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.collection-search-dropdown-item:hover .collection-search-dropdown-item-actions,
-.collection-search-dropdown-item:focus-within .collection-search-dropdown-item-actions {
-  opacity: 1;
+  margin-left: auto;
 }
 
 .collection-search-dropdown-item-add {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  border: none;
+  width: 20px;
+  height: 20px;
   border-radius: 0.25rem;
-  background: transparent;
-  color: var(--text-muted);
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
 .collection-search-dropdown-item-add:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
 }
 
-.collection-search-dropdown-item-add svg {
-  width: 1rem;
-  height: 1rem;
+.collection-search-dropdown-item-add .icon {
+  width: 14px;
+  height: 14px;
 }
 ```
 
@@ -172,9 +172,8 @@ this.dropdownGroupsMeta = renderCollectionDropdownList({
 
 - `packages/web-client/src/controllers/collectionDropdownListRenderer.ts` — Add `renderItemActions` option
 - `packages/plugins/official/lists/web/index.ts` — Implement quick-add button using the new callback
-- `packages/web-client/src/styles/collectionDropdown.css` — Add styling for actions and + button
+- `packages/plugins/official/lists/web/styles.css` — Add styling for actions and + button
 
 ## Open Questions
 
-1. Should the + button be visible on mobile/touch devices by default (since hover doesn't work)?
-2. Should keyboard navigation support focusing the + button (e.g., Tab or Right arrow)?
+None. (Decisions: always show + on all platforms; no keyboard focus/activation for +.)

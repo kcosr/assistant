@@ -1168,8 +1168,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getSearchQuery: () => sharedSearchController.getQuery(),
         getSearchTagController: () => sharedSearchController.getTagController(),
         getActiveInstanceId: () => activeListInstanceId ?? activeInstanceId,
-        callOperation: (operation, args) =>
-          callInstanceOperation(activeListInstanceId ?? activeInstanceId, operation, args),
+        callOperation: (operation, args) => {
+          const { instanceId, ...rest } = args as Record<string, unknown> & {
+            instanceId?: unknown;
+          };
+          const overrideInstanceId = typeof instanceId === 'string' ? instanceId : null;
+          const targetInstanceId = overrideInstanceId ?? activeListInstanceId ?? activeInstanceId;
+          return callInstanceOperation(targetInstanceId, operation, rest);
+        },
         icons: {
           copy: ICONS.copy,
           duplicate: ICONS.duplicate,
@@ -1479,6 +1485,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const instanceId = item.instanceId ?? activeInstanceId;
           void selectList(item.id, instanceId, { focus: false });
+        },
+        renderItemActions: (actionsEl, item) => {
+          if (item.type !== 'list') {
+            return;
+          }
+          const addButton = document.createElement('span');
+          addButton.className = 'collection-search-dropdown-item-add';
+          addButton.title = 'Add item to this list';
+          addButton.innerHTML = ICONS.plus;
+          addButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropdownController?.close(false);
+            const instanceId = item.instanceId ?? activeInstanceId;
+            const listSummary =
+              availableLists.find(
+                (list) => list.id === item.id && list.instanceId === instanceId,
+              ) ?? null;
+            listPanelController.openAddItemDialog(item.id, {
+              instanceId,
+              openOptions: {
+                availableTags: [],
+                defaultTags: listSummary?.defaultTags ?? [],
+                customFields: listSummary?.customFields ?? [],
+              },
+            });
+          });
+          actionsEl.appendChild(addButton);
         },
       });
       dropdownController?.attach();

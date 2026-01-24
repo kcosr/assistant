@@ -31,6 +31,7 @@ export interface CollectionDropdownControllerOptions {
   getActiveItemReference: () => CollectionReference | null;
   updateSelection: (reference: CollectionReference | null) => void;
   selectItem: (item: CollectionReference | null) => Promise<void> | void;
+  renderItemActions?: (actionsEl: HTMLElement, item: CollectionItemSummary) => void;
 }
 
 export class CollectionDropdownController {
@@ -174,6 +175,7 @@ export class CollectionDropdownController {
       triggerText.textContent = 'Select an item…';
     }
 
+    const renderItemActions = this.options.renderItemActions;
     this.dropdownGroupsMeta = renderCollectionDropdownList({
       listEl: list,
       items: sortedItems,
@@ -181,6 +183,7 @@ export class CollectionDropdownController {
       onSelectItem: (itemEl) => {
         this.selectDropdownItem(itemEl);
       },
+      ...(renderItemActions ? { renderItemActions } : {}),
     });
 
     this.options.updateSelection(activeItem);

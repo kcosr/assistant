@@ -330,6 +330,107 @@ describe('ListPanelController keyboard shortcuts', () => {
   });
 });
 
+describe('ListPanelController add dialog', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('passes instance overrides when adding items', async () => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+
+    const controller = new ListPanelController({
+      bodyEl,
+      getSearchQuery: () => '',
+      getSearchTagController: () => null,
+      getActiveInstanceId: () => 'default',
+      callOperation,
+      icons: {
+        copy: '',
+        duplicate: '',
+        move: '',
+        plus: '',
+        edit: '',
+        trash: '',
+        moreVertical: '',
+        x: '',
+        clock: '',
+        clockOff: '',
+        moveTop: '',
+        moveBottom: '',
+        pin: '',
+      },
+      renderTags: () => null,
+      setStatus: () => undefined,
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemIds: () => [],
+      getSelectedItemCount: () => 0,
+      onSelectionChange: () => undefined,
+      getMoveTargetLists: () => [],
+      openListMetadataDialog: () => undefined,
+      getListColumnPreferences: () => null,
+      updateListColumnPreferences: () => undefined,
+      getSortState: () => null,
+      updateSortState: () => undefined,
+      getTimelineField: () => null,
+      updateTimelineField: () => undefined,
+      getFocusMarkerItemId: () => null,
+      getFocusMarkerExpanded: () => false,
+      updateFocusMarker: () => undefined,
+      updateFocusMarkerExpanded: () => undefined,
+      setRightControls: () => undefined,
+    });
+
+    controller.openAddItemDialog('list-1', {
+      instanceId: 'secondary',
+      openOptions: {
+        availableTags: [],
+        defaultTags: [],
+        customFields: [],
+      },
+    });
+
+    const form = document.querySelector('form.list-item-form') as HTMLFormElement | null;
+    const titleInput = form?.querySelector('input.list-item-form-input') as
+      | HTMLInputElement
+      | null;
+
+    expect(form).not.toBeNull();
+    expect(titleInput).not.toBeNull();
+
+    if (!form || !titleInput) {
+      return;
+    }
+
+    titleInput.value = 'New item';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOperation).toHaveBeenCalledWith(
+      'item-add',
+      expect.objectContaining({
+        listId: 'list-1',
+        title: 'New item',
+        instanceId: 'secondary',
+      }),
+    );
+  });
+});
+
 describe('ListPanelController clipboard shortcuts', () => {
   beforeEach(() => {
     __TEST_ONLY.clearListClipboard();

@@ -13,12 +13,14 @@ export interface CollectionDropdownListRenderOptions {
   getGroupLabel: (type: string) => string;
   onSelectItem: (itemEl: HTMLElement) => void;
   renderItemContent?: (itemEl: HTMLElement, item: CollectionItemSummary) => void;
+  renderItemActions?: (actionsEl: HTMLElement, item: CollectionItemSummary) => void;
 }
 
 export function renderCollectionDropdownList(
   options: CollectionDropdownListRenderOptions,
 ): CollectionDropdownGroupMeta[] {
-  const { listEl, items, getGroupLabel, onSelectItem, renderItemContent } = options;
+  const { listEl, items, getGroupLabel, onSelectItem, renderItemContent, renderItemActions } =
+    options;
 
   listEl.innerHTML = '';
 
@@ -52,6 +54,12 @@ export function renderCollectionDropdownList(
       labelEl.className = 'collection-search-dropdown-item-label';
       labelEl.textContent = item.name;
       itemEl.appendChild(labelEl);
+      if (renderItemActions) {
+        const actionsEl = document.createElement('span');
+        actionsEl.className = 'collection-search-dropdown-item-actions';
+        itemEl.appendChild(actionsEl);
+        renderItemActions(actionsEl, item);
+      }
       itemEl.dataset['collectionType'] = item.type;
       itemEl.dataset['collectionId'] = item.id;
       if (item.instanceId) {

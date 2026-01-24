@@ -36,6 +36,7 @@ operations.
   dialog (toggle in settings, default on).
 - Cmd/Ctrl+C/X/V support copy/cut/paste of selected list items between lists; external paste
   uses the same plain-text item block.
+- The lists dropdown includes a quick-add (+) action to add an item to a list without switching views.
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.
