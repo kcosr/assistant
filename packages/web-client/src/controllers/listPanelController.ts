@@ -189,6 +189,7 @@ export class ListPanelController {
     colCount: number;
     hasAnyItems: boolean;
   } | null = null;
+  private addDialogInstanceOverrides = new Map<string, string>();
   constructor(private readonly options: ListPanelControllerOptions) {
     this.listItemEditorDialog = new ListItemEditorDialog({
       dialogManager: options.dialogManager,
@@ -276,11 +277,15 @@ export class ListPanelController {
   private async runOperation<T>(
     operation: string,
     args: Record<string, unknown>,
+    options?: { instanceId?: string | null },
   ): Promise<T | null> {
     if (!this.options.callOperation) {
       return null;
     }
-    return this.options.callOperation<T>(operation, args);
+    const instanceId = options?.instanceId;
+    const payload =
+      instanceId && typeof instanceId === 'string' ? { ...args, instanceId } : args;
+    return this.options.callOperation<T>(operation, payload);
   }
 
   applySearch(query: string): void {
@@ -353,8 +358,19 @@ export class ListPanelController {
     return withoutPinnedTag(this.currentAvailableTags);
   }
 
-  openAddItemDialog(listId: string): void {
-    this.showListItemEditorDialog('add', listId);
+  openAddItemDialog(
+    listId: string,
+    options?: {
+      openOptions?: ListItemEditorDialogOpenOptions;
+      instanceId?: string | null;
+    },
+  ): void {
+    if (options?.instanceId) {
+      this.addDialogInstanceOverrides.set(listId, options.instanceId);
+    } else {
+      this.addDialogInstanceOverrides.delete(listId);
+    }
+    this.showListItemEditorDialog('add', listId, undefined, options?.openOptions);
   }
 
   handleKeyboardEvent(event: KeyboardEvent): boolean {
@@ -1053,7 +1069,15 @@ export class ListPanelController {
       return false;
     }
     try {
-      await this.runOperation('item-add', { listId, ...item });
+      const instanceId = this.addDialogInstanceOverrides.get(listId);
+      await this.runOperation(
+        'item-add',
+        { listId, ...item },
+        instanceId ? { instanceId } : undefined,
+      );
+      if (instanceId) {
+        this.addDialogInstanceOverrides.delete(listId);
+      }
       return true;
     } catch {
       return false;
@@ -1144,10 +1168,12 @@ export class ListPanelController {
     mode: 'add' | 'edit',
     listId: string,
     item?: ListPanelItem,
+    openOptionsOverride?: ListItemEditorDialogOpenOptions,
   ): void {
     const openOptions: ListItemEditorDialogOpenOptions = {
-      availableTags: withoutPinnedTag(this.currentAvailableTags),
-      customFields: this.currentCustomFields,
+      availableTags:
+        openOptionsOverride?.availableTags ?? withoutPinnedTag(this.currentAvailableTags),
+      customFields: openOptionsOverride?.customFields ?? this.currentCustomFields,
     };
 
     if (mode === 'add') {
@@ -1165,20 +1191,25 @@ export class ListPanelController {
         collected.push(canonical);
       };
 
-      for (const tag of this.currentDefaultTags) {
-        if (typeof tag === 'string' && !hasPinnedTag([tag])) {
-          addTag(tag);
+      if (Array.isArray(openOptionsOverride?.defaultTags)) {
+        openOptions.defaultTags = openOptionsOverride.defaultTags;
+      } else {
+        for (const tag of this.currentDefaultTags) {
+          if (typeof tag === 'string' && !hasPinnedTag([tag])) {
+            addTag(tag);
+          }
         }
-      }
 
-      for (const tag of this.getAppliedTagFilters()) {
-        if (!hasPinnedTag([tag])) {
-          addTag(tag);
+        for (const tag of this.getAppliedTagFilters()) {
+          if (!hasPinnedTag([tag])) {
+            addTag(tag);
+          }
         }
-      }
 
-      openOptions.defaultTags = collected;
-      openOptions.insertAtTop = this.getInsertAtTopPreference();
+        openOptions.defaultTags = collected;
+      }
+      openOptions.insertAtTop =
+        openOptionsOverride?.insertAtTop ?? this.getInsertAtTopPreference();
     } else if (
       mode === 'edit' &&
       item &&
