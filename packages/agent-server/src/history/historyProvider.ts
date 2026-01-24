@@ -11,7 +11,7 @@ import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
 import { getProviderAttributes } from './providerAttributes';
 
-const HISTORY_DEBUG = process.env.ASSISTANT_HISTORY_DEBUG === '1';
+const HISTORY_DEBUG = process.env['ASSISTANT_HISTORY_DEBUG'] === '1';
 const historyDebug = (...args: unknown[]): void => {
   if (!HISTORY_DEBUG) {
     return;
