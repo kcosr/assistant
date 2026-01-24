@@ -226,7 +226,7 @@ Likely touchpoints for implementation:
 - `packages/web-client/public/styles.css` (questionnaire block styling)
 - `packages/agent-server/src/tools/types.ts` (extend `InteractionRequest` schema for questionnaire fields)
 - `packages/agent-server/src/ws/toolCallHandling.ts` (reprompt + initialValues handling)
-- `packages/plugins` or built-in tool module (add `ask_user` or questionnaire tool)
+- `packages/plugins/official/questions` (questions plugin for questionnaire tool)
 
 ## Open Questions
 

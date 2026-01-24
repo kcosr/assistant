@@ -73,6 +73,7 @@ This index maps the repository documentation into predictable categories so it i
 - [Links Plugin](../packages/plugins/official/links/README.md)
 - [Lists Plugin](../packages/plugins/official/lists/README.md)
 - [Notes Plugin](../packages/plugins/official/notes/README.md)
+- [Questions Plugin](../packages/plugins/official/questions/README.md)
 - [Terminal Plugin](../packages/plugins/official/terminal/README.md)
 - [Time Tracker Plugin](../packages/plugins/official/time-tracker/README.md)
 - [Time Tracker Spec](../packages/plugins/official/time-tracker/SPEC.md)

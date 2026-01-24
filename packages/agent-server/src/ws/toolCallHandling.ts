@@ -148,7 +148,7 @@ function extractTruncationSummary(result: unknown): ToolTruncationSummary | null
 
 const DEFAULT_INTERACTION_TIMEOUT_MS = 5 * 60_000;
 
-function interactionUnavailableError(request: InteractionRequest): ToolError {
+export function interactionUnavailableError(request: InteractionRequest): ToolError {
   const message =
     request.type === 'approval'
       ? 'Approval required but no interactive client is available to respond.'
@@ -156,7 +156,7 @@ function interactionUnavailableError(request: InteractionRequest): ToolError {
   return new ToolError('interaction_unavailable', message);
 }
 
-async function executeInteraction(options: {
+export async function executeInteraction(options: {
   request: InteractionRequest;
   context: {
     sessionId: string;
@@ -179,6 +179,23 @@ async function executeInteraction(options: {
 
   while (true) {
     const interactionId = randomUUID();
+    const availability = sessionHub.getInteractionAvailability(sessionId);
+
+    console.log('[interaction] request', {
+      sessionId,
+      callId,
+      toolName,
+      interactionId,
+      type: currentRequest.type,
+      presentation: currentRequest.presentation ?? 'tool',
+      hasInputSchema: Boolean(currentRequest.inputSchema),
+      timeoutMs: currentRequest.timeoutMs ?? DEFAULT_INTERACTION_TIMEOUT_MS,
+      turnId: turnId ?? null,
+      responseId: responseId ?? null,
+      available: availability.available,
+      supportedCount: availability.supportedCount,
+      enabledCount: availability.enabledCount,
+    });
 
     emitInteractionRequestEvent({
       ...(eventStore ? { eventStore } : {}),
@@ -202,6 +219,11 @@ async function executeInteraction(options: {
 
     let userResponse: UserResponse;
     try {
+      console.log('[interaction] awaiting response', {
+        sessionId,
+        callId,
+        interactionId,
+      });
       userResponse = await registry.waitForResponse({
         sessionId,
         callId,
@@ -258,13 +280,23 @@ async function executeInteraction(options: {
       ...(userResponse.reason ? { reason: userResponse.reason } : {}),
     });
 
+    console.log('[interaction] response received', {
+      sessionId,
+      callId,
+      interactionId,
+      action: userResponse.action,
+      hasInput: Boolean(userResponse.input),
+    });
+
     const outcome = await currentRequest.onResponse(userResponse);
 
     if ('complete' in outcome) {
+      console.log('[interaction] outcome complete', { sessionId, callId, interactionId });
       return outcome.complete;
     }
 
     if ('reprompt' in outcome) {
+      console.log('[interaction] outcome reprompt', { sessionId, callId, interactionId });
       currentRequest = {
         ...outcome.reprompt,
         onResponse: currentRequest.onResponse,
@@ -275,6 +307,7 @@ async function executeInteraction(options: {
     }
 
     if ('pending' in outcome) {
+      console.log('[interaction] outcome pending', { sessionId, callId, interactionId });
       return {
         pending: true,
         message: outcome.pending.message,

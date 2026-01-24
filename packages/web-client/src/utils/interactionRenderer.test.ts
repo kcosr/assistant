@@ -33,4 +33,38 @@ describe('interactionRenderer', () => {
 
     expect(onSubmit).toHaveBeenCalledWith({ action: 'submit', input: { answer: 'hello' } });
   });
+
+  it('skips client validation when validateOnClient is false', () => {
+    const request: InteractionRequestPayload = {
+      toolCallId: 'tc2',
+      toolName: 'questions_ask',
+      interactionId: 'i2',
+      interactionType: 'input',
+      inputSchema: {
+        title: 'Skip validation',
+        fields: [
+          {
+            id: 'name',
+            type: 'text',
+            label: 'Name',
+            required: true,
+            minLength: 3,
+            pattern: '^a',
+            validateOnClient: false,
+          },
+        ],
+      },
+    };
+    const onSubmit = vi.fn();
+    const element = createInteractionElement({ request, enabled: true, onSubmit });
+    document.body.appendChild(element);
+
+    const input = element.querySelector<HTMLInputElement>('[data-field-id=\"name\"]');
+    expect(input).not.toBeNull();
+    if (!input) return;
+
+    expect(input.required).toBe(false);
+    expect(input.minLength).toBe(-1);
+    expect(input.pattern).toBe('');
+  });
 });

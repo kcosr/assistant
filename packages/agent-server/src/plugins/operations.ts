@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
   CombinedPluginManifest,
   PluginJsonSchema,
@@ -9,6 +11,7 @@ import type {
 import type { HttpRouteHandler } from '../http/types';
 import type { ToolContext } from '../tools';
 import { ToolError } from '../tools';
+import { executeInteraction, interactionUnavailableError } from '../ws/toolCallHandling';
 
 import type { PluginToolDefinition } from './types';
 
@@ -312,10 +315,12 @@ export function createPluginOperationRoutes(options: {
   const routes = operations.map((operation) => {
     const httpConfig = resolveHttpConfig(operation);
     const pathSegments = httpConfig.path.split('/').filter(Boolean);
+    const toolName = resolveToolConfig(manifest.id, operation).name;
     return {
       operation,
       httpConfig,
       pathSegments,
+      toolName,
     };
   });
 
@@ -420,9 +425,40 @@ export function createPluginOperationRoutes(options: {
       }
 
       try {
-        const toolContext = sessionId
+        let toolContext = sessionId
           ? { ...context.httpToolContext, sessionId }
           : context.httpToolContext;
+        if (sessionId && toolContext.sessionHub) {
+          const toolCallId = randomUUID();
+          const sessionHub = toolContext.sessionHub;
+          toolContext = {
+            ...toolContext,
+            requestInteraction: async (request) => {
+              const availability = sessionHub.getInteractionAvailability(sessionId);
+              if (!availability.available) {
+                throw interactionUnavailableError(request);
+              }
+              return executeInteraction({
+                request,
+                context: {
+                  sessionId,
+                  callId: toolCallId,
+                  toolName: route.toolName,
+                  sessionHub,
+                  ...(toolContext.eventStore ? { eventStore: toolContext.eventStore } : {}),
+                  ...(toolContext.signal ? { signal: toolContext.signal } : {}),
+                },
+              });
+            },
+          };
+        } else if (sessionId) {
+          toolContext = {
+            ...toolContext,
+            requestInteraction: async (request) => {
+              throw interactionUnavailableError(request);
+            },
+          };
+        }
         const result = await operationHandler(args, toolContext);
         const status = route.httpConfig.successStatus ?? 200;
         helpers.sendJson(status, { ok: true, result });

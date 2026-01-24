@@ -10,3 +10,9 @@ For example:
 ./notes-cli --help
 ./notes-cli list
 ```
+
+## Session scoping
+
+Plugin CLIs accept `--session-id` (or `-s`) for session-scoped operations.
+If the flag is omitted, the CLI will fall back to the `ASSISTANT_SESSION_ID`
+environment variable.

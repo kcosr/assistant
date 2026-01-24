@@ -286,14 +286,19 @@ function appendFields(
 function createInputForField(
   field: QuestionnaireField,
 ): HTMLElement {
+  const shouldValidate = field.validateOnClient !== false;
   switch (field.type) {
     case 'textarea': {
       const textarea = document.createElement('textarea');
       textarea.dataset['fieldId'] = field.id;
-      if (field.required) textarea.required = true;
+      if (shouldValidate && field.required) textarea.required = true;
       if (field.placeholder) textarea.placeholder = field.placeholder;
-      if (typeof field.minLength === 'number') textarea.minLength = field.minLength;
-      if (typeof field.maxLength === 'number') textarea.maxLength = field.maxLength;
+      if (shouldValidate && typeof field.minLength === 'number') {
+        textarea.minLength = field.minLength;
+      }
+      if (shouldValidate && typeof field.maxLength === 'number') {
+        textarea.maxLength = field.maxLength;
+      }
       return textarea;
     }
     case 'select':
@@ -303,7 +308,7 @@ function createInputForField(
       if (field.type === 'multiselect') {
         select.multiple = true;
       }
-      if (field.required) {
+      if (shouldValidate && field.required) {
         select.required = true;
       }
       if (field.options) {
@@ -328,7 +333,7 @@ function createInputForField(
           input.name = field.id;
           input.value = option.value;
           input.dataset['fieldId'] = field.id;
-          if (field.required && index === 0) {
+          if (shouldValidate && field.required && index === 0) {
             input.required = true;
           }
           optionLabel.appendChild(input);
@@ -343,7 +348,7 @@ function createInputForField(
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.dataset['fieldId'] = field.id;
-      if (field.required) {
+      if (shouldValidate && field.required) {
         input.required = true;
       }
       return input;
@@ -367,22 +372,34 @@ function createInputForField(
                 : 'text';
 
       input.dataset['fieldId'] = field.id;
-      if (field.required) {
+      if (shouldValidate && field.required) {
         input.required = true;
       }
       if (field.placeholder) {
         input.placeholder = field.placeholder;
       }
       if (field.type === 'number') {
-        if (typeof field.min === 'number') input.min = String(field.min);
-        if (typeof field.max === 'number') input.max = String(field.max);
-        if (typeof field.step === 'number') input.step = String(field.step);
+        if (shouldValidate && typeof field.min === 'number') {
+          input.min = String(field.min);
+        }
+        if (shouldValidate && typeof field.max === 'number') {
+          input.max = String(field.max);
+        }
+        if (shouldValidate && typeof field.step === 'number') {
+          input.step = String(field.step);
+        }
       }
 
       if (field.type === 'text') {
-        if (typeof field.minLength === 'number') input.minLength = field.minLength;
-        if (typeof field.maxLength === 'number') input.maxLength = field.maxLength;
-        if (typeof field.pattern === 'string') input.pattern = field.pattern;
+        if (shouldValidate && typeof field.minLength === 'number') {
+          input.minLength = field.minLength;
+        }
+        if (shouldValidate && typeof field.maxLength === 'number') {
+          input.maxLength = field.maxLength;
+        }
+        if (shouldValidate && typeof field.pattern === 'string') {
+          input.pattern = field.pattern;
+        }
       }
 
       return input;

@@ -8,10 +8,14 @@
 - Added list item drag export blocks for external drop targets. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added Cmd/Ctrl+X/C/V cut/copy/paste shortcuts for list items across lists. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added interactive tool approvals and questionnaires with an interactive-mode toggle. ([#28](https://github.com/kcosr/assistant/pull/28))
+- Added questions plugin with questionnaire tool support. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
+- Changed plugin CLIs to default `--session-id` from `ASSISTANT_SESSION_ID` when omitted. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed Codex/Claude/Pi CLI providers to inject `ASSISTANT_SESSION_ID` into spawned processes. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
+- Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

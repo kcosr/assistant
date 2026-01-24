@@ -62,6 +62,33 @@ describe('runCodexCliChat', () => {
     expect(args[args.length - 1]).toBe('hello');
   });
 
+  it('injects ASSISTANT_SESSION_ID into the codex environment', async () => {
+    const child = new FakeCodexProcess();
+    let capturedEnv: SpawnOptionsWithoutStdio['env'] | undefined;
+
+    const spawnFn: CodexCliSpawn = (_command, _args, options) => {
+      capturedEnv = options.env;
+      return child as unknown as ReturnType<CodexCliSpawn>;
+    };
+
+    const promise = runCodexCliChat({
+      ourSessionId: 'session-123',
+      existingCodexSessionId: undefined,
+      userText: 'hello',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    expect(capturedEnv?.['ASSISTANT_SESSION_ID']).toBe('session-123');
+  });
+
   it('adds model to codex args when provided', async () => {
     const child = new FakeCodexProcess();
     const calls: Array<{ command: string; args: readonly string[] }> = [];

@@ -245,6 +245,9 @@ export async function runCodexCliChat(options: {
       }
     }
   }
+  if (ourSessionId.trim().length > 0) {
+    spawnEnv['ASSISTANT_SESSION_ID'] = ourSessionId.trim();
+  }
   const spawnOptions: SpawnOptionsWithoutStdio = { env: spawnEnv };
   if (config?.workdir && config.workdir.trim().length > 0) {
     spawnOptions.cwd = config.workdir.trim();

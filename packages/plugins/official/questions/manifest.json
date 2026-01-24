@@ -1,0 +1,131 @@
+{
+  "id": "questions",
+  "version": "0.1.0",
+  "description": "Collect structured answers via interactive questionnaires.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "server": {
+    "provides": ["questions"],
+    "capabilities": ["questions.ask"]
+  },
+  "operations": [
+    {
+      "id": "ask",
+      "summary": "Ask the user a structured questionnaire.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Optional prompt shown above the questionnaire."
+          },
+          "schema": {
+            "type": "object",
+            "description": "Questionnaire schema (title, fields, sections, validation hints).",
+            "properties": {
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "fields": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/field" }
+              },
+              "sections": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/section" }
+              },
+              "submitLabel": { "type": "string" },
+              "cancelLabel": { "type": "string" },
+              "initialValues": {
+                "type": "object",
+                "description": "Prefill values keyed by field id.",
+                "additionalProperties": true
+              }
+            }
+          },
+          "timeoutMs": {
+            "type": "number",
+            "description": "Optional timeout in milliseconds."
+          },
+          "completedView": {
+            "type": "object",
+            "properties": {
+              "showInputs": { "type": "boolean" },
+              "summaryTemplate": { "type": "string" }
+            }
+          },
+          "validate": {
+            "type": "boolean",
+            "description": "When true (default), validate responses against the schema and reprompt on errors."
+          }
+        },
+        "required": ["schema"],
+        "definitions": {
+          "field": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "textarea",
+                  "number",
+                  "boolean",
+                  "select",
+                  "multiselect",
+                  "checkbox",
+                  "radio",
+                  "date",
+                  "time",
+                  "datetime"
+                ]
+              },
+              "label": { "type": "string" },
+              "description": { "type": "string" },
+              "required": { "type": "boolean" },
+              "placeholder": { "type": "string" },
+              "defaultValue": { "description": "Default value when no initialValues override is set." },
+              "validateOnClient": { "type": "boolean" },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": { "type": "string" },
+                    "value": { "type": "string" }
+                  },
+                  "required": ["label", "value"]
+                }
+              },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "step": { "type": "number" },
+              "minLength": { "type": "number" },
+              "maxLength": { "type": "number" },
+              "pattern": { "type": "string" }
+            },
+            "required": ["id", "type", "label"]
+          },
+          "section": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "fields": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/field" }
+              },
+              "optional": { "type": "boolean" },
+              "submitLabel": { "type": "string" }
+            },
+            "required": ["id", "fields"]
+          }
+        }
+      },
+      "capabilities": ["questions.ask"],
+      "tool": {
+        "description": "Ask the user a questionnaire and return their answers. Use schema.fields or schema.sections to define the form inputs."
+      }
+    }
+  ]
+}

@@ -213,6 +213,9 @@ export async function runClaudeCliChat(options: {
       }
     }
   }
+  if (sessionId.trim().length > 0) {
+    spawnEnv['ASSISTANT_SESSION_ID'] = sessionId.trim();
+  }
   const spawnOptions: SpawnOptionsWithoutStdio = { env: spawnEnv };
   const resolvedWorkdir = config?.workdir?.trim();
   if (resolvedWorkdir && resolvedWorkdir.length > 0) {

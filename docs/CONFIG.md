@@ -239,6 +239,7 @@ Enable or configure server plugins.
     "scheduled-sessions": { "enabled": true },
     "lists": { "enabled": true },
     "notes": { "enabled": true },
+    "questions": { "enabled": true },
     "url-fetch": { "enabled": true }
   }
 }
