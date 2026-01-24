@@ -1050,6 +1050,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (modalOverlay && !modalOverlay.contains(root)) {
           return true;
         }
+        if (document.querySelector('.command-palette-overlay.open')) {
+          return true;
+        }
         const dockPopover = document.querySelector<HTMLElement>('.panel-dock-popover.open');
         if (dockPopover && !dockPopover.contains(root)) {
           return true;

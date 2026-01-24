@@ -788,6 +788,44 @@ describe('ListPanelTableController notes column', () => {
     expect(urgentCheckbox?.checked).toBe(true);
   });
 
+  it('renders empty inline select with a blank placeholder', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [{ id: 'item1', title: 'Item 1' }],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [
+        { key: 'priority', label: 'Priority', type: 'select', options: ['High', 'Low'] },
+      ],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+    if (!row) return;
+
+    const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>('td'));
+    const select = cells[2]?.querySelector<HTMLSelectElement>('select');
+    expect(select).not.toBeNull();
+    if (!select) return;
+
+    expect(select.value).toBe('');
+    expect(select.options[0]?.textContent ?? '').toBe('');
+  });
+
   it('renders custom field values when inline editing is disabled', () => {
     try {
       localStorage.setItem(inlineEditingStorageKey, 'false');

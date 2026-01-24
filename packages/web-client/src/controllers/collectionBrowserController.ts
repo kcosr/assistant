@@ -1406,6 +1406,7 @@ export class CollectionBrowserController {
       tagController,
       itemFocusController,
       tagsContainer: this.tagsContainer,
+      allowItemNavigation: false,
       moveFocus: (delta) => this.moveFocus(delta),
       selectItem: (itemEl) => this.selectItem(itemEl),
       filter: (query) => this.filter(query),

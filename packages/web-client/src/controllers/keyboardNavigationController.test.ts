@@ -1,0 +1,370 @@
+// @vitest-environment jsdom
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { KeyboardNavigationController } from './keyboardNavigationController';
+import type { KeyboardNavigationControllerOptions } from './keyboardNavigationController';
+import type { PanelWorkspaceController } from './panelWorkspaceController';
+import type { DialogManager } from './dialogManager';
+
+function buildPanelWorkspace(
+  panelFrame: HTMLElement,
+  headerPanels: string[] = [],
+  openHeaderPanelId: string | null = null,
+): PanelWorkspaceController {
+  const layoutRoot = { kind: 'panel', panelId: 'panel-1' };
+  return {
+    focusNextPanel: vi.fn(),
+    getActivePanelId: vi.fn(() => 'panel-1'),
+    getPanelFrameElement: vi.fn((panelId: string) =>
+      panelId === 'panel-1' ? panelFrame : null,
+    ),
+    getLayoutRoot: vi.fn(() => layoutRoot),
+    cycleTabForPanel: vi.fn(() => null),
+    toggleSplitViewModeForPanelId: vi.fn(),
+    activatePanel: vi.fn(),
+    closePanelToPlaceholder: vi.fn(),
+    closePanel: vi.fn(),
+    togglePanel: vi.fn(),
+    isPanelTypeOpen: vi.fn(() => false),
+    openPanel: vi.fn(() => null),
+    listHeaderPanelIds: vi.fn(() => headerPanels),
+    toggleHeaderPanelById: vi.fn(),
+    openHeaderPanel: vi.fn(),
+    getHeaderDockButton: vi.fn(() => null),
+    getHeaderDockRoot: vi.fn(() => null),
+    getOpenHeaderPanelId: vi.fn(() => openHeaderPanelId),
+    getHeaderPopoverElement: vi.fn(() => null),
+  } as unknown as PanelWorkspaceController;
+}
+
+function buildOptions(
+  panelFrame: HTMLElement,
+  headerPanels: string[] = [],
+  openHeaderPanelId: string | null = null,
+): KeyboardNavigationControllerOptions {
+  const panelWorkspace = buildPanelWorkspace(panelFrame, headerPanels, openHeaderPanelId);
+  return {
+    getAgentSidebar: () => null,
+    getAgentSidebarSections: () => null,
+    panelWorkspace,
+    dialogManager: {
+      hasOpenDialog: false,
+      showConfirmDialog: vi.fn(),
+      showTextInputDialog: vi.fn(),
+    } as DialogManager,
+    isKeyboardShortcutsEnabled: () => true,
+    getSpeechAudioController: () => null,
+    cancelAllActiveOperations: () => false,
+    startPushToTalk: async () => {},
+    stopPushToTalk: () => {},
+    focusInput: () => {},
+    getInputEl: () => null,
+    getActiveChatRuntime: () => null,
+    openCommandPalette: () => {},
+    getFocusedSessionId: () => null,
+    setFocusedSessionId: () => {},
+    isSidebarFocused: () => false,
+    isMobileViewport: () => false,
+    selectSession: () => {},
+    showDeleteConfirmation: () => {},
+    touchSession: async () => {},
+    showClearHistoryConfirmation: () => {},
+  };
+}
+
+describe('KeyboardNavigationController panel shortcuts', () => {
+  beforeEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  it('toggles layout navigation on ctrl+p when panel is focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(buildOptions(panelFrame));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).registerShortcuts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry = (controller as any).shortcutRegistry;
+    registry.attach();
+
+    panelFrame.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    registry.detach();
+  });
+
+  it('toggles layout navigation on ctrl+p when body is focused and panel is active', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(buildOptions(panelFrame));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).registerShortcuts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry = (controller as any).shortcutRegistry;
+    registry.attach();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    registry.detach();
+  });
+
+  it('toggles layout navigation on ctrl+p when no panel is active', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    options.panelWorkspace.getActivePanelId = vi.fn(() => null);
+
+    const controller = new KeyboardNavigationController(options);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).registerShortcuts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry = (controller as any).shortcutRegistry;
+    registry.attach();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    registry.detach();
+  });
+
+  it('does not toggle layout navigation when target is editable', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    const input = document.createElement('input');
+    panelFrame.appendChild(input);
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(buildOptions(panelFrame));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).registerShortcuts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry = (controller as any).shortcutRegistry;
+    registry.attach();
+
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+
+    registry.detach();
+  });
+
+  it('toggles header navigation on ctrl+h when panel is focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(buildOptions(panelFrame));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).registerShortcuts();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const registry = (controller as any).shortcutRegistry;
+    registry.attach();
+
+    panelFrame.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(true);
+
+    registry.detach();
+  });
+
+  it('exits layout navigation on ctrl+p while active', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(buildOptions(panelFrame));
+    controller.attach();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+  });
+
+  it('switches layout navigation to header navigation on ctrl+h', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(
+      buildOptions(panelFrame, ['header-1', 'header-2'], null),
+    );
+    controller.attach();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    panelFrame.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(false);
+  });
+
+  it('switches header navigation to layout navigation on ctrl+p', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const controller = new KeyboardNavigationController(
+      buildOptions(panelFrame, ['header-1', 'header-2'], null),
+    );
+    controller.attach();
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(false);
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.body.classList.contains('panel-nav-layout-active')).toBe(false);
+  });
+
+  it('cycles header panels with left/right and a/d', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, ['header-1', 'header-2', 'header-3'], 'header-1');
+    const controller = new KeyboardNavigationController(options);
+    controller.attach();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).startHeaderNavigation();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+    );
+    expect(options.panelWorkspace.toggleHeaderPanelById).toHaveBeenLastCalledWith('header-1');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(new KeyboardEvent('keydown', { key: 'a' }));
+    expect(options.panelWorkspace.toggleHeaderPanelById).toHaveBeenLastCalledWith('header-3');
+  });
+
+  it('confirms header selection on Enter', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, ['header-1', 'header-2'], null);
+    const controller = new KeyboardNavigationController(options);
+    controller.attach();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).startHeaderNavigation();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'Enter' }),
+    );
+
+    expect(options.panelWorkspace.activatePanel).toHaveBeenLastCalledWith('header-1');
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(false);
+  });
+
+  it('confirms header selection on ArrowDown', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, ['header-1', 'header-2'], null);
+    const controller = new KeyboardNavigationController(options);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).startHeaderNavigation();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'ArrowDown' }),
+    );
+
+    expect(options.panelWorkspace.activatePanel).toHaveBeenLastCalledWith('header-1');
+    expect(document.body.classList.contains('panel-nav-header-active')).toBe(false);
+  });
+
+  it('closes modal before confirming header selection', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'panel-modal-overlay open';
+    document.body.appendChild(overlay);
+
+    const options = buildOptions(panelFrame, ['header-1'], null);
+    const controller = new KeyboardNavigationController(options);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).startHeaderNavigation();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (controller as any).handleHeaderNavigationKey(
+      new KeyboardEvent('keydown', { key: 'Enter' }),
+    );
+
+    expect(options.panelWorkspace.closePanel).toHaveBeenCalled();
+    expect(options.panelWorkspace.activatePanel).toHaveBeenLastCalledWith('header-1');
+  });
+});

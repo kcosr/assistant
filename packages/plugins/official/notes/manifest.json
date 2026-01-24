@@ -112,6 +112,10 @@
             "type": "string",
             "description": "Markdown content."
           },
+          "description": {
+            "type": "string",
+            "description": "Optional short description."
+          },
           "tags": {
             "type": "array",
             "items": { "type": "string" },

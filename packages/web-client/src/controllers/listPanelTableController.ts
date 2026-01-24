@@ -2191,7 +2191,7 @@ export class ListPanelTableController {
         select.className = 'list-item-form-select list-item-inline-select';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = 'Select…';
+        placeholder.textContent = '';
         select.appendChild(placeholder);
 
         const options: string[] = [];

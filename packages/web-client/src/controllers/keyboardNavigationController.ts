@@ -48,6 +48,7 @@ interface LayoutNavState {
 interface HeaderNavState {
   mode: 'header';
   page: number;
+  index: number;
 }
 
 export class KeyboardNavigationController {
@@ -155,7 +156,6 @@ export class KeyboardNavigationController {
     const layoutNavModifiers: ModifierKey[] = isMacPlatform()
       ? ['ctrl', 'meta', 'shift']
       : ['ctrl', 'shift', 'alt'];
-    const headerNavModifiers: ModifierKey[] = layoutNavModifiers;
 
     this.shortcutRegistry.register({
       id: 'open-command-palette',
@@ -167,28 +167,42 @@ export class KeyboardNavigationController {
         this.options.openCommandPalette();
       },
     });
+    if (isMacPlatform()) {
+      this.shortcutRegistry.register(
+        ctrlShortcut('open-command-palette-ctrl', 'k', 'Open command palette', () => {
+          this.options.openCommandPalette();
+        }),
+      );
+    }
 
-    this.shortcutRegistry.register({
-      id: 'toggle-layout-navigation',
-      key: 'p',
-      modifiers: layoutNavModifiers,
-      cmdOrCtrl: false,
-      description: 'Toggle layout navigation mode',
-      handler: () => {
+    this.shortcutRegistry.register(
+      ctrlShortcut('toggle-layout-navigation', 'p', 'Toggle layout navigation mode', (event) => {
+        if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
+          return false;
+        }
+        if (!this.canHandlePanelNavigationShortcut(event)) {
+          return false;
+        }
         this.toggleLayoutNavigation();
-      },
-    });
+      }),
+    );
 
-    this.shortcutRegistry.register({
-      id: 'toggle-header-navigation',
-      key: 'h',
-      modifiers: headerNavModifiers,
-      cmdOrCtrl: false,
-      description: 'Toggle header panel navigation mode',
-      handler: () => {
-        this.toggleHeaderNavigation();
-      },
-    });
+    this.shortcutRegistry.register(
+      ctrlShortcut(
+        'toggle-header-navigation',
+        'h',
+        'Toggle header panel navigation mode',
+        (event) => {
+          if (!this.preparePanelNavigationShortcut({ closeModal: false })) {
+            return false;
+          }
+          if (!this.canHandlePanelNavigationShortcut(event)) {
+            return false;
+          }
+          this.toggleHeaderNavigation();
+        },
+      ),
+    );
 
     this.shortcutRegistry.register({
       id: 'cycle-panel-forward',
@@ -375,10 +389,9 @@ export class KeyboardNavigationController {
           event.stopImmediatePropagation();
           return;
         }
-        if (this.isTerminalKeyTarget(event)) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-        }
+        // Block keyboard events from reaching panels while navigation mode is active.
+        event.preventDefault();
+        event.stopImmediatePropagation();
       },
       true,
     );
@@ -469,6 +482,9 @@ export class KeyboardNavigationController {
   }
 
   private handlePanelNavigationKey(event: KeyboardEvent): boolean {
+    if (this.handlePanelNavigationToggle(event)) {
+      return true;
+    }
     if (this.layoutNavState) {
       return this.handleLayoutNavigationKey(event);
     }
@@ -476,6 +492,36 @@ export class KeyboardNavigationController {
       return this.handleHeaderNavigationKey(event);
     }
     return false;
+  }
+
+  private handlePanelNavigationToggle(event: KeyboardEvent): boolean {
+    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+      return false;
+    }
+    const key = event.key.toLowerCase();
+    if (key !== 'p' && key !== 'h') {
+      return false;
+    }
+    if (key === 'p') {
+      if (this.layoutNavState) {
+        this.stopLayoutNavigation();
+        return true;
+      }
+      if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
+        return true;
+      }
+      this.startLayoutNavigation();
+      return true;
+    }
+    if (this.headerNavState) {
+      this.stopHeaderNavigation();
+      return true;
+    }
+    if (!this.preparePanelNavigationShortcut({ closeModal: false })) {
+      return true;
+    }
+    this.startHeaderNavigation();
+    return true;
   }
 
   private isTerminalKeyTarget(event: KeyboardEvent): boolean {
@@ -496,6 +542,106 @@ export class KeyboardNavigationController {
       key.startsWith('audio') ||
       code.startsWith('audio')
     );
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) {
+      return false;
+    }
+    if ((target as HTMLElement).isContentEditable) {
+      return true;
+    }
+    return Boolean(
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
+      ),
+    );
+  }
+
+  private preparePanelNavigationShortcut(options?: { closeModal?: boolean }): boolean {
+    const blockingSelectors = [
+      '.command-palette-overlay.open',
+      '.workspace-switcher-overlay.open',
+      '.session-picker-popover',
+      '.panel-launcher-overlay.open',
+      '.confirm-dialog-overlay',
+      '#share-target-modal.visible',
+    ];
+    if (blockingSelectors.some((selector) => Boolean(document.querySelector(selector)))) {
+      return false;
+    }
+
+    const openHeaderPanelId = this.options.panelWorkspace.getOpenHeaderPanelId();
+    if (openHeaderPanelId) {
+      this.options.panelWorkspace.toggleHeaderPanelById(openHeaderPanelId);
+    }
+
+    if (options?.closeModal !== false) {
+      const modalOverlay = document.querySelector('.panel-modal-overlay.open');
+      if (modalOverlay) {
+        const activePanelId = this.options.panelWorkspace.getActivePanelId();
+        if (activePanelId) {
+          this.options.panelWorkspace.closePanel(activePanelId);
+        }
+      }
+    }
+
+    return true;
+  }
+
+  private canHandlePanelNavigationShortcut(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) {
+      return false;
+    }
+    if (this.isEditableTarget(event.target) || this.isEditableTarget(document.activeElement)) {
+      return false;
+    }
+    const targetNode = event.target instanceof Node ? event.target : null;
+    const activeNode = document.activeElement instanceof Node ? document.activeElement : null;
+    const modalRoot = document.querySelector('.panel-modal');
+    if (
+      modalRoot &&
+      ((targetNode && modalRoot.contains(targetNode)) ||
+        (activeNode && modalRoot.contains(activeNode)))
+    ) {
+      return true;
+    }
+    const headerPopover = this.options.panelWorkspace.getHeaderPopoverElement();
+    if (headerPopover) {
+      if (
+        (targetNode && headerPopover.contains(targetNode)) ||
+        (activeNode && headerPopover.contains(activeNode))
+      ) {
+        return true;
+      }
+    }
+    const activePanelId = this.options.panelWorkspace.getActivePanelId();
+    if (activePanelId) {
+      const frame = this.options.panelWorkspace.getPanelFrameElement(activePanelId);
+      if (frame) {
+        if (
+          (targetNode && frame.contains(targetNode)) ||
+          (activeNode && frame.contains(activeNode))
+        ) {
+          return true;
+        }
+      }
+    }
+    const isBodyTarget = targetNode === document.body || targetNode === document.documentElement;
+    const isBodyActive = activeNode === document.body || activeNode === document.documentElement;
+    if (isBodyTarget || isBodyActive) {
+      return true;
+    }
+    const headerDockRoot = this.options.panelWorkspace.getHeaderDockRoot?.() ?? null;
+    if (headerDockRoot) {
+      if (
+        (targetNode && headerDockRoot.contains(targetNode)) ||
+        (activeNode && headerDockRoot.contains(activeNode))
+      ) {
+        return true;
+      }
+    }
+    return true;
   }
 
   private toggleLayoutNavigation(): void {
@@ -540,7 +686,9 @@ export class KeyboardNavigationController {
 
   private startHeaderNavigation(): void {
     this.stopLayoutNavigation();
-    this.headerNavState = { mode: 'header', page: 0 };
+    const page = 0;
+    const index = -1;
+    this.headerNavState = { mode: 'header', page, index };
     document.body.classList.add('panel-nav-header-active');
     this.renderHeaderNavBadges();
   }
@@ -646,6 +794,11 @@ export class KeyboardNavigationController {
 
     if (event.key === 'Enter') {
       return this.confirmLayoutSelection();
+    }
+
+    const lowerKey = event.key.toLowerCase();
+    if (lowerKey === 'a' || lowerKey === 's' || lowerKey === 'd') {
+      return this.moveLayoutSelection(lowerKey);
     }
 
     if (event.key.startsWith('Arrow')) {
@@ -792,8 +945,11 @@ export class KeyboardNavigationController {
   private resolveArrowDirection(key: string): ArrowDirection | null {
     switch (key) {
       case 'ArrowLeft':
+      case 'a':
+      case 's':
         return 'left';
       case 'ArrowRight':
+      case 'd':
         return 'right';
       case 'ArrowUp':
         return 'up';
@@ -984,6 +1140,19 @@ export class KeyboardNavigationController {
     if (event.ctrlKey || event.metaKey || event.altKey) {
       return false;
     }
+    const lowerKey = event.key.toLowerCase();
+    if (event.key === 'ArrowLeft' || lowerKey === 'a') {
+      return this.moveHeaderSelection(-1);
+    }
+    if (event.key === 'ArrowRight' || lowerKey === 'd') {
+      return this.moveHeaderSelection(1);
+    }
+    if (event.key === 'ArrowDown') {
+      return this.confirmHeaderSelection();
+    }
+    if (event.key === 'Enter') {
+      return this.confirmHeaderSelection();
+    }
     if (event.key === '0') {
       return this.advanceHeaderPage();
     }
@@ -994,18 +1163,85 @@ export class KeyboardNavigationController {
     return false;
   }
 
+  private confirmHeaderSelection(): boolean {
+    const state = this.headerNavState;
+    if (!state) {
+      return false;
+    }
+    const headerPanels = this.options.panelWorkspace.listHeaderPanelIds();
+    if (headerPanels.length === 0) {
+      return true;
+    }
+    let panelId: string | null = null;
+    if (state.index >= 0 && state.index < headerPanels.length) {
+      panelId = headerPanels[state.index] ?? null;
+    }
+    if (!panelId) {
+      panelId = this.options.panelWorkspace.getOpenHeaderPanelId();
+    }
+    if (!panelId) {
+      panelId = headerPanels[0] ?? null;
+    }
+    if (!panelId) {
+      return true;
+    }
+    const modalOverlay = document.querySelector('.panel-modal-overlay.open');
+    if (modalOverlay) {
+      const activePanelId = this.options.panelWorkspace.getActivePanelId();
+      if (activePanelId) {
+        this.options.panelWorkspace.closePanel(activePanelId);
+      }
+    }
+    this.options.panelWorkspace.openHeaderPanel(panelId);
+    this.options.panelWorkspace.activatePanel(panelId);
+    this.stopHeaderNavigation();
+    return true;
+  }
+
   private advanceHeaderPage(): boolean {
     const state = this.headerNavState;
     if (!state) {
       return false;
     }
     const headerPanels = this.options.panelWorkspace.listHeaderPanelIds();
+    if (headerPanels.length === 0) {
+      return true;
+    }
     const pageSize = 9;
     const totalPages = Math.max(1, Math.ceil(headerPanels.length / pageSize));
     if (totalPages <= 1) {
       return true;
     }
     state.page = (state.page + 1) % totalPages;
+    const nextIndex = Math.min(state.page * pageSize, headerPanels.length - 1);
+    state.index = nextIndex;
+    this.renderHeaderNavBadges();
+    return true;
+  }
+
+  private moveHeaderSelection(offset: -1 | 1): boolean {
+    const state = this.headerNavState;
+    if (!state) {
+      return false;
+    }
+    const headerPanels = this.options.panelWorkspace.listHeaderPanelIds();
+    if (headerPanels.length === 0) {
+      return true;
+    }
+    const total = headerPanels.length;
+    let nextIndex: number;
+    if (state.index < 0) {
+      nextIndex = offset > 0 ? 0 : total - 1;
+    } else {
+      nextIndex = (state.index + offset + total) % total;
+    }
+    const panelId = headerPanels[nextIndex];
+    if (!panelId) {
+      return true;
+    }
+    this.options.panelWorkspace.toggleHeaderPanelById(panelId);
+    state.index = nextIndex;
+    state.page = Math.floor(nextIndex / 9);
     this.renderHeaderNavBadges();
     return true;
   }
@@ -1023,6 +1259,8 @@ export class KeyboardNavigationController {
       return true;
     }
     this.options.panelWorkspace.toggleHeaderPanelById(panelId);
+    state.index = index;
+    state.page = Math.floor(index / pageSize);
     this.renderHeaderNavBadges();
     return true;
   }
@@ -1037,6 +1275,7 @@ export class KeyboardNavigationController {
     const totalPages = Math.max(1, Math.ceil(headerPanels.length / pageSize));
     if (this.headerNavState.page >= totalPages) {
       this.headerNavState.page = 0;
+      this.headerNavState.index = 0;
     }
     const startIndex = this.headerNavState.page * pageSize;
     const endIndex = Math.min(headerPanels.length, startIndex + pageSize);

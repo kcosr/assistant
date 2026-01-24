@@ -1,4 +1,5 @@
 import type { ListCustomFieldDefinition } from '../controllers/listCustomFields';
+import { hasPinnedTag } from './pinnedTag';
 
 export type SortDirection = 'asc' | 'desc';
 
@@ -226,6 +227,13 @@ export function sortItems(
   const sortType = getSortTypeForColumn(sortState.column, customFields);
 
   const sortFn = (a: ListItem, b: ListItem): number => {
+    if (sortState.column === 'title') {
+      const aPinned = hasPinnedTag(a.tags);
+      const bPinned = hasPinnedTag(b.tags);
+      if (aPinned !== bPinned) {
+        return aPinned ? -1 : 1;
+      }
+    }
     const aVal = getComparableValue(a, sortState.column, sortType);
     const bVal = getComparableValue(b, sortState.column, sortType);
     return compareValues(aVal, bVal, sortState.direction);

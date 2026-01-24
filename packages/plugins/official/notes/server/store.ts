@@ -95,11 +95,16 @@ export class NotesStore {
       }
 
       const tags = normalizeTags(metadata.tags);
+      const description =
+        typeof metadata.description === 'string' && metadata.description.trim().length > 0
+          ? metadata.description
+          : undefined;
       const noteMeta: NoteMetadata = {
         title: metadata.title ?? this.paths.titleFromSlug(slug),
         tags,
         created,
         updated,
+        ...(description ? { description } : {}),
       };
 
       if (!hasAllTags(noteMeta.tags, params?.tags)) {
@@ -121,17 +126,27 @@ export class NotesStore {
     const tags = normalizeTags(metadata.tags);
     const created = metadata.created ?? new Date().toISOString();
     const updated = metadata.updated ?? created;
+    const description =
+      typeof metadata.description === 'string' && metadata.description.trim().length > 0
+        ? metadata.description
+        : undefined;
 
     return {
       title: metadata.title ?? title ?? this.paths.titleFromSlug(slug),
       tags,
       created,
       updated,
+      ...(description ? { description } : {}),
       content,
     };
   }
 
-  async write(params: { title: string; content: string; tags?: string[] }): Promise<NoteMetadata> {
+  async write(params: {
+    title: string;
+    content: string;
+    tags?: string[];
+    description?: string;
+  }): Promise<NoteMetadata> {
     const { title, content } = params;
     const { filePath } = this.paths.resolvePath(title);
 
@@ -150,12 +165,20 @@ export class NotesStore {
     const now = new Date().toISOString();
     const created = existingMetadata?.created ?? now;
     const tags = params.tags ?? existingMetadata?.tags ?? [];
+    let description: string | undefined;
+    if (params.description !== undefined) {
+      const trimmed = params.description.trim();
+      description = trimmed ? params.description : undefined;
+    } else if (typeof existingMetadata?.description === 'string') {
+      description = existingMetadata.description;
+    }
 
     const metadata: NoteMetadata = {
       title,
       tags: normalizeTags(tags),
       created,
       updated: now,
+      ...(description ? { description } : {}),
     };
 
     const serialized = serializeFrontmatter(metadata, content);
@@ -172,6 +195,7 @@ export class NotesStore {
       tags: normalizeTags(note.tags ?? []),
       created: note.created || now,
       updated: note.updated || now,
+      ...(note.description && note.description.trim() ? { description: note.description } : {}),
     };
 
     const serialized = serializeFrontmatter(metadata, note.content);
@@ -194,6 +218,10 @@ export class NotesStore {
     const now = new Date().toISOString();
     const created = metadata.created ?? now;
     const tags = normalizeTags(metadata.tags);
+    const description =
+      typeof metadata.description === 'string' && metadata.description.trim().length > 0
+        ? metadata.description
+        : undefined;
     const updated = now;
 
     const newMetadata: NoteMetadata = {
@@ -201,6 +229,7 @@ export class NotesStore {
       tags,
       created,
       updated,
+      ...(description ? { description } : {}),
     };
 
     const serialized = serializeFrontmatter(newMetadata, content);
@@ -239,6 +268,10 @@ export class NotesStore {
     const now = new Date().toISOString();
     const created = metadata.created ?? now;
     const tags = normalizeTags(metadata.tags);
+    const description =
+      typeof metadata.description === 'string' && metadata.description.trim().length > 0
+        ? metadata.description
+        : undefined;
     const updatedBody = body.length > 0 ? `${body}\n${content}` : content;
 
     const newMetadata: NoteMetadata = {
@@ -246,6 +279,7 @@ export class NotesStore {
       tags,
       created,
       updated: now,
+      ...(description ? { description } : {}),
     };
 
     const serialized = serializeFrontmatter(newMetadata, updatedBody);
@@ -272,6 +306,10 @@ export class NotesStore {
     const now = new Date().toISOString();
     const created = metadata.created ?? now;
     const existingTags = normalizeTags(metadata.tags);
+    const description =
+      typeof metadata.description === 'string' && metadata.description.trim().length > 0
+        ? metadata.description
+        : undefined;
     const combinedTags = normalizeTags([...existingTags, ...tagsToAdd]);
 
     const newMetadata: NoteMetadata = {
@@ -279,6 +317,7 @@ export class NotesStore {
       tags: combinedTags,
       created,
       updated: now,
+      ...(description ? { description } : {}),
     };
 
     const serialized = serializeFrontmatter(newMetadata, content);
@@ -306,6 +345,10 @@ export class NotesStore {
     const now = new Date().toISOString();
     const created = metadata.created ?? now;
     const existingTags = normalizeTags(metadata.tags);
+    const description =
+      typeof metadata.description === 'string' && metadata.description.trim().length > 0
+        ? metadata.description
+        : undefined;
     const removeNormalized = normalizeTags(tagsToRemove);
     const remainingTags = existingTags.filter((tag) => !removeNormalized.includes(tag));
 
@@ -314,6 +357,7 @@ export class NotesStore {
       tags: remainingTags,
       created,
       updated: now,
+      ...(description ? { description } : {}),
     };
 
     const serialized = serializeFrontmatter(newMetadata, content);
@@ -384,34 +428,47 @@ export class NotesStore {
       const title = metadata.title ?? this.paths.titleFromSlug(slug);
       const lowerTitle = title.toLowerCase();
       const lowerContent = content.toLowerCase();
+      const description =
+        typeof metadata.description === 'string' && metadata.description.trim().length > 0
+          ? metadata.description
+          : '';
+      const lowerDescription = description.toLowerCase();
 
-      // Check if query matches title or content
+      // Check if query matches title, content, or description
       const titleMatches = lowerTitle.includes(query);
       const contentIndex = lowerContent.indexOf(query);
       const contentMatches = contentIndex !== -1;
+      const descriptionIndex = description ? lowerDescription.indexOf(query) : -1;
+      const descriptionMatches = descriptionIndex !== -1;
 
-      if (!titleMatches && !contentMatches) {
+      if (!titleMatches && !contentMatches && !descriptionMatches) {
         continue;
       }
 
       let snippet: string | undefined;
-      if (contentMatches) {
+      const buildSnippet = (source: string, matchIndex: number): string => {
         const context = 40;
-        const start = Math.max(0, contentIndex - context);
-        const end = Math.min(content.length, contentIndex + query.length + context);
-        snippet = content.slice(start, end).replace(/\s+/g, ' ').trim();
-
+        const start = Math.max(0, matchIndex - context);
+        const end = Math.min(source.length, matchIndex + query.length + context);
+        let snippetText = source.slice(start, end).replace(/\s+/g, ' ').trim();
         if (start > 0) {
-          snippet = `…${snippet}`;
+          snippetText = `…${snippetText}`;
         }
-        if (end < content.length) {
-          snippet = `${snippet}…`;
+        if (end < source.length) {
+          snippetText = `${snippetText}…`;
         }
+        return snippetText;
+      };
+      if (contentMatches) {
+        snippet = buildSnippet(content, contentIndex);
+      } else if (descriptionMatches) {
+        snippet = buildSnippet(description, descriptionIndex);
       }
 
       results.push({
         title,
         tags,
+        ...(description ? { description } : {}),
         ...(snippet ? { snippet } : {}),
       });
     }

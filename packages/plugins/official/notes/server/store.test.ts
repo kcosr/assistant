@@ -39,17 +39,20 @@ describe('NotesStore (plugin)', () => {
       title: 'Meeting Notes',
       content: 'First line of the meeting.',
       tags: ['work', 'meetings'],
+      description: 'Weekly sync notes.',
     });
 
     expect(meta.title).toBe('Meeting Notes');
     expect(meta.tags).toEqual(['work', 'meetings']);
     expect(meta.created).toBe('2024-01-01T00:00:00.000Z');
     expect(meta.updated).toBe('2024-01-01T00:00:00.000Z');
+    expect(meta.description).toBe('Weekly sync notes.');
 
     const list = await store.list();
     expect(list).toHaveLength(1);
     expect(list[0]?.title).toBe('Meeting Notes');
     expect(list[0]?.tags).toEqual(['work', 'meetings']);
+    expect(list[0]?.description).toBe('Weekly sync notes.');
 
     const filtered = await store.list({ tags: ['work', 'meetings'] });
     expect(filtered).toHaveLength(1);
@@ -59,6 +62,7 @@ describe('NotesStore (plugin)', () => {
     expect(note.title).toBe('Meeting Notes');
     expect(note.tags).toEqual(['work', 'meetings']);
     expect(note.content).toBe('First line of the meeting.');
+    expect(note.description).toBe('Weekly sync notes.');
   });
 
   it('preserves created timestamp and updates updated on write', async () => {
@@ -134,6 +138,7 @@ describe('NotesStore (plugin)', () => {
       title: 'Frontmatter Note',
       content: 'Body content',
       tags: ['a', 'b'],
+      description: 'Frontmatter description',
     });
 
     const slug = (store as unknown as { slugify(title: string): string }).slugify(
@@ -147,6 +152,7 @@ describe('NotesStore (plugin)', () => {
     expect(raw).toContain('tags:');
     expect(raw).toContain('- a');
     expect(raw).toContain('- b');
+    expect(raw).toContain('description: Frontmatter description');
     expect(raw).toContain('created: 2024-01-01T00:00:00.000Z');
     expect(raw).toContain('updated: 2024-01-01T00:00:00.000Z');
     expect(raw).toContain('Body content');
@@ -155,6 +161,31 @@ describe('NotesStore (plugin)', () => {
     expect(note.title).toBe('Frontmatter Note');
     expect(note.tags).toEqual(['a', 'b']);
     expect(note.content).toBe('Body content');
+    expect(note.description).toBe('Frontmatter description');
+  });
+
+  it('preserves or clears description on write', async () => {
+    const baseDir = await createTempDir();
+    const store = createStore(baseDir);
+
+    await store.write({
+      title: 'Summary Note',
+      content: 'Original content',
+      description: 'Initial description',
+    });
+
+    const preserved = await store.write({
+      title: 'Summary Note',
+      content: 'Updated content',
+    });
+    expect(preserved.description).toBe('Initial description');
+
+    const cleared = await store.write({
+      title: 'Summary Note',
+      content: 'Cleared description',
+      description: '',
+    });
+    expect(cleared.description).toBeUndefined();
   });
 
   it('filters notes by tags with AND logic', async () => {
@@ -196,6 +227,7 @@ describe('NotesStore (plugin)', () => {
       title: 'Work Plan',
       content: 'Prepare quarterly report and buy milk for office.',
       tags: ['work'],
+      description: 'Office checklist',
     });
 
     const milkResults = await store.search({ query: 'milk' });
@@ -205,6 +237,11 @@ describe('NotesStore (plugin)', () => {
     const tagged = await store.search({ query: 'milk', tags: ['personal', 'shopping'] });
     expect(tagged).toHaveLength(1);
     expect(tagged[0]?.title).toBe('Groceries');
+
+    const descriptionMatch = await store.search({ query: 'checklist' });
+    expect(descriptionMatch).toHaveLength(1);
+    expect(descriptionMatch[0]?.title).toBe('Work Plan');
+    expect(descriptionMatch[0]?.description).toBe('Office checklist');
   });
 
   it('enforces slug validation and prevents path traversal', async () => {

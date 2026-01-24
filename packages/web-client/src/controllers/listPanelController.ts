@@ -366,6 +366,20 @@ export class ListPanelController {
       void this.moveFocusedItemToBoundary('bottom');
       return true;
     }
+    if (lowerKey === 'w') {
+      if (this.options.getSelectedItemCount() !== 1) {
+        return false;
+      }
+      void this.moveFocusedItemByOffset(-1);
+      return true;
+    }
+    if (lowerKey === 's') {
+      if (this.options.getSelectedItemCount() !== 1) {
+        return false;
+      }
+      void this.moveFocusedItemByOffset(1);
+      return true;
+    }
     if (lowerKey === 'n') {
       this.openAddItemDialog(this.currentListId);
       return true;
@@ -1546,6 +1560,48 @@ export class ListPanelController {
       this.options.setStatus('Failed to update pinned items');
       return false;
     }
+  }
+
+  private async moveFocusedItemByOffset(offset: -1 | 1): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId || !this.currentData) {
+      return false;
+    }
+    const selectedIds = this.options.getSelectedItemIds();
+    if (selectedIds.length !== 1) {
+      return false;
+    }
+    const itemId = selectedIds[0];
+    if (!itemId) {
+      return false;
+    }
+    const currentIndex = this.currentSortedItems.findIndex((item) => item.id === itemId);
+    if (currentIndex === -1) {
+      return false;
+    }
+    const nextIndex = currentIndex + offset;
+    if (nextIndex < 0 || nextIndex >= this.currentSortedItems.length) {
+      return false;
+    }
+    const currentItem = this.currentSortedItems[currentIndex];
+    const nextItem = this.currentSortedItems[nextIndex];
+    if (!currentItem || !nextItem) {
+      return false;
+    }
+    const currentCompleted = currentItem.completed ?? false;
+    const nextCompleted = nextItem.completed ?? false;
+    if (currentCompleted !== nextCompleted) {
+      return false;
+    }
+    this.options.recentUserItemUpdates.add(itemId);
+    window.setTimeout(() => {
+      this.options.recentUserItemUpdates.delete(itemId);
+    }, this.options.userUpdateTimeoutMs);
+    const ok = await this.updateListItem(listId, itemId, { position: nextIndex });
+    if (!ok) {
+      this.options.setStatus('Failed to move item');
+    }
+    return ok;
   }
 
   private async moveFocusedItemToBoundary(

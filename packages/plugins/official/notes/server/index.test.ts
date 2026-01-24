@@ -36,31 +36,51 @@ describe('notes plugin operations', () => {
     }
 
     const writeResult = (await ops.write(
-      { title: 'Test Note', content: 'Hello world', tags: ['Personal', 'test'] },
+      {
+        title: 'Test Note',
+        content: 'Hello world',
+        tags: ['Personal', 'test'],
+        description: 'Sample description',
+      },
       ctx,
-    )) as { title?: string; tags?: string[] };
+    )) as { title?: string; tags?: string[]; description?: string };
 
     expect(writeResult.title).toBe('Test Note');
     expect(writeResult.tags).toEqual(['personal', 'test']);
+    expect(writeResult.description).toBe('Sample description');
 
-    const listResult = (await ops.list({}, ctx)) as Array<{ title?: string; tags?: string[] }>;
+    const listResult = (await ops.list({}, ctx)) as Array<{
+      title?: string;
+      tags?: string[];
+      description?: string;
+    }>;
     const titles = listResult.map((note) => note.title);
     expect(titles).toContain('Test Note');
+    expect(listResult[0]?.description).toBe('Sample description');
 
     const readResult = (await ops.read({ title: 'Test Note' }, ctx)) as {
       title?: string;
       tags?: string[];
       content?: string;
+      description?: string;
     };
     expect(readResult.title).toBe('Test Note');
     expect(readResult.tags).toEqual(['personal', 'test']);
     expect(readResult.content).toBe('Hello world');
+    expect(readResult.description).toBe('Sample description');
 
     const searchResult = (await ops.search({ query: 'hello', limit: 5 }, ctx)) as Array<{
       title?: string;
     }>;
     expect(searchResult.length).toBeGreaterThan(0);
     expect(searchResult[0]?.title).toBe('Test Note');
+
+    const descriptionSearch = (await ops.search({ query: 'sample', limit: 5 }, ctx)) as Array<{
+      title?: string;
+      description?: string;
+    }>;
+    expect(descriptionSearch[0]?.title).toBe('Test Note');
+    expect(descriptionSearch[0]?.description).toBe('Sample description');
 
     const afterAdd = (await ops['tags-add']({ title: 'Test Note', tags: ['Extra'] }, ctx)) as {
       tags?: string[];
@@ -133,7 +153,10 @@ describe('notes plugin operations', () => {
       throw new Error('Expected operations to be defined');
     }
 
-    await ops.write({ title: 'Alpha Note', content: 'First', tags: ['alpha'] }, ctx);
+    await ops.write(
+      { title: 'Alpha Note', content: 'First', tags: ['alpha'], description: 'Alpha desc' },
+      ctx,
+    );
     await ops.write({ title: 'Beta Note', content: 'Second', tags: ['beta'] }, ctx);
 
     const searchProvider = plugin.searchProvider;
@@ -145,6 +168,8 @@ describe('notes plugin operations', () => {
     const titles = results.map((result) => result.title);
     expect(titles).toContain('Alpha Note');
     expect(titles).toContain('Beta Note');
+    const alphaResult = results.find((result) => result.title === 'Alpha Note');
+    expect(alphaResult?.snippet).toBe('Alpha desc');
 
     if (plugin.shutdown) {
       await plugin.shutdown();

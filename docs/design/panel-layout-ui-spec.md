@@ -173,8 +173,8 @@ Right-clicking (or long-pressing) a panel header should expose:
 ## Keyboard Shortcuts (Default)
 
 - **Open launcher / command palette**: `Ctrl/Cmd + K`
-- **Layout navigation mode**: `Ctrl + Shift + Cmd + P` (macOS) / `Ctrl + Shift + Alt + P` (others) (arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
-- **Header panel navigation**: `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) (`1-9` toggle pinned header panels, `0` cycles pages, `Esc` exits)
+- **Layout navigation mode**: `Ctrl + P` (arrows move between siblings, `A/S` = left, `D` = right, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
+- **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - **Split panel**: `Ctrl/Cmd + Shift + \`
 - **Close panel**: `Ctrl/Cmd + W` (panel-focused)

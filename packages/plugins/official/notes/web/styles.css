@@ -1443,10 +1443,20 @@
   gap: var(--spacing-sm);
 }
 
+.collection-note-description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
 .collection-note-button-group {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
+}
+
+.note-description-textarea {
+  min-height: 72px;
 }
 
 .collection-note-edit-button,
