@@ -1014,6 +1014,45 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.querySelector('.interaction-approval')).not.toBeNull();
   });
 
+  it('does not create a tool block for questionnaire tool_result without tool_call', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-question',
+          toolName: 'questions_ask',
+          interactionId: 'i-question',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Question',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-question',
+          result: { answers: { answer: 'ok' } },
+        },
+      }),
+    ]);
+
+    expect(
+      container.querySelector('.tool-output-block[data-tool-call-id="tc-question"]'),
+    ).toBeNull();
+    expect(container.querySelector('.interaction-standalone')).not.toBeNull();
+  });
+
   it('creates a new thinking block after tool calls', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

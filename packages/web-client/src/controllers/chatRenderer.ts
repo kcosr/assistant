@@ -83,6 +83,7 @@ export class ChatRenderer {
   private readonly agentMessageElements = new Map<string, HTMLDivElement>();
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
+  private readonly questionnaireToolCalls = new Set<string>();
   private readonly pendingInteractionToolCalls = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
     string,
@@ -312,6 +313,7 @@ export class ChatRenderer {
     this.pendingInteractionRequests.clear();
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
+    this.questionnaireToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
     this.suppressTypingIndicator = false;
   }
@@ -790,6 +792,9 @@ export class ChatRenderer {
     // Prefer existing tool-call element; if missing, create a minimal one.
     let block = this.toolCallElements.get(callId) ?? null;
     if (!block) {
+      if (this.questionnaireToolCalls.has(callId)) {
+        return;
+      }
       const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
 
       block = createToolOutputBlock({
@@ -943,6 +948,7 @@ export class ChatRenderer {
     const presentation = payload.presentation ?? 'tool';
 
     if (presentation === 'questionnaire') {
+      this.questionnaireToolCalls.add(toolCallId);
       this.renderStandaloneInteraction(event, enabled);
       return;
     }
