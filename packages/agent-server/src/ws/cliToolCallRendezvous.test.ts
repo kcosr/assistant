@@ -10,6 +10,8 @@ describe('CliToolCallRendezvous', () => {
       callId: 'c1',
       toolName: 'bash',
       args: { command: 'assistant plugins run questions ask' },
+      turnId: 't1',
+      responseId: 'r1',
     });
 
     const match = await rendezvous.match({
@@ -19,6 +21,8 @@ describe('CliToolCallRendezvous', () => {
     });
 
     expect(match?.callId).toBe('c1');
+    expect(match?.turnId).toBe('t1');
+    expect(match?.responseId).toBe('r1');
   });
 
   it('waits for a matching call to arrive', async () => {

@@ -3,6 +3,8 @@ export interface CliToolCallRecord {
   callId: string;
   toolName: string;
   args: Record<string, unknown>;
+  turnId?: string;
+  responseId?: string;
   createdAt: number;
 }
 
@@ -33,12 +35,16 @@ export class CliToolCallRendezvous {
     callId: string;
     toolName: string;
     args: Record<string, unknown>;
+    turnId?: string;
+    responseId?: string;
   }): void {
     const call: CliToolCallRecord = {
       sessionId: options.sessionId,
       callId: options.callId,
       toolName: options.toolName,
       args: options.args ?? {},
+      ...(options.turnId ? { turnId: options.turnId } : {}),
+      ...(options.responseId ? { responseId: options.responseId } : {}),
       createdAt: Date.now(),
     };
 

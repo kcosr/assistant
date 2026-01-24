@@ -527,6 +527,8 @@ export function createPluginOperationRoutes(options: {
                   callId: toolCallId,
                   toolName: route.toolName,
                   sessionHub,
+                  ...(resolvedMatch?.turnId ? { turnId: resolvedMatch.turnId } : {}),
+                  ...(resolvedMatch?.responseId ? { responseId: resolvedMatch.responseId } : {}),
                   ...(toolContext.eventStore ? { eventStore: toolContext.eventStore } : {}),
                   ...(toolContext.signal ? { signal: toolContext.signal } : {}),
                 },

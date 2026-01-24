@@ -75,7 +75,8 @@ the server now:
 - Records CLI tool calls (callId + args) in a short-lived per-session queue.
 - When an HTTP interaction request arrives, waits briefly (~1s) for a matching CLI tool call.
 - Scores candidates using plugin/tool tokens, with a `bash` fallback if no score matches.
-- Reuses the matched CLI `callId` so the UI can anchor interactions to the tool block.
+- Reuses the matched CLI `callId` and carries forward the tool call’s `turnId`/`responseId` so
+  replay can anchor approvals/questionnaires to the correct assistant response.
 
 This keeps CLI questionnaires visually identical to built-in agent flows without requiring a
 synthetic response id.

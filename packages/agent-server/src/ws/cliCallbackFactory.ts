@@ -86,6 +86,8 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
       callId,
       toolName,
       args: args ?? {},
+      ...(turnId ? { turnId } : {}),
+      ...(responseId ? { responseId } : {}),
     });
     let argsJson = '{}';
     try {

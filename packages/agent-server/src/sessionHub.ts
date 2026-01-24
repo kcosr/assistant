@@ -183,6 +183,8 @@ export class SessionHub {
     callId: string;
     toolName: string;
     args: Record<string, unknown>;
+    turnId?: string;
+    responseId?: string;
   }): void {
     this.cliToolCallRendezvous.record(options);
   }
