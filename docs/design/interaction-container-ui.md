@@ -65,6 +65,16 @@ CLI/HTTP tool calls to render without a response ID.
 - Tool calls that receive **approvals** or **questionnaires** are treated as standalone blocks:
   they are ungrouped (or prevent grouping) so the interaction stays visually distinct and does
   not collapse into adjacent tool-call groups.
+- If an approval interaction arrives during replay without a matching `tool_call`, a placeholder
+  tool block is created so the approval controls still render.
+- Questionnaire tool results do **not** create placeholder tool blocks; questionnaires remain
+  standalone UI elements.
+
+### 3a) Failure + Pending Interaction Handling
+
+- If a tool call fails while an approval/questionnaire is pending, the interaction is marked
+  complete (cancelled) and controls are disabled so users can’t approve a failed tool call.
+- Pending-interaction typing suppression is cleared when the tool finishes or fails.
 
 ### 4) CLI/HTTP Tool-Call Rendezvous (Server-Side)
 
@@ -105,6 +115,7 @@ synthetic response IDs.
 
 - `packages/web-client/src/controllers/chatRenderer.ts`
 - `packages/web-client/src/controllers/chatRenderer.test.ts`
+- `packages/web-client/src/utils/interactionRenderer.ts`
 - `packages/agent-server/src/plugins/operations.ts`
 - `packages/agent-server/src/sessionHub.ts`
 - `packages/agent-server/src/ws/cliCallbackFactory.ts`
