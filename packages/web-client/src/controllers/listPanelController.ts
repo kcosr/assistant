@@ -53,6 +53,7 @@ export interface ListPanelControllerOptions {
   bodyEl: HTMLElement | null;
   getSearchQuery: () => string;
   getSearchTagController: () => CollectionTagFilterController | null;
+  getActiveInstanceId: () => string | null;
   callOperation?: <T>(operation: string, args: Record<string, unknown>) => Promise<T>;
   icons: {
     copy: string;
@@ -111,6 +112,50 @@ const DEFAULT_VISIBILITY_BY_COLUMN: Record<string, ColumnVisibility> = {
 };
 
 const INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
+const LIST_ITEM_EXPORT_PLUGIN = 'lists';
+const LIST_CLIPBOARD_TIMEOUT_MS = 60_000;
+
+type ListClipboardMode = 'copy' | 'cut';
+type ListClipboardPayload = {
+  mode: ListClipboardMode;
+  sourceListId: string;
+  sourceInstanceId: string | null;
+  itemIds: string[];
+  expiresAt: number;
+};
+
+let listClipboard: ListClipboardPayload | null = null;
+let listClipboardTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const clearListClipboard = (): void => {
+  listClipboard = null;
+  if (listClipboardTimeout) {
+    clearTimeout(listClipboardTimeout);
+    listClipboardTimeout = null;
+  }
+};
+
+const setListClipboard = (payload: ListClipboardPayload | null): void => {
+  clearListClipboard();
+  if (!payload) {
+    return;
+  }
+  listClipboard = payload;
+  listClipboardTimeout = setTimeout(() => {
+    clearListClipboard();
+  }, LIST_CLIPBOARD_TIMEOUT_MS);
+};
+
+const getListClipboard = (): ListClipboardPayload | null => {
+  if (!listClipboard) {
+    return null;
+  }
+  if (Date.now() >= listClipboard.expiresAt) {
+    clearListClipboard();
+    return null;
+  }
+  return listClipboard;
+};
 
 type ListColumnState = {
   showUrlColumn: boolean;
@@ -197,6 +242,13 @@ export class ListPanelController {
       recentUserItemUpdates: options.recentUserItemUpdates,
       userUpdateTimeoutMs: options.userUpdateTimeoutMs,
       getSelectedItemCount: options.getSelectedItemCount,
+      getExternalDragPayload: ({ itemIds }) => {
+        const plainText = this.buildListItemExportText(itemIds);
+        if (!plainText) {
+          return null;
+        }
+        return { plainText };
+      },
       showListItemMenu: (trigger, listId, item, itemId, row) => {
         this.showListItemMenu(trigger, listId, item, itemId, row);
       },
@@ -310,7 +362,24 @@ export class ListPanelController {
       return false;
     }
     const key = event.key;
+    const lowerKey = key.toLowerCase();
     const hasModifier = event.ctrlKey || event.metaKey || event.altKey;
+    const isCommand = event.ctrlKey || event.metaKey;
+
+    if (isCommand && !event.altKey && !event.shiftKey) {
+      if (lowerKey === 'c') {
+        void this.copySelectionToClipboard('copy');
+        return true;
+      }
+      if (lowerKey === 'x') {
+        void this.copySelectionToClipboard('cut');
+        return true;
+      }
+      if (lowerKey === 'v') {
+        void this.pasteClipboardToCurrentList();
+        return true;
+      }
+    }
 
     if (key === 'ArrowDown' || key === 'ArrowUp') {
       if (event.ctrlKey || event.metaKey || event.altKey) {
@@ -348,7 +417,6 @@ export class ListPanelController {
       return true;
     }
 
-    const lowerKey = key.toLowerCase();
     if (lowerKey === 'd') {
       return this.requestDeleteSelectedItems();
     }
@@ -391,6 +459,134 @@ export class ListPanelController {
     }
 
     return false;
+  }
+
+  private buildListItemExportText(itemIds: string[]): string | null {
+    const listId = this.currentListId ?? this.currentData?.id ?? null;
+    const listName = this.currentData?.name?.trim() ?? '';
+    const instanceId = this.options.getActiveInstanceId();
+    const itemsById = new Map<string, ListPanelItem>();
+    for (const item of this.currentSortedItems) {
+      if (item.id) {
+        itemsById.set(item.id, item);
+      }
+    }
+
+    const blocks: string[] = [];
+    for (const id of itemIds) {
+      const item = itemsById.get(id);
+      if (!item || typeof item.title !== 'string') {
+        continue;
+      }
+      const title = item.title.trim();
+      if (!title) {
+        continue;
+      }
+      const lines: string[] = [];
+      lines.push(`plugin: ${LIST_ITEM_EXPORT_PLUGIN}`);
+      if (item.id) {
+        lines.push(`itemId: ${item.id}`);
+      }
+      lines.push(`title: ${title}`);
+      if (item.notes && item.notes.trim()) {
+        lines.push(`notes: ${item.notes.trim()}`);
+      }
+      if (item.url && item.url.trim()) {
+        lines.push(`url: ${item.url.trim()}`);
+      }
+      if (listId) {
+        lines.push(`listId: ${listId}`);
+      }
+      if (listName) {
+        lines.push(`listName: ${listName}`);
+      }
+      if (instanceId) {
+        lines.push(`instance_id: ${instanceId}`);
+      }
+      blocks.push(lines.join('\n'));
+    }
+
+    if (blocks.length === 0) {
+      return null;
+    }
+    return blocks.join('\n\n');
+  }
+
+  private async writeListItemExportToClipboard(itemIds: string[]): Promise<boolean> {
+    const payload = this.buildListItemExportText(itemIds);
+    if (!payload) {
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async copySelectionToClipboard(mode: ListClipboardMode): Promise<void> {
+    const itemIds = this.options.getSelectedItemIds();
+    if (itemIds.length === 0) {
+      this.options.setStatus(`Select at least one item to ${mode}`);
+      return;
+    }
+    const sourceListId = this.currentListId;
+    if (!sourceListId) {
+      this.options.setStatus('No source list available');
+      return;
+    }
+    const sourceInstanceId = this.options.getActiveInstanceId();
+    setListClipboard({
+      mode,
+      sourceListId,
+      sourceInstanceId,
+      itemIds: [...itemIds],
+      expiresAt: Date.now() + LIST_CLIPBOARD_TIMEOUT_MS,
+    });
+    await this.writeListItemExportToClipboard(itemIds);
+    this.options.setStatus(
+      `${mode === 'cut' ? 'Cut' : 'Copied'} ${itemIds.length} item${itemIds.length === 1 ? '' : 's'}`,
+    );
+  }
+
+  private async pasteClipboardToCurrentList(): Promise<void> {
+    const payload = getListClipboard();
+    if (!payload) {
+      this.options.setStatus('Nothing to paste');
+      return;
+    }
+    const targetListId = this.currentListId;
+    if (!targetListId) {
+      this.options.setStatus('No target list available');
+      return;
+    }
+    if (payload.sourceListId === targetListId) {
+      this.options.setStatus('Paste into the same list is ignored');
+      return;
+    }
+    const targetInstanceId = this.options.getActiveInstanceId();
+    if (
+      payload.sourceInstanceId &&
+      targetInstanceId &&
+      payload.sourceInstanceId !== targetInstanceId
+    ) {
+      this.options.setStatus('Paste only works within the same instance');
+      return;
+    }
+
+    if (payload.mode === 'cut') {
+      const moved = await this.bulkMoveItems(payload.itemIds, targetListId, {
+        clearSelection: true,
+        sourceListId: payload.sourceListId,
+      });
+      if (moved) {
+        clearListClipboard();
+      }
+      return;
+    }
+
+    await this.copyItemsToList(payload.sourceListId, payload.itemIds, targetListId);
   }
 
   render(listId: string, data: ListPanelData): ListPanelHeaderControls {
@@ -1131,14 +1327,14 @@ export class ListPanelController {
       sourceListId?: string | null;
       targetPosition?: number | null;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (itemIds.length === 0) {
-      return;
+      return false;
     }
 
     if (!this.options.callOperation) {
       this.options.setStatus('Lists tool is unavailable');
-      return;
+      return false;
     }
     try {
       const basePosition =
@@ -1152,7 +1348,7 @@ export class ListPanelController {
           ...(basePosition !== null ? { position: basePosition + index } : {}),
         })),
       });
-      const { okCount, totalCount } = this.countBulkResults({ result }, itemIds.length);
+      const { okCount, totalCount } = this.countBulkResults(result, itemIds.length);
 
       if (options?.clearSelection) {
         this.clearListSelection();
@@ -1162,18 +1358,22 @@ export class ListPanelController {
         this.options.setStatus(
           `Moved ${okCount} item${okCount === 1 ? '' : 's'} to "${targetListId}"`,
         );
+        return true;
       } else if (okCount > 0) {
         const failed = totalCount - okCount;
         this.options.setStatus(
           `Moved ${okCount} item${okCount === 1 ? '' : 's'} to "${targetListId}", ` +
             `but ${failed} failed`,
         );
+        return false;
       } else {
         this.options.setStatus('Failed to move items');
+        return false;
       }
     } catch (err) {
       console.error('Error performing bulk move:', err);
       this.options.setStatus('Failed to move items');
+      return false;
     }
   }
 
@@ -1256,7 +1456,7 @@ export class ListPanelController {
         targetListId: trimmedTargetId,
         items: itemIds.map((id) => ({ id })),
       });
-      const { okCount, totalCount } = this.countBulkResults({ result }, itemIds.length);
+      const { okCount, totalCount } = this.countBulkResults(result, itemIds.length);
 
       if (okCount === totalCount) {
         this.options.setStatus(
@@ -1631,3 +1831,8 @@ export class ListPanelController {
     return ok;
   }
 }
+
+export const __TEST_ONLY = {
+  clearListClipboard,
+  getListClipboard,
+};

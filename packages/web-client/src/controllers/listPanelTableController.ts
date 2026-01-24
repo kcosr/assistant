@@ -23,6 +23,11 @@ export interface ListPanelTableControllerOptions {
   recentUserItemUpdates: Set<string>;
   userUpdateTimeoutMs: number;
   getSelectedItemCount: () => number;
+  getExternalDragPayload?: (params: {
+    listId: string;
+    itemIds: string[];
+    primaryItemId: string;
+  }) => { plainText?: string; html?: string } | null;
   onSelectionChange?: () => void;
   showListItemMenu: (
     trigger: HTMLElement,
@@ -1571,7 +1576,19 @@ export class ListPanelTableController {
               }),
             );
           }
-          e.dataTransfer.setData('text/plain', primaryId);
+          const exportPayload = this.options.getExternalDragPayload?.({
+            listId,
+            itemIds: dragItemIds,
+            primaryItemId: primaryId,
+          });
+          if (exportPayload?.plainText) {
+            e.dataTransfer.setData('text/plain', exportPayload.plainText);
+          } else {
+            e.dataTransfer.setData('text/plain', primaryId);
+          }
+          if (exportPayload?.html) {
+            e.dataTransfer.setData('text/html', exportPayload.html);
+          }
           e.dataTransfer.setDragImage(row, 0, 0);
         }
       };
@@ -1764,12 +1781,12 @@ export class ListPanelTableController {
 
     if (itemId) {
       menuTrigger.title = 'Item actions';
-      menuTrigger.draggable = false;
-      let lastDragStartAt = 0;
       const isCoarsePointer =
         typeof window !== 'undefined' &&
         typeof window.matchMedia === 'function' &&
         window.matchMedia('(pointer: coarse)').matches;
+      menuTrigger.draggable = !isCoarsePointer;
+      let lastDragStartAt = 0;
 
       let touchLongPressTimer: ReturnType<typeof setTimeout> | null = null;
       let touchDragStartX = 0;
@@ -1792,6 +1809,15 @@ export class ListPanelTableController {
         setDragSelectionSuppressed(true);
         onDragStartFromHandle?.(e);
       };
+
+      if (!isCoarsePointer) {
+        menuTrigger.addEventListener('dragstart', (event) => {
+          startDragFromHandle(event);
+        });
+        menuTrigger.addEventListener('dragend', () => {
+          onDragEnd?.();
+        });
+      }
 
       const pointerEventTargets: EventTarget[] = [document, window];
       const toPointerEvent = (event: Event): PointerEvent | null => {

@@ -578,6 +578,35 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(copyButton.classList.contains('visible')).toBe(false);
     expect(onSelectionChange).toHaveBeenCalledTimes(2);
   });
+
+  it('adds external drag payloads when provided', () => {
+    const dataTransfer = {
+      setData: vi.fn(),
+      setDragImage: vi.fn(),
+    } as unknown as DataTransfer;
+
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      getExternalDragPayload: () => ({ plainText: 'exported payload' }),
+    });
+
+    const { tbody } = controller.renderTable(baseRenderOptions);
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    const menuTrigger = row?.querySelector<HTMLButtonElement>('.list-item-menu-trigger');
+    expect(menuTrigger).not.toBeNull();
+
+    const dragEvent = new Event('dragstart', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperty(dragEvent, 'dataTransfer', { value: dataTransfer });
+    menuTrigger?.dispatchEvent(dragEvent);
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'exported payload');
+  });
 });
 
 describe('ListPanelTableController keyboard selection', () => {

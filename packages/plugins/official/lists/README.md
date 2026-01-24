@@ -30,8 +30,12 @@ operations.
 - Web UI: implemented in `web/index.ts` using shared controllers from `packages/web-client/src`.
 - Drag within a list to reorder, or drag selected items across list panels to move them to the
   drop position.
+- Dragging list items to external apps provides a plain-text item block (list metadata + item
+  details) for easy paste.
 - Select and checkbox custom fields can be edited inline from list rows without opening the edit
   dialog (toggle in settings, default on).
+- Cmd/Ctrl+C/X/V support copy/cut/paste of selected list items between lists; external paste
+  uses the same plain-text item block.
 - Browser mode supports arrow-key grid navigation with Enter to open a list; Escape returns to the
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.

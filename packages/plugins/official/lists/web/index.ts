@@ -1167,6 +1167,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         bodyEl: panelContent,
         getSearchQuery: () => sharedSearchController.getQuery(),
         getSearchTagController: () => sharedSearchController.getTagController(),
+        getActiveInstanceId: () => activeListInstanceId ?? activeInstanceId,
         callOperation: (operation, args) =>
           callInstanceOperation(activeListInstanceId ?? activeInstanceId, operation, args),
         icons: {
