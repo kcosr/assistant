@@ -11,6 +11,14 @@ import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
 import { getProviderAttributes } from './providerAttributes';
 
+const HISTORY_DEBUG = process.env.ASSISTANT_HISTORY_DEBUG === '1';
+const historyDebug = (...args: unknown[]): void => {
+  if (!HISTORY_DEBUG) {
+    return;
+  }
+  console.log('[history]', ...args);
+};
+
 export interface HistoryRequest {
   sessionId: string;
   agentId?: string;
@@ -611,6 +619,12 @@ async function mergeOverlayEvents(
   }
   const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayEvent);
   const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
+  historyDebug('merge overlay events', {
+    sessionId,
+    baseCount: baseEvents.length,
+    overlayCount: overlayEvents.length,
+    alignedCount: alignedOverlayEvents.length,
+  });
   return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
 }
 
@@ -648,11 +662,22 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
     const payload = event.payload as { toolCallId?: string } | undefined;
     const toolCallId = payload?.toolCallId;
     if (!toolCallId) {
+      historyDebug('overlay event missing toolCallId', {
+        type: event.type,
+        id: event.id,
+        timestamp: event.timestamp,
+      });
       return event;
     }
 
     const anchor = toolCallAnchors.get(toolCallId) ?? toolResultAnchors.get(toolCallId);
     if (!anchor) {
+      historyDebug('overlay event missing anchor', {
+        toolCallId,
+        type: event.type,
+        id: event.id,
+        timestamp: event.timestamp,
+      });
       return event;
     }
 
@@ -663,6 +688,16 @@ function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[])
     } else {
       timestamp = anchor.timestamp + 1;
     }
+
+    historyDebug('overlay event aligned', {
+      toolCallId,
+      type: event.type,
+      id: event.id,
+      fromTimestamp: event.timestamp,
+      toTimestamp: timestamp,
+      turnId: anchor.turnId ?? null,
+      responseId: anchor.responseId ?? null,
+    });
 
     return {
       ...event,
