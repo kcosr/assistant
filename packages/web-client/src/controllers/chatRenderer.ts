@@ -1249,6 +1249,11 @@ export class ChatRenderer {
     let afterContainer: HTMLElement;
     if (afterBlocks.length === 1) {
       const remaining = afterBlocks[0];
+      if (!remaining) {
+        this.refreshToolCallGroup(group);
+        parent.insertBefore(block, group.nextSibling);
+        return;
+      }
       if (remaining.parentElement === groupContent) {
         groupContent.removeChild(remaining);
       }
