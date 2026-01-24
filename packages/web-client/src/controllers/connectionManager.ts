@@ -187,4 +187,17 @@ export class ConnectionManager {
     }
     this.subscribedSessions.delete(trimmed);
   }
+
+  setInteractionEnabled(enabled: boolean): void {
+    const socket = this.options.getSocket();
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    socket.send(
+      JSON.stringify({
+        type: 'set_interaction_mode',
+        enabled,
+      }),
+    );
+  }
 }

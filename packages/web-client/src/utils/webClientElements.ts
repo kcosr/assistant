@@ -10,6 +10,7 @@ export interface WebClientElements {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  interactionModeCheckbox: HTMLInputElement | null;
   panelWorkspace: HTMLElement | null;
   settingsDropdown: HTMLElement | null;
   themeSelect: HTMLSelectElement | null;
@@ -56,6 +57,7 @@ export function getWebClientElements(): WebClientElements | null {
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
+  const interactionModeCheckbox = getElement<HTMLInputElement>('interaction-mode-checkbox');
   const panelWorkspace = getElement<HTMLElement>('panel-workspace');
 
   if (
@@ -83,6 +85,7 @@ export function getWebClientElements(): WebClientElements | null {
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,
+    interactionModeCheckbox,
     panelWorkspace,
     settingsDropdown: getElement<HTMLElement>('settings-dropdown'),
     themeSelect: getElement<HTMLSelectElement>('theme-select'),

@@ -944,6 +944,9 @@ interface ClientSetInteractionModeMessage {
 }
 ```
 
+Web client UX: a settings toggle (“Enable interactive tool prompts”) persists locally and sends
+`set_interaction_mode` when changed.
+
 3. SessionHub tracks:
    - `interactiveClientCount`
    - `interactiveEnabledCount`
