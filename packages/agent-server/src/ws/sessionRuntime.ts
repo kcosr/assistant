@@ -9,11 +9,13 @@ import type {
   ClientHelloMessage,
   ClientPanelEventMessage,
   ClientPingMessage,
+  ClientSetInteractionModeMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
   ClientSetSessionThinkingMessage,
   ClientSubscribeMessage,
   ClientTextInputMessage,
+  ClientToolInteractionResponseMessage,
   ClientUnsubscribeMessage,
   InputMode,
   OutputMode,
@@ -95,6 +97,10 @@ export class SessionRuntime {
   private inputMode: InputMode = 'text';
   private outputMode: OutputMode = 'text';
   private clientAudioCapabilities: ClientAudioCapabilities | undefined;
+  private interactionState: { supported: boolean; enabled: boolean } = {
+    supported: false,
+    enabled: false,
+  };
 
   private readonly messageRateLimiter: RateLimiter | undefined;
   private readonly toolCallRateLimiter: RateLimiter | undefined;
@@ -182,6 +188,10 @@ export class SessionRuntime {
         onSetSessionModel: (message) => this.enqueue(() => this.handleSetSessionModel(message)),
         onSetSessionThinking: (message) =>
           this.enqueue(() => this.handleSetSessionThinking(message)),
+        onSetInteractionMode: (message) =>
+          this.enqueue(() => this.handleSetInteractionMode(message)),
+        onToolInteractionResponse: (message) =>
+          this.enqueue(() => this.handleToolInteractionResponse(message)),
         onCancelQueuedMessage: (message) =>
           this.enqueue(() => this.handleCancelQueuedMessage(message)),
       });
@@ -235,6 +245,10 @@ export class SessionRuntime {
       },
       setClientAudioCapabilities: (audio) => {
         this.clientAudioCapabilities = audio;
+      },
+      setInteractionState: (state) => {
+        this.interactionState = state;
+        this.sessionHub.setInteractionState(this.connection, state);
       },
       connection: this.connection,
       sessionHub: this.sessionHub,
@@ -302,6 +316,55 @@ export class SessionRuntime {
 
   private handlePing(message: ClientPingMessage): void {
     this.sendToClient(buildPongMessage(message, Date.now()));
+  }
+
+  private async handleSetInteractionMode(
+    message: ClientSetInteractionModeMessage,
+  ): Promise<void> {
+    const enabled = message.enabled === true;
+    const nextState = {
+      supported: this.interactionState.supported,
+      enabled: this.interactionState.supported ? enabled : false,
+    };
+    this.interactionState = nextState;
+    this.sessionHub.setInteractionState(this.connection, nextState);
+  }
+
+  private async handleToolInteractionResponse(
+    message: ClientToolInteractionResponseMessage,
+  ): Promise<void> {
+    const sessionId = message.sessionId.trim();
+    if (!sessionId) {
+      this.sendError('invalid_session_id', 'Session id must not be empty');
+      return;
+    }
+    if (typeof this.connection.isSubscribedTo === 'function') {
+      const isSubscribed = this.connection.isSubscribedTo(sessionId);
+      if (!isSubscribed) {
+        this.sendError(
+          'invalid_session_id',
+          'Cannot respond to an interaction for a session that this connection is not subscribed to',
+          { sessionId },
+        );
+        return;
+      }
+    }
+
+    const handled = this.sessionHub.getInteractionRegistry().resolveResponse({
+      sessionId,
+      callId: message.callId,
+      interactionId: message.interactionId,
+      response: {
+        action: message.action,
+        ...(message.approvalScope ? { approvalScope: message.approvalScope } : {}),
+        ...(message.input ? { input: message.input } : {}),
+        ...(message.reason ? { reason: message.reason } : {}),
+      },
+    });
+
+    if (!handled) {
+      this.sendError('interaction_not_found', 'Interaction response did not match a pending request');
+    }
   }
 
   private async handlePanelEvent(message: ClientPanelEventMessage): Promise<void> {

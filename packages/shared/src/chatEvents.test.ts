@@ -78,4 +78,40 @@ describe('chat event validation', () => {
       expect(result.data.payload.text).toBe('Done.');
     }
   });
+
+  it('accepts interaction_request and interaction_response events', () => {
+    const request: ChatEvent = {
+      id: 'event-5',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'tool-1',
+        toolName: 'ask_user',
+        interactionId: 'interaction-1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+        },
+      },
+    };
+
+    const response: ChatEvent = {
+      id: 'event-6',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'interaction_response',
+      payload: {
+        toolCallId: 'tool-1',
+        interactionId: 'interaction-1',
+        action: 'submit',
+        input: { answer: 'hello' },
+      },
+    };
+
+    expect(validateChatEvent(request)).toEqual(request);
+    expect(validateChatEvent(response)).toEqual(response);
+  });
 });

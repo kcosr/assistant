@@ -1,6 +1,9 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ServerToolCallStartMessage, ServerToolResultMessage } from '@assistant/shared';
 
 import { ToolError, type ToolContext, type ToolHost } from '../tools';
+import type { InteractionRequest, UserResponse } from '../tools/types';
 import type { RateLimiter } from '../rateLimit';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -12,7 +15,10 @@ import {
   emitToolCallEvent,
   emitToolOutputChunkEvent,
   emitToolResultEvent,
+  emitInteractionRequestEvent,
+  emitInteractionResponseEvent,
 } from '../events/chatEventUtils';
+import { InteractionRegistryError } from './interactionRegistry';
 
 function normaliseToolError(error: unknown): { code: string; message: string } {
   if (error instanceof ToolError) {
@@ -140,6 +146,144 @@ function extractTruncationSummary(result: unknown): ToolTruncationSummary | null
   return summary;
 }
 
+const DEFAULT_INTERACTION_TIMEOUT_MS = 5 * 60_000;
+
+function interactionUnavailableError(request: InteractionRequest): ToolError {
+  const message =
+    request.type === 'approval'
+      ? 'Approval required but no interactive client is available to respond.'
+      : 'Input required but no interactive client is available to respond. Ask the user in chat.';
+  return new ToolError('interaction_unavailable', message);
+}
+
+async function executeInteraction(options: {
+  request: InteractionRequest;
+  context: {
+    sessionId: string;
+    callId: string;
+    toolName: string;
+    sessionHub: SessionHub;
+    eventStore?: EventStore;
+    turnId?: string;
+    responseId?: string;
+    signal?: AbortSignal;
+  };
+}): Promise<unknown> {
+  const {
+    request,
+    context: { sessionId, callId, toolName, sessionHub, eventStore, turnId, responseId, signal },
+  } = options;
+  const registry = sessionHub.getInteractionRegistry();
+
+  let currentRequest: InteractionRequest = request;
+
+  while (true) {
+    const interactionId = randomUUID();
+
+    emitInteractionRequestEvent({
+      ...(eventStore ? { eventStore } : {}),
+      sessionHub,
+      sessionId,
+      ...(turnId ? { turnId } : {}),
+      ...(responseId ? { responseId } : {}),
+      toolCallId: callId,
+      interactionId,
+      toolName,
+      interactionType: currentRequest.type,
+      ...(currentRequest.presentation ? { presentation: currentRequest.presentation } : {}),
+      ...(currentRequest.prompt ? { prompt: currentRequest.prompt } : {}),
+      ...(currentRequest.approvalScopes ? { approvalScopes: currentRequest.approvalScopes } : {}),
+      ...(currentRequest.inputSchema ? { inputSchema: currentRequest.inputSchema } : {}),
+      ...(currentRequest.timeoutMs ? { timeoutMs: currentRequest.timeoutMs } : {}),
+      ...(currentRequest.completedView ? { completedView: currentRequest.completedView } : {}),
+      ...(currentRequest.errorSummary ? { errorSummary: currentRequest.errorSummary } : {}),
+      ...(currentRequest.fieldErrors ? { fieldErrors: currentRequest.fieldErrors } : {}),
+    });
+
+    let userResponse: UserResponse;
+    try {
+      userResponse = await registry.waitForResponse({
+        sessionId,
+        callId,
+        interactionId,
+        timeoutMs: currentRequest.timeoutMs ?? DEFAULT_INTERACTION_TIMEOUT_MS,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (err) {
+      if (err instanceof InteractionRegistryError) {
+        if (err.code === 'timeout') {
+          if (currentRequest.onTimeout) {
+            const outcome = await currentRequest.onTimeout();
+            if ('complete' in outcome) {
+              return outcome.complete;
+            }
+            if ('reprompt' in outcome) {
+              currentRequest = {
+                ...outcome.reprompt,
+                onResponse: currentRequest.onResponse,
+                ...(currentRequest.onTimeout ? { onTimeout: currentRequest.onTimeout } : {}),
+                ...(currentRequest.onCancel ? { onCancel: currentRequest.onCancel } : {}),
+              };
+              continue;
+            }
+            if ('pending' in outcome) {
+              return {
+                pending: true,
+                message: outcome.pending.message,
+                ...(outcome.pending.queued ? { queued: true } : {}),
+              };
+            }
+          }
+          throw new ToolError('interaction_timeout', 'Interaction timed out');
+        }
+        if (err.code === 'cancelled') {
+          currentRequest.onCancel?.();
+          throw new ToolError('tool_aborted', 'Tool execution aborted');
+        }
+      }
+      throw err;
+    }
+
+    emitInteractionResponseEvent({
+      ...(eventStore ? { eventStore } : {}),
+      sessionHub,
+      sessionId,
+      ...(turnId ? { turnId } : {}),
+      ...(responseId ? { responseId } : {}),
+      toolCallId: callId,
+      interactionId,
+      action: userResponse.action,
+      ...(userResponse.approvalScope ? { approvalScope: userResponse.approvalScope } : {}),
+      ...(userResponse.input ? { input: userResponse.input } : {}),
+      ...(userResponse.reason ? { reason: userResponse.reason } : {}),
+    });
+
+    const outcome = await currentRequest.onResponse(userResponse);
+
+    if ('complete' in outcome) {
+      return outcome.complete;
+    }
+
+    if ('reprompt' in outcome) {
+      currentRequest = {
+        ...outcome.reprompt,
+        onResponse: currentRequest.onResponse,
+        ...(currentRequest.onTimeout ? { onTimeout: currentRequest.onTimeout } : {}),
+        ...(currentRequest.onCancel ? { onCancel: currentRequest.onCancel } : {}),
+      };
+      continue;
+    }
+
+    if ('pending' in outcome) {
+      return {
+        pending: true,
+        message: outcome.pending.message,
+        ...(outcome.pending.queued ? { queued: true } : {}),
+      };
+    }
+  }
+}
+
 export async function handleChatToolCalls(options: {
   sessionId: string;
   state: LogicalSessionState;
@@ -215,6 +359,8 @@ export async function handleChatToolCalls(options: {
     // Track cumulative offset for tool output streaming
     let toolOutputOffset = 0;
 
+    const interactionAvailability = sessionHub.getInteractionAvailability(sessionId);
+
     const toolContext: ToolContext = {
       signal: abortSignal,
       sessionId,
@@ -229,6 +375,26 @@ export async function handleChatToolCalls(options: {
       ...(eventStore ? { eventStore } : {}),
       ...(scheduledSessionService ? { scheduledSessionService } : {}),
       ...(searchService ? { searchService } : {}),
+      interaction: interactionAvailability,
+      requestInteraction: async (request) => {
+        const availability = sessionHub.getInteractionAvailability(sessionId);
+        if (!availability.available) {
+          throw interactionUnavailableError(request);
+        }
+        return executeInteraction({
+          request,
+          context: {
+            sessionId,
+            callId: call.id,
+            toolName: call.name,
+            sessionHub,
+            ...(turnId ? { turnId } : {}),
+            ...(responseId ? { responseId } : {}),
+            ...(eventStore ? { eventStore } : {}),
+            ...(abortSignal ? { signal: abortSignal } : {}),
+          },
+        });
+      },
       onUpdate: (update) => {
         if (!update || typeof update.delta !== 'string') {
           return;

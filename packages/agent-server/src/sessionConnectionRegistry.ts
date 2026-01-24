@@ -7,6 +7,10 @@ export class SessionConnectionRegistry {
   private readonly sessionIdsByConnection = new Map<SessionConnection, Set<string>>();
   private readonly allConnections = new Set<SessionConnection>();
   private readonly connectionsById = new Map<string, SessionConnection>();
+  private readonly interactionStateByConnection = new Map<
+    SessionConnection,
+    { supported: boolean; enabled: boolean }
+  >();
 
   private withSessionId(message: ServerMessage, sessionId: string): ServerMessage {
     switch (message.type) {
@@ -43,6 +47,7 @@ export class SessionConnectionRegistry {
 
   unregisterConnection(connection: SessionConnection): void {
     this.allConnections.delete(connection);
+    this.interactionStateByConnection.delete(connection);
     const connectionId = typeof connection.id === 'string' ? connection.id.trim() : '';
     if (connectionId && this.connectionsById.get(connectionId) === connection) {
       this.connectionsById.delete(connectionId);
@@ -116,6 +121,42 @@ export class SessionConnectionRegistry {
     }
 
     this.sessionIdsByConnection.delete(connection);
+  }
+
+  setInteractionState(
+    connection: SessionConnection,
+    state: { supported: boolean; enabled: boolean },
+  ): void {
+    this.interactionStateByConnection.set(connection, state);
+  }
+
+  getInteractionState(connection: SessionConnection): { supported: boolean; enabled: boolean } {
+    return this.interactionStateByConnection.get(connection) ?? { supported: false, enabled: false };
+  }
+
+  getInteractionSummary(sessionId: string): { supportedCount: number; enabledCount: number } {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return { supportedCount: 0, enabledCount: 0 };
+    }
+    const connections = this.connectionsBySessionId.get(trimmed);
+    if (!connections) {
+      return { supportedCount: 0, enabledCount: 0 };
+    }
+
+    let supportedCount = 0;
+    let enabledCount = 0;
+    for (const connection of connections) {
+      const state = this.getInteractionState(connection);
+      if (state.supported) {
+        supportedCount += 1;
+      }
+      if (state.enabled) {
+        enabledCount += 1;
+      }
+    }
+
+    return { supportedCount, enabledCount };
   }
 
   getSubscriptions(connection: SessionConnection): ReadonlySet<string> {

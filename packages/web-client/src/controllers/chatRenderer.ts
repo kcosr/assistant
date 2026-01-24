@@ -6,6 +6,8 @@ import type {
   ChatEvent,
   CustomMessageEvent,
   ErrorEvent,
+  InteractionRequestEvent,
+  InteractionResponseEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
   ToolCallEvent,
@@ -39,10 +41,22 @@ import {
   updateToolOutputBlockContent,
 } from '../utils/toolOutputRenderer';
 import { formatToolResultText } from '../utils/toolResultFormatting';
+import {
+  applyInteractionResponse,
+  createInteractionElement,
+  type InteractionResponseDraft,
+} from '../utils/interactionRenderer';
 
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
   getExpandToolOutput?: () => boolean;
+  getInteractionEnabled?: () => boolean;
+  sendInteractionResponse?: (options: {
+    sessionId: string;
+    callId: string;
+    interactionId: string;
+    response: InteractionResponseDraft;
+  }) => void;
 }
 
 export class ChatRenderer {
@@ -65,6 +79,16 @@ export class ChatRenderer {
   private readonly toolOutputOffsets = new Map<string, number>();
   private readonly toolOutputToolNames = new Map<string, string>();
   private readonly agentMessageElements = new Map<string, HTMLDivElement>();
+  private readonly interactionElements = new Map<string, HTMLDivElement>();
+  private readonly interactionByToolCall = new Map<string, string>();
+  private readonly pendingInteractionRequests = new Map<
+    string,
+    { payload: InteractionRequestEvent['payload']; sessionId: string }
+  >();
+  private readonly pendingInteractionResponses = new Map<
+    string,
+    InteractionResponseEvent['payload']
+  >();
   // Track text segment index per response.
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
@@ -172,6 +196,12 @@ export class ChatRenderer {
       case 'tool_result':
         this.handleToolResult(event);
         break;
+      case 'interaction_request':
+        this.handleInteractionRequest(event);
+        break;
+      case 'interaction_response':
+        this.handleInteractionResponse(event);
+        break;
       case 'agent_message':
         this.handleAgentMessage(event);
         break;
@@ -219,6 +249,10 @@ export class ChatRenderer {
     this.toolOutputToolNames.clear();
     this.agentMessageElements.clear();
     this.needsNewTextSegment.clear();
+    this.interactionElements.clear();
+    this.pendingInteractionRequests.clear();
+    this.pendingInteractionResponses.clear();
+    this.interactionByToolCall.clear();
   }
 
   private handleTurnStart(event: TurnStartEvent): void {
@@ -563,6 +597,30 @@ export class ChatRenderer {
       this.updateToolCallGroupForBlock(block);
     }
 
+    if (block) {
+      const pendingInteraction = this.pendingInteractionRequests.get(callId);
+      if (pendingInteraction) {
+        this.pendingInteractionRequests.delete(callId);
+        const enabled = this.options.getInteractionEnabled?.() ?? true;
+        this.attachInteractionToToolBlock(
+          block,
+          pendingInteraction.payload,
+          enabled,
+          pendingInteraction.sessionId,
+        );
+        const pendingResponse = this.pendingInteractionResponses.get(
+          pendingInteraction.payload.interactionId,
+        );
+        if (pendingResponse) {
+          this.pendingInteractionResponses.delete(pendingInteraction.payload.interactionId);
+          const element = this.interactionElements.get(pendingInteraction.payload.interactionId);
+          if (element) {
+            applyInteractionResponse(element, pendingResponse);
+          }
+        }
+      }
+    }
+
     // Mark text segment break so any text after this tool goes into a new element
     // (only if we created a new block - streaming blocks already handled)
     if (responseId && !existingBlock) {
@@ -831,6 +889,191 @@ export class ChatRenderer {
     }
 
     this.updateToolCallGroupForBlock(block);
+  }
+
+  private handleInteractionRequest(event: InteractionRequestEvent): void {
+    const payload = event.payload;
+    const interactionId = payload.interactionId;
+    const toolCallId = payload.toolCallId;
+    const enabled = this.options.getInteractionEnabled?.() ?? true;
+    const presentation = payload.presentation ?? 'tool';
+
+    if (presentation === 'questionnaire') {
+      this.renderStandaloneInteraction(event, enabled);
+      return;
+    }
+
+    const block = this.toolCallElements.get(toolCallId);
+    if (!block) {
+      this.pendingInteractionRequests.set(toolCallId, {
+        payload,
+        sessionId: event.sessionId,
+      });
+      return;
+    }
+
+    this.attachInteractionToToolBlock(block, payload, enabled, event.sessionId);
+
+    const pendingResponse = this.pendingInteractionResponses.get(interactionId);
+    if (pendingResponse) {
+      this.pendingInteractionResponses.delete(interactionId);
+      const element = this.interactionElements.get(interactionId);
+      if (element) {
+        applyInteractionResponse(element, pendingResponse);
+        const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
+        if (toolBlock) {
+          this.updateToolInteractionState(toolBlock);
+        }
+      }
+    }
+  }
+
+  private handleInteractionResponse(event: InteractionResponseEvent): void {
+    const payload = event.payload;
+    const interactionId = payload.interactionId;
+    const element = this.interactionElements.get(interactionId);
+    if (element) {
+      applyInteractionResponse(element, payload);
+      const toolBlock = element.closest<HTMLDivElement>('.tool-output-block');
+      if (toolBlock) {
+        this.updateToolInteractionState(toolBlock);
+      }
+      return;
+    }
+    this.pendingInteractionResponses.set(interactionId, payload);
+  }
+
+  private attachInteractionToToolBlock(
+    block: HTMLDivElement,
+    payload: InteractionRequestEvent['payload'],
+    enabled: boolean,
+    sessionId: string,
+  ): void {
+    const outputSection = block.querySelector<HTMLDivElement>('.tool-output-result');
+    if (!outputSection) {
+      return;
+    }
+
+    const existingId =
+      block.dataset['interactionId'] ?? this.interactionByToolCall.get(payload.toolCallId);
+    if (existingId) {
+      const existing = this.interactionElements.get(existingId);
+      if (existing) {
+        existing.remove();
+        this.interactionElements.delete(existingId);
+      }
+    }
+
+    const element = createInteractionElement({
+      request: payload,
+      enabled,
+      onSubmit: (response) => {
+        this.sendInteractionResponse(payload, response, sessionId);
+      },
+    });
+    element.classList.add('tool-interaction');
+    block.dataset['interactionId'] = payload.interactionId;
+    element.dataset['sessionId'] = sessionId;
+    this.interactionByToolCall.set(payload.toolCallId, payload.interactionId);
+
+    if (payload.interactionType === 'approval') {
+      const dock = this.getOrCreateInteractionDock(block);
+      dock.innerHTML = '';
+      dock.appendChild(element);
+    } else {
+      outputSection.insertBefore(element, outputSection.firstChild);
+    }
+    this.interactionElements.set(payload.interactionId, element);
+    this.updateToolInteractionState(block);
+  }
+
+  private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
+    const payload = event.payload;
+    const responseId = this.getResponseId(event.responseId);
+    if (!responseId) {
+      return;
+    }
+    const existingId = this.interactionByToolCall.get(payload.toolCallId);
+    if (existingId) {
+      const existing = this.interactionElements.get(existingId);
+      if (existing) {
+        existing.remove();
+      }
+      this.interactionElements.delete(existingId);
+    }
+    const container = this.getOrCreateAssistantResponseContainer(event.turnId, event.id, responseId);
+    const element = createInteractionElement({
+      request: payload,
+      enabled,
+      onSubmit: (response) => {
+        this.sendInteractionResponse(payload, response, event.sessionId);
+      },
+    });
+    element.classList.add('interaction-standalone');
+    element.dataset['sessionId'] = event.sessionId;
+    container.appendChild(element);
+    this.interactionElements.set(payload.interactionId, element);
+    this.interactionByToolCall.set(payload.toolCallId, payload.interactionId);
+
+    const pendingResponse = this.pendingInteractionResponses.get(payload.interactionId);
+    if (pendingResponse) {
+      this.pendingInteractionResponses.delete(payload.interactionId);
+      applyInteractionResponse(element, pendingResponse);
+    }
+  }
+
+  private getOrCreateInteractionDock(block: HTMLDivElement): HTMLDivElement {
+    let dock = block.querySelector<HTMLDivElement>('.tool-interaction-dock');
+    if (!dock) {
+      dock = document.createElement('div');
+      dock.className = 'tool-interaction-dock';
+      block.appendChild(dock);
+    }
+    return dock;
+  }
+
+  private updateToolInteractionState(block: HTMLDivElement): void {
+    const hasPending = Boolean(
+      block.querySelector('.interaction-block:not(.interaction-complete)'),
+    );
+    const hasPendingApproval = Boolean(
+      block.querySelector('.interaction-approval:not(.interaction-complete)'),
+    );
+    block.classList.toggle('has-pending-interaction', hasPending);
+    block.classList.toggle('has-pending-approval', hasPendingApproval);
+
+    const group = block.closest<HTMLDivElement>('.tool-call-group');
+    if (!group) {
+      return;
+    }
+    const groupHasPending = Boolean(
+      group.querySelector('.tool-output-block.has-pending-interaction'),
+    );
+    const groupHasPendingApproval = Boolean(
+      group.querySelector('.tool-output-block.has-pending-approval'),
+    );
+    group.classList.toggle('has-pending-interaction', groupHasPending);
+    group.classList.toggle('has-pending-approval', groupHasPendingApproval);
+  }
+
+  private sendInteractionResponse(
+    payload: InteractionRequestEvent['payload'],
+    response: InteractionResponseDraft,
+    sessionId: string,
+  ): void {
+    if (!this.options.sendInteractionResponse) {
+      return;
+    }
+    const trimmedSessionId = sessionId.trim();
+    if (!trimmedSessionId) {
+      return;
+    }
+    this.options.sendInteractionResponse({
+      sessionId: trimmedSessionId,
+      callId: payload.toolCallId,
+      interactionId: payload.interactionId,
+      response,
+    });
   }
 
   private handleAgentMessage(_event: AgentMessageEvent): void {

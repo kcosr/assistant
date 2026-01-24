@@ -24,6 +24,7 @@ import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
+import { InteractionRegistry } from './ws/interactionRegistry';
 
 export interface LogicalSessionState {
   summary: SessionSummary;
@@ -110,6 +111,7 @@ export class SessionHub {
   private readonly agentRegistry: AgentRegistry;
   private readonly sessions = new Map<string, LogicalSessionState>();
   private readonly connections = new SessionConnectionRegistry();
+  private readonly interactionRegistry = new InteractionRegistry();
   private readonly pluginRegistry: PluginRegistry | undefined;
   private readonly queuedMessageTasks = new Map<string, QueuedMessageTask>();
   private readonly maxCachedSessions: number;
@@ -164,6 +166,30 @@ export class SessionHub {
   getMessageQueue(sessionId: string): QueuedMessage[] {
     const state = this.sessions.get(sessionId);
     return state?.messageQueue ?? [];
+  }
+
+  getInteractionRegistry(): InteractionRegistry {
+    return this.interactionRegistry;
+  }
+
+  setInteractionState(
+    connection: SessionConnection,
+    state: { supported: boolean; enabled: boolean },
+  ): void {
+    this.connections.setInteractionState(connection, state);
+  }
+
+  getInteractionAvailability(sessionId: string): {
+    supportedCount: number;
+    enabledCount: number;
+    available: boolean;
+  } {
+    const { supportedCount, enabledCount } = this.connections.getInteractionSummary(sessionId);
+    return {
+      supportedCount,
+      enabledCount,
+      available: enabledCount > 0,
+    };
   }
 
   async attachConnection(
@@ -308,6 +334,7 @@ export class SessionHub {
   async deleteSession(sessionId: string): Promise<SessionSummary | undefined> {
     console.log('[sessionHub] deleteSession', { sessionId });
     const summary = await this.sessionIndex.markSessionDeleted(sessionId);
+    this.interactionRegistry.clearSession(sessionId);
     try {
       if (this.eventStore) {
         await this.eventStore.deleteSession(sessionId);

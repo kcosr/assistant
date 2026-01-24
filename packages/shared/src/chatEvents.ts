@@ -15,6 +15,8 @@ export const ChatEventTypeSchema = z.enum([
   'tool_input_chunk',
   'tool_output_chunk',
   'tool_result',
+  'interaction_request',
+  'interaction_response',
   'agent_message',
   'agent_callback',
   'agent_switch',
@@ -110,6 +112,131 @@ export const ToolResultPayloadSchema = z.object({
 });
 export type ToolResultPayload = z.infer<typeof ToolResultPayloadSchema>;
 
+export const InteractionTypeSchema = z.enum(['approval', 'input']);
+export type InteractionType = z.infer<typeof InteractionTypeSchema>;
+
+export const InteractionPresentationSchema = z.enum(['tool', 'questionnaire']);
+export type InteractionPresentation = z.infer<typeof InteractionPresentationSchema>;
+
+export const ApprovalScopeSchema = z.enum(['once', 'session', 'always']);
+export type ApprovalScope = z.infer<typeof ApprovalScopeSchema>;
+
+export const SimpleInputFieldSchema = z.object({
+  id: z.string(),
+  type: z.enum(['text', 'textarea', 'select', 'checkbox', 'radio']),
+  label: z.string(),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  defaultValue: z.unknown().optional(),
+  options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+});
+export type SimpleInputField = z.infer<typeof SimpleInputFieldSchema>;
+
+export const SimpleInputSchema = z.object({
+  type: z.literal('form'),
+  fields: z.array(SimpleInputFieldSchema),
+});
+export type SimpleInputSchema = z.infer<typeof SimpleInputSchema>;
+
+export const QuestionnaireFieldTypeSchema = z.enum([
+  'text',
+  'textarea',
+  'number',
+  'boolean',
+  'select',
+  'multiselect',
+  'checkbox',
+  'radio',
+  'date',
+  'time',
+  'datetime',
+]);
+export type QuestionnaireFieldType = z.infer<typeof QuestionnaireFieldTypeSchema>;
+
+export const QuestionnaireFieldSchema = z.object({
+  id: z.string(),
+  type: QuestionnaireFieldTypeSchema,
+  label: z.string(),
+  description: z.string().optional(),
+  required: z.boolean().optional(),
+  placeholder: z.string().optional(),
+  defaultValue: z.unknown().optional(),
+  validateOnClient: z.boolean().optional(),
+  options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  minLength: z.number().int().nonnegative().optional(),
+  maxLength: z.number().int().nonnegative().optional(),
+  pattern: z.string().optional(),
+});
+export type QuestionnaireField = z.infer<typeof QuestionnaireFieldSchema>;
+
+export const QuestionnaireSectionSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  fields: z.array(QuestionnaireFieldSchema),
+  optional: z.boolean().optional(),
+  submitLabel: z.string().optional(),
+});
+export type QuestionnaireSection = z.infer<typeof QuestionnaireSectionSchema>;
+
+export const QuestionnaireSchema = z
+  .object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    fields: z.array(QuestionnaireFieldSchema).optional(),
+    sections: z.array(QuestionnaireSectionSchema).optional(),
+    submitLabel: z.string().optional(),
+    cancelLabel: z.string().optional(),
+    initialValues: z.record(z.string(), z.unknown()).optional(),
+  })
+  .refine((value) => {
+    const hasFields = Array.isArray(value.fields) && value.fields.length > 0;
+    const hasSections = Array.isArray(value.sections) && value.sections.length > 0;
+    return (hasFields && !hasSections) || (!hasFields && hasSections);
+  });
+export type QuestionnaireSchema = z.infer<typeof QuestionnaireSchema>;
+
+export const InteractionInputSchema = z.union([SimpleInputSchema, QuestionnaireSchema]);
+export type InteractionInputSchema = z.infer<typeof InteractionInputSchema>;
+
+export const InteractionCompletedViewSchema = z.object({
+  showInputs: z.boolean().optional(),
+  summaryTemplate: z.string().optional(),
+});
+export type InteractionCompletedView = z.infer<typeof InteractionCompletedViewSchema>;
+
+export const InteractionRequestPayloadSchema = z.object({
+  toolCallId: z.string(),
+  interactionId: z.string(),
+  toolName: z.string(),
+  interactionType: InteractionTypeSchema,
+  presentation: InteractionPresentationSchema.optional(),
+  prompt: z.string().optional(),
+  approvalScopes: z.array(ApprovalScopeSchema).optional(),
+  inputSchema: InteractionInputSchema.optional(),
+  timeoutMs: z.number().int().positive().optional(),
+  completedView: InteractionCompletedViewSchema.optional(),
+  errorSummary: z.string().optional(),
+  fieldErrors: z.record(z.string(), z.string()).optional(),
+});
+export type InteractionRequestPayload = z.infer<typeof InteractionRequestPayloadSchema>;
+
+export const InteractionActionSchema = z.enum(['approve', 'deny', 'submit', 'cancel']);
+export type InteractionAction = z.infer<typeof InteractionActionSchema>;
+
+export const InteractionResponsePayloadSchema = z.object({
+  toolCallId: z.string(),
+  interactionId: z.string(),
+  action: InteractionActionSchema,
+  approvalScope: ApprovalScopeSchema.optional(),
+  input: z.record(z.string(), z.unknown()).optional(),
+  reason: z.string().optional(),
+});
+export type InteractionResponsePayload = z.infer<typeof InteractionResponsePayloadSchema>;
+
 export const ToolOutputChunkStreamSchema = z.enum(['stdout', 'stderr', 'output']);
 export type ToolOutputChunkStream = z.infer<typeof ToolOutputChunkStreamSchema>;
 
@@ -188,8 +315,11 @@ export type ChatEventPayload =
   | CustomMessagePayload
   | SummaryMessagePayload
   | ToolCallPayload
+  | ToolInputChunkPayload
   | ToolOutputChunkPayload
   | ToolResultPayload
+  | InteractionRequestPayload
+  | InteractionResponsePayload
   | AgentMessagePayload
   | AgentCallbackPayload
   | AgentSwitchPayload
@@ -276,6 +406,16 @@ export const ToolResultEventSchema = ChatEventBaseSchema.extend({
   payload: ToolResultPayloadSchema,
 });
 
+export const InteractionRequestEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('interaction_request'),
+  payload: InteractionRequestPayloadSchema,
+});
+
+export const InteractionResponseEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('interaction_response'),
+  payload: InteractionResponsePayloadSchema,
+});
+
 export const AgentMessageEventSchema = ChatEventBaseSchema.extend({
   type: z.literal('agent_message'),
   payload: AgentMessagePayloadSchema,
@@ -326,6 +466,8 @@ export const ChatEventSchema = z.discriminatedUnion('type', [
   ToolInputChunkEventSchema,
   ToolOutputChunkEventSchema,
   ToolResultEventSchema,
+  InteractionRequestEventSchema,
+  InteractionResponseEventSchema,
   AgentMessageEventSchema,
   AgentCallbackEventSchema,
   AgentSwitchEventSchema,
@@ -351,6 +493,8 @@ export type ToolCallEvent = z.infer<typeof ToolCallEventSchema>;
 export type ToolInputChunkEvent = z.infer<typeof ToolInputChunkEventSchema>;
 export type ToolOutputChunkEvent = z.infer<typeof ToolOutputChunkEventSchema>;
 export type ToolResultEvent = z.infer<typeof ToolResultEventSchema>;
+export type InteractionRequestEvent = z.infer<typeof InteractionRequestEventSchema>;
+export type InteractionResponseEvent = z.infer<typeof InteractionResponseEventSchema>;
 export type AgentMessageEvent = z.infer<typeof AgentMessageEventSchema>;
 export type AgentCallbackEvent = z.infer<typeof AgentCallbackEventSchema>;
 export type AgentSwitchEvent = z.infer<typeof AgentSwitchEventSchema>;

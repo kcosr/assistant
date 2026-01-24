@@ -944,6 +944,9 @@ interface ClientSetInteractionModeMessage {
 }
 ```
 
+Web client UX: a settings toggle (“Enable interactive tool prompts”) persists locally and sends
+`set_interaction_mode` when changed.
+
 3. SessionHub tracks:
    - `interactiveClientCount`
    - `interactiveEnabledCount`
@@ -1000,3 +1003,9 @@ Likely touchpoints for implementation:
 5. ✅ Reprompts should preserve user input via `initialValues` in the questionnaire schema. Tools can also keep state in closure if needed for multi-step flows.
 
 6. **Plugin data access in handlers**: The `onResponse` handler needs access to plugin state/services. How is that wired up? Closure over plugin instance? Passed via context?
+
+7. ✅ **Interactive availability**: `requestInteraction()` hard-fails with `interaction_unavailable` when no enabled interactive client is available. Tools may catch and fall back to text prompts.
+
+8. ✅ **Scope (Phase 1)**: MCP tools are out of scope; interactive hooks are supported for in-process tools only.
+
+9. ✅ **Approval presentation**: approval requests render as a docked strip attached to the tool block header so they remain visible when tool output is collapsed or hidden.

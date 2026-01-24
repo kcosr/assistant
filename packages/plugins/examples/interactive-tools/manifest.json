@@ -1,0 +1,41 @@
+{
+  "id": "interactive-tools",
+  "version": "0.1.0",
+  "description": "Example tools demonstrating interactive approvals and questionnaires.",
+  "surfaces": { "tool": true },
+  "server": {
+    "provides": ["tools"]
+  },
+  "operations": [
+    {
+      "id": "approval_request",
+      "summary": "Request an approval prompt from the user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Prompt to show in the approval dialog."
+          },
+          "approvalScopes": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["once", "session", "always"] }
+          }
+        },
+        "required": ["prompt"]
+      }
+    },
+    {
+      "id": "questionnaire_request",
+      "summary": "Request a sample questionnaire from the user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "prompt": { "type": "string" },
+          "includeRole": { "type": "boolean" }
+        }
+      }
+    }
+  ]
+}

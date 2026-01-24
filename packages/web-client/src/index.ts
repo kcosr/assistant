@@ -35,6 +35,7 @@ import {
 } from './controllers/commandPaletteController';
 import { PanelWorkspaceController } from './controllers/panelWorkspaceController';
 import { initShareTarget } from './controllers/shareTargetController';
+import type { InteractionResponseDraft } from './utils/interactionRenderer';
 import {
   SessionPickerController,
   type SessionPickerOpenOptions,
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
+    interactionModeCheckbox: interactionModeCheckboxEl,
     panelWorkspace: panelWorkspaceRoot,
     settingsDropdown,
     themeSelect,
@@ -351,6 +353,7 @@ async function main(): Promise<void> {
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
+  const INTERACTION_MODE_STORAGE_KEY = 'aiAssistantInteractiveModeEnabled';
   const SHOW_CONTEXT_STORAGE_KEY = 'aiAssistantShowContextEnabled';
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
@@ -373,6 +376,55 @@ async function main(): Promise<void> {
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
+  let interactionEnabled = true;
+
+  const updateInteractionElementsEnabled = (enabled: boolean): void => {
+    const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
+    for (const block of blocks) {
+      if (block.classList.contains('interaction-complete')) {
+        continue;
+      }
+      const controls = block.querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement
+      >('input, select, textarea, button');
+      for (const control of controls) {
+        control.disabled = !enabled;
+      }
+      const actions = block.querySelectorAll<HTMLElement>('.interaction-actions, .interaction-form');
+      for (const action of actions) {
+        action.classList.toggle('disabled', !enabled);
+      }
+      const existingHint = block.querySelector<HTMLElement>('.interaction-hint');
+      if (!enabled && !existingHint) {
+        const hint = document.createElement('div');
+        hint.className = 'interaction-hint';
+        hint.textContent = 'Interactive mode disabled — enable to respond.';
+        block.appendChild(hint);
+      } else if (enabled && existingHint) {
+        existingHint.remove();
+      }
+    }
+  };
+
+  const applyInteractionEnabled = (enabled: boolean, options?: { persist?: boolean }): void => {
+    const persist = options?.persist ?? true;
+    interactionEnabled = enabled;
+    if (interactionModeCheckboxEl) {
+      interactionModeCheckboxEl.checked = enabled;
+    }
+    updateInteractionElementsEnabled(enabled);
+    if (connectionManager) {
+      connectionManager.setInteractionEnabled(enabled);
+    }
+    if (!persist) {
+      return;
+    }
+    try {
+      localStorage.setItem(INTERACTION_MODE_STORAGE_KEY, enabled ? 'true' : 'false');
+    } catch {
+      // Ignore localStorage errors.
+    }
+  };
 
   // Set global flag for stripContextLine to use
   const updateShowContextFlag = (enabled: boolean): void => {
@@ -418,6 +470,12 @@ async function main(): Promise<void> {
       listInlineCustomFieldEditingEnabled = true;
     } else if (storedInlineCustomFields === 'false') {
       listInlineCustomFieldEditingEnabled = false;
+    }
+    const storedInteractionEnabled = localStorage.getItem(INTERACTION_MODE_STORAGE_KEY);
+    if (storedInteractionEnabled === 'true') {
+      interactionEnabled = true;
+    } else if (storedInteractionEnabled === 'false') {
+      interactionEnabled = false;
     }
   } catch {
     // Ignore localStorage errors
@@ -1218,6 +1276,34 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify(message));
   }
 
+  function sendInteractionResponse(options: {
+    sessionId: string;
+    callId: string;
+    interactionId: string;
+    response: InteractionResponseDraft;
+  }): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const sessionId = options.sessionId.trim();
+    if (!sessionId) {
+      return;
+    }
+    const message = {
+      type: 'tool_interaction_response' as const,
+      sessionId,
+      callId: options.callId,
+      interactionId: options.interactionId,
+      action: options.response.action,
+      ...(options.response.approvalScope
+        ? { approvalScope: options.response.approvalScope }
+        : {}),
+      ...(options.response.input ? { input: options.response.input } : {}),
+      ...(options.response.reason ? { reason: options.response.reason } : {}),
+    };
+    socket.send(JSON.stringify(message));
+  }
+
   // Keyboard navigation state
   type FocusZone = 'sidebar' | 'input';
   let focusedSessionId: string | null = null;
@@ -1293,6 +1379,13 @@ async function main(): Promise<void> {
         }
         return Boolean(active.closest('.panel-chrome-row, .chat-header'));
       };
+      const isInteractionActive = (): boolean => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) {
+          return false;
+        }
+        return Boolean(active.closest('.interaction-block, .tool-interaction-dock'));
+      };
       panelWorkspace?.setActiveChatPanelId(panelId);
       const binding = panelHostControllerInstance.getPanelBinding(panelId);
       const boundSessionId =
@@ -1300,7 +1393,12 @@ async function main(): Promise<void> {
       if (boundSessionId && boundSessionId !== inputSessionId) {
         setInputSessionId(boundSessionId);
       }
-      if (focusSource !== 'chrome' && !isChromeActive() && !isMobileViewport()) {
+      if (
+        focusSource !== 'chrome' &&
+        !isChromeActive() &&
+        !isMobileViewport() &&
+        !isInteractionActive()
+      ) {
         window.setTimeout(() => {
           const inputRuntime = chatPanelsById.get(panelId)?.inputRuntime ?? null;
           inputRuntime?.focusInput();
@@ -1569,6 +1667,7 @@ async function main(): Promise<void> {
     },
     protocolVersion: PROTOCOL_VERSION,
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
+    getInteractionEnabled: () => interactionEnabled,
     onMessage: (data) => {
       void handleServerMessage(data);
     },
@@ -1748,6 +1847,8 @@ async function main(): Promise<void> {
       thinkingPreferencesClient,
       autoScrollEnabled,
       getAgentDisplayName,
+      getInteractionEnabled: () => interactionEnabled,
+      sendInteractionResponse,
     };
   }
 
@@ -2270,6 +2371,13 @@ async function main(): Promise<void> {
       }
     });
   }
+  if (interactionModeCheckboxEl) {
+    interactionModeCheckboxEl.checked = interactionEnabled;
+    interactionModeCheckboxEl.addEventListener('change', () => {
+      applyInteractionEnabled(interactionModeCheckboxEl.checked);
+    });
+  }
+  updateInteractionElementsEnabled(interactionEnabled);
   if (listInsertAtTopCheckboxEl) {
     listInsertAtTopCheckboxEl.checked = listInsertAtTopEnabled;
     listInsertAtTopCheckboxEl.addEventListener('change', () => {
