@@ -29,6 +29,7 @@
 - Fixed pending tool approvals to cancel when tool calls fail. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed approval tool calls to render outside grouped tool blocks. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed approval/questionnaire replay ordering for CLI interactions by carrying turn/response IDs. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed Codex CLI history loading on refresh by persisting session mappings early. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

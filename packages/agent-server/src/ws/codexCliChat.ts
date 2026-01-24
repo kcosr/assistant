@@ -176,6 +176,7 @@ export async function runCodexCliChat(options: {
   onThinkingDone?: (text: string) => void | Promise<void>;
   onToolCallStart?: CodexCliToolCallbacks['onToolCallStart'];
   onToolResult?: CodexCliToolCallbacks['onToolResult'];
+  onSessionId?: (sessionId: string) => void | Promise<void>;
   log: (...args: unknown[]) => void;
   spawnFn?: CodexCliSpawn;
 }): Promise<{ text: string; aborted: boolean; codexSessionId?: string }> {
@@ -291,6 +292,16 @@ export async function runCodexCliChat(options: {
   let fullText = '';
   let lastAgentMessageText = '';
   let codexSessionId = existingCodexSessionId;
+  const emitSessionId = async (nextId: string): Promise<void> => {
+    if (!options.onSessionId) {
+      return;
+    }
+    try {
+      await options.onSessionId(nextId);
+    } catch (err) {
+      log('codex onSessionId error', { error: String(err) });
+    }
+  };
   const toolCallIdByItemId = new Map<string, string>();
   const emittedToolCallIds = new Set<string>();
   const emittedToolResultIds = new Set<string>();
@@ -547,6 +558,7 @@ export async function runCodexCliChat(options: {
       const sessionIdValue = msg['session_id'];
       if (isNonEmptyString(sessionIdValue)) {
         codexSessionId = sessionIdValue.trim();
+        await emitSessionId(codexSessionId);
       }
       return;
     }
@@ -558,6 +570,7 @@ export async function runCodexCliChat(options: {
         const sessionIdValue = payloadRecord['id'];
         if (isNonEmptyString(sessionIdValue)) {
           codexSessionId = sessionIdValue.trim();
+          await emitSessionId(codexSessionId);
         }
       }
       return;
@@ -567,6 +580,7 @@ export async function runCodexCliChat(options: {
       const threadId = msg['thread_id'];
       if (isNonEmptyString(threadId)) {
         codexSessionId = threadId.trim();
+        await emitSessionId(codexSessionId);
       }
       return;
     }

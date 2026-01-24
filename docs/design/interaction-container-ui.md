@@ -87,6 +87,8 @@ the server now:
 - Scores candidates using plugin/tool tokens, with a `bash` fallback if no score matches.
 - Reuses the matched CLI `callId` and carries forward the tool call’s `turnId`/`responseId` so
   replay can anchor approvals/questionnaires to the correct assistant response.
+- For Codex CLI, we persist the CLI session mapping as soon as the CLI emits its session id so
+  refresh during a pending interaction still loads history.
 
 This keeps CLI questionnaires visually identical to built-in agent flows without requiring a
 synthetic response id.

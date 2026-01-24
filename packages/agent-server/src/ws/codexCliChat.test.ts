@@ -2,7 +2,7 @@ import { type SpawnOptionsWithoutStdio } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { runCodexCliChat, type CodexCliSpawn } from './codexCliChat';
 
@@ -276,6 +276,7 @@ describe('runCodexCliChat', () => {
   it('captures codex session_id from session_configured', async () => {
     const child = new FakeCodexProcess();
     const spawnFn: CodexCliSpawn = () => child as unknown as ReturnType<CodexCliSpawn>;
+    const onSessionId = vi.fn();
 
     const promise = runCodexCliChat({
       ourSessionId: 'session-123',
@@ -283,6 +284,7 @@ describe('runCodexCliChat', () => {
       existingCodexSessionId: undefined,
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
+      onSessionId,
       log: () => undefined,
       spawnFn,
     });
@@ -309,11 +311,13 @@ describe('runCodexCliChat', () => {
 
     const result = await promise;
     expect(result.codexSessionId).toBe('codex-session-xyz');
+    expect(onSessionId).toHaveBeenCalledWith('codex-session-xyz');
   });
 
   it('captures codex session_id from session_meta output', async () => {
     const child = new FakeCodexProcess();
     const spawnFn: CodexCliSpawn = () => child as unknown as ReturnType<CodexCliSpawn>;
+    const onSessionId = vi.fn();
 
     const promise = runCodexCliChat({
       ourSessionId: 'session-123',
@@ -321,6 +325,7 @@ describe('runCodexCliChat', () => {
       existingCodexSessionId: undefined,
       abortSignal: new AbortController().signal,
       onTextDelta: () => undefined,
+      onSessionId,
       log: () => undefined,
       spawnFn,
     });
@@ -348,6 +353,7 @@ describe('runCodexCliChat', () => {
 
     const result = await promise;
     expect(result.codexSessionId).toBe('codex-session-meta');
+    expect(onSessionId).toHaveBeenCalledWith('codex-session-meta');
   });
 
   it('decodes exec_command_output_delta stdout as base64 and appends to text', async () => {
