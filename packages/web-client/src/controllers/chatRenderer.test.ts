@@ -348,14 +348,13 @@ describe('ChatRenderer', () => {
     );
 
     renderer.renderEvent(
-      createBaseEvent('interaction_request', {
+      createBaseEvent('interaction_pending', {
         id: 'e1',
         responseId: undefined,
         payload: {
           toolCallId: 'tc1',
-          interactionId: 'i1',
           toolName: 'questions_ask',
-          interactionType: 'input',
+          pending: true,
           presentation: 'questionnaire',
         },
       }),
@@ -366,14 +365,14 @@ describe('ChatRenderer', () => {
     );
 
     renderer.renderEvent(
-      createBaseEvent('interaction_response', {
+      createBaseEvent('interaction_pending', {
         id: 'e2',
         responseId: undefined,
         payload: {
           toolCallId: 'tc1',
-          interactionId: 'i1',
-          action: 'submit',
-          input: { answer: 'ok' },
+          toolName: 'questions_ask',
+          pending: false,
+          presentation: 'questionnaire',
         },
       }),
     );

@@ -8,6 +8,7 @@ import type {
   ErrorEvent,
   InteractionRequestEvent,
   InteractionResponseEvent,
+  InteractionPendingEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
   ToolCallEvent,
@@ -82,7 +83,7 @@ export class ChatRenderer {
   private readonly agentMessageElements = new Map<string, HTMLDivElement>();
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
-  private readonly pendingInteractionIds = new Set<string>();
+  private readonly pendingInteractionToolCalls = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
     string,
     { payload: InteractionRequestEvent['payload']; sessionId: string }
@@ -256,6 +257,9 @@ export class ChatRenderer {
       case 'interaction_response':
         this.handleInteractionResponse(event);
         break;
+      case 'interaction_pending':
+        this.handleInteractionPending(event);
+        break;
       case 'agent_message':
         this.handleAgentMessage(event);
         break;
@@ -308,7 +312,7 @@ export class ChatRenderer {
     this.pendingInteractionRequests.clear();
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
-    this.pendingInteractionIds.clear();
+    this.pendingInteractionToolCalls.clear();
     this.suppressTypingIndicator = false;
   }
 
@@ -938,10 +942,6 @@ export class ChatRenderer {
     const enabled = this.options.getInteractionEnabled?.() ?? true;
     const presentation = payload.presentation ?? 'tool';
 
-    if (!this._isReplaying) {
-      this.markInteractionPending(interactionId);
-    }
-
     if (presentation === 'questionnaire') {
       this.renderStandaloneInteraction(event, enabled);
       return;
@@ -975,9 +975,6 @@ export class ChatRenderer {
   private handleInteractionResponse(event: InteractionResponseEvent): void {
     const payload = event.payload;
     const interactionId = payload.interactionId;
-    if (!this._isReplaying) {
-      this.resolveInteractionPending(interactionId, payload.action);
-    }
     const element = this.interactionElements.get(interactionId);
     if (element) {
       applyInteractionResponse(element, payload);
@@ -990,30 +987,27 @@ export class ChatRenderer {
     this.pendingInteractionResponses.set(interactionId, payload);
   }
 
-  private markInteractionPending(interactionId: string): void {
-    if (this.pendingInteractionIds.has(interactionId)) {
+  private handleInteractionPending(event: InteractionPendingEvent): void {
+    if (this._isReplaying) {
       return;
     }
-    this.pendingInteractionIds.add(interactionId);
-    this.updateTypingSuppression();
-  }
-
-  private resolveInteractionPending(
-    interactionId: string,
-    action: InteractionResponseEvent['payload']['action'],
-  ): void {
-    if (!this.pendingInteractionIds.delete(interactionId)) {
-      return;
+    const payload = event.payload;
+    if (payload.pending) {
+      this.pendingInteractionToolCalls.add(payload.toolCallId);
+    } else {
+      this.pendingInteractionToolCalls.delete(payload.toolCallId);
     }
     this.updateTypingSuppression();
-    if (this.pendingInteractionIds.size > 0 || action === 'cancel') {
+    if (payload.pending) {
       return;
     }
-    this.showTypingIndicator();
+    if (this.pendingInteractionToolCalls.size === 0) {
+      this.showTypingIndicator();
+    }
   }
 
   private updateTypingSuppression(): void {
-    const shouldSuppress = this.pendingInteractionIds.size > 0;
+    const shouldSuppress = this.pendingInteractionToolCalls.size > 0;
     if (this.suppressTypingIndicator === shouldSuppress) {
       return;
     }

@@ -265,7 +265,11 @@ export class SessionScopedEventStore implements EventStore {
   ) {}
 
   private isOverlayEvent(event: ChatEvent): boolean {
-    return event.type === 'interaction_request' || event.type === 'interaction_response';
+    return (
+      event.type === 'interaction_request' ||
+      event.type === 'interaction_response' ||
+      event.type === 'interaction_pending'
+    );
   }
 
   async append(sessionId: string, event: ChatEvent): Promise<void> {

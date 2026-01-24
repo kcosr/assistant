@@ -66,6 +66,18 @@ export interface EmitInteractionResponseEventParams {
   reason?: string;
 }
 
+export interface EmitInteractionPendingEventParams {
+  eventStore?: EventStore;
+  sessionHub: SessionHub;
+  sessionId: string;
+  turnId?: string;
+  responseId?: string;
+  toolCallId: string;
+  toolName: string;
+  pending: boolean;
+  presentation?: 'tool' | 'questionnaire';
+}
+
 export interface EmitToolOutputChunkParams {
   sessionHub: SessionHub;
   sessionId: string;
@@ -294,6 +306,49 @@ export function emitInteractionResponseEvent(params: EmitInteractionResponseEven
         ...(approvalScope ? { approvalScope } : {}),
         ...(input ? { input } : {}),
         ...(reason ? { reason } : {}),
+      },
+    },
+  ];
+
+  if (eventStore) {
+    void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+    return;
+  }
+
+  const message: ServerChatEventMessage = {
+    type: 'chat_event',
+    sessionId,
+    event: events[0]!,
+  };
+  sessionHub.broadcastToSession(sessionId, message);
+}
+
+export function emitInteractionPendingEvent(params: EmitInteractionPendingEventParams): void {
+  const {
+    eventStore,
+    sessionHub,
+    sessionId,
+    turnId,
+    responseId,
+    toolCallId,
+    toolName,
+    pending,
+    presentation,
+  } = params;
+
+  const events: ChatEvent[] = [
+    {
+      ...createChatEventBase({
+        sessionId,
+        ...(turnId ? { turnId } : {}),
+        ...(responseId ? { responseId } : {}),
+      }),
+      type: 'interaction_pending',
+      payload: {
+        toolCallId,
+        toolName,
+        pending,
+        ...(presentation ? { presentation } : {}),
       },
     },
   ];

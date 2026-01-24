@@ -286,6 +286,21 @@ describe('SessionScopedEventStore', () => {
     await store.append('pi-session', piInteraction);
     expect(baseStore.append).toHaveBeenCalledWith('pi-session', piInteraction);
 
+    const piPending: ChatEvent = {
+      id: 'i-2',
+      timestamp: Date.now(),
+      sessionId: 'pi-session',
+      type: 'interaction_pending',
+      payload: {
+        toolCallId: 'call-1',
+        toolName: 'questions_ask',
+        pending: true,
+        presentation: 'questionnaire',
+      },
+    };
+    await store.append('pi-session', piPending);
+    expect(baseStore.append).toHaveBeenCalledWith('pi-session', piPending);
+
     const openaiEvent = createEvent({ id: 'e-openai', sessionId: 'openai-session' });
     await store.append('openai-session', openaiEvent);
     expect(baseStore.append).toHaveBeenCalledWith('openai-session', openaiEvent);

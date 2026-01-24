@@ -9,6 +9,7 @@
 - Added Cmd/Ctrl+X/C/V cut/copy/paste shortcuts for list items across lists. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added interactive tool approvals and questionnaires with an interactive-mode toggle. ([#28](https://github.com/kcosr/assistant/pull/28))
 - Added questions plugin with questionnaire tool support. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added first-class interaction pending events for interactive tools. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 - Changed plugin CLIs to default `--session-id` from `ASSISTANT_SESSION_ID` when omitted. ([#000](https://github.com/kcosr/assistant/pull/000))

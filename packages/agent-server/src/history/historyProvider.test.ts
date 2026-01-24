@@ -177,12 +177,24 @@ describe('PiSessionHistoryProvider', () => {
         },
       },
     };
+    const pendingEvent: ChatEvent = {
+      id: 'interaction-pending-1',
+      timestamp: Date.now(),
+      sessionId,
+      type: 'interaction_pending',
+      payload: {
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        pending: true,
+        presentation: 'questionnaire',
+      },
+    };
 
     const eventStore: EventStore = {
       append: async () => undefined,
       appendBatch: async () => undefined,
-      getEvents: async () => [overlayEvent],
-      getEventsSince: async () => [overlayEvent],
+      getEvents: async () => [overlayEvent, pendingEvent],
+      getEventsSince: async () => [overlayEvent, pendingEvent],
       subscribe: () => () => undefined,
       clearSession: async () => undefined,
       deleteSession: async () => undefined,
@@ -214,6 +226,7 @@ describe('PiSessionHistoryProvider', () => {
     });
 
     expect(events.some((event) => event.type === 'interaction_request')).toBe(true);
+    expect(events.some((event) => event.type === 'interaction_pending')).toBe(true);
   });
 
   it('treats sessions with provider metadata as external history', async () => {

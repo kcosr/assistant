@@ -576,7 +576,11 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isOverlayEvent(event: ChatEvent): boolean {
-  return event.type === 'interaction_request' || event.type === 'interaction_response';
+  return (
+    event.type === 'interaction_request' ||
+    event.type === 'interaction_response' ||
+    event.type === 'interaction_pending'
+  );
 }
 
 function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {

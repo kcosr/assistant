@@ -90,7 +90,7 @@ export interface ServerMessageHandlerOptions {
 
 export class ServerMessageHandler {
   private readonly queuedMessageBubbles = new Map<string, HTMLDivElement>();
-  private readonly sessionsWithPendingInteractions = new Set<string>();
+  private readonly pendingInteractionsBySession = new Map<string, Set<string>>();
 
   constructor(private readonly options: ServerMessageHandlerOptions) {}
 
@@ -144,22 +144,26 @@ export class ServerMessageHandler {
         const event: ChatEvent = chatEventMessage.event;
 
         if (sessionId) {
-          if (event.type === 'interaction_request') {
-            this.sessionsWithPendingInteractions.add(sessionId);
-            this.options.hideSessionTypingIndicator(sessionId);
-          } else if (event.type === 'interaction_response') {
-            this.sessionsWithPendingInteractions.delete(sessionId);
-            if (event.payload.action !== 'cancel') {
-              this.options.showSessionTypingIndicator(sessionId);
-            } else {
+          if (event.type === 'interaction_pending') {
+            const pendingSet =
+              this.pendingInteractionsBySession.get(sessionId) ?? new Set<string>();
+            if (event.payload.pending) {
+              pendingSet.add(event.payload.toolCallId);
+              this.pendingInteractionsBySession.set(sessionId, pendingSet);
               this.options.hideSessionTypingIndicator(sessionId);
+            } else {
+              pendingSet.delete(event.payload.toolCallId);
+              if (pendingSet.size === 0) {
+                this.pendingInteractionsBySession.delete(sessionId);
+                this.options.hideSessionTypingIndicator(sessionId);
+              }
             }
           } else if (
             event.type === 'assistant_chunk' ||
             event.type === 'thinking_chunk' ||
             event.type === 'tool_call'
           ) {
-            if (!this.sessionsWithPendingInteractions.has(sessionId)) {
+            if (!this.pendingInteractionsBySession.has(sessionId)) {
               this.options.showSessionTypingIndicator(sessionId);
             }
           } else if (
@@ -186,13 +190,10 @@ export class ServerMessageHandler {
           break;
         }
 
-        if (event.type === 'interaction_request') {
-          runtime.chatRenderer.hideTypingIndicator();
-          this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
-        } else if (event.type === 'interaction_response') {
-          if (event.payload.action !== 'cancel') {
-            runtime.chatRenderer.showTypingIndicator();
-            this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
+        if (event.type === 'interaction_pending') {
+          if (event.payload.pending) {
+            runtime.chatRenderer.hideTypingIndicator();
+            this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
           } else {
             runtime.chatRenderer.hideTypingIndicator();
             this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
@@ -202,7 +203,7 @@ export class ServerMessageHandler {
           event.type === 'thinking_chunk' ||
           event.type === 'tool_call'
         ) {
-          if (!this.sessionsWithPendingInteractions.has(sessionId)) {
+          if (!this.pendingInteractionsBySession.has(sessionId)) {
             runtime.chatRenderer.showTypingIndicator();
             this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
           }
