@@ -987,6 +987,33 @@ describe('ChatRenderer', () => {
     expect(group?.classList.contains('has-pending-approval')).toBe(false);
   });
 
+  it('renders approval interaction on replay even without tool_call event', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc-approval',
+          toolName: 'files_read',
+          interactionId: 'i-approval',
+          interactionType: 'approval',
+          presentation: 'tool',
+        },
+      }),
+    ]);
+
+    const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
+    expect(toolBlock).not.toBeNull();
+    expect(toolBlock?.dataset['toolCallId']).toBe('tc-approval');
+    expect(toolBlock?.querySelector('.interaction-approval')).not.toBeNull();
+  });
+
   it('creates a new thinking block after tool calls', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

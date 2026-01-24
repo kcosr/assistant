@@ -947,7 +947,15 @@ export class ChatRenderer {
       return;
     }
 
-    const block = this.toolCallElements.get(toolCallId);
+    let block = this.toolCallElements.get(toolCallId);
+    if (!block) {
+      if (this._isReplaying && presentation !== 'questionnaire') {
+        block = this.createToolBlockForInteraction(event);
+      }
+      if (block) {
+        this.toolCallElements.set(toolCallId, block);
+      }
+    }
     if (!block) {
       this.pendingInteractionRequests.set(toolCallId, {
         payload,
@@ -1059,6 +1067,37 @@ export class ChatRenderer {
     }
     this.interactionElements.set(payload.interactionId, element);
     this.updateToolInteractionState(block);
+  }
+
+  private createToolBlockForInteraction(event: InteractionRequestEvent): HTMLDivElement | null {
+    const payload = event.payload;
+    const responseId = this.getResponseId(event.responseId);
+    const responseEl = this.getOrCreateToolCallContainer(
+      event.id,
+      event.turnId,
+      payload.toolCallId,
+      responseId,
+    );
+    const block = createToolOutputBlock({
+      callId: payload.toolCallId,
+      toolName: payload.toolName,
+      expanded: this.shouldExpandToolOutput(),
+    });
+
+    block.dataset['toolCallId'] = payload.toolCallId;
+    block.dataset['toolName'] = payload.toolName;
+    block.dataset['eventId'] = event.id;
+    block.dataset['renderer'] = 'unified';
+
+    setToolOutputBlockPending(block, '{}', {
+      pendingText: 'Awaiting approval…',
+      statusLabel: 'Approval',
+      state: 'running',
+    });
+
+    this.appendToolCallBlock(responseEl, responseId ?? undefined, block, payload.toolName);
+    this.updateToolCallGroupForBlock(block);
+    return block;
   }
 
   private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
