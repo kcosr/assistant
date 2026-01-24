@@ -13,12 +13,15 @@
 ### Changed
 - Changed plugin CLIs to default `--session-id` from `ASSISTANT_SESSION_ID` when omitted. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed Codex/Claude/Pi CLI providers to inject `ASSISTANT_SESSION_ID` into spawned processes. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed questionnaire inputs to use themed styling and display required indicators. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 - Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed tool calls and questionnaires rendering when response ids are missing. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed CLI questionnaire ordering and persistence across refresh. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Fixed CLI questionnaire tool calls to rendezvous with HTTP interactions. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed typing indicator to hide while awaiting interactive tool input. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed questions plugin docs to include `initialValues` guidance. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

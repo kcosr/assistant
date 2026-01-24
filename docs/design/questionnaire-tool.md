@@ -97,6 +97,7 @@ interface QuestionnaireField {
   required?: boolean;
   placeholder?: string;
   defaultValue?: unknown;          // used if no initialValues override
+  // Note: per-field "initialValue" is not supported; use schema.initialValues instead.
 
   /** Enable client-side validation for this field (default: true) */
   validateOnClient?: boolean;

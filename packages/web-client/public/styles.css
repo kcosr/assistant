@@ -3648,6 +3648,25 @@ body.panel-reordering {
   font-weight: 500;
 }
 
+.interaction-field-label-text {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xxs);
+}
+
+.interaction-field-required {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
+  color: var(--color-error);
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .interaction-field-description {
   color: var(--color-text-secondary);
   font-size: 0.85em;
@@ -3662,6 +3681,40 @@ body.panel-reordering {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+}
+
+.interaction-input {
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  padding: 6px 10px;
+  font-size: 0.9em;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.interaction-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.interaction-input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.interaction-input:disabled {
+  background-color: var(--color-bg-muted);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.interaction-option-input {
+  accent-color: var(--color-accent-primary);
 }
 
 .interaction-radio-group {

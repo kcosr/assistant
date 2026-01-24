@@ -8,6 +8,7 @@ Quick rules
 - Validation runs by default (`validate: true`): required, min/max, minLength/maxLength, pattern, and option membership.
 - On validation errors the tool reprompts with `fieldErrors` and preserves prior input via `initialValues`.
 - Set `validate: false` to handle validation in your own tool logic.
+- `schema.initialValues` is the only supported way to prefill fields; per-field `initialValue` is ignored.
 
 Response shape
 - `answers` map field ids to values:
@@ -16,6 +17,55 @@ Response shape
   - select/radio -> string
   - multiselect -> string[]
   - checkbox/boolean -> boolean
+
+Pre-populating fields (initialValues)
+Use `schema.initialValues` to pre-fill form fields. This is a map of field ids to initial values.
+
+```
+{
+  "prompt": "Edit your profile.",
+  "schema": {
+    "title": "Edit profile",
+    "initialValues": {
+      "name": "Kevin Smith",
+      "age": 35,
+      "theme": "dark",
+      "languages": ["ts", "rust"],
+      "subscribe": true
+    },
+    "fields": [
+      { "id": "name", "type": "text", "label": "Name" },
+      { "id": "age", "type": "number", "label": "Age" },
+      {
+        "id": "theme",
+        "type": "select",
+        "label": "Theme",
+        "options": [
+          { "label": "Light", "value": "light" },
+          { "label": "Dark", "value": "dark" }
+        ]
+      },
+      {
+        "id": "languages",
+        "type": "multiselect",
+        "label": "Languages",
+        "options": [
+          { "label": "TypeScript", "value": "ts" },
+          { "label": "Rust", "value": "rust" }
+        ]
+      },
+      { "id": "subscribe", "type": "boolean", "label": "Subscribe?" }
+    ]
+  }
+}
+```
+
+Value types should match the field type:
+- text/textarea/date/time/datetime -> string
+- number -> number
+- select/radio -> string (matching an option value)
+- multiselect -> string[] (matching option values)
+- checkbox/boolean -> boolean
 
 Example: flat fields
 ```

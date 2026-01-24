@@ -258,7 +258,17 @@ function appendFields(
 
     const label = document.createElement('label');
     label.className = 'interaction-field-label';
-    label.textContent = field.label;
+    const labelText = document.createElement('span');
+    labelText.className = 'interaction-field-label-text';
+    labelText.textContent = field.label;
+    label.appendChild(labelText);
+
+    if (field.required) {
+      const required = document.createElement('span');
+      required.className = 'interaction-field-required';
+      required.textContent = 'Required';
+      label.appendChild(required);
+    }
 
     const input = createInputForField(field);
     label.appendChild(input);
@@ -290,6 +300,7 @@ function createInputForField(
   switch (field.type) {
     case 'textarea': {
       const textarea = document.createElement('textarea');
+      textarea.className = 'interaction-input';
       textarea.dataset['fieldId'] = field.id;
       if (shouldValidate && field.required) textarea.required = true;
       if (field.placeholder) textarea.placeholder = field.placeholder;
@@ -304,6 +315,7 @@ function createInputForField(
     case 'select':
     case 'multiselect': {
       const select = document.createElement('select');
+      select.className = 'interaction-input';
       select.dataset['fieldId'] = field.id;
       if (field.type === 'multiselect') {
         select.multiple = true;
@@ -329,6 +341,7 @@ function createInputForField(
           const optionLabel = document.createElement('label');
           optionLabel.className = 'interaction-radio-option';
           const input = document.createElement('input');
+          input.className = 'interaction-option-input';
           input.type = 'radio';
           input.name = field.id;
           input.value = option.value;
@@ -346,6 +359,7 @@ function createInputForField(
     case 'checkbox':
     case 'boolean': {
       const input = document.createElement('input');
+      input.className = 'interaction-option-input';
       input.type = 'checkbox';
       input.dataset['fieldId'] = field.id;
       if (shouldValidate && field.required) {
@@ -360,6 +374,7 @@ function createInputForField(
     case 'text':
     default: {
       const input = document.createElement('input');
+      input.className = 'interaction-input';
       input.type =
         field.type === 'number'
           ? 'number'

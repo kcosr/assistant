@@ -82,6 +82,7 @@ export class ChatRenderer {
   private readonly agentMessageElements = new Map<string, HTMLDivElement>();
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
+  private readonly pendingInteractionIds = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
     string,
     { payload: InteractionRequestEvent['payload']; sessionId: string }
@@ -94,6 +95,7 @@ export class ChatRenderer {
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
   private debugEnabled: boolean | null = null;
+  private suppressTypingIndicator = false;
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -160,6 +162,9 @@ export class ChatRenderer {
   }
 
   showTypingIndicator(): void {
+    if (this.suppressTypingIndicator) {
+      return;
+    }
     this._isStreaming = true;
     if (!this.typingIndicator) {
       this.typingIndicator = document.createElement('div');
@@ -303,6 +308,8 @@ export class ChatRenderer {
     this.pendingInteractionRequests.clear();
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
+    this.pendingInteractionIds.clear();
+    this.suppressTypingIndicator = false;
   }
 
   private handleTurnStart(event: TurnStartEvent): void {
@@ -931,6 +938,10 @@ export class ChatRenderer {
     const enabled = this.options.getInteractionEnabled?.() ?? true;
     const presentation = payload.presentation ?? 'tool';
 
+    if (!this._isReplaying) {
+      this.markInteractionPending(interactionId);
+    }
+
     if (presentation === 'questionnaire') {
       this.renderStandaloneInteraction(event, enabled);
       return;
@@ -964,6 +975,9 @@ export class ChatRenderer {
   private handleInteractionResponse(event: InteractionResponseEvent): void {
     const payload = event.payload;
     const interactionId = payload.interactionId;
+    if (!this._isReplaying) {
+      this.resolveInteractionPending(interactionId, payload.action);
+    }
     const element = this.interactionElements.get(interactionId);
     if (element) {
       applyInteractionResponse(element, payload);
@@ -974,6 +988,39 @@ export class ChatRenderer {
       return;
     }
     this.pendingInteractionResponses.set(interactionId, payload);
+  }
+
+  private markInteractionPending(interactionId: string): void {
+    if (this.pendingInteractionIds.has(interactionId)) {
+      return;
+    }
+    this.pendingInteractionIds.add(interactionId);
+    this.updateTypingSuppression();
+  }
+
+  private resolveInteractionPending(
+    interactionId: string,
+    action: InteractionResponseEvent['payload']['action'],
+  ): void {
+    if (!this.pendingInteractionIds.delete(interactionId)) {
+      return;
+    }
+    this.updateTypingSuppression();
+    if (this.pendingInteractionIds.size > 0 || action === 'cancel') {
+      return;
+    }
+    this.showTypingIndicator();
+  }
+
+  private updateTypingSuppression(): void {
+    const shouldSuppress = this.pendingInteractionIds.size > 0;
+    if (this.suppressTypingIndicator === shouldSuppress) {
+      return;
+    }
+    this.suppressTypingIndicator = shouldSuppress;
+    if (shouldSuppress) {
+      this.hideTypingIndicator();
+    }
   }
 
   private attachInteractionToToolBlock(

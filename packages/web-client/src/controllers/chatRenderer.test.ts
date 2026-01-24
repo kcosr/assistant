@@ -336,6 +336,53 @@ describe('ChatRenderer', () => {
     expect(renderer.hasActiveOutput()).toBe(false);
   });
 
+  it('suppresses typing indicator while interaction is pending', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.showTypingIndicator();
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          toolName: 'questions_ask',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+        },
+      }),
+    );
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      false,
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_response', {
+        id: 'e2',
+        responseId: undefined,
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          action: 'submit',
+          input: { answer: 'ok' },
+        },
+      }),
+    );
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
   it('shows agent attribution for user_message events from agents', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

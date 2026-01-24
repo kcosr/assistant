@@ -67,4 +67,28 @@ describe('interactionRenderer', () => {
     expect(input.minLength).toBe(-1);
     expect(input.pattern).toBe('');
   });
+
+  it('adds required indicator and themed input classes', () => {
+    const request: InteractionRequestPayload = {
+      toolCallId: 'tc3',
+      toolName: 'questions_ask',
+      interactionId: 'i3',
+      interactionType: 'input',
+      inputSchema: {
+        title: 'Required field',
+        fields: [{ id: 'email', type: 'text', label: 'Email', required: true }],
+      },
+    };
+    const onSubmit = vi.fn();
+    const element = createInteractionElement({ request, enabled: true, onSubmit });
+    document.body.appendChild(element);
+
+    const label = element.querySelector<HTMLLabelElement>('.interaction-field-label');
+    expect(label).not.toBeNull();
+    expect(label?.querySelector('.interaction-field-required')).not.toBeNull();
+
+    const input = element.querySelector<HTMLInputElement>('[data-field-id="email"]');
+    expect(input).not.toBeNull();
+    expect(input?.classList.contains('interaction-input')).toBe(true);
+  });
 });

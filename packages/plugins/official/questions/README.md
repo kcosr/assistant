@@ -45,3 +45,54 @@ Enable the plugin in `config.json`:
   `docs/design/questionnaire-tool.md`.
 - When `validate` is `true` (default), the plugin validates the response against the schema and
   reprompts with `fieldErrors` and `initialValues` when needed.
+- `schema.initialValues` is the supported way to prefill fields; per-field `initialValue` is ignored.
+
+## Pre-populating fields
+
+Use `schema.initialValues` to pre-fill form fields in edit/update flows:
+
+```json
+{
+  "prompt": "Edit your profile.",
+  "schema": {
+    "title": "Edit profile",
+    "initialValues": {
+      "name": "Kevin Smith",
+      "age": 35,
+      "theme": "dark",
+      "languages": ["ts", "rust"],
+      "subscribe": true
+    },
+    "fields": [
+      { "id": "name", "type": "text", "label": "Name" },
+      { "id": "age", "type": "number", "label": "Age" },
+      {
+        "id": "theme",
+        "type": "select",
+        "label": "Theme",
+        "options": [
+          { "label": "Light", "value": "light" },
+          { "label": "Dark", "value": "dark" }
+        ]
+      },
+      {
+        "id": "languages",
+        "type": "multiselect",
+        "label": "Languages",
+        "options": [
+          { "label": "TypeScript", "value": "ts" },
+          { "label": "Rust", "value": "rust" }
+        ]
+      },
+      { "id": "subscribe", "type": "boolean", "label": "Subscribe?" }
+    ]
+  }
+}
+```
+
+Value types should match the field type:
+- text/textarea/date/time/datetime -> string
+- number -> number
+- select/radio -> string (matching an option value)
+- multiselect -> string[] (matching option values)
+- checkbox/boolean -> boolean
