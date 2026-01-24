@@ -11,6 +11,7 @@
 - Added Ctrl+S split placement shortcut for panels (arrows/WASD selection, empty placeholder). ([#29](https://github.com/kcosr/assistant/pull/29))
 - Added questions plugin with schema-driven questionnaires, including initial values and required indicators. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Added first-class interaction pending events for interactive tools. ([#30](https://github.com/kcosr/assistant/pull/30))
+- Added quick-add (+) action in the lists dropdown to add items without switching lists. ([#31](https://github.com/kcosr/assistant/pull/31))
 
 ### Changed
 - Changed CLI providers to inject `ASSISTANT_SESSION_ID` and default plugin CLIs to read it when `--session-id` is omitted. ([#30](https://github.com/kcosr/assistant/pull/30))
