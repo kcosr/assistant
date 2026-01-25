@@ -81,6 +81,7 @@ import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
 import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
 import { PluginSettingsClient } from './utils/pluginSettingsClient';
+import { shouldAutoOpenSessionPicker } from './utils/sessionPickerAutoOpen';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
@@ -961,7 +962,36 @@ async function main(): Promise<void> {
       inputRuntime.focusInput();
     });
     chatPanelsById.set(panelId, entry);
+    let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
+    const openChatSessionPicker = () => {
+      const anchor = dom.sessionLabelEl;
+      if (!anchor) {
+        return;
+      }
+      const disabledSessionIds = new Set<string>();
+      for (const candidate of chatPanelsById.values()) {
+        if (candidate.panelId === panelId) {
+          continue;
+        }
+        if (candidate.bindingSessionId) {
+          disabledSessionIds.add(candidate.bindingSessionId);
+        }
+      }
+      openSessionPicker({
+        anchor,
+        title: 'Select session',
+        allowUnbound: true,
+        ...(disabledSessionIds.size > 0 ? { disabledSessionIds } : {}),
+        createSessionOptions: { openChatPanel: false, selectSession: false },
+        onSelectSession: (sessionId) => {
+          host.setBinding({ mode: 'fixed', sessionId });
+        },
+        onSelectUnbound: () => {
+          host.setBinding(null);
+        },
+      });
+    };
     if (dom.refreshButtonEl) {
       dom.refreshButtonEl.disabled = true;
       dom.refreshButtonEl.addEventListener(
@@ -984,36 +1014,29 @@ async function main(): Promise<void> {
         (event) => {
           event.preventDefault();
           event.stopPropagation();
-          const anchor = dom.sessionLabelEl;
-          if (!anchor) {
-            return;
-          }
-          const disabledSessionIds = new Set<string>();
-          for (const candidate of chatPanelsById.values()) {
-            if (candidate.panelId === panelId) {
-              continue;
-            }
-            if (candidate.bindingSessionId) {
-              disabledSessionIds.add(candidate.bindingSessionId);
-            }
-          }
-          openSessionPicker({
-            anchor,
-            title: 'Select session',
-            allowUnbound: true,
-            ...(disabledSessionIds.size > 0 ? { disabledSessionIds } : {}),
-            createSessionOptions: { openChatPanel: false, selectSession: false },
-            onSelectSession: (sessionId) => {
-              host.setBinding({ mode: 'fixed', sessionId });
-            },
-            onSelectUnbound: () => {
-              host.setBinding(null);
-            },
-          });
+          openChatSessionPicker();
         },
         { signal: abortController.signal },
       );
     }
+    const maybeAutoOpenSessionPicker = () => {
+      const active = getActivePanelContext();
+      const isActive = active?.panelId === panelId;
+      if (
+        !shouldAutoOpenSessionPicker({
+          hasSession: Boolean(bindingSessionId),
+          isActive,
+          hasAnchor: Boolean(dom.sessionLabelEl),
+          alreadyOpened: didAutoOpenSessionPicker,
+        })
+      ) {
+        return;
+      }
+      didAutoOpenSessionPicker = true;
+      requestAnimationFrame(() => {
+        openChatSessionPicker();
+      });
+    };
     const updateBinding = (binding: PanelBinding | null) => {
       const sessionId = binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
       const previousSessionId = entry.bindingSessionId;
@@ -1070,11 +1093,17 @@ async function main(): Promise<void> {
       if (sessionId) {
         void loadSessionTranscript(sessionId, { force: true });
       }
+      if (!sessionId) {
+        maybeAutoOpenSessionPicker();
+      }
     };
     updateBinding(host.getBinding());
     const unsubBinding = host.onBindingChange(updateBinding);
     const unsubSessionContext = host.subscribeSessionContext(() => {
       updateChatPanelSessionLabel(entry);
+    });
+    const unsubActive = host.subscribeContext('panel.active', () => {
+      maybeAutoOpenSessionPicker();
     });
     if (dom.modelSelectEl) {
       dom.modelSelectEl.addEventListener(
@@ -1119,6 +1148,7 @@ async function main(): Promise<void> {
       abortController.abort();
       unsubBinding();
       unsubSessionContext();
+      unsubActive();
       runtime.chatRenderer.setFocusInputHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {

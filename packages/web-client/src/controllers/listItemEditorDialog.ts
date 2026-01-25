@@ -76,11 +76,12 @@ export class ListItemEditorDialog {
         continue;
       }
 
-      const row = document.createElement('div');
+      const row = document.createElement('label');
       row.className = 'list-item-form-label list-item-custom-field-row';
 
-      const fieldLabel = document.createElement('label');
-      fieldLabel.textContent = label;
+      const labelText = document.createElement('span');
+      labelText.className = 'list-item-custom-field-label-text';
+      labelText.textContent = label;
 
       let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
       const type = def.type;
@@ -130,6 +131,7 @@ export class ListItemEditorDialog {
         textarea.className = 'list-item-form-textarea';
         textarea.rows = 3;
         input = textarea;
+        row.classList.add('list-item-custom-field-row--wide');
       } else {
         input = document.createElement('input');
         input.type = 'text';
@@ -138,7 +140,14 @@ export class ListItemEditorDialog {
 
       const id = `list-item-custom-field-${key}-${Math.random().toString(36).slice(2)}`;
       input.id = id;
-      fieldLabel.htmlFor = id;
+      if (type === 'checkbox') {
+        row.classList.add('list-item-custom-field-row--checkbox');
+        row.appendChild(input);
+        row.appendChild(labelText);
+      } else {
+        row.appendChild(labelText);
+        row.appendChild(input);
+      }
 
       const rawValue = initialValues[key];
       if (type === 'checkbox') {
@@ -174,8 +183,6 @@ export class ListItemEditorDialog {
         }
       }
 
-      fieldLabel.appendChild(input);
-      row.appendChild(fieldLabel);
       container.appendChild(row);
 
       fieldInputs.push({ definition: def, input });

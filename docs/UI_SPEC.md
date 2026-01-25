@@ -87,6 +87,7 @@ Binding indicator behavior:
 - Chat panels show a session picker dropdown with search, keyboard navigation, and sections for Unbound (optional), Sessions, and New session
 - Panels do not implicitly follow a global "active session"; chat binding is explicit
 - Non-chat panels do not expose session binding controls
+- New unbound chat panels auto-open the session picker to prompt session selection
 
 ### Unavailable Panels
 
@@ -166,6 +167,7 @@ Panels can register additional shortcuts scoped to the focused panel.
 - Lists panels are global (no session binding).
 - Clicking a list item selects it when enabled in the Settings menu.
 - List view supports keyboard navigation (arrow keys to move selection, Shift+Arrow to extend, Enter to edit, Space to toggle complete, `n` to add, `t`/`b` to move, `d` to delete, Esc to clear). `f` focuses the list search.
+- List metadata dialog keeps custom field editor rows compact, with action buttons aligned to the right.
 
 ### Notes Panel
 

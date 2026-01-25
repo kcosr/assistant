@@ -3075,9 +3075,13 @@ button.list-item-menu-checkbox {
 }
 
 .list-metadata-custom-field-row {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main actions'
+    'options actions'
+    'markdown actions';
+  gap: var(--spacing-xs) var(--spacing-sm);
   padding: var(--spacing-xs);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-subtle);
@@ -3085,6 +3089,7 @@ button.list-item-menu-checkbox {
 }
 
 .list-metadata-custom-field-main {
+  grid-area: main;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
   gap: var(--spacing-xs);
@@ -3100,6 +3105,7 @@ button.list-item-menu-checkbox {
 }
 
 .list-metadata-custom-field-options-wrapper {
+  grid-area: options;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3112,6 +3118,7 @@ button.list-item-menu-checkbox {
 }
 
 .list-metadata-custom-field-markdown {
+  grid-area: markdown;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
@@ -3127,9 +3134,12 @@ button.list-item-menu-checkbox {
 }
 
 .list-metadata-custom-field-actions {
+  grid-area: actions;
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-xs);
+  align-self: start;
+  justify-self: end;
 }
 
 .list-metadata-custom-field-move-button,
@@ -3371,14 +3381,38 @@ button.list-item-menu-checkbox {
 }
 
 .list-item-custom-fields {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.list-item-custom-field-row {
   gap: var(--spacing-xs);
 }
 
-.list-item-custom-field-row label {
+.list-item-custom-field-row--wide {
+  grid-column: 1 / -1;
+}
+
+.list-item-custom-field-row--checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.list-item-custom-field-row--checkbox .list-item-form-checkbox {
+  padding: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.list-item-custom-field-label-text {
   font-size: var(--font-size-xs);
   color: var(--color-text-secondary);
+}
+
+.list-item-custom-field-row--checkbox .list-item-custom-field-label-text {
+  font-size: var(--font-size-sm);
 }
 
 .list-item-form-select,
@@ -3633,6 +3667,20 @@ button.tag-chip-remove {
     max-height: 70dvh;
     overflow-y: auto;
   }
+
+  .list-item-custom-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .list-metadata-custom-field-row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'main'
+      'options'
+      'markdown'
+      'actions';
+  }
+
 
   .message {
     max-width: 95%;

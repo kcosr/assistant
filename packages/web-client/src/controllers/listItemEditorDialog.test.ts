@@ -129,6 +129,8 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(urgentCheckbox).not.toBeUndefined();
     if (!urgentCheckbox) return;
     urgentCheckbox.checked = true;
+    const urgentRow = urgentCheckbox.closest('.list-item-custom-field-row');
+    expect(urgentRow?.classList.contains('list-item-custom-field-row--checkbox')).toBe(true);
 
     const titleInput = document.querySelector<HTMLInputElement>(
       '.list-item-form input.list-item-form-input',
@@ -183,6 +185,8 @@ describe('ListItemEditorDialog tag chips', () => {
     );
     expect(textarea).not.toBeNull();
     if (!textarea) return;
+    const row = textarea.closest('.list-item-custom-field-row');
+    expect(row?.classList.contains('list-item-custom-field-row--wide')).toBe(true);
     expect(textarea.value).toBe('Initial text');
     textarea.value = 'Updated text';
 
