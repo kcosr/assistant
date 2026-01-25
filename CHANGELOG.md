@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.0] - 2026-01-25
 
 ### Breaking Changes
 
@@ -30,6 +30,7 @@
 - Fixed mobile WebSocket reconnection getting stuck after backgrounding by forcing a resume reconnect. ([#34](https://github.com/kcosr/assistant/pull/34))
 
 ### Removed
+
 
 ## [0.9.0] - 2026-01-24
 
