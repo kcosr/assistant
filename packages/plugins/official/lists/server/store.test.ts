@@ -148,6 +148,56 @@ describe('ListsStore (plugin)', () => {
     expect(anyMatch.map((list) => list.id).sort()).toEqual(['reading', 'shopping']);
   });
 
+  it('saves, overwrites, and sets default AQL queries per list', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'work', name: 'Work' });
+
+    let saved = await store.saveSavedQuery({
+      listId: 'work',
+      name: 'Ready',
+      query: 'status = "Ready"',
+    });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.name).toBe('Ready');
+
+    await expect(
+      store.saveSavedQuery({
+        listId: 'work',
+        name: 'Ready',
+        query: 'status = "Blocked"',
+      }),
+    ).rejects.toThrowError(/already exists/i);
+
+    saved = await store.saveSavedQuery({
+      listId: 'work',
+      name: 'Ready',
+      query: 'status = "Blocked"',
+      overwrite: true,
+    });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.query).toBe('status = "Blocked"');
+
+    saved = await store.saveSavedQuery({
+      listId: 'work',
+      name: 'Urgent',
+      query: 'priority >= 2',
+      makeDefault: true,
+    });
+    expect(saved.some((entry) => entry.isDefault)).toBe(true);
+
+    saved = await store.setDefaultSavedQuery({
+      listId: 'work',
+      id: saved[0]!.id,
+    });
+    const defaults = saved.filter((entry) => entry.isDefault);
+    expect(defaults).toHaveLength(1);
+
+    saved = await store.deleteSavedQuery({ listId: 'work', id: defaults[0]!.id });
+    expect(saved.some((entry) => entry.isDefault)).toBe(false);
+  });
+
   it('updates list metadata and clears description', async () => {
     const filePath = createTempFilePath();
     const store = createStore(filePath);

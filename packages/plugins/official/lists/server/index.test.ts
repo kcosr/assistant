@@ -470,6 +470,51 @@ describe('lists plugin operations', () => {
     expect(itemResult).toBeUndefined();
   });
 
+  it('manages saved AQL queries', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create({ id: 'work', name: 'Work' }, ctx);
+
+    const saved = (await ops['aql-query-save'](
+      {
+        listId: 'work',
+        name: 'Ready',
+        query: 'status = "Ready"',
+        makeDefault: true,
+      },
+      ctx,
+    )) as Array<{ id: string; name: string; isDefault?: boolean }>;
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.isDefault).toBe(true);
+
+    const listed = (await ops['aql-query-list']({ listId: 'work' }, ctx)) as Array<{
+      id: string;
+      name: string;
+    }>;
+    expect(listed.map((entry) => entry.name)).toEqual(['Ready']);
+
+    const cleared = (await ops['aql-query-default']({ listId: 'work' }, ctx)) as Array<{
+      id: string;
+      isDefault?: boolean;
+    }>;
+    expect(cleared.some((entry) => entry.isDefault)).toBe(false);
+
+    const afterDelete = (await ops['aql-query-delete'](
+      { listId: 'work', id: saved[0]!.id },
+      ctx,
+    )) as Array<{ id: string }>;
+    expect(afterDelete).toHaveLength(0);
+  });
+
   it('supports multiple instances and isolates data', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

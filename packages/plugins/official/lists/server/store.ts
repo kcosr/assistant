@@ -4,7 +4,13 @@ import { randomUUID } from 'node:crypto';
 
 import { matchesTags, normalizeTags } from '@assistant/shared';
 
-import type { ListCustomFieldDefinition, ListDefinition, ListItem, ListsData } from './types';
+import type {
+  ListCustomFieldDefinition,
+  ListDefinition,
+  ListItem,
+  ListsData,
+  ListSavedQuery,
+} from './types';
 import { repositionItem, reflowPositions } from './positions';
 
 const LIST_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -52,6 +58,7 @@ export class ListsStore {
         this.data.lists.forEach((list) => {
           list.tags = this.normalizeTags(list.tags);
           list.defaultTags = this.normalizeTags(list.defaultTags);
+          this.normalizeSavedQueries(list);
         });
         this.data.items.forEach((item) => {
           item.tags = this.normalizeTags(item.tags);
@@ -84,6 +91,44 @@ export class ListsStore {
     if (!LIST_ID_PATTERN.test(id)) {
       throw new Error(`Invalid list ID: ${id}. Must be lowercase alphanumeric with hyphens.`);
     }
+  }
+
+  private normalizeSavedQueries(list: ListDefinition): void {
+    const now = new Date().toISOString();
+    if (!Array.isArray(list.savedQueries)) {
+      list.savedQueries = [];
+      return;
+    }
+    const result: ListSavedQuery[] = [];
+    let hasDefault = false;
+    for (const entry of list.savedQueries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const id = typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : randomUUID();
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      const query = typeof entry.query === 'string' ? entry.query.trim() : '';
+      if (!name || !query) continue;
+      const createdAt =
+        typeof entry.createdAt === 'string' && entry.createdAt.trim()
+          ? entry.createdAt
+          : now;
+      const updatedAt =
+        typeof entry.updatedAt === 'string' && entry.updatedAt.trim()
+          ? entry.updatedAt
+          : createdAt;
+      const isDefault = entry.isDefault === true && !hasDefault;
+      if (isDefault) {
+        hasDefault = true;
+      }
+      result.push({
+        id,
+        name,
+        query,
+        ...(isDefault ? { isDefault: true } : {}),
+        createdAt,
+        updatedAt,
+      });
+    }
+    list.savedQueries = result;
   }
 
   private touchList(listId: string, timestamp?: string): void {
@@ -128,6 +173,7 @@ export class ListsStore {
       tags: this.normalizeTags(params.tags),
       defaultTags: this.normalizeTags(params.defaultTags),
       ...(params.customFields ? { customFields: params.customFields } : {}),
+      savedQueries: [],
       createdAt: now,
       updatedAt: now,
       ...(params.description ? { description: params.description } : {}),
@@ -151,7 +197,12 @@ export class ListsStore {
     }
     const items = this.data.items.filter((item) => item.listId === id);
     return {
-      list: { ...list, tags: [...(list.tags ?? [])], defaultTags: [...(list.defaultTags ?? [])] },
+      list: {
+        ...list,
+        tags: [...(list.tags ?? [])],
+        defaultTags: [...(list.defaultTags ?? [])],
+        savedQueries: [...(list.savedQueries ?? [])],
+      },
       items: items.map((item) => ({
         ...item,
         tags: [...(item.tags ?? [])],
@@ -184,6 +235,7 @@ export class ListsStore {
       tags: this.normalizeTags(params.list.tags),
       defaultTags: this.normalizeTags(params.list.defaultTags),
     };
+    this.normalizeSavedQueries(normalizedList);
 
     this.data.lists.push(normalizedList);
 
@@ -263,6 +315,128 @@ export class ListsStore {
     list.updatedAt = new Date().toISOString();
     await this.save();
     return list;
+  }
+
+  async listSavedQueries(listId: string): Promise<ListSavedQuery[]> {
+    await this.ensureLoaded();
+    const list = this.data.lists.find((l) => l.id === listId);
+    if (!list) {
+      throw new Error(`List not found: ${listId}`);
+    }
+    return [...(list.savedQueries ?? [])];
+  }
+
+  async saveSavedQuery(params: {
+    listId: string;
+    name: string;
+    query: string;
+    overwrite?: boolean;
+    makeDefault?: boolean;
+  }): Promise<ListSavedQuery[]> {
+    await this.ensureLoaded();
+    const list = this.data.lists.find((l) => l.id === params.listId);
+    if (!list) {
+      throw new Error(`List not found: ${params.listId}`);
+    }
+    const name = params.name.trim();
+    const query = params.query.trim();
+    if (!name) {
+      throw new Error('Query name is required');
+    }
+    if (!query) {
+      throw new Error('Query text is required');
+    }
+    const savedQueries = list.savedQueries ?? [];
+    const normalizedName = name.toLowerCase();
+    const existingIndex = savedQueries.findIndex(
+      (entry) => entry.name.trim().toLowerCase() === normalizedName,
+    );
+    if (existingIndex !== -1 && !params.overwrite) {
+      throw new Error(`Saved query already exists: ${name}`);
+    }
+    const now = new Date().toISOString();
+    if (existingIndex !== -1) {
+      const existing = savedQueries[existingIndex]!;
+      savedQueries[existingIndex] = {
+        ...existing,
+        name,
+        query,
+        updatedAt: now,
+        ...(params.makeDefault ? { isDefault: true } : {}),
+      };
+    } else {
+      savedQueries.push({
+        id: randomUUID(),
+        name,
+        query,
+        ...(params.makeDefault ? { isDefault: true } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    if (params.makeDefault) {
+      const latestId = savedQueries[existingIndex]?.id ?? savedQueries[savedQueries.length - 1]?.id;
+      for (const entry of savedQueries) {
+        if (entry.id !== latestId && entry.isDefault) {
+          delete entry.isDefault;
+        }
+      }
+    }
+    list.savedQueries = savedQueries;
+    this.touchList(params.listId, now);
+    await this.save();
+    return [...savedQueries];
+  }
+
+  async deleteSavedQuery(params: { listId: string; id: string }): Promise<ListSavedQuery[]> {
+    await this.ensureLoaded();
+    const list = this.data.lists.find((l) => l.id === params.listId);
+    if (!list) {
+      throw new Error(`List not found: ${params.listId}`);
+    }
+    const savedQueries = list.savedQueries ?? [];
+    const nextQueries = savedQueries.filter((entry) => entry.id !== params.id);
+    list.savedQueries = nextQueries;
+    this.touchList(params.listId);
+    await this.save();
+    return [...nextQueries];
+  }
+
+  async setDefaultSavedQuery(params: {
+    listId: string;
+    id: string | null;
+  }): Promise<ListSavedQuery[]> {
+    await this.ensureLoaded();
+    const list = this.data.lists.find((l) => l.id === params.listId);
+    if (!list) {
+      throw new Error(`List not found: ${params.listId}`);
+    }
+    const savedQueries = list.savedQueries ?? [];
+    if (!params.id) {
+      for (const entry of savedQueries) {
+        if (entry.isDefault) {
+          delete entry.isDefault;
+        }
+      }
+      list.savedQueries = savedQueries;
+      await this.save();
+      return [...savedQueries];
+    }
+    const match = savedQueries.find((entry) => entry.id === params.id);
+    if (!match) {
+      throw new Error(`Saved query not found: ${params.id}`);
+    }
+    for (const entry of savedQueries) {
+      if (entry.id === params.id) {
+        entry.isDefault = true;
+      } else if (entry.isDefault) {
+        delete entry.isDefault;
+      }
+    }
+    list.savedQueries = savedQueries;
+    this.touchList(params.listId);
+    await this.save();
+    return [...savedQueries];
   }
 
   async deleteList(id: string): Promise<void> {

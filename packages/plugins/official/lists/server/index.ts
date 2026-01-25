@@ -669,6 +669,78 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         });
         return result;
       },
+      'aql-query-list': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        return listsStore.listSavedQueries(listId);
+      },
+      'aql-query-save': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        const name = requireNonEmptyString(parsed['name'], 'name');
+        const query = requireNonEmptyString(parsed['query'], 'query');
+        const overwrite = parsed['overwrite'];
+        if (overwrite !== undefined && typeof overwrite !== 'boolean') {
+          throw new ToolError('invalid_arguments', 'overwrite must be a boolean');
+        }
+        const makeDefault = parsed['makeDefault'];
+        if (makeDefault !== undefined && typeof makeDefault !== 'boolean') {
+          throw new ToolError('invalid_arguments', 'makeDefault must be a boolean');
+        }
+        const saved = await listsStore.saveSavedQuery({
+          listId,
+          name,
+          query,
+          ...(overwrite !== undefined ? { overwrite } : {}),
+          ...(makeDefault !== undefined ? { makeDefault } : {}),
+        });
+        const updated = await listsStore.getList(listId);
+        if (updated) {
+          broadcastListsUpdate(ctx, {
+            instance_id: instanceId,
+            listId,
+            action: 'list_updated',
+            list: updated,
+          });
+        }
+        return saved;
+      },
+      'aql-query-delete': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        const id = requireNonEmptyString(parsed['id'], 'id');
+        const saved = await listsStore.deleteSavedQuery({ listId, id });
+        const updated = await listsStore.getList(listId);
+        if (updated) {
+          broadcastListsUpdate(ctx, {
+            instance_id: instanceId,
+            listId,
+            action: 'list_updated',
+            list: updated,
+          });
+        }
+        return saved;
+      },
+      'aql-query-default': async (args, ctx): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        const id = parseOptionalString(parsed['id'], 'id');
+        const saved = await listsStore.setDefaultSavedQuery({ listId, id: id ?? null });
+        const updated = await listsStore.getList(listId);
+        if (updated) {
+          broadcastListsUpdate(ctx, {
+            instance_id: instanceId,
+            listId,
+            action: 'list_updated',
+            list: updated,
+          });
+        }
+        return saved;
+      },
       'items-list': async (args): Promise<unknown> => {
         const parsed = asObject(args);
         const { store: listsStore } = await resolveStore(parsed);

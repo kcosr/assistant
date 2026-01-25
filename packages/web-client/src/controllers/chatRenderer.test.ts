@@ -1524,3 +1524,143 @@ describe('ChatRenderer', () => {
     expect(focusInput).toHaveBeenCalledTimes(1);
   });
 });
+
+  it('renders multiple questionnaires in the same response without removing earlier ones', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        turnId: 'turn1',
+        responseId: 'resp1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'First questionnaire',
+            fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
+          },
+        },
+      }),
+      createBaseEvent('interaction_response', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          action: 'submit',
+          input: { answer1: 'response1' },
+        },
+      }),
+      // Second questionnaire with different toolCallId
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        turnId: 'turn1',
+        responseId: 'resp1',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          interactionId: 'i2',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Second questionnaire',
+            fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
+          },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const questionnaires = container.querySelectorAll('.interaction-questionnaire');
+    expect(questionnaires.length).toBe(2);
+
+    const first = questionnaires[0];
+    const second = questionnaires[1];
+
+    expect(first?.classList.contains('interaction-complete')).toBe(true);
+    expect(first?.textContent).toContain('First questionnaire');
+
+    expect(second?.classList.contains('interaction-complete')).toBe(false);
+    expect(second?.textContent).toContain('Second questionnaire');
+  });
+
+  it('renders multiple questionnaires via handleNewEvent without removing earlier ones', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    // First questionnaire
+    renderer.handleNewEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e1',
+        turnId: 'turn1',
+        responseId: 'resp1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          interactionId: 'i1',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'First questionnaire',
+            fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
+          },
+        },
+      }),
+    );
+
+    // Response to first
+    renderer.handleNewEvent(
+      createBaseEvent('interaction_response', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc1',
+          interactionId: 'i1',
+          action: 'submit',
+          input: { answer1: 'response1' },
+        },
+      }),
+    );
+
+    // Second questionnaire
+    renderer.handleNewEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e3',
+        turnId: 'turn1',
+        responseId: 'resp1',
+        payload: {
+          toolCallId: 'tc2',
+          toolName: 'questions_ask',
+          interactionId: 'i2',
+          interactionType: 'input',
+          presentation: 'questionnaire',
+          inputSchema: {
+            title: 'Second questionnaire',
+            fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
+          },
+        },
+      }),
+    );
+
+    const questionnaires = container.querySelectorAll('.interaction-questionnaire');
+    expect(questionnaires.length).toBe(2);
+
+    const first = questionnaires[0];
+    const second = questionnaires[1];
+
+    expect(first?.classList.contains('interaction-complete')).toBe(true);
+    expect(first?.textContent).toContain('First questionnaire');
+
+    expect(second?.classList.contains('interaction-complete')).toBe(false);
+    expect(second?.textContent).toContain('Second questionnaire');
+  });

@@ -1658,6 +1658,120 @@
   color: var(--color-text-primary);
 }
 
+.collection-list-search-status {
+  margin-top: 4px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  display: none;
+}
+
+.collection-list-search-status.visible {
+  display: block;
+}
+
+.collection-list-search-status.error {
+  color: var(--color-danger, #dc2626);
+}
+
+.list-search-aql-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.list-search-mode-toggle,
+.list-search-apply,
+.list-search-aql-save,
+.list-search-aql-delete,
+.list-search-aql-default {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.list-search-mode-toggle.active {
+  border-color: var(--color-accent-primary);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.list-search-mode-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.list-search-apply {
+  padding: 0 8px;
+}
+
+.list-search-aql-select {
+  display: none;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.list-search-aql-select.visible {
+  display: inline-flex;
+}
+
+.list-search-aql-actions {
+  display: none;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.list-search-aql-actions.visible {
+  display: inline-flex;
+}
+
+.list-search-aql-actions .list-search-aql-save,
+.list-search-aql-actions .list-search-aql-delete,
+.list-search-aql-actions .list-search-apply,
+.list-search-aql-actions .list-search-aql-default {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 8px;
+}
+
+.list-search-aql-actions .list-search-aql-save,
+.list-search-aql-actions .list-search-aql-delete,
+.list-search-aql-actions .list-search-apply {
+  border-right: 1px solid var(--color-border-default);
+}
+
+.list-search-aql-actions .list-search-apply.dirty {
+  color: var(--color-text-primary);
+}
+
+.list-search-aql-actions .list-search-aql-default.active {
+  color: var(--color-accent-primary);
+}
+
+.list-search-apply:disabled,
+.list-search-aql-save:disabled,
+.list-search-aql-delete:disabled,
+.list-search-aql-default:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .collection-list-add-button {
   width: 24px;
   height: 24px;

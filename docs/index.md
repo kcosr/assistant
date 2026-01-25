@@ -19,6 +19,7 @@ This index maps the repository documentation into predictable categories so it i
 ## Specifications and References
 
 - [Config Reference](CONFIG.md)
+- [AQL](AQL.md)
 - [UI Specification](UI_SPEC.md)
 - [Plugin SDK](PLUGIN_SDK.md)
 - [Plugin Migration](PLUGIN_MIGRATION.md)

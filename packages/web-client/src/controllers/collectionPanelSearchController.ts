@@ -16,9 +16,11 @@ export class CollectionPanelSearchController {
   private searchClearButton: HTMLButtonElement | null = null;
   private searchActiveTagsContainer: HTMLElement | null = null;
   private searchTagsContainer: HTMLElement | null = null;
+  private statusMessageEl: HTMLElement | null = null;
   private tagController: CollectionTagFilterController | null = null;
   private escapeClearsFirst = true;
   private restoringState = false;
+  private tagsEnabled = true;
 
   private onQueryChanged: ((query: string) => void) | null = null;
   private getAllTags: () => string[] = () => [];
@@ -78,6 +80,35 @@ export class CollectionPanelSearchController {
   setTagsProvider(getAllTags: () => string[]): void {
     this.getAllTags = getAllTags;
     this.refreshTagSuggestions();
+  }
+
+  setTagFilteringEnabled(enabled: boolean): void {
+    this.tagsEnabled = enabled;
+    const tagController = this.tagController;
+    if (!tagController) {
+      return;
+    }
+    if (!enabled) {
+      tagController.clearAllTagFilters();
+      tagController.updateTagSuggestions(null, false);
+    } else {
+      this.refreshTagSuggestions();
+    }
+    this.updateClearButtonVisibility();
+  }
+
+  setStatusMessage(message: string | null, kind: 'error' | 'info' = 'info'): void {
+    const el = this.statusMessageEl;
+    if (!el) return;
+    if (!message) {
+      el.textContent = '';
+      el.classList.remove('visible');
+      el.classList.remove('error');
+      return;
+    }
+    el.textContent = message;
+    el.classList.add('visible');
+    el.classList.toggle('error', kind === 'error');
   }
 
   setKeydownHandler(handler: ((event: KeyboardEvent) => boolean) | null): void {
@@ -232,9 +263,13 @@ export class CollectionPanelSearchController {
     const searchTagsContainer = document.createElement('div');
     searchTagsContainer.className = 'collection-search-dropdown-tags';
 
+    const statusMessage = document.createElement('div');
+    statusMessage.className = 'collection-list-search-status';
+
     searchStack.appendChild(searchWrapper);
     searchStack.appendChild(searchActiveTagsContainer);
     searchStack.appendChild(searchTagsContainer);
+    searchStack.appendChild(statusMessage);
 
     center.appendChild(searchStack);
     row.appendChild(leftControls);
@@ -252,6 +287,7 @@ export class CollectionPanelSearchController {
     this.searchClearButton = searchClearButton;
     this.searchActiveTagsContainer = searchActiveTagsContainer;
     this.searchTagsContainer = searchTagsContainer;
+    this.statusMessageEl = statusMessage;
 
     const tagController = new CollectionTagFilterController({
       tagsContainer: searchTagsContainer,
@@ -288,7 +324,7 @@ export class CollectionPanelSearchController {
         return;
       }
 
-      if (tagController.isSuggestionsMode) {
+    if (this.tagsEnabled && tagController.isSuggestionsMode) {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault();
           const suggestions = tagController.getVisibleTagSuggestions();
@@ -322,7 +358,7 @@ export class CollectionPanelSearchController {
         }
       }
 
-      if (e.key === 'Backspace') {
+    if (this.tagsEnabled && e.key === 'Backspace') {
         const cursorPos = searchInput.selectionStart ?? 0;
         if (cursorPos === 0 && tagController.getActiveFiltersInOrder().length > 0) {
           e.preventDefault();
@@ -337,15 +373,18 @@ export class CollectionPanelSearchController {
         e.preventDefault();
         e.stopPropagation();
 
-        const hasFilters =
-          searchInput.value.trim().length > 0 ||
-          tagController.getActiveTagFilters().length > 0 ||
-          tagController.getActiveExcludedTagFilters().length > 0;
+    const hasFilters =
+      searchInput.value.trim().length > 0 ||
+      (this.tagsEnabled &&
+        (tagController.getActiveTagFilters().length > 0 ||
+          tagController.getActiveExcludedTagFilters().length > 0));
 
         if (hasFilters && this.escapeClearsFirst) {
           searchInput.value = '';
-          tagController.clearAllTagFilters();
-          tagController.updateTagSuggestions(null, false);
+    if (this.tagsEnabled) {
+      tagController.clearAllTagFilters();
+      tagController.updateTagSuggestions(null, false);
+    }
           this.escapeClearsFirst = false;
           this.applyQueryChange();
         } else {
@@ -387,8 +426,9 @@ export class CollectionPanelSearchController {
 
     if (
       searchInput.value.trim().length > 0 ||
-      tagController.getActiveTagFilters().length > 0 ||
-      tagController.getActiveExcludedTagFilters().length > 0
+      (this.tagsEnabled &&
+        (tagController.getActiveTagFilters().length > 0 ||
+          tagController.getActiveExcludedTagFilters().length > 0))
     ) {
       searchClearButton.classList.add('visible');
     } else {
@@ -399,7 +439,7 @@ export class CollectionPanelSearchController {
   private refreshTagSuggestions(): void {
     const tagController = this.tagController;
     const searchInput = this.searchInput;
-    if (!tagController || !searchInput) return;
+    if (!tagController || !searchInput || !this.tagsEnabled) return;
 
     const parsed = tagController.parseSearchQuery(searchInput.value);
     tagController.updateTagSuggestions(parsed.partialTag, parsed.partialTagIsExcluded);
@@ -407,7 +447,9 @@ export class CollectionPanelSearchController {
 
   private applyQueryChange(): void {
     this.updateClearButtonVisibility();
-    this.refreshTagSuggestions();
+    if (this.tagsEnabled) {
+      this.refreshTagSuggestions();
+    }
     if (!this.restoringState) {
       this.onQueryChanged?.(this.getQuery());
     }

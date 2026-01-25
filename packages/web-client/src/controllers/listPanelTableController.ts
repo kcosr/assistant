@@ -54,6 +54,8 @@ export interface ListPanelTableControllerOptions {
 export interface ListPanelTableRenderOptions {
   listId: string;
   sortedItems: ListPanelItem[];
+  columnOrder?: string[] | null;
+  showTitleColumn?: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -88,6 +90,8 @@ type ListPanelTableRenderState = {
   listId: string;
   tbody: HTMLTableSectionElement;
   colCount: number;
+  columnOrder: string[] | null;
+  showTitleColumn: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -110,6 +114,7 @@ type ListPanelRowRenderOptions = {
   index: number;
   sortedItems: ListPanelItem[];
   tbody: HTMLTableSectionElement;
+  showTitleColumn: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -341,6 +346,8 @@ export class ListPanelTableController {
     const {
       listId,
       sortedItems,
+      columnOrder,
+      showTitleColumn = true,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -403,11 +410,13 @@ export class ListPanelTableController {
     }
     headerRow.appendChild(checkboxHeader);
 
-    const titleHeader = document.createElement('th');
-    titleHeader.textContent = 'Title';
-    titleHeader.dataset['columnKey'] = 'title';
-    this.makeSortableHeader(titleHeader, 'title', sortState, onSortChange);
-    headerRow.appendChild(titleHeader);
+    if (showTitleColumn) {
+      const titleHeader = document.createElement('th');
+      titleHeader.textContent = 'Title';
+      titleHeader.dataset['columnKey'] = 'title';
+      this.makeSortableHeader(titleHeader, 'title', sortState, onSortChange);
+      headerRow.appendChild(titleHeader);
+    }
 
     if (showUrlColumn) {
       const urlHeader = document.createElement('th');
@@ -510,7 +519,7 @@ export class ListPanelTableController {
 
     const colCount =
       1 +
-      1 +
+      (showTitleColumn ? 1 : 0) +
       (showUrlColumn ? 1 : 0) +
       visibleCustomFields.length +
       (showNotesColumn ? 1 : 0) +
@@ -908,6 +917,7 @@ export class ListPanelTableController {
           index: i,
           sortedItems,
           tbody,
+          showTitleColumn,
           showUrlColumn,
           showNotesColumn,
           showTagsColumn,
@@ -965,12 +975,19 @@ export class ListPanelTableController {
 
     table.appendChild(tbody);
 
+    const orderedKeys = columnOrder && columnOrder.length > 0 ? ['checkbox', ...columnOrder] : null;
+    if (orderedKeys) {
+      this.applyColumnOrder(headerRow, tbody, orderedKeys);
+    }
+
     this.initializeColumnResizeHandles(headerRow, tbody, listId, columnWidths, onColumnResize);
 
     this.renderState = {
       listId,
       tbody,
       colCount,
+      columnOrder: orderedKeys,
+      showTitleColumn,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -1016,6 +1033,7 @@ export class ListPanelTableController {
       index,
       sortedItems,
       tbody: state.tbody,
+      showTitleColumn: state.showTitleColumn,
       showUrlColumn: state.showUrlColumn,
       showNotesColumn: state.showNotesColumn,
       showTagsColumn: state.showTagsColumn,
@@ -1027,6 +1045,9 @@ export class ListPanelTableController {
       now: state.now,
       rerender: state.rerender,
     });
+    if (state.columnOrder) {
+      this.reorderRowByKeys(newRow, state.columnOrder);
+    }
     if (wasSelected) {
       newRow.classList.add('list-item-selected');
     }
@@ -1170,6 +1191,7 @@ export class ListPanelTableController {
       index,
       sortedItems,
       tbody,
+      showTitleColumn,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -1769,6 +1791,7 @@ export class ListPanelTableController {
 
     const checkboxCell = document.createElement('td');
     checkboxCell.className = 'list-item-checkbox-cell';
+    checkboxCell.dataset['columnKey'] = 'checkbox';
 
     const actions = document.createElement('div');
     actions.className = 'list-item-actions';
@@ -2100,50 +2123,54 @@ export class ListPanelTableController {
 
     row.appendChild(checkboxCell);
 
-    const titleCell = document.createElement('td');
-    titleCell.className = isCompleted
-      ? 'list-item-title list-item-completed-text'
-      : 'list-item-title';
+    if (showTitleColumn) {
+      const titleCell = document.createElement('td');
+      titleCell.className = isCompleted
+        ? 'list-item-title list-item-completed-text'
+        : 'list-item-title';
+      titleCell.dataset['columnKey'] = 'title';
 
-    const titleContent = document.createElement('div');
-    titleContent.className = 'list-item-title-content';
+      const titleContent = document.createElement('div');
+      titleContent.className = 'list-item-title-content';
 
-    const titleMain = document.createElement('div');
-    titleMain.className = 'list-item-title-main';
+      const titleMain = document.createElement('div');
+      titleMain.className = 'list-item-title-main';
 
-    if (hasPinnedTag(item.tags)) {
-      const pin = document.createElement('span');
-      pin.className = 'list-item-pin';
-      pin.innerHTML = this.options.icons.pin;
-      pin.setAttribute('aria-hidden', 'true');
-      titleMain.appendChild(pin);
-    }
-
-    if (!showUrlColumn && item.url) {
-      const link = document.createElement('a');
-      link.href = item.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.draggable = false;
-      link.textContent = item.title;
-      link.title = item.url;
-      if (isCompleted) {
-        link.className = 'list-item-completed-text';
+      if (hasPinnedTag(item.tags)) {
+        const pin = document.createElement('span');
+        pin.className = 'list-item-pin';
+        pin.innerHTML = this.options.icons.pin;
+        pin.setAttribute('aria-hidden', 'true');
+        titleMain.appendChild(pin);
       }
-      titleMain.appendChild(link);
-    } else {
-      const titleText = document.createElement('span');
-      titleText.textContent = item.title;
-      titleMain.appendChild(titleText);
-    }
 
-    titleContent.appendChild(titleMain);
-    titleCell.appendChild(titleContent);
-    row.appendChild(titleCell);
+      if (!showUrlColumn && item.url) {
+        const link = document.createElement('a');
+        link.href = item.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.draggable = false;
+        link.textContent = item.title;
+        link.title = item.url;
+        if (isCompleted) {
+          link.className = 'list-item-completed-text';
+        }
+        titleMain.appendChild(link);
+      } else {
+        const titleText = document.createElement('span');
+        titleText.textContent = item.title;
+        titleMain.appendChild(titleText);
+      }
+
+      titleContent.appendChild(titleMain);
+      titleCell.appendChild(titleContent);
+      row.appendChild(titleCell);
+    }
 
     if (showUrlColumn) {
       const urlCell = document.createElement('td');
       urlCell.className = isCompleted ? 'list-item-completed-text' : '';
+      urlCell.dataset['columnKey'] = 'url';
       if (item.url) {
         const link = document.createElement('a');
         link.href = item.url;
@@ -2161,14 +2188,16 @@ export class ListPanelTableController {
 
     if (showNotesColumn) {
       const notesCell = document.createElement('td');
+      notesCell.dataset['columnKey'] = 'notes';
       this.renderNotesCell(notesCell, listId, item, itemId, isCompleted);
       row.appendChild(notesCell);
     }
 
     const inlineCustomFieldEditingEnabled = this.isInlineCustomFieldEditingEnabled();
     for (const field of visibleCustomFields) {
-      const customCell = document.createElement('td');
       const key = field.key;
+      const customCell = document.createElement('td');
+      customCell.dataset['columnKey'] = key;
       const value = item.customFields ? item.customFields[key] : undefined;
       const text = this.formatCustomFieldValue(value, field.type);
       const isMarkdown = field.type === 'text' && field.markdown === true;
@@ -2277,6 +2306,7 @@ export class ListPanelTableController {
     if (showTagsColumn) {
       const tagsCell = document.createElement('td');
       tagsCell.className = isCompleted ? 'list-item-completed-text' : '';
+      tagsCell.dataset['columnKey'] = 'tags';
       const tagsPills = this.options.renderTags(item.tags);
       if (tagsPills) {
         tagsCell.appendChild(tagsPills);
@@ -2287,6 +2317,7 @@ export class ListPanelTableController {
     if (showAddedColumn) {
       const addedCell = document.createElement('td');
       addedCell.className = isCompleted ? 'list-item-completed-text' : '';
+      addedCell.dataset['columnKey'] = 'added';
       if (item.addedAt) {
         const date = new Date(item.addedAt);
         addedCell.textContent = date.toLocaleDateString();
@@ -2298,6 +2329,7 @@ export class ListPanelTableController {
     if (showUpdatedColumn) {
       const updatedCell = document.createElement('td');
       updatedCell.className = isCompleted ? 'list-item-completed-text' : '';
+      updatedCell.dataset['columnKey'] = 'updated';
       if (item.updatedAt) {
         const date = new Date(item.updatedAt);
         updatedCell.textContent = date.toLocaleDateString();
@@ -2309,6 +2341,7 @@ export class ListPanelTableController {
     if (showTouchedColumn) {
       const touchedCell = document.createElement('td');
       touchedCell.className = isCompleted ? 'list-item-completed-text' : '';
+      touchedCell.dataset['columnKey'] = 'touched';
       if (item.touchedAt) {
         const date = new Date(item.touchedAt);
         touchedCell.textContent = date.toLocaleDateString();
@@ -2357,6 +2390,45 @@ export class ListPanelTableController {
           this.updateNotesOverflowState(cell, display, content);
         }
       }, 0);
+    }
+  }
+
+  private applyColumnOrder(
+    headerRow: HTMLTableRowElement,
+    tbody: HTMLTableSectionElement,
+    orderedKeys: string[],
+  ): void {
+    this.reorderRowByKeys(headerRow, orderedKeys);
+    const rows = Array.from(
+      tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'),
+    );
+    for (const row of rows) {
+      this.reorderRowByKeys(row, orderedKeys);
+    }
+  }
+
+  private reorderRowByKeys(row: HTMLTableRowElement, orderedKeys: string[]): void {
+    const cells = Array.from(row.children) as HTMLTableCellElement[];
+    const byKey = new Map<string, HTMLTableCellElement>();
+    for (const cell of cells) {
+      const key = cell.dataset['columnKey'];
+      if (key) {
+        byKey.set(key, cell);
+      }
+    }
+    const orderedCells: HTMLTableCellElement[] = [];
+    for (const key of orderedKeys) {
+      const cell = byKey.get(key);
+      if (cell) {
+        orderedCells.push(cell);
+      }
+    }
+    if (orderedCells.length === 0) {
+      return;
+    }
+    row.innerHTML = '';
+    for (const cell of orderedCells) {
+      row.appendChild(cell);
     }
   }
 
