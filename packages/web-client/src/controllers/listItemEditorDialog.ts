@@ -2,7 +2,7 @@ import type { DialogManager } from './dialogManager';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
-import { applyMarkdownToElement } from '../utils/markdown';
+import { MarkdownViewerController } from './markdownViewerController';
 import {
   applyPinnedTag,
   hasPinnedTag,
@@ -720,19 +720,30 @@ export class ListItemEditorDialog {
       container.textContent = trimmed.length === 0 ? 'Not set' : trimmed;
     };
 
+    const markdownViewers = new WeakMap<HTMLElement, MarkdownViewerController>();
+
     const setReviewMarkdown = (container: HTMLElement, value: string): void => {
       const trimmed = value.trim();
-      container.innerHTML = '';
       if (!trimmed) {
+        const existingViewer = markdownViewers.get(container);
+        if (existingViewer) {
+          existingViewer.clear();
+        }
         container.classList.add('list-item-review-empty');
         container.textContent = 'Not set';
         return;
       }
+
       container.classList.remove('list-item-review-empty');
-      const body = document.createElement('div');
-      body.className = 'list-item-review-markdown';
-      applyMarkdownToElement(body, trimmed);
-      container.appendChild(body);
+      let viewer = markdownViewers.get(container);
+      if (!viewer) {
+        viewer = new MarkdownViewerController({
+          container,
+          contentClass: 'list-item-review-markdown',
+        });
+        markdownViewers.set(container, viewer);
+      }
+      viewer.render(trimmed);
     };
 
     const createReviewField = (
@@ -949,11 +960,12 @@ export class ListItemEditorDialog {
       for (const field of customFieldsSection.fields) {
         const { definition, input, row } = field;
         const label = definition.label;
+        const isMarkdownField = definition.markdown === true && definition.type === 'text';
         const replaceDisplay =
           input instanceof HTMLTextAreaElement ||
           (input instanceof HTMLInputElement && definition.type === 'text') ||
-          definition.markdown === true;
-        createReviewField(
+          isMarkdownField;
+        const fieldState = createReviewField(
           label,
           row,
           (container) => {
@@ -979,6 +991,9 @@ export class ListItemEditorDialog {
           input,
           replaceDisplay,
         );
+        if (isMarkdownField) {
+          fieldState.field.classList.add('list-item-review-field--wide');
+        }
       }
     }
 

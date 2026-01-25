@@ -269,6 +269,81 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(display?.textContent ?? '').toContain('Original notes');
   });
 
+  it('renders review markdown with collapsible sections', () => {
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open(
+      'edit',
+      'list1',
+      { id: 'item1', title: 'Item', notes: '# Heading\n\nBody', tags: [] },
+      { initialMode: 'review' },
+    );
+
+    const notesField = Array.from(
+      document.querySelectorAll<HTMLElement>('.list-item-review-field'),
+    ).find(
+      (field) =>
+        field
+          .querySelector('.list-item-review-field-label')
+          ?.textContent?.trim() === 'Notes',
+    );
+    expect(notesField).not.toBeUndefined();
+    if (!notesField) return;
+
+    const collapsible = notesField.querySelector('.collapsible-section');
+    expect(collapsible).not.toBeNull();
+  });
+
+  it('renders markdown custom fields as full-width review fields', () => {
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open(
+      'edit',
+      'list1',
+      { id: 'item1', title: 'Item', tags: [] },
+      {
+        customFields: [{ key: 'details', label: 'Details', type: 'text', markdown: true }],
+        initialCustomFieldValues: { details: '### Details' },
+        initialMode: 'review',
+      },
+    );
+
+    const detailsField = Array.from(
+      document.querySelectorAll<HTMLElement>('.list-item-review-field'),
+    ).find(
+      (field) =>
+        field
+          .querySelector('.list-item-review-field-label')
+          ?.textContent?.trim() === 'Details',
+    );
+    expect(detailsField).not.toBeUndefined();
+    if (!detailsField) return;
+
+    expect(detailsField.classList.contains('list-item-review-field--wide')).toBe(true);
+  });
+
   it('sends null for cleared select/text fields to remove previous values', async () => {
     const updateListItem = vi.fn(async () => true);
 

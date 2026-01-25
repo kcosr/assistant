@@ -3726,6 +3726,10 @@ button.tag-chip-remove {
   background-color: var(--color-bg-surface);
 }
 
+.list-item-review-field--wide {
+  grid-column: 1 / -1;
+}
+
 .list-item-review-field-header {
   display: flex;
   align-items: center;
@@ -3793,6 +3797,157 @@ button.tag-chip-remove {
 
 .list-item-review-editor {
   margin-top: var(--spacing-xs);
+}
+
+/* Collapsible markdown sections (shared renderer) */
+.collapsible-section {
+  margin-bottom: var(--spacing-sm);
+}
+
+.collapsible-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+}
+
+.collapsible-section-header h1,
+.collapsible-section-header h2,
+.collapsible-section-header h3,
+.collapsible-section-header h4,
+.collapsible-section-header h5,
+.collapsible-section-header h6 {
+  margin: 0;
+  flex: 1;
+}
+
+.collapsible-section-toggle {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-top: 2px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  opacity: 0.6;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.collapsible-section-toggle:hover {
+  opacity: 1;
+  background-color: var(--color-bg-active);
+}
+
+.collapsible-section-content {
+  margin-left: 24px;
+  padding-top: var(--spacing-xs);
+}
+
+.collapsible-section.collapsed > .collapsible-section-content {
+  display: none;
+}
+
+.list-item-review-markdown > .collapsible-section > .collapsible-section-content {
+  margin-left: 0;
+}
+
+.collapsible-section-copy-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.collapsible-section-header:hover .collapsible-section-copy-wrapper {
+  opacity: 1;
+}
+
+.collapsible-section-copy-button {
+  padding: 2px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.collapsible-section-copy-main-button {
+  padding-inline: var(--spacing-sm);
+}
+
+.collapsible-section-copy-toggle-button {
+  padding-inline: var(--spacing-xs);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.collapsible-section-copy-toggle-button::after {
+  content: '▾';
+  font-size: 9px;
+}
+
+.collapsible-section-copy-button:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.collapsible-section-copy-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.collapsible-section-copy-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--spacing-xs);
+  min-width: 120px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-xs) 0;
+  z-index: 100;
+  display: none;
+}
+
+.collapsible-section-copy-menu.open {
+  display: block;
+}
+
+.collapsible-section-copy-menu-item {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.collapsible-section-copy-menu-item:hover:not(:disabled) {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
 }
 
 .list-item-review-inline-editor.list-item-form-label {
