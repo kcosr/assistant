@@ -3275,6 +3275,25 @@ async function main(): Promise<void> {
     connectionManager?.connect();
   }
 
+  function ensureConnected(reason: string): void {
+    connectionManager?.ensureConnected(reason);
+  }
+
+  const handleVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') {
+      ensureConnected('visibilitychange');
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('online', () => ensureConnected('online'));
+  window.addEventListener('focus', () => ensureConnected('focus'));
+  window.addEventListener('pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) {
+      ensureConnected('pageshow');
+    }
+  });
+
   async function startPushToTalk(): Promise<void> {
     const controller = getActiveChatInputRuntime()?.speechAudioController;
     if (!controller) {

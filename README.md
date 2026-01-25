@@ -108,31 +108,64 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl/Cmd + K` | Open launcher/command palette |
+| `Ctrl/Cmd + K` | Open command palette |
 | `Ctrl/Cmd + ]` / `Ctrl/Cmd + [` | Cycle focus between panels |
-| `Ctrl + Shift + Cmd + P` (macOS) / `Ctrl + Shift + Alt + P` (others) | Layout navigation mode |
-| `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) | Header panel navigation |
+| `Ctrl + P` | Toggle layout navigation mode |
+| `Ctrl + H` | Toggle header panel navigation mode |
+| `Ctrl + S` | Split active panel (placement mode) |
+| `Ctrl + I` | Focus text input |
+| `Ctrl + R` | Toggle speech recording (if available) |
+| `Cmd/Ctrl + Shift + S` | Toggle sessions sidebar |
+| `Cmd/Ctrl + Shift + C` | Toggle chat panel |
+| `Cmd/Ctrl + Shift + ↑/↓` | Jump to top/bottom of chat |
 | `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) | Close panel (replace with placeholder) |
 | `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) | Remove panel from layout |
 | `Shift + Enter` | Submit modal form (e.g., from tags input in notes/lists) |
 | `Cmd + Click` (macOS) / `Ctrl + Click` (others) | Focus a non-chat panel (chat panels focus on regular click) |
+| `Tab` / `Shift + Tab` | Cycle focus between sidebar and input (when input is empty) |
+| `Esc` | Cancel active operations (on mobile, closes sidebar if open) |
 
-In layout navigation mode: arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages.
+In layout navigation mode: arrows move between panels, `Enter` selects, `Esc` exits, `Tab` cycles tabs, `m` toggles split view, `1-9` select visible panels, `0` cycles pages.
+
+In header navigation mode: `←/→` (or `A/D`) cycle header panels, `Enter`/`↓` activates, `Esc` exits, `1-9` select visible panels, `0` cycles pages.
+
+In split placement mode: arrows or WASD choose region, `Enter` confirms, `Esc` cancels.
+
+**Sessions sidebar (when focused):**
+- `Arrow Up/Down` – Move between sessions (selection follows focus)
+- `Enter` – Focus input
+- `t` – Toggle pin
+- `d` / `Delete` / `Backspace` – Delete session (with confirmation)
+- `c` – Clear history (with confirmation)
 
 **Lists panel item selection:**
 - `Click` – Select item (when enabled in Settings menu)
 - `Shift + Click` – Range select from last selected item to clicked item
 - `Cmd + Click` (macOS) / `Ctrl + Click` (others) – Toggle individual item selection
 - `Double-click` – Edit item
-- `f` – Focus list search
-- `Arrow Up/Down` – Move selection (wraps at top/bottom)
+- `Arrow Up/Down` – Move selection
 - `Shift + Arrow Up/Down` – Extend selection
 - `Enter` – Edit focused item
 - `Space` – Toggle completed for selection
 - `n` – Add item
+- `w` / `s` – Move focused item up/down
 - `t` / `b` – Move focused item to top/bottom
+- `p` – Toggle pin
+- `Cmd/Ctrl + C` / `X` / `V` – Copy / cut / paste list items (cross-list)
 - `d` – Delete selection (with confirmation)
 - `Esc` – Clear selection
+
+**Lists/Notes browser (collection view):**
+- `Arrow keys` – Move focus
+- `Enter` – Open focused item
+- `p` – Toggle pin
+
+**Command palette (when open):**
+- `Arrow Up/Down` – Move focus
+- `Enter` – Launch selection
+- `Shift + Enter` – Replace active panel (when available)
+- `→` – Open action menu
+- `Esc` – Close palette or menus
 
 **Notes panel:** Drag to select text, then release with `Shift` held to add selection to agent context.
 

@@ -140,6 +140,21 @@ export class ConnectionManager {
     });
   }
 
+  ensureConnected(reason?: string): void {
+    const socket = this.options.getSocket();
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    if (this.reconnectTimeoutId !== null) {
+      window.clearTimeout(this.reconnectTimeoutId);
+      this.reconnectTimeoutId = null;
+    }
+
+    console.log('[client] ensureConnected', { reason, readyState: socket?.readyState ?? null });
+    this.connect();
+  }
+
   subscribe(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
