@@ -2,6 +2,7 @@
   "id": "interactive-tools",
   "version": "0.1.0",
   "description": "Example tools demonstrating interactive approvals and questionnaires.",
+  "skills": { "autoExport": false },
   "surfaces": { "tool": true },
   "server": {
     "provides": ["tools"]

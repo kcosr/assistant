@@ -2,6 +2,7 @@
   "id": "hello",
   "version": "0.1.0",
   "description": "Sample plugin panel for validating plugin packaging.",
+  "skills": { "autoExport": false },
   "panels": [
     {
       "type": "hello",

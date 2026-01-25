@@ -1,5 +1,6 @@
 {
   "name": "assistant",
+  "author": "kcosr",
   "version": "0.10.0",
   "private": true,
   "engines": {

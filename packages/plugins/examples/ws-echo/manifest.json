@@ -2,6 +2,7 @@
   "id": "ws-echo",
   "version": "0.1.0",
   "description": "Sample WebSocket echo panel.",
+  "skills": { "autoExport": false },
   "panels": [
     {
       "type": "ws-echo",

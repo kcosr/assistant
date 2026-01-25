@@ -87,26 +87,46 @@ async function readManifest(manifestPath) {
   return JSON.parse(raw);
 }
 
-let cachedSystemVersion;
+let cachedRootPackage;
 
-async function readSystemVersion() {
-  if (cachedSystemVersion !== undefined) {
-    return cachedSystemVersion;
+async function readRootPackage() {
+  if (cachedRootPackage !== undefined) {
+    return cachedRootPackage;
   }
   try {
     const raw = await fs.readFile(rootPackagePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    const version =
-      typeof parsed.version === 'string' && parsed.version.trim().length > 0
-        ? parsed.version.trim()
-        : null;
-    cachedSystemVersion = version;
-    return version;
+    cachedRootPackage = JSON.parse(raw);
+    return cachedRootPackage;
   } catch (error) {
-    console.warn('[plugins] Failed to read root package.json version', error);
-    cachedSystemVersion = null;
+    console.warn('[plugins] Failed to read root package.json', error);
+    cachedRootPackage = null;
     return null;
   }
+}
+
+function normalizePackageAuthor(author) {
+  if (typeof author === 'string') {
+    const trimmed = author.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (author && typeof author === 'object' && typeof author.name === 'string') {
+    const trimmed = author.name.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+}
+
+async function readSystemMetadata() {
+  const rootPackage = await readRootPackage();
+  if (!rootPackage) {
+    return { version: null, author: null };
+  }
+  const version =
+    typeof rootPackage.version === 'string' && rootPackage.version.trim().length > 0
+      ? rootPackage.version.trim()
+      : null;
+  const author = normalizePackageAuthor(rootPackage.author);
+  return { version, author };
 }
 
 async function readOptionalFile(filePath) {
@@ -199,7 +219,14 @@ function formatOptionLine({ name, schema, override, required }) {
   return `- \`--${name}${typeSuffix}\`${requiredSuffix}${arraySuffix}${descriptionSuffix}`;
 }
 
-function formatSkillsDocument({ manifest, extra }) {
+function formatYamlValue(value) {
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  return JSON.stringify(value);
+}
+
+function formatSkillsDocument({ manifest, extra, metadata }) {
   const description =
     typeof manifest.description === 'string' && manifest.description.trim().length > 0
       ? manifest.description.trim()
@@ -215,11 +242,21 @@ function formatSkillsDocument({ manifest, extra }) {
     '---',
     `name: ${manifest.id}`,
     `description: ${description}`,
-    '---',
-    '',
-    `# ${title} CLI`,
-    '',
   ];
+
+  const author = metadata?.author;
+  const version = metadata?.version;
+  if (author || version) {
+    lines.push('metadata:');
+    if (author) {
+      lines.push(`  author: ${formatYamlValue(author)}`);
+    }
+    if (version) {
+      lines.push(`  version: ${formatYamlValue(version)}`);
+    }
+  }
+
+  lines.push('---', '', `# ${title} CLI`, '');
 
   lines.push('## CLI', '');
   if (!cliEnabled || operations.length === 0) {
@@ -303,14 +340,33 @@ function formatSkillsDocument({ manifest, extra }) {
   return lines.join('\n');
 }
 
-async function writeSkillsBundles({ manifest, sourceDir, outputDir, extraSkillsDirs }) {
+function shouldExportSkills(manifest, forceExport) {
+  if (forceExport) {
+    return true;
+  }
+  const autoExport = manifest.skills?.autoExport;
+  return autoExport !== false;
+}
+
+async function writeSkillsBundles({
+  manifest,
+  sourceDir,
+  outputDir,
+  extraSkillsDirs,
+  metadata,
+  exportSkills,
+}) {
   const extraPath = path.join(sourceDir, 'skill-extra.md');
   const extra = await readOptionalFile(extraPath);
-  const skillsDoc = formatSkillsDocument({ manifest, extra });
+  const skillsDoc = formatSkillsDocument({ manifest, extra, metadata });
 
   await fs.writeFile(path.join(outputDir, 'SKILL.md'), skillsDoc, 'utf8');
   await fs.mkdir(path.join(outputDir, 'public'), { recursive: true });
   await fs.writeFile(path.join(outputDir, 'public', 'skill.md'), skillsDoc, 'utf8');
+
+  if (!exportSkills) {
+    return;
+  }
 
   const skillsDirs = [defaultSkillsRoot, ...extraSkillsDirs];
   for (const skillsDir of skillsDirs) {
@@ -399,8 +455,9 @@ async function buildCustomCliBundle(entryPath, outputPath) {
   await fs.chmod(outputPath, 0o755);
 }
 
-async function buildPlugin({ pluginId, sourceDir }, systemVersion) {
+async function buildPlugin({ pluginId, sourceDir }, options) {
   const extraSkillsDirs = parseSkillsDirs(process.argv.slice(2));
+  const systemVersion = options?.systemMetadata?.version ?? null;
 
   const manifestPath = path.join(sourceDir, 'manifest.json');
   if (!(await pathExists(manifestPath))) {
@@ -470,7 +527,15 @@ async function buildPlugin({ pluginId, sourceDir }, systemVersion) {
     }
   }
 
-  await writeSkillsBundles({ manifest, sourceDir, outputDir, extraSkillsDirs });
+  const exportSkills = shouldExportSkills(manifest, options?.forceSkillsExport);
+  await writeSkillsBundles({
+    manifest,
+    sourceDir,
+    outputDir,
+    extraSkillsDirs,
+    metadata: options?.systemMetadata,
+    exportSkills,
+  });
 }
 
 async function findPluginDirectories(rootDir) {
@@ -529,14 +594,24 @@ async function main() {
     }
   }
 
-  const systemVersion = await readSystemVersion();
+  const systemMetadata = await readSystemMetadata();
+  const forceSkillsExport = skillsFilter !== null;
 
   for (const plugin of pluginDirs) {
-    await buildPlugin(plugin, systemVersion);
+    await buildPlugin(plugin, { systemMetadata, forceSkillsExport });
   }
 }
 
-main().catch((err) => {
-  console.error('[plugins] Failed to build plugins', err);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error('[plugins] Failed to build plugins', err);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  formatSkillsDocument,
+  normalizePackageAuthor,
+  readSystemMetadata,
+  shouldExportSkills,
+};
