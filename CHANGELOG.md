@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed plugin CLI `--version` to report the core package version. ([#35](https://github.com/kcosr/assistant/pull/35))
 
 ### Removed
 
