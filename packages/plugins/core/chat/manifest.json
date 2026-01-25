@@ -2,6 +2,7 @@
   "id": "chat",
   "version": "0.1.0",
   "description": "Chat transcript panel.",
+  "skills": { "autoExport": false },
   "capabilities": ["chat.read", "chat.write"],
   "panels": [
     {

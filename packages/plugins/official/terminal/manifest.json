@@ -2,6 +2,7 @@
   "id": "terminal",
   "version": "0.1.0",
   "description": "Interactive terminal panel backed by a PTY.",
+  "skills": { "autoExport": false },
   "surfaces": { "tool": true, "http": true, "cli": true },
   "panels": [
     {
