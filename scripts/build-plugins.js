@@ -7,6 +7,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const pluginsRoot = path.join(repoRoot, 'packages', 'plugins');
 const distRoot = path.join(repoRoot, 'dist', 'plugins');
 const defaultSkillsRoot = path.join(repoRoot, 'dist', 'skills');
+const rootPackagePath = path.join(repoRoot, 'package.json');
 
 function parseSkillsDirs(argv) {
   const dirs = [];
@@ -84,6 +85,28 @@ async function copyDirIfExists(source, destination) {
 async function readManifest(manifestPath) {
   const raw = await fs.readFile(manifestPath, 'utf8');
   return JSON.parse(raw);
+}
+
+let cachedSystemVersion;
+
+async function readSystemVersion() {
+  if (cachedSystemVersion !== undefined) {
+    return cachedSystemVersion;
+  }
+  try {
+    const raw = await fs.readFile(rootPackagePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const version =
+      typeof parsed.version === 'string' && parsed.version.trim().length > 0
+        ? parsed.version.trim()
+        : null;
+    cachedSystemVersion = version;
+    return version;
+  } catch (error) {
+    console.warn('[plugins] Failed to read root package.json version', error);
+    cachedSystemVersion = null;
+    return null;
+  }
 }
 
 async function readOptionalFile(filePath) {
@@ -332,10 +355,14 @@ async function buildServerBundle(entryPath, outputPath) {
   });
 }
 
-async function buildCliBundle(manifest, outputPath) {
+async function buildCliBundle(manifest, outputPath, systemVersion) {
+  const cliManifest =
+    typeof systemVersion === 'string' && systemVersion.length > 0
+      ? { ...manifest, version: systemVersion }
+      : manifest;
   const contents = `
     import { runPluginCli } from './packages/assistant-cli/src/pluginRuntime';
-    const manifest = ${JSON.stringify(manifest)};
+    const manifest = ${JSON.stringify(cliManifest)};
     void runPluginCli({ manifest, pluginId: manifest.id });
   `;
 
@@ -372,7 +399,7 @@ async function buildCustomCliBundle(entryPath, outputPath) {
   await fs.chmod(outputPath, 0o755);
 }
 
-async function buildPlugin({ pluginId, sourceDir }) {
+async function buildPlugin({ pluginId, sourceDir }, systemVersion) {
   const extraSkillsDirs = parseSkillsDirs(process.argv.slice(2));
 
   const manifestPath = path.join(sourceDir, 'manifest.json');
@@ -436,10 +463,10 @@ async function buildPlugin({ pluginId, sourceDir }) {
     const cliPath = path.join(outputDir, 'bin', getSkillCliName(manifest.id));
     await buildCustomCliBundle(customCliEntry, cliPath);
   } else {
-    const shouldBuildCli = !sourceBinExists && operations.length > 0 && enableCli && enableHttp;
+      const shouldBuildCli = !sourceBinExists && operations.length > 0 && enableCli && enableHttp;
     if (shouldBuildCli) {
       const cliPath = path.join(outputDir, 'bin', getSkillCliName(manifest.id));
-      await buildCliBundle(manifest, cliPath);
+      await buildCliBundle(manifest, cliPath, systemVersion);
     }
   }
 
@@ -502,8 +529,10 @@ async function main() {
     }
   }
 
+  const systemVersion = await readSystemVersion();
+
   for (const plugin of pluginDirs) {
-    await buildPlugin(plugin);
+    await buildPlugin(plugin, systemVersion);
   }
 }
 

@@ -473,6 +473,8 @@ Quick example:
 ./dist/skills/notes/notes-cli list
 ```
 
+Generated CLIs support `--version`, which reports the core version from the root `package.json`.
+
 You can also copy the `dist/skills/<pluginId>/` directory into external agent skill roots (for example `~/.codex/skills/`). To write skills into a custom directory during build, run:
 
 ```bash

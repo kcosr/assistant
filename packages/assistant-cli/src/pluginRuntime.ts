@@ -46,6 +46,7 @@ export async function runPluginCli(options: {
   try {
     const parser = yargs(options.argv ?? hideBin(process.argv))
       .scriptName(`${pluginId}-cli`)
+      .version(manifest.version ?? 'unknown')
       .usage('Usage: $0 <command> [options]')
       .option('json', {
         type: 'boolean',
