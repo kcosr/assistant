@@ -244,6 +244,82 @@
       "capabilities": ["lists.write"]
     },
     {
+      "id": "aql-query-list",
+      "summary": "List saved AQL queries for a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "aql-query-save",
+      "summary": "Save or update a named AQL query for a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "name": { "type": "string", "description": "Saved query name." },
+          "query": { "type": "string", "description": "AQL query text." },
+          "overwrite": { "type": "boolean", "description": "Overwrite existing name." },
+          "makeDefault": {
+            "type": "boolean",
+            "description": "Mark this query as the default view."
+          }
+        },
+        "required": ["listId", "name", "query"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "aql-query-delete",
+      "summary": "Delete a saved AQL query.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": { "type": "string", "description": "Saved query id." }
+        },
+        "required": ["listId", "id"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
+      "id": "aql-query-default",
+      "summary": "Set or clear the default AQL query for a list.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "id": {
+            "type": "string",
+            "description": "Saved query id (omit to clear default)."
+          }
+        },
+        "required": ["listId"]
+      },
+      "capabilities": ["lists.write"]
+    },
+    {
       "id": "items-list",
       "summary": "List items in a list.",
       "inputSchema": {

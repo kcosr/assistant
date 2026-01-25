@@ -5,6 +5,7 @@ List management with a dedicated lists panel, list item CRUD, tags, and browser 
 ## Table of Contents
 
 - [Overview](#overview)
+- [AQL Search](#aql-search)
 - [Source files](#source-files)
 - [Web UI Architecture](#web-ui-architecture)
 - [UI Composition Diagram](#ui-composition-diagram)
@@ -43,11 +44,44 @@ operations.
   Pinned entries show a pin icon and appear in the command palette via `/pinned`.
 - Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
+- AQL mode provides structured list-item queries with filters, boolean logic, `ORDER BY`, and `SHOW` for column visibility/order.
 - Capacitor Android builds and narrow viewports show floating add/search buttons in list view; search opens the command palette.
 - Custom fields can be reordered in the list metadata dialog.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.
+
+## AQL Search
+
+AQL is a structured query mode for list items. Toggle **AQL** in the search bar (list mode only),
+then press Enter or **Apply** to run the query. Raw search mode still applies live as you type.
+Saved queries are stored per list + instance and can be loaded from the Saved dropdown. You can
+mark one saved query as the default view for a list.
+
+Syntax highlights:
+
+- Boolean logic: `AND`, `OR`, `NOT`, parentheses.
+- Operators: `:`, `!:`, `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`.
+- Empty checks: `IS EMPTY`, `IS NOT EMPTY`.
+- Ordering: `ORDER BY updated DESC, priority ASC`.
+- Column visibility/order: `SHOW title, status, priority`.
+
+Fields:
+
+- Built-ins: `title`, `notes`, `url`, `tag`, `added`, `updated`, `touched`, `completed`, `position`.
+- Custom fields: reference by key or label (labels must be unique).
+
+Examples:
+
+```
+status = "Ready" AND NOT title : "wip"
+```
+
+```
+priority >= 2 AND tag IN (urgent, "needs-review")
+ORDER BY updated DESC
+SHOW title, status, priority
+```
 
 ## Source files
 

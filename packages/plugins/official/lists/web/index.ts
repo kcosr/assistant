@@ -26,11 +26,13 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import {
   ListColumnPreferencesClient,
   type ListColumnPreferences,
+  type ListViewPreferences,
 } from '../../../../web-client/src/utils/listColumnPreferences';
 import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
 import { PINNED_TAG, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
+import { buildAqlString, parseAql, type AqlQuery } from '../../../../web-client/src/utils/listItemQuery';
 import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
   type PanelCoreServices,
@@ -273,9 +275,19 @@ type ListSummary = {
   tags?: string[];
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
+  savedQueries?: SavedAqlQuery[];
   updatedAt?: string;
   instanceId: string;
   instanceLabel?: string;
+};
+
+type SavedAqlQuery = {
+  id: string;
+  name: string;
+  query: string;
+  isDefault?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type OperationResponse<T> = { ok: true; result: T } | { error: string };
@@ -350,6 +362,37 @@ function parseCustomFields(value: unknown): ListCustomFieldDefinition[] | undefi
   return result.length > 0 ? result : undefined;
 }
 
+function parseSavedQueries(value: unknown): SavedAqlQuery[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const result: SavedAqlQuery[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const obj = entry as Record<string, unknown>;
+    const id = typeof obj['id'] === 'string' ? obj['id'].trim() : '';
+    const name = typeof obj['name'] === 'string' ? obj['name'].trim() : '';
+    const query = typeof obj['query'] === 'string' ? obj['query'].trim() : '';
+    if (!id || !name || !query) {
+      continue;
+    }
+    const createdAt = typeof obj['createdAt'] === 'string' ? obj['createdAt'] : undefined;
+    const updatedAt = typeof obj['updatedAt'] === 'string' ? obj['updatedAt'] : undefined;
+    const isDefault = obj['isDefault'] === true;
+    result.push({
+      id,
+      name,
+      query,
+      ...(isDefault ? { isDefault: true } : {}),
+      ...(createdAt ? { createdAt } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    });
+  }
+  return result.length > 0 ? result : undefined;
+}
+
 function parseListSummary(value: unknown, instanceId: string): ListSummary | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -364,6 +407,7 @@ function parseListSummary(value: unknown, instanceId: string): ListSummary | nul
   const tags = parseStringArray(obj['tags']);
   const defaultTags = parseStringArray(obj['defaultTags']);
   const customFields = parseCustomFields(obj['customFields']);
+  const savedQueries = parseSavedQueries(obj['savedQueries']);
   const updatedAt = typeof obj['updatedAt'] === 'string' ? obj['updatedAt'] : undefined;
 
   return {
@@ -373,6 +417,7 @@ function parseListSummary(value: unknown, instanceId: string): ListSummary | nul
     tags: tags.length > 0 ? tags : undefined,
     defaultTags: defaultTags.length > 0 ? defaultTags : undefined,
     customFields,
+    savedQueries,
     updatedAt,
     instanceId,
   };
@@ -623,13 +668,65 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       );
 
       const services = resolveServices(host);
-      const preferencesLoaded = services.listColumnPreferencesClient.load();
       const isCapacitor = isCapacitorAndroid();
 
       const sharedSearchController = new CollectionPanelSearchController({
         containerEl: sharedSearchEl,
         icons: { x: ICONS.x },
       });
+
+      const aqlToggleButton = document.createElement('button');
+      aqlToggleButton.type = 'button';
+      aqlToggleButton.className = 'list-search-mode-toggle';
+      aqlToggleButton.textContent = 'AQL';
+      aqlToggleButton.setAttribute('aria-label', 'Toggle AQL mode');
+      aqlToggleButton.setAttribute('aria-pressed', 'false');
+
+      const aqlApplyButton = document.createElement('button');
+      aqlApplyButton.type = 'button';
+      aqlApplyButton.className = 'list-search-apply';
+      aqlApplyButton.innerHTML = ICONS.check;
+      aqlApplyButton.setAttribute('aria-label', 'Apply AQL query');
+      aqlApplyButton.setAttribute('title', 'Apply');
+      aqlApplyButton.disabled = true;
+
+      const aqlSavedSelect = document.createElement('select');
+      aqlSavedSelect.className = 'list-search-aql-select';
+      aqlSavedSelect.setAttribute('aria-label', 'Saved AQL queries');
+
+      const aqlSaveButton = document.createElement('button');
+      aqlSaveButton.type = 'button';
+      aqlSaveButton.className = 'list-search-aql-save';
+      aqlSaveButton.innerHTML = ICONS.save;
+      aqlSaveButton.setAttribute('aria-label', 'Save AQL query');
+      aqlSaveButton.setAttribute('title', 'Save');
+
+      const aqlDeleteButton = document.createElement('button');
+      aqlDeleteButton.type = 'button';
+      aqlDeleteButton.className = 'list-search-aql-delete';
+      aqlDeleteButton.innerHTML = ICONS.trash;
+      aqlDeleteButton.setAttribute('aria-label', 'Delete saved AQL query');
+      aqlDeleteButton.setAttribute('title', 'Delete');
+
+      const aqlDefaultButton = document.createElement('button');
+      aqlDefaultButton.type = 'button';
+      aqlDefaultButton.className = 'list-search-aql-default';
+      aqlDefaultButton.innerHTML = ICONS.star;
+      aqlDefaultButton.setAttribute('aria-label', 'Set default AQL query');
+      aqlDefaultButton.setAttribute('title', 'Set default');
+
+      const aqlActionGroup = document.createElement('div');
+      aqlActionGroup.className = 'list-search-aql-actions';
+      aqlActionGroup.appendChild(aqlSaveButton);
+      aqlActionGroup.appendChild(aqlDeleteButton);
+      aqlActionGroup.appendChild(aqlApplyButton);
+      aqlActionGroup.appendChild(aqlDefaultButton);
+
+      const aqlControls = document.createElement('div');
+      aqlControls.className = 'list-search-aql-controls';
+      aqlControls.appendChild(aqlToggleButton);
+      aqlControls.appendChild(aqlSavedSelect);
+      aqlControls.appendChild(aqlActionGroup);
 
       if (fabAddButton) {
         fabAddButton.innerHTML = ICONS.plus;
@@ -678,7 +775,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
       let activeListData: ListPanelData | null = null;
-      let panelColumnWidths: Record<string, Record<string, number>> = {};
+      let panelListViewPrefs: Record<string, ListViewPreferences> = {};
+      let searchMode: 'raw' | 'aql' = 'raw';
+      let rawQueryText = '';
+      let aqlQueryText = '';
+      let aqlAppliedQueryText: string | null = null;
+      let aqlAppliedQuery: AqlQuery | null = null;
+      let aqlError: string | null = null;
+      let aqlDirty = false;
+      let savedAqlQueries: SavedAqlQuery[] = [];
+      let selectedAqlQueryId: string | null = null;
+      let ignoreSearchChange = false;
       let mode: ViewMode = 'browser';
       let isVisible = false;
       let panelKeydownAttached = false;
@@ -735,7 +842,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           selectedListInstanceId: activeListInstanceId,
           mode,
           instanceIds: selectedInstanceIds,
-          columnWidths: panelColumnWidths,
+          listViewPrefs: panelListViewPrefs,
+          searchMode,
+          rawQueryText,
+          aqlQueryText,
+          aqlAppliedQueryText,
         });
       };
 
@@ -770,27 +881,110 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return result;
       };
 
-      const getListColumnPreferences = (listId: string): ListColumnPreferences | null => {
-        const basePrefs = services.listColumnPreferencesClient.getListPreferences(listId);
-        const widths = panelColumnWidths[listId];
-        const merged: ListColumnPreferences = {};
-
-        for (const [columnKey, config] of Object.entries(basePrefs ?? {})) {
-          if (config?.visibility) {
-            merged[columnKey] = { visibility: config.visibility };
+      const normalizeListViewPrefs = (
+        value: unknown,
+      ): Record<string, ListViewPreferences> => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          return {};
+        }
+        const result: Record<string, ListViewPreferences> = {};
+        for (const [listId, rawPrefs] of Object.entries(value as Record<string, unknown>)) {
+          if (!rawPrefs || typeof rawPrefs !== 'object' || Array.isArray(rawPrefs)) {
+            continue;
+          }
+          const prefs: ListViewPreferences = {};
+          const rawColumns = (rawPrefs as Record<string, unknown>)['columns'];
+          if (rawColumns && typeof rawColumns === 'object' && !Array.isArray(rawColumns)) {
+            const columns: ListColumnPreferences = {};
+            for (const [columnKey, rawConfig] of Object.entries(
+              rawColumns as Record<string, unknown>,
+            )) {
+              if (!rawConfig || typeof rawConfig !== 'object' || Array.isArray(rawConfig)) {
+                continue;
+              }
+              const config = rawConfig as Record<string, unknown>;
+              const width =
+                typeof config['width'] === 'number' && Number.isFinite(config['width'])
+                  ? Math.round(config['width'] as number)
+                  : undefined;
+              const visibility = config['visibility'];
+              const normalizedVisibility =
+                visibility === 'always-show' ||
+                visibility === 'show-with-data' ||
+                visibility === 'hide-in-compact' ||
+                visibility === 'always-hide'
+                  ? visibility
+                  : undefined;
+              const entry: { width?: number; visibility?: typeof normalizedVisibility } = {};
+              if (width && width > 0) entry.width = width;
+              if (normalizedVisibility) entry.visibility = normalizedVisibility;
+              if (Object.keys(entry).length > 0) {
+                columns[columnKey] = entry;
+              }
+            }
+            if (Object.keys(columns).length > 0) {
+              prefs.columns = columns;
+            }
+          }
+          const rawSortState = (rawPrefs as Record<string, unknown>)['sortState'];
+          if (
+            rawSortState &&
+            typeof rawSortState === 'object' &&
+            !Array.isArray(rawSortState)
+          ) {
+            const column = (rawSortState as Record<string, unknown>)['column'];
+            const direction = (rawSortState as Record<string, unknown>)['direction'];
+            if (typeof column === 'string' && (direction === 'asc' || direction === 'desc')) {
+              prefs.sortState = { column: column.trim(), direction };
+            }
+          }
+          const rawTimeline = (rawPrefs as Record<string, unknown>)['timelineField'];
+          if (rawTimeline === null) {
+            prefs.timelineField = null;
+          } else if (typeof rawTimeline === 'string') {
+            const trimmed = rawTimeline.trim();
+            prefs.timelineField = trimmed.length > 0 ? trimmed : null;
+          }
+          const rawFocusId = (rawPrefs as Record<string, unknown>)['focusMarkerItemId'];
+          if (rawFocusId === null) {
+            prefs.focusMarkerItemId = null;
+          } else if (typeof rawFocusId === 'string') {
+            const trimmed = rawFocusId.trim();
+            prefs.focusMarkerItemId = trimmed.length > 0 ? trimmed : null;
+          }
+          const rawExpanded = (rawPrefs as Record<string, unknown>)['focusMarkerExpanded'];
+          if (typeof rawExpanded === 'boolean') {
+            prefs.focusMarkerExpanded = rawExpanded;
+          }
+          if (Object.keys(prefs).length > 0) {
+            result[listId] = prefs;
           }
         }
+        return result;
+      };
 
-        if (widths) {
-          for (const [columnKey, width] of Object.entries(widths)) {
-            merged[columnKey] = {
-              ...(merged[columnKey] ?? {}),
+      const mergeColumnWidthsIntoViewPrefs = (
+        prefs: Record<string, ListViewPreferences>,
+        widths: Record<string, Record<string, number>>,
+      ): Record<string, ListViewPreferences> => {
+        const merged: Record<string, ListViewPreferences> = { ...prefs };
+        for (const [listId, listWidths] of Object.entries(widths)) {
+          const existing = merged[listId] ?? {};
+          const columns: ListColumnPreferences = { ...(existing.columns ?? {}) };
+          for (const [columnKey, width] of Object.entries(listWidths)) {
+            columns[columnKey] = {
+              ...(columns[columnKey] ?? {}),
               width,
             };
           }
+          merged[listId] = { ...existing, columns };
         }
+        return merged;
+      };
 
-        return Object.keys(merged).length > 0 ? merged : null;
+      const getListColumnPreferences = (listId: string): ListColumnPreferences | null => {
+        const prefs = panelListViewPrefs[listId]?.columns ?? null;
+        return prefs && Object.keys(prefs).length > 0 ? prefs : null;
       };
 
       const updatePanelColumnWidth = (listId: string, columnKey: string, width: number): void => {
@@ -801,14 +995,32 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (normalizedWidth <= 0) {
           return;
         }
-        const current = panelColumnWidths[listId] ?? {};
-        panelColumnWidths = {
-          ...panelColumnWidths,
-          [listId]: {
-            ...current,
-            [columnKey]: normalizedWidth,
-          },
+        const current = panelListViewPrefs[listId] ?? {};
+        const columns: ListColumnPreferences = { ...(current.columns ?? {}) };
+        columns[columnKey] = {
+          ...(columns[columnKey] ?? {}),
+          width: normalizedWidth,
         };
+        panelListViewPrefs = {
+          ...panelListViewPrefs,
+          [listId]: { ...current, columns },
+        };
+        persistState();
+      };
+
+      const updateListViewPrefs = (
+        listId: string,
+        patch: Partial<ListViewPreferences>,
+      ): void => {
+        if (!listId) {
+          return;
+        }
+        const current = panelListViewPrefs[listId] ?? {};
+        const next: ListViewPreferences = { ...current, ...patch };
+        if (patch.columns) {
+          next.columns = { ...(current.columns ?? {}), ...patch.columns };
+        }
+        panelListViewPrefs = { ...panelListViewPrefs, [listId]: next };
         persistState();
       };
 
@@ -1218,36 +1430,50 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             updatePanelColumnWidth(listId, columnKey, patch.width);
           }
           if (patch.visibility !== undefined) {
-            void services.listColumnPreferencesClient.updateColumn(listId, columnKey, {
+            const current = panelListViewPrefs[listId] ?? {};
+            const columns: ListColumnPreferences = { ...(current.columns ?? {}) };
+            columns[columnKey] = {
+              ...(columns[columnKey] ?? {}),
               visibility: patch.visibility,
-            });
+            };
+            panelListViewPrefs = {
+              ...panelListViewPrefs,
+              [listId]: { ...current, columns },
+            };
+            persistState();
+            updateAqlShowFromVisibility(columnKey, patch.visibility);
           }
         },
-        getSortState: (listId) => services.listColumnPreferencesClient.getSortState(listId),
+        getSortState: (listId) => panelListViewPrefs[listId]?.sortState ?? null,
         updateSortState: (listId, sortState) => {
-          void services.listColumnPreferencesClient.updateSortState(listId, sortState);
+          updateListViewPrefs(listId, { sortState: sortState ?? null });
+          updateAqlOrderFromSort(sortState ?? null);
         },
-        getTimelineField: (listId) => services.listColumnPreferencesClient.getTimelineField(listId),
+        getTimelineField: (listId) => panelListViewPrefs[listId]?.timelineField ?? null,
         updateTimelineField: (listId, timelineField) => {
-          void services.listColumnPreferencesClient.updateTimelineField(listId, timelineField);
+          updateListViewPrefs(listId, { timelineField });
         },
         getFocusMarkerItemId: (listId) =>
-          services.listColumnPreferencesClient.getFocusMarkerItemId(listId),
+          panelListViewPrefs[listId]?.focusMarkerItemId ?? null,
         getFocusMarkerExpanded: (listId) =>
-          services.listColumnPreferencesClient.getFocusMarkerExpanded(listId),
+          panelListViewPrefs[listId]?.focusMarkerExpanded ?? false,
         updateFocusMarker: (listId, focusMarkerItemId, focusMarkerExpanded) => {
-          void services.listColumnPreferencesClient.updateFocusMarker(
-            listId,
-            focusMarkerItemId,
-            focusMarkerExpanded,
-          );
+          const current = panelListViewPrefs[listId] ?? {};
+          const next: ListViewPreferences = { ...current, focusMarkerItemId };
+          if (focusMarkerExpanded !== undefined) {
+            next.focusMarkerExpanded = focusMarkerExpanded;
+          }
+          if (focusMarkerItemId === null) {
+            delete next.focusMarkerExpanded;
+          }
+          panelListViewPrefs = { ...panelListViewPrefs, [listId]: next };
+          persistState();
         },
         updateFocusMarkerExpanded: (listId, focusMarkerExpanded) => {
-          void services.listColumnPreferencesClient.updateFocusMarkerExpanded(
-            listId,
-            focusMarkerExpanded,
-          );
+          updateListViewPrefs(listId, { focusMarkerExpanded });
         },
+        getAqlMode: () => mode === 'list' && searchMode === 'aql',
+        getAqlQuery: () => (mode === 'list' && searchMode === 'aql' ? aqlAppliedQuery : null),
         setRightControls: (elements) => {
           sharedSearchController.setRightControls(elements);
         },
@@ -1541,6 +1767,563 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         });
       }
 
+      const isAqlEnabled = (): boolean => mode === 'list' && searchMode === 'aql';
+
+      const getSavedQueryById = (id: string | null): SavedAqlQuery | null => {
+        if (!id) {
+          return null;
+        }
+        return savedAqlQueries.find((entry) => entry.id === id) ?? null;
+      };
+
+      const getDefaultSavedQuery = (): SavedAqlQuery | null =>
+        savedAqlQueries.find((entry) => entry.isDefault) ?? null;
+
+      const renderSavedQueryOptions = (): void => {
+        aqlSavedSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = savedAqlQueries.length > 0 ? 'Saved queries' : 'No saved queries';
+        aqlSavedSelect.appendChild(placeholder);
+        for (const entry of savedAqlQueries) {
+          const option = document.createElement('option');
+          option.value = entry.id;
+          option.textContent = entry.isDefault ? `★ ${entry.name}` : entry.name;
+          aqlSavedSelect.appendChild(option);
+        }
+        aqlSavedSelect.value = selectedAqlQueryId ?? '';
+      };
+
+      const updateAqlStatusMessage = (): void => {
+        if (!isAqlEnabled()) {
+          sharedSearchController.setStatusMessage(null);
+          return;
+        }
+        if (aqlError) {
+          sharedSearchController.setStatusMessage(aqlError, 'error');
+          return;
+        }
+        if (aqlDirty) {
+          sharedSearchController.setStatusMessage('Press Enter or Apply to run.');
+          return;
+        }
+        sharedSearchController.setStatusMessage(null);
+      };
+
+      const confirmDialog = (options: {
+        title: string;
+        message: string;
+        confirmText: string;
+        confirmClassName?: string;
+      }): Promise<boolean> => {
+        return new Promise((resolve) => {
+          let resolved = false;
+          services.dialogManager.showConfirmDialog({
+            title: options.title,
+            message: options.message,
+            confirmText: options.confirmText,
+            confirmClassName: options.confirmClassName,
+            onConfirm: () => {
+              if (resolved) return;
+              resolved = true;
+              resolve(true);
+            },
+            onCancel: () => {
+              if (resolved) return;
+              resolved = true;
+              resolve(false);
+            },
+          });
+
+          const overlays = Array.from(
+            document.querySelectorAll<HTMLElement>('.confirm-dialog-overlay'),
+          );
+          const overlay = overlays[overlays.length - 1];
+          if (!overlay) {
+            if (!resolved) {
+              resolved = true;
+              resolve(false);
+            }
+            return;
+          }
+          const observer = new MutationObserver(() => {
+            if (!overlay.isConnected && !resolved) {
+              resolved = true;
+              resolve(false);
+            }
+            if (resolved) {
+              observer.disconnect();
+            }
+          });
+          observer.observe(document.body, { childList: true });
+        });
+      };
+
+      const updateAqlControls = (): void => {
+        const enabled = isAqlEnabled();
+        aqlToggleButton.classList.toggle('active', enabled);
+        aqlToggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        aqlToggleButton.disabled = mode !== 'list';
+        aqlActionGroup.classList.toggle('visible', enabled);
+        aqlApplyButton.disabled = !enabled || !!aqlError;
+        aqlApplyButton.classList.toggle('dirty', enabled && aqlDirty);
+        aqlSavedSelect.classList.toggle('visible', enabled);
+        aqlSavedSelect.disabled = mode !== 'list';
+        aqlSaveButton.disabled = !enabled || !aqlQueryText.trim();
+        const selected = getSavedQueryById(selectedAqlQueryId);
+        const hasSelection = !!selected;
+        aqlDeleteButton.disabled = !enabled || !hasSelection;
+        aqlDefaultButton.disabled = !enabled || !hasSelection;
+        aqlDefaultButton.classList.toggle('active', !!selected?.isDefault);
+        aqlDefaultButton.innerHTML = selected?.isDefault ? ICONS.starFilled : ICONS.star;
+        aqlDefaultButton.setAttribute(
+          'aria-label',
+          selected?.isDefault ? 'Clear default AQL query' : 'Set default AQL query',
+        );
+        aqlDefaultButton.setAttribute(
+          'title',
+          selected?.isDefault ? 'Clear default' : 'Set default',
+        );
+      };
+
+      const rerenderList = (): void => {
+        if (!activeListId || !activeListData) {
+          return;
+        }
+        const controls = listPanelController.render(activeListId, activeListData);
+        sharedSearchController.setRightControls(controls.rightControls);
+      };
+
+      const setSavedQueries = (queries: SavedAqlQuery[]): void => {
+        savedAqlQueries = queries;
+        if (activeListData) {
+          activeListData.savedQueries = queries;
+        }
+        if (selectedAqlQueryId) {
+          const stillExists = savedAqlQueries.some((entry) => entry.id === selectedAqlQueryId);
+          if (!stillExists) {
+            selectedAqlQueryId = null;
+          }
+        }
+        renderSavedQueryOptions();
+        updateAqlControls();
+      };
+
+      const fetchSavedQueries = async (
+        listId: string,
+        instanceId: string,
+      ): Promise<SavedAqlQuery[]> => {
+        const raw = await callInstanceOperation<unknown>(instanceId, 'aql-query-list', {
+          listId,
+        });
+        return parseSavedQueries(raw) ?? [];
+      };
+
+      const applySavedQuery = (entry: SavedAqlQuery): void => {
+        if (mode !== 'list') {
+          return;
+        }
+        if (searchMode !== 'aql') {
+          setSearchMode('aql');
+        }
+        selectedAqlQueryId = entry.id;
+        applyAqlQueryText(entry.query, true);
+        renderSavedQueryOptions();
+      };
+
+      const applyDefaultQuery = (): void => {
+        const defaultQuery = getDefaultSavedQuery();
+        if (!defaultQuery) {
+          return;
+        }
+        applySavedQuery(defaultQuery);
+      };
+
+      const applyAqlQueryText = (nextText: string, syncInput: boolean): void => {
+        if (!isAqlEnabled()) {
+          return;
+        }
+        const trimmed = nextText.trim();
+        aqlQueryText = nextText;
+        if (syncInput) {
+          const searchInput = sharedSearchController.getSearchInputEl();
+          if (searchInput) {
+            searchInput.value = nextText;
+          }
+        }
+        if (!trimmed) {
+          aqlAppliedQuery = null;
+          aqlAppliedQueryText = null;
+          aqlError = null;
+          aqlDirty = false;
+          selectedAqlQueryId = null;
+          renderSavedQueryOptions();
+          updateAqlStatusMessage();
+          updateAqlControls();
+          persistState();
+          rerenderList();
+          return;
+        }
+        const result = parseAql(nextText, {
+          customFields: activeListData?.customFields ?? [],
+        });
+        if (!result.ok) {
+          aqlError = result.error;
+          aqlDirty = (aqlAppliedQueryText ?? '') !== aqlQueryText;
+          updateAqlStatusMessage();
+          updateAqlControls();
+          return;
+        }
+        aqlAppliedQuery = result.query;
+        aqlAppliedQueryText = nextText;
+        aqlError = null;
+        aqlDirty = false;
+        const matchingSaved = savedAqlQueries.find((entry) => entry.query === trimmed);
+        selectedAqlQueryId = matchingSaved?.id ?? selectedAqlQueryId;
+        renderSavedQueryOptions();
+        updateAqlStatusMessage();
+        updateAqlControls();
+        persistState();
+        rerenderList();
+      };
+
+      const applyAqlQuery = (): void => {
+        applyAqlQueryText(aqlQueryText, false);
+      };
+
+      const ensureAqlAppliedQuery = (): void => {
+        if (!isAqlEnabled()) {
+          aqlAppliedQuery = null;
+          return;
+        }
+        if (!aqlAppliedQueryText || !aqlAppliedQueryText.trim()) {
+          aqlAppliedQuery = null;
+          return;
+        }
+        const result = parseAql(aqlAppliedQueryText, {
+          customFields: activeListData?.customFields ?? [],
+        });
+        if (!result.ok) {
+          aqlAppliedQuery = null;
+          aqlError = result.error;
+          updateAqlStatusMessage();
+          updateAqlControls();
+          return;
+        }
+        aqlAppliedQuery = result.query;
+        aqlError = null;
+        updateAqlStatusMessage();
+        updateAqlControls();
+      };
+
+      const handleSearchInputChange = (query: string): void => {
+        if (ignoreSearchChange) {
+          return;
+        }
+        if (searchMode === 'aql' && mode === 'list') {
+          aqlQueryText = query;
+          aqlError = null;
+          aqlDirty = (aqlAppliedQueryText ?? '') !== aqlQueryText;
+          const selected = getSavedQueryById(selectedAqlQueryId);
+          if (selected && selected.query !== aqlQueryText.trim()) {
+            selectedAqlQueryId = null;
+            renderSavedQueryOptions();
+          }
+          updateAqlStatusMessage();
+          updateAqlControls();
+          persistState();
+          return;
+        }
+
+        rawQueryText = query;
+        applySearch(query);
+        persistState();
+      };
+
+      const buildFieldRef = (key: string) => ({
+        key,
+        label: key,
+        type: 'text' as const,
+        kind: 'builtin' as const,
+        displayable: true,
+      });
+
+      const getDefaultColumnOrder = (): string[] => {
+        const order: string[] = ['title', 'url', 'notes'];
+        const customFields = activeListData?.customFields ?? [];
+        for (const field of customFields) {
+          if (field.key) {
+            order.push(field.key);
+          }
+        }
+        order.push('tags', 'added', 'updated', 'touched');
+        return order;
+      };
+
+      const updateAqlOrderFromSort = (sortState: { column: string; direction: 'asc' | 'desc' } | null): void => {
+        if (!isAqlEnabled() || !aqlAppliedQuery) {
+          return;
+        }
+        const orderBy = sortState
+          ? [{ field: buildFieldRef(sortState.column), direction: sortState.direction }]
+          : [];
+        const nextText = buildAqlString(aqlAppliedQuery.base, orderBy, aqlAppliedQuery.show);
+        applyAqlQueryText(nextText, true);
+      };
+
+      const updateAqlShowFromVisibility = (columnKey: string, visibility: string): void => {
+        if (!isAqlEnabled() || !aqlAppliedQuery) {
+          return;
+        }
+        const shouldShow = visibility !== 'always-hide';
+        const currentKeys = aqlAppliedQuery.show
+          ? aqlAppliedQuery.show.map((field) => field.key)
+          : getDefaultColumnOrder();
+        const nextKeys = [...currentKeys];
+        const index = nextKeys.indexOf(columnKey);
+        if (shouldShow) {
+          if (index === -1) {
+            nextKeys.push(columnKey);
+          }
+        } else if (index !== -1) {
+          nextKeys.splice(index, 1);
+        }
+        const orderedKeys = aqlAppliedQuery.show ? nextKeys : getDefaultColumnOrder().filter((key) => nextKeys.includes(key));
+        const showFields = orderedKeys.map((key) => buildFieldRef(key));
+        const nextText = buildAqlString(aqlAppliedQuery.base, aqlAppliedQuery.orderBy, showFields);
+        applyAqlQueryText(nextText, true);
+      };
+
+      const setSearchMode = (nextMode: 'raw' | 'aql'): void => {
+        if (mode !== 'list' && nextMode === 'aql') {
+          return;
+        }
+        if (searchMode === nextMode) {
+          return;
+        }
+        searchMode = nextMode;
+        const searchInput = sharedSearchController.getSearchInputEl();
+        if (searchMode === 'aql') {
+          sharedSearchController.setTagFilteringEnabled(false);
+          sharedSearchController.setPlaceholder('Enter AQL...');
+          sharedSearchController.setKeydownHandler(handleAqlKeydown);
+          if (searchInput) {
+            searchInput.value = aqlQueryText;
+          }
+          ensureAqlAppliedQuery();
+          handleSearchInputChange(aqlQueryText);
+          rerenderList();
+        } else {
+          sharedSearchController.setTagFilteringEnabled(true);
+          sharedSearchController.setPlaceholder('Search items...');
+          sharedSearchController.setKeydownHandler(null);
+          aqlAppliedQuery = null;
+          aqlError = null;
+          aqlDirty = false;
+          sharedSearchController.setStatusMessage(null);
+          if (searchInput) {
+            searchInput.value = rawQueryText;
+          }
+          applySearch(rawQueryText);
+          rerenderList();
+        }
+        updateAqlControls();
+        persistState();
+      };
+
+      const handleAqlKeydown = (event: KeyboardEvent): boolean => {
+        if (!isAqlEnabled()) {
+          return false;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          applyAqlQuery();
+          return true;
+        }
+        return false;
+      };
+
+      const validateAqlInput = (queryText: string): AqlQuery | null => {
+        const trimmed = queryText.trim();
+        if (!trimmed) {
+          aqlError = 'AQL query cannot be empty.';
+          updateAqlStatusMessage();
+          updateAqlControls();
+          return null;
+        }
+        const result = parseAql(trimmed, {
+          customFields: activeListData?.customFields ?? [],
+        });
+        if (!result.ok) {
+          aqlError = result.error;
+          updateAqlStatusMessage();
+          updateAqlControls();
+          return null;
+        }
+        aqlError = null;
+        updateAqlStatusMessage();
+        updateAqlControls();
+        return result.query;
+      };
+
+      const handleSaveAqlQuery = async (): Promise<void> => {
+        if (!activeListId || !activeListInstanceId) {
+          return;
+        }
+        if (!isAqlEnabled()) {
+          setSearchMode('aql');
+        }
+        const selected = getSavedQueryById(selectedAqlQueryId);
+        const name = await services.dialogManager.showTextInputDialog({
+          title: 'Save AQL query',
+          message: 'Name this query for quick access.',
+          confirmText: 'Save',
+          labelText: 'Query name',
+          initialValue: selected?.name ?? '',
+          placeholder: 'e.g. Ready items',
+          validate: (value) => (value.trim().length === 0 ? 'Name is required.' : null),
+        });
+        if (!name) {
+          return;
+        }
+        const trimmedName = name.trim();
+        if (!validateAqlInput(aqlQueryText)) {
+          return;
+        }
+        const existing = savedAqlQueries.find(
+          (entry) => entry.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+        );
+        const isSame = existing && existing.id === selected?.id;
+        if (existing && !isSame) {
+          const confirmed = await confirmDialog({
+            title: 'Overwrite saved query?',
+            message: `A saved query named "${existing.name}" already exists. Overwrite it?`,
+            confirmText: 'Overwrite',
+            confirmClassName: 'danger',
+          });
+          if (!confirmed) {
+            return;
+          }
+        }
+        try {
+          const raw = await callInstanceOperation<unknown>(
+            activeListInstanceId,
+            'aql-query-save',
+            {
+              listId: activeListId,
+              name: trimmedName,
+              query: aqlQueryText.trim(),
+              ...(existing ? { overwrite: true } : {}),
+            },
+          );
+          const parsed = parseSavedQueries(raw) ?? [];
+          const saved = parsed.find(
+            (entry) => entry.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+          );
+          selectedAqlQueryId = saved?.id ?? null;
+          setSavedQueries(parsed);
+        } catch (error) {
+          sharedSearchController.setStatusMessage('Failed to save query.', 'error');
+          console.error('Failed to save AQL query', error);
+        }
+      };
+
+      const handleDeleteAqlQuery = async (): Promise<void> => {
+        if (!activeListId || !activeListInstanceId) {
+          return;
+        }
+        const selected = getSavedQueryById(selectedAqlQueryId);
+        if (!selected) {
+          return;
+        }
+        const confirmed = await confirmDialog({
+          title: 'Delete saved query?',
+          message: `Delete saved query "${selected.name}"?`,
+          confirmText: 'Delete',
+          confirmClassName: 'danger',
+        });
+        if (!confirmed) {
+          return;
+        }
+        try {
+          const raw = await callInstanceOperation<unknown>(
+            activeListInstanceId,
+            'aql-query-delete',
+            {
+              listId: activeListId,
+              id: selected.id,
+            },
+          );
+          selectedAqlQueryId = null;
+          setSavedQueries(parseSavedQueries(raw) ?? []);
+        } catch (error) {
+          sharedSearchController.setStatusMessage('Failed to delete query.', 'error');
+          console.error('Failed to delete AQL query', error);
+        }
+      };
+
+      const handleToggleDefaultAqlQuery = async (): Promise<void> => {
+        if (!activeListId || !activeListInstanceId) {
+          return;
+        }
+        const selected = getSavedQueryById(selectedAqlQueryId);
+        if (!selected) {
+          return;
+        }
+        try {
+          const raw = await callInstanceOperation<unknown>(
+            activeListInstanceId,
+            'aql-query-default',
+            {
+              listId: activeListId,
+              ...(selected.isDefault ? {} : { id: selected.id }),
+            },
+          );
+          setSavedQueries(parseSavedQueries(raw) ?? []);
+        } catch (error) {
+          sharedSearchController.setStatusMessage('Failed to update default query.', 'error');
+          console.error('Failed to update default AQL query', error);
+        }
+      };
+
+      aqlToggleButton.addEventListener('click', () => {
+        if (mode !== 'list') {
+          return;
+        }
+        setSearchMode(searchMode === 'aql' ? 'raw' : 'aql');
+      });
+
+      aqlApplyButton.addEventListener('click', () => {
+        applyAqlQuery();
+      });
+
+      aqlSavedSelect.addEventListener('change', () => {
+        const id = aqlSavedSelect.value;
+        if (!id) {
+          selectedAqlQueryId = null;
+          renderSavedQueryOptions();
+          updateAqlControls();
+          return;
+        }
+        const entry = savedAqlQueries.find((item) => item.id === id);
+        if (entry) {
+          applySavedQuery(entry);
+        }
+      });
+
+      aqlSaveButton.addEventListener('click', () => {
+        void handleSaveAqlQuery();
+      });
+
+      aqlDeleteButton.addEventListener('click', () => {
+        void handleDeleteAqlQuery();
+      });
+
+      aqlDefaultButton.addEventListener('click', () => {
+        void handleToggleDefaultAqlQuery();
+      });
+
       function applySearch(query: string): void {
         if (mode === 'browser') {
           browserController?.applySearchQuery(query);
@@ -1568,6 +2351,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         chromeController?.scheduleLayoutCheck();
         if (mode === 'browser') {
+          searchMode = 'raw';
+          aqlAppliedQuery = null;
+          aqlError = null;
+          aqlDirty = false;
+          sharedSearchController.setTagFilteringEnabled(true);
+          const searchInput = sharedSearchController.getSearchInputEl();
+          if (searchInput) {
+            searchInput.value = rawQueryText;
+          }
           browserController?.setSharedSearchElements({
             searchInput: sharedSearchController.getSearchInputEl(),
             tagController: sharedSearchController.getTagController(),
@@ -1579,6 +2371,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sharedSearchController.setKeydownHandler((event) =>
             browserController ? browserController.handleSharedSearchKeyDown(event) : false,
           );
+          sharedSearchController.setLeftControls(null);
           const controls = browserController
             ? browserController.getSharedSearchRightControls()
             : [];
@@ -1588,12 +2381,44 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!activeListData) {
             sharedSearchController.setRightControls(null);
           }
-          sharedSearchController.setPlaceholder('Search items...');
+          const defaultQuery = getDefaultSavedQuery();
+          if (defaultQuery) {
+            searchMode = 'aql';
+            aqlQueryText = defaultQuery.query;
+            aqlAppliedQueryText = defaultQuery.query;
+            aqlAppliedQuery = null;
+            aqlError = null;
+            aqlDirty = false;
+            selectedAqlQueryId = defaultQuery.id;
+            renderSavedQueryOptions();
+          }
+          sharedSearchController.setLeftControls([aqlControls]);
+          const searchInput = sharedSearchController.getSearchInputEl();
+          if (searchInput) {
+            searchInput.value = searchMode === 'aql' ? aqlQueryText : rawQueryText;
+          }
+          if (searchMode === 'aql') {
+            sharedSearchController.setTagFilteringEnabled(false);
+            sharedSearchController.setPlaceholder('Enter AQL...');
+            sharedSearchController.setKeydownHandler(handleAqlKeydown);
+          } else {
+            sharedSearchController.setTagFilteringEnabled(true);
+            sharedSearchController.setPlaceholder('Search items...');
+            sharedSearchController.setKeydownHandler(null);
+          }
           sharedSearchController.setTagsProvider(() => listPanelController.getAvailableTags());
-          sharedSearchController.setKeydownHandler(null);
         }
         sharedSearchController.setVisible(true);
-        applySearch(sharedSearchController.getQuery());
+        const currentQuery = sharedSearchController.getQuery();
+        if (mode === 'list' && searchMode === 'aql') {
+          aqlQueryText = currentQuery;
+          ensureAqlAppliedQuery();
+          rerenderList();
+        } else {
+          applySearch(currentQuery);
+        }
+        updateAqlControls();
+        updateAqlStatusMessage();
         if (mode === 'browser') {
           browserController?.focusActiveItem();
         }
@@ -1717,10 +2542,27 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             limit: 0,
             sort: 'position',
           });
+          const rawSavedQueries = await callInstanceOperation<unknown>(
+            instanceId,
+            'aql-query-list',
+            { listId },
+          );
           if (currentToken !== loadToken) {
             return;
           }
           const items = parseListItems(rawItems);
+          const savedQueries = parseSavedQueries(rawSavedQueries) ?? [];
+          const defaultQuery = savedQueries.find((entry) => entry.isDefault) ?? null;
+          selectedAqlQueryId = defaultQuery?.id ?? null;
+          setSavedQueries(savedQueries);
+          if (defaultQuery) {
+            searchMode = 'aql';
+            aqlQueryText = defaultQuery.query;
+            aqlAppliedQueryText = defaultQuery.query;
+            aqlAppliedQuery = null;
+            aqlError = null;
+            aqlDirty = false;
+          }
           const data: ListPanelData = {
             id: list.id,
             name: list.name,
@@ -1728,6 +2570,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             tags: list.tags,
             defaultTags: list.defaultTags,
             customFields: list.customFields,
+            savedQueries,
             items,
           };
           activeListId = list.id;
@@ -1996,7 +2839,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       });
       chromeController.setInstances(instances, selectedInstanceIds);
 
-      sharedSearchController.setOnQueryChanged(applySearch);
+      ignoreSearchChange = true;
+      const initialSearchInput = sharedSearchController.getSearchInputEl();
+      if (initialSearchInput) {
+        initialSearchInput.value = searchMode === 'aql' ? aqlQueryText : rawQueryText;
+      }
+      sharedSearchController.setOnQueryChanged(handleSearchInputChange);
+      ignoreSearchChange = false;
       sharedSearchController.setVisible(true);
       attachPanelShortcuts();
 
@@ -2016,8 +2865,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (data['mode'] === 'browser' || data['mode'] === 'list') {
           initialMode = data['mode'] as ViewMode;
         }
+        if (data['listViewPrefs']) {
+          panelListViewPrefs = normalizeListViewPrefs(data['listViewPrefs']);
+        }
         if (data['columnWidths']) {
-          panelColumnWidths = normalizeColumnWidths(data['columnWidths']);
+          const legacyWidths = normalizeColumnWidths(data['columnWidths']);
+          panelListViewPrefs = mergeColumnWidthsIntoViewPrefs(panelListViewPrefs, legacyWidths);
+        }
+        if (data['searchMode'] === 'raw' || data['searchMode'] === 'aql') {
+          searchMode = data['searchMode'] as 'raw' | 'aql';
+        }
+        if (typeof data['rawQueryText'] === 'string') {
+          rawQueryText = data['rawQueryText'];
+        }
+        if (typeof data['aqlQueryText'] === 'string') {
+          aqlQueryText = data['aqlQueryText'];
+        }
+        if (typeof data['aqlAppliedQueryText'] === 'string') {
+          aqlAppliedQueryText = data['aqlAppliedQueryText'];
         }
         if (Array.isArray(data['instanceIds'])) {
           selectedInstanceIds = data['instanceIds'].filter(
@@ -2034,35 +2899,32 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         activeInstanceId = selectedInstanceIds[0] ?? DEFAULT_INSTANCE_ID;
       }
 
-      // Wait for preferences to load before initializing list view
-      void preferencesLoaded.then(() => {
-        void refreshInstances({ silent: true }).then(() => {
-          if (
-            initialInstanceIds &&
-            initialInstanceIds.join('|') !== selectedInstanceIds.join('|')
-          ) {
-            initialListId = null;
-            initialListInstanceId = null;
+      void refreshInstances({ silent: true }).then(() => {
+        if (
+          initialInstanceIds &&
+          initialInstanceIds.join('|') !== selectedInstanceIds.join('|')
+        ) {
+          initialListId = null;
+          initialListInstanceId = null;
+        }
+        void refreshLists().then(() => {
+          if (activeListId) {
+            setMode('list');
+            return;
           }
-          void refreshLists().then(() => {
-            if (activeListId) {
-              setMode('list');
-              return;
-            }
-            if (initialListId) {
-              const resolvedInstanceId =
-                initialListInstanceId ??
-                availableLists.find((list) => list.id === initialListId)?.instanceId ??
-                activeInstanceId;
-              void selectList(initialListId, resolvedInstanceId).then(() => {
-                if (initialMode) {
-                  setMode(initialMode);
-                }
-              });
-              return;
-            }
-            setMode('browser');
-          });
+          if (initialListId) {
+            const resolvedInstanceId =
+              initialListInstanceId ??
+              availableLists.find((list) => list.id === initialListId)?.instanceId ??
+              activeInstanceId;
+            void selectList(initialListId, resolvedInstanceId).then(() => {
+              if (initialMode) {
+                setMode(initialMode);
+              }
+            });
+            return;
+          }
+          setMode('browser');
         });
       });
 

@@ -18,6 +18,12 @@ import { arraysEqualBy, syncArrayContents } from '../utils/arrayUtils';
 import { getListColumnPresence, getVisibleCustomFields } from '../utils/listColumnVisibility';
 import { sortItems, type SortState } from '../utils/listSorting';
 import { PINNED_TAG, hasPinnedTag, withoutPinnedTag } from '../utils/pinnedTag';
+import type { AqlQuery } from '../utils/listItemQuery';
+import {
+  evaluateAql,
+  getShowColumnOrder,
+  sortItemsByOrderBy,
+} from '../utils/listItemQuery';
 
 export interface ListMoveTarget {
   id: string;
@@ -46,6 +52,14 @@ export interface ListPanelData {
   tags?: string[];
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
+  savedQueries?: Array<{
+    id: string;
+    name: string;
+    query: string;
+    isDefault?: boolean;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
   items?: ListPanelItem[];
 }
 
@@ -99,6 +113,8 @@ export interface ListPanelControllerOptions {
     focusMarkerExpanded?: boolean,
   ) => void;
   updateFocusMarkerExpanded: (listId: string, focusMarkerExpanded: boolean) => void;
+  getAqlMode?: () => boolean;
+  getAqlQuery?: () => AqlQuery | null;
   setRightControls: (elements: HTMLElement[]) => void;
 }
 
@@ -158,6 +174,7 @@ const getListClipboard = (): ListClipboardPayload | null => {
 };
 
 type ListColumnState = {
+  showTitleColumn: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
   showTagsColumn: boolean;
@@ -180,6 +197,8 @@ export class ListPanelController {
   private currentTimelineField: string | null = null;
   private currentFocusMarkerItemId: string | null = null;
   private currentFocusMarkerExpanded: boolean = false;
+  private currentAqlQuery: AqlQuery | null = null;
+  private currentAqlMode: boolean = false;
   private currentListId: string | null = null;
   private currentData: ListPanelData | null = null;
   private currentSortedItems: ListPanelItem[] = [];
@@ -289,6 +308,9 @@ export class ListPanelController {
   }
 
   applySearch(query: string): void {
+    if (this.currentAqlMode) {
+      return;
+    }
     const table = this.currentTable;
     if (!table) {
       return;
@@ -331,6 +353,7 @@ export class ListPanelController {
     const nextColumnState = this.buildColumnState(
       this.options.getListColumnPreferences(this.currentListId),
       nextSortedItems,
+      getShowColumnOrder(this.currentAqlQuery?.show ?? null),
     );
     if (!this.columnStateMatches(nextColumnState)) {
       this.rerenderCurrent();
@@ -346,6 +369,11 @@ export class ListPanelController {
 
     const updated = this.tableController.updateRow(item, this.currentSortedItems);
     if (!updated) {
+      this.rerenderCurrent();
+      return true;
+    }
+
+    if (this.currentAqlMode) {
       this.rerenderCurrent();
       return true;
     }
@@ -631,13 +659,18 @@ export class ListPanelController {
       this.currentFocusMarkerItemId = this.options.getFocusMarkerItemId(listId);
       this.currentFocusMarkerExpanded = this.options.getFocusMarkerExpanded(listId);
     }
+    this.currentAqlMode = this.options.getAqlMode?.() ?? false;
+    this.currentAqlQuery = this.currentAqlMode ? this.options.getAqlQuery?.() ?? null : null;
 
     // Get custom fields early for the header
     const customFields = Array.isArray(data.customFields) ? data.customFields : [];
 
     // Check if sorted by position (default or explicit)
-    const isSortedByPosition =
-      !this.currentSortState || this.currentSortState.column === 'position';
+    const aqlPrimarySort = this.currentAqlQuery?.orderBy?.[0] ?? null;
+    const effectiveSortState = aqlPrimarySort
+      ? { column: aqlPrimarySort.field.key, direction: aqlPrimarySort.direction }
+      : this.currentSortState;
+    const isSortedByPosition = !effectiveSortState || effectiveSortState.column === 'position';
 
     const { header, controls } = renderListPanelHeader({
       listId,
@@ -734,16 +767,26 @@ export class ListPanelController {
 
     this.currentCustomFields = customFields;
 
-    // Sort items using the current sort state
-    const sortedItems = sortItems(allItems, this.currentSortState, this.currentCustomFields);
+    let filteredItems = allItems;
+    if (this.currentAqlQuery?.where) {
+      filteredItems = allItems.filter((item) => evaluateAql(this.currentAqlQuery!, item));
+    }
+
+    const aqlOrderBy = this.currentAqlQuery?.orderBy ?? [];
+    const sortedItems =
+      aqlOrderBy.length > 0
+        ? sortItemsByOrderBy(filteredItems, aqlOrderBy, this.currentCustomFields)
+        : sortItems(filteredItems, this.currentSortState, this.currentCustomFields);
 
     const tagState = this.computeTagState(data, sortedItems);
     this.currentAvailableTags = tagState.availableTags;
     this.currentDefaultTags = tagState.defaultTags;
 
     const listColumnPrefs = this.options.getListColumnPreferences(listId);
-    const columnState = this.buildColumnState(listColumnPrefs, sortedItems);
+    const showOverride = getShowColumnOrder(this.currentAqlQuery?.show ?? null);
+    const columnState = this.buildColumnState(listColumnPrefs, sortedItems, showOverride);
     const {
+      showTitleColumn,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -875,6 +918,8 @@ export class ListPanelController {
     const { table, tbody, colCount, hasAnyItems } = this.tableController.renderTable({
       listId,
       sortedItems,
+      columnOrder: showOverride,
+      showTitleColumn,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -888,7 +933,7 @@ export class ListPanelController {
       getColumnVisibility,
       onColumnVisibilityChange: handleColumnVisibilityChange,
       onColumnResize: handleColumnResize,
-      sortState: this.currentSortState,
+      sortState: effectiveSortState,
       onSortChange: handleSortChange,
       timelineField: this.currentTimelineField,
       focusMarkerItemId: focusViewActive ? validatedFocusMarkerItemId : null,
@@ -964,8 +1009,10 @@ export class ListPanelController {
   private buildColumnState(
     listColumnPrefs: ListColumnPreferences | null,
     items: ListPanelItem[],
+    columnOrderOverride: string[] | null,
   ): ListColumnState {
     const isCompactView = !this.listViewShowAllColumns;
+    const showOverrideSet = columnOrderOverride ? new Set(columnOrderOverride) : null;
 
     const resolveVisibilityMode = (
       columnKey: string,
@@ -980,6 +1027,9 @@ export class ListPanelController {
     };
 
     const getColumnVisibility = (columnKey: string): ColumnVisibility => {
+      if (showOverrideSet) {
+        return showOverrideSet.has(columnKey) ? 'always-show' : 'always-hide';
+      }
       if (columnKey === 'title') {
         return 'always-show';
       }
@@ -1008,21 +1058,45 @@ export class ListPanelController {
       }
     };
 
-    const showUrlColumn = isColumnVisible('url', 'hide-in-compact', presence.hasUrl);
-    const showNotesColumn = isColumnVisible('notes', 'show-with-data', presence.hasNotes);
-    const showTagsColumn = isColumnVisible('tags', 'show-with-data', presence.hasTags);
-    const showAddedColumn = isColumnVisible('added', 'hide-in-compact', presence.hasAdded);
-    const showUpdatedColumn = isColumnVisible('updated', 'hide-in-compact', presence.hasUpdated);
-    const showTouchedColumn = isColumnVisible('touched', 'hide-in-compact', presence.hasTouched);
+    const showTitleColumn = showOverrideSet ? showOverrideSet.has('title') : true;
+    const showUrlColumn = showOverrideSet
+      ? showOverrideSet.has('url')
+      : isColumnVisible('url', 'hide-in-compact', presence.hasUrl);
+    const showNotesColumn = showOverrideSet
+      ? showOverrideSet.has('notes')
+      : isColumnVisible('notes', 'show-with-data', presence.hasNotes);
+    const showTagsColumn = showOverrideSet
+      ? showOverrideSet.has('tags')
+      : isColumnVisible('tags', 'show-with-data', presence.hasTags);
+    const showAddedColumn = showOverrideSet
+      ? showOverrideSet.has('added')
+      : isColumnVisible('added', 'hide-in-compact', presence.hasAdded);
+    const showUpdatedColumn = showOverrideSet
+      ? showOverrideSet.has('updated')
+      : isColumnVisible('updated', 'hide-in-compact', presence.hasUpdated);
+    const showTouchedColumn = showOverrideSet
+      ? showOverrideSet.has('touched')
+      : isColumnVisible('touched', 'hide-in-compact', presence.hasTouched);
 
-    const visibleCustomFields = getVisibleCustomFields({
-      customFields: this.currentCustomFields,
-      items,
-      showAllColumns: this.listViewShowAllColumns,
-      getColumnVisibility,
-    });
+    let visibleCustomFields: ListCustomFieldDefinition[] = [];
+    if (showOverrideSet && columnOrderOverride) {
+      for (const key of columnOrderOverride) {
+        const field = this.currentCustomFields.find((entry) => entry.key === key);
+        if (field) {
+          visibleCustomFields.push(field);
+        }
+      }
+    } else {
+      visibleCustomFields = getVisibleCustomFields({
+        customFields: this.currentCustomFields,
+        items,
+        showAllColumns: this.listViewShowAllColumns,
+        getColumnVisibility,
+      });
+    }
 
     return {
+      showTitleColumn,
       showUrlColumn,
       showNotesColumn,
       showTagsColumn,
@@ -1040,6 +1114,7 @@ export class ListPanelController {
       return false;
     }
     if (
+      current.showTitleColumn !== next.showTitleColumn ||
       current.showUrlColumn !== next.showUrlColumn ||
       current.showNotesColumn !== next.showNotesColumn ||
       current.showTagsColumn !== next.showTagsColumn ||

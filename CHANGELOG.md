@@ -5,12 +5,12 @@
 ### Breaking Changes
 
 ### Added
-- Added skill metadata (author/version) and manifest control for skill auto export. ([#36](https://github.com/kcosr/assistant/pull/36))
+- Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
 
 ### Changed
+- Changed list view preferences to persist per-panel instead of `/preferences`. ([#37](https://github.com/kcosr/assistant/pull/37))
 
 ### Fixed
-- Fixed plugin CLI `--version` to report the core package version. ([#35](https://github.com/kcosr/assistant/pull/35))
 
 ### Removed
 
