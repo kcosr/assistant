@@ -6,12 +6,12 @@
 
 ### Added
 - Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
-- Added list item editor review mode with report-style layout, markdown previews, inline field edits, and a default mode setting. ([#000](<pr-url>))
+- Added list item editor review mode with report-style layout, markdown previews, inline field edits, and a default mode setting. ([#38](https://github.com/kcosr/assistant/pull/38))
 
 ### Changed
 - Changed list view preferences to persist per-panel instead of `/preferences`. ([#37](https://github.com/kcosr/assistant/pull/37))
-- Changed list item single-click setting to a dropdown (none/select/open edit modal/open review). ([#000](<pr-url>))
-- Changed list item review mode inline edits to replace previews with inline editors and allow canceling text edits; renamed Quick edit to Edit. ([#000](<pr-url>))
+- Changed list item single-click setting to a dropdown (none/select/open edit modal/open review). ([#38](https://github.com/kcosr/assistant/pull/38))
+- Changed list item review mode inline edits to replace previews with inline editors and allow canceling text edits; renamed Quick edit to Edit. ([#38](https://github.com/kcosr/assistant/pull/38))
 
 ### Fixed
 
