@@ -19,14 +19,14 @@ Add a “review” mode to the list item edit dialog that presents item fields a
 - Markdown support exists for custom fields (textarea) and notes rendering elsewhere, but the dialog is purely input-oriented.
 
 ## Proposal
-- Add a two-mode toggle to the list item editor dialog: **Quick edit** (existing form) and **Review** (new report-style layout).
+- Add a two-mode toggle to the list item editor dialog: **Edit** (existing form) and **Review** (new report-style layout).
 - The review layout is full-page (larger width + height), displaying:
   - Title, URL (as link), tags, pinned state
   - Notes rendered as markdown
   - Custom fields rendered as labeled values, with markdown previews where `markdown: true`
   - Optional metadata block (added/updated/touched/completed) if available on the item
 - Provide an **Edit** button next to each field in review mode that toggles that field into an inline editor (input/textarea/select) within the review layout.
-- Add a settings preference for the default edit mode (Quick edit vs Review), persisted to localStorage. Do not auto-remember the last-selected mode.
+- Add a settings preference for the default edit mode (Edit vs Review), persisted to localStorage. Do not auto-remember the last-selected mode.
 
 ## UX flow
 1. User opens Add/Edit Item.

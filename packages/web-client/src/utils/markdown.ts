@@ -344,7 +344,7 @@ export function renderMarkdown(text: string): string {
   const rawHtml = marked.parse(normalized, { async: false, breaks: true }) as string;
 
   // Sanitize the HTML to prevent XSS
-  const sanitized = DOMPurify.sanitize(rawHtml, purifyConfig);
+  const sanitized = DOMPurify.sanitize(rawHtml, purifyConfig) as string;
 
   return sanitized;
 }

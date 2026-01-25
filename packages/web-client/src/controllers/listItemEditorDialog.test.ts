@@ -6,6 +6,7 @@ import type { DialogManager } from './dialogManager';
 describe('ListItemEditorDialog tag chips', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+    window.localStorage.clear();
   });
 
   it('removes only the clicked tag chip', () => {
@@ -31,23 +32,24 @@ describe('ListItemEditorDialog tag chips', () => {
     entry.value = 'newtag';
     entry.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
 
-    const chips = Array.from(document.body.querySelectorAll<HTMLElement>('.tag-chip')).map((el) =>
-      (el.textContent ?? '').replace('×', '').trim(),
-    );
+    const chipsContainer = document.body.querySelector('.tag-chips-input-chips');
+    const chips = Array.from(
+      chipsContainer?.querySelectorAll<HTMLElement>('.tag-chip') ?? [],
+    ).map((el) => (el.textContent ?? '').replace('×', '').trim());
     expect(chips.sort()).toEqual(['alpha', 'beta', 'newtag'].sort());
 
-    const newChip = Array.from(document.body.querySelectorAll<HTMLElement>('.tag-chip')).find(
-      (el) => (el.textContent ?? '').includes('newtag'),
-    );
+    const newChip = Array.from(
+      chipsContainer?.querySelectorAll<HTMLElement>('.tag-chip') ?? [],
+    ).find((el) => (el.textContent ?? '').includes('newtag'));
     expect(newChip).not.toBeUndefined();
 
     const remove = newChip?.querySelector<HTMLButtonElement>('.tag-chip-remove');
     expect(remove).not.toBeNull();
     remove?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    const chipsAfter = Array.from(document.body.querySelectorAll<HTMLElement>('.tag-chip')).map(
-      (el) => (el.textContent ?? '').replace('×', '').trim(),
-    );
+    const chipsAfter = Array.from(
+      chipsContainer?.querySelectorAll<HTMLElement>('.tag-chip') ?? [],
+    ).map((el) => (el.textContent ?? '').replace('×', '').trim());
     expect(chipsAfter.sort()).toEqual(['alpha', 'beta'].sort());
   });
 
@@ -73,9 +75,10 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(tagsLabel).not.toBeUndefined();
     tagsLabel?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-    const chipsAfter = Array.from(document.body.querySelectorAll<HTMLElement>('.tag-chip')).map(
-      (el) => (el.textContent ?? '').replace('×', '').trim(),
-    );
+    const chipsContainer = document.body.querySelector('.tag-chips-input-chips');
+    const chipsAfter = Array.from(
+      chipsContainer?.querySelectorAll<HTMLElement>('.tag-chip') ?? [],
+    ).map((el) => (el.textContent ?? '').replace('×', '').trim());
     expect(chipsAfter.sort()).toEqual(['alpha', 'beta'].sort());
   });
 
@@ -214,6 +217,58 @@ describe('ListItemEditorDialog tag chips', () => {
     });
   });
 
+  it('cancels review-mode edits for text areas', () => {
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open(
+      'edit',
+      'list1',
+      { id: 'item1', title: 'Sample', notes: 'Original notes', tags: [] },
+      { initialMode: 'review' },
+    );
+
+    const notesField = Array.from(
+      document.querySelectorAll<HTMLElement>('.list-item-review-field'),
+    ).find(
+      (field) =>
+        field
+          .querySelector('.list-item-review-field-label')
+          ?.textContent?.trim() === 'Notes',
+    );
+    expect(notesField).not.toBeUndefined();
+    if (!notesField) return;
+
+    const editButton = notesField.querySelector<HTMLButtonElement>('.list-item-review-edit');
+    expect(editButton).not.toBeNull();
+    editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    const textarea = notesField.querySelector<HTMLTextAreaElement>(
+      'textarea.list-item-form-textarea',
+    );
+    expect(textarea).not.toBeNull();
+    if (!textarea) return;
+    textarea.value = 'Changed notes';
+
+    const cancelButton = notesField.querySelector<HTMLButtonElement>('.list-item-review-cancel');
+    expect(cancelButton).not.toBeNull();
+    cancelButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(textarea.value).toBe('Original notes');
+    const display = notesField.querySelector<HTMLElement>('.list-item-review-value');
+    expect(display?.textContent ?? '').toContain('Original notes');
+  });
+
   it('sends null for cleared select/text fields to remove previous values', async () => {
     const updateListItem = vi.fn(async () => true);
 
@@ -331,5 +386,94 @@ describe('ListItemEditorDialog tag chips', () => {
     expect(args).toBeDefined();
     // Unchecked checkbox should be null to signal removal
     expect(args?.customFields?.['urgent']).toBeNull();
+  });
+
+  it('defaults to review mode when preference stored', () => {
+    window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'review');
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('edit', 'list1', { id: 'item1', title: 'Review item', tags: [] });
+
+    const dialogEl = document.querySelector<HTMLElement>('.list-item-dialog');
+    expect(dialogEl?.classList.contains('list-item-dialog--review')).toBe(true);
+    const reviewContainer = document.querySelector<HTMLElement>('.list-item-review');
+    const quickContainer = document.querySelector<HTMLElement>('.list-item-form-fields');
+    expect(reviewContainer?.hidden).toBe(false);
+    expect(quickContainer?.hidden).toBe(true);
+  });
+
+  it('honors initialMode override when opening', () => {
+    window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'quick');
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('edit', 'list1', { id: 'item1', title: 'Review item', tags: [] }, {
+      initialMode: 'review',
+    });
+
+    const dialogEl = document.querySelector<HTMLElement>('.list-item-dialog');
+    expect(dialogEl?.classList.contains('list-item-dialog--review')).toBe(true);
+    const reviewContainer = document.querySelector<HTMLElement>('.list-item-review');
+    const quickContainer = document.querySelector<HTMLElement>('.list-item-form-fields');
+    expect(reviewContainer?.hidden).toBe(false);
+    expect(quickContainer?.hidden).toBe(true);
+  });
+
+  it('toggles inline editing in review mode', () => {
+    window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'review');
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    dialog.open('edit', 'list1', { id: 'item1', title: 'Review item', tags: [] });
+
+    const editNotesButton = document.querySelector<HTMLButtonElement>(
+      '.list-item-review-edit[aria-label="Edit Notes"]',
+    );
+    expect(editNotesButton).not.toBeNull();
+    editNotesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    const editingField = editNotesButton?.closest('.list-item-review-field');
+    expect(editingField?.classList.contains('list-item-review-field--editing')).toBe(true);
+    const notesTextarea = document.querySelector<HTMLTextAreaElement>(
+      '.list-item-review-editor textarea.list-item-form-textarea',
+    );
+    expect(notesTextarea).not.toBeNull();
+
+    editNotesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(editingField?.classList.contains('list-item-review-field--editing')).toBe(false);
   });
 });

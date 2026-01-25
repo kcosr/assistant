@@ -2,6 +2,7 @@ import type { DialogManager } from './dialogManager';
 import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
+import { applyMarkdownToElement } from '../utils/markdown';
 import {
   applyPinnedTag,
   hasPinnedTag,
@@ -29,7 +30,25 @@ export interface ListItemEditorDialogOpenOptions {
   initialCustomFieldValues?: Record<string, unknown>;
   /** Default value for "Insert at top" checkbox (only shown in add mode) */
   insertAtTop?: boolean;
+  /** Override initial editor mode for this dialog */
+  initialMode?: ListItemEditorMode;
 }
+
+type ListItemEditorMode = 'quick' | 'review';
+
+const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
+
+const loadDefaultEditMode = (): ListItemEditorMode => {
+  try {
+    const stored = window.localStorage?.getItem(LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY);
+    if (stored === 'review') {
+      return 'review';
+    }
+  } catch {
+    // Ignore localStorage errors.
+  }
+  return 'quick';
+};
 
 export class ListItemEditorDialog {
   constructor(private readonly options: ListItemEditorDialogOptions) {}
@@ -40,12 +59,18 @@ export class ListItemEditorDialog {
   ): {
     container: HTMLElement | null;
     getValues: () => Record<string, unknown>;
+    fields: Array<{
+      definition: ListCustomFieldDefinition;
+      input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      row: HTMLElement;
+    }>;
   } {
     const normalized = Array.isArray(definitions) ? definitions : [];
     if (normalized.length === 0) {
       return {
         container: null,
         getValues: () => ({}),
+        fields: [],
       };
     }
 
@@ -64,6 +89,7 @@ export class ListItemEditorDialog {
     const fieldInputs: Array<{
       definition: ListCustomFieldDefinition;
       input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      row: HTMLElement;
     }> = [];
 
     for (const def of normalized) {
@@ -185,7 +211,7 @@ export class ListItemEditorDialog {
 
       container.appendChild(row);
 
-      fieldInputs.push({ definition: def, input });
+      fieldInputs.push({ definition: def, input, row });
     }
 
     const getValues = (): Record<string, unknown> => {
@@ -236,6 +262,7 @@ export class ListItemEditorDialog {
     return {
       container: section,
       getValues,
+      fields: fieldInputs,
     };
   }
 
@@ -258,43 +285,87 @@ export class ListItemEditorDialog {
     titleEl.textContent = mode === 'add' ? 'Add Item' : 'Edit Item';
     dialog.appendChild(titleEl);
 
+    let editMode: ListItemEditorMode = openOptions?.initialMode ?? loadDefaultEditMode();
+
+    const modeToggle = document.createElement('div');
+    modeToggle.className = 'list-item-mode-toggle';
+
+    const modeToggleLabel = document.createElement('span');
+    modeToggleLabel.className = 'list-item-mode-toggle-label';
+    modeToggleLabel.textContent = 'Mode';
+    modeToggle.appendChild(modeToggleLabel);
+
+    const modeToggleButtons = document.createElement('div');
+    modeToggleButtons.className = 'list-item-mode-toggle-buttons';
+
+    const quickModeButton = document.createElement('button');
+    quickModeButton.type = 'button';
+    quickModeButton.className = 'list-item-mode-toggle-button';
+    quickModeButton.textContent = 'Edit';
+
+    const reviewModeButton = document.createElement('button');
+    reviewModeButton.type = 'button';
+    reviewModeButton.className = 'list-item-mode-toggle-button';
+    reviewModeButton.textContent = 'Review';
+
+    modeToggleButtons.appendChild(quickModeButton);
+    modeToggleButtons.appendChild(reviewModeButton);
+    modeToggle.appendChild(modeToggleButtons);
+    dialog.appendChild(modeToggle);
+
     const form = document.createElement('form');
     form.className = 'list-item-form';
 
+    const quickEditContainer = document.createElement('div');
+    quickEditContainer.className = 'list-item-form-fields';
+
+    const reviewContainer = document.createElement('div');
+    reviewContainer.className = 'list-item-review';
+
     const titleLabel = document.createElement('label');
     titleLabel.className = 'list-item-form-label';
-    titleLabel.textContent = 'Title';
+    const titleLabelText = document.createElement('span');
+    titleLabelText.className = 'list-item-form-label-text';
+    titleLabelText.textContent = 'Title';
     const titleInput = document.createElement('input');
     titleInput.type = 'text';
     titleInput.className = 'list-item-form-input';
     titleInput.value = item?.title ?? '';
     titleInput.required = true;
+    titleLabel.appendChild(titleLabelText);
     titleLabel.appendChild(titleInput);
-    form.appendChild(titleLabel);
+    quickEditContainer.appendChild(titleLabel);
 
     const urlLabel = document.createElement('label');
     urlLabel.className = 'list-item-form-label';
-    urlLabel.textContent = 'URL';
+    const urlLabelText = document.createElement('span');
+    urlLabelText.className = 'list-item-form-label-text';
+    urlLabelText.textContent = 'URL';
     const urlInput = document.createElement('input');
     urlInput.type = 'url';
     urlInput.className = 'list-item-form-input';
     urlInput.value = item?.url ?? '';
+    urlLabel.appendChild(urlLabelText);
     urlLabel.appendChild(urlInput);
-    form.appendChild(urlLabel);
+    quickEditContainer.appendChild(urlLabel);
 
     const notesLabel = document.createElement('label');
     notesLabel.className = 'list-item-form-label';
-    notesLabel.textContent = 'Notes';
+    const notesLabelText = document.createElement('span');
+    notesLabelText.className = 'list-item-form-label-text';
+    notesLabelText.textContent = 'Notes';
     const notesInput = document.createElement('textarea');
     notesInput.className = 'list-item-form-textarea';
     notesInput.value = item?.notes ?? '';
+    notesLabel.appendChild(notesLabelText);
     notesLabel.appendChild(notesInput);
-    form.appendChild(notesLabel);
+    quickEditContainer.appendChild(notesLabel);
 
     const tagsRow = document.createElement('div');
     tagsRow.className = 'list-item-form-label';
 
     const tagsLabel = document.createElement('label');
+    tagsLabel.className = 'list-item-form-label-text list-item-tags-label';
     tagsLabel.textContent = 'Tags';
 
     const tagInputWrap = document.createElement('div');
@@ -319,7 +390,7 @@ export class ListItemEditorDialog {
     tagInputWrap.appendChild(tagSuggestions);
     tagsRow.appendChild(tagsLabel);
     tagsRow.appendChild(tagInputWrap);
-    form.appendChild(tagsRow);
+    quickEditContainer.appendChild(tagsRow);
 
     const initialTagsSource =
       mode === 'edit'
@@ -343,11 +414,12 @@ export class ListItemEditorDialog {
 
     const pinnedLabel = document.createElement('label');
     pinnedLabel.htmlFor = pinnedCheckbox.id;
+    pinnedLabel.className = 'list-item-form-checkbox-label';
     pinnedLabel.textContent = 'Pinned';
 
     pinnedRow.appendChild(pinnedCheckbox);
     pinnedRow.appendChild(pinnedLabel);
-    form.appendChild(pinnedRow);
+    quickEditContainer.appendChild(pinnedRow);
 
     // Insert at top checkbox (only shown in add mode)
     let insertAtTopCheckbox: HTMLInputElement | null = null;
@@ -363,11 +435,12 @@ export class ListItemEditorDialog {
 
       const insertAtTopLabel = document.createElement('label');
       insertAtTopLabel.htmlFor = insertAtTopCheckbox.id;
+      insertAtTopLabel.className = 'list-item-form-checkbox-label';
       insertAtTopLabel.textContent = 'Insert at top';
 
       insertAtTopRow.appendChild(insertAtTopCheckbox);
       insertAtTopRow.appendChild(insertAtTopLabel);
-      form.appendChild(insertAtTopRow);
+      quickEditContainer.appendChild(insertAtTopRow);
     }
 
     const customFieldsSection = this.createCustomFieldsSection(
@@ -375,7 +448,7 @@ export class ListItemEditorDialog {
       openOptions?.initialCustomFieldValues ?? {},
     );
     if (customFieldsSection.container) {
-      form.appendChild(customFieldsSection.container);
+      quickEditContainer.appendChild(customFieldsSection.container);
     }
 
     const canonicalTagByLower = new Map<string, string>();
@@ -391,6 +464,8 @@ export class ListItemEditorDialog {
 
     const selectedTagsLower = new Set<string>();
     const selectedTags: string[] = [];
+    let renderReviewTags = () => {};
+    let renderReviewDisplays = () => {};
 
     const removeTagByLower = (lower: string): void => {
       if (!selectedTagsLower.has(lower)) {
@@ -427,6 +502,7 @@ export class ListItemEditorDialog {
         chip.appendChild(removeBtn);
         tagChipsContainer.insertBefore(chip, tagEntryInput);
       }
+      renderReviewTags();
     };
 
     const addTag = (raw: string): void => {
@@ -554,6 +630,475 @@ export class ListItemEditorDialog {
       }
     }
 
+    type ReviewFieldState = {
+      field: HTMLElement;
+      editButton: HTMLButtonElement;
+      editorRow: HTMLElement;
+      editorSlot: HTMLElement;
+      placeholder: HTMLElement;
+      display: HTMLElement;
+      renderValue: () => void;
+      focusTarget?: HTMLElement;
+      replaceDisplay?: boolean;
+      cancelButton?: HTMLButtonElement;
+      snapshotValue?: string;
+    };
+
+    const reviewFields: ReviewFieldState[] = [];
+
+    const createEditorPlaceholder = (editorRow: HTMLElement): HTMLElement => {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'list-item-review-placeholder';
+      placeholder.hidden = true;
+      const parent = editorRow.parentElement;
+      if (parent) {
+        parent.insertBefore(placeholder, editorRow);
+      }
+      return placeholder;
+    };
+
+    const restoreEditorRow = (field: ReviewFieldState): void => {
+      const parent = field.placeholder.parentElement;
+      if (parent) {
+        parent.insertBefore(field.editorRow, field.placeholder);
+      }
+      if (field.replaceDisplay) {
+        field.display.hidden = false;
+      }
+      if (field.cancelButton) {
+        field.cancelButton.hidden = true;
+      }
+      delete field.snapshotValue;
+      field.editorRow.classList.remove('list-item-review-inline-editor');
+      field.field.classList.remove('list-item-review-field--editing');
+      field.editButton.textContent = 'Edit';
+    };
+
+    const toggleReviewField = (field: ReviewFieldState): void => {
+      const isEditing = field.field.classList.contains('list-item-review-field--editing');
+      if (isEditing) {
+        restoreEditorRow(field);
+        field.renderValue();
+        return;
+      }
+      const displayHeight = field.display.offsetHeight;
+      field.editorRow.classList.add('list-item-review-inline-editor');
+      field.editorSlot.appendChild(field.editorRow);
+      if (field.replaceDisplay) {
+        field.display.hidden = true;
+      }
+      if (field.cancelButton) {
+        field.cancelButton.hidden = false;
+      }
+      if (
+        field.replaceDisplay &&
+        (field.focusTarget instanceof HTMLInputElement ||
+          field.focusTarget instanceof HTMLTextAreaElement)
+      ) {
+        field.snapshotValue = field.focusTarget.value;
+        if (field.focusTarget instanceof HTMLTextAreaElement && displayHeight > 0) {
+          const targetHeight = Math.max(displayHeight, field.focusTarget.scrollHeight, 60);
+          field.focusTarget.style.minHeight = `${targetHeight}px`;
+        }
+      }
+      field.field.classList.add('list-item-review-field--editing');
+      field.editButton.textContent = 'Done';
+      field.focusTarget?.focus();
+    };
+
+    const closeAllReviewEditors = (): void => {
+      for (const field of reviewFields) {
+        if (field.field.classList.contains('list-item-review-field--editing')) {
+          restoreEditorRow(field);
+        }
+      }
+    };
+
+    const setReviewValue = (container: HTMLElement, value: string): void => {
+      const trimmed = value.trim();
+      container.classList.toggle('list-item-review-empty', trimmed.length === 0);
+      container.textContent = trimmed.length === 0 ? 'Not set' : trimmed;
+    };
+
+    const setReviewMarkdown = (container: HTMLElement, value: string): void => {
+      const trimmed = value.trim();
+      container.innerHTML = '';
+      if (!trimmed) {
+        container.classList.add('list-item-review-empty');
+        container.textContent = 'Not set';
+        return;
+      }
+      container.classList.remove('list-item-review-empty');
+      const body = document.createElement('div');
+      body.className = 'list-item-review-markdown';
+      applyMarkdownToElement(body, trimmed);
+      container.appendChild(body);
+    };
+
+    const createReviewField = (
+      label: string,
+      editorRow: HTMLElement,
+      renderValue: (container: HTMLElement) => void,
+      section: HTMLElement,
+      focusTarget?: HTMLElement,
+      replaceDisplay?: boolean,
+    ): ReviewFieldState => {
+      const field = document.createElement('div');
+      field.className = 'list-item-review-field';
+
+      const header = document.createElement('div');
+      header.className = 'list-item-review-field-header';
+
+      const labelEl = document.createElement('div');
+      labelEl.className = 'list-item-review-field-label';
+      labelEl.textContent = label;
+
+      const actions = document.createElement('div');
+      actions.className = 'list-item-review-field-actions';
+
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.className = 'list-item-review-edit';
+      editButton.textContent = 'Edit';
+      editButton.setAttribute('aria-label', `Edit ${label}`);
+      actions.appendChild(editButton);
+
+      let cancelButton: HTMLButtonElement | undefined;
+      if (replaceDisplay) {
+        cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'list-item-review-cancel';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.hidden = true;
+        cancelButton.setAttribute('aria-label', `Cancel ${label} edits`);
+        actions.appendChild(cancelButton);
+      }
+
+      header.appendChild(labelEl);
+      header.appendChild(actions);
+
+      const display = document.createElement('div');
+      display.className = 'list-item-review-value';
+
+      const editorSlot = document.createElement('div');
+      editorSlot.className = 'list-item-review-editor';
+
+      field.appendChild(header);
+      field.appendChild(display);
+      field.appendChild(editorSlot);
+      section.appendChild(field);
+
+      const placeholder = createEditorPlaceholder(editorRow);
+      const fieldState: ReviewFieldState = {
+        field,
+        editButton,
+        editorRow,
+        editorSlot,
+        placeholder,
+        display,
+        renderValue: () => renderValue(display),
+      };
+      if (focusTarget) {
+        fieldState.focusTarget = focusTarget;
+      }
+      if (replaceDisplay) {
+        fieldState.replaceDisplay = replaceDisplay;
+      }
+      if (cancelButton) {
+        fieldState.cancelButton = cancelButton;
+        cancelButton.addEventListener('click', (event) => {
+          event.preventDefault();
+          if (
+            fieldState.replaceDisplay &&
+            (fieldState.focusTarget instanceof HTMLInputElement ||
+              fieldState.focusTarget instanceof HTMLTextAreaElement)
+          ) {
+            fieldState.focusTarget.value = fieldState.snapshotValue ?? '';
+          }
+          restoreEditorRow(fieldState);
+          fieldState.renderValue();
+        });
+      }
+      editButton.addEventListener('click', () => {
+        toggleReviewField(fieldState);
+      });
+      reviewFields.push(fieldState);
+      return fieldState;
+    };
+
+    const reviewHeader = document.createElement('div');
+    reviewHeader.className = 'list-item-review-section list-item-review-header';
+
+    const reviewMain = document.createElement('div');
+    reviewMain.className = 'list-item-review-section';
+
+    const reviewCustomFields = document.createElement('div');
+    reviewCustomFields.className = 'list-item-review-section list-item-review-custom-fields';
+
+    reviewContainer.appendChild(reviewHeader);
+    reviewContainer.appendChild(reviewMain);
+
+    createReviewField(
+      'Title',
+      titleLabel,
+      (container) => {
+        setReviewValue(container, titleInput.value);
+      },
+      reviewHeader,
+      titleInput,
+      true,
+    );
+
+    createReviewField(
+      'URL',
+      urlLabel,
+      (container) => {
+        const raw = urlInput.value.trim();
+        container.innerHTML = '';
+        if (!raw) {
+          container.classList.add('list-item-review-empty');
+          container.textContent = 'Not set';
+          return;
+        }
+        container.classList.remove('list-item-review-empty');
+        const link = document.createElement('a');
+        link.href = raw;
+        link.textContent = raw;
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        container.appendChild(link);
+      },
+      reviewHeader,
+      urlInput,
+      true,
+    );
+
+    const tagsField = createReviewField(
+      'Tags',
+      tagInputWrap,
+      (container) => {
+        container.innerHTML = '';
+        if (selectedTags.length === 0) {
+          container.classList.add('list-item-review-empty');
+          container.textContent = 'Not set';
+          return;
+        }
+        container.classList.remove('list-item-review-empty');
+        const tagsWrap = document.createElement('div');
+        tagsWrap.className = 'list-item-review-tags';
+        for (const tag of selectedTags) {
+          const chip = document.createElement('span');
+          chip.className = 'tag-chip';
+          chip.textContent = tag;
+          chip.dataset['tag'] = normalizeTag(tag);
+          applyTagColorToElement(chip, tag);
+          tagsWrap.appendChild(chip);
+        }
+        container.appendChild(tagsWrap);
+      },
+      reviewHeader,
+      tagEntryInput,
+    );
+
+    createReviewField(
+      'Pinned',
+      pinnedRow,
+      (container) => {
+        container.classList.remove('list-item-review-empty');
+        container.textContent = pinnedCheckbox.checked ? 'Pinned' : 'Not pinned';
+      },
+      reviewHeader,
+      pinnedCheckbox,
+    );
+
+    if (insertAtTopCheckbox) {
+      createReviewField(
+        'Insert at top',
+        insertAtTopCheckbox.parentElement ?? insertAtTopCheckbox,
+        (container) => {
+          container.classList.remove('list-item-review-empty');
+          container.textContent = insertAtTopCheckbox.checked ? 'Yes' : 'No';
+        },
+        reviewHeader,
+        insertAtTopCheckbox,
+      );
+    }
+
+    createReviewField(
+      'Notes',
+      notesLabel,
+      (container) => {
+        setReviewMarkdown(container, notesInput.value);
+      },
+      reviewMain,
+      notesInput,
+      true,
+    );
+
+    if (customFieldsSection.fields.length > 0) {
+      const customTitle = document.createElement('h4');
+      customTitle.className = 'list-item-review-section-title';
+      customTitle.textContent = 'Custom fields';
+      reviewCustomFields.appendChild(customTitle);
+
+      const customFieldsGrid = document.createElement('div');
+      customFieldsGrid.className = 'list-item-review-custom-fields-grid';
+      reviewCustomFields.appendChild(customFieldsGrid);
+      reviewContainer.appendChild(reviewCustomFields);
+
+      for (const field of customFieldsSection.fields) {
+        const { definition, input, row } = field;
+        const label = definition.label;
+        const replaceDisplay =
+          input instanceof HTMLTextAreaElement ||
+          (input instanceof HTMLInputElement && definition.type === 'text') ||
+          definition.markdown === true;
+        createReviewField(
+          label,
+          row,
+          (container) => {
+            const value = (input instanceof HTMLInputElement ||
+            input instanceof HTMLTextAreaElement ||
+            input instanceof HTMLSelectElement)
+              ? input.value
+              : '';
+            if (definition.type === 'checkbox') {
+              const checked =
+                input instanceof HTMLInputElement ? input.checked === true : false;
+              container.classList.remove('list-item-review-empty');
+              container.textContent = checked ? 'Yes' : 'Not set';
+              return;
+            }
+            if (definition.markdown === true && definition.type === 'text') {
+              setReviewMarkdown(container, value);
+              return;
+            }
+            setReviewValue(container, value);
+          },
+          customFieldsGrid,
+          input,
+          replaceDisplay,
+        );
+      }
+    }
+
+    const metadataEntries: Array<{ label: string; value: string }> = [];
+    const addMetadata = (label: string, raw?: string | null) => {
+      if (!raw) return;
+      const parsed = new Date(raw);
+      const formatted = Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString();
+      metadataEntries.push({ label, value: formatted });
+    };
+    addMetadata('Added', item?.addedAt ?? null);
+    addMetadata('Updated', item?.updatedAt ?? null);
+    addMetadata('Touched', item?.touchedAt ?? null);
+    if (item?.completedAt) {
+      addMetadata('Completed', item.completedAt);
+    } else if (item?.completed) {
+      metadataEntries.push({ label: 'Completed', value: 'Yes' });
+    }
+
+    if (metadataEntries.length > 0) {
+      const metadataSection = document.createElement('div');
+      metadataSection.className = 'list-item-review-section list-item-review-metadata';
+      const metadataTitle = document.createElement('h4');
+      metadataTitle.className = 'list-item-review-section-title';
+      metadataTitle.textContent = 'Metadata';
+      metadataSection.appendChild(metadataTitle);
+
+      const metadataGrid = document.createElement('div');
+      metadataGrid.className = 'list-item-review-metadata-grid';
+      for (const entry of metadataEntries) {
+        const row = document.createElement('div');
+        row.className = 'list-item-review-metadata-row';
+        const label = document.createElement('span');
+        label.className = 'list-item-review-metadata-label';
+        label.textContent = entry.label;
+        const value = document.createElement('span');
+        value.className = 'list-item-review-metadata-value';
+        value.textContent = entry.value;
+        row.appendChild(label);
+        row.appendChild(value);
+        metadataGrid.appendChild(row);
+      }
+      metadataSection.appendChild(metadataGrid);
+      reviewContainer.appendChild(metadataSection);
+    }
+
+    renderReviewTags = () => {
+      tagsField.renderValue();
+    };
+
+    renderReviewDisplays = () => {
+      for (const field of reviewFields) {
+        field.renderValue();
+      }
+    };
+
+    renderReviewDisplays();
+
+    const attachReviewListeners = (
+      input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+    ): void => {
+      input.addEventListener('input', () => {
+        renderReviewDisplays();
+      });
+      input.addEventListener('change', () => {
+        renderReviewDisplays();
+      });
+    };
+
+    attachReviewListeners(titleInput);
+    attachReviewListeners(urlInput);
+    attachReviewListeners(notesInput);
+    attachReviewListeners(pinnedCheckbox);
+    if (insertAtTopCheckbox) {
+      attachReviewListeners(insertAtTopCheckbox);
+    }
+    for (const field of customFieldsSection.fields) {
+      attachReviewListeners(field.input);
+    }
+
+    const updateModeToggle = (): void => {
+      const isQuick = editMode === 'quick';
+      quickModeButton.classList.toggle('active', isQuick);
+      reviewModeButton.classList.toggle('active', !isQuick);
+      quickModeButton.setAttribute('aria-pressed', isQuick ? 'true' : 'false');
+      reviewModeButton.setAttribute('aria-pressed', isQuick ? 'false' : 'true');
+    };
+
+    const applyMode = (modeValue: ListItemEditorMode): void => {
+      editMode = modeValue;
+      dialog.classList.toggle('list-item-dialog--review', editMode === 'review');
+      overlay.classList.toggle('list-item-dialog-overlay--review', editMode === 'review');
+      quickEditContainer.hidden = editMode === 'review';
+      reviewContainer.hidden = editMode !== 'review';
+      if (editMode === 'quick') {
+        closeAllReviewEditors();
+        titleInput.focus();
+      } else {
+        renderReviewDisplays();
+        const firstEditButton = reviewContainer.querySelector<HTMLButtonElement>(
+          '.list-item-review-edit',
+        );
+        firstEditButton?.focus();
+      }
+      updateModeToggle();
+    };
+
+    quickModeButton.addEventListener('click', () => {
+      applyMode('quick');
+    });
+
+    reviewModeButton.addEventListener('click', () => {
+      applyMode('review');
+    });
+
+    applyMode(editMode);
+
+    form.appendChild(quickEditContainer);
+    form.appendChild(reviewContainer);
+
     const buttons = document.createElement('div');
     buttons.className = 'confirm-dialog-buttons';
 
@@ -582,11 +1127,25 @@ export class ListItemEditorDialog {
 
     const focusableSelectors =
       'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])';
-    const focusableElements = Array.from(
-      dialog.querySelectorAll<HTMLElement>(focusableSelectors),
-    ).filter((el) => !el.hasAttribute('disabled'));
+    const getFocusableElements = (): HTMLElement[] =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelectors)).filter((el) => {
+        if (el.hasAttribute('disabled')) {
+          return false;
+        }
+        if (el.closest('[hidden]')) {
+          return false;
+        }
+        return el.getClientRects().length > 0;
+      });
 
-    titleInput.focus();
+    if (editMode === 'review') {
+      const firstEditButton = reviewContainer.querySelector<HTMLButtonElement>(
+        '.list-item-review-edit',
+      );
+      firstEditButton?.focus();
+    } else {
+      titleInput.focus();
+    }
 
     const closeDialog = (): void => {
       overlay.remove();
@@ -611,6 +1170,7 @@ export class ListItemEditorDialog {
       }
 
       if (e.key === 'Tab') {
+        const focusableElements = getFocusableElements();
         if (focusableElements.length === 0) {
           return;
         }

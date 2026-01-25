@@ -10,7 +10,8 @@ import { parseFieldValueToDate, toggleSort } from '../utils/listSorting';
 const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11h6M9 15h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
 const LIST_ITEMS_DRAG_TYPE = 'application/x-list-items';
-const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY =
+  'aiAssistantListSingleClickSelectionEnabled';
 const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
   'aiAssistantListInlineCustomFieldEditingEnabled';
 
@@ -47,7 +48,11 @@ export interface ListPanelTableControllerOptions {
     targetListId: string,
     targetPosition: number | null,
   ) => Promise<void>;
-  onEditItem?: (listId: string, item: ListPanelItem) => void;
+  onEditItem?: (
+    listId: string,
+    item: ListPanelItem,
+    options?: { initialMode?: 'quick' | 'review' },
+  ) => void;
   onColumnResize?: (listId: string, columnKey: string, width: number) => void;
 }
 
@@ -85,6 +90,8 @@ export interface ListPanelTableRenderResult {
   colCount: number;
   hasAnyItems: boolean;
 }
+
+type ListItemSingleClickBehavior = 'none' | 'select' | 'open' | 'open-review';
 
 type ListPanelTableRenderState = {
   listId: string;
@@ -1628,7 +1635,17 @@ export class ListPanelTableController {
           return;
         }
         this.keyboardSelectionAnchorIndex = null;
-        const singleClickEnabled = this.isSingleClickSelectionEnabled();
+        const singleClickBehavior = this.getSingleClickBehavior();
+        const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
+
+        const selectSingleRow = () => {
+          const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+          rows.forEach((r) => r.classList.remove('list-item-selected'));
+          row.classList.add('list-item-selected');
+          this.lastSelectedRowIndex = rows.indexOf(row);
+          this.updateSelectionButtons();
+        };
+
         if (e.shiftKey && this.lastSelectedRowIndex !== null) {
           e.preventDefault();
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
@@ -1644,14 +1661,14 @@ export class ListPanelTableController {
             rows[j]?.classList.add('list-item-selected');
           }
           this.updateSelectionButtons();
-        } else if (!singleClickEnabled && (e.ctrlKey || e.metaKey || e.altKey)) {
+        } else if (singleClickBehavior !== 'select' && hasModifier) {
           e.preventDefault();
           row.classList.toggle('list-item-selected');
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
-        } else if (singleClickEnabled) {
-          if (e.ctrlKey || e.metaKey || e.altKey) {
+        } else if (singleClickBehavior === 'select') {
+          if (hasModifier) {
             return;
           }
           const isSelectedPanel =
@@ -1672,15 +1689,39 @@ export class ListPanelTableController {
           row.classList.add('list-item-selected');
           this.lastSelectedRowIndex = rows.indexOf(row);
           this.updateSelectionButtons();
+        } else if (singleClickBehavior === 'open' || singleClickBehavior === 'open-review') {
+          if (hasModifier) {
+            return;
+          }
+          const isSelectedPanel =
+            Boolean(row.closest('.panel-frame.is-active')) ||
+            Boolean(row.closest('.panel-modal')) ||
+            Boolean(row.closest('.panel-dock-popover'));
+          if (!isSelectedPanel) {
+            return;
+          }
+          e.preventDefault();
+          selectSingleRow();
+          if (typeof onEditItem === 'function') {
+            onEditItem(
+              listId,
+              item,
+              singleClickBehavior === 'open-review' ? { initialMode: 'review' } : undefined,
+            );
+          }
         }
       });
 
-      const onEditItem = this.options.onEditItem;
-      if (onEditItem) {
-        row.addEventListener('dblclick', (e) => {
-          if (this.shouldIgnoreRowDoubleClick(e.target)) {
-            return;
-          }
+    const onEditItem = this.options.onEditItem;
+    if (onEditItem) {
+      row.addEventListener('dblclick', (e) => {
+        const behavior = this.getSingleClickBehavior();
+        if (behavior === 'open' || behavior === 'open-review') {
+          return;
+        }
+        if (this.shouldIgnoreRowDoubleClick(e.target)) {
+          return;
+        }
 
           if (
             typeof window !== 'undefined' &&
@@ -1695,10 +1736,10 @@ export class ListPanelTableController {
             return;
           }
 
-          e.preventDefault();
-          onEditItem(listId, item);
-        });
-      }
+        e.preventDefault();
+        onEditItem(listId, item);
+      });
+    }
 
       let touchStartTime = 0;
       let touchStartX = 0;
@@ -2650,14 +2691,27 @@ export class ListPanelTableController {
     return true;
   }
 
-  private isSingleClickSelectionEnabled(): boolean {
+  private getSingleClickBehavior(): ListItemSingleClickBehavior {
     if (typeof window === 'undefined') {
-      return true;
+      return 'select';
     }
     try {
-      return window.localStorage.getItem(LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY) !== 'false';
+      const stored = window.localStorage.getItem(LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY);
+      if (stored === 'open') {
+        return 'open';
+      }
+      if (stored === 'open-review') {
+        return 'open-review';
+      }
+      if (stored === 'none' || stored === 'false') {
+        return 'none';
+      }
+      if (stored === 'select' || stored === 'true') {
+        return 'select';
+      }
+      return 'select';
     } catch {
-      return true;
+      return 'select';
     }
   }
 
