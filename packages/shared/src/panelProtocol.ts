@@ -314,6 +314,12 @@ export const PluginOperationSchema = z.object({
 
 export type PluginOperation = z.infer<typeof PluginOperationSchema>;
 
+export const PluginSkillsSchema = z.object({
+  autoExport: z.boolean().optional(),
+});
+
+export type PluginSkills = z.infer<typeof PluginSkillsSchema>;
+
 export const CombinedPluginManifestSchema = z.object({
   id: z.string().min(1),
   version: z.string().min(1),
@@ -329,6 +335,7 @@ export const CombinedPluginManifestSchema = z.object({
   capabilities: z.array(z.string()).optional(),
   settingsSchema: z.unknown().optional(),
   surfaces: PluginOperationSurfacesSchema.optional(),
+  skills: PluginSkillsSchema.optional(),
   operations: z.array(PluginOperationSchema).optional(),
 });
 

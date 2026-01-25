@@ -2,6 +2,7 @@
   "id": "diff",
   "version": "0.1.0",
   "description": "Review git diffs in the configured workspace.",
+  "skills": { "autoExport": false },
   "surfaces": { "tool": true, "http": true, "cli": true },
   "panels": [
     {

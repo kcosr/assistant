@@ -371,11 +371,23 @@ Each plugin can include a `skill-extra.md` file (optional) alongside `manifest.j
 During `npm run build:plugins`, the build generates a `SKILL.md` file containing YAML
 frontmatter plus CLI usage, commands, and options (each command maps to a tool when
 tools are enabled). The optional extra file is appended under the `## Extra` section.
+Frontmatter includes `metadata.author` and `metadata.version`, sourced from the root
+`package.json`.
 Generated outputs:
 
 - `dist/plugins/<pluginId>/SKILL.md`
 - `dist/plugins/<pluginId>/public/skill.md` (served at `/plugins/<pluginId>/skill.md`)
 - `dist/skills/<pluginId>/SKILL.md` (plus `<pluginId>-cli` when CLI exists)
+
+To suppress automatic export to `dist/skills` (and `--skills-dir` outputs), set:
+
+```json
+{
+  "skills": { "autoExport": false }
+}
+```
+
+Passing `--skills <pluginId>` still forces export for that plugin.
 
 Skills bundles are flat: `SKILL.md` and `<pluginId>-cli` sit in the same directory
 (no `bin/` directory).
@@ -472,6 +484,8 @@ Quick example:
 ```bash
 ./dist/skills/notes/notes-cli list
 ```
+
+Generated CLIs support `--version`, which reports the core version from the root `package.json`.
 
 You can also copy the `dist/skills/<pluginId>/` directory into external agent skill roots (for example `~/.codex/skills/`). To write skills into a custom directory during build, run:
 

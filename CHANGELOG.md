@@ -5,10 +5,12 @@
 ### Breaking Changes
 
 ### Added
+- Added skill metadata (author/version) and manifest control for skill auto export. ([#36](https://github.com/kcosr/assistant/pull/36))
 
 ### Changed
 
 ### Fixed
+- Fixed plugin CLI `--version` to report the core package version. ([#35](https://github.com/kcosr/assistant/pull/35))
 
 ### Removed
 

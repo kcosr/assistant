@@ -224,6 +224,24 @@ Build system compiles this file instead of auto‑generating a CLI from operatio
 
 ---
 
+## 9.1 Skill Bundle Export Controls
+
+By default, `npm run build:plugins` exports skills to `dist/skills/<pluginId>/`.
+To opt out for a specific plugin, set:
+
+```json
+{
+  "skills": { "autoExport": false }
+}
+```
+
+Passing `--skills <pluginId>` still forces export for that plugin.
+
+Generated `SKILL.md` frontmatter includes `metadata.author` and `metadata.version`,
+populated from the root `package.json`.
+
+---
+
 ## 10. Theme Variables
 
 Use shared theme variables:

@@ -62,4 +62,21 @@ describe('runPluginCli', () => {
       }),
     );
   });
+
+  it('prints the manifest version for --version', async () => {
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runPluginCli({ manifest, argv: ['--version'] });
+
+    const output = [
+      ...writeSpy.mock.calls.map(([chunk]) => String(chunk)),
+      ...logSpy.mock.calls.map(([chunk]) => String(chunk)),
+    ].join('');
+    expect(output).toContain(manifest.version);
+    expect(httpRequest).not.toHaveBeenCalled();
+
+    logSpy.mockRestore();
+    writeSpy.mockRestore();
+  });
 });

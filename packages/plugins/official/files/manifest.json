@@ -2,6 +2,7 @@
   "id": "files",
   "version": "0.1.0",
   "description": "Browse files in the configured workspace.",
+  "skills": { "autoExport": false },
   "surfaces": { "tool": true, "http": true, "cli": true },
   "panels": [
     {

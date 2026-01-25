@@ -2,6 +2,7 @@
   "id": "session-info",
   "version": "0.1.0",
   "description": "Session label and attribute tools for session debugging.",
+  "skills": { "autoExport": false },
   "surfaces": { "tool": true, "http": true, "cli": true },
   "panels": [
     {
