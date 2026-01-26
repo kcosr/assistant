@@ -1911,6 +1911,29 @@ table.collection-list-table {
   margin-top: var(--spacing-xs);
 }
 
+table.collection-list-table[data-drop-hint='insert-front'] {
+  position: relative;
+}
+
+table.collection-list-table[data-drop-hint='insert-front']::after {
+  content: 'Insert at front';
+  position: absolute;
+  top: calc(var(--spacing-sm) + 22px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-full);
+  background-color: var(--color-accent-primary);
+  border: 1px solid var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
 table.collection-list-table th,
 table.collection-list-table td {
   padding: var(--spacing-sm) var(--spacing-md);
@@ -2225,6 +2248,18 @@ body.list-row-dragging .list-item-row * {
 .list-item-row.drag-over > td {
   background-color: var(--color-accent-subtle);
   box-shadow: inset 0 -2px 0 var(--color-accent-primary);
+}
+
+.list-item-row.drag-over-disabled {
+  background-color: var(--color-bg-muted);
+  box-shadow: inset 0 -2px 0 var(--color-border);
+  cursor: not-allowed;
+}
+
+.list-item-row.drag-over-disabled > td {
+  background-color: var(--color-bg-muted);
+  box-shadow: inset 0 -2px 0 var(--color-border);
+  cursor: not-allowed;
 }
 
 .list-item-completed {

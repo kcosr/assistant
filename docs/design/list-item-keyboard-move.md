@@ -19,7 +19,7 @@ Add keyboard shortcuts in the Lists panel to move a single focused/selected item
   - `t` / `b` to move a single selected item to top/bottom (requires exactly one selected item).
   - `n` to add an item, `d` to delete, `p` to pin.
 - `t` / `b` updates `position` to `0` / `Number.MAX_SAFE_INTEGER` and does not check the current sort mode.
-- Drag-and-drop reorders items by updating `position`, but blocks reordering across the completed/uncompleted boundary.
+- Drag-and-drop reorders items by updating `position` only when sorted by position, and blocks reordering across the completed/uncompleted boundary.
 - `sortItems` groups completed items at the end (sorted separately), so reorders only affect the current completion group.
 
 ## Proposed behavior
