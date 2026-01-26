@@ -6,7 +6,7 @@
 
 ### Added
 - Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
-- Added server-side AQL queries and panel apply tooling for lists. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added server-side AQL queries and panel apply tooling for lists. ([#39](https://github.com/kcosr/assistant/pull/39))
 
 ### Changed
 - Changed list view preferences to persist per-panel instead of `/preferences`. ([#37](https://github.com/kcosr/assistant/pull/37))
