@@ -884,6 +884,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let unsubscribePanelActive: (() => void) | null = null;
       let unsubscribeViewportResize: (() => void) | null = null;
       let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
+      let pendingAqlApplyEvent: { listId: string; instanceId: string; query: string } | null = null;
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
@@ -919,6 +920,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             highlightListItem(itemId);
           }
         });
+      };
+
+      const applyAqlQueryForList = async (
+        listId: string,
+        instanceId: string,
+        query: string,
+      ): Promise<void> => {
+        if (!selectedInstanceIds.includes(instanceId)) {
+          setActiveInstances([instanceId, ...selectedInstanceIds]);
+        }
+        await selectList(listId, instanceId, { focus: false });
+        aqlQueryText = query;
+        if (searchMode !== 'aql') {
+          setSearchMode('aql');
+        }
+        applyAqlQueryText(query, true);
+      };
+
+      const applyPendingAqlApplyEvent = (): void => {
+        if (!pendingAqlApplyEvent) {
+          return;
+        }
+        const { listId, instanceId, query } = pendingAqlApplyEvent;
+        if (!isKnownInstance(instanceId)) {
+          return;
+        }
+        pendingAqlApplyEvent = null;
+        void applyAqlQueryForList(listId, instanceId, query);
       };
 
       const persistState = (): void => {
@@ -2900,6 +2929,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           renderInstanceSelect();
           updatePanelMetadata();
           applyPendingShowEvent();
+          applyPendingAqlApplyEvent();
         } catch (error) {
           if (!options?.silent) {
             services.setStatus('Failed to load instances');
@@ -3239,6 +3269,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           : DEFAULT_INSTANCE_ID;
       };
 
+      const handleAqlApplyEvent = async (payload: Record<string, unknown>): Promise<void> => {
+        const eventInstanceId = resolveEventInstanceId(payload);
+        const listId = typeof payload['listId'] === 'string' ? payload['listId'].trim() : '';
+        const query = typeof payload['query'] === 'string' ? payload['query'] : null;
+        if (!listId || query === null) {
+          return;
+        }
+        if (!isKnownInstance(eventInstanceId)) {
+          pendingAqlApplyEvent = { listId, instanceId: eventInstanceId, query };
+          void refreshInstances({ silent: true });
+          return;
+        }
+        await applyAqlQueryForList(listId, eventInstanceId, query);
+      };
+
       const handleShowEvent = (listId: string, instanceId: string, itemId?: string): void => {
         if (!isKnownInstance(instanceId)) {
           pendingShowEvent = { listId, instanceId, ...(itemId ? { itemId } : {}) };
@@ -3401,6 +3446,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               return;
             }
             handleShowEvent(listId, eventInstanceId, itemId || undefined);
+            return;
+          }
+          if (type === 'lists_aql_apply') {
+            void handleAqlApplyEvent(payload);
             return;
           }
           if (type === 'panel_update') {

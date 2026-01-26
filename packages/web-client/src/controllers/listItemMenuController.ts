@@ -22,7 +22,11 @@ export interface ListItemMenuControllerOptions {
     itemId: string,
     updates: Record<string, unknown>,
   ) => Promise<boolean>;
-  onEditItem: (listId: string, item: ListPanelItem) => void;
+  onEditItem: (
+    listId: string,
+    item: ListPanelItem,
+    options?: { initialMode?: 'quick' | 'review' },
+  ) => void;
   onDeleteItem: (listId: string, itemId: string, title: string) => void;
   onMoveItemToList: (listId: string, itemId: string, targetListId: string) => void;
   onCopyItemToList: (listId: string, itemId: string, targetListId: string) => void;

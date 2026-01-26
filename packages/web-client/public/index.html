@@ -221,15 +221,29 @@
               </label>
             </div>
             <div class="settings-dropdown-item">
-              <label for="list-single-click-selection-checkbox">
-                <input type="checkbox" id="list-single-click-selection-checkbox" />
-                Single-click selects list items
+              <label for="list-item-single-click-select">
+                List item single-click
+                <select id="list-item-single-click-select" aria-label="List item single-click">
+                  <option value="none">None</option>
+                  <option value="select">Select</option>
+                  <option value="open">Open edit modal</option>
+                  <option value="open-review">Open edit modal (review)</option>
+                </select>
               </label>
             </div>
             <div class="settings-dropdown-item">
               <label for="list-inline-custom-field-editing-checkbox">
                 <input type="checkbox" id="list-inline-custom-field-editing-checkbox" />
                 Inline edit select/checkbox list fields
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
+              <label for="list-item-editor-mode-select">
+                List item editor mode
+                <select id="list-item-editor-mode-select" aria-label="List item editor mode">
+                  <option value="quick">Edit</option>
+                  <option value="review">Review</option>
+                </select>
               </label>
             </div>
             <div class="settings-dropdown-item">

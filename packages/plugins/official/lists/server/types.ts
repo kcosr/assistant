@@ -1,3 +1,7 @@
+import type { ListCustomFieldDefinition, ListCustomFieldType } from '@assistant/shared';
+
+export type { ListCustomFieldDefinition, ListCustomFieldType };
+
 export interface ListDefinition {
   id: string; // Slug identifier (lowercase alphanumeric with hyphens)
   name: string; // Display name
@@ -37,37 +41,6 @@ export interface ListItem {
   position: number; // Zero-based position within the list
   completed?: boolean; // Whether the item is marked as completed
   completedAt?: string; // ISO 8601 timestamp when completed
-}
-
-export type ListCustomFieldType =
-  | 'text'
-  | 'number'
-  | 'date'
-  | 'time'
-  | 'datetime'
-  | 'select'
-  | 'checkbox'
-  | 'ref';
-
-export interface ListCustomFieldDefinition {
-  /**
-   * Stable identifier for this field. Used as the key in
-   * ListItem.customFields.
-   */
-  key: string;
-  /**
-   * Human-readable label for this field.
-   */
-  label: string;
-  type: ListCustomFieldType;
-  /**
-   * For select fields, the list of allowed option values.
-   */
-  options?: string[];
-  /**
-   * For text fields, whether values should render as markdown.
-   */
-  markdown?: boolean;
 }
 
 export interface ListsData {

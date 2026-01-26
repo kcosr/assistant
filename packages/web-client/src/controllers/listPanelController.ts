@@ -253,8 +253,12 @@ export class ListPanelController {
       userUpdateTimeoutMs: options.userUpdateTimeoutMs,
       getMoveTargetLists: () => this.options.getMoveTargetLists(),
       updateListItem: (listId, itemId, updates) => this.updateListItem(listId, itemId, updates),
-      onEditItem: (listId, item) => {
-        this.showListItemEditorDialog('edit', listId, item);
+      onEditItem: (
+        listId: string,
+        item: ListPanelItem,
+        options?: ListItemEditorDialogOpenOptions,
+      ) => {
+        this.showListItemEditorDialog('edit', listId, item, options);
       },
       onDeleteItem: (listId, itemId, title) => {
         this.showListItemDeleteConfirmation(listId, itemId, title);
@@ -292,8 +296,12 @@ export class ListPanelController {
       updateListItem: (listId, itemId, updates) => this.updateListItem(listId, itemId, updates),
       onMoveItemsToList: (sourceListId, itemIds, targetListId, targetPosition) =>
         this.moveItemsToListFromDrag(sourceListId, itemIds, targetListId, targetPosition),
-      onEditItem: (listId, item) => {
-        this.showListItemEditorDialog('edit', listId, item);
+      onEditItem: (
+        listId: string,
+        item: ListPanelItem,
+        options?: ListItemEditorDialogOpenOptions,
+      ) => {
+        this.showListItemEditorDialog('edit', listId, item, options);
       },
       ...(options.openReferencePicker
         ? { openReferencePicker: options.openReferencePicker }
@@ -1274,6 +1282,9 @@ export class ListPanelController {
         openOptionsOverride?.availableTags ?? withoutPinnedTag(this.currentAvailableTags),
       customFields: openOptionsOverride?.customFields ?? this.currentCustomFields,
     };
+    if (openOptionsOverride?.initialMode) {
+      openOptions.initialMode = openOptionsOverride.initialMode;
+    }
 
     if (mode === 'add') {
       const collected: string[] = [];

@@ -91,7 +91,7 @@ interface PanelShortcutService {
 - Provide a listing API for UI (action metadata + current bindings).
 
 ## Existing settings storage breakdown
-- LocalStorage (web-client): UI-only preferences and per-device state, e.g. theme/fonts, panel layout, list/browser view & sort modes, command palette sort/group modes, list behaviors (insert-at-top, single-click selection, inline custom fields), tag colors, keyboard shortcuts enabled, auto-focus/auto-scroll, sidebar view mode.
+- LocalStorage (web-client): UI-only preferences and per-device state, e.g. theme/fonts, panel layout, list/browser view & sort modes, command palette sort/group modes, list behaviors (insert-at-top, single-click behavior, inline custom fields), tag colors, keyboard shortcuts enabled, auto-focus/auto-scroll, sidebar view mode.
 - Plugin settings store (agent-server): per-plugin settings via `/api/plugins/:id/settings`, stored in `plugin-settings.json` under the server data directory and surfaced to panels via `plugin.settings.<id>` context.
 - Tauri settings (desktop): backend URL persisted to disk for native builds.
 -

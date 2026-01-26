@@ -591,6 +591,8 @@ The lists plugin provides tools for managing lists and their items:
 | `lists_items_bulk_copy`    | Bulk copy items to a different list            |
 | `lists_items_list`         | List items in a list                           |
 | `lists_items_search`       | Search items by text                           |
+| `lists_items_aql`          | Run an AQL query against list items            |
+| `lists_aql_apply`          | Apply an AQL query to a lists panel            |
 | `lists_get_selected_items` | Get items currently selected by user in the UI |
 
 Clearing list item fields:

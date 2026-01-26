@@ -353,7 +353,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
       updateListItem: vi.fn(async () => true),
     });
 
-    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'false');
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'none');
 
     const { table, tbody } = controller.renderTable(baseRenderOptions);
     const panelFrame = document.createElement('div');
@@ -367,6 +367,79 @@ describe('ListPanelTableController drag reorder and selection', () => {
     row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(row?.classList.contains('list-item-selected')).toBe(false);
+
+    window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
+  });
+
+  it('opens the edit modal on single click when behavior is open', () => {
+    const onEditItem = vi.fn();
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      onEditItem,
+    });
+
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'open');
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(onEditItem).toHaveBeenCalledTimes(1);
+    expect(onEditItem).toHaveBeenCalledWith(
+      'list1',
+      expect.objectContaining({ id: 'item1', title: 'Item 1' }),
+      undefined,
+    );
+    expect(row?.classList.contains('list-item-selected')).toBe(true);
+
+    window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
+  });
+
+  it('opens the edit modal in review mode when behavior is open-review', () => {
+    const onEditItem = vi.fn();
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      onEditItem,
+    });
+
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'open-review');
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const row = tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(row).not.toBeNull();
+
+    row?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(onEditItem).toHaveBeenCalledTimes(1);
+    expect(onEditItem).toHaveBeenCalledWith(
+      'list1',
+      expect.objectContaining({ id: 'item1', title: 'Item 1' }),
+      { initialMode: 'review' },
+    );
 
     window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
   });
