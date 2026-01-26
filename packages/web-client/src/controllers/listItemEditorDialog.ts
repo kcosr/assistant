@@ -3,6 +3,12 @@ import type { ListCustomFieldDefinition } from './listCustomFields';
 import type { ListPanelItem } from './listPanelController';
 import { applyTagColorToElement, normalizeTag } from '../utils/tagColors';
 import {
+  formatListItemReferenceLabel,
+  getListItemReferenceTypeLabel,
+  parseListItemReference,
+  type ListItemReference,
+} from '../utils/listCustomFieldReference';
+import {
   applyPinnedTag,
   hasPinnedTag,
   isPinnedTag,
@@ -20,6 +26,12 @@ export interface ListItemEditorDialogOptions {
     itemId: string,
     updates: Record<string, unknown>,
   ) => Promise<boolean>;
+  openReferencePicker?: (options: {
+    listId: string;
+    field: ListCustomFieldDefinition;
+    item?: ListPanelItem;
+    currentValue: ListItemReference | null;
+  }) => Promise<ListItemReference | null>;
 }
 
 export interface ListItemEditorDialogOpenOptions {
@@ -35,6 +47,8 @@ export class ListItemEditorDialog {
   constructor(private readonly options: ListItemEditorDialogOptions) {}
 
   private createCustomFieldsSection(
+    listId: string,
+    item: ListPanelItem | undefined,
     definitions: ListCustomFieldDefinition[],
     initialValues: Record<string, unknown>,
   ): {
@@ -63,7 +77,7 @@ export class ListItemEditorDialog {
 
     const fieldInputs: Array<{
       definition: ListCustomFieldDefinition;
-      input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      getValue: () => unknown;
     }> = [];
 
     for (const def of normalized) {
@@ -83,29 +97,145 @@ export class ListItemEditorDialog {
       labelText.className = 'list-item-custom-field-label-text';
       labelText.textContent = label;
 
-      let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+      let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null = null;
+      let getValue: () => unknown;
       const type = def.type;
 
-      if (type === 'checkbox') {
+      if (type === 'ref') {
+        row.classList.add('list-item-custom-field-row--ref');
+
+        const refContainer = document.createElement('div');
+        refContainer.className = 'list-item-ref-container';
+
+        const display = document.createElement('div');
+        display.className = 'list-item-ref-display';
+
+        const badge = document.createElement('span');
+        badge.className = 'list-item-ref-type';
+        display.appendChild(badge);
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'list-item-ref-label';
+        display.appendChild(labelSpan);
+
+        const actions = document.createElement('div');
+        actions.className = 'list-item-ref-actions';
+
+        const selectButton = document.createElement('button');
+        selectButton.type = 'button';
+        selectButton.className = 'list-item-ref-action';
+        selectButton.textContent = 'Select';
+        actions.appendChild(selectButton);
+
+        const clearButton = document.createElement('button');
+        clearButton.type = 'button';
+        clearButton.className = 'list-item-ref-action list-item-ref-action--clear';
+        clearButton.textContent = 'Clear';
+        actions.appendChild(clearButton);
+
+        refContainer.appendChild(display);
+        refContainer.appendChild(actions);
+        row.appendChild(labelText);
+        row.appendChild(refContainer);
+
+        let currentValue = parseListItemReference(initialValues[key]);
+
+        const updateDisplay = (): void => {
+          if (currentValue) {
+            labelSpan.textContent = formatListItemReferenceLabel(currentValue);
+            badge.textContent = getListItemReferenceTypeLabel(currentValue.panelType);
+            badge.style.display = '';
+            display.classList.remove('is-empty');
+          } else {
+            labelSpan.textContent = 'Not set';
+            badge.textContent = '';
+            badge.style.display = 'none';
+            display.classList.add('is-empty');
+          }
+          clearButton.disabled = !currentValue;
+        };
+
+        updateDisplay();
+
+        const openPicker = this.options.openReferencePicker;
+        if (!openPicker) {
+          selectButton.disabled = true;
+          selectButton.title = 'Reference picker unavailable';
+        } else {
+          selectButton.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const pickerOptions: {
+              listId: string;
+              field: ListCustomFieldDefinition;
+              item?: ListPanelItem;
+              currentValue: ListItemReference | null;
+            } = { listId, field: def, currentValue };
+            if (item) {
+              pickerOptions.item = item;
+            }
+            const next = await openPicker(pickerOptions);
+            if (!next) {
+              return;
+            }
+            currentValue = next;
+            updateDisplay();
+          });
+        }
+
+        clearButton.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          currentValue = null;
+          updateDisplay();
+        });
+
+        getValue = () => currentValue ?? null;
+      } else if (type === 'checkbox') {
         input = document.createElement('input');
         input.type = 'checkbox';
         input.className = 'list-item-form-checkbox';
+        getValue = () => (input && (input as HTMLInputElement).checked ? true : null);
       } else if (type === 'number') {
         input = document.createElement('input');
         input.type = 'number';
         input.className = 'list-item-form-input';
+        getValue = () => {
+          if (!input) return undefined;
+          const raw = input.value.trim();
+          if (!raw) {
+            return null;
+          }
+          const numeric = (input as HTMLInputElement).valueAsNumber;
+          return Number.isNaN(numeric) ? undefined : numeric;
+        };
       } else if (type === 'date') {
         input = document.createElement('input');
         input.type = 'date';
         input.className = 'list-item-form-input';
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       } else if (type === 'time') {
         input = document.createElement('input');
         input.type = 'time';
         input.className = 'list-item-form-input';
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       } else if (type === 'datetime') {
         input = document.createElement('input');
         input.type = 'datetime-local';
         input.className = 'list-item-form-input';
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       } else if (type === 'select') {
         const select = document.createElement('select');
         select.className = 'list-item-form-select';
@@ -126,109 +256,97 @@ export class ListItemEditorDialog {
           }
         }
         input = select;
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       } else if (type === 'text' && def.markdown === true) {
         const textarea = document.createElement('textarea');
         textarea.className = 'list-item-form-textarea';
         textarea.rows = 3;
         input = textarea;
         row.classList.add('list-item-custom-field-row--wide');
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       } else {
         input = document.createElement('input');
         input.type = 'text';
         input.className = 'list-item-form-input';
+        getValue = () => {
+          if (!input) return null;
+          const raw = input.value.trim();
+          return raw ? raw : null;
+        };
       }
 
-      const id = `list-item-custom-field-${key}-${Math.random().toString(36).slice(2)}`;
-      input.id = id;
-      if (type === 'checkbox') {
-        row.classList.add('list-item-custom-field-row--checkbox');
-        row.appendChild(input);
-        row.appendChild(labelText);
-      } else {
-        row.appendChild(labelText);
-        row.appendChild(input);
+      if (input) {
+        const id = `list-item-custom-field-${key}-${Math.random().toString(36).slice(2)}`;
+        input.id = id;
+        if (type === 'checkbox') {
+          row.classList.add('list-item-custom-field-row--checkbox');
+          row.appendChild(input);
+          row.appendChild(labelText);
+        } else if (type !== 'ref') {
+          row.appendChild(labelText);
+          row.appendChild(input);
+        }
       }
 
       const rawValue = initialValues[key];
-      if (type === 'checkbox') {
-        if (input instanceof HTMLInputElement) {
-          input.checked = rawValue === true;
-        }
-      } else if (type === 'number') {
-        if (typeof rawValue === 'number') {
-          input.value = String(rawValue);
-        } else if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          input.value = rawValue.trim();
-        }
-      } else if (type === 'select') {
-        if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          input.value = rawValue.trim();
-        }
-      } else if (type === 'date') {
-        if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          input.value = rawValue.trim();
-        }
-      } else if (type === 'time') {
-        if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          input.value = rawValue.trim();
-        }
-      } else if (type === 'datetime') {
-        if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          // datetime-local expects format YYYY-MM-DDTHH:MM
-          input.value = rawValue.trim();
-        }
-      } else {
-        if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
-          input.value = rawValue.trim();
+      if (input) {
+        if (type === 'checkbox') {
+          if (input instanceof HTMLInputElement) {
+            input.checked = rawValue === true;
+          }
+        } else if (type === 'number') {
+          if (typeof rawValue === 'number') {
+            input.value = String(rawValue);
+          } else if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            input.value = rawValue.trim();
+          }
+        } else if (type === 'select') {
+          if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            input.value = rawValue.trim();
+          }
+        } else if (type === 'date') {
+          if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            input.value = rawValue.trim();
+          }
+        } else if (type === 'time') {
+          if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            input.value = rawValue.trim();
+          }
+        } else if (type === 'datetime') {
+          if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            // datetime-local expects format YYYY-MM-DDTHH:MM
+            input.value = rawValue.trim();
+          }
+        } else {
+          if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+            input.value = rawValue.trim();
+          }
         }
       }
 
       container.appendChild(row);
 
-      fieldInputs.push({ definition: def, input });
+      fieldInputs.push({ definition: def, getValue });
     }
 
     const getValues = (): Record<string, unknown> => {
       const result: Record<string, unknown> = {};
-      for (const { definition, input } of fieldInputs) {
+      for (const { definition, getValue } of fieldInputs) {
         const key = definition.key;
         if (!key) continue;
-        const type = definition.type;
-
-        if (type === 'checkbox') {
-          if (input instanceof HTMLInputElement && input.checked) {
-            result[key] = true;
-          } else {
-            // Unchecked checkbox: send null to remove any previous value
-            result[key] = null;
-          }
+        const value = getValue();
+        if (value === undefined) {
           continue;
         }
-
-        const raw = input.value.trim();
-        if (!raw) {
-          // Empty value: send null to remove any previous value
-          result[key] = null;
-          continue;
-        }
-
-        if (type === 'number') {
-          const numberInput = input as HTMLInputElement;
-          const numeric = numberInput.valueAsNumber;
-          if (!Number.isNaN(numeric)) {
-            result[key] = numeric;
-          }
-        } else if (type === 'select') {
-          result[key] = raw;
-        } else if (type === 'date') {
-          result[key] = raw;
-        } else if (type === 'time') {
-          result[key] = raw;
-        } else if (type === 'datetime') {
-          result[key] = raw;
-        } else {
-          result[key] = raw;
-        }
+        result[key] = value;
       }
       return result;
     };
@@ -371,6 +489,8 @@ export class ListItemEditorDialog {
     }
 
     const customFieldsSection = this.createCustomFieldsSection(
+      listId,
+      item,
       openOptions?.customFields ?? [],
       openOptions?.initialCustomFieldValues ?? {},
     );

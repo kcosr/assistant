@@ -275,6 +275,72 @@ describe('ListMetadataDialog tag chips', () => {
     ]);
   });
 
+  it('supports reference custom field type', async () => {
+    const dialogManager = new DialogManager();
+    const getAllKnownTags = vi.fn(() => []);
+    const createList = vi.fn(async () => true);
+
+    const controller = new ListMetadataDialog({
+      dialogManager,
+      getAllKnownTags,
+      createList,
+      updateList: vi.fn(async () => true),
+      deleteList: vi.fn(async () => true),
+    });
+
+    controller.open('create');
+
+    const nameInput = document.querySelector<HTMLInputElement>(
+      '.list-metadata-dialog input.list-item-form-input',
+    );
+    expect(nameInput).not.toBeNull();
+    if (!nameInput) return;
+    nameInput.value = 'Reference Fields';
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '.list-metadata-custom-field-add-button',
+    );
+    expect(addButton).not.toBeNull();
+    addButton?.click();
+
+    const row = document.querySelector<HTMLElement>('.list-metadata-custom-field-row');
+    expect(row).not.toBeNull();
+    if (!row) return;
+
+    const labelInput = row.querySelector<HTMLInputElement>(
+      '.list-metadata-custom-field-label-input',
+    );
+    const keyInput = row.querySelector<HTMLInputElement>('.list-metadata-custom-field-key-input');
+    const typeSelect = row.querySelector<HTMLSelectElement>(
+      '.list-metadata-custom-field-type-select',
+    );
+    expect(labelInput).not.toBeNull();
+    expect(keyInput).not.toBeNull();
+    expect(typeSelect).not.toBeNull();
+    if (!labelInput || !keyInput || !typeSelect) return;
+
+    labelInput.value = 'Reference';
+    keyInput.value = 'reference';
+    typeSelect.value = 'ref';
+    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const form = document.querySelector<HTMLFormElement>('.list-metadata-dialog form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(createList).toHaveBeenCalledTimes(1);
+    const calls = createList.mock.calls as ListMetadataDialogPayload[][];
+    const payload = calls[0]?.[0];
+    expect(payload?.customFields).toEqual([
+      {
+        key: 'reference',
+        label: 'Reference',
+        type: 'ref',
+      },
+    ]);
+  });
+
   it('submits custom fields in the reordered order', async () => {
     const dialogManager = new DialogManager();
     const getAllKnownTags = vi.fn(() => []);

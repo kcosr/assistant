@@ -1,6 +1,7 @@
 import type { ListCustomFieldDefinition } from '../controllers/listCustomFields';
 import type { ListPanelItem } from '../controllers/listPanelController';
 import type { ColumnVisibility } from './listColumnPreferences';
+import { parseListItemReference } from './listCustomFieldReference';
 
 export type ListColumnPresence = {
   hasUrl: boolean;
@@ -74,7 +75,8 @@ export function normalizeListCustomFields(
         field.type === 'time' ||
         field.type === 'datetime' ||
         field.type === 'select' ||
-        field.type === 'checkbox'),
+        field.type === 'checkbox' ||
+        field.type === 'ref'),
   );
 }
 
@@ -117,6 +119,9 @@ export function getVisibleCustomFields(options: {
         field.type === 'text'
       ) {
         return typeof value === 'string' && value.trim().length > 0;
+      }
+      if (field.type === 'ref') {
+        return parseListItemReference(value) !== null;
       }
       return true;
     });

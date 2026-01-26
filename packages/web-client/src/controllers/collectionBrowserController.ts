@@ -63,6 +63,8 @@ export interface CollectionBrowserControllerOptions {
   onSortModeChanged?: (mode: CollectionBrowserSortMode) => void;
   shouldShowInstanceBadge?: () => boolean;
   getListInstanceSelection?: () => ListMetadataDialogInstanceSelection | null;
+  showCreateActions?: boolean;
+  showListEditActions?: boolean;
 }
 
 export class CollectionBrowserController {
@@ -335,106 +337,111 @@ export class CollectionBrowserController {
     sortToggle.appendChild(alphaBtn);
     sortToggle.appendChild(updatedBtn);
 
-    // Add button/dropdown - show simple button if only one type is supported
-    const createActions = document.createElement('div');
-    createActions.className = 'collection-browser-create-actions';
+    let createActions: HTMLDivElement | null = null;
+    if (this.options.showCreateActions !== false) {
+      // Add button/dropdown - show simple button if only one type is supported
+      createActions = document.createElement('div');
+      createActions.className = 'collection-browser-create-actions';
 
-    const supportedTypes = this.options.getSupportedTypes();
-    const supportsNotes =
-      !supportedTypes || supportedTypes.some((t) => t.toLowerCase().trim() === 'note');
-    const supportsLists =
-      !supportedTypes || supportedTypes.some((t) => t.toLowerCase().trim() === 'list');
+      const supportedTypes = this.options.getSupportedTypes();
+      const supportsNotes =
+        !supportedTypes || supportedTypes.some((t) => t.toLowerCase().trim() === 'note');
+      const supportsLists =
+        !supportedTypes || supportedTypes.some((t) => t.toLowerCase().trim() === 'list');
 
-    // If only one type is supported, use a simple button; otherwise use dropdown
-    if (supportsNotes && !supportsLists) {
-      // Notes only - simple + button
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'collection-browser-add-button collection-browser-add-button--simple';
-      addBtn.innerHTML = this.options.icons.plus;
-      addBtn.setAttribute('aria-label', 'Create new note');
-      addBtn.addEventListener('click', () => {
-        this.options.openNoteEditor('create');
-      });
-      createActions.appendChild(addBtn);
-    } else if (supportsLists && !supportsNotes) {
-      // Lists only - simple + button
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'collection-browser-add-button collection-browser-add-button--simple';
-      addBtn.innerHTML = this.options.icons.plus;
-      addBtn.setAttribute('aria-label', 'Create new list');
-      addBtn.addEventListener('click', () => {
-        this.openCreateListDialog();
-      });
-      createActions.appendChild(addBtn);
-    } else {
-      // Both types supported - use dropdown
-      const addDropdownWrapper = document.createElement('div');
-      addDropdownWrapper.className = 'collection-browser-add-dropdown';
+      // If only one type is supported, use a simple button; otherwise use dropdown
+      if (supportsNotes && !supportsLists) {
+        // Notes only - simple + button
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'collection-browser-add-button collection-browser-add-button--simple';
+        addBtn.innerHTML = this.options.icons.plus;
+        addBtn.setAttribute('aria-label', 'Create new note');
+        addBtn.addEventListener('click', () => {
+          this.options.openNoteEditor('create');
+        });
+        createActions.appendChild(addBtn);
+      } else if (supportsLists && !supportsNotes) {
+        // Lists only - simple + button
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'collection-browser-add-button collection-browser-add-button--simple';
+        addBtn.innerHTML = this.options.icons.plus;
+        addBtn.setAttribute('aria-label', 'Create new list');
+        addBtn.addEventListener('click', () => {
+          this.openCreateListDialog();
+        });
+        createActions.appendChild(addBtn);
+      } else {
+        // Both types supported - use dropdown
+        const addDropdownWrapper = document.createElement('div');
+        addDropdownWrapper.className = 'collection-browser-add-dropdown';
 
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'collection-browser-add-button';
-      addBtn.innerHTML = `${this.options.icons.plus}${this.options.icons.chevronDown}`;
-      addBtn.setAttribute('aria-label', 'Create new item');
-      addBtn.setAttribute('aria-haspopup', 'menu');
-      addBtn.setAttribute('aria-expanded', 'false');
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'collection-browser-add-button';
+        addBtn.innerHTML = `${this.options.icons.plus}${this.options.icons.chevronDown}`;
+        addBtn.setAttribute('aria-label', 'Create new item');
+        addBtn.setAttribute('aria-haspopup', 'menu');
+        addBtn.setAttribute('aria-expanded', 'false');
 
-      const addMenu = document.createElement('div');
-      addMenu.className = 'collection-browser-add-menu';
+        const addMenu = document.createElement('div');
+        addMenu.className = 'collection-browser-add-menu';
 
-      const addNoteItem = document.createElement('button');
-      addNoteItem.type = 'button';
-      addNoteItem.className = 'collection-browser-add-menu-item';
-      addNoteItem.innerHTML = `${this.options.icons.fileText}<span>Note</span>`;
-      addNoteItem.addEventListener('click', () => {
-        this.closeAddMenu();
-        this.options.openNoteEditor('create');
-      });
-
-      const addListItem = document.createElement('button');
-      addListItem.type = 'button';
-      addListItem.className = 'collection-browser-add-menu-item';
-      addListItem.innerHTML = `${this.options.icons.list}<span>List</span>`;
-      addListItem.addEventListener('click', () => {
-        this.closeAddMenu();
-        this.openCreateListDialog();
-      });
-
-      addMenu.appendChild(addNoteItem);
-      addMenu.appendChild(addListItem);
-
-      addDropdownWrapper.appendChild(addBtn);
-      addDropdownWrapper.appendChild(addMenu);
-      createActions.appendChild(addDropdownWrapper);
-
-      // Toggle add menu
-      addBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = addMenu.classList.contains('open');
-        if (isOpen) {
+        const addNoteItem = document.createElement('button');
+        addNoteItem.type = 'button';
+        addNoteItem.className = 'collection-browser-add-menu-item';
+        addNoteItem.innerHTML = `${this.options.icons.fileText}<span>Note</span>`;
+        addNoteItem.addEventListener('click', () => {
           this.closeAddMenu();
-        } else {
-          addMenu.classList.add('open');
-          addBtn.setAttribute('aria-expanded', 'true');
-          // Close on outside click
-          const closeHandler = (evt: MouseEvent) => {
-            if (!addDropdownWrapper.contains(evt.target as Node)) {
-              this.closeAddMenu();
-              document.removeEventListener('click', closeHandler);
-            }
-          };
-          document.addEventListener('click', closeHandler);
-        }
-      });
+          this.options.openNoteEditor('create');
+        });
 
-      this.addMenuEl = addMenu;
-      this.addBtnEl = addBtn;
+        const addListItem = document.createElement('button');
+        addListItem.type = 'button';
+        addListItem.className = 'collection-browser-add-menu-item';
+        addListItem.innerHTML = `${this.options.icons.list}<span>List</span>`;
+        addListItem.addEventListener('click', () => {
+          this.closeAddMenu();
+          this.openCreateListDialog();
+        });
+
+        addMenu.appendChild(addNoteItem);
+        addMenu.appendChild(addListItem);
+
+        addDropdownWrapper.appendChild(addBtn);
+        addDropdownWrapper.appendChild(addMenu);
+        createActions.appendChild(addDropdownWrapper);
+
+        // Toggle add menu
+        addBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = addMenu.classList.contains('open');
+          if (isOpen) {
+            this.closeAddMenu();
+          } else {
+            addMenu.classList.add('open');
+            addBtn.setAttribute('aria-expanded', 'true');
+            // Close on outside click
+            const closeHandler = (evt: MouseEvent) => {
+              if (!addDropdownWrapper.contains(evt.target as Node)) {
+                this.closeAddMenu();
+                document.removeEventListener('click', closeHandler);
+              }
+            };
+            document.addEventListener('click', closeHandler);
+          }
+        });
+
+        this.addMenuEl = addMenu;
+        this.addBtnEl = addBtn;
+      }
     }
 
     rightControls.appendChild(sortToggle);
-    rightControls.appendChild(createActions);
+    if (createActions) {
+      rightControls.appendChild(createActions);
+    }
 
     // Assemble row: [viewToggle] [spacer for search] [rightControls]
     searchRow.appendChild(viewToggle);
@@ -593,6 +600,9 @@ export class CollectionBrowserController {
 
   private decorateListItem(itemEl: HTMLElement, item: CollectionItemSummary): void {
     if (item.type.toLowerCase().trim() !== 'list') {
+      return;
+    }
+    if (this.options.showListEditActions === false) {
       return;
     }
     const editEl = document.createElement('span');

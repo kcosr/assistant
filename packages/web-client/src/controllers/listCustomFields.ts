@@ -5,7 +5,8 @@ export type ListCustomFieldType =
   | 'time'
   | 'datetime'
   | 'select'
-  | 'checkbox';
+  | 'checkbox'
+  | 'ref';
 
 export interface ListCustomFieldDefinition {
   key: string;

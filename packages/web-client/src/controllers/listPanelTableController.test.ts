@@ -904,6 +904,55 @@ describe('ListPanelTableController notes column', () => {
     expect(cells[3]?.querySelector('input[type=\"checkbox\"]')).toBeNull();
   });
 
+  it('renders reference custom fields with navigation', () => {
+    const onOpenReference = vi.fn();
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      onOpenReference,
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [
+        {
+          id: 'item1',
+          title: 'Item 1',
+          customFields: {
+            ref: {
+              kind: 'panel',
+              panelType: 'notes',
+              id: 'Project Note',
+              label: 'Project Note',
+            },
+          },
+        },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [{ key: 'ref', label: 'Reference', type: 'ref' }],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const button = tbody.querySelector<HTMLButtonElement>('.list-item-ref-pill');
+    expect(button).not.toBeNull();
+    button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onOpenReference).toHaveBeenCalledTimes(1);
+    expect(onOpenReference.mock.calls[0]?.[0]).toMatchObject({
+      kind: 'panel',
+      panelType: 'notes',
+      id: 'Project Note',
+    });
+  });
+
   it('recomputes markdown overflow after column resize', () => {
     const controller = new ListPanelTableController({
       icons: { moreVertical: '', pin: '' },

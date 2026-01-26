@@ -34,6 +34,7 @@ describe('listSorting', () => {
         { key: 'status', label: 'Status', type: 'select', options: ['Open', 'Closed'] },
         { key: 'important', label: 'Important', type: 'checkbox' },
         { key: 'description', label: 'Description', type: 'text' },
+        { key: 'ref', label: 'Reference', type: 'ref' },
       ];
       expect(getSortTypeForColumn('priority', customFields)).toBe('number');
       expect(getSortTypeForColumn('due_date', customFields)).toBe('date');
@@ -42,6 +43,7 @@ describe('listSorting', () => {
       expect(getSortTypeForColumn('status', customFields)).toBe('text');
       expect(getSortTypeForColumn('important', customFields)).toBe('checkbox');
       expect(getSortTypeForColumn('description', customFields)).toBe('text');
+      expect(getSortTypeForColumn('ref', customFields)).toBe('text');
     });
 
     it('returns text for unknown custom fields', () => {

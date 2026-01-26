@@ -35,6 +35,8 @@ operations.
   details) for easy paste.
 - Select and checkbox custom fields can be edited inline from list rows without opening the edit
   dialog (toggle in settings, default on).
+- Reference custom fields let list items link to notes or lists via a picker; list rows render
+  clickable references.
 - Cmd/Ctrl+C/X/V support copy/cut/paste of selected list items between lists; external paste
   uses the same plain-text item block.
 - The lists dropdown includes a quick-add (+) action to add an item to a list without switching views.

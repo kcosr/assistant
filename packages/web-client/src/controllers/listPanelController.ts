@@ -24,6 +24,7 @@ import {
   getShowColumnOrder,
   sortItemsByOrderBy,
 } from '../utils/listItemQuery';
+import type { ListItemReference } from '../utils/listCustomFieldReference';
 
 export interface ListMoveTarget {
   id: string;
@@ -116,6 +117,13 @@ export interface ListPanelControllerOptions {
   getAqlMode?: () => boolean;
   getAqlQuery?: () => AqlQuery | null;
   setRightControls: (elements: HTMLElement[]) => void;
+  openReferencePicker?: (options: {
+    listId: string;
+    field: ListCustomFieldDefinition;
+    item?: ListPanelItem;
+    currentValue: ListItemReference | null;
+  }) => Promise<ListItemReference | null>;
+  openReference?: (reference: ListItemReference) => void;
 }
 
 const DEFAULT_VISIBILITY_BY_COLUMN: Record<string, ColumnVisibility> = {
@@ -217,6 +225,7 @@ export class ListPanelController {
       userUpdateTimeoutMs: options.userUpdateTimeoutMs,
       createListItem: (listId, item) => this.createListItem(listId, item),
       updateListItem: (listId, itemId, updates) => this.updateListItem(listId, itemId, updates),
+      ...(options.openReferencePicker ? { openReferencePicker: options.openReferencePicker } : {}),
     });
 
     this.listItemMenuController = new ListItemMenuController({
@@ -278,6 +287,10 @@ export class ListPanelController {
       onEditItem: (listId, item) => {
         this.showListItemEditorDialog('edit', listId, item);
       },
+      ...(options.openReferencePicker
+        ? { openReferencePicker: options.openReferencePicker }
+        : {}),
+      ...(options.openReference ? { onOpenReference: options.openReference } : {}),
     };
     if (options.onSelectionChange) {
       tableOptions.onSelectionChange = options.onSelectionChange;

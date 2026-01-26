@@ -1,5 +1,9 @@
 import type { ListCustomFieldDefinition } from '../controllers/listCustomFields';
 import type { ListPanelItem } from '../controllers/listPanelController';
+import {
+  formatListItemReferenceLabel,
+  parseListItemReference,
+} from './listCustomFieldReference';
 
 export type AqlParseResult =
   | { ok: true; query: AqlQuery }
@@ -33,6 +37,7 @@ export type AqlFieldType =
   | 'time'
   | 'datetime'
   | 'checkbox'
+  | 'ref'
   | 'tag'
   | 'boolean'
   | 'position';
@@ -156,6 +161,8 @@ function buildFieldMap(customFields: ListCustomFieldDefinition[]): {
               ? 'datetime'
               : field.type === 'checkbox'
                 ? 'checkbox'
+                : field.type === 'ref'
+                  ? 'ref'
                 : 'text';
     const label = field.label?.trim() || key;
     const aqlField: AqlField = {
@@ -884,6 +891,10 @@ function getFieldValue(
       if (typeof value === 'string') return parseDatetimeToTimestamp(value);
       return null;
     }
+    if (field.type === 'ref') {
+      const reference = parseListItemReference(value);
+      return reference ? formatListItemReferenceLabel(reference).toLowerCase() : null;
+    }
     if (typeof value === 'string') return value.toLowerCase();
     return String(value).toLowerCase();
   }
@@ -1046,6 +1057,7 @@ function getSortTypeForField(
       return 'checkbox';
     case 'select':
     case 'text':
+    case 'ref':
     default:
       return 'text';
   }
@@ -1108,6 +1120,10 @@ function getComparableValue(
     case 'text':
     default:
       if (typeof value === 'string') return value.toLowerCase();
+      const reference = parseListItemReference(value);
+      if (reference) {
+        return formatListItemReferenceLabel(reference).toLowerCase();
+      }
       return String(value).toLowerCase();
   }
 }

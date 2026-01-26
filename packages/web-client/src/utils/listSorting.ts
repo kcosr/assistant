@@ -1,4 +1,8 @@
 import type { ListCustomFieldDefinition } from '../controllers/listCustomFields';
+import {
+  formatListItemReferenceLabel,
+  parseListItemReference,
+} from './listCustomFieldReference';
 import { hasPinnedTag } from './pinnedTag';
 
 export type SortDirection = 'asc' | 'desc';
@@ -57,6 +61,7 @@ export function getSortTypeForColumn(
       return 'checkbox';
     case 'select':
     case 'text':
+    case 'ref':
     default:
       return 'text';
   }
@@ -166,6 +171,10 @@ function getComparableValue(
     default:
       if (typeof value === 'string') {
         return value.toLowerCase();
+      }
+      const reference = parseListItemReference(value);
+      if (reference) {
+        return formatListItemReferenceLabel(reference).toLowerCase();
       }
       return String(value).toLowerCase();
   }

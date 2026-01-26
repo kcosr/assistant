@@ -1960,6 +1960,53 @@ table.collection-list-table td {
   text-decoration: underline;
 }
 
+.list-item-ref-cell {
+  vertical-align: middle;
+}
+
+.list-item-ref-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.list-item-ref-pill:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.list-item-ref-label {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-item-ref-badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+}
+
+.list-item-ref-empty {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.list-item-ref-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .collection-list-table th .list-column-resize-handle {
   position: absolute;
   top: 0;
@@ -3441,6 +3488,74 @@ button.list-item-menu-checkbox {
   line-height: var(--line-height-relaxed);
 }
 
+.list-ref-picker-dialog {
+  max-width: 720px;
+  width: min(90vw, 720px);
+}
+
+.list-ref-picker-body {
+  height: min(70vh, 520px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.list-ref-picker-search-input {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.list-ref-picker-search-input:focus {
+  outline: none;
+  border-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.list-ref-picker-list {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-elevated);
+}
+
+.list-ref-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.list-ref-picker-item + .list-ref-picker-item {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.list-ref-picker-item:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.list-ref-picker-item.is-selected {
+  background-color: var(--color-bg-hover);
+  font-weight: 600;
+}
+
+.list-ref-picker-empty {
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
 .list-item-form {
   display: flex;
   flex-direction: column;
@@ -3527,6 +3642,77 @@ button.list-item-menu-checkbox {
 
 .list-item-custom-field-row--checkbox .list-item-custom-field-label-text {
   font-size: var(--font-size-sm);
+}
+
+.list-item-custom-field-row--ref {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.list-item-ref-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+}
+
+.list-item-ref-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+}
+
+.list-item-ref-display.is-empty {
+  color: var(--color-text-muted);
+}
+
+.list-item-ref-type {
+  font-size: var(--font-size-xxs);
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+}
+
+.list-item-ref-label {
+  font-size: var(--font-size-sm);
+}
+
+.list-item-ref-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.list-item-ref-action {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.list-item-ref-action:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.list-item-ref-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.list-item-ref-action--clear {
+  color: var(--color-error);
 }
 
 .list-item-form-select,

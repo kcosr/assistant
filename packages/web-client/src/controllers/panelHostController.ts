@@ -21,6 +21,7 @@ import { resolvePanelAvailability } from '../utils/panelAvailability';
 
 export interface PanelWorkspaceHandle {
   openPanel(panelType: string, options?: PanelOpenOptions): string | null;
+  openModalPanel?(panelType: string, options?: PanelOpenOptions): string | null;
   closePanel(panelId: string): void;
   activatePanel(panelId: string): void;
   movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void;
@@ -489,6 +490,8 @@ export class PanelHostController {
       },
       loadPanelState: () => this.options.getPanelState?.(entry.panelId) ?? null,
       openPanel: (panelType, options) => this.workspace?.openPanel(panelType, options) ?? null,
+      openModalPanel: (panelType, options) =>
+        this.workspace?.openModalPanel?.(panelType, options) ?? null,
       closePanel: (panelId) => {
         this.workspace?.closePanel(panelId);
       },

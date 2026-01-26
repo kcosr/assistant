@@ -7,6 +7,7 @@ import { evaluateAql, parseAql, sortItemsByOrderBy } from './listItemQuery';
 const customFields: ListCustomFieldDefinition[] = [
   { key: 'status', label: 'Status', type: 'select', options: ['Ready', 'Blocked'] },
   { key: 'priority', label: 'Priority', type: 'number' },
+  { key: 'ref', label: 'Reference', type: 'ref' },
 ];
 
 describe('listItemQuery', () => {
@@ -67,6 +68,37 @@ describe('listItemQuery', () => {
         notes: 'has notes',
       }),
     ).toBe(false);
+  });
+
+  it('treats reference fields as text in queries', () => {
+    const result = parseAql('ref : "project"', { customFields });
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    const matching: ListPanelItem = {
+      title: 'Item',
+      customFields: {
+        ref: {
+          kind: 'panel',
+          panelType: 'notes',
+          id: 'Project Plan',
+          label: 'Project Plan',
+        },
+      },
+    };
+    const rejected: ListPanelItem = {
+      title: 'Item',
+      customFields: {
+        ref: {
+          kind: 'panel',
+          panelType: 'notes',
+          id: 'Other Note',
+          label: 'Other Note',
+        },
+      },
+    };
+    expect(evaluateAql(result.query, matching)).toBe(true);
+    expect(evaluateAql(result.query, rejected)).toBe(false);
   });
 
   it('parses ORDER BY and SHOW', () => {

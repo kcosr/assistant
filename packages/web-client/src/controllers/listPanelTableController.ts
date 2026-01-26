@@ -6,6 +6,13 @@ import type { ColumnVisibility } from '../utils/listColumnPreferences';
 import { getVisibleCustomFields, normalizeListCustomFields } from '../utils/listColumnVisibility';
 import type { SortState } from '../utils/listSorting';
 import { parseFieldValueToDate, toggleSort } from '../utils/listSorting';
+import {
+  formatListItemReferenceLabel,
+  getListItemReferenceSearchText,
+  getListItemReferenceTypeLabel,
+  parseListItemReference,
+  type ListItemReference,
+} from '../utils/listCustomFieldReference';
 
 const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11h6M9 15h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
@@ -41,6 +48,13 @@ export interface ListPanelTableControllerOptions {
     itemId: string,
     updates: Record<string, unknown>,
   ) => Promise<boolean>;
+  openReferencePicker?: (options: {
+    listId: string;
+    field: ListCustomFieldDefinition;
+    item?: ListPanelItem;
+    currentValue: ListItemReference | null;
+  }) => Promise<ListItemReference | null>;
+  onOpenReference?: (reference: ListItemReference) => void;
   onMoveItemsToList?: (
     sourceListId: string,
     itemIds: string[],
@@ -1261,7 +1275,10 @@ export class ListPanelTableController {
         const key = field.key;
         if (!key) continue;
         const value = item.customFields[key];
-        const text = this.formatCustomFieldValue(value, field.type);
+        const text =
+          field.type === 'ref'
+            ? getListItemReferenceSearchText(value)
+            : this.formatCustomFieldValue(value, field.type);
         if (text.trim().length > 0) {
           searchParts.push(text);
         }
@@ -2220,6 +2237,21 @@ export class ListPanelTableController {
         }
       };
 
+      if (field.type === 'ref') {
+        this.renderReferenceCell({
+          cell: customCell,
+          field,
+          listId,
+          item,
+          itemId: itemIdValue,
+          value,
+          inlineEditingEnabled: inlineCustomFieldEditingEnabled,
+          isCompleted,
+        });
+        row.appendChild(customCell);
+        continue;
+      }
+
       if (inlineCustomFieldEditingEnabled && field.type === 'checkbox') {
         customCell.className = isCompleted ? 'list-item-completed-text' : '';
         const checkbox = document.createElement('input');
@@ -2364,6 +2396,60 @@ export class ListPanelTableController {
     this.renderMarkdownPreviewCell(notesCell, notes, isCompleted, 'list-item-notes-cell');
   }
 
+  private renderReferenceCell(options: {
+    cell: HTMLTableCellElement;
+    field: ListCustomFieldDefinition;
+    listId: string;
+    item: ListPanelItem;
+    itemId: string;
+    value: unknown;
+    inlineEditingEnabled: boolean;
+    isCompleted: boolean;
+  }): void {
+    const { cell, value, isCompleted } = options;
+    const openReference = this.options.onOpenReference;
+    const currentValue = parseListItemReference(value);
+
+    cell.innerHTML = '';
+    cell.className = isCompleted
+      ? 'list-item-ref-cell list-item-completed-text'
+      : 'list-item-ref-cell';
+
+    if (currentValue) {
+      const pill = document.createElement(openReference ? 'button' : 'span');
+      pill.className = 'list-item-ref-pill';
+      if (pill instanceof HTMLButtonElement) {
+        pill.type = 'button';
+      }
+
+      const label = document.createElement('span');
+      label.className = 'list-item-ref-label';
+      label.textContent = formatListItemReferenceLabel(currentValue);
+
+      const badge = document.createElement('span');
+      badge.className = 'list-item-ref-badge';
+      badge.textContent = getListItemReferenceTypeLabel(currentValue.panelType);
+
+      pill.appendChild(label);
+      pill.appendChild(badge);
+
+      if (openReference) {
+        pill.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openReference(currentValue as ListItemReference);
+        });
+      }
+      cell.appendChild(pill);
+      return;
+    }
+
+    const empty = document.createElement('span');
+    empty.className = 'list-item-ref-empty';
+    empty.textContent = '';
+    cell.appendChild(empty);
+  }
+
   private renderMarkdownPreviewCell(
     cell: HTMLTableCellElement,
     markdown: string,
@@ -2502,6 +2588,11 @@ export class ListPanelTableController {
         return value.trim();
       }
       return String(value);
+    }
+
+    if (type === 'ref') {
+      const reference = parseListItemReference(value);
+      return reference ? formatListItemReferenceLabel(reference) : '';
     }
 
     if (typeof value === 'string') {
