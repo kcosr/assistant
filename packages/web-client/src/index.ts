@@ -285,8 +285,9 @@ async function main(): Promise<void> {
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
-    listSingleClickSelectionCheckbox: listSingleClickSelectionCheckboxEl,
+    listItemSingleClickSelect: listItemSingleClickSelectEl,
     listInlineCustomFieldEditingCheckbox: listInlineCustomFieldEditingCheckboxEl,
+    listItemEditorModeSelect: listItemEditorModeSelectEl,
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
@@ -359,9 +360,11 @@ async function main(): Promise<void> {
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
-  const LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+  const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY =
+    'aiAssistantListSingleClickSelectionEnabled';
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
+  const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
 
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
@@ -434,8 +437,27 @@ async function main(): Promise<void> {
   updateShowContextFlag(showContextEnabled);
   let briefModeEnabled = false;
   let listInsertAtTopEnabled = false;
-  let listSingleClickSelectionEnabled = true;
+  let listItemSingleClickBehavior: 'none' | 'select' | 'open' | 'open-review' = 'select';
+
+  const normalizeListItemSingleClickBehavior = (
+    value: string | null,
+  ): 'none' | 'select' | 'open' | 'open-review' => {
+    if (value === 'open') {
+      return 'open';
+    }
+    if (value === 'open-review') {
+      return 'open-review';
+    }
+    if (value === 'none' || value === 'false') {
+      return 'none';
+    }
+    if (value === 'select' || value === 'true') {
+      return 'select';
+    }
+    return 'select';
+  };
   let listInlineCustomFieldEditingEnabled = true;
+  let listItemEditorDefaultMode: 'quick' | 'review' = 'quick';
 
   try {
     const storedIncludeContext = localStorage.getItem(INCLUDE_PANEL_CONTEXT_STORAGE_KEY);
@@ -456,14 +478,12 @@ async function main(): Promise<void> {
     } else if (storedInsertAtTop === 'false') {
       listInsertAtTopEnabled = false;
     }
-    const storedSingleClickSelection = localStorage.getItem(
-      LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY,
+    const storedSingleClickBehavior = localStorage.getItem(
+      LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY,
     );
-    if (storedSingleClickSelection === 'true') {
-      listSingleClickSelectionEnabled = true;
-    } else if (storedSingleClickSelection === 'false') {
-      listSingleClickSelectionEnabled = false;
-    }
+    listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(
+      storedSingleClickBehavior,
+    );
     const storedInlineCustomFields = localStorage.getItem(
       LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY,
     );
@@ -471,6 +491,12 @@ async function main(): Promise<void> {
       listInlineCustomFieldEditingEnabled = true;
     } else if (storedInlineCustomFields === 'false') {
       listInlineCustomFieldEditingEnabled = false;
+    }
+    const storedListItemEditorMode = localStorage.getItem(
+      LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY,
+    );
+    if (storedListItemEditorMode === 'review' || storedListItemEditorMode === 'quick') {
+      listItemEditorDefaultMode = storedListItemEditorMode;
     }
     const storedInteractionEnabled = localStorage.getItem(INTERACTION_MODE_STORAGE_KEY);
     if (storedInteractionEnabled === 'true') {
@@ -2427,14 +2453,16 @@ async function main(): Promise<void> {
       }
     });
   }
-  if (listSingleClickSelectionCheckboxEl) {
-    listSingleClickSelectionCheckboxEl.checked = listSingleClickSelectionEnabled;
-    listSingleClickSelectionCheckboxEl.addEventListener('change', () => {
-      listSingleClickSelectionEnabled = listSingleClickSelectionCheckboxEl.checked;
+  if (listItemSingleClickSelectEl) {
+    listItemSingleClickSelectEl.value = listItemSingleClickBehavior;
+    listItemSingleClickSelectEl.addEventListener('change', () => {
+      listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(
+        listItemSingleClickSelectEl.value,
+      );
       try {
         localStorage.setItem(
-          LIST_SINGLE_CLICK_SELECTION_STORAGE_KEY,
-          listSingleClickSelectionEnabled ? 'true' : 'false',
+          LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY,
+          listItemSingleClickBehavior,
         );
       } catch {
         // Ignore localStorage errors.
@@ -2456,6 +2484,18 @@ async function main(): Promise<void> {
       document.dispatchEvent(
         new CustomEvent('assistant:list-inline-custom-field-editing-updated'),
       );
+    });
+  }
+  if (listItemEditorModeSelectEl) {
+    listItemEditorModeSelectEl.value = listItemEditorDefaultMode;
+    listItemEditorModeSelectEl.addEventListener('change', () => {
+      listItemEditorDefaultMode =
+        listItemEditorModeSelectEl.value === 'review' ? 'review' : 'quick';
+      try {
+        localStorage.setItem(LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY, listItemEditorDefaultMode);
+      } catch {
+        // Ignore localStorage errors.
+      }
     });
   }
 

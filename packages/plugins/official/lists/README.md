@@ -45,8 +45,10 @@ operations.
 - Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
 - AQL mode provides structured list-item queries with filters, boolean logic, `ORDER BY`, and `SHOW` for column visibility/order.
+- List item single-click behavior is configurable (none, select, open edit modal, open edit modal in review mode) via settings.
 - Capacitor Android builds and narrow viewports show floating add/search buttons in list view; search opens the command palette.
 - Custom fields can be reordered in the list metadata dialog.
+- List item editor supports Edit and Review modes; Review shows a report-style view with markdown previews and inline edit buttons, and the default mode is configurable in settings.
 
 All operations accept an optional `instance_id` (defaults to `default`), and `instance_list` reports
 configured instances.
