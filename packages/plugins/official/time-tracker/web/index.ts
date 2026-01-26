@@ -1317,7 +1317,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           .map((record) => {
             const notes = Array.from(record.notes.values());
             const description =
-              notes.length > 0 ? notes.map((note) => `- ${note}`).join('\n') : '';
+              notes.length > 0 ? notes.map((note) => `• ${note}`).join('\n') : '';
             return {
               item: record.item,
               total_minutes: record.totalMinutes,

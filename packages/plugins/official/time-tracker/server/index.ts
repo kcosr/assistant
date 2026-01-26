@@ -109,6 +109,13 @@ function requireDateString(value: unknown, field: string): string {
   return parsed;
 }
 
+function formatExportDescription(value: string): string {
+  if (!value) {
+    return '';
+  }
+  return value.replace(/^-\s+/gm, '• ');
+}
+
 function isValidDateString(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
@@ -473,7 +480,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             formula: `B${rowIndex}+C${rowIndex}/60`,
             result: hours + minutes / 60,
           };
-          excelRow.getCell('E').value = row.description;
+          excelRow.getCell('E').value = formatExportDescription(row.description);
           excelRow.getCell('D').numFmt = '0.00';
           excelRow.getCell('E').alignment = { wrapText: true, vertical: 'top' };
           const lineCount = Math.max(1, row.description.split('\n').length);

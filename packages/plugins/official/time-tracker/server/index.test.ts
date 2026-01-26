@@ -32,7 +32,7 @@ describe('time-tracker export_xlsx', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  it('uses fixed column widths for item and description', async () => {
+  it('uses fixed column widths and formats description bullets', async () => {
     const plugin = createTestPlugin();
     await plugin.initialize(tempDir, { enabled: true } as any);
 
@@ -46,7 +46,7 @@ describe('time-tracker export_xlsx', () => {
         {
           item: 'Task A',
           total_minutes: 90,
-          description: 'One note',
+          description: '- One note',
         },
       ],
       start_date: '2026-01-01',
@@ -62,5 +62,6 @@ describe('time-tracker export_xlsx', () => {
 
     expect(sheet.getColumn(1).width).toBe(80);
     expect(sheet.getColumn(5).width).toBe(160);
+    expect(sheet.getCell('E2').value).toBe('• One note');
   });
 });
