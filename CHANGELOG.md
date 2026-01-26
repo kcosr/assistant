@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
 
 ### Removed
 
