@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
-import { normalizeTags } from '@assistant/shared';
+import { evaluateAql, normalizeTags, parseAql, sortItemsByOrderBy } from '@assistant/shared';
 
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
@@ -740,6 +740,66 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           });
         }
         return saved;
+      },
+      'items-aql': async (args): Promise<unknown> => {
+        const parsed = asObject(args);
+        const { store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        const queryRaw = parsed['query'];
+        if (typeof queryRaw !== 'string') {
+          throw new ToolError('invalid_arguments', 'query is required and must be a string');
+        }
+        const limit = parsed['limit'];
+        if (limit !== undefined && typeof limit !== 'number') {
+          throw new ToolError('invalid_arguments', 'limit must be a number');
+        }
+        const list = await listsStore.getList(listId);
+        if (!list) {
+          throw new ToolError('list_not_found', `List not found: ${listId}`);
+        }
+        const result = parseAql(queryRaw, { customFields: list.customFields ?? [] });
+        if (!result.ok) {
+          throw new ToolError('invalid_arguments', result.error);
+        }
+        const baseItems = await listsStore.listItems({ listId, limit: 0, sort: 'position' });
+        const filtered = baseItems.filter((item) => evaluateAql(result.query, item));
+        const sorted =
+          result.query.orderBy.length > 0
+            ? sortItemsByOrderBy(filtered, result.query.orderBy, list.customFields ?? [])
+            : filtered;
+        const max = limit ?? 0;
+        return max > 0 ? sorted.slice(0, max) : sorted;
+      },
+      'aql-apply': async (args, ctx): Promise<{ ok: true; panelId: string }> => {
+        const parsed = asObject(args);
+        const { instanceId, store: listsStore } = await resolveStore(parsed);
+        const listId = requireNonEmptyString(parsed['listId'], 'listId');
+        const panelId = requireNonEmptyString(parsed['panelId'], 'panelId');
+        const queryRaw = parsed['query'];
+        if (typeof queryRaw !== 'string') {
+          throw new ToolError('invalid_arguments', 'query is required and must be a string');
+        }
+        const list = await listsStore.getList(listId);
+        if (!list) {
+          throw new ToolError('list_not_found', `List not found: ${listId}`);
+        }
+        const result = parseAql(queryRaw, { customFields: list.customFields ?? [] });
+        if (!result.ok) {
+          throw new ToolError('invalid_arguments', result.error);
+        }
+        const sessionHub = requireSessionHub(ctx);
+        sessionHub.broadcastToAll({
+          type: 'panel_event',
+          panelId,
+          panelType: 'lists',
+          payload: {
+            type: 'lists_aql_apply',
+            instance_id: instanceId,
+            listId,
+            query: queryRaw,
+          },
+        });
+        return { ok: true, panelId };
       },
       'items-list': async (args): Promise<unknown> => {
         const parsed = asObject(args);

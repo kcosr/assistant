@@ -320,6 +320,42 @@
       "capabilities": ["lists.write"]
     },
     {
+      "id": "items-aql",
+      "summary": "Run an AQL query against list items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "query": { "type": "string", "description": "AQL query text." },
+          "limit": { "type": "number", "description": "Max items to return." }
+        },
+        "required": ["listId", "query"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
+      "id": "aql-apply",
+      "summary": "Apply an AQL query to a lists panel.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "listId": { "type": "string", "description": "List id." },
+          "panelId": { "type": "string", "description": "Lists panel id to target." },
+          "query": { "type": "string", "description": "AQL query text." }
+        },
+        "required": ["listId", "panelId", "query"]
+      },
+      "capabilities": ["lists.read"]
+    },
+    {
       "id": "items-list",
       "summary": "List items in a list.",
       "inputSchema": {

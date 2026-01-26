@@ -31,6 +31,12 @@ via CLI or tools.
 
 ## Proposed Solution
 
+### Shared AQL module
+
+1. Extract AQL parsing/evaluation/sort helpers into `packages/shared/src/aql/`.
+2. Define shared AQL types + a minimal `AqlItem` (title/notes/url/tags/customFields/timestamps/position/completed).
+3. Rewire web + server to import from shared, ensuring identical validation behavior.
+
 ### Server-side AQL evaluation
 
 1. Move AQL parsing/evaluation into a shared module (e.g., `packages/shared/src/aql/`).
@@ -62,6 +68,14 @@ Two options:
 - If a saved query name exists for the same string, select it in the Saved dropdown.
 - If the query is invalid, show an inline error and do not apply.
 
+## Decisions
+
+- `items-aql` requires `listId` (no cross-list queries in v1).
+- `SHOW` is parsed/validated but ignored for server-side projection.
+- `aql-apply` requires `panelId` and targets that specific lists panel.
+- CLI accepts raw AQL strings only (saved query name/id resolution is out of scope for v1).
+- Server-side validation uses the shared AQL module (including ambiguous field checks).
+
 ## Files to update
 
 - `packages/shared/src/` (new shared AQL module)
@@ -76,11 +90,3 @@ Two options:
   - `packages/plugins/official/lists/server/index.test.ts`
   - `packages/plugins/official/lists/server/store.test.ts`
   - `packages/shared/src/...` (AQL unit tests)
-
-## Open questions
-
-1. Should the server-side AQL operation require `listId`, or allow cross-list queries?
-2. Should `SHOW` be ignored for CLI results, or used for projection in output?
-3. For applying to panels, should `panelId` be required, or default to the selected lists panel?
-4. Do we want CLI commands to accept saved query names (resolve to query string) in addition to raw AQL?
-5. Should the server enforce the same AQL validation as the client (including custom field name collisions)?

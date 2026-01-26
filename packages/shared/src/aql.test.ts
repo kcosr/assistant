@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ListCustomFieldDefinition } from '../controllers/listCustomFields';
-import type { ListPanelItem } from '../controllers/listPanelController';
-import { evaluateAql, parseAql, sortItemsByOrderBy } from './listItemQuery';
+import type { AqlItem, ListCustomFieldDefinition } from './aql';
+import { evaluateAql, parseAql, sortItemsByOrderBy } from './aql';
 
 const customFields: ListCustomFieldDefinition[] = [
   { key: 'status', label: 'Status', type: 'select', options: ['Ready', 'Blocked'] },
   { key: 'priority', label: 'Priority', type: 'number' },
 ];
 
-describe('listItemQuery', () => {
+describe('aql', () => {
   it('parses and evaluates AQL clauses', () => {
     const result = parseAql('status = "Ready" AND NOT title : "wip"', {
       customFields,
@@ -17,11 +16,11 @@ describe('listItemQuery', () => {
     if (!result.ok) {
       throw new Error(result.error);
     }
-    const matching: ListPanelItem = {
+    const matching: AqlItem = {
       title: 'Launch',
       customFields: { status: 'Ready' },
     };
-    const rejected: ListPanelItem = {
+    const rejected: AqlItem = {
       title: 'WIP Launch',
       customFields: { status: 'Ready' },
     };
@@ -36,12 +35,12 @@ describe('listItemQuery', () => {
     if (!result.ok) {
       throw new Error(result.error);
     }
-    const matching: ListPanelItem = {
+    const matching: AqlItem = {
       title: 'Ship',
       notes: 'ready to go',
       tags: ['urgent'],
     };
-    const rejected: ListPanelItem = {
+    const rejected: AqlItem = {
       title: 'Ship',
       notes: 'todo later',
       tags: ['urgent'],
@@ -85,7 +84,7 @@ describe('listItemQuery', () => {
     if (!result.ok) {
       throw new Error(result.error);
     }
-    const items: ListPanelItem[] = [
+    const items: AqlItem[] = [
       {
         title: 'First',
         updatedAt: '2024-01-01T00:00:00Z',

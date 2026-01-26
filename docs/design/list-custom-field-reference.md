@@ -98,7 +98,7 @@ Add a new list custom field type (`ref`) that stores a reference to another pane
 - `packages/web-client/src/controllers/listPanelTableController.ts`
 - `packages/web-client/src/utils/listColumnVisibility.ts`
 - `packages/web-client/src/utils/listSorting.ts`
-- `packages/web-client/src/utils/listItemQuery.ts`
+- `packages/shared/src/aql.ts`
 - `packages/plugins/official/lists/web/index.ts`
 - `packages/plugins/official/lists/web/styles.css`
 
