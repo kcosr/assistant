@@ -110,7 +110,7 @@ be marked as the default view. The list panel loads saved queries on list load.
 - `packages/web-client/src/controllers/collectionPanelSearchController.ts`
 - `packages/plugins/official/lists/web/index.ts`
 - `packages/plugins/official/lists/web/styles.css`
-- `packages/web-client/src/utils/listItemQuery.ts` (new)
+- `packages/shared/src/aql.ts`
 - `packages/web-client/src/controllers/listPanelController.test.ts`
 - `packages/plugins/official/lists/web/index.test.ts`
 - `CHANGELOG.md`

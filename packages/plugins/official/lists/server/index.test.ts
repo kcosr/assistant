@@ -550,6 +550,99 @@ describe('lists plugin operations', () => {
     await fs.rm(dataDir, { recursive: true, force: true });
   });
 
+  it('runs server-side AQL queries and applies them to panels', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create(
+      {
+        id: 'work',
+        name: 'Work',
+        customFields: [{ key: 'priority', label: 'Priority', type: 'number' }],
+      },
+      ctx,
+    );
+
+    await ops['item-add'](
+      {
+        listId: 'work',
+        title: 'First',
+        customFields: { priority: 2 },
+      },
+      ctx,
+    );
+    await ops['item-add'](
+      {
+        listId: 'work',
+        title: 'Second',
+        customFields: { priority: 1 },
+      },
+      ctx,
+    );
+    await ops['item-add'](
+      {
+        listId: 'work',
+        title: 'Third',
+        customFields: { priority: 3 },
+      },
+      ctx,
+    );
+
+    const filtered = (await ops['items-aql'](
+      {
+        listId: 'work',
+        query: 'priority >= 2 ORDER BY priority ASC',
+      },
+      ctx,
+    )) as ListItem[];
+    expect(filtered.map((item) => item.title)).toEqual(['First', 'Third']);
+
+    await expect(
+      ops['items-aql']({ listId: 'work', query: 'unknown_field = 1' }, ctx),
+    ).rejects.toThrow(/Unknown field/);
+
+    const broadcastToAll = vi.fn();
+    const applyCtx: ToolContext = {
+      ...ctx,
+      sessionHub: { broadcastToAll } as ToolContext['sessionHub'],
+    };
+    const applyResult = (await ops['aql-apply'](
+      {
+        listId: 'work',
+        panelId: 'lists-2',
+        query: 'priority >= 2',
+      },
+      applyCtx,
+    )) as { ok: true; panelId: string };
+    expect(applyResult).toEqual({ ok: true, panelId: 'lists-2' });
+    expect(broadcastToAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'panel_event',
+        panelId: 'lists-2',
+        panelType: 'lists',
+        payload: {
+          type: 'lists_aql_apply',
+          instance_id: 'default',
+          listId: 'work',
+          query: 'priority >= 2',
+        },
+      }),
+    );
+
+    if (plugin.shutdown) {
+      await plugin.shutdown();
+    }
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
   it('stores data under the default instance directory', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

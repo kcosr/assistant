@@ -59,6 +59,8 @@ AQL is a structured query mode for list items. Toggle **AQL** in the search bar 
 then press Enter or **Apply** to run the query. Raw search mode still applies live as you type.
 Saved queries are stored per list + instance and can be loaded from the Saved dropdown. You can
 mark one saved query as the default view for a list.
+Server-side AQL evaluation is available via the `items-aql` tool/CLI command, and `aql-apply`
+can target a specific lists panel to apply a query.
 
 Syntax highlights:
 

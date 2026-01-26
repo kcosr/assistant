@@ -6,6 +6,7 @@
 
 ### Added
 - Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
+- Added server-side AQL queries and panel apply tooling for lists. ([#39](https://github.com/kcosr/assistant/pull/39))
 - Added list item editor review mode with report-style layout, markdown previews, inline field edits, and a default mode setting. ([#38](https://github.com/kcosr/assistant/pull/38))
 
 ### Changed
