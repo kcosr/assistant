@@ -6,6 +6,7 @@
 
 ### Added
 - Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
+- Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 
 ### Changed
 - Changed list view preferences to persist per-panel instead of `/preferences`. ([#37](https://github.com/kcosr/assistant/pull/37))
