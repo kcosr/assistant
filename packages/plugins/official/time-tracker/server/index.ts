@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
+import ExcelJS from 'exceljs';
 
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
@@ -51,6 +52,16 @@ function parseOptionalString(value: unknown, field: string): string | undefined 
   }
   if (typeof value !== 'string') {
     throw new ToolError('invalid_arguments', `${field} must be a string`);
+  }
+  return value;
+}
+
+function parseOptionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'boolean') {
+    throw new ToolError('invalid_arguments', `${field} must be a boolean`);
   }
   return value;
 }
@@ -276,12 +287,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const entryDate =
           parseOptionalDateString(parsed['entry_date'], 'entry_date') ?? getLocalDateString();
         const note = parseOptionalString(parsed['note'], 'note');
+        const reported = parseOptionalBoolean(parsed['reported'], 'reported');
         try {
           const entry = (await getStore(instanceId)).createEntry({
             taskId,
             entryDate,
             durationMinutes,
             note,
+            ...(reported !== undefined ? { reported } : {}),
             entryType: 'manual',
           });
           broadcast(ctx, { type: 'time-tracker:entry:created', instance_id: instanceId, entry });
@@ -296,11 +309,16 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const startDate = parseOptionalDateString(parsed['start_date'], 'start_date');
         const endDate = parseOptionalDateString(parsed['end_date'], 'end_date');
         const taskId = parseOptionalTrimmedString(parsed['task_id'], 'task_id');
+        const includeReported = parseOptionalBoolean(
+          parsed['include_reported'],
+          'include_reported',
+        );
         try {
           return (await getStore(instanceId)).listEntries({
             ...(startDate ? { startDate } : {}),
             ...(endDate ? { endDate } : {}),
             ...(taskId ? { taskId } : {}),
+            ...(includeReported !== undefined ? { includeReported } : {}),
           });
         } catch (error) {
           handleStoreError(error);
@@ -324,6 +342,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const entryDate = parseOptionalDateString(parsed['entry_date'], 'entry_date');
         const durationMinutesRaw = parsed['duration_minutes'];
         const note = parseOptionalString(parsed['note'], 'note');
+        const reported = parseOptionalBoolean(parsed['reported'], 'reported');
         let durationMinutes: number | undefined;
         if (durationMinutesRaw !== undefined) {
           durationMinutes = parseDurationMinutes(durationMinutesRaw);
@@ -334,6 +353,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(taskId ? { taskId } : {}),
             ...(entryDate ? { entryDate } : {}),
             ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+            ...(reported !== undefined ? { reported } : {}),
             ...(note !== undefined ? { note } : {}),
           });
           broadcast(ctx, { type: 'time-tracker:entry:updated', instance_id: instanceId, entry });
@@ -398,6 +418,94 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         } catch (error) {
           handleStoreError(error);
         }
+      },
+      export_xlsx: async (args) => {
+        const parsed = asObject(args);
+        const rowsRaw = parsed['rows'];
+        if (!Array.isArray(rowsRaw)) {
+          throw new ToolError('invalid_arguments', 'rows must be an array');
+        }
+        const startDate = parseOptionalDateString(parsed['start_date'], 'start_date');
+        const endDate = parseOptionalDateString(parsed['end_date'], 'end_date');
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Time Report');
+
+        sheet.columns = [
+          { header: 'Item', key: 'item', width: 32 },
+          { header: 'Hours', key: 'hours', width: 10 },
+          { header: 'Minutes', key: 'minutes', width: 10 },
+          { header: 'Hours (Decimal)', key: 'hours_decimal', width: 16 },
+          { header: 'Description', key: 'description', width: 60 },
+        ];
+
+        const headerRow = sheet.getRow(1);
+        headerRow.font = { bold: true };
+
+        const rows = rowsRaw
+          .map((row) => {
+            if (!row || typeof row !== 'object') {
+              return null;
+            }
+            const record = row as Record<string, unknown>;
+            const item = record['item'];
+            const totalMinutes = record['total_minutes'];
+            const description = record['description'];
+            if (typeof item !== 'string' || typeof totalMinutes !== 'number') {
+              return null;
+            }
+            return {
+              item,
+              totalMinutes,
+              description: typeof description === 'string' ? description : '',
+            };
+          })
+          .filter(Boolean) as Array<{ item: string; totalMinutes: number; description: string }>;
+
+        let rowIndex = 2;
+        for (const row of rows) {
+          const hours = Math.floor(row.totalMinutes / 60);
+          const minutes = row.totalMinutes % 60;
+          const excelRow = sheet.getRow(rowIndex);
+          excelRow.getCell('A').value = row.item;
+          excelRow.getCell('B').value = hours;
+          excelRow.getCell('C').value = minutes;
+          excelRow.getCell('D').value = {
+            formula: `B${rowIndex}+C${rowIndex}/60`,
+            result: hours + minutes / 60,
+          };
+          excelRow.getCell('E').value = row.description;
+          excelRow.getCell('D').numFmt = '0.00';
+          excelRow.getCell('E').alignment = { wrapText: true, vertical: 'top' };
+          const lineCount = Math.max(1, row.description.split('\n').length);
+          excelRow.height = Math.min(180, 15 * lineCount);
+          rowIndex += 1;
+        }
+
+        if (rows.length > 0) {
+          const totalRow = sheet.getRow(rowIndex);
+          totalRow.font = { bold: true };
+          totalRow.getCell('A').value = 'Total';
+          totalRow.getCell('B').value = { formula: `SUM(B2:B${rowIndex - 1})` };
+          totalRow.getCell('C').value = { formula: `SUM(C2:C${rowIndex - 1})` };
+          totalRow.getCell('D').value = { formula: `SUM(D2:D${rowIndex - 1})` };
+          totalRow.getCell('D').numFmt = '0.00';
+          totalRow.getCell('D').fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'C6EFCE' },
+          };
+        }
+
+        const buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer;
+        const content = Buffer.from(buffer).toString('base64');
+        const dateSuffix =
+          startDate && endDate ? `${startDate}_to_${endDate}` : getLocalDateString();
+        const filename = `time-tracker-export-${dateSuffix}.xlsx`;
+        return {
+          filename,
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          content,
+        };
       },
       timer_discard: async (args, ctx) => {
         const parsed = asObject(args);

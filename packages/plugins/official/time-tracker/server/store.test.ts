@@ -33,7 +33,7 @@ describe('TimeTrackerStore', () => {
     const dir = await createTempDir();
     const store = new TimeTrackerStore(dir);
 
-    expect(store.getSchemaVersion()).toBe(1);
+    expect(store.getSchemaVersion()).toBe(2);
     expect(store.listTasks()).toHaveLength(0);
 
     store.close();
@@ -129,6 +129,45 @@ describe('TimeTrackerStore', () => {
     expect(result.entry.start_time).toBe('2024-01-05T10:00:00.000Z');
     expect(result.entry.end_time).toBe('2024-01-05T10:01:30.000Z');
     expect(store.getActiveTimer()).toBeNull();
+
+    store.close();
+  });
+
+  it('stores and filters reported entries', async () => {
+    const dir = await createTempDir();
+    const store = new TimeTrackerStore(dir);
+
+    const task = store.createTask({ name: 'Reporting' });
+
+    const reportedEntry = store.createEntry({
+      taskId: task.id,
+      entryDate: '2024-01-10',
+      durationMinutes: 30,
+      note: 'Reported work',
+      entryType: 'manual',
+      reported: true,
+    });
+
+    const unreportedEntry = store.createEntry({
+      taskId: task.id,
+      entryDate: '2024-01-11',
+      durationMinutes: 45,
+      note: 'Unreported work',
+      entryType: 'manual',
+    });
+
+    const defaultList = store.listEntries();
+    expect(defaultList).toHaveLength(1);
+    expect(defaultList[0]?.id).toBe(unreportedEntry.id);
+
+    const fullList = store.listEntries({ includeReported: true });
+    expect(fullList).toHaveLength(2);
+
+    const updated = store.updateEntry({ id: unreportedEntry.id, reported: true });
+    expect(updated.reported).toBe(true);
+
+    const updatedEntry = store.getEntry(reportedEntry.id);
+    expect(updatedEntry?.reported).toBe(true);
 
     store.close();
   });

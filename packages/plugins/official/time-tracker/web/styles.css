@@ -353,6 +353,23 @@
   gap: var(--spacing-xs);
 }
 
+.time-tracker-filter-extras {
+  margin-top: var(--spacing-xs);
+}
+
+.time-tracker-filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.time-tracker-filter-checkbox input[type='checkbox'] {
+  cursor: pointer;
+}
+
 .time-tracker-filter-button {
   border: 1px solid var(--color-border-default);
   background-color: var(--color-bg-input);
@@ -584,6 +601,10 @@
   border-top: 1px solid var(--color-border-subtle);
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
 }
 
 .time-tracker-empty {
@@ -675,6 +696,26 @@
   background-color: var(--color-bg-input);
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
+}
+
+.list-item-form-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.list-item-form-checkbox {
+  cursor: pointer;
+}
+
+.time-tracker-export-summary {
+  display: grid;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
 }
 
 .confirm-dialog-buttons {

@@ -16,6 +16,8 @@ Track time against named tasks with timers, manual entries, and date filters.
 - Panel type: `time-tracker` (multi-instance, global scope).
 - Timer state is stored server-side and persists across reloads.
 - Instance selection comes from config (`plugins.time-tracker.instances`); the default instance id is `default`.
+- Entries support a `reported` flag and can be filtered with "Show reported".
+- Export generates an XLSX report from the current view and uploads it to Artifacts.
 
 ## Source files
 
@@ -44,9 +46,10 @@ Notable operations:
 
 - `instance_list`
 - `task_create`, `task_list`, `task_get`, `task_update`, `task_delete`
-- `entry_create`, `entry_list`, `entry_get`, `entry_update`, `entry_delete`
+- `entry_create`, `entry_list`, `entry_get`, `entry_update`, `entry_delete` (includes `reported`, `include_reported`)
 - `timer_start`, `timer_status`, `timer_stop`, `timer_discard`
 - `set_filter` (broadcasts a panel range update)
+- `export_xlsx` (server-side XLSX generation)
 
 All operations accept an optional `instance_id` (defaults to `default`).
 

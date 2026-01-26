@@ -16,6 +16,7 @@ export type Entry = {
   task_id: string;
   entry_date: string;
   duration_minutes: number;
+  reported: boolean;
   note: string;
   entry_type: 'manual' | 'timer';
   start_time: string | null;
@@ -86,6 +87,14 @@ const MIGRATIONS: Array<{ version: number; up: (db: Database.Database) => void }
           last_resumed_at TEXT NOT NULL,
           created_at TEXT NOT NULL
         );
+      `);
+    },
+  },
+  {
+    version: 2,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE entries ADD COLUMN reported INTEGER NOT NULL DEFAULT 0;
       `);
     },
   },
@@ -268,9 +277,18 @@ export class TimeTrackerStore {
     }
   }
 
-  listEntries(params?: { startDate?: string; endDate?: string; taskId?: string }): Entry[] {
+  listEntries(params?: {
+    startDate?: string;
+    endDate?: string;
+    taskId?: string;
+    includeReported?: boolean;
+  }): Entry[] {
     const clauses: string[] = [];
     const values: Array<string> = [];
+
+    if (!params?.includeReported) {
+      clauses.push('reported = 0');
+    }
 
     if (params?.taskId) {
       clauses.push('task_id = ?');
@@ -288,31 +306,39 @@ export class TimeTrackerStore {
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     return this.db
       .prepare(
-        `SELECT id, task_id, entry_date, duration_minutes, note, entry_type, start_time, end_time,
+        `SELECT id, task_id, entry_date, duration_minutes, reported, note, entry_type, start_time, end_time,
                 created_at, updated_at
          FROM entries
          ${where}
          ORDER BY updated_at DESC`,
       )
-      .all(...values) as Entry[];
+      .all(...values)
+      .map((row) => ({
+        ...row,
+        reported: Boolean((row as { reported?: number }).reported),
+      })) as Entry[];
   }
 
   getEntry(id: string): Entry | null {
     const row = this.db
       .prepare(
-        `SELECT id, task_id, entry_date, duration_minutes, note, entry_type, start_time, end_time,
+        `SELECT id, task_id, entry_date, duration_minutes, reported, note, entry_type, start_time, end_time,
                 created_at, updated_at
          FROM entries
          WHERE id = ?`,
       )
       .get(id) as Entry | undefined;
-    return row ?? null;
+    if (!row) {
+      return null;
+    }
+    return { ...row, reported: Boolean((row as { reported?: number }).reported) };
   }
 
   createEntry(params: {
     taskId: string;
     entryDate: string;
     durationMinutes: number;
+    reported?: boolean;
     note?: string;
     entryType: Entry['entry_type'];
     startTime?: string | null;
@@ -331,6 +357,7 @@ export class TimeTrackerStore {
       task_id: params.taskId,
       entry_date: params.entryDate,
       duration_minutes: params.durationMinutes,
+      reported: params.reported ?? false,
       note: params.note ?? '',
       entry_type: params.entryType,
       start_time: params.startTime ?? null,
@@ -342,14 +369,15 @@ export class TimeTrackerStore {
     this.db
       .prepare(
         `INSERT INTO entries
-         (id, task_id, entry_date, duration_minutes, note, entry_type, start_time, end_time, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, task_id, entry_date, duration_minutes, reported, note, entry_type, start_time, end_time, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         entry.id,
         entry.task_id,
         entry.entry_date,
         entry.duration_minutes,
+        entry.reported ? 1 : 0,
         entry.note,
         entry.entry_type,
         entry.start_time,
@@ -367,6 +395,7 @@ export class TimeTrackerStore {
     taskId?: string;
     entryDate?: string;
     durationMinutes?: number;
+    reported?: boolean;
     note?: string;
   }): Entry {
     const updatedAt = nowIso();
@@ -386,16 +415,17 @@ export class TimeTrackerStore {
     const durationMinutes = params.durationMinutes ?? entry.duration_minutes;
     ensurePositiveMinutes(durationMinutes);
 
+    const reported = params.reported ?? entry.reported;
     const entryDate = params.entryDate ?? entry.entry_date;
     const note = params.note ?? entry.note;
 
     this.db
       .prepare(
         `UPDATE entries
-         SET task_id = ?, entry_date = ?, duration_minutes = ?, note = ?, updated_at = ?
+         SET task_id = ?, entry_date = ?, duration_minutes = ?, reported = ?, note = ?, updated_at = ?
          WHERE id = ?`,
       )
-      .run(targetTaskId, entryDate, durationMinutes, note, updatedAt, entry.id);
+      .run(targetTaskId, entryDate, durationMinutes, reported ? 1 : 0, note, updatedAt, entry.id);
 
     this.touchTask(entry.task_id, updatedAt);
     if (targetTaskId !== entry.task_id) {
@@ -407,6 +437,7 @@ export class TimeTrackerStore {
       task_id: targetTaskId,
       entry_date: entryDate,
       duration_minutes: durationMinutes,
+      reported,
       note,
       updated_at: updatedAt,
     };

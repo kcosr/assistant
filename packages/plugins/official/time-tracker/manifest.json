@@ -128,7 +128,8 @@
           "task_id": { "type": "string", "description": "Task id." },
           "duration_minutes": { "type": "number", "description": "Entry duration in minutes." },
           "entry_date": { "type": "string", "description": "Entry date (YYYY-MM-DD)." },
-          "note": { "type": "string", "description": "Optional note." }
+          "note": { "type": "string", "description": "Optional note." },
+          "reported": { "type": "boolean", "description": "Whether the entry is reported." }
         },
         "required": ["task_id", "duration_minutes"]
       },
@@ -146,7 +147,11 @@
           },
           "start_date": { "type": "string", "description": "Start date (YYYY-MM-DD)." },
           "end_date": { "type": "string", "description": "End date (YYYY-MM-DD)." },
-          "task_id": { "type": "string", "description": "Optional task id filter." }
+          "task_id": { "type": "string", "description": "Optional task id filter." },
+          "include_reported": {
+            "type": "boolean",
+            "description": "Include reported entries (defaults to false)."
+          }
         }
       },
       "capabilities": ["time-tracker.read"]
@@ -181,11 +186,42 @@
           "task_id": { "type": "string", "description": "New task id." },
           "duration_minutes": { "type": "number", "description": "New duration in minutes." },
           "entry_date": { "type": "string", "description": "Entry date (YYYY-MM-DD)." },
-          "note": { "type": "string", "description": "Optional note." }
+          "note": { "type": "string", "description": "Optional note." },
+          "reported": { "type": "boolean", "description": "Whether the entry is reported." }
         },
         "required": ["id"]
       },
       "capabilities": ["time-tracker.write"]
+    },
+    {
+      "id": "export_xlsx",
+      "summary": "Export entries to XLSX.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id (defaults to \"default\")."
+          },
+          "start_date": { "type": "string", "description": "Start date (YYYY-MM-DD)." },
+          "end_date": { "type": "string", "description": "End date (YYYY-MM-DD)." },
+          "rows": {
+            "type": "array",
+            "description": "Rows to include in export.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": { "type": "string" },
+                "total_minutes": { "type": "number" },
+                "description": { "type": "string" }
+              },
+              "required": ["item", "total_minutes"]
+            }
+          }
+        },
+        "required": ["rows"]
+      },
+      "capabilities": ["time-tracker.read"]
     },
     {
       "id": "entry_delete",
