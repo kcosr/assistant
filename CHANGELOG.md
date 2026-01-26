@@ -10,6 +10,8 @@
 ### Changed
 
 ### Fixed
+- Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
+- Fixed time tracker created-at date formatting showing the year instead of day. ([#41](https://github.com/kcosr/assistant/pull/41))
 
 ### Removed
 
