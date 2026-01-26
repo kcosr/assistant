@@ -988,7 +988,7 @@ export class ListItemEditorDialog {
             setReviewValue(container, value);
           },
           customFieldsGrid,
-          input,
+          input ?? undefined,
           replaceDisplay,
         );
         if (isMarkdownField) {
@@ -1071,7 +1071,9 @@ export class ListItemEditorDialog {
       attachReviewListeners(insertAtTopCheckbox);
     }
     for (const field of customFieldsSection.fields) {
-      attachReviewListeners(field.input);
+      if (field.input) {
+        attachReviewListeners(field.input);
+      }
     }
 
     const updateModeToggle = (): void => {
