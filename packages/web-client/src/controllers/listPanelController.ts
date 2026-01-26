@@ -124,6 +124,7 @@ export interface ListPanelControllerOptions {
     currentValue: ListItemReference | null;
   }) => Promise<ListItemReference | null>;
   openReference?: (reference: ListItemReference) => void;
+  isReferenceAvailable?: (reference: ListItemReference) => boolean;
 }
 
 const DEFAULT_VISIBILITY_BY_COLUMN: Record<string, ColumnVisibility> = {
@@ -226,6 +227,9 @@ export class ListPanelController {
       createListItem: (listId, item) => this.createListItem(listId, item),
       updateListItem: (listId, itemId, updates) => this.updateListItem(listId, itemId, updates),
       ...(options.openReferencePicker ? { openReferencePicker: options.openReferencePicker } : {}),
+      ...(options.isReferenceAvailable
+        ? { isReferenceAvailable: options.isReferenceAvailable }
+        : {}),
     });
 
     this.listItemMenuController = new ListItemMenuController({
@@ -291,6 +295,9 @@ export class ListPanelController {
         ? { openReferencePicker: options.openReferencePicker }
         : {}),
       ...(options.openReference ? { onOpenReference: options.openReference } : {}),
+      ...(options.isReferenceAvailable
+        ? { isReferenceAvailable: options.isReferenceAvailable }
+        : {}),
     };
     if (options.onSelectionChange) {
       tableOptions.onSelectionChange = options.onSelectionChange;

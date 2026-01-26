@@ -855,6 +855,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeInstanceId = DEFAULT_INSTANCE_ID;
       let availableLists: ListSummary[] = [];
       let availableNotes: NoteSummary[] = [];
+      let notesLoadedInstances = new Set<string>();
       let activeListId: string | null = null;
       let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
@@ -1162,6 +1163,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             });
             const notes = parseNoteMetadataList(raw, instance.id, instance.label);
             summaries.push(...notes);
+            notesLoadedInstances.add(instance.id);
           } catch {
             // Ignore note list failures for a single instance.
           }
@@ -1235,6 +1237,31 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
         }
         host.openPanel(panelType, { state, focus: true });
+      };
+
+      const isReferenceAvailable = (reference: ListItemReference): boolean => {
+        if (reference.kind !== 'panel') {
+          return true;
+        }
+        const instanceId = reference.instanceId ?? DEFAULT_INSTANCE_ID;
+        const panelType = reference.panelType.toLowerCase().trim();
+        if (panelType === 'notes') {
+          if (!notesLoadedInstances.has(instanceId)) {
+            return true;
+          }
+          return availableNotes.some(
+            (note) => note.title === reference.id && note.instanceId === instanceId,
+          );
+        }
+        if (panelType === 'lists') {
+          if (!selectedInstanceIds.includes(instanceId)) {
+            return true;
+          }
+          return availableLists.some(
+            (list) => list.id === reference.id && list.instanceId === instanceId,
+          );
+        }
+        return true;
       };
 
       const openReferencePicker = async (options: {
@@ -1853,6 +1880,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         },
         openReferencePicker,
         openReference,
+        isReferenceAvailable,
       });
 
       if (fabAddButton) {

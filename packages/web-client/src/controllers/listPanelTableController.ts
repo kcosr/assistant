@@ -13,6 +13,7 @@ import {
   parseListItemReference,
   type ListItemReference,
 } from '../utils/listCustomFieldReference';
+import { ICONS } from '../utils/icons';
 
 const NOTES_EXPAND_ICON_SVG = `<svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 11h6M9 15h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const LIST_ITEM_DRAG_TYPE = 'application/x-list-item';
@@ -55,6 +56,7 @@ export interface ListPanelTableControllerOptions {
     currentValue: ListItemReference | null;
   }) => Promise<ListItemReference | null>;
   onOpenReference?: (reference: ListItemReference) => void;
+  isReferenceAvailable?: (reference: ListItemReference) => boolean;
   onMoveItemsToList?: (
     sourceListId: string,
     itemIds: string[],
@@ -2416,6 +2418,9 @@ export class ListPanelTableController {
       : 'list-item-ref-cell';
 
     if (currentValue) {
+      const isMissing = this.options.isReferenceAvailable
+        ? !this.options.isReferenceAvailable(currentValue)
+        : false;
       const pill = document.createElement(openReference ? 'button' : 'span');
       pill.className = 'list-item-ref-pill';
       if (pill instanceof HTMLButtonElement) {
@@ -2428,7 +2433,19 @@ export class ListPanelTableController {
 
       const badge = document.createElement('span');
       badge.className = 'list-item-ref-badge';
-      badge.textContent = getListItemReferenceTypeLabel(currentValue.panelType);
+      badge.classList.toggle('list-item-ref-badge--missing', isMissing);
+      const typeLabel = getListItemReferenceTypeLabel(currentValue.panelType);
+      const badgeText = document.createElement('span');
+      badgeText.textContent = typeLabel;
+      badge.appendChild(badgeText);
+      if (isMissing) {
+        const icon = document.createElement('span');
+        icon.className = 'list-item-ref-badge-icon';
+        icon.innerHTML = ICONS.alertTriangle;
+        icon.setAttribute('aria-hidden', 'true');
+        badge.appendChild(icon);
+        badge.title = 'Missing reference';
+      }
 
       pill.appendChild(label);
       pill.appendChild(badge);

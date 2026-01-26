@@ -276,6 +276,39 @@ describe('ListItemEditorDialog tag chips', () => {
     });
   });
 
+  it('marks missing references in the editor display', () => {
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+      isReferenceAvailable: () => false,
+    });
+
+    dialog.open('edit', 'list1', { title: 'Item 1' }, {
+      customFields: [{ key: 'ref', label: 'Reference', type: 'ref' }],
+      initialCustomFieldValues: {
+        ref: {
+          kind: 'panel',
+          panelType: 'notes',
+          id: 'Missing Note',
+          label: 'Missing Note',
+        },
+      },
+    });
+
+    const badge = document.querySelector<HTMLElement>('.list-item-ref-type');
+    expect(badge).not.toBeNull();
+    expect(badge?.classList.contains('list-item-ref-type--missing')).toBe(true);
+    expect(badge?.querySelector('.list-item-ref-badge-icon')).not.toBeNull();
+  });
+
   it('sends null for cleared select/text fields to remove previous values', async () => {
     const updateListItem = vi.fn(async () => true);
 

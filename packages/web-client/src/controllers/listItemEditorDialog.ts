@@ -8,6 +8,7 @@ import {
   parseListItemReference,
   type ListItemReference,
 } from '../utils/listCustomFieldReference';
+import { ICONS } from '../utils/icons';
 import {
   applyPinnedTag,
   hasPinnedTag,
@@ -32,6 +33,7 @@ export interface ListItemEditorDialogOptions {
     item?: ListPanelItem;
     currentValue: ListItemReference | null;
   }) => Promise<ListItemReference | null>;
+  isReferenceAvailable?: (reference: ListItemReference) => boolean;
 }
 
 export interface ListItemEditorDialogOpenOptions {
@@ -143,7 +145,25 @@ export class ListItemEditorDialog {
         const updateDisplay = (): void => {
           if (currentValue) {
             labelSpan.textContent = formatListItemReferenceLabel(currentValue);
-            badge.textContent = getListItemReferenceTypeLabel(currentValue.panelType);
+            const typeLabel = getListItemReferenceTypeLabel(currentValue.panelType);
+            const isMissing = this.options.isReferenceAvailable
+              ? !this.options.isReferenceAvailable(currentValue)
+              : false;
+            badge.innerHTML = '';
+            badge.classList.toggle('list-item-ref-type--missing', isMissing);
+            const text = document.createElement('span');
+            text.textContent = typeLabel;
+            badge.appendChild(text);
+            if (isMissing) {
+              const icon = document.createElement('span');
+              icon.className = 'list-item-ref-badge-icon';
+              icon.innerHTML = ICONS.alertTriangle;
+              icon.setAttribute('aria-hidden', 'true');
+              badge.appendChild(icon);
+              badge.title = 'Missing reference';
+            } else {
+              badge.title = '';
+            }
             badge.style.display = '';
             display.classList.remove('is-empty');
           } else {

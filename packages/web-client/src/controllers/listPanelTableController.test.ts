@@ -953,6 +953,49 @@ describe('ListPanelTableController notes column', () => {
     });
   });
 
+  it('marks missing references with a warning badge', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      isReferenceAvailable: () => false,
+    });
+
+    const { tbody } = controller.renderTable({
+      listId,
+      sortedItems: [
+        {
+          id: 'item1',
+          title: 'Item 1',
+          customFields: {
+            ref: {
+              kind: 'panel',
+              panelType: 'notes',
+              id: 'Missing Note',
+              label: 'Missing Note',
+            },
+          },
+        },
+      ],
+      showUrlColumn: false,
+      showNotesColumn: false,
+      showTagsColumn: false,
+      showAddedColumn: false,
+      customFields: [{ key: 'ref', label: 'Reference', type: 'ref' }],
+      showAllColumns: false,
+      rerender: () => {},
+    });
+
+    const badge = tbody.querySelector<HTMLElement>('.list-item-ref-badge');
+    expect(badge).not.toBeNull();
+    expect(badge?.classList.contains('list-item-ref-badge--missing')).toBe(true);
+    expect(badge?.querySelector('.list-item-ref-badge-icon')).not.toBeNull();
+  });
+
   it('recomputes markdown overflow after column resize', () => {
     const controller = new ListPanelTableController({
       icons: { moreVertical: '', pin: '' },

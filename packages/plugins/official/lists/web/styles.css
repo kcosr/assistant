@@ -1990,10 +1990,23 @@ table.collection-list-table td {
 }
 
 .list-item-ref-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: var(--color-text-secondary);
+}
+
+.list-item-ref-badge--missing {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.list-item-ref-badge-icon .icon {
+  width: 12px;
+  height: 12px;
 }
 
 .list-item-ref-empty {
@@ -3673,6 +3686,9 @@ button.list-item-menu-checkbox {
 }
 
 .list-item-ref-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-xxs);
   text-transform: uppercase;
   padding: 2px 6px;
@@ -3680,6 +3696,11 @@ button.list-item-menu-checkbox {
   border: 1px solid var(--color-border-default);
   background-color: var(--color-bg-elevated);
   color: var(--color-text-secondary);
+}
+
+.list-item-ref-type--missing {
+  color: var(--color-error);
+  border-color: var(--color-error);
 }
 
 .list-item-ref-label {
