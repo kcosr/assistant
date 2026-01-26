@@ -583,7 +583,7 @@ function compileAql(
     const isNumber = raw.type === 'number' && Number.isFinite(Number(rawValue));
 
     if (op === 'contains' || op === 'not_contains') {
-      if (field.type !== 'text' && field.type !== 'tag') {
+      if (field.type !== 'text' && field.type !== 'tag' && field.type !== 'ref') {
         throw new Error(`Operator ${opSymbol(op)} is not supported for ${field.label}`);
       }
       return rawValue.toLowerCase();
@@ -788,7 +788,7 @@ function evaluateClause(clause: AqlClause, item: ListPanelItem): boolean {
     return false;
   }
 
-  if (field.type === 'text') {
+  if (field.type === 'text' || field.type === 'ref') {
     const text = typeof value === 'string' ? value.toLowerCase() : '';
     const rawValue = clause.value as string | undefined;
     if (op === 'contains') {
