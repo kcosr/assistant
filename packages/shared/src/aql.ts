@@ -5,7 +5,8 @@ export type ListCustomFieldType =
   | 'time'
   | 'datetime'
   | 'select'
-  | 'checkbox';
+  | 'checkbox'
+  | 'ref';
 
 export interface ListCustomFieldDefinition {
   key: string;
@@ -62,6 +63,7 @@ export type AqlFieldType =
   | 'time'
   | 'datetime'
   | 'checkbox'
+  | 'ref'
   | 'tag'
   | 'boolean'
   | 'position';
@@ -185,7 +187,9 @@ function buildFieldMap(customFields: ListCustomFieldDefinition[]): {
               ? 'datetime'
               : field.type === 'checkbox'
                 ? 'checkbox'
-                : 'text';
+                : field.type === 'ref'
+                  ? 'ref'
+                  : 'text';
     const label = field.label?.trim() || key;
     const aqlField: AqlField = {
       key,
@@ -605,7 +609,7 @@ function compileAql(
     const isNumber = raw.type === 'number' && Number.isFinite(Number(rawValue));
 
     if (op === 'contains' || op === 'not_contains') {
-      if (field.type !== 'text' && field.type !== 'tag') {
+      if (field.type !== 'text' && field.type !== 'tag' && field.type !== 'ref') {
         throw new Error(`Operator ${opSymbol(op)} is not supported for ${field.label}`);
       }
       return rawValue.toLowerCase();
@@ -810,7 +814,7 @@ function evaluateClause(clause: AqlClause, item: AqlItem): boolean {
     return false;
   }
 
-  if (field.type === 'text') {
+  if (field.type === 'text' || field.type === 'ref') {
     const text = typeof value === 'string' ? value.toLowerCase() : '';
     const rawValue = clause.value as string | undefined;
     if (op === 'contains') {
@@ -883,6 +887,25 @@ function evaluateClause(clause: AqlClause, item: AqlItem): boolean {
   return false;
 }
 
+const normalizeString = (value: unknown): string =>
+  typeof value === 'string' ? value.trim() : '';
+
+const getReferenceLabel = (value: unknown): string | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  if (raw['kind'] !== 'panel') {
+    return null;
+  }
+  const id = normalizeString(raw['id']);
+  if (!id) {
+    return null;
+  }
+  const label = normalizeString(raw['label']);
+  return (label || id).toLowerCase();
+};
+
 function getFieldValue(
   item: AqlItem,
   field: AqlField,
@@ -912,6 +935,10 @@ function getFieldValue(
     if (field.type === 'datetime') {
       if (typeof value === 'string') return parseDatetimeToTimestamp(value);
       return null;
+    }
+    if (field.type === 'ref') {
+      const label = getReferenceLabel(value);
+      return label ?? null;
     }
     if (typeof value === 'string') return value.toLowerCase();
     return String(value).toLowerCase();
@@ -950,7 +977,7 @@ function isEmptyValue(
   if (value === null || value === undefined) {
     return true;
   }
-  if (type === 'text') {
+  if (type === 'text' || type === 'ref') {
     return typeof value === 'string' ? value.trim().length === 0 : false;
   }
   if (type === 'tag') {
@@ -1074,6 +1101,7 @@ function getSortTypeForField(
     case 'checkbox':
       return 'checkbox';
     case 'select':
+    case 'ref':
     case 'text':
     default:
       return 'text';
@@ -1137,6 +1165,10 @@ function getComparableValue(
     case 'text':
     default:
       if (typeof value === 'string') return value.toLowerCase();
+      const referenceLabel = getReferenceLabel(value);
+      if (referenceLabel) {
+        return referenceLabel;
+      }
       return String(value).toLowerCase();
   }
 }

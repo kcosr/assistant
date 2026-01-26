@@ -46,6 +46,7 @@ export interface PanelHost {
   persistPanelState(state: unknown): void;
   loadPanelState(): unknown | null;
   openPanel(panelType: string, options?: PanelOpenOptions): string | null;
+  openModalPanel?(panelType: string, options?: PanelOpenOptions): string | null;
   closePanel(panelId: string): void;
   activatePanel(panelId: string): void;
   movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void;

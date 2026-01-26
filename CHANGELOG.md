@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 
 ### Changed
 

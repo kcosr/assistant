@@ -217,6 +217,101 @@ describe('ListItemEditorDialog tag chips', () => {
     });
   });
 
+  it('submits reference custom field selections', async () => {
+    const createListItem = vi.fn(async () => true);
+    const openReferencePicker = vi.fn(async () => ({
+      kind: 'panel' as const,
+      panelType: 'notes',
+      id: 'Project Note',
+      label: 'Project Note',
+    }));
+
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem,
+      updateListItem: vi.fn(async () => true),
+      openReferencePicker,
+    });
+
+    dialog.open('add', 'list1', undefined, {
+      customFields: [{ key: 'ref', label: 'Reference', type: 'ref' }],
+      initialCustomFieldValues: {},
+    });
+
+    const selectButton = document.querySelector<HTMLButtonElement>('.list-item-ref-action');
+    expect(selectButton).not.toBeNull();
+    selectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    const titleInput = document.querySelector<HTMLInputElement>(
+      '.list-item-form input.list-item-form-input',
+    );
+    expect(titleInput).not.toBeNull();
+    if (!titleInput) return;
+    titleInput.value = 'Item with reference';
+
+    const form = document.querySelector<HTMLFormElement>('.list-item-form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    await Promise.resolve();
+
+    expect(createListItem).toHaveBeenCalledTimes(1);
+    const calls = createListItem.mock.calls as unknown as [
+      string,
+      { customFields?: Record<string, unknown> },
+    ][];
+    const args = calls[0]?.[1];
+    expect(args?.customFields).toEqual({
+      ref: {
+        kind: 'panel',
+        panelType: 'notes',
+        id: 'Project Note',
+        label: 'Project Note',
+      },
+    });
+  });
+
+  it('marks missing references in the editor display', () => {
+    const dialog = new ListItemEditorDialog({
+      dialogManager: {
+        hasOpenDialog: false,
+        showConfirmDialog: vi.fn(),
+        showTextInputDialog: vi.fn(),
+      } as unknown as DialogManager,
+      setStatus: vi.fn(),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      createListItem: vi.fn(async () => true),
+      updateListItem: vi.fn(async () => true),
+      isReferenceAvailable: () => false,
+    });
+
+    dialog.open('edit', 'list1', { title: 'Item 1' }, {
+      customFields: [{ key: 'ref', label: 'Reference', type: 'ref' }],
+      initialCustomFieldValues: {
+        ref: {
+          kind: 'panel',
+          panelType: 'notes',
+          id: 'Missing Note',
+          label: 'Missing Note',
+        },
+      },
+    });
+
+    const badge = document.querySelector<HTMLElement>('.list-item-ref-type');
+    expect(badge).not.toBeNull();
+    expect(badge?.classList.contains('list-item-ref-type--missing')).toBe(true);
+    expect(badge?.querySelector('.list-item-ref-badge-icon')).not.toBeNull();
+  });
+
   it('cancels review-mode edits for text areas', () => {
     const dialog = new ListItemEditorDialog({
       dialogManager: {

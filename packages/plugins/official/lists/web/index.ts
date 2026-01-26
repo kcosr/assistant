@@ -38,6 +38,7 @@ import {
   type PanelCoreServices,
 } from '../../../../web-client/src/utils/panelServices';
 import { getPanelContextKey } from '../../../../web-client/src/utils/panelContext';
+import type { ListItemReference } from '../../../../web-client/src/utils/listCustomFieldReference';
 
 const LISTS_PANEL_TEMPLATE = `
   <aside class="lists-panel collection-panel" aria-label="Lists panel">
@@ -281,6 +282,16 @@ type ListSummary = {
   instanceLabel?: string;
 };
 
+type NoteSummary = {
+  title: string;
+  tags: string[];
+  created?: string;
+  updated?: string;
+  description?: string;
+  instanceId: string;
+  instanceLabel?: string;
+};
+
 type SavedAqlQuery = {
   id: string;
   name: string;
@@ -360,6 +371,50 @@ function parseCustomFields(value: unknown): ListCustomFieldDefinition[] | undefi
     });
   }
   return result.length > 0 ? result : undefined;
+}
+
+function parseNoteMetadata(value: unknown): Omit<NoteSummary, 'instanceId' | 'instanceLabel'> | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const obj = value as Record<string, unknown>;
+  const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+  if (!title) {
+    return null;
+  }
+  const tags = parseStringArray(obj['tags']);
+  const created = typeof obj['created'] === 'string' ? obj['created'] : undefined;
+  const updated = typeof obj['updated'] === 'string' ? obj['updated'] : undefined;
+  const description = typeof obj['description'] === 'string' ? obj['description'] : undefined;
+  return {
+    title,
+    tags,
+    ...(created ? { created } : {}),
+    ...(updated ? { updated } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+function parseNoteMetadataList(
+  value: unknown,
+  instanceId: string,
+  instanceLabel?: string,
+): NoteSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: NoteSummary[] = [];
+  for (const entry of value) {
+    const parsed = parseNoteMetadata(entry);
+    if (parsed) {
+      result.push({
+        ...parsed,
+        instanceId,
+        ...(instanceLabel ? { instanceLabel } : {}),
+      });
+    }
+  }
+  return result;
 }
 
 function parseSavedQueries(value: unknown): SavedAqlQuery[] | undefined {
@@ -580,6 +635,34 @@ async function callOperation<T>(operation: string, body: Record<string, unknown>
   return payload.result;
 }
 
+async function callNotesOperation<T>(
+  operation: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await apiFetch(`/api/plugins/notes/operations/${operation}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let payload: OperationResponse<T> | null = null;
+  try {
+    payload = (await response.json()) as OperationResponse<T>;
+  } catch {
+    // ignore json parsing failures
+  }
+
+  if (!response.ok || !payload || 'error' in payload) {
+    const message =
+      payload && 'error' in payload && payload.error
+        ? payload.error
+        : `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return payload.result;
+}
+
 const fallbackDialogManager = new DialogManager();
 const fallbackContextMenuManager = new ContextMenuManager({
   isSessionPinned: () => false,
@@ -771,6 +854,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let selectedInstanceIds: string[] = [DEFAULT_INSTANCE_ID];
       let activeInstanceId = DEFAULT_INSTANCE_ID;
       let availableLists: ListSummary[] = [];
+      let availableNotes: NoteSummary[] = [];
+      let notesLoadedInstances = new Set<string>();
       let activeListId: string | null = null;
       let activeListInstanceId: string | null = null;
       let activeListSummary: ListSummary | null = null;
@@ -1084,6 +1169,37 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           instance_id: instanceId,
         });
 
+      const refreshNoteInstances = async (): Promise<Instance[]> => {
+        try {
+          const raw = await callNotesOperation<unknown>('instance_list', {});
+          if (!Array.isArray(raw)) {
+            return [];
+          }
+          const parsed = raw.map(parseInstance).filter((entry): entry is Instance => !!entry);
+          return parsed;
+        } catch {
+          return [];
+        }
+      };
+
+      const refreshAvailableNotes = async (): Promise<void> => {
+        const noteInstances = await refreshNoteInstances();
+        const summaries: NoteSummary[] = [];
+        for (const instance of noteInstances) {
+          try {
+            const raw = await callNotesOperation<unknown>('list', {
+              instance_id: instance.id,
+            });
+            const notes = parseNoteMetadataList(raw, instance.id, instance.label);
+            summaries.push(...notes);
+            notesLoadedInstances.add(instance.id);
+          } catch {
+            // Ignore note list failures for a single instance.
+          }
+        }
+        availableNotes = summaries;
+      };
+
       const getAvailableItems = (): CollectionItemSummary[] =>
         availableLists.map((list) => ({
           type: 'list',
@@ -1095,10 +1211,336 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
         }));
 
+      const buildReferenceItems = (): CollectionItemSummary[] => {
+        const listItems = availableLists.map((list) => ({
+          type: 'list',
+          id: list.id,
+          name: list.name,
+          tags: list.tags,
+          updatedAt: list.updatedAt,
+          instanceId: list.instanceId,
+          instanceLabel: list.instanceLabel ?? formatInstanceLabel(list.instanceId),
+        }));
+        const noteItems = availableNotes.map((note) => ({
+          type: 'note',
+          id: note.title,
+          name: note.title,
+          tags: note.tags,
+          updatedAt: note.updated ?? note.created,
+          instanceId: note.instanceId,
+          instanceLabel: note.instanceLabel ?? formatInstanceLabel(note.instanceId),
+        }));
+        return [...noteItems, ...listItems];
+      };
+
       const getActiveReference = (): CollectionReference | null =>
         activeListId && activeListInstanceId
           ? { type: 'list', id: activeListId, instanceId: activeListInstanceId }
           : null;
+
+      const openReference = (reference: ListItemReference): void => {
+        const normalized = reference.panelType.toLowerCase().trim();
+        if (normalized !== 'notes' && normalized !== 'lists') {
+          return;
+        }
+        const instanceId = reference.instanceId ?? DEFAULT_INSTANCE_ID;
+        const state =
+          normalized === 'notes'
+            ? {
+                selectedNoteTitle: reference.id,
+                selectedNoteInstanceId: instanceId,
+                instanceIds: [instanceId],
+                mode: 'note',
+              }
+            : {
+                selectedListId: reference.id,
+                selectedListInstanceId: instanceId,
+                instanceIds: [instanceId],
+                mode: 'list',
+              };
+        const panelType = normalized === 'notes' ? 'notes' : 'lists';
+        if (typeof host.openModalPanel === 'function') {
+          const panelId = host.openModalPanel(panelType, { state, focus: true });
+          if (panelId) {
+            return;
+          }
+        }
+        host.openPanel(panelType, { state, focus: true });
+      };
+
+      const isReferenceAvailable = (reference: ListItemReference): boolean => {
+        if (reference.kind !== 'panel') {
+          return true;
+        }
+        const instanceId = reference.instanceId ?? DEFAULT_INSTANCE_ID;
+        const panelType = reference.panelType.toLowerCase().trim();
+        if (panelType === 'notes') {
+          if (!notesLoadedInstances.has(instanceId)) {
+            return true;
+          }
+          return availableNotes.some(
+            (note) => note.title === reference.id && note.instanceId === instanceId,
+          );
+        }
+        if (panelType === 'lists') {
+          if (!selectedInstanceIds.includes(instanceId)) {
+            return true;
+          }
+          return availableLists.some(
+            (list) => list.id === reference.id && list.instanceId === instanceId,
+          );
+        }
+        return true;
+      };
+
+      const checkReferenceAvailability = async (
+        reference: ListItemReference,
+      ): Promise<boolean | null> => {
+        if (reference.kind !== 'panel') {
+          return null;
+        }
+        const instanceId = reference.instanceId ?? DEFAULT_INSTANCE_ID;
+        const panelType = reference.panelType.toLowerCase().trim();
+        if (panelType === 'notes') {
+          try {
+            await callNotesOperation('read', {
+              instance_id: instanceId,
+              title: reference.id,
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        if (panelType === 'lists') {
+          if (!isKnownInstance(instanceId)) {
+            return null;
+          }
+          try {
+            await callInstanceOperation(instanceId, 'get', { id: reference.id });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        return null;
+      };
+
+      const openReferencePicker = async (options: {
+        listId: string;
+        field: ListCustomFieldDefinition;
+        item?: ListPanelItem;
+        currentValue: ListItemReference | null;
+      }): Promise<ListItemReference | null> => {
+        const { currentValue } = options;
+        try {
+          await refreshAvailableNotes();
+        } catch {
+          // Ignore note refresh errors and show lists only.
+        }
+
+        let pickerItems = buildReferenceItems();
+        pickerItems = pickerItems.sort((a, b) => {
+          const typeRank = (entry: CollectionItemSummary) => (entry.type === 'note' ? 0 : 1);
+          const typeDiff = typeRank(a) - typeRank(b);
+          if (typeDiff !== 0) {
+            return typeDiff;
+          }
+          const aLabel = (a.name ?? a.id).toLowerCase();
+          const bLabel = (b.name ?? b.id).toLowerCase();
+          return aLabel.localeCompare(bLabel);
+        });
+
+        const toReference = (entry: CollectionItemSummary): ListItemReference => {
+          const panelType = entry.type === 'note' ? 'notes' : 'lists';
+          return {
+            kind: 'panel',
+            panelType,
+            id: entry.id,
+            ...(entry.instanceId ? { instanceId: entry.instanceId } : {}),
+            ...(entry.name ? { label: entry.name } : {}),
+          };
+        };
+
+      const formatEntryLabel = (entry: CollectionItemSummary): string => {
+        const name = entry.name?.trim() || entry.id;
+        const instanceId = entry.instanceId ?? DEFAULT_INSTANCE_ID;
+        const instanceLabel = entry.instanceLabel ?? formatInstanceLabel(instanceId);
+        const showInstance =
+          selectedInstanceIds.length > 1 && instanceId && instanceId !== DEFAULT_INSTANCE_ID;
+        return `${name}${showInstance ? ` (${instanceLabel})` : ''}`;
+      };
+
+        return new Promise((resolve) => {
+          const underlyingOverlay = document.querySelector<HTMLElement>(
+            '.confirm-dialog-overlay.list-item-dialog-overlay',
+          );
+          const previousOverlayDisplay = underlyingOverlay?.style.display ?? null;
+          const previousOverlayAriaHidden = underlyingOverlay?.getAttribute('aria-hidden');
+          if (underlyingOverlay) {
+            underlyingOverlay.style.display = 'none';
+            underlyingOverlay.setAttribute('aria-hidden', 'true');
+          }
+
+          const overlay = document.createElement('div');
+          overlay.className = 'confirm-dialog-overlay list-ref-picker-overlay';
+
+          const dialog = document.createElement('div');
+          dialog.className = 'confirm-dialog list-ref-picker-dialog';
+          dialog.setAttribute('role', 'dialog');
+          dialog.setAttribute('aria-modal', 'true');
+
+          const titleEl = document.createElement('h3');
+          titleEl.className = 'confirm-dialog-title';
+          titleEl.textContent = 'Select reference';
+          dialog.appendChild(titleEl);
+
+          const body = document.createElement('div');
+          body.className = 'list-ref-picker-body';
+          dialog.appendChild(body);
+
+          const searchInput = document.createElement('input');
+          searchInput.type = 'search';
+          searchInput.className = 'list-ref-picker-search-input';
+          searchInput.placeholder = 'Search notes and lists...';
+          searchInput.autocomplete = 'off';
+
+          const listContainer = document.createElement('div');
+          listContainer.className = 'list-ref-picker-list';
+
+          body.appendChild(searchInput);
+          body.appendChild(listContainer);
+
+          const buttons = document.createElement('div');
+          buttons.className = 'confirm-dialog-buttons';
+
+          const cancelButton = document.createElement('button');
+          cancelButton.className = 'confirm-dialog-button cancel';
+          cancelButton.textContent = 'Cancel';
+          buttons.appendChild(cancelButton);
+          dialog.appendChild(buttons);
+
+          overlay.appendChild(dialog);
+          document.body.appendChild(overlay);
+
+          const previousDialogState = services.dialogManager.hasOpenDialog;
+          services.dialogManager.hasOpenDialog = true;
+
+          const close = (value: ListItemReference | null): void => {
+            overlay.remove();
+            document.removeEventListener('keydown', handleKeyDown, { capture: true });
+            services.dialogManager.hasOpenDialog = previousDialogState;
+            if (underlyingOverlay) {
+              underlyingOverlay.style.display = previousOverlayDisplay ?? '';
+              if (previousOverlayAriaHidden === null) {
+                underlyingOverlay.removeAttribute('aria-hidden');
+              } else {
+                underlyingOverlay.setAttribute('aria-hidden', previousOverlayAriaHidden);
+              }
+            }
+            resolve(value);
+          };
+
+          const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              close(null);
+            }
+          };
+          document.addEventListener('keydown', handleKeyDown, { capture: true });
+
+          overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+              close(null);
+            }
+          });
+
+          cancelButton.addEventListener('click', () => close(null));
+
+          const isCurrentEntry = (entry: CollectionItemSummary): boolean => {
+            if (!currentValue || currentValue.kind !== 'panel') {
+              return false;
+            }
+            const currentType =
+              currentValue.panelType.toLowerCase().trim() === 'notes' ? 'note' : 'list';
+            const currentInstance = currentValue.instanceId ?? DEFAULT_INSTANCE_ID;
+            const entryInstance = entry.instanceId ?? DEFAULT_INSTANCE_ID;
+            return (
+              entry.type === currentType &&
+              entry.id === currentValue.id &&
+              entryInstance === currentInstance
+            );
+          };
+
+          const buildSearchText = (entry: CollectionItemSummary): string =>
+            [
+              entry.name ?? '',
+              entry.id,
+              entry.instanceLabel ?? '',
+              entry.type,
+            ]
+              .join(' ')
+              .toLowerCase();
+
+          let searchIndex = pickerItems.map((entry) => ({
+            entry,
+            searchText: buildSearchText(entry),
+          }));
+
+          const renderList = (): void => {
+            listContainer.innerHTML = '';
+            const query = searchInput.value.trim().toLowerCase();
+            const filtered = query
+              ? searchIndex
+                  .filter((item) => item.searchText.includes(query))
+                  .map((item) => item.entry)
+              : pickerItems;
+            if (filtered.length === 0) {
+              const empty = document.createElement('div');
+              empty.className = 'list-ref-picker-empty';
+              empty.textContent = 'No matches.';
+              listContainer.appendChild(empty);
+              return;
+            }
+            for (const entry of filtered) {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.className = 'list-ref-picker-item';
+              if (isCurrentEntry(entry)) {
+                button.classList.add('is-selected');
+              }
+              const nameSpan = document.createElement('span');
+              nameSpan.className = 'list-ref-picker-item-name';
+              nameSpan.textContent = formatEntryLabel(entry);
+
+              const badge = document.createElement('span');
+              badge.className = 'list-ref-picker-item-badge';
+              badge.textContent = entry.type === 'note' ? 'NOTE' : 'LIST';
+
+              button.appendChild(nameSpan);
+              button.appendChild(badge);
+              button.addEventListener('click', () => close(toReference(entry)));
+              listContainer.appendChild(button);
+            }
+          };
+
+          let renderTimeout: ReturnType<typeof setTimeout> | null = null;
+          const scheduleRender = (): void => {
+            if (renderTimeout) {
+              clearTimeout(renderTimeout);
+            }
+            renderTimeout = setTimeout(() => {
+              renderTimeout = null;
+              renderList();
+            }, 120);
+          };
+
+          searchInput.addEventListener('input', scheduleRender);
+          renderList();
+          searchInput.focus();
+        });
+      };
 
       const updateDropdownSelection = (reference: CollectionReference | null): void => {
         if (!dropdownTriggerText) {
@@ -1506,6 +1948,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         setRightControls: (elements) => {
           sharedSearchController.setRightControls(elements);
         },
+        openReferencePicker,
+        openReference,
+        isReferenceAvailable,
+        checkReferenceAvailability,
       });
 
       if (fabAddButton) {

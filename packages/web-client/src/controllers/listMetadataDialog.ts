@@ -176,6 +176,7 @@ export class ListMetadataDialog {
         { value: 'datetime', label: 'Date & Time' },
         { value: 'select', label: 'Select' },
         { value: 'checkbox', label: 'Checkbox' },
+        { value: 'ref', label: 'Reference' },
       ];
       for (const t of types) {
         const option = document.createElement('option');
@@ -364,7 +365,8 @@ export class ListMetadataDialog {
           rawType === 'time' ||
           rawType === 'datetime' ||
           rawType === 'select' ||
-          rawType === 'checkbox'
+          rawType === 'checkbox' ||
+          rawType === 'ref'
             ? rawType
             : 'text';
 
