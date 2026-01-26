@@ -19,14 +19,14 @@ Add a “review” mode to the list item edit dialog that presents item fields a
 - Markdown support exists for custom fields (textarea) and notes rendering elsewhere, but the dialog is purely input-oriented.
 
 ## Proposal
-- Add a two-mode toggle to the list item editor dialog: **Quick edit** (existing form) and **Review** (new report-style layout).
+- Add a two-mode toggle to the list item editor dialog: **Edit** (existing form) and **Review** (new report-style layout).
 - The review layout is full-page (larger width + height), displaying:
   - Title, URL (as link), tags, pinned state
   - Notes rendered as markdown
   - Custom fields rendered as labeled values, with markdown previews where `markdown: true`
   - Optional metadata block (added/updated/touched/completed) if available on the item
 - Provide an **Edit** button next to each field in review mode that toggles that field into an inline editor (input/textarea/select) within the review layout.
-- Add a settings preference for the default edit mode (Quick edit vs Review), persisted to localStorage. Do not auto-remember the last-selected mode.
+- Add a settings preference for the default edit mode (Edit vs Review), persisted to localStorage. Do not auto-remember the last-selected mode.
 
 ## UX flow
 1. User opens Add/Edit Item.
@@ -41,7 +41,8 @@ Add a “review” mode to the list item edit dialog that presents item fields a
   - Notes block (markdown)
   - Custom fields grid (label/value cards)
   - Metadata row (optional)
-- Use existing `applyMarkdownToElement` for notes and markdown custom fields.
+- Use the shared `MarkdownViewerController` to render markdown previews (with collapsible sections) for notes and markdown custom fields.
+- Render markdown custom fields as full-width cards so their preview/editor matches the notes layout.
 - Represent empty fields with a muted placeholder (e.g. “Not set”).
 
 ## Behavior details
@@ -49,8 +50,8 @@ Add a “review” mode to the list item edit dialog that presents item fields a
 - The dialog buttons remain consistent: Cancel + Save. In Review mode, Save persists any inline edits.
 - Inline edit behavior:
   - Title/URL/Notes/Tags/Pinned/Custom fields each get an Edit button.
-  - Clicking Edit replaces the display value with the corresponding input control, keeping label context.
-  - For markdown fields, show the preview when not editing; switch to a textarea on edit.
+- Clicking Edit replaces the display value with the corresponding input control, keeping label context and offering a Cancel action for text fields.
+- For markdown fields, show the preview when not editing; switch to a full-width textarea on edit.
 
 ## Accessibility
 - Ensure the mode toggle is keyboard-focusable and uses `aria-pressed` or `aria-selected` semantics.
