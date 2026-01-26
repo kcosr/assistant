@@ -431,11 +431,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const sheet = workbook.addWorksheet('Time Report');
 
         sheet.columns = [
-          { header: 'Item', key: 'item', width: 32 },
+          { header: 'Item', key: 'item', width: 80 },
           { header: 'Hours', key: 'hours', width: 10 },
           { header: 'Minutes', key: 'minutes', width: 10 },
           { header: 'Hours (Decimal)', key: 'hours_decimal', width: 16 },
-          { header: 'Description', key: 'description', width: 60 },
+          { header: 'Description', key: 'description', width: 160 },
         ];
 
         const headerRow = sheet.getRow(1);
