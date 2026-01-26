@@ -28,7 +28,6 @@ A simple time tracking plugin with named tasks, timer support, and date range fi
 ## Out of Scope (for now)
 
 - Tags on tasks/entries
-- Export (Excel/CSV)
 - Reports (saving snapshots of time periods)
 - Multi-user / authentication
 - Pause/resume timer (only start/stop/discard)
@@ -58,6 +57,7 @@ Data is scoped per instance; each instance has its own task list, entries, and a
 | `task_id`          | uuid          | References task (CASCADE delete)        |
 | `entry_date`       | YYYY-MM-DD    | The "work day" for this entry           |
 | `duration_minutes` | integer       | >= 1                                    |
+| `reported`         | boolean       | Whether the entry is reported           |
 | `note`             | string        | Optional, default empty                 |
 | `entry_type`       | enum          | 'manual' \| 'timer'                     |
 | `start_time`       | ISO timestamp | Only for timer entries, NULL for manual |
@@ -241,6 +241,11 @@ Data is scoped per instance; each instance has its own task list, entries, and a
 - Edit button → opens entry edit modal
 - Delete button (✕) → confirmation dialog, then delete
 
+**Filters:**
+
+- "Show reported" toggle (client + server filtering).
+- Note search input filters entries by note text (client-side only).
+
 **Range total:**
 
 - Bottom of list shows total duration for current date range filter
@@ -335,16 +340,25 @@ All operations accept an optional `instance_id` (defaults to `default`).
 | `task_get`      | Get single task       | `id` (required)                                                                                                    |
 | `task_update`   | Update a task         | `id` (required), `name`, `description`                                                                             |
 | `task_delete`   | Delete task + entries | `id` (required)                                                                                                    |
-| `entry_create`  | Log a time entry      | `task_id` (required), `duration_minutes` (required), `entry_date` (optional, defaults to today), `note` (optional) |
-| `entry_list`    | Query entries         | `start_date`, `end_date`, `task_id` (all optional)                                                                 |
+| `entry_create`  | Log a time entry      | `task_id` (required), `duration_minutes` (required), `entry_date` (optional, defaults to today), `note` (optional), `reported` (optional) |
+| `entry_list`    | Query entries         | `start_date`, `end_date`, `task_id`, `include_reported` (all optional)                                              |
 | `entry_get`     | Get single entry      | `id` (required)                                                                                                    |
-| `entry_update`  | Update an entry       | `id` (required), `task_id`, `duration_minutes`, `entry_date`, `note`                                               |
+| `entry_update`  | Update an entry       | `id` (required), `task_id`, `duration_minutes`, `entry_date`, `note`, `reported`                                   |
 | `entry_delete`  | Delete an entry       | `id` (required)                                                                                                    |
 | `timer_start`   | Start timer           | `task_id` (required), `entry_date` (optional, defaults to today)                                                   |
 | `timer_status`  | Get active timer      | (none)                                                                                                             |
 | `timer_stop`    | Stop timer → entry    | `note` (optional)                                                                                                  |
 | `timer_discard` | Discard timer         | (none)                                                                                                             |
 | `set_filter`    | Set panel date range  | `start_date` (required), `end_date` (required), `panel_id` (optional, all panels if omitted)                       |
+| `export_xlsx`   | Export XLSX           | `rows` (required), `start_date`/`end_date` (optional)                                                              |
+
+## Export (XLSX)
+
+- Export is initiated from the time-tracker panel and respects the current view filters (instance, task, date range, and "Show reported").
+- The export dialog shows a summary and offers to mark exported entries as reported (default on).
+- The XLSX file includes columns: Item, Hours, Minutes, Hours (Decimal), Description (multi-line notes, each line prefixed with "•").
+- Column widths are fixed for Item (80) and Description (160).
+- A totals row with formulas is appended, and the Hours (Decimal) total cell is highlighted green.
 
 ### CLI Examples
 
@@ -398,6 +412,7 @@ CREATE TABLE entries (
     task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     entry_date TEXT NOT NULL,
     duration_minutes INTEGER NOT NULL CHECK (duration_minutes >= 1),
+    reported INTEGER NOT NULL DEFAULT 0,
     note TEXT NOT NULL DEFAULT '',
     entry_type TEXT NOT NULL CHECK (entry_type IN ('manual', 'timer')),
     start_time TEXT,

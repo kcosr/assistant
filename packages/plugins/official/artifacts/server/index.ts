@@ -462,7 +462,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
     async initialize(dataDir, pluginConfig): Promise<void> {
       baseDataDir = dataDir;
-      instances = resolvePluginInstances(pluginConfig);
+      instances = resolvePluginInstances('artifacts', pluginConfig);
       instanceById = new Map(instances.map((i) => [i.id, i]));
 
       // Read max file size from config

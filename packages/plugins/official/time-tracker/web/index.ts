@@ -5,7 +5,7 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import { ContextMenuManager } from '../../../../web-client/src/controllers/contextMenu';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
-import { apiFetch } from '../../../../web-client/src/utils/api';
+import { apiFetch, getApiBaseUrl } from '../../../../web-client/src/utils/api';
 import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
   type PanelCoreServices,
@@ -198,6 +198,21 @@ const TIME_TRACKER_PANEL_TEMPLATE = `
             <span class="time-tracker-button-caret">${ICONS.chevronDown}</span>
           </button>
         </div>
+        <div class="time-tracker-filter-extras">
+          <label class="time-tracker-filter-checkbox">
+            <input type="checkbox" data-role="filter-reported" />
+            <span>Show reported</span>
+          </label>
+        </div>
+        <div class="time-tracker-filter-search">
+          <input
+            type="search"
+            class="time-tracker-filter-input"
+            placeholder="Filter notes"
+            aria-label="Filter entries by note"
+            data-role="entry-search"
+          />
+        </div>
         <div class="time-tracker-range-popover" data-role="range-popover">
           <div class="time-tracker-range-header">
             <button type="button" class="time-tracker-range-nav" data-role="range-prev">&lt;</button>
@@ -213,7 +228,12 @@ const TIME_TRACKER_PANEL_TEMPLATE = `
         </div>
       </div>
       <div class="time-tracker-entry-list" data-role="entry-list"></div>
-      <div class="time-tracker-range-total" data-role="range-total"></div>
+      <div class="time-tracker-range-total" data-role="range-total">
+        <span data-role="range-total-value">Total: 0m</span>
+        <button type="button" class="time-tracker-button ghost" data-role="export-xlsx">
+          Export XLSX
+        </button>
+      </div>
     </div>
   </aside>
 `;
@@ -233,6 +253,7 @@ type Entry = {
   task_id: string;
   entry_date: string;
   duration_minutes: number;
+  reported: boolean;
   note: string;
   entry_type: 'manual' | 'timer';
   start_time: string | null;
@@ -268,6 +289,17 @@ type DateRange = {
 type TaskOption =
   | { type: 'create'; label: string; query: string }
   | { type: 'task'; label: string; task: Task };
+
+type ExportRow = {
+  item: string;
+  total_minutes: number;
+  description: string;
+};
+
+type ArtifactMetadata = {
+  id: string;
+  filename: string;
+};
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
 
@@ -339,6 +371,58 @@ async function callOperation<T>(operation: string, body: Record<string, unknown>
   }
 
   return payload.result;
+}
+
+async function callArtifactsOperation<T>(
+  operation: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const response = await apiFetch(`/api/plugins/artifacts/operations/${operation}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let payload: OperationResponse<T> | null = null;
+  try {
+    payload = (await response.json()) as OperationResponse<T>;
+  } catch {
+    // ignore json parsing failures
+  }
+
+  if (!response.ok || !payload || 'error' in payload) {
+    const message =
+      payload && 'error' in payload && payload.error
+        ? payload.error
+        : `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return payload.result;
+}
+
+async function resolveArtifactsInstanceId(targetId: string): Promise<string> {
+  try {
+    const raw = await callArtifactsOperation<unknown>('instance_list', {});
+    const list = Array.isArray(raw) ? raw.map(parseInstance).filter(Boolean) : [];
+    const instances = list as Instance[];
+    if (instances.some((instance) => instance.id === targetId)) {
+      return targetId;
+    }
+  } catch {
+    // Ignore lookup errors and fall back to default.
+  }
+  return DEFAULT_INSTANCE_ID;
+}
+
+function buildArtifactsDownloadUrl(options: {
+  instanceId: string;
+  artifactId: string;
+}): string {
+  const base = getApiBaseUrl().replace(/\/+$/, '');
+  return `${base}/api/plugins/artifacts/files/${encodeURIComponent(
+    options.instanceId,
+  )}/${encodeURIComponent(options.artifactId)}?download=1`;
 }
 
 function toDateString(date: Date): string {
@@ -548,6 +632,7 @@ function parseEntry(value: unknown): Entry | null {
   if (typeof duration !== 'number') {
     return null;
   }
+  const reported = raw['reported'];
   const entryType = raw['entry_type'];
   if (entryType !== 'manual' && entryType !== 'timer') {
     return null;
@@ -557,6 +642,7 @@ function parseEntry(value: unknown): Entry | null {
     task_id: raw['task_id'] as string,
     entry_date: typeof raw['entry_date'] === 'string' ? (raw['entry_date'] as string) : '',
     duration_minutes: duration,
+    reported: typeof reported === 'boolean' ? reported : Boolean(reported),
     note: typeof raw['note'] === 'string' ? (raw['note'] as string) : '',
     entry_type: entryType,
     start_time: typeof raw['start_time'] === 'string' ? (raw['start_time'] as string) : null,
@@ -662,9 +748,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const noteInput = root.querySelector<HTMLInputElement>('[data-role="note-input"]');
       const entryList = root.querySelector<HTMLElement>('[data-role="entry-list"]');
       const rangeTotal = root.querySelector<HTMLElement>('[data-role="range-total"]');
+      const rangeTotalValue = root.querySelector<HTMLElement>('[data-role="range-total-value"]');
+      const exportButton = root.querySelector<HTMLButtonElement>('[data-role="export-xlsx"]');
       const filterButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-range]'));
       const rangeToggle = root.querySelector<HTMLButtonElement>('[data-role="range-toggle"]');
       const rangeLabel = root.querySelector<HTMLElement>('[data-role="range-label"]');
+      const reportedFilter = root.querySelector<HTMLInputElement>('[data-role="filter-reported"]');
+      const entrySearchInput = root.querySelector<HTMLInputElement>('[data-role="entry-search"]');
       const rangePopover = root.querySelector<HTMLElement>('[data-role="range-popover"]');
       const rangeMonth = root.querySelector<HTMLElement>('[data-role="range-month"]');
       const rangePrev = root.querySelector<HTMLButtonElement>('[data-role="range-prev"]');
@@ -700,8 +790,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         !noteInput ||
         !entryList ||
         !rangeTotal ||
+        !rangeTotalValue ||
+        !exportButton ||
         !rangeToggle ||
         !rangeLabel ||
+        !reportedFilter ||
+        !entrySearchInput ||
         !rangePopover ||
         !rangeMonth ||
         !rangePrev ||
@@ -721,6 +815,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeTimer: ActiveTimer | null = null;
       let selectedTaskId: string | null = null;
       let selectedDuration = 30;
+      let includeReported = false;
+      let entrySearchQuery = '';
       let stopEntry: Entry | null = null;
       let isVisible = true;
       let taskRefreshToken = 0;
@@ -766,6 +862,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (typeof data['duration'] === 'number' && data['duration'] > 0) {
           selectedDuration = data['duration'] as number;
         }
+        if (typeof data['includeReported'] === 'boolean') {
+          includeReported = data['includeReported'] as boolean;
+        }
       }
 
       const contextKey = getPanelContextKey(host.panelId());
@@ -799,6 +898,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           rangeEnd: dateRange.end,
           rangePreset: dateRange.preset,
           duration: selectedDuration,
+          includeReported,
         });
       }
 
@@ -1018,7 +1118,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       function renderEntries(): void {
-        const sorted = [...entries].sort((a, b) => {
+        const query = entrySearchQuery.trim().toLowerCase();
+        const filtered = query
+          ? entries.filter((entry) => entry.note.toLowerCase().includes(query))
+          : entries;
+        const sorted = [...filtered].sort((a, b) => {
           const dateCompare = compareDatesDesc(a.entry_date, b.entry_date);
           if (dateCompare !== 0) {
             return dateCompare;
@@ -1027,13 +1131,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         });
 
         entryList.innerHTML = '';
+        exportButton.disabled = entries.length === 0;
 
         if (sorted.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'time-tracker-empty';
-          empty.textContent = 'No entries for this period.';
+          empty.textContent = query ? 'No entries match this filter.' : 'No entries for this period.';
           entryList.appendChild(empty);
-          rangeTotal.textContent = 'Total: 0m';
+          rangeTotalValue.textContent = 'Total: 0m';
           return;
         }
 
@@ -1189,7 +1294,255 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
 
         flushGroup();
-        rangeTotal.textContent = `Total: ${formatDuration(totalMinutes)}`;
+        rangeTotalValue.textContent = `Total: ${formatDuration(totalMinutes)}`;
+      }
+
+      function buildExportRows(): {
+        rows: ExportRow[];
+        totalMinutes: number;
+        entryCount: number;
+        taskCount: number;
+      } {
+        function normalizeExportNote(note: string): string {
+          return note.replace(/^[-*•–—]\s+/, '');
+        }
+
+        const taskMap = new Map<
+          string,
+          { item: string; totalMinutes: number; notes: Map<string, string> }
+        >();
+        let totalMinutes = 0;
+        for (const entry of entries) {
+          totalMinutes += entry.duration_minutes;
+          const task = getTaskById(entry.task_id);
+          const item = task ? task.name : 'Unknown task';
+          const existing =
+            taskMap.get(entry.task_id) ??
+            ({ item, totalMinutes: 0, notes: new Map<string, string>() } as const);
+          const next = {
+            item: existing.item,
+            totalMinutes: existing.totalMinutes + entry.duration_minutes,
+            notes: existing.notes,
+          };
+          const rawNote = entry.note.trim();
+          if (rawNote) {
+            const normalizedNote = normalizeExportNote(rawNote);
+            if (!normalizedNote) {
+              continue;
+            }
+            const key = normalizedNote.toLowerCase();
+            if (!next.notes.has(key)) {
+              next.notes.set(key, normalizedNote);
+            }
+          }
+          taskMap.set(entry.task_id, next);
+        }
+        const rows = Array.from(taskMap.values())
+          .map((record) => {
+            const notes = Array.from(record.notes.values());
+            const description =
+              notes.length > 0 ? notes.map((note) => `• ${note}`).join('\n') : '';
+            return {
+              item: record.item,
+              total_minutes: record.totalMinutes,
+              description,
+            };
+          })
+          .sort((a, b) => a.item.localeCompare(b.item));
+        return {
+          rows,
+          totalMinutes,
+          entryCount: entries.length,
+          taskCount: rows.length,
+        };
+      }
+
+      async function exportXlsx(
+        rows: ExportRow[],
+        markReported: boolean,
+      ): Promise<{ artifact: ArtifactMetadata; instanceId: string }> {
+        const raw = await callInstanceOperation<unknown>('export_xlsx', {
+          rows,
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+        });
+        if (!raw || typeof raw !== 'object') {
+          throw new Error('Failed to export XLSX');
+        }
+        const payload = raw as { filename?: string; mimeType?: string; content?: string };
+        if (!payload.content || !payload.filename) {
+          throw new Error('Failed to export XLSX');
+        }
+        const mimeType =
+          payload.mimeType ??
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const artifactsInstanceId = await resolveArtifactsInstanceId(selectedInstanceId);
+        const artifact = await callArtifactsOperation<ArtifactMetadata>('upload', {
+          instance_id: artifactsInstanceId,
+          title: payload.filename,
+          filename: payload.filename,
+          content: payload.content,
+          mimeType,
+        });
+
+        if (markReported) {
+          const toReport = entries.filter((entry) => !entry.reported);
+          for (const entry of toReport) {
+            await callInstanceOperation('entry_update', { id: entry.id, reported: true });
+          }
+          void refreshEntries({ silent: true });
+          void refreshTasks({ silent: true });
+        }
+        setStatus('Exported XLSX to Artifacts.');
+        return { artifact, instanceId: artifactsInstanceId };
+      }
+
+      function openExportDialog(): void {
+        if (entries.length === 0) {
+          setStatus('No entries to export.');
+          return;
+        }
+        const { rows, totalMinutes, entryCount, taskCount } = buildExportRows();
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        const decimalHours = totalMinutes / 60;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-dialog-overlay time-tracker-dialog-overlay';
+
+        const dialog = document.createElement('div');
+        dialog.className = 'confirm-dialog time-tracker-dialog time-tracker-export-dialog';
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+
+        const title = document.createElement('h3');
+        title.className = 'confirm-dialog-title';
+        title.textContent = 'Export XLSX';
+        dialog.appendChild(title);
+
+        const form = document.createElement('form');
+        form.className = 'list-item-form';
+
+        const summary = document.createElement('div');
+        summary.className = 'time-tracker-export-summary';
+        summary.innerHTML = `
+          <div><strong>Entries:</strong> ${entryCount}</div>
+          <div><strong>Tasks:</strong> ${taskCount}</div>
+          <div><strong>Total:</strong> ${hours}h ${minutes}m (${decimalHours.toFixed(2)}h)</div>
+        `;
+        form.appendChild(summary);
+
+        const error = document.createElement('p');
+        error.className = 'time-tracker-form-error';
+        error.textContent = '';
+        form.appendChild(error);
+
+        const checkboxRow = document.createElement('div');
+        checkboxRow.className = 'list-item-form-checkbox-row';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'list-item-form-checkbox';
+        checkbox.id = `time-tracker-export-reported-${Math.random().toString(36).slice(2)}`;
+        checkbox.checked = true;
+
+        const checkboxLabel = document.createElement('label');
+        checkboxLabel.htmlFor = checkbox.id;
+        checkboxLabel.textContent = 'Mark exported entries as reported';
+
+        checkboxRow.appendChild(checkbox);
+        checkboxRow.appendChild(checkboxLabel);
+        form.appendChild(checkboxRow);
+
+        const buttons = document.createElement('div');
+        buttons.className = 'confirm-dialog-buttons';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'confirm-dialog-button cancel';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', () => {
+          closeDialog();
+        });
+        buttons.appendChild(cancelButton);
+
+        const exportBtn = document.createElement('button');
+        exportBtn.type = 'submit';
+        exportBtn.className = 'confirm-dialog-button primary';
+        exportBtn.textContent = 'Export';
+        buttons.appendChild(exportBtn);
+
+        form.appendChild(buttons);
+        dialog.appendChild(form);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        services.dialogManager.hasOpenDialog = true;
+
+        const closeDialog = (): void => {
+          overlay.remove();
+          document.removeEventListener('keydown', handleKeyDown);
+          services.dialogManager.hasOpenDialog = false;
+        };
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+          event.stopPropagation();
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            closeDialog();
+          }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          error.textContent = '';
+          exportBtn.disabled = true;
+          try {
+            const result = await exportXlsx(rows, checkbox.checked);
+            const downloadUrl = buildArtifactsDownloadUrl({
+              instanceId: result.instanceId,
+              artifactId: result.artifact.id,
+            });
+
+            form.innerHTML = '';
+            const success = document.createElement('div');
+            success.className = 'time-tracker-export-summary';
+
+            const headline = document.createElement('div');
+            const strong = document.createElement('strong');
+            strong.textContent = 'Export complete.';
+            headline.appendChild(strong);
+            success.appendChild(headline);
+
+            const downloadRow = document.createElement('div');
+            downloadRow.textContent = 'Download: ';
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = result.artifact.filename;
+            downloadRow.appendChild(link);
+            success.appendChild(downloadRow);
+
+            form.appendChild(success);
+
+            const closeRow = document.createElement('div');
+            closeRow.className = 'confirm-dialog-buttons';
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'confirm-dialog-button primary';
+            closeButton.textContent = 'Close';
+            closeButton.addEventListener('click', () => {
+              closeDialog();
+            });
+            closeRow.appendChild(closeButton);
+            form.appendChild(closeRow);
+          } catch (err) {
+            error.textContent = (err as Error).message || 'Failed to export XLSX.';
+            exportBtn.disabled = false;
+          }
+        });
       }
 
       function renderDurationMenu(): void {
@@ -1407,6 +1760,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             start_date: dateRange.start,
             end_date: dateRange.end,
             ...(selectedTaskId ? { task_id: selectedTaskId } : {}),
+            include_reported: includeReported,
           });
           if (token !== entryRefreshToken) {
             return;
@@ -1764,7 +2118,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         let entryCount = 0;
         try {
-          const raw = await callInstanceOperation<unknown>('entry_list', { task_id: task.id });
+          const raw = await callInstanceOperation<unknown>('entry_list', {
+            task_id: task.id,
+            include_reported: true,
+          });
           if (Array.isArray(raw)) {
             entryCount = raw.length;
           }
@@ -1859,6 +2216,23 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         noteLabel.appendChild(noteField);
         form.appendChild(noteLabel);
 
+        const reportedRow = document.createElement('div');
+        reportedRow.className = 'list-item-form-checkbox-row';
+
+        const reportedCheckbox = document.createElement('input');
+        reportedCheckbox.type = 'checkbox';
+        reportedCheckbox.className = 'list-item-form-checkbox';
+        reportedCheckbox.id = `time-tracker-reported-${Math.random().toString(36).slice(2)}`;
+        reportedCheckbox.checked = entry.reported;
+
+        const reportedLabel = document.createElement('label');
+        reportedLabel.htmlFor = reportedCheckbox.id;
+        reportedLabel.textContent = 'Reported';
+
+        reportedRow.appendChild(reportedCheckbox);
+        reportedRow.appendChild(reportedLabel);
+        form.appendChild(reportedRow);
+
         const buttons = document.createElement('div');
         buttons.className = 'confirm-dialog-buttons';
 
@@ -1929,6 +2303,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               task_id: taskSelect.value,
               entry_date: dateInput.value,
               duration_minutes: parsedDuration,
+              reported: reportedCheckbox.checked,
               note: noteField.value.trim(),
             });
             closeDialog();
@@ -2309,6 +2684,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         });
       });
 
+      reportedFilter.checked = includeReported;
+      reportedFilter.addEventListener('change', () => {
+        includeReported = reportedFilter.checked;
+        persistState();
+        void refreshEntries();
+      });
+
+      exportButton.addEventListener('click', () => {
+        if (exportButton.disabled) {
+          return;
+        }
+        openExportDialog();
+      });
+
       rangeToggle.addEventListener('click', () => {
         if (rangePopover.classList.contains('open')) {
           closeRangePopover();
@@ -2344,6 +2733,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         setCustomRange(rangeDraftStart, rangeDraftEnd);
         renderFilterButtons();
         closeRangePopover();
+      });
+
+      entrySearchInput.addEventListener('input', () => {
+        entrySearchQuery = entrySearchInput.value;
+        renderEntries();
       });
 
       renderDurationMenu();
