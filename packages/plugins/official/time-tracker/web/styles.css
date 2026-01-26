@@ -335,6 +335,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--spacing-sm);
   position: relative;
   background-color: var(--color-bg-surface);
@@ -355,6 +356,24 @@
 
 .time-tracker-filter-extras {
   margin-top: var(--spacing-xs);
+}
+
+.time-tracker-filter-search {
+  flex-basis: 100%;
+}
+
+.time-tracker-filter-input {
+  width: 100%;
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: var(--font-size-xs);
+}
+
+.time-tracker-filter-input::placeholder {
+  color: var(--color-text-muted);
 }
 
 .time-tracker-filter-checkbox {

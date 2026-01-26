@@ -241,6 +241,11 @@ Data is scoped per instance; each instance has its own task list, entries, and a
 - Edit button → opens entry edit modal
 - Delete button (✕) → confirmation dialog, then delete
 
+**Filters:**
+
+- "Show reported" toggle (client + server filtering).
+- Note search input filters entries by note text (client-side only).
+
 **Range total:**
 
 - Bottom of list shows total duration for current date range filter

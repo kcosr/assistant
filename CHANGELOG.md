@@ -7,6 +7,7 @@
 ### Added
 - Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 - Added time tracker reported flag and XLSX export with artifacts upload. ([#42](https://github.com/kcosr/assistant/pull/42))
+- Added client-side note search filtering in the time tracker panel. ([#42](https://github.com/kcosr/assistant/pull/42))
 
 ### Changed
 

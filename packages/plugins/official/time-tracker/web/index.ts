@@ -204,6 +204,15 @@ const TIME_TRACKER_PANEL_TEMPLATE = `
             <span>Show reported</span>
           </label>
         </div>
+        <div class="time-tracker-filter-search">
+          <input
+            type="search"
+            class="time-tracker-filter-input"
+            placeholder="Filter notes"
+            aria-label="Filter entries by note"
+            data-role="entry-search"
+          />
+        </div>
         <div class="time-tracker-range-popover" data-role="range-popover">
           <div class="time-tracker-range-header">
             <button type="button" class="time-tracker-range-nav" data-role="range-prev">&lt;</button>
@@ -745,6 +754,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const rangeToggle = root.querySelector<HTMLButtonElement>('[data-role="range-toggle"]');
       const rangeLabel = root.querySelector<HTMLElement>('[data-role="range-label"]');
       const reportedFilter = root.querySelector<HTMLInputElement>('[data-role="filter-reported"]');
+      const entrySearchInput = root.querySelector<HTMLInputElement>('[data-role="entry-search"]');
       const rangePopover = root.querySelector<HTMLElement>('[data-role="range-popover"]');
       const rangeMonth = root.querySelector<HTMLElement>('[data-role="range-month"]');
       const rangePrev = root.querySelector<HTMLButtonElement>('[data-role="range-prev"]');
@@ -785,6 +795,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         !rangeToggle ||
         !rangeLabel ||
         !reportedFilter ||
+        !entrySearchInput ||
         !rangePopover ||
         !rangeMonth ||
         !rangePrev ||
@@ -805,6 +816,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let selectedTaskId: string | null = null;
       let selectedDuration = 30;
       let includeReported = false;
+      let entrySearchQuery = '';
       let stopEntry: Entry | null = null;
       let isVisible = true;
       let taskRefreshToken = 0;
@@ -1106,7 +1118,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       function renderEntries(): void {
-        const sorted = [...entries].sort((a, b) => {
+        const query = entrySearchQuery.trim().toLowerCase();
+        const filtered = query
+          ? entries.filter((entry) => entry.note.toLowerCase().includes(query))
+          : entries;
+        const sorted = [...filtered].sort((a, b) => {
           const dateCompare = compareDatesDesc(a.entry_date, b.entry_date);
           if (dateCompare !== 0) {
             return dateCompare;
@@ -1115,12 +1131,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         });
 
         entryList.innerHTML = '';
-        exportButton.disabled = sorted.length === 0;
+        exportButton.disabled = entries.length === 0;
 
         if (sorted.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'time-tracker-empty';
-          empty.textContent = 'No entries for this period.';
+          empty.textContent = query ? 'No entries match this filter.' : 'No entries for this period.';
           entryList.appendChild(empty);
           rangeTotalValue.textContent = 'Total: 0m';
           return;
@@ -2717,6 +2733,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         setCustomRange(rangeDraftStart, rangeDraftEnd);
         renderFilterButtons();
         closeRangePopover();
+      });
+
+      entrySearchInput.addEventListener('input', () => {
+        entrySearchQuery = entrySearchInput.value;
+        renderEntries();
       });
 
       renderDurationMenu();

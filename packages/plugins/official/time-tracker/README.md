@@ -17,6 +17,7 @@ Track time against named tasks with timers, manual entries, and date filters.
 - Timer state is stored server-side and persists across reloads.
 - Instance selection comes from config (`plugins.time-tracker.instances`); the default instance id is `default`.
 - Entries support a `reported` flag and can be filtered with "Show reported".
+- Entries can be filtered client-side by note text for quick search.
 - Export generates an XLSX report from the current view and uploads it to Artifacts.
 
 ## Source files
