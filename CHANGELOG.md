@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2026-01-26
 
 ### Breaking Changes
 
@@ -17,6 +17,7 @@
 ### Fixed
 
 ### Removed
+
 
 ## [0.10.0] - 2026-01-25
 
