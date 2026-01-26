@@ -645,6 +645,10 @@ export class ListItemEditorDialog {
     };
 
     const reviewFields: ReviewFieldState[] = [];
+    const reviewFieldByInput = new Map<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+      ReviewFieldState
+    >();
 
     const createEditorPlaceholder = (editorRow: HTMLElement): HTMLElement => {
       const placeholder = document.createElement('div');
@@ -834,6 +838,12 @@ export class ListItemEditorDialog {
         toggleReviewField(fieldState);
       });
       reviewFields.push(fieldState);
+      if (focusTarget) {
+        reviewFieldByInput.set(
+          focusTarget as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+          fieldState,
+        );
+      }
       return fieldState;
     };
 
@@ -1046,6 +1056,9 @@ export class ListItemEditorDialog {
 
     renderReviewDisplays = () => {
       for (const field of reviewFields) {
+        if (field.field.classList.contains('list-item-review-field--editing')) {
+          continue;
+        }
         field.renderValue();
       }
     };
@@ -1055,12 +1068,25 @@ export class ListItemEditorDialog {
     const attachReviewListeners = (
       input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
     ): void => {
-      input.addEventListener('input', () => {
-        renderReviewDisplays();
-      });
-      input.addEventListener('change', () => {
-        renderReviewDisplays();
-      });
+      const fieldState = reviewFieldByInput.get(input);
+      const maybeRender = () => {
+        if (editMode !== 'review') {
+          return;
+        }
+        if (!fieldState) {
+          renderReviewDisplays();
+          return;
+        }
+        if (
+          fieldState.replaceDisplay &&
+          fieldState.field.classList.contains('list-item-review-field--editing')
+        ) {
+          return;
+        }
+        fieldState.renderValue();
+      };
+      input.addEventListener('input', maybeRender);
+      input.addEventListener('change', maybeRender);
     };
 
     attachReviewListeners(titleInput);
