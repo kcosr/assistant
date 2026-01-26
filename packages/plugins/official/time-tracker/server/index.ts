@@ -113,7 +113,22 @@ function formatExportDescription(value: string): string {
   if (!value) {
     return '';
   }
-  return value.replace(/^-\s+/gm, '• ');
+  return value
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return '';
+      }
+      if (/^•\s+/.test(trimmed)) {
+        return trimmed.replace(/^•\s*[-*•–—]\s+/, '• ');
+      }
+      if (/^[-*•–—]\s+/.test(trimmed)) {
+        return trimmed.replace(/^[-*•–—]\s+/, '• ');
+      }
+      return trimmed;
+    })
+    .join('\n');
 }
 
 function isValidDateString(value: string): boolean {

@@ -1287,6 +1287,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         entryCount: number;
         taskCount: number;
       } {
+        function normalizeExportNote(note: string): string {
+          return note.replace(/^[-*•–—]\s+/, '');
+        }
+
         const taskMap = new Map<
           string,
           { item: string; totalMinutes: number; notes: Map<string, string> }
@@ -1304,11 +1308,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             totalMinutes: existing.totalMinutes + entry.duration_minutes,
             notes: existing.notes,
           };
-          const note = entry.note.trim();
-          if (note) {
-            const key = note.toLowerCase();
+          const rawNote = entry.note.trim();
+          if (rawNote) {
+            const normalizedNote = normalizeExportNote(rawNote);
+            if (!normalizedNote) {
+              continue;
+            }
+            const key = normalizedNote.toLowerCase();
             if (!next.notes.has(key)) {
-              next.notes.set(key, note);
+              next.notes.set(key, normalizedNote);
             }
           }
           taskMap.set(entry.task_id, next);
