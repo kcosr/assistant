@@ -125,6 +125,7 @@ export interface ListPanelControllerOptions {
   }) => Promise<ListItemReference | null>;
   openReference?: (reference: ListItemReference) => void;
   isReferenceAvailable?: (reference: ListItemReference) => boolean;
+  checkReferenceAvailability?: (reference: ListItemReference) => Promise<boolean | null>;
 }
 
 const DEFAULT_VISIBILITY_BY_COLUMN: Record<string, ColumnVisibility> = {
@@ -229,6 +230,9 @@ export class ListPanelController {
       ...(options.openReferencePicker ? { openReferencePicker: options.openReferencePicker } : {}),
       ...(options.isReferenceAvailable
         ? { isReferenceAvailable: options.isReferenceAvailable }
+        : {}),
+      ...(options.checkReferenceAvailability
+        ? { checkReferenceAvailability: options.checkReferenceAvailability }
         : {}),
     });
 

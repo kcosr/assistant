@@ -34,6 +34,7 @@ export interface ListItemEditorDialogOptions {
     currentValue: ListItemReference | null;
   }) => Promise<ListItemReference | null>;
   isReferenceAvailable?: (reference: ListItemReference) => boolean;
+  checkReferenceAvailability?: (reference: ListItemReference) => Promise<boolean | null>;
 }
 
 export interface ListItemEditorDialogOpenOptions {
@@ -141,14 +142,48 @@ export class ListItemEditorDialog {
         row.appendChild(refContainer);
 
         let currentValue = parseListItemReference(initialValues[key]);
+        let availabilityState: 'unknown' | 'available' | 'missing' = 'unknown';
+        let availabilityToken = 0;
+
+        const updateAvailability = async (value: ListItemReference | null): Promise<void> => {
+          if (!value || !this.options.checkReferenceAvailability) {
+            availabilityState = 'unknown';
+            return;
+          }
+          const token = ++availabilityToken;
+          try {
+            const result = await this.options.checkReferenceAvailability(value);
+            if (token !== availabilityToken) {
+              return;
+            }
+            if (result === true) {
+              availabilityState = 'available';
+            } else if (result === false) {
+              availabilityState = 'missing';
+            } else {
+              availabilityState = 'unknown';
+            }
+          } catch {
+            if (token !== availabilityToken) {
+              return;
+            }
+            availabilityState = 'missing';
+          }
+          updateDisplay();
+        };
 
         const updateDisplay = (): void => {
           if (currentValue) {
             labelSpan.textContent = formatListItemReferenceLabel(currentValue);
             const typeLabel = getListItemReferenceTypeLabel(currentValue.panelType);
-            const isMissing = this.options.isReferenceAvailable
-              ? !this.options.isReferenceAvailable(currentValue)
-              : false;
+            const isMissing =
+              availabilityState === 'missing'
+                ? true
+                : availabilityState === 'available'
+                  ? false
+                  : this.options.isReferenceAvailable
+                    ? !this.options.isReferenceAvailable(currentValue)
+                    : false;
             badge.innerHTML = '';
             badge.classList.toggle('list-item-ref-type--missing', isMissing);
             const text = document.createElement('span');
@@ -176,6 +211,7 @@ export class ListItemEditorDialog {
         };
 
         updateDisplay();
+        void updateAvailability(currentValue);
 
         const openPicker = this.options.openReferencePicker;
         if (!openPicker) {
@@ -200,6 +236,7 @@ export class ListItemEditorDialog {
             }
             currentValue = next;
             updateDisplay();
+            void updateAvailability(currentValue);
           });
         }
 
@@ -208,6 +245,7 @@ export class ListItemEditorDialog {
           event.stopPropagation();
           currentValue = null;
           updateDisplay();
+          void updateAvailability(currentValue);
         });
 
         getValue = () => currentValue ?? null;

@@ -1264,6 +1264,39 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return true;
       };
 
+      const checkReferenceAvailability = async (
+        reference: ListItemReference,
+      ): Promise<boolean | null> => {
+        if (reference.kind !== 'panel') {
+          return null;
+        }
+        const instanceId = reference.instanceId ?? DEFAULT_INSTANCE_ID;
+        const panelType = reference.panelType.toLowerCase().trim();
+        if (panelType === 'notes') {
+          try {
+            await callNotesOperation('read', {
+              instance_id: instanceId,
+              title: reference.id,
+            });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        if (panelType === 'lists') {
+          if (!isKnownInstance(instanceId)) {
+            return null;
+          }
+          try {
+            await callInstanceOperation(instanceId, 'get', { id: reference.id });
+            return true;
+          } catch {
+            return false;
+          }
+        }
+        return null;
+      };
+
       const openReferencePicker = async (options: {
         listId: string;
         field: ListCustomFieldDefinition;
@@ -1300,15 +1333,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           };
         };
 
-        const formatEntryLabel = (entry: CollectionItemSummary): string => {
-          const typeLabel = entry.type === 'note' ? 'Note' : 'List';
-          const name = entry.name?.trim() || entry.id;
-          const instanceId = entry.instanceId ?? DEFAULT_INSTANCE_ID;
-          const instanceLabel = entry.instanceLabel ?? formatInstanceLabel(instanceId);
-          const showInstance =
-            selectedInstanceIds.length > 1 && instanceId && instanceId !== DEFAULT_INSTANCE_ID;
-          return `${typeLabel}: ${name}${showInstance ? ` (${instanceLabel})` : ''}`;
-        };
+      const formatEntryLabel = (entry: CollectionItemSummary): string => {
+        const name = entry.name?.trim() || entry.id;
+        const instanceId = entry.instanceId ?? DEFAULT_INSTANCE_ID;
+        const instanceLabel = entry.instanceLabel ?? formatInstanceLabel(instanceId);
+        const showInstance =
+          selectedInstanceIds.length > 1 && instanceId && instanceId !== DEFAULT_INSTANCE_ID;
+        return `${name}${showInstance ? ` (${instanceLabel})` : ''}`;
+      };
 
         return new Promise((resolve) => {
           const underlyingOverlay = document.querySelector<HTMLElement>(
@@ -1449,7 +1481,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               if (isCurrentEntry(entry)) {
                 button.classList.add('is-selected');
               }
-              button.textContent = formatEntryLabel(entry);
+              const nameSpan = document.createElement('span');
+              nameSpan.className = 'list-ref-picker-item-name';
+              nameSpan.textContent = formatEntryLabel(entry);
+
+              const badge = document.createElement('span');
+              badge.className = 'list-ref-picker-item-badge';
+              badge.textContent = entry.type === 'note' ? 'NOTE' : 'LIST';
+
+              button.appendChild(nameSpan);
+              button.appendChild(badge);
               button.addEventListener('click', () => close(toReference(entry)));
               listContainer.appendChild(button);
             }
@@ -1881,6 +1922,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         openReferencePicker,
         openReference,
         isReferenceAvailable,
+        checkReferenceAvailability,
       });
 
       if (fabAddButton) {
