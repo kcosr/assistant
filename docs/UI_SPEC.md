@@ -140,7 +140,7 @@ Binding indicator behavior:
 - Header panel navigation: `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) (`1-9` toggle pinned header panels, `0` cycles pages, `Esc` exits)
 - Cycle focus: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - Split panel: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
-- Focus last time tracker panel: `Ctrl + T` (does nothing if no time tracker panel has been focused)
+- Focus last time tracker panel: `Ctrl + T` (uses last-used history; no-op if none)
 - Close panel: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (panel-focused, replaces with an empty placeholder)
 - Remove panel: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) (removes panel from layout)
 - Reset layout: available in settings (and command palette when implemented)

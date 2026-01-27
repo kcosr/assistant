@@ -66,6 +66,8 @@ const resolveIconSvg = (iconName: string | null | undefined): string | null => {
   return null;
 };
 
+const FOCUS_HISTORY_STORAGE_KEY = 'aiAssistantPanelFocusHistory';
+
 export interface PanelWorkspaceControllerOptions {
   root: HTMLElement;
   registry: PanelRegistry;
@@ -128,6 +130,7 @@ export class PanelWorkspaceController {
       }
     }
     this.layout = this.loadInitialLayout();
+    this.loadFocusHistoryFromStorage();
     this.resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? null
@@ -563,6 +566,7 @@ export class PanelWorkspaceController {
       headerPanels: this.getHeaderPanelIds(),
       headerPanelSizes: this.getHeaderPanelSizes(),
     };
+    this.recordPanelFocus(panelId);
 
     this.persistLayout();
     this.render();
@@ -1105,23 +1109,85 @@ export class PanelWorkspaceController {
     if (this.focusHistory.length > PanelWorkspaceController.FOCUS_HISTORY_LIMIT) {
       this.focusHistory.length = PanelWorkspaceController.FOCUS_HISTORY_LIMIT;
     }
+    this.persistFocusHistory();
   }
 
   private removeFromFocusHistory(panelId: string): void {
     let index = this.focusHistory.indexOf(panelId);
+    let removed = false;
     while (index >= 0) {
       this.focusHistory.splice(index, 1);
+      removed = true;
       index = this.focusHistory.indexOf(panelId);
+    }
+    if (removed) {
+      this.persistFocusHistory();
     }
   }
 
   private pruneFocusHistory(): void {
     const validIds = new Set(Object.keys(this.layout.panels));
+    let removed = false;
     for (let index = this.focusHistory.length - 1; index >= 0; index -= 1) {
       const panelId = this.focusHistory[index];
       if (panelId && !validIds.has(panelId)) {
         this.focusHistory.splice(index, 1);
+        removed = true;
       }
+    }
+    if (removed) {
+      this.persistFocusHistory();
+    }
+  }
+
+  private loadFocusHistoryFromStorage(): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(FOCUS_HISTORY_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as unknown;
+      const list = Array.isArray(parsed)
+        ? parsed
+        : typeof parsed === 'object' && parsed && Array.isArray((parsed as { history?: unknown })
+              .history)
+          ? (parsed as { history: unknown[] }).history
+          : null;
+      if (!list) {
+        return;
+      }
+      const seen = new Set<string>();
+      for (const entry of list) {
+        if (typeof entry !== 'string') {
+          continue;
+        }
+        const trimmed = entry.trim();
+        if (!trimmed || seen.has(trimmed)) {
+          continue;
+        }
+        seen.add(trimmed);
+        this.focusHistory.push(trimmed);
+      }
+      this.pruneFocusHistory();
+    } catch {
+      // Ignore localStorage parse errors.
+    }
+  }
+
+  private persistFocusHistory(): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        FOCUS_HISTORY_STORAGE_KEY,
+        JSON.stringify(this.focusHistory),
+      );
+    } catch {
+      // Ignore localStorage serialization errors.
     }
   }
 
