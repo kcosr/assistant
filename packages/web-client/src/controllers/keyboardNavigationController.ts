@@ -329,6 +329,16 @@ export class KeyboardNavigationController {
 
     this.shortcutRegistry.register(
       ctrlShortcut(
+        'focus-last-time-tracker',
+        't',
+        'Focus last used time tracker panel',
+        () => panelWorkspace.focusLastPanelOfType('time-tracker'),
+        { bindingId: 'panel.focus-last.time-tracker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      ctrlShortcut(
         'toggle-input-focus',
         'i',
         'Toggle text input focus',

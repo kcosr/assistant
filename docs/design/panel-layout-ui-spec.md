@@ -177,6 +177,7 @@ Right-clicking (or long-pressing) a panel header should expose:
 - **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- **Focus last time tracker panel**: `Ctrl + T` (no-op if none exists)
 - **Close panel**: `Ctrl/Cmd + W` (panel-focused)
 - **Reset layout**: command palette action
 

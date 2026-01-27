@@ -27,6 +27,7 @@ function buildPanelWorkspace(
     togglePanel: vi.fn(),
     isPanelTypeOpen: vi.fn(() => false),
     openPanel: vi.fn(() => null),
+    focusLastPanelOfType: vi.fn(() => false),
     listHeaderPanelIds: vi.fn(() => headerPanels),
     toggleHeaderPanelById: vi.fn(),
     openHeaderPanel: vi.fn(),
@@ -575,6 +576,29 @@ describe('KeyboardNavigationController chat shortcuts', () => {
       new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }),
     );
     expect(document.activeElement).not.toBe(input);
+
+    detach();
+  });
+
+  it('focuses the last time tracker panel on ctrl+t', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const panelWorkspace = options.panelWorkspace as unknown as {
+      focusLastPanelOfType: ReturnType<typeof vi.fn>;
+    };
+    panelWorkspace.focusLastPanelOfType = vi.fn(() => true);
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith('time-tracker');
 
     detach();
   });

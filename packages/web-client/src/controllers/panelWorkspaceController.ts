@@ -89,12 +89,14 @@ export interface PanelWorkspaceControllerOptions {
 }
 
 export class PanelWorkspaceController {
+  private static readonly FOCUS_HISTORY_LIMIT = 50;
   private layout: LayoutPersistence;
   private readonly panelElements = new Map<string, HTMLElement>();
   private readonly mountedPanelIds = new Set<string>();
   private readonly panelVisibility = new Map<string, boolean>();
   private readonly resizeObserver: ResizeObserver | null;
   private activePanelId: string | null = null;
+  private readonly focusHistory: string[] = [];
   private activeChatPanelId: string | null = null;
   private activeChatPanelFrame: HTMLElement | null = null;
   private activeChatPanelContent: HTMLElement | null = null;
@@ -179,6 +181,24 @@ export class PanelWorkspaceController {
       this.persistLayout();
     }
     this.render({ forceRemount: true });
+  }
+
+  focusLastPanelOfType(panelType: string): boolean {
+    this.pruneFocusHistory();
+    for (const panelId of this.focusHistory) {
+      const panel = this.layout.panels[panelId];
+      if (!panel || panel.panelType !== panelType) {
+        continue;
+      }
+      if (this.isPanelPinned(panelId)) {
+        this.openHeaderPanel(panelId);
+        this.focusPanel(panelId);
+      } else {
+        this.activatePanel(panelId);
+      }
+      return true;
+    }
+    return false;
   }
 
   applyLayoutPreset(preset: PanelLayoutPreset): void {
@@ -697,6 +717,7 @@ export class PanelWorkspaceController {
       headerPanels: nextHeaderPanels,
       headerPanelSizes: nextHeaderPanelSizes,
     };
+    this.removeFromFocusHistory(panelId);
 
     if (this.openHeaderPanelId === panelId) {
       this.closeHeaderPopover();
@@ -731,6 +752,7 @@ export class PanelWorkspaceController {
 
     const { [panelId]: _, ...remainingPanels } = this.layout.panels;
     this.layout = { ...this.layout, panels: remainingPanels };
+    this.removeFromFocusHistory(panelId);
 
     const unsubscribe = this.panelContextSubscriptions.get(panelId);
     if (unsubscribe) {
@@ -1068,11 +1090,47 @@ export class PanelWorkspaceController {
     return panel?.state ?? null;
   }
 
+  private recordPanelFocus(panelId: string): void {
+    if (!this.layout.panels[panelId]) {
+      return;
+    }
+    const existingIndex = this.focusHistory.indexOf(panelId);
+    if (existingIndex === 0) {
+      return;
+    }
+    if (existingIndex > 0) {
+      this.focusHistory.splice(existingIndex, 1);
+    }
+    this.focusHistory.unshift(panelId);
+    if (this.focusHistory.length > PanelWorkspaceController.FOCUS_HISTORY_LIMIT) {
+      this.focusHistory.length = PanelWorkspaceController.FOCUS_HISTORY_LIMIT;
+    }
+  }
+
+  private removeFromFocusHistory(panelId: string): void {
+    let index = this.focusHistory.indexOf(panelId);
+    while (index >= 0) {
+      this.focusHistory.splice(index, 1);
+      index = this.focusHistory.indexOf(panelId);
+    }
+  }
+
+  private pruneFocusHistory(): void {
+    const validIds = new Set(Object.keys(this.layout.panels));
+    for (let index = this.focusHistory.length - 1; index >= 0; index -= 1) {
+      const panelId = this.focusHistory[index];
+      if (panelId && !validIds.has(panelId)) {
+        this.focusHistory.splice(index, 1);
+      }
+    }
+  }
+
   focusPanel(panelId: string, source: PanelFocusSource = 'program'): void {
     if (this.activePanelId && this.activePanelId !== panelId) {
       this.options.host.setPanelFocus(this.activePanelId, false);
     }
     this.activePanelId = panelId;
+    this.recordPanelFocus(panelId);
     if (isPanelDebugEnabled()) {
       const panel = this.layout.panels[panelId];
       console.log('[panelWorkspace] focusPanel', {
@@ -1364,6 +1422,7 @@ export class PanelWorkspaceController {
     this.closePanelMenu();
     this.stopPanelDrag();
     this.stopPanelReorder();
+    this.pruneFocusHistory();
     this.unmountRemovedPanels(new Set(Object.keys(this.layout.panels)));
     const scrollPositions = this.captureScrollPositions();
     const rootNode = this.renderNode(this.layout.layout);
@@ -2742,6 +2801,7 @@ export class PanelWorkspaceController {
       if (nextPanelIds.has(panelId)) {
         continue;
       }
+      this.removeFromFocusHistory(panelId);
       if (this.activePanelId === panelId) {
         this.activePanelId = null;
         this.setActivePanelContext(null, 'program');
