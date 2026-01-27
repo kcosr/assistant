@@ -10,9 +10,12 @@
 - Added client-side note search filtering in the time tracker panel. ([#42](https://github.com/kcosr/assistant/pull/42))
 - Added AQL `~` operator and `text` pseudo-field for cross-field text search. ([#44](https://github.com/kcosr/assistant/pull/44))
 - Added `a` keyboard shortcut to toggle AQL in lists. ([#44](https://github.com/kcosr/assistant/pull/44))
+- Added Android back button handling for Capacitor overlays and modal navigation. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Changed
 - Changed AQL status hint copy when clearing a query. ([#44](https://github.com/kcosr/assistant/pull/44))
+- Changed Escape to close pinned or modal chat panels without canceling active chat operations. ([#45](https://github.com/kcosr/assistant/pull/45))
+- Changed Android back button fallback to open the command palette when nothing else is open. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Fixed
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))

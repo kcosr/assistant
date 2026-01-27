@@ -55,4 +55,15 @@ export class SettingsDropdownController {
     toggleButton.classList.toggle('active', this.isOpen);
     toggleButton.setAttribute('aria-expanded', String(this.isOpen));
   }
+
+  isDropdownOpen(): boolean {
+    return this.isOpen;
+  }
+
+  close(): void {
+    if (!this.isOpen) {
+      return;
+    }
+    this.toggle(false);
+  }
 }

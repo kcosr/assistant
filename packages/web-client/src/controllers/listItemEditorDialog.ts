@@ -1344,8 +1344,6 @@ export class ListItemEditorDialog {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
 
-    this.options.dialogManager.hasOpenDialog = true;
-
     const focusableSelectors =
       'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])';
     const getFocusableElements = (): HTMLElement[] =>
@@ -1371,8 +1369,10 @@ export class ListItemEditorDialog {
     const closeDialog = (): void => {
       overlay.remove();
       document.removeEventListener('keydown', handleKeyDown);
-      this.options.dialogManager.hasOpenDialog = false;
+      this.options.dialogManager.releaseExternalDialog(overlay);
     };
+
+    this.options.dialogManager.registerExternalDialog(overlay, closeDialog);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       e.stopPropagation();

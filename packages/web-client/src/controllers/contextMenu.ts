@@ -18,6 +18,10 @@ export class ContextMenuManager {
     }
   }
 
+  isOpen(): boolean {
+    return Boolean(this.activeContextMenu);
+  }
+
   setActiveMenu(menu: HTMLElement | null): void {
     this.activeContextMenu = menu;
   }

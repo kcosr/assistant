@@ -208,6 +208,10 @@ export class PanelLauncherController {
     this.positionLauncher();
   }
 
+  isLauncherOpen(): boolean {
+    return this.isOpen;
+  }
+
   private render(): void {
     const { launcherList } = this.options;
     if (!launcherList) {

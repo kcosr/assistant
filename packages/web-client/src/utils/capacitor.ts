@@ -15,7 +15,110 @@ const importModule = new Function('specifier', 'return import(specifier)') as <T
  * Check if running in Capacitor Android context.
  */
 export function isCapacitorAndroid(): boolean {
-  return window.location.origin === 'https://localhost';
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const cap = (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+  const platform = cap?.getPlatform?.();
+  if (platform) {
+    return platform === 'android';
+  }
+  const origin = window.location.origin;
+  return origin === 'https://localhost' || origin === 'capacitor://localhost';
+}
+
+export type CapacitorBackButtonEvent = {
+  canGoBack?: boolean;
+};
+
+export async function setupBackButtonHandler(
+  handler: (event: { canGoBack: boolean }) => boolean,
+  options?: {
+    importModule?: typeof importModule;
+    isAndroid?: () => boolean;
+  },
+): Promise<void> {
+  const isAndroid = options?.isAndroid ?? isCapacitorAndroid;
+  if (!isAndroid()) {
+    return;
+  }
+
+  const importer = options?.importModule ?? importModule;
+
+  try {
+    type AppPlugin = {
+      addListener: (
+        eventName: 'backButton',
+        listenerFunc: (event: CapacitorBackButtonEvent) => void,
+      ) => { remove: () => Promise<void> };
+      exitApp?: () => Promise<void> | void;
+    };
+
+    const loadAppPlugin = async (): Promise<AppPlugin | null> => {
+      try {
+        const { App } = await importer<{
+          App: AppPlugin;
+        }>('@capacitor/app');
+        if (App && typeof App.addListener === 'function') {
+          return App;
+        }
+        return null;
+      } catch {
+        const cap = (window as unknown as {
+          Capacitor?: { Plugins?: { App?: unknown }; App?: unknown };
+        }).Capacitor;
+        const appPlugin = (
+          (cap?.Plugins?.App as {
+            addListener?: (
+              eventName: 'backButton',
+              listenerFunc: (event: CapacitorBackButtonEvent) => void,
+            ) => { remove: () => Promise<void> };
+            exitApp?: () => Promise<void> | void;
+          }) ??
+          (cap?.App as {
+            addListener?: (
+              eventName: 'backButton',
+              listenerFunc: (event: CapacitorBackButtonEvent) => void,
+            ) => { remove: () => Promise<void> };
+            exitApp?: () => Promise<void> | void;
+          })
+        ) ?? null;
+        if (appPlugin && typeof appPlugin.addListener === 'function') {
+          return appPlugin as AppPlugin;
+        }
+        return null;
+      }
+    };
+
+    const appPlugin = await loadAppPlugin();
+    if (!appPlugin) {
+      return;
+    }
+
+    appPlugin.addListener('backButton', (event) => {
+      const canGoBack = typeof event?.canGoBack === 'boolean' ? event.canGoBack : false;
+      const handled = handler({ canGoBack });
+      if (handled) {
+        return;
+      }
+      const historyLength =
+        typeof window !== 'undefined' && typeof window.history?.length === 'number'
+          ? window.history.length
+          : 0;
+      if (
+        canGoBack &&
+        historyLength > 1 &&
+        typeof window !== 'undefined' &&
+        typeof window.history?.back === 'function'
+      ) {
+        window.history.back();
+        return;
+      }
+      void appPlugin.exitApp?.();
+    });
+  } catch {
+    // Not in Capacitor context or plugin not available.
+  }
 }
 
 /**

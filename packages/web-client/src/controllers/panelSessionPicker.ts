@@ -396,6 +396,10 @@ export class SessionPickerController {
     this.focusedIndex = -1;
   }
 
+  isOpen(): boolean {
+    return Boolean(this.activeMenu);
+  }
+
   private getOrderedSessions(): SessionSummary[] {
     const sessions = [...this.options.getSessionSummaries()];
     return sessions.sort((a, b) => this.compareSessions(a, b));

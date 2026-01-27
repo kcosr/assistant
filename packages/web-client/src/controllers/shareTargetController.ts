@@ -281,6 +281,14 @@ function hideShareModal(): void {
   pendingContent = null;
 }
 
+export function closeShareModal(): void {
+  hideShareModal();
+}
+
+export function isShareModalVisible(): boolean {
+  return Boolean(modalElements?.container.classList.contains('visible'));
+}
+
 function shareToChatSession(sessionId: string): void {
   if (!pendingContent || !controllerOptions) {
     return;
