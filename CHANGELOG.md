@@ -8,11 +8,12 @@
 - Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 - Added time tracker reported flag and XLSX export with artifacts upload. ([#42](https://github.com/kcosr/assistant/pull/42))
 - Added client-side note search filtering in the time tracker panel. ([#42](https://github.com/kcosr/assistant/pull/42))
-- Added Android back button handling for Capacitor overlays and modal navigation. ([#000](<pr-url>))
+- Added Android back button handling for Capacitor overlays and modal navigation. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Changed
 - Changed Escape to close pinned or modal chat panels without canceling active chat operations. ([#000](<pr-url>))
-- Changed Android back button fallback to open the command palette when nothing else is open. ([#000](<pr-url>))
+- Changed Escape to close pinned or modal chat panels without canceling active chat operations. ([#45](https://github.com/kcosr/assistant/pull/45))
+- Changed Android back button fallback to open the command palette when nothing else is open. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Fixed
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
