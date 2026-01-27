@@ -38,7 +38,7 @@ create = true
 ttl_sec = 0
 
 [output]
-stdout_max_lines = 10
-stderr_max_lines = 10
-stdout_tail_lines = 100
-stderr_tail_lines = 100
+#stdout_max_lines = 10
+#stderr_max_lines = 10
+#stdout_tail_lines = 10
+#stderr_tail_lines = 10

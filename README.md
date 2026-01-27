@@ -52,6 +52,12 @@ npm install
 # Build all packages
 npm run build
 
+# Build all packages in parallel
+npm run build:parallel
+
+# Build all packages in parallel on the remote builder
+npm run build:remote
+
 # Start the server (uses built-in config at packages/agent-server/data/config.json)
 npm run start -w @assistant/agent-server
 
