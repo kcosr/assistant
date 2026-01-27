@@ -2278,7 +2278,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           sharedSearchController.setStatusMessage(aqlError, 'error');
           return;
         }
-        if (aqlDirty) {
+        const hasAppliedQuery =
+          !!(aqlAppliedQueryText && aqlAppliedQueryText.trim()) || !!aqlAppliedQuery;
+        if (aqlDirty || (hasAppliedQuery && !aqlQueryText.trim())) {
           sharedSearchController.setStatusMessage('Press Enter or Apply to run.');
           return;
         }
@@ -3006,6 +3008,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         options?: { silent?: boolean },
       ): Promise<void> {
         const currentToken = ++loadToken;
+        const isSwitchingLists =
+          !!activeListId && (activeListId !== listId || activeListInstanceId !== instanceId);
         bodyManager.renderLoading({ type: 'list', id: listId });
         try {
           const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
@@ -3029,16 +3033,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const items = parseListItems(rawItems);
           const savedQueries = parseSavedQueries(rawSavedQueries) ?? [];
           const defaultQuery = savedQueries.find((entry) => entry.isDefault) ?? null;
-          selectedAqlQueryId = defaultQuery?.id ?? null;
-          setSavedQueries(savedQueries);
-          if (defaultQuery) {
-            searchMode = 'aql';
-            aqlQueryText = defaultQuery.query;
-            aqlAppliedQueryText = defaultQuery.query;
+          if (isSwitchingLists) {
+            aqlQueryText = '';
+            aqlAppliedQueryText = null;
             aqlAppliedQuery = null;
             aqlError = null;
             aqlDirty = false;
+            selectedAqlQueryId = defaultQuery?.id ?? null;
+            if (defaultQuery) {
+              searchMode = 'aql';
+              aqlQueryText = defaultQuery.query;
+              aqlAppliedQueryText = defaultQuery.query;
+            }
           }
+          setSavedQueries(savedQueries);
           const data: ListPanelData = {
             id: list.id,
             name: list.name,

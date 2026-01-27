@@ -40,6 +40,8 @@ export type AqlValue = string | number | boolean;
 export type AqlOperator =
   | 'contains'
   | 'not_contains'
+  | 'similar'
+  | 'not_similar'
   | 'eq'
   | 'neq'
   | 'gt'
@@ -131,6 +133,7 @@ const KEYWORDS = new Set([
 ]);
 
 const BUILTIN_FIELDS: Array<Omit<AqlField, 'label'> & { name: string; label: string }> = [
+  { name: 'text', key: 'text', label: 'Text', type: 'text', kind: 'builtin', displayable: false },
   { name: 'title', key: 'title', label: 'Title', type: 'text', kind: 'builtin', displayable: true },
   { name: 'notes', key: 'notes', label: 'Notes', type: 'text', kind: 'builtin', displayable: true },
   { name: 'url', key: 'url', label: 'URL', type: 'text', kind: 'builtin', displayable: true },
@@ -233,9 +236,9 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
-    if (char === '!' || char === '>' || char === '<' || char === ':' || char === '=') {
+    if (char === '!' || char === '>' || char === '<' || char === ':' || char === '=' || char === '~') {
       const two = input.slice(i, i + 2);
-      if (two === '!=' || two === '>=' || two === '<=' || two === '!:') {
+      if (two === '!=' || two === '>=' || two === '<=' || two === '!:' || two === '!~') {
         tokens.push({ type: 'operator', value: two, start, end: i + 2 });
         i += 2;
         continue;
@@ -412,19 +415,23 @@ class Parser {
       ? 'contains'
       : opValue === '!:'
         ? 'not_contains'
-        : opValue === '='
-          ? 'eq'
-          : opValue === '!='
-            ? 'neq'
-            : opValue === '>'
-              ? 'gt'
-              : opValue === '>='
-                ? 'gte'
-                : opValue === '<'
-                  ? 'lt'
-                  : opValue === '<='
-                    ? 'lte'
-                    : null;
+        : opValue === '~'
+          ? 'similar'
+          : opValue === '!~'
+            ? 'not_similar'
+            : opValue === '='
+              ? 'eq'
+              : opValue === '!='
+                ? 'neq'
+                : opValue === '>'
+                  ? 'gt'
+                  : opValue === '>='
+                    ? 'gte'
+                    : opValue === '<'
+                      ? 'lt'
+                      : opValue === '<='
+                        ? 'lte'
+                        : null;
     if (!op) {
       this.error(`Unsupported operator "${opValue}"`);
     }
@@ -608,7 +615,7 @@ function compileAql(
     const isBoolean = lower === 'true' || lower === 'false';
     const isNumber = raw.type === 'number' && Number.isFinite(Number(rawValue));
 
-    if (op === 'contains' || op === 'not_contains') {
+    if (op === 'contains' || op === 'not_contains' || op === 'similar' || op === 'not_similar') {
       if (field.type !== 'text' && field.type !== 'tag' && field.type !== 'ref') {
         throw new Error(`Operator ${opSymbol(op)} is not supported for ${field.label}`);
       }
@@ -688,11 +695,52 @@ function compileAql(
     throw new Error('Invalid operator');
   };
 
-  const compileClause = (raw: ClauseRaw): AqlClause => {
-    const field = resolveField(raw.field);
-    if (!field) {
-      throw new Error(`Unknown field "${raw.field}"`);
+  const getTextSearchFields = (customFields: ListCustomFieldDefinition[]): AqlField[] => {
+    const fields: AqlField[] = [];
+    const seen = new Set<string>();
+
+    for (const entry of BUILTIN_FIELDS) {
+      if (entry.key === 'text') {
+        continue;
+      }
+      if (entry.type !== 'text' && entry.type !== 'tag') {
+        continue;
+      }
+      if (seen.has(entry.key)) {
+        continue;
+      }
+      seen.add(entry.key);
+      fields.push({
+        key: entry.key,
+        label: entry.label,
+        type: entry.type,
+        kind: entry.kind,
+        displayable: entry.displayable,
+      });
     }
+
+    for (const field of customFields) {
+      if (field.type !== 'text') {
+        continue;
+      }
+      const key = field.key?.trim();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      fields.push({
+        key,
+        label: field.label?.trim() || key,
+        type: 'text',
+        kind: 'custom',
+        displayable: true,
+      });
+    }
+
+    return fields;
+  };
+
+  const buildClause = (field: AqlField, raw: ClauseRaw): AqlClause => {
     if (raw.op === 'is_empty' || raw.op === 'is_not_empty') {
       return { field, op: raw.op };
     }
@@ -711,9 +759,42 @@ function compileAql(
     return { field, op: raw.op, value };
   };
 
+  const buildNeverMatchExpr = (field: AqlField): AqlExpr => ({
+    type: 'and',
+    left: { type: 'clause', clause: { field, op: 'is_empty' } },
+    right: { type: 'clause', clause: { field, op: 'is_not_empty' } },
+  });
+
+  const compileClause = (raw: ClauseRaw): AqlExpr => {
+    const field = resolveField(raw.field);
+    if (!field) {
+      throw new Error(`Unknown field "${raw.field}"`);
+    }
+    if (field.key === 'text') {
+      if (
+        raw.op !== 'contains' &&
+        raw.op !== 'not_contains' &&
+        raw.op !== 'similar' &&
+        raw.op !== 'not_similar'
+      ) {
+        throw new Error(`Operator ${opSymbol(raw.op)} is not supported for ${field.label}`);
+      }
+      const textFields = getTextSearchFields(options.customFields);
+      if (textFields.length === 0) {
+        return buildNeverMatchExpr(field);
+      }
+      const clauses = textFields.map((textField) => ({
+        type: 'clause' as const,
+        clause: buildClause(textField, raw),
+      }));
+      return clauses.reduce((left, right) => ({ type: 'or', left, right }));
+    }
+    return { type: 'clause', clause: buildClause(field, raw) };
+  };
+
   const compileExpr = (expr: RawAqlExpr): AqlExpr => {
     if (expr.type === 'clause') {
-      return { type: 'clause', clause: compileClause(expr.clause) };
+      return compileClause(expr.clause);
     }
     if (expr.type === 'not') {
       return { type: 'not', expr: compileExpr(expr.expr) };
@@ -795,10 +876,10 @@ function evaluateClause(clause: AqlClause, item: AqlItem): boolean {
       ? item.tags.map((tag) => tag.toLowerCase().trim()).filter(Boolean)
       : [];
     const rawValue = clause.value as string | undefined;
-    if (op === 'contains') {
+    if (op === 'contains' || op === 'similar') {
       return rawValue ? tags.some((tag) => tag.includes(rawValue)) : false;
     }
-    if (op === 'not_contains') {
+    if (op === 'not_contains' || op === 'not_similar') {
       return rawValue ? tags.every((tag) => !tag.includes(rawValue)) : true;
     }
     if (op === 'eq') {
@@ -817,10 +898,10 @@ function evaluateClause(clause: AqlClause, item: AqlItem): boolean {
   if (field.type === 'text' || field.type === 'ref') {
     const text = typeof value === 'string' ? value.toLowerCase() : '';
     const rawValue = clause.value as string | undefined;
-    if (op === 'contains') {
+    if (op === 'contains' || op === 'similar') {
       return rawValue ? text.includes(rawValue) : false;
     }
-    if (op === 'not_contains') {
+    if (op === 'not_contains' || op === 'not_similar') {
       return rawValue ? !text.includes(rawValue) : true;
     }
     if (op === 'eq') {
@@ -1043,6 +1124,8 @@ export function buildAqlString(base: string, orderBy: AqlOrderBy[], show: AqlFie
 function opSymbol(op: AqlOperator): string {
   if (op === 'contains') return ':';
   if (op === 'not_contains') return '!:';
+  if (op === 'similar') return '~';
+  if (op === 'not_similar') return '!~';
   if (op === 'eq') return '=';
   if (op === 'neq') return '!=';
   if (op === 'gt') return '>';

@@ -298,6 +298,166 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   });
 
+  it('clears previous AQL input and applies list defaults when switching lists', async () => {
+    vi.resetModules();
+
+    const respond = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    const listSummaries = [
+      { id: 'list-a', name: 'List A', customFields: [] },
+      { id: 'list-b', name: 'List B', customFields: [] },
+    ];
+    const listDetails: Record<string, unknown> = {
+      'list-a': { id: 'list-a', name: 'List A', customFields: [] },
+      'list-b': { id: 'list-b', name: 'List B', customFields: [] },
+    };
+    const savedQueries: Record<string, unknown[]> = {
+      'list-a': [],
+      'list-b': [
+        {
+          id: 'default-b',
+          name: 'Default',
+          query: 'status = "Ready"',
+          isDefault: true,
+        },
+      ],
+    };
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const body =
+        typeof init?.body === 'string' && init.body.length > 0
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      const operation = url.split('/').pop();
+      switch (operation) {
+        case 'instance_list':
+          return respond([{ id: 'default', label: 'Default' }]);
+        case 'list':
+          return respond(listSummaries);
+        case 'get':
+          return respond(listDetails[String(body['id'])] ?? null);
+        case 'items-list':
+          return respond([]);
+        case 'aql-query-list':
+          return respond(savedQueries[String(body['listId'])] ?? []);
+        default:
+          return respond([]);
+      }
+    }));
+
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'lists-aql-switch',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'list-a',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+        searchMode: 'aql',
+        aqlQueryText: 'title : "foo"',
+        aqlAppliedQueryText: 'title : "foo"',
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const flush = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const waitFor = async (predicate: () => boolean) => {
+      for (let i = 0; i < 10; i += 1) {
+        if (predicate()) {
+          return;
+        }
+        await flush();
+      }
+      throw new Error('Timed out waiting for condition');
+    };
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '.collection-list-search-input',
+    );
+    expect(searchInput).not.toBeNull();
+    await waitFor(() => searchInput?.value === 'title : "foo"');
+
+    const listItemSelector =
+      '.collection-search-dropdown-item[data-collection-id="list-b"]';
+    await waitFor(() => container.querySelectorAll(listItemSelector).length === 1);
+    const listItems = container.querySelectorAll<HTMLElement>(listItemSelector);
+    listItems[0]?.click();
+    await waitFor(() => searchInput?.value === 'status = "Ready"');
+
+    handle.unmount();
+  });
+
   it('shows mobile fabs and opens the command palette on search click', async () => {
     vi.resetModules();
     await import('./index');
