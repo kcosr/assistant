@@ -1,0 +1,44 @@
+[connection]
+endpoint = "http://pc:8882"
+local_fallback = true
+
+[sources]
+include = [
+  "package.json",
+  "package-lock.json",
+  "tsconfig.base.json",
+  "vitest.config.ts",
+  "eslint.config.js",
+  "scripts/**",
+  "packages/**",
+  "assets/**",
+  "README.md",
+  "VERSION"
+]
+exclude = []
+
+[artifacts]
+include = [
+  "dist/**",
+  "packages/**/dist/**",
+  "packages/web-client/public/client.js",
+  "packages/web-client/public/plugins/**"
+]
+exclude = []
+
+[request]
+timeout_sec = 900
+
+[request.env]
+
+[workspace]
+reuse = true
+id = "assistant"
+create = true
+ttl_sec = 0
+
+[output]
+#stdout_max_lines = 10
+#stderr_max_lines = 10
+#stdout_tail_lines = 10
+#stderr_tail_lines = 10

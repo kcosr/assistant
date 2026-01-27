@@ -239,6 +239,7 @@ const NOTE_SEARCH_IGNORE_SELECTORS = [
 type NoteMetadata = {
   title: string;
   tags: string[];
+  favorite?: boolean;
   created: string;
   updated: string;
   description?: string;
@@ -310,9 +311,11 @@ function parseNoteMetadata(value: unknown): NoteMetadata | null {
   const created = typeof obj['created'] === 'string' ? obj['created'] : '';
   const updated = typeof obj['updated'] === 'string' ? obj['updated'] : '';
   const description = typeof obj['description'] === 'string' ? obj['description'] : '';
+  const favorite = obj['favorite'] === true;
   return {
     title,
     tags,
+    ...(favorite ? { favorite: true } : {}),
     created,
     updated,
     ...(description.trim().length > 0 ? { description } : {}),
@@ -819,6 +822,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           id: note.title,
           name: note.title,
           tags: note.tags,
+          favorite: note.favorite,
           updatedAt: note.updated,
           instanceId: note.instanceId,
           instanceLabel: note.instanceLabel ?? getInstanceLabel(note.instanceId),
@@ -1702,6 +1706,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const initialTags = withoutPinnedTag(note.tags);
         const initialPinned = hasPinnedTag(note.tags);
+        const initialFavorite = note.favorite === true;
         const tagInput = createTagChipsInput({
           availableTags: withoutPinnedTag(getAllNoteTags()),
           initialTags,
@@ -1728,6 +1733,23 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         pinnedRow.appendChild(pinnedCheckbox);
         pinnedRow.appendChild(pinnedLabel);
         form.appendChild(pinnedRow);
+
+        const favoriteRow = document.createElement('div');
+        favoriteRow.className = 'list-item-form-checkbox-row';
+
+        const favoriteCheckbox = document.createElement('input');
+        favoriteCheckbox.type = 'checkbox';
+        favoriteCheckbox.id = `note-favorite-${Math.random().toString(36).slice(2)}`;
+        favoriteCheckbox.className = 'list-item-form-checkbox';
+        favoriteCheckbox.checked = initialFavorite;
+
+        const favoriteLabel = document.createElement('label');
+        favoriteLabel.htmlFor = favoriteCheckbox.id;
+        favoriteLabel.textContent = 'Favorite';
+
+        favoriteRow.appendChild(favoriteCheckbox);
+        favoriteRow.appendChild(favoriteLabel);
+        form.appendChild(favoriteRow);
 
         const contentLabel = document.createElement('label');
         contentLabel.className = 'list-item-form-label';
@@ -1781,15 +1803,18 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               content: contentInput.value,
               description,
               tags: nextTags,
+              favorite: favoriteCheckbox.checked,
             });
             const metadata = parseNoteMetadata(result);
             const savedTags = metadata?.tags ?? nextTags;
             const savedDescription =
               metadata?.description ?? (description.length > 0 ? description : undefined);
+            const savedFavorite = metadata?.favorite ?? (favoriteCheckbox.checked ? true : undefined);
             const updatedNote: Note = {
               title,
               content: contentInput.value,
               tags: savedTags,
+              ...(savedFavorite ? { favorite: true } : {}),
               created: metadata?.created ?? note.created,
               updated: metadata?.updated ?? note.updated,
               ...(savedDescription ? { description: savedDescription } : {}),
@@ -1884,6 +1909,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           title: '',
           content: '',
           tags: [],
+          favorite: false,
           created: '',
           updated: '',
         };
@@ -1939,6 +1965,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           fileText: ICONS.fileText,
           list: ICONS.list,
           pin: ICONS.pin,
+          favorite: ICONS.heart,
         },
         onTogglePinned: (item, isPinned) => {
           if (item.type !== 'note') {

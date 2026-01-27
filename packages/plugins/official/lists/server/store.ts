@@ -154,6 +154,7 @@ export class ListsStore {
     name: string;
     description?: string;
     tags?: string[];
+    favorite?: boolean;
     defaultTags?: string[];
     customFields?: ListCustomFieldDefinition[];
   }): Promise<ListDefinition> {
@@ -171,6 +172,7 @@ export class ListsStore {
       id: params.id,
       name: params.name,
       tags: this.normalizeTags(params.tags),
+      ...(params.favorite === true ? { favorite: true } : {}),
       defaultTags: this.normalizeTags(params.defaultTags),
       ...(params.customFields ? { customFields: params.customFields } : {}),
       savedQueries: [],
@@ -274,6 +276,7 @@ export class ListsStore {
     name?: string;
     description?: string;
     tags?: string[];
+    favorite?: boolean;
     defaultTags?: string[];
     customFields?: ListCustomFieldDefinition[] | null;
   }): Promise<ListDefinition> {
@@ -298,6 +301,14 @@ export class ListsStore {
 
     if (params.tags !== undefined) {
       list.tags = this.normalizeTags(params.tags);
+    }
+
+    if (params.favorite !== undefined) {
+      if (params.favorite) {
+        list.favorite = true;
+      } else {
+        delete list.favorite;
+      }
     }
 
     if (params.defaultTags !== undefined) {

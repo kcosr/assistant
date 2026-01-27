@@ -52,6 +52,12 @@ npm install
 # Build all packages
 npm run build
 
+# Build all packages in parallel
+npm run build:parallel
+
+# Build all packages in parallel on the remote builder
+npm run build:remote
+
 # Start the server (uses built-in config at packages/agent-server/data/config.json)
 npm run start -w @assistant/agent-server
 
@@ -167,6 +173,10 @@ In split placement mode: arrows or WASD choose region, `Enter` confirms, `Esc` c
 - `Shift + Enter` – Replace active panel (when available)
 - `→` – Open action menu
 - `Esc` – Close palette or menus
+
+Palette commands:
+- `/pinned` – Show pinned lists and notes
+- `/favorites` – Show favorite lists and notes
 
 **Notes panel:** Drag to select text, then release with `Shift` held to add selection to agent context.
 

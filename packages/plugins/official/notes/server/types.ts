@@ -1,6 +1,7 @@
 export interface NoteMetadata {
   title: string;
   tags: string[];
+  favorite?: boolean;
   created: string; // ISO 8601
   updated: string; // ISO 8601
   description?: string;

@@ -162,6 +162,21 @@ describe('CommandPaletteController', () => {
     expect(titles).toEqual(['Buy milk', 'Tasks', 'Project note']);
   });
 
+  it('routes /favorites to the favorites query', async () => {
+    const { controller, input, fetchResults } = buildController();
+    fetchResults.mockResolvedValueOnce({ results: [] });
+
+    controller.open();
+    input.value = '/favorites';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    await vi.runAllTimersAsync();
+
+    expect(fetchResults).toHaveBeenCalledWith(
+      expect.objectContaining({ query: 'favorite:true' }),
+    );
+  });
+
   it('renders group headers by result type', async () => {
     window.localStorage.setItem('aiAssistantCommandPaletteGroupMode', 'type');
     const { controller, input, fetchResults } = buildController();

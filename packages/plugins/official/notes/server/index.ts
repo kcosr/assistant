@@ -50,6 +50,16 @@ function parseOptionalString(value: unknown, field: string): string | undefined 
   return value;
 }
 
+function parseOptionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'boolean') {
+    throw new ToolError('invalid_arguments', `${field} must be a boolean`);
+  }
+  return value;
+}
+
 function parseOptionalTags(value: unknown): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -72,6 +82,7 @@ function parseRequiredTags(value: unknown): string[] {
 }
 
 const TAG_QUERY_PATTERN = /^(?:tag|tags):(.+)$/i;
+const FAVORITE_QUERY_PATTERN = /^(?:favorite|favorites):true$/i;
 
 function parseTagQuery(query: string): string | null {
   const trimmed = query.trim();
@@ -88,6 +99,14 @@ function parseTagQuery(query: string): string | null {
   }
   const normalized = normalizeTags([match[1] ?? ''])[0];
   return normalized ?? null;
+}
+
+function parseFavoriteQuery(query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) {
+    return false;
+  }
+  return FAVORITE_QUERY_PATTERN.test(trimmed);
 }
 
 function toScore(value?: string): number {
@@ -217,7 +236,42 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const { instanceId, limit = 10 } = options;
       const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
       const results: SearchResult[] = [];
+      const favoriteQuery = parseFavoriteQuery(trimmed);
       const tagQuery = parseTagQuery(trimmed);
+
+      if (favoriteQuery) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const notes = await store.list();
+          const favorites = notes.filter((note) => note.favorite === true);
+          const sorted = favorites.slice().sort((a, b) => {
+            const scoreA = toScore(a.updated ?? a.created);
+            const scoreB = toScore(b.updated ?? b.created);
+            return scoreB - scoreA;
+          });
+          for (const note of sorted) {
+            results.push({
+              id: note.title,
+              title: note.title,
+              subtitle: note.tags?.join(', '),
+              ...(note.description ? { snippet: note.description } : {}),
+              score: toScore(note.updated ?? note.created),
+              launch: {
+                panelType: 'notes',
+                payload: {
+                  type: 'notes_show',
+                  instance_id: instId,
+                  title: note.title,
+                },
+              },
+            });
+          }
+        }
+        return results.slice(0, limit);
+      }
 
       if (tagQuery) {
         for (const instId of targetInstances) {
@@ -364,12 +418,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const content = requireNonEmptyString(parsed['content'], 'content');
         const tags = parseOptionalTags(parsed['tags']);
         const description = parseOptionalString(parsed['description'], 'description');
+        const favorite = parseOptionalBoolean(parsed['favorite'], 'favorite');
         const store = await getStore(instanceId);
         const result = await store.write({
           title,
           content,
           ...(tags !== undefined ? { tags } : {}),
           ...(description !== undefined ? { description } : {}),
+          ...(favorite !== undefined ? { favorite } : {}),
         });
         broadcastNotesUpdate(ctx, {
           instance_id: instanceId,

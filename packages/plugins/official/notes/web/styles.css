@@ -1018,6 +1018,16 @@
   height: 14px;
 }
 
+.collection-browser-item-favorite {
+  display: inline-flex;
+  color: var(--color-accent-primary);
+}
+
+.collection-browser-item-favorite .icon {
+  width: 14px;
+  height: 14px;
+}
+
 .collection-browser-item-badge {
   display: inline-flex;
   align-items: center;

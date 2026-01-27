@@ -139,6 +139,7 @@ describe('NotesStore (plugin)', () => {
       content: 'Body content',
       tags: ['a', 'b'],
       description: 'Frontmatter description',
+      favorite: true,
     });
 
     const slug = (store as unknown as { slugify(title: string): string }).slugify(
@@ -152,6 +153,7 @@ describe('NotesStore (plugin)', () => {
     expect(raw).toContain('tags:');
     expect(raw).toContain('- a');
     expect(raw).toContain('- b');
+    expect(raw).toContain('favorite: true');
     expect(raw).toContain('description: Frontmatter description');
     expect(raw).toContain('created: 2024-01-01T00:00:00.000Z');
     expect(raw).toContain('updated: 2024-01-01T00:00:00.000Z');
@@ -160,6 +162,7 @@ describe('NotesStore (plugin)', () => {
     const note = await store.read('Frontmatter Note');
     expect(note.title).toBe('Frontmatter Note');
     expect(note.tags).toEqual(['a', 'b']);
+    expect(note.favorite).toBe(true);
     expect(note.content).toBe('Body content');
     expect(note.description).toBe('Frontmatter description');
   });

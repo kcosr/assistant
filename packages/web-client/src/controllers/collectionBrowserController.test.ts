@@ -47,6 +47,7 @@ describe('CollectionBrowserController list CRUD UI', () => {
         fileText: '',
         list: '',
         pin: '',
+        favorite: '',
       },
       viewModeStorageKey: 'collectionBrowserTestViewMode',
       sortModeStorageKey: 'collectionBrowserTestSortMode',

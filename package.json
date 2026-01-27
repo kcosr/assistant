@@ -19,6 +19,8 @@
   ],
   "scripts": {
     "build": "npm run build -w @assistant/shared && npm run build -w @assistant/coding-executor && npm run build -w @assistant/agent-server && npm run build -w @assistant/web-client && npm run build:plugins && npm run build -w @assistant/assistant-cli && npm run build -w @assistant/coding-sidecar && npm run build -w @assistant/notify-proxy",
+    "build:parallel": "node scripts/build-parallel.mjs",
+    "build:remote": "node scripts/build-remote.mjs",
     "build:plugins": "node scripts/build-plugins.js",
     "lint": "eslint \"packages/**/*.{ts,tsx}\"",
     "format": "prettier --check .",

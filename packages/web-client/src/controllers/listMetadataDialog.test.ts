@@ -61,6 +61,17 @@ describe('ListMetadataDialog tag chips', () => {
     defaultTagsInput.value = 'beta,delta';
     defaultTagsInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
+    const favoriteLabel = Array.from(
+      document.querySelectorAll<HTMLLabelElement>('.list-item-form-checkbox-row label'),
+    ).find((label) => label.textContent?.trim() === 'Favorite');
+    const favoriteCheckbox = favoriteLabel?.parentElement?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    expect(favoriteCheckbox).not.toBeNull();
+    if (favoriteCheckbox) {
+      favoriteCheckbox.checked = true;
+    }
+
     form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await flushPromises();
 
@@ -73,6 +84,7 @@ describe('ListMetadataDialog tag chips', () => {
 
     expect(payload.name).toBe('My List');
     expect(payload.tags).toEqual(['alpha']);
+    expect(payload.favorite).toBe(true);
     expect(payload.defaultTags.sort()).toEqual(['beta', 'delta'].sort());
     expect(payload.customFields).toEqual([]);
   });
