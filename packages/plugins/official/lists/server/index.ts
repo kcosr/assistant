@@ -53,6 +53,16 @@ function parseOptionalString(value: unknown, field: string): string | undefined 
   return value;
 }
 
+function parseOptionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'boolean') {
+    throw new ToolError('invalid_arguments', `${field} must be a boolean`);
+  }
+  return value;
+}
+
 function parseOptionalTags(value: unknown): string[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -98,6 +108,7 @@ function safeSlugify(raw: string): string | null {
 }
 
 const TAG_QUERY_PATTERN = /^(?:tag|tags):(.+)$/i;
+const FAVORITE_QUERY_PATTERN = /^(?:favorite|favorites):true$/i;
 
 function parseTagQuery(query: string): string | null {
   const trimmed = query.trim();
@@ -114,6 +125,14 @@ function parseTagQuery(query: string): string | null {
   }
   const normalized = normalizeTags([match[1] ?? ''])[0];
   return normalized ?? null;
+}
+
+function parseFavoriteQuery(query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) {
+    return false;
+  }
+  return FAVORITE_QUERY_PATTERN.test(trimmed);
 }
 
 function toScore(value?: string): number {
@@ -260,7 +279,42 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const { instanceId, limit = 10 } = options;
       const targetInstances = instanceId ? [instanceId] : Array.from(instanceById.keys());
       const results: SearchResult[] = [];
+      const favoriteQuery = parseFavoriteQuery(trimmed);
       const tagQuery = parseTagQuery(trimmed);
+
+      if (favoriteQuery) {
+        for (const instId of targetInstances) {
+          if (!instanceById.has(instId)) {
+            continue;
+          }
+          const store = await getStore(instId);
+          const allLists = await store.listLists();
+          const listResults = allLists
+            .filter((list) => list.favorite === true)
+            .map<SearchResult>((list) => ({
+              id: `list:${list.id}`,
+              title: list.name,
+              subtitle: list.id,
+              snippet: list.description ? truncateSnippet(list.description) : undefined,
+              score: toScore(list.updatedAt),
+              launch: {
+                panelType: 'lists',
+                payload: {
+                  type: 'lists_show',
+                  instance_id: instId,
+                  listId: list.id,
+                },
+              },
+            }));
+          results.push(...listResults);
+        }
+        results.sort((a, b) => {
+          const scoreA = typeof a.score === 'number' ? a.score : 0;
+          const scoreB = typeof b.score === 'number' ? b.score : 0;
+          return scoreB - scoreA;
+        });
+        return results.slice(0, limit);
+      }
 
       if (tagQuery) {
         for (const instId of targetInstances) {
@@ -486,6 +540,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
         const description = parseOptionalString(parsed['description'], 'description');
         const tags = parseOptionalTags(parsed['tags']);
+        const favorite = parseOptionalBoolean(parsed['favorite'], 'favorite');
         const defaultTags = parseOptionalTags(parsed['defaultTags']);
         const customFieldsRaw = parsed['customFields'];
         let customFields: Array<ListCustomFieldDefinition> | undefined;
@@ -500,6 +555,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           name,
           ...(description !== undefined ? { description } : {}),
           ...(tags !== undefined ? { tags } : {}),
+          ...(favorite !== undefined ? { favorite } : {}),
           ...(defaultTags !== undefined ? { defaultTags } : {}),
           ...(customFields !== undefined ? { customFields } : {}),
         });
@@ -518,6 +574,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const name = parseOptionalString(parsed['name'], 'name');
         const description = parseOptionalString(parsed['description'], 'description');
         const tags = parseOptionalTags(parsed['tags']);
+        const favorite = parseOptionalBoolean(parsed['favorite'], 'favorite');
         const defaultTags = parseOptionalTags(parsed['defaultTags']);
         const customFieldsRaw = parsed['customFields'];
         let customFields: Array<ListCustomFieldDefinition> | null | undefined;
@@ -531,6 +588,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           name === undefined &&
           description === undefined &&
           tags === undefined &&
+          favorite === undefined &&
           defaultTags === undefined &&
           customFields === undefined
         ) {
@@ -541,6 +599,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           ...(name !== undefined ? { name } : {}),
           ...(description !== undefined ? { description } : {}),
           ...(tags !== undefined ? { tags } : {}),
+          ...(favorite !== undefined ? { favorite } : {}),
           ...(defaultTags !== undefined ? { defaultTags } : {}),
           ...(customFields !== undefined ? { customFields } : {}),
         });

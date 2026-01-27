@@ -21,3 +21,4 @@ packages/agent-server/data/*
 packages/android-client/app/build
 packages/push-cli/firebase-sa.json
 packages/mobile-web/google-services.json
+.build-service/workspace-id

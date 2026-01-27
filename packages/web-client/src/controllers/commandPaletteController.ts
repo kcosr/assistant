@@ -116,9 +116,16 @@ const COMMAND_OPTIONS: OptionItem[] = [
     description: 'Show pinned notes and lists',
     type: 'command',
   },
+  {
+    id: 'favorites',
+    label: 'Favorites',
+    description: 'Show favorite notes and lists',
+    type: 'command',
+  },
 ];
 
 const PINNED_QUERY = 'tag:pinned';
+const FAVORITES_QUERY = 'favorite:true';
 
 const MAIN_MENU_ITEMS: Array<{
   id: string;
@@ -471,7 +478,8 @@ export class CommandPaletteController {
     const normalizedCommand = commandToken.toLowerCase();
     const isSearchCommand = 'search'.startsWith(normalizedCommand);
     const isPinnedCommand = 'pinned'.startsWith(normalizedCommand);
-    if (!isSearchCommand && !isPinnedCommand) {
+    const isFavoritesCommand = 'favorites'.startsWith(normalizedCommand);
+    if (!isSearchCommand && !isPinnedCommand && !isFavoritesCommand) {
       return { mode: 'command', commandQuery: commandToken };
     }
     if (isPinnedCommand) {
@@ -479,6 +487,12 @@ export class CommandPaletteController {
         return { mode: 'command', commandQuery: commandToken };
       }
       return { mode: 'global', query: PINNED_QUERY };
+    }
+    if (isFavoritesCommand) {
+      if (normalizedCommand !== 'favorites') {
+        return { mode: 'command', commandQuery: commandToken };
+      }
+      return { mode: 'global', query: FAVORITES_QUERY };
     }
     const commandConfirmed =
       normalizedCommand === 'search' && (hasTrailingSpace || rest.trim().length > 0);
@@ -990,6 +1004,12 @@ export class CommandPaletteController {
     if (option.type === 'command') {
       if (option.id === 'pinned') {
         this.setInputValue('/pinned');
+        this.profileSkipped = false;
+        this.pluginSkipped = false;
+        return;
+      }
+      if (option.id === 'favorites') {
+        this.setInputValue('/favorites');
         this.profileSkipped = false;
         this.pluginSkipped = false;
         return;

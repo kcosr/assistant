@@ -32,6 +32,7 @@ export function parseFrontmatter(fileContent: string): {
     const obj = parsed as {
       title?: unknown;
       tags?: unknown;
+      favorite?: unknown;
       created?: unknown;
       updated?: unknown;
       description?: unknown;
@@ -44,6 +45,10 @@ export function parseFrontmatter(fileContent: string): {
     if (Array.isArray(obj.tags)) {
       const rawTags = obj.tags.filter((t): t is string => typeof t === 'string');
       meta.tags = normalizeTags(rawTags);
+    }
+
+    if (typeof obj.favorite === 'boolean') {
+      meta.favorite = obj.favorite;
     }
 
     if (typeof obj.created === 'string') {
@@ -69,6 +74,7 @@ export function serializeFrontmatter(metadata: NoteMetadata, content: string): s
   const frontmatter: Record<string, unknown> = {
     title: metadata.title,
     tags: normalizeTags(metadata.tags),
+    ...(metadata.favorite === true ? { favorite: true } : {}),
     created: metadata.created,
     updated: metadata.updated,
   };

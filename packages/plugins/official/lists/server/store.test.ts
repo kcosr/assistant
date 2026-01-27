@@ -79,6 +79,24 @@ describe('ListsStore (plugin)', () => {
     );
   });
 
+  it('stores and clears the favorite flag', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    const created = await store.createList({
+      id: 'favorites',
+      name: 'Favorites',
+      favorite: true,
+    });
+    expect(created.favorite).toBe(true);
+
+    const updated = await store.updateList({
+      id: 'favorites',
+      favorite: false,
+    });
+    expect(updated.favorite).toBeUndefined();
+  });
+
   it('normalizes tags for lists and items', async () => {
     const filePath = createTempFilePath();
     const store = createStore(filePath);

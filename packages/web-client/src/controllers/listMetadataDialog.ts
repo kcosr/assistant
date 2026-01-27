@@ -11,6 +11,7 @@ export interface ListMetadataDialogPayload {
   name: string;
   description: string;
   tags: string[];
+  favorite?: boolean;
   defaultTags: string[];
   customFields: ListCustomFieldDefinition[];
   instanceId?: string;
@@ -22,6 +23,7 @@ export interface ListMetadataDialogInitialData {
   name?: string;
   description?: string;
   tags?: string[];
+  favorite?: boolean;
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
   instanceId?: string;
@@ -680,6 +682,7 @@ export class ListMetadataDialog {
 
     const initialTagsSource = Array.isArray(data?.tags) ? data.tags : [];
     const initialPinned = hasPinnedTag(initialTagsSource);
+    const initialFavorite = data?.favorite === true;
     const initialTags = withoutPinnedTag(initialTagsSource);
     const tagsInput = createTagChipsInput('Tags', 'list-tags', initialTags);
     form.appendChild(tagsInput.container);
@@ -700,6 +703,23 @@ export class ListMetadataDialog {
     pinnedRow.appendChild(pinnedCheckbox);
     pinnedRow.appendChild(pinnedLabel);
     form.appendChild(pinnedRow);
+
+    const favoriteRow = document.createElement('div');
+    favoriteRow.className = 'list-item-form-checkbox-row';
+
+    const favoriteCheckbox = document.createElement('input');
+    favoriteCheckbox.type = 'checkbox';
+    favoriteCheckbox.id = `list-favorite-${Math.random().toString(36).slice(2)}`;
+    favoriteCheckbox.className = 'list-item-form-checkbox';
+    favoriteCheckbox.checked = initialFavorite;
+
+    const favoriteLabel = document.createElement('label');
+    favoriteLabel.htmlFor = favoriteCheckbox.id;
+    favoriteLabel.textContent = 'Favorite';
+
+    favoriteRow.appendChild(favoriteCheckbox);
+    favoriteRow.appendChild(favoriteLabel);
+    form.appendChild(favoriteRow);
 
     const initialDefaultTags = Array.isArray(data?.defaultTags)
       ? withoutPinnedTag(data.defaultTags)
@@ -859,6 +879,7 @@ export class ListMetadataDialog {
         name,
         description,
         tags,
+        favorite: favoriteCheckbox.checked,
         defaultTags,
         customFields,
         ...(selectedInstanceId ? { instanceId: selectedInstanceId } : {}),

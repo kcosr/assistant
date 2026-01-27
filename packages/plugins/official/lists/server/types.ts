@@ -7,6 +7,7 @@ export interface ListDefinition {
   name: string; // Display name
   description?: string;
   tags: string[];
+  favorite?: boolean;
   /**
    * Default tags applied to new items in this list.
    * These are merged with item-specific tags on creation.

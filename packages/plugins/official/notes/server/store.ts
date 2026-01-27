@@ -99,9 +99,11 @@ export class NotesStore {
         typeof metadata.description === 'string' && metadata.description.trim().length > 0
           ? metadata.description
           : undefined;
+      const favorite = metadata.favorite === true;
       const noteMeta: NoteMetadata = {
         title: metadata.title ?? this.paths.titleFromSlug(slug),
         tags,
+        ...(favorite ? { favorite: true } : {}),
         created,
         updated,
         ...(description ? { description } : {}),
@@ -131,9 +133,11 @@ export class NotesStore {
         ? metadata.description
         : undefined;
 
+    const favorite = metadata.favorite === true;
     return {
       title: metadata.title ?? title ?? this.paths.titleFromSlug(slug),
       tags,
+      ...(favorite ? { favorite: true } : {}),
       created,
       updated,
       ...(description ? { description } : {}),
@@ -146,6 +150,7 @@ export class NotesStore {
     content: string;
     tags?: string[];
     description?: string;
+    favorite?: boolean;
   }): Promise<NoteMetadata> {
     const { title, content } = params;
     const { filePath } = this.paths.resolvePath(title);
@@ -173,11 +178,19 @@ export class NotesStore {
       description = existingMetadata.description;
     }
 
+    let favorite: boolean | undefined;
+    if (params.favorite !== undefined) {
+      favorite = params.favorite === true ? true : undefined;
+    } else if (existingMetadata?.favorite === true) {
+      favorite = true;
+    }
+
     const metadata: NoteMetadata = {
       title,
       tags: normalizeTags(tags),
       created,
       updated: now,
+      ...(favorite ? { favorite: true } : {}),
       ...(description ? { description } : {}),
     };
 
@@ -193,6 +206,7 @@ export class NotesStore {
     const metadata: NoteMetadata = {
       title: note.title,
       tags: normalizeTags(note.tags ?? []),
+      ...(note.favorite === true ? { favorite: true } : {}),
       created: note.created || now,
       updated: note.updated || now,
       ...(note.description && note.description.trim() ? { description: note.description } : {}),

@@ -274,6 +274,7 @@ type ListSummary = {
   name: string;
   description?: string;
   tags?: string[];
+  favorite?: boolean;
   defaultTags?: string[];
   customFields?: ListCustomFieldDefinition[];
   savedQueries?: SavedAqlQuery[];
@@ -285,6 +286,7 @@ type ListSummary = {
 type NoteSummary = {
   title: string;
   tags: string[];
+  favorite?: boolean;
   created?: string;
   updated?: string;
   description?: string;
@@ -386,9 +388,11 @@ function parseNoteMetadata(value: unknown): Omit<NoteSummary, 'instanceId' | 'in
   const created = typeof obj['created'] === 'string' ? obj['created'] : undefined;
   const updated = typeof obj['updated'] === 'string' ? obj['updated'] : undefined;
   const description = typeof obj['description'] === 'string' ? obj['description'] : undefined;
+  const favorite = obj['favorite'] === true;
   return {
     title,
     tags,
+    ...(favorite ? { favorite: true } : {}),
     ...(created ? { created } : {}),
     ...(updated ? { updated } : {}),
     ...(description ? { description } : {}),
@@ -464,12 +468,14 @@ function parseListSummary(value: unknown, instanceId: string): ListSummary | nul
   const customFields = parseCustomFields(obj['customFields']);
   const savedQueries = parseSavedQueries(obj['savedQueries']);
   const updatedAt = typeof obj['updatedAt'] === 'string' ? obj['updatedAt'] : undefined;
+  const favorite = obj['favorite'] === true;
 
   return {
     id,
     name,
     description,
     tags: tags.length > 0 ? tags : undefined,
+    ...(favorite ? { favorite: true } : {}),
     defaultTags: defaultTags.length > 0 ? defaultTags : undefined,
     customFields,
     savedQueries,
@@ -1206,6 +1212,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           id: list.id,
           name: list.name,
           tags: list.tags,
+          favorite: list.favorite,
           updatedAt: list.updatedAt,
           instanceId: list.instanceId,
           instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
@@ -1217,6 +1224,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           id: list.id,
           name: list.name,
           tags: list.tags,
+          favorite: list.favorite,
           updatedAt: list.updatedAt,
           instanceId: list.instanceId,
           instanceLabel: list.instanceLabel ?? formatInstanceLabel(list.instanceId),
@@ -1226,6 +1234,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           id: note.title,
           name: note.title,
           tags: note.tags,
+          favorite: note.favorite,
           updatedAt: note.updated ?? note.created,
           instanceId: note.instanceId,
           instanceLabel: note.instanceLabel ?? formatInstanceLabel(note.instanceId),
@@ -1995,6 +2004,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (includeEmpty || payload.tags.length > 0) {
           args['tags'] = payload.tags;
         }
+        if (typeof payload.favorite === 'boolean') {
+          args['favorite'] = payload.favorite;
+        }
         if (includeEmpty || payload.defaultTags.length > 0) {
           args['defaultTags'] = payload.defaultTags;
         }
@@ -2040,6 +2052,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           fileText: ICONS.fileText,
           list: ICONS.list,
           pin: ICONS.pin,
+          favorite: ICONS.heart,
         },
         onTogglePinned: (item, isPinned) => {
           if (item.type !== 'list') {
@@ -2074,6 +2087,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               name: list.name,
               description: list.description ?? '',
               tags: list.tags ?? [],
+              favorite: list.favorite,
               defaultTags: list.defaultTags ?? [],
               customFields: list.customFields ?? [],
               instanceId: targetInstanceId,

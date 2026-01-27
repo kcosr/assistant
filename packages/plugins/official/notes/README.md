@@ -23,6 +23,8 @@ Markdown notes with tags, search, and a dedicated notes panel.
   browser view from note mode.
 - Press **p** in browser mode to toggle pinned notes. Pinned notes show a pin icon and appear in the
   command palette via `/pinned`.
+- Favorite notes from the editor; favorites show a heart icon and appear in the command palette via
+  `/favorites`.
 - Default instance data lives under `data/plugins/notes/default/`; additional instances use
   `data/plugins/notes/<instanceId>/`.
 

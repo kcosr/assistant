@@ -44,6 +44,8 @@ operations.
   browser view from list mode.
 - Press **p** in browser mode to toggle pinned lists, or in list view to toggle pinned list items.
   Pinned entries show a pin icon and appear in the command palette via `/pinned`.
+- Favorite lists from the add/edit dialog; favorites show a heart icon and appear in the command
+  palette via `/favorites`.
 - Column headers stick while scrolling list items.
 - Column widths can be resized per panel and persist for the panel session.
 - AQL mode provides structured list-item queries with filters, boolean logic, `ORDER BY`, and `SHOW` for column visibility/order.

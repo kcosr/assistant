@@ -168,6 +168,10 @@ In split placement mode: arrows or WASD choose region, `Enter` confirms, `Esc` c
 - `→` – Open action menu
 - `Esc` – Close palette or menus
 
+Palette commands:
+- `/pinned` – Show pinned lists and notes
+- `/favorites` – Show favorite lists and notes
+
 **Notes panel:** Drag to select text, then release with `Shift` held to add selection to agent context.
 
 ### ElevenLabs Streaming TTS (Optional)

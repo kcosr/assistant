@@ -41,6 +41,7 @@ export interface CollectionBrowserControllerOptions {
     fileText: string;
     list: string;
     pin: string;
+    favorite: string;
   };
   onTogglePinned?: (item: CollectionReference, isPinned: boolean) => void;
   fetchPreview?: (
@@ -565,6 +566,33 @@ export class CollectionBrowserController {
     titleRow.insertBefore(pin, labelEl);
   }
 
+  private decorateItemFavorite(itemEl: HTMLElement, item: CollectionItemSummary): void {
+    if (!item.favorite) {
+      return;
+    }
+    const labelEl = itemEl.querySelector<HTMLElement>('.collection-search-dropdown-item-label');
+    if (!labelEl) {
+      return;
+    }
+    let titleRow: HTMLElement | null = null;
+    if (
+      labelEl.parentElement &&
+      labelEl.parentElement.classList.contains('collection-browser-item-title')
+    ) {
+      titleRow = labelEl.parentElement as HTMLElement;
+    } else {
+      titleRow = document.createElement('div');
+      titleRow.className = 'collection-browser-item-title';
+      labelEl.insertAdjacentElement('beforebegin', titleRow);
+      titleRow.appendChild(labelEl);
+    }
+    const favorite = document.createElement('span');
+    favorite.className = 'collection-browser-item-favorite';
+    favorite.innerHTML = this.options.icons.favorite;
+    favorite.setAttribute('aria-hidden', 'true');
+    titleRow.insertBefore(favorite, labelEl);
+  }
+
   private decorateItemInstanceBadge(itemEl: HTMLElement, item: CollectionItemSummary): void {
     if (!item.instanceId) {
       return;
@@ -663,6 +691,10 @@ export class CollectionBrowserController {
         defaultTags: Array.isArray(data.defaultTags) ? data.defaultTags : [],
         customFields: Array.isArray(data.customFields) ? data.customFields : [],
       };
+      const favorite = data.favorite ?? item.favorite;
+      if (favorite !== undefined) {
+        dialogData.favorite = favorite;
+      }
       const resolvedInstanceId = data.instanceId ?? listInstanceId;
       if (resolvedInstanceId) {
         dialogData.instanceId = resolvedInstanceId;
@@ -878,6 +910,7 @@ export class CollectionBrowserController {
       getGroupLabel: this.options.getGroupLabel,
       onSelectItem: (itemEl) => this.selectItem(itemEl),
       renderItemContent: (itemEl, item) => {
+        this.decorateItemFavorite(itemEl, item);
         this.decorateItemPinned(itemEl, item);
         this.decorateItemInstanceBadge(itemEl, item);
         this.decorateListItem(itemEl, item);
