@@ -1402,6 +1402,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             const shortcutId = `notes-${panelId}-copy-menu-${copyMenuShortcutIndex++}`;
             return services.keyboardShortcuts.register({
               id: shortcutId,
+              bindingId: 'notes.copy-menu.escape',
               key: 'escape',
               modifiers: [],
               description: 'Close copy menu',
