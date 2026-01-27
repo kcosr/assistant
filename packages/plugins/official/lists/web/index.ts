@@ -1881,6 +1881,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         ): void => {
           registerPanelShortcut({
             id: `lists-${panelId}-${idSuffix}`,
+            bindingId: `lists.${idSuffix}`,
             key,
             modifiers: [],
             description,
@@ -1892,6 +1893,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const registerCommand = (idSuffix: string, key: string): void => {
           registerPanelShortcut({
             id: `lists-${panelId}-${idSuffix}`,
+            bindingId: `lists.${idSuffix}`,
             key,
             modifiers: ['ctrl'],
             cmdOrCtrl: true,
