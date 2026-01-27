@@ -15,6 +15,7 @@
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed time tracker created-at date formatting showing the year instead of day. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed artifacts instance listing to include configured instances. ([#42](https://github.com/kcosr/assistant/pull/42))
+- Fixed list drag-and-drop reorder positions and cross-list insert hinting. ([#43](https://github.com/kcosr/assistant/pull/43))
 
 ### Removed
 

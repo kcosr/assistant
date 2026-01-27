@@ -114,6 +114,7 @@ type ListPanelTableRenderState = {
   tbody: HTMLTableSectionElement;
   colCount: number;
   columnOrder: string[] | null;
+  isSortedByPosition: boolean;
   showTitleColumn: boolean;
   showUrlColumn: boolean;
   showNotesColumn: boolean;
@@ -136,6 +137,7 @@ type ListPanelRowRenderOptions = {
   item: ListPanelItem;
   index: number;
   sortedItems: ListPanelItem[];
+  isSortedByPosition: boolean;
   tbody: HTMLTableSectionElement;
   showTitleColumn: boolean;
   showUrlColumn: boolean;
@@ -392,6 +394,7 @@ export class ListPanelTableController {
       onFocusMarkerExpandedChange,
       rerender,
     } = renderOptions;
+    const isSortedByPosition = !sortState || sortState.column === 'position';
 
     const normalizedCustomFields = normalizeListCustomFields(customFields);
     const visibleCustomFields =
@@ -406,6 +409,7 @@ export class ListPanelTableController {
     const table = document.createElement('table');
     table.className = 'collection-list-table';
     table.dataset['listId'] = listId;
+    table.dataset['listSort'] = isSortedByPosition ? 'position' : 'other';
 
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
@@ -939,6 +943,7 @@ export class ListPanelTableController {
           item,
           index: i,
           sortedItems,
+          isSortedByPosition,
           tbody,
           showTitleColumn,
           showUrlColumn,
@@ -1010,6 +1015,7 @@ export class ListPanelTableController {
       tbody,
       colCount,
       columnOrder: orderedKeys,
+      isSortedByPosition,
       showTitleColumn,
       showUrlColumn,
       showNotesColumn,
@@ -1055,6 +1061,7 @@ export class ListPanelTableController {
       item,
       index,
       sortedItems,
+      isSortedByPosition: state.isSortedByPosition,
       tbody: state.tbody,
       showTitleColumn: state.showTitleColumn,
       showUrlColumn: state.showUrlColumn,
@@ -1213,6 +1220,7 @@ export class ListPanelTableController {
       item,
       index,
       sortedItems,
+      isSortedByPosition,
       tbody,
       showTitleColumn,
       showUrlColumn,
@@ -1231,6 +1239,35 @@ export class ListPanelTableController {
 
     const row = document.createElement('tr');
     let rowClass = isCompleted ? 'list-item-row list-item-completed' : 'list-item-row';
+
+    const clearDropOverlays = (): void => {
+      if (typeof document === 'undefined') {
+        return;
+      }
+      document
+        .querySelectorAll<HTMLTableElement>('table.collection-list-table[data-drop-hint]')
+        .forEach((tableEl) => {
+          delete tableEl.dataset['dropHint'];
+        });
+    };
+
+    const setDropOverlay = (rowEl: HTMLTableRowElement | null, enabled: boolean): void => {
+      const tableEl = rowEl?.closest<HTMLTableElement>('table.collection-list-table');
+      if (!tableEl) {
+        return;
+      }
+      if (enabled) {
+        clearDropOverlays();
+        tableEl.dataset['dropHint'] = 'insert-front';
+      } else {
+        delete tableEl.dataset['dropHint'];
+      }
+    };
+
+    const isNonPositionSortedList = (rowEl: HTMLTableRowElement | null): boolean => {
+      const tableEl = rowEl?.closest<HTMLTableElement>('table.collection-list-table');
+      return tableEl?.dataset['listSort'] === 'other';
+    };
 
     if (timelineFieldDef && !isCompleted) {
       const fieldValue = item.customFields?.[timelineFieldDef.key];
@@ -1497,7 +1534,7 @@ export class ListPanelTableController {
       if (!target || payload.sourceListId === target.listId) {
         return false;
       }
-      await onMoveItemsToList(payload.sourceListId, payload.itemIds, target.listId, target.position);
+      await onMoveItemsToList(payload.sourceListId, payload.itemIds, target.listId, 0);
       return true;
     };
 
@@ -1516,6 +1553,11 @@ export class ListPanelTableController {
 
       const targetItemId = targetRow.dataset['itemId'];
       if (!targetItemId || targetItemId === draggedId) {
+        onDragEnd?.();
+        return;
+      }
+
+      if (!isSortedByPosition) {
         onDragEnd?.();
         return;
       }
@@ -1542,6 +1584,11 @@ export class ListPanelTableController {
       }
 
       const insertIndex = draggedIndex > targetIndex ? targetIndex + 1 : targetIndex;
+      const draggedPosition =
+        typeof draggedItem.position === 'number' ? draggedItem.position : draggedIndex;
+      const targetPosition =
+        typeof targetItem.position === 'number' ? targetItem.position : targetIndex;
+      const newPosition = draggedPosition > targetPosition ? targetPosition + 1 : targetPosition;
       const orderedItems = [...sortedItems];
       const [movedItem] = orderedItems.splice(draggedIndex, 1);
       if (!movedItem) {
@@ -1555,8 +1602,6 @@ export class ListPanelTableController {
         originalPositions.set(entry, entry.position);
         entry.position = idx;
       });
-
-      const newPosition = insertIndex;
 
       rerender();
 
@@ -1646,6 +1691,10 @@ export class ListPanelTableController {
         this.draggedListId = null;
         row.classList.remove('dragging');
         tbody.querySelectorAll('.drag-over').forEach((el) => el.classList.remove('drag-over'));
+        tbody
+          .querySelectorAll('.drag-over-disabled')
+          .forEach((el) => el.classList.remove('drag-over-disabled'));
+        clearDropOverlays();
         setDragSelectionSuppressed(false);
       };
 
@@ -1819,32 +1868,54 @@ export class ListPanelTableController {
           if (e.dataTransfer) {
             e.dataTransfer.dropEffect = 'move';
           }
+          setDropOverlay(row, false);
+          if (!isSortedByPosition) {
+            if (e.dataTransfer) {
+              e.dataTransfer.dropEffect = 'none';
+            }
+            row.classList.remove('drag-over');
+            row.classList.add('drag-over-disabled');
+            return;
+          }
           const draggedItem = sortedItems.find((it) => it.id === this.draggedItemId);
           if (!draggedItem) return;
           const draggedIsCompleted = draggedItem.completed ?? false;
           if (draggedIsCompleted !== isCompleted) return;
 
+          row.classList.remove('drag-over-disabled');
           row.classList.add('drag-over');
           return;
         }
 
         const payload = getDragPayload(e.dataTransfer ?? null);
         if (!payload || payload.sourceListId === listId) {
+          setDropOverlay(row, false);
           return;
         }
         if (e.dataTransfer) {
           e.dataTransfer.dropEffect = 'move';
         }
+        if (!isSortedByPosition) {
+          setDropOverlay(row, true);
+          row.classList.remove('drag-over');
+          row.classList.remove('drag-over-disabled');
+          return;
+        }
+        setDropOverlay(row, false);
+        row.classList.remove('drag-over-disabled');
         row.classList.add('drag-over');
       });
 
       row.addEventListener('dragleave', () => {
         row.classList.remove('drag-over');
+        row.classList.remove('drag-over-disabled');
       });
 
       row.addEventListener('drop', async (e) => {
         e.preventDefault();
         row.classList.remove('drag-over');
+        row.classList.remove('drag-over-disabled');
+        setDropOverlay(row, false);
         await handleDrop(row, this.draggedItemId, e);
       });
     }
@@ -1932,11 +2003,30 @@ export class ListPanelTableController {
         if (targetRow && targetRow !== row) {
           if (pointerCurrentDropRow && pointerCurrentDropRow !== targetRow) {
             pointerCurrentDropRow.classList.remove('drag-over');
+            pointerCurrentDropRow.classList.remove('drag-over-disabled');
+            setDropOverlay(pointerCurrentDropRow, false);
           }
           pointerCurrentDropRow = targetRow;
-          pointerCurrentDropRow.classList.add('drag-over');
+          const targetListId = targetRow.dataset['listId'];
+          const isCrossList = !!targetListId && targetListId !== listId;
+          if (isCrossList && isNonPositionSortedList(targetRow)) {
+            setDropOverlay(targetRow, true);
+            pointerCurrentDropRow.classList.remove('drag-over');
+            pointerCurrentDropRow.classList.remove('drag-over-disabled');
+            return;
+          }
+          setDropOverlay(targetRow, false);
+          if (!isCrossList && !isSortedByPosition) {
+            pointerCurrentDropRow.classList.remove('drag-over');
+            pointerCurrentDropRow.classList.add('drag-over-disabled');
+          } else {
+            pointerCurrentDropRow.classList.remove('drag-over-disabled');
+            pointerCurrentDropRow.classList.add('drag-over');
+          }
         } else if (pointerCurrentDropRow) {
           pointerCurrentDropRow.classList.remove('drag-over');
+          pointerCurrentDropRow.classList.remove('drag-over-disabled');
+          setDropOverlay(pointerCurrentDropRow, false);
           pointerCurrentDropRow = null;
         }
       };
@@ -1971,6 +2061,8 @@ export class ListPanelTableController {
 
         if (targetRow) {
           targetRow.classList.remove('drag-over');
+          targetRow.classList.remove('drag-over-disabled');
+          setDropOverlay(targetRow, false);
         }
 
         await handleDrop(targetRow ?? null, draggedId ?? null, event);
@@ -2098,11 +2190,30 @@ export class ListPanelTableController {
             if (targetRow && targetRow !== row) {
               if (touchCurrentDropRow && touchCurrentDropRow !== targetRow) {
                 touchCurrentDropRow.classList.remove('drag-over');
+                touchCurrentDropRow.classList.remove('drag-over-disabled');
+                setDropOverlay(touchCurrentDropRow, false);
               }
               touchCurrentDropRow = targetRow;
-              touchCurrentDropRow.classList.add('drag-over');
+              const targetListId = targetRow.dataset['listId'];
+              const isCrossList = !!targetListId && targetListId !== listId;
+              if (isCrossList && isNonPositionSortedList(targetRow)) {
+                setDropOverlay(targetRow, true);
+                touchCurrentDropRow.classList.remove('drag-over');
+                touchCurrentDropRow.classList.remove('drag-over-disabled');
+              } else {
+                setDropOverlay(targetRow, false);
+                if (!isCrossList && !isSortedByPosition) {
+                  touchCurrentDropRow.classList.remove('drag-over');
+                  touchCurrentDropRow.classList.add('drag-over-disabled');
+                } else {
+                  touchCurrentDropRow.classList.remove('drag-over-disabled');
+                  touchCurrentDropRow.classList.add('drag-over');
+                }
+              }
             } else if (touchCurrentDropRow) {
               touchCurrentDropRow.classList.remove('drag-over');
+              touchCurrentDropRow.classList.remove('drag-over-disabled');
+              setDropOverlay(touchCurrentDropRow, false);
               touchCurrentDropRow = null;
             }
           },
@@ -2131,6 +2242,8 @@ export class ListPanelTableController {
 
             if (targetRow) {
               targetRow.classList.remove('drag-over');
+              targetRow.classList.remove('drag-over-disabled');
+              setDropOverlay(targetRow, false);
             }
 
             await handleDrop(targetRow ?? null, draggedId ?? null, e);
@@ -2155,6 +2268,8 @@ export class ListPanelTableController {
 
             if (touchCurrentDropRow) {
               touchCurrentDropRow.classList.remove('drag-over');
+              touchCurrentDropRow.classList.remove('drag-over-disabled');
+              setDropOverlay(touchCurrentDropRow, false);
               touchCurrentDropRow = null;
             }
 

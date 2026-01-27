@@ -444,7 +444,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
     window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
   });
 
-  it('moves selected items to another list on pointer drop', async () => {
+  it('moves selected items to another list at the top on pointer drop', async () => {
     const onMoveItemsToList = vi.fn(async () => {});
     const sourceController = new ListPanelTableController({
       icons: { moreVertical: '', pin: '' },
@@ -545,8 +545,282 @@ describe('ListPanelTableController drag reorder and selection', () => {
       'list-a',
       ['item-1', 'item-2'],
       'list-b',
-      1,
+      0,
     );
+
+    elementFromPointSpy.mockRestore();
+    if (!originalElementFromPoint) {
+      delete (document as { elementFromPoint?: typeof document.elementFromPoint }).elementFromPoint;
+    }
+  });
+
+  it('shows insert-at-front overlay when cross-list target is not sorted by position', async () => {
+    const onMoveItemsToList = vi.fn(async () => {});
+    const sourceController = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      onMoveItemsToList,
+    });
+
+    const targetController = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const source = sourceController.renderTable({
+      ...baseRenderOptions,
+      listId: 'list-a',
+      sortedItems: [
+        { id: 'item-1', title: 'Item 1' },
+        { id: 'item-2', title: 'Item 2' },
+      ],
+    });
+
+    const target = targetController.renderTable({
+      ...baseRenderOptions,
+      listId: 'list-b',
+      sortedItems: [{ id: 'item-b1', title: 'Item B1', position: 0 }],
+      sortState: { column: 'title', direction: 'asc' },
+    });
+
+    document.body.appendChild(source.table);
+    document.body.appendChild(target.table);
+
+    const sourceRows = Array.from(
+      source.tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'),
+    );
+    const targetRow = target.tbody.querySelector<HTMLTableRowElement>('.list-item-row');
+    expect(sourceRows).toHaveLength(2);
+    expect(targetRow).not.toBeNull();
+    if (!targetRow) {
+      throw new Error('Expected target row');
+    }
+
+    sourceRows[0]?.classList.add('list-item-selected');
+
+    const originalElementFromPoint = document.elementFromPoint;
+    if (!originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: () => null,
+        configurable: true,
+      });
+    }
+    const elementFromPointSpy = vi
+      .spyOn(document, 'elementFromPoint')
+      .mockImplementation(() => targetRow);
+
+    sourceRows[0]?.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 0,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+
+    expect(target.table.dataset['dropHint']).toBe('insert-front');
+
+    document.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(target.table.dataset['dropHint']).toBeUndefined();
+
+    elementFromPointSpy.mockRestore();
+    if (!originalElementFromPoint) {
+      delete (document as { elementFromPoint?: typeof document.elementFromPoint }).elementFromPoint;
+    }
+  });
+
+  it('uses target item position when reordering within the list', async () => {
+    const updateListItem = vi.fn(async () => true);
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem,
+    });
+
+    const { table, tbody } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [
+        { id: 'item3', title: 'Item 3', position: 3 },
+        { id: 'item4', title: 'Item 4', position: 4 },
+        { id: 'item5', title: 'Item 5', position: 5 },
+        { id: 'item0', title: 'Item 0', position: 0, completed: true },
+        { id: 'item1', title: 'Item 1', position: 1, completed: true },
+      ],
+    });
+
+    document.body.appendChild(table);
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const sourceRow = rows[2];
+    const targetRow = rows[0];
+    expect(sourceRow).not.toBeUndefined();
+    expect(targetRow).not.toBeUndefined();
+    if (!sourceRow || !targetRow) {
+      throw new Error('Expected rows to exist');
+    }
+
+    const originalElementFromPoint = document.elementFromPoint;
+    if (!originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: () => null,
+        configurable: true,
+      });
+    }
+    const elementFromPointSpy = vi
+      .spyOn(document, 'elementFromPoint')
+      .mockImplementation(() => targetRow);
+
+    sourceRow.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 0,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 4,
+        pointerType: 'mouse',
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+    expect(updateListItem).toHaveBeenCalledWith('list1', 'item5', { position: 4 });
+
+    elementFromPointSpy.mockRestore();
+    if (!originalElementFromPoint) {
+      delete (document as { elementFromPoint?: typeof document.elementFromPoint }).elementFromPoint;
+    }
+  });
+
+  it('does not reorder items when sorted by a non-position column', async () => {
+    const updateListItem = vi.fn(async () => true);
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () => 0,
+      showListItemMenu: vi.fn(),
+      updateListItem,
+    });
+
+    const { table, tbody } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [
+        { id: 'item1', title: 'Alpha', position: 0 },
+        { id: 'item2', title: 'Beta', position: 1 },
+      ],
+      sortState: { column: 'title', direction: 'asc' },
+    });
+
+    document.body.appendChild(table);
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const sourceRow = rows[0];
+    const targetRow = rows[1];
+    expect(sourceRow).not.toBeUndefined();
+    expect(targetRow).not.toBeUndefined();
+    if (!sourceRow || !targetRow) {
+      throw new Error('Expected rows to exist');
+    }
+
+    const originalElementFromPoint = document.elementFromPoint;
+    if (!originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: () => null,
+        configurable: true,
+      });
+    }
+    const elementFromPointSpy = vi
+      .spyOn(document, 'elementFromPoint')
+      .mockImplementation(() => targetRow);
+
+    sourceRow.dispatchEvent(
+      new PointerEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 0,
+        clientY: 0,
+        pointerId: 5,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 5,
+        pointerType: 'mouse',
+      }),
+    );
+    document.dispatchEvent(
+      new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 12,
+        clientY: 0,
+        pointerId: 5,
+        pointerType: 'mouse',
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(updateListItem).not.toHaveBeenCalled();
 
     elementFromPointSpy.mockRestore();
     if (!originalElementFromPoint) {
