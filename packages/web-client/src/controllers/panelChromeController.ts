@@ -3,6 +3,7 @@ import {
   InstanceDropdownController,
   type InstanceOption,
 } from './instanceDropdownController';
+import { getPanelHeaderActionsKey } from '../utils/panelHeaderActions';
 
 type PanelChromeElements = {
   row: HTMLElement;
@@ -90,6 +91,7 @@ export class PanelChromeController {
     }
 
     this.attachFrameControls();
+    this.registerHeaderActions();
     this.attachGlobalListeners();
     this.attachResizeObserver();
     this.runInitialLayoutChecks();
@@ -110,6 +112,17 @@ export class PanelChromeController {
     this.instanceDropdown.setInstances(instances, selectedIds);
     this.instanceDropdown.setVisible(instances.length > 1);
     this.scheduleLayoutCheck();
+  }
+
+  openInstancePicker(): boolean {
+    if (!this.instanceDropdown || !this.elements.instanceDropdownRoot) {
+      return false;
+    }
+    if (this.elements.instanceDropdownRoot.style.display === 'none') {
+      return false;
+    }
+    this.instanceDropdown.open();
+    return true;
   }
 
   scheduleLayoutCheck(): void {
@@ -250,6 +263,17 @@ export class PanelChromeController {
     for (const cleanup of this.cleanupFns) {
       cleanup();
     }
+  }
+
+  private registerHeaderActions(): void {
+    const panelId = this.host.panelId();
+    const key = getPanelHeaderActionsKey(panelId);
+    this.host.setContext(key, {
+      openInstancePicker: () => this.openInstancePicker(),
+    });
+    this.cleanupFns.push(() => {
+      this.host.setContext(key, null);
+    });
   }
 
   private attachFrameControls(): void {

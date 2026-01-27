@@ -94,6 +94,10 @@ import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
+import {
+  getPanelHeaderActionsKey,
+  type PanelHeaderActions,
+} from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 
 const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
@@ -759,6 +763,17 @@ async function main(): Promise<void> {
   function openActiveChatThinkingPicker(): boolean {
     const entry = getActiveChatPanelEntry();
     return openChatPanelSelect(entry?.dom.thinkingSelectEl ?? null);
+  }
+
+  function openActivePanelInstancePicker(): boolean {
+    const active = getActivePanelContext();
+    if (!active || !panelHostController) {
+      return false;
+    }
+    const actions = panelHostController.getContext(
+      getPanelHeaderActionsKey(active.panelId),
+    ) as PanelHeaderActions | null;
+    return actions?.openInstancePicker?.() ?? false;
   }
 
   function getPrimaryChatInputRuntime(): InputRuntime | null {
@@ -3479,6 +3494,7 @@ async function main(): Promise<void> {
       openChatSessionPicker: () => openActiveChatSessionPicker(),
       openChatModelPicker: () => openActiveChatModelPicker(),
       openChatThinkingPicker: () => openActiveChatThinkingPicker(),
+      openPanelInstancePicker: () => openActivePanelInstancePicker(),
       getFocusedSessionId: () => focusedSessionId,
       setFocusedSessionId: (id) => {
         focusedSessionId = id;

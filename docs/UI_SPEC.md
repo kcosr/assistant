@@ -144,6 +144,7 @@ Binding indicator behavior:
 - Remove panel: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) (removes panel from layout)
 - Reset layout: available in settings (and command palette when implemented)
 - Reset panel state: clears persisted panel state without changing the layout
+- Instance/profile selector (active panel): `i` (when the active panel provides an instance selector and focus is not in an input)
 
 Panels can register additional shortcuts scoped to the focused panel.
 

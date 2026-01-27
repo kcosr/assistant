@@ -71,6 +71,7 @@ function buildOptions(
     openChatSessionPicker: () => false,
     openChatModelPicker: () => false,
     openChatThinkingPicker: () => false,
+    openPanelInstancePicker: () => false,
     getFocusedSessionId: () => null,
     setFocusedSessionId: () => {},
     isSidebarFocused: () => false,
@@ -627,6 +628,40 @@ describe('KeyboardNavigationController chat shortcuts', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
     expect(opened).toBe(false);
+
+    detach();
+  });
+});
+
+describe('KeyboardNavigationController panel header shortcuts', () => {
+  beforeEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  it('opens the active panel instance picker on "i"', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    let opened = false;
+    const options = buildOptions(panelFrame);
+    options.openPanelInstancePicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    expect(opened).toBe(true);
 
     detach();
   });

@@ -30,6 +30,7 @@ export interface KeyboardNavigationControllerOptions {
   openChatSessionPicker?: () => boolean;
   openChatModelPicker?: () => boolean;
   openChatThinkingPicker?: () => boolean;
+  openPanelInstancePicker?: () => boolean;
   getFocusedSessionId: () => string | null;
   setFocusedSessionId: (id: string | null) => void;
   isSidebarFocused: () => boolean;
@@ -391,6 +392,21 @@ export class KeyboardNavigationController {
       ),
     );
 
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'open-panel-instance-picker',
+        'i',
+        'Open panel instance picker',
+        (event) => {
+          if (!this.canHandlePanelHeaderShortcut(event)) {
+            return false;
+          }
+          return this.options.openPanelInstancePicker?.() ?? false;
+        },
+        { bindingId: 'panel.header.instance' },
+      ),
+    );
+
     const toggleSpeechInput = (): boolean | void => {
       const controller = this.options.getSpeechAudioController();
       if (!controller?.hasSpeechInput) {
@@ -687,6 +703,20 @@ export class KeyboardNavigationController {
       return false;
     }
     if (this.isEditableTarget(document.activeElement)) {
+      return false;
+    }
+    return true;
+  }
+
+  private canHandlePanelHeaderShortcut(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) {
+      return false;
+    }
+    const activePanelId = this.options.panelWorkspace.getActivePanelId();
+    if (!activePanelId) {
+      return false;
+    }
+    if (this.isEditableTarget(event.target) || this.isEditableTarget(document.activeElement)) {
       return false;
     }
     return true;
