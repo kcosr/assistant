@@ -1809,6 +1809,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!canHandlePanelShortcuts(event, { requireListMode: mode === 'list' })) {
           return;
         }
+        const lowerKey = event.key.toLowerCase();
+        const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+        if (mode === 'list' && !hasModifier && lowerKey === 'a') {
+          setSearchMode(searchMode === 'aql' ? 'raw' : 'aql');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
           setMode('browser');
           event.preventDefault();
@@ -2276,6 +2284,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         if (aqlError) {
           sharedSearchController.setStatusMessage(aqlError, 'error');
+          return;
+        }
+        const hasAppliedQuery =
+          !!(aqlAppliedQueryText && aqlAppliedQueryText.trim()) || !!aqlAppliedQuery;
+        const isClearing = hasAppliedQuery && !aqlQueryText.trim();
+        if (isClearing) {
+          sharedSearchController.setStatusMessage('Press enter to clear');
           return;
         }
         if (aqlDirty) {
@@ -3006,6 +3021,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         options?: { silent?: boolean },
       ): Promise<void> {
         const currentToken = ++loadToken;
+        const isSwitchingLists =
+          !!activeListId && (activeListId !== listId || activeListInstanceId !== instanceId);
         bodyManager.renderLoading({ type: 'list', id: listId });
         try {
           const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
@@ -3029,16 +3046,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const items = parseListItems(rawItems);
           const savedQueries = parseSavedQueries(rawSavedQueries) ?? [];
           const defaultQuery = savedQueries.find((entry) => entry.isDefault) ?? null;
-          selectedAqlQueryId = defaultQuery?.id ?? null;
-          setSavedQueries(savedQueries);
-          if (defaultQuery) {
-            searchMode = 'aql';
-            aqlQueryText = defaultQuery.query;
-            aqlAppliedQueryText = defaultQuery.query;
+          if (isSwitchingLists) {
+            aqlQueryText = '';
+            aqlAppliedQueryText = null;
             aqlAppliedQuery = null;
             aqlError = null;
             aqlDirty = false;
+            selectedAqlQueryId = defaultQuery?.id ?? null;
+            if (defaultQuery) {
+              searchMode = 'aql';
+              aqlQueryText = defaultQuery.query;
+              aqlAppliedQueryText = defaultQuery.query;
+            }
           }
+          setSavedQueries(savedQueries);
           const data: ListPanelData = {
             id: list.id,
             name: list.name,

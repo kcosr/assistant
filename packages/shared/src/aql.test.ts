@@ -7,6 +7,7 @@ const customFields: ListCustomFieldDefinition[] = [
   { key: 'status', label: 'Status', type: 'select', options: ['Ready', 'Blocked'] },
   { key: 'priority', label: 'Priority', type: 'number' },
   { key: 'ref', label: 'Reference', type: 'ref' },
+  { key: 'summary', label: 'Summary', type: 'text' },
 ];
 
 describe('aql', () => {
@@ -48,6 +49,53 @@ describe('aql', () => {
     };
     expect(evaluateAql(result.query, matching)).toBe(true);
     expect(evaluateAql(result.query, rejected)).toBe(false);
+  });
+
+  it('supports ~ and !~ operators', () => {
+    const result = parseAql('title ~ "launch" AND title !~ "wip"', {
+      customFields,
+    });
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    const matching: AqlItem = {
+      title: 'Launch Plan',
+    };
+    const rejected: AqlItem = {
+      title: 'WIP Launch Plan',
+    };
+    expect(evaluateAql(result.query, matching)).toBe(true);
+    expect(evaluateAql(result.query, rejected)).toBe(false);
+  });
+
+  it('supports text pseudo-field search across text fields', () => {
+    const result = parseAql('text : "urgent"', { customFields });
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    const matchingTag: AqlItem = {
+      title: 'Item',
+      tags: ['Urgent'],
+    };
+    const matchingCustom: AqlItem = {
+      title: 'Item',
+      customFields: { summary: 'Urgent follow-up' },
+    };
+    const rejected: AqlItem = {
+      title: 'Item',
+      notes: 'nope',
+    };
+    expect(evaluateAql(result.query, matchingTag)).toBe(true);
+    expect(evaluateAql(result.query, matchingCustom)).toBe(true);
+    expect(evaluateAql(result.query, rejected)).toBe(false);
+  });
+
+  it('rejects unsupported operators for text pseudo-field', () => {
+    const result = parseAql('text = "foo"', { customFields });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Operator = is not supported');
+    }
   });
 
   it('supports IS EMPTY', () => {
@@ -98,6 +146,14 @@ describe('aql', () => {
     };
     expect(evaluateAql(result.query, matching)).toBe(true);
     expect(evaluateAql(result.query, rejected)).toBe(false);
+  });
+
+  it('parses SHOW without a match term', () => {
+    const result = parseAql('SHOW title, notes', { customFields });
+    if (!result.ok) {
+      throw new Error(result.error);
+    }
+    expect(result.query.show?.map((field) => field.key)).toEqual(['title', 'notes']);
   });
 
   it('parses ORDER BY and SHOW', () => {

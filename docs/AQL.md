@@ -14,13 +14,13 @@ Saved queries:
 <expr>     := <term> ( (AND | OR) <term> )*
 <term>     := NOT <term> | '(' <expr> ')' | <clause>
 <clause>   := <field> <op> <value> | <field> IS EMPTY | <field> IS NOT EMPTY
-<op>       := : | !: | = | != | > | >= | < | <= | IN
+<op>       := : | !: | ~ | !~ | = | != | > | >= | < | <= | IN
 <orderBy>  := ORDER BY <field> (ASC|DESC)? ( , <field> (ASC|DESC)? )*
 <show>     := SHOW <field> ( , <field> )*
 ```
 
 Notes:
-- `:` is case-insensitive contains; `!:` is not-contains.
+- `:` and `~` are case-insensitive contains; `!:` / `!~` are not-contains.
 - `IN` accepts a comma-separated list in parentheses.
 - `SHOW` controls which columns are visible and their order while AQL is active.
 - `ORDER BY` controls list sorting while AQL is active.
@@ -28,6 +28,7 @@ Notes:
 ## Fields
 
 Built-ins:
+- `text` (pseudo-field: searches title, notes, url, tags, and custom text fields)
 - `title`, `notes`, `url`
 - `tag`
 - `added`, `updated`, `touched`
@@ -35,6 +36,7 @@ Built-ins:
 
 Custom fields:
 - Use the custom field key or label (labels must be unique).
+- `text` only supports `:` / `!:` / `~` / `!~`.
 
 ## Examples
 
@@ -46,4 +48,8 @@ status = "Ready" AND NOT title : "wip"
 priority >= 2 AND tag IN (urgent, "needs-review")
 ORDER BY updated DESC
 SHOW title, status, priority
+```
+
+```
+text ~ "on-call"
 ```

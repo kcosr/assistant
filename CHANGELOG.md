@@ -8,14 +8,18 @@
 - Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 - Added time tracker reported flag and XLSX export with artifacts upload. ([#42](https://github.com/kcosr/assistant/pull/42))
 - Added client-side note search filtering in the time tracker panel. ([#42](https://github.com/kcosr/assistant/pull/42))
+- Added AQL `~` operator and `text` pseudo-field for cross-field text search. ([#44](https://github.com/kcosr/assistant/pull/44))
+- Added `a` keyboard shortcut to toggle AQL in lists. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Changed
+- Changed AQL status hint copy when clearing a query. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Fixed
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed time tracker created-at date formatting showing the year instead of day. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed artifacts instance listing to include configured instances. ([#42](https://github.com/kcosr/assistant/pull/42))
 - Fixed list drag-and-drop reorder positions and cross-list insert hinting. ([#43](https://github.com/kcosr/assistant/pull/43))
+- Fixed lists panel to clear prior AQL input and apply list defaults when switching lists. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Removed
 

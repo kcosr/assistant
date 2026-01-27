@@ -148,6 +148,7 @@ In split placement mode: arrows or WASD choose region, `Enter` confirms, `Esc` c
 - `Enter` – Edit focused item
 - `Space` – Toggle completed for selection
 - `n` – Add item
+- `a` – Toggle AQL mode
 - `w` / `s` – Move focused item up/down
 - `t` / `b` – Move focused item to top/bottom
 - `p` – Toggle pin
