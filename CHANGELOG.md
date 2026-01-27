@@ -8,8 +8,11 @@
 - Added favorites for lists and notes with a heart indicator and `/favorites` command palette view. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added build-service configuration for TypeScript remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added `build:parallel` and `build:remote` scripts for parallel/remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
+- Added keyboard shortcut registry with panel-scoped resolution and per-device binding overrides. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added core services keyboard shortcut registration for panel plugins. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
+- Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 

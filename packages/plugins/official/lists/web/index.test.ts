@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  KeyboardShortcutRegistry,
+  createShortcutService,
+} from '../../../../web-client/src/utils/keyboardShortcuts';
 
 type PanelFactory = () => {
   mount: (container: HTMLElement, host: {
@@ -25,6 +29,19 @@ describe('lists panel keyboard shortcuts', () => {
   const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
     .ASSISTANT_PANEL_REGISTRY;
   let factories: Record<string, PanelFactory>;
+  const shortcutCleanups: Array<() => void> = [];
+
+  const createShortcutHarness = (
+    getActivePanel: () => { panelId: string; panelType: string } | null,
+  ) => {
+    const registry = new KeyboardShortcutRegistry({
+      isEnabled: () => true,
+      getActivePanel,
+    });
+    registry.attach();
+    shortcutCleanups.push(() => registry.detach());
+    return createShortcutService(registry);
+  };
 
   beforeEach(() => {
     factories = {};
@@ -49,6 +66,9 @@ describe('lists panel keyboard shortcuts', () => {
     } else {
       (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown }).ASSISTANT_PANEL_REGISTRY =
         originalRegistry;
+    }
+    for (const cleanup of shortcutCleanups.splice(0)) {
+      cleanup();
     }
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -102,6 +122,15 @@ describe('lists panel keyboard shortcuts', () => {
     };
 
     const pendingPreferences = new Promise<void>(() => {});
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -118,13 +147,14 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => false,
       notifyContextAvailabilityChange: () => undefined,
     });
 
-    host.setContext('panel.active', { panelId: host.panelId() });
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
@@ -254,6 +284,15 @@ describe('lists panel keyboard shortcuts', () => {
       }),
     );
 
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -270,6 +309,7 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => false,
@@ -402,6 +442,15 @@ describe('lists panel keyboard shortcuts', () => {
       startPanelReorder: () => undefined,
     };
 
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -418,13 +467,14 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => false,
       notifyContextAvailabilityChange: () => undefined,
     });
 
-    host.setContext('panel.active', { panelId: host.panelId() });
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
@@ -552,6 +602,15 @@ describe('lists panel keyboard shortcuts', () => {
       startPanelReorder: () => undefined,
     };
 
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -568,13 +627,14 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => false,
       notifyContextAvailabilityChange: () => undefined,
     });
 
-    host.setContext('panel.active', { panelId: host.panelId() });
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
@@ -698,6 +758,15 @@ describe('lists panel keyboard shortcuts', () => {
       startPanelReorder: () => undefined,
     };
 
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -714,13 +783,14 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => false,
       notifyContextAvailabilityChange: () => undefined,
     });
 
-    host.setContext('panel.active', { panelId: host.panelId() });
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
@@ -856,6 +926,15 @@ describe('lists panel keyboard shortcuts', () => {
     );
 
     const openCommandPalette = vi.fn();
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
     host.setContext('core.services', {
       dialogManager: { hasOpenDialog: false },
       contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
@@ -872,6 +951,7 @@ describe('lists panel keyboard shortcuts', () => {
         updateFocusMarker: () => undefined,
         updateFocusMarkerExpanded: () => undefined,
       },
+      keyboardShortcuts,
       focusInput: () => undefined,
       setStatus: () => undefined,
       isMobileViewport: () => true,
@@ -879,7 +959,7 @@ describe('lists panel keyboard shortcuts', () => {
       openCommandPalette,
     });
 
-    host.setContext('panel.active', { panelId: host.panelId() });
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);

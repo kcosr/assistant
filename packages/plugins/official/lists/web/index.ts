@@ -33,6 +33,7 @@ import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
 import { PINNED_TAG, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
 import { buildAqlString, parseAql, type AqlQuery } from '../../../../web-client/src/utils/listItemQuery';
+import type { KeyboardShortcut } from '../../../../web-client/src/utils/keyboardShortcuts';
 import {
   CORE_PANEL_SERVICES_CONTEXT_KEY,
   type PanelCoreServices,
@@ -879,7 +880,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let ignoreSearchChange = false;
       let mode: ViewMode = 'browser';
       let isVisible = false;
-      let panelKeydownAttached = false;
       let isPanelSelected = false;
       let refreshToken = 0;
       let refreshInFlight = false;
@@ -891,9 +891,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let unsubscribeViewportResize: (() => void) | null = null;
       let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
       let pendingAqlApplyEvent: { listId: string; instanceId: string; query: string } | null = null;
+      const panelShortcutUnsubscribers: Array<() => void> = [];
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
+      const panelShortcutScope = { scope: 'panelInstance' as const, panelId };
 
       const updatePanelSelection = (value: unknown): void => {
         if (!value || typeof value !== 'object') {
@@ -1799,7 +1801,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return true;
       };
 
-      const handlePanelKeydown = (event: KeyboardEvent): void => {
+      const handlePanelShortcut = (event: KeyboardEvent): boolean => {
         const isSearchShortcut =
           !event.metaKey &&
           !event.ctrlKey &&
@@ -1808,59 +1810,89 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           event.key.toLowerCase() === 'f';
         if (isSearchShortcut) {
           if (!canHandlePanelShortcuts(event, { requireListMode: false })) {
-            return;
+            return false;
           }
-          event.preventDefault();
-          event.stopPropagation();
           sharedSearchController.focus(true);
-          return;
+          return true;
         }
         if (!canHandlePanelShortcuts(event, { requireListMode: mode === 'list' })) {
-          return;
+          return false;
         }
         const lowerKey = event.key.toLowerCase();
         const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
         if (mode === 'list' && !hasModifier && lowerKey === 'a') {
           setSearchMode(searchMode === 'aql' ? 'raw' : 'aql');
-          event.preventDefault();
-          event.stopPropagation();
-          return;
+          return true;
         }
         if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
           setMode('browser');
-          event.preventDefault();
-          event.stopPropagation();
-          return;
+          return true;
         }
         if (mode === 'browser') {
-          const handled = browserController?.handleKeyboardEvent(event) ?? false;
-          if (handled) {
-            event.preventDefault();
-            event.stopPropagation();
-          }
-          return;
+          return browserController?.handleKeyboardEvent(event) ?? false;
         }
-        const handled = listPanelController.handleKeyboardEvent(event);
-        if (handled) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
+        return listPanelController.handleKeyboardEvent(event);
       };
 
-      const attachPanelShortcuts = (): void => {
-        if (panelKeydownAttached) {
+      const registerPanelShortcut = (shortcut: KeyboardShortcut): void => {
+        if (!services.keyboardShortcuts) {
           return;
         }
-        document.addEventListener('keydown', handlePanelKeydown, true);
-        panelKeydownAttached = true;
+        panelShortcutUnsubscribers.push(services.keyboardShortcuts.register(shortcut));
       };
 
-      const detachPanelShortcuts = (): void => {
-        if (!panelKeydownAttached) {
+      const registerPanelShortcuts = (): void => {
+        if (!services.keyboardShortcuts) {
           return;
         }
-        document.removeEventListener('keydown', handlePanelKeydown, true);
-        panelKeydownAttached = false;
+        const description = 'Lists panel shortcut';
+        const registerPlain = (
+          idSuffix: string,
+          key: string,
+          options: Partial<KeyboardShortcut> = {},
+        ): void => {
+          registerPanelShortcut({
+            id: `lists-${panelId}-${idSuffix}`,
+            key,
+            modifiers: [],
+            description,
+            handler: handlePanelShortcut,
+            ...panelShortcutScope,
+            ...options,
+          });
+        };
+        const registerCommand = (idSuffix: string, key: string): void => {
+          registerPanelShortcut({
+            id: `lists-${panelId}-${idSuffix}`,
+            key,
+            modifiers: ['ctrl'],
+            cmdOrCtrl: true,
+            description,
+            handler: handlePanelShortcut,
+            ...panelShortcutScope,
+          });
+        };
+
+        registerPlain('search-focus', 'f');
+        registerPlain('toggle-aql', 'a');
+        registerPlain('escape', 'escape');
+        registerPlain('arrow-up', 'arrowup', { allowShift: true });
+        registerPlain('arrow-down', 'arrowdown', { allowShift: true });
+        registerPlain('arrow-left', 'arrowleft', { allowShift: true });
+        registerPlain('arrow-right', 'arrowright', { allowShift: true });
+        registerPlain('enter', 'enter');
+        registerPlain('space', ' ');
+        registerPlain('spacebar', 'spacebar');
+        registerPlain('delete', 'd');
+        registerPlain('pin', 'p');
+        registerPlain('new', 'n');
+        registerPlain('move-top', 't');
+        registerPlain('move-bottom', 'b');
+        registerPlain('move-up', 'w');
+        registerPlain('move-down', 's');
+        registerCommand('copy', 'c');
+        registerCommand('cut', 'x');
+        registerCommand('paste', 'v');
       };
 
       const listPanelController = new ListPanelController({
@@ -3373,7 +3405,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       sharedSearchController.setOnQueryChanged(handleSearchInputChange);
       ignoreSearchChange = false;
       sharedSearchController.setVisible(true);
-      attachPanelShortcuts();
+      registerPanelShortcuts();
 
       const stored = host.loadPanelState();
       let initialListId: string | null = null;
@@ -3495,7 +3527,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           void refreshLists({ silent: true });
         },
         unmount() {
-          detachPanelShortcuts();
+          for (const unsubscribe of panelShortcutUnsubscribers.splice(0)) {
+            unsubscribe();
+          }
           chromeController?.destroy();
           unsubscribePanelActive?.();
           unsubscribeViewportResize?.();

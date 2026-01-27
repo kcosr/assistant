@@ -17,6 +17,7 @@ export interface KeyboardNavigationControllerOptions {
   getAgentSidebarSections: () => HTMLElement | null;
   panelWorkspace: PanelWorkspaceController;
   dialogManager: DialogManager;
+  shortcutRegistry?: KeyboardShortcutRegistry;
   isKeyboardShortcutsEnabled: () => boolean;
   getSpeechAudioController: () => SpeechAudioController | null;
   cancelAllActiveOperations: () => boolean;
@@ -74,13 +75,15 @@ export class KeyboardNavigationController {
   private navCleanup: (() => void) | null = null;
 
   constructor(private readonly options: KeyboardNavigationControllerOptions) {
-    this.shortcutRegistry = new KeyboardShortcutRegistry({
-      onConflict: (existing, incoming) => {
-        console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
-      },
-      isEnabled: () =>
-        this.options.isKeyboardShortcutsEnabled() && !this.options.dialogManager.hasOpenDialog,
-    });
+    this.shortcutRegistry =
+      this.options.shortcutRegistry ??
+      new KeyboardShortcutRegistry({
+        onConflict: (existing, incoming) => {
+          console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
+        },
+        isEnabled: () =>
+          this.options.isKeyboardShortcutsEnabled() && !this.options.dialogManager.hasOpenDialog,
+      });
   }
 
   attach(): void {

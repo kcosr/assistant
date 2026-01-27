@@ -58,6 +58,10 @@ import {
   type SessionsRuntimeOptions,
 } from './panels/sessions';
 import { getWebClientElements } from './utils/webClientElements';
+import {
+  KeyboardShortcutRegistry,
+  createShortcutService,
+} from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
@@ -361,6 +365,7 @@ async function main(): Promise<void> {
   const speechFeaturesEnabled = isSpeechFeatureEnabled();
   const AUDIO_RESPONSES_STORAGE_KEY = 'aiAssistantAudioResponsesEnabled';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
+  const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
   const INTERACTION_MODE_STORAGE_KEY = 'aiAssistantInteractiveModeEnabled';
@@ -377,6 +382,7 @@ async function main(): Promise<void> {
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
+    keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
@@ -384,6 +390,7 @@ async function main(): Promise<void> {
 
   const initialAudioResponsesEnabled = initialPreferences.audioResponsesEnabled;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
+  const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
@@ -1428,6 +1435,26 @@ async function main(): Promise<void> {
     updateSessionAttributes,
   });
   panelHostController = panelHostControllerInstance;
+  const keyboardShortcutRegistry = new KeyboardShortcutRegistry({
+    onConflict: (existing, incoming) => {
+      console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
+    },
+    isEnabled: () => keyboardShortcutsEnabled && !dialogManager.hasOpenDialog,
+    getActivePanel: () => {
+      const active =
+        (panelHostControllerInstance.getContext('panel.active') as {
+          panelId?: string;
+          panelType?: string;
+        } | null) ?? null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    },
+    ...(keyboardShortcutBindings
+      ? { bindingOverrides: keyboardShortcutBindings }
+      : {}),
+  });
   panelHostControllerInstance.subscribeContext('panel.active', (value) => {
     if (!value || typeof value !== 'object') {
       return;
@@ -1676,6 +1703,7 @@ async function main(): Promise<void> {
     dialogManager,
     contextMenuManager,
     listColumnPreferencesClient,
+    keyboardShortcuts: createShortcutService(keyboardShortcutRegistry),
     focusInput: () => {
       getActiveChatInputRuntime()?.focusInput();
     },
@@ -3380,6 +3408,7 @@ async function main(): Promise<void> {
       getAgentSidebarSections: () => getSidebarElementsForKeyboardNav().agentSidebarSections,
       panelWorkspace,
       dialogManager,
+      shortcutRegistry: keyboardShortcutRegistry,
       isKeyboardShortcutsEnabled: () => keyboardShortcutsEnabled,
       getSpeechAudioController: () => getActiveChatInputRuntime()?.speechAudioController ?? null,
       cancelAllActiveOperations,

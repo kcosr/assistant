@@ -117,4 +117,4 @@ Proposed usage: store keyboard bindings in client preferences (localStorage-back
 - `packages/web-client/src/controllers/commandPaletteController.ts` (ensure overlay gating list stays aligned)
 
 ## Open questions
-- How should we name the client preference keys for bindings (single JSON blob vs per-action keys)?
+- Resolved: store binding overrides as a single JSON blob in client preferences under `aiAssistantKeyboardShortcutBindings`.

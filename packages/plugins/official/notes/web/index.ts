@@ -19,6 +19,7 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import { MarkdownViewerController } from '../../../../web-client/src/controllers/markdownViewerController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
+import type { KeyboardShortcut } from '../../../../web-client/src/utils/keyboardShortcuts';
 import {
   applyPinnedTag,
   hasPinnedTag,
@@ -739,10 +740,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let selectedNoteText: string | null = null;
       let expandCollapseToggle: HTMLButtonElement | null = null;
       let chromeController: PanelChromeController | null = null;
-      let panelKeydownAttached = false;
       let isPanelSelected = false;
       let unsubscribePanelActive: (() => void) | null = null;
       let pendingShowEvent: { title: string; instanceId: string } | null = null;
+      const panelShortcutUnsubscribers: Array<() => void> = [];
 
       const persistState = (): void => {
         host.persistPanelState({
@@ -786,6 +787,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const panelId = host.panelId();
       const contextKey = getPanelContextKey(panelId);
+      const panelShortcutScope = { scope: 'panelInstance' as const, panelId };
 
       const updatePanelSelection = (value: unknown): void => {
         if (!value || typeof value !== 'object') {
@@ -1072,7 +1074,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return true;
       };
 
-      const handlePanelKeydown = (event: KeyboardEvent): void => {
+      const handlePanelShortcut = (event: KeyboardEvent): boolean => {
         if (event.key === 'Escape') {
           const searchInput = sharedSearchController.getSearchInputEl();
           if (searchInput && document.activeElement === searchInput) {
@@ -1082,10 +1084,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               (tagController?.getActiveTagFilters().length ?? 0) > 0 ||
               (tagController?.getActiveExcludedTagFilters().length ?? 0) > 0;
             if (!hasFilters) {
-              event.preventDefault();
-              event.stopPropagation();
               searchInput.blur();
-              return;
+              return true;
             }
           }
         }
@@ -1097,45 +1097,60 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           event.key.toLowerCase() === 'f';
         if (isSearchShortcut) {
           if (!canHandlePanelShortcuts(event, { requireNoteMode: false })) {
-            return;
+            return false;
           }
-          event.preventDefault();
-          event.stopPropagation();
           sharedSearchController.focus(true);
-          return;
+          return true;
         }
         if (!canHandlePanelShortcuts(event, { requireNoteMode: mode === 'note' })) {
-          return;
+          return false;
         }
         if (mode === 'note' && event.key === 'Escape') {
           setMode('browser');
-          event.preventDefault();
-          event.stopPropagation();
-          return;
+          return true;
         }
         if (mode === 'browser') {
-          const handled = browserController?.handleKeyboardEvent(event) ?? false;
-          if (handled) {
-            event.preventDefault();
-            event.stopPropagation();
-          }
+          return browserController?.handleKeyboardEvent(event) ?? false;
         }
+        return false;
       };
 
-      const attachPanelShortcuts = (): void => {
-        if (panelKeydownAttached) {
+      const registerPanelShortcut = (shortcut: KeyboardShortcut): void => {
+        if (!services.keyboardShortcuts) {
           return;
         }
-        document.addEventListener('keydown', handlePanelKeydown, true);
-        panelKeydownAttached = true;
+        panelShortcutUnsubscribers.push(services.keyboardShortcuts.register(shortcut));
       };
 
-      const detachPanelShortcuts = (): void => {
-        if (!panelKeydownAttached) {
+      const registerPanelShortcuts = (): void => {
+        if (!services.keyboardShortcuts) {
           return;
         }
-        document.removeEventListener('keydown', handlePanelKeydown, true);
-        panelKeydownAttached = false;
+        const description = 'Notes panel shortcut';
+        const registerPlain = (
+          idSuffix: string,
+          key: string,
+          options: Partial<KeyboardShortcut> = {},
+        ): void => {
+          registerPanelShortcut({
+            id: `notes-${panelId}-${idSuffix}`,
+            key,
+            modifiers: [],
+            description,
+            handler: handlePanelShortcut,
+            ...panelShortcutScope,
+            ...options,
+          });
+        };
+
+        registerPlain('search-focus', 'f');
+        registerPlain('escape', 'escape');
+        registerPlain('arrow-up', 'arrowup', { allowShift: true });
+        registerPlain('arrow-down', 'arrowdown', { allowShift: true });
+        registerPlain('arrow-left', 'arrowleft', { allowShift: true });
+        registerPlain('arrow-right', 'arrowright', { allowShift: true });
+        registerPlain('enter', 'enter');
+        registerPlain('pin', 'p');
       };
 
       const refreshInstances = async (options?: { silent?: boolean }): Promise<void> => {
@@ -2363,7 +2378,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       sharedSearchController.setOnQueryChanged(applySearch);
       sharedSearchController.setVisible(true);
-      attachPanelShortcuts();
+      registerPanelShortcuts();
 
       const stored = host.loadPanelState();
       let initialTitle: string | null = null;
@@ -2459,7 +2474,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             'assistant:clear-context-selection',
             handleClearContextSelectionEvent,
           );
-          detachPanelShortcuts();
+          for (const unsubscribe of panelShortcutUnsubscribers.splice(0)) {
+            unsubscribe();
+          }
           unsubscribePanelActive?.();
           chromeController?.destroy();
           host.setContext(contextKey, null);

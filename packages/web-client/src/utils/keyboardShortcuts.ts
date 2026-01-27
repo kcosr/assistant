@@ -6,6 +6,17 @@
  */
 
 export type ModifierKey = 'ctrl' | 'meta' | 'shift' | 'alt';
+export type ShortcutScope = 'global' | 'activePanel' | 'panelType' | 'panelInstance';
+export type ShortcutPlatform = 'mac' | 'win' | 'linux' | 'all';
+
+export interface ShortcutBindingOverride {
+  key: string;
+  modifiers: ModifierKey[];
+  cmdOrCtrl?: boolean;
+  platform?: ShortcutPlatform;
+}
+
+export type ShortcutBindingOverrides = Record<string, ShortcutBindingOverride>;
 
 export interface KeyboardShortcut {
   /** Unique identifier for this shortcut */
@@ -16,20 +27,47 @@ export interface KeyboardShortcut {
   modifiers: ModifierKey[];
   /** Human-readable description */
   description: string;
-  /** Handler function - return true if handled, false to allow propagation */
+  /** Handler function - return true if handled, false to allow fallback */
   handler: (event: KeyboardEvent) => boolean | void;
   /**
    * If true, use meta on Mac and ctrl on other platforms for the 'cmdOrCtrl' modifier.
    * When set, 'ctrl' in modifiers is treated as 'cmdOrCtrl'.
    */
   cmdOrCtrl?: boolean;
+  /** Optional scope for resolving conflicts */
+  scope?: ShortcutScope;
+  /** Panel type to scope to (panelType scope only) */
+  panelType?: string;
+  /** Panel id to scope to (panelInstance scope only) */
+  panelId?: string;
+  /** Priority when conflicts exist within the same scope */
+  priority?: number;
+  /** Optional platform restriction */
+  platform?: ShortcutPlatform;
+  /** Allow matching when Shift is held even if not in modifiers */
+  allowShift?: boolean;
 }
 
 export interface ShortcutRegistryOptions {
-  /** Called when a duplicate shortcut binding is detected */
+  /** Called when a duplicate shortcut binding is detected in the same scope */
   onConflict?: (existing: KeyboardShortcut, incoming: KeyboardShortcut) => void;
   /** Optional predicate to decide whether shortcuts should be handled */
   isEnabled?: () => boolean;
+  /** Active panel context for scope resolution */
+  getActivePanel?: () => { panelId: string; panelType: string } | null;
+  /** Optional per-action binding overrides */
+  bindingOverrides?: ShortcutBindingOverrides;
+}
+
+interface ShortcutRegistration {
+  shortcut: KeyboardShortcut;
+  bindingKey: string;
+  order: number;
+}
+
+export interface KeyboardShortcutService {
+  register: (shortcut: KeyboardShortcut) => () => void;
+  getAll: () => KeyboardShortcut[];
 }
 
 /**
@@ -40,6 +78,20 @@ export function isMacPlatform(): boolean {
     return false;
   }
   return /Mac|iP(hone|od|ad)/.test(window.navigator.platform);
+}
+
+export function getShortcutPlatform(): ShortcutPlatform {
+  if (typeof window === 'undefined' || typeof window.navigator === 'undefined') {
+    return 'all';
+  }
+  if (isMacPlatform()) {
+    return 'mac';
+  }
+  const platform = window.navigator.platform?.toLowerCase() ?? '';
+  if (platform.includes('win')) {
+    return 'win';
+  }
+  return 'linux';
 }
 
 /**
@@ -83,6 +135,34 @@ export function getShortcutLabel(shortcut: KeyboardShortcut): string {
   return parts.join(isMac ? '' : '+');
 }
 
+const VALID_MODIFIERS: ModifierKey[] = ['ctrl', 'meta', 'shift', 'alt'];
+
+function normalizeModifiers(modifiers: ModifierKey[]): ModifierKey[] {
+  const normalized: ModifierKey[] = [];
+  const seen = new Set<ModifierKey>();
+  for (const mod of modifiers) {
+    const candidate = mod.toLowerCase() as ModifierKey;
+    if (!VALID_MODIFIERS.includes(candidate)) {
+      continue;
+    }
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    normalized.push(candidate);
+  }
+  return normalized;
+}
+
+function normalizeShortcut(shortcut: KeyboardShortcut): KeyboardShortcut {
+  return {
+    ...shortcut,
+    key: shortcut.key.toLowerCase(),
+    modifiers: normalizeModifiers(shortcut.modifiers),
+    scope: shortcut.scope ?? 'global',
+  };
+}
+
 /**
  * Creates a unique key for shortcut lookup based on modifiers and key
  */
@@ -103,12 +183,51 @@ function createShortcutKey(
   return `${effectiveMods.join('+')}-${key.toLowerCase()}`;
 }
 
+function getEventModifiers(event: KeyboardEvent): ModifierKey[] {
+  const modifiers: ModifierKey[] = [];
+  if (event.ctrlKey) modifiers.push('ctrl');
+  if (event.metaKey) modifiers.push('meta');
+  if (event.shiftKey) modifiers.push('shift');
+  if (event.altKey) modifiers.push('alt');
+  return modifiers;
+}
+
+function scopeRank(scope: ShortcutScope): number {
+  switch (scope) {
+    case 'panelInstance':
+      return 4;
+    case 'panelType':
+      return 3;
+    case 'activePanel':
+      return 2;
+    case 'global':
+    default:
+      return 1;
+  }
+}
+
+function isSameScopeTarget(a: KeyboardShortcut, b: KeyboardShortcut): boolean {
+  const scopeA = a.scope ?? 'global';
+  const scopeB = b.scope ?? 'global';
+  if (scopeA !== scopeB) {
+    return false;
+  }
+  if (scopeA === 'panelInstance') {
+    return a.panelId === b.panelId;
+  }
+  if (scopeA === 'panelType') {
+    return a.panelType === b.panelType;
+  }
+  return true;
+}
+
 export class KeyboardShortcutRegistry {
-  private shortcuts: Map<string, KeyboardShortcut> = new Map();
-  private shortcutsById: Map<string, KeyboardShortcut> = new Map();
+  private shortcuts: Map<string, ShortcutRegistration[]> = new Map();
+  private shortcutsById: Map<string, ShortcutRegistration> = new Map();
   private options: ShortcutRegistryOptions;
   private isMac: boolean;
   private boundHandler: ((e: KeyboardEvent) => void) | null = null;
+  private registrationOrder = 0;
 
   constructor(options: ShortcutRegistryOptions = {}) {
     this.options = options;
@@ -119,50 +238,62 @@ export class KeyboardShortcutRegistry {
    * Register a keyboard shortcut
    */
   register(shortcut: KeyboardShortcut): void {
+    const normalized = normalizeShortcut(shortcut);
+    const resolved = this.applyBindingOverrides(normalized);
+
     const key = createShortcutKey(
-      shortcut.key,
-      shortcut.modifiers,
-      shortcut.cmdOrCtrl ?? false,
+      resolved.key,
+      resolved.modifiers,
+      resolved.cmdOrCtrl ?? false,
       this.isMac,
     );
 
+    const existingById = this.shortcutsById.get(resolved.id);
+    if (existingById) {
+      this.removeRegistration(existingById);
+    }
+
     const existing = this.shortcuts.get(key);
     if (existing) {
-      if (this.options.onConflict) {
-        this.options.onConflict(existing, shortcut);
-      } else {
-        console.warn(
-          `[KeyboardShortcutRegistry] Conflict: "${shortcut.id}" overwrites "${existing.id}" for ${key}`,
-        );
+      const conflict = existing.find((entry) => isSameScopeTarget(entry.shortcut, resolved));
+      if (conflict) {
+        if (this.options.onConflict) {
+          this.options.onConflict(conflict.shortcut, resolved);
+        } else {
+          console.warn(
+            `[KeyboardShortcutRegistry] Conflict: "${resolved.id}" overlaps "${conflict.shortcut.id}" for ${key}`,
+          );
+        }
       }
     }
 
-    this.shortcuts.set(key, shortcut);
-    this.shortcutsById.set(shortcut.id, shortcut);
+    const registration: ShortcutRegistration = {
+      shortcut: resolved,
+      bindingKey: key,
+      order: ++this.registrationOrder,
+    };
+
+    const list = existing ?? [];
+    list.push(registration);
+    this.shortcuts.set(key, list);
+    this.shortcutsById.set(resolved.id, registration);
   }
 
   /**
    * Unregister a shortcut by ID
    */
   unregister(id: string): void {
-    const shortcut = this.shortcutsById.get(id);
-    if (!shortcut) return;
+    const registration = this.shortcutsById.get(id);
+    if (!registration) return;
 
-    const key = createShortcutKey(
-      shortcut.key,
-      shortcut.modifiers,
-      shortcut.cmdOrCtrl ?? false,
-      this.isMac,
-    );
-    this.shortcuts.delete(key);
-    this.shortcutsById.delete(id);
+    this.removeRegistration(registration);
   }
 
   /**
    * Get all registered shortcuts
    */
   getAll(): KeyboardShortcut[] {
-    return Array.from(this.shortcutsById.values());
+    return Array.from(this.shortcutsById.values()).map((entry) => entry.shortcut);
   }
 
   /**
@@ -173,18 +304,41 @@ export class KeyboardShortcutRegistry {
       return false;
     }
 
-    // Build the key for this event
-    const modifiers: ModifierKey[] = [];
-    if (event.ctrlKey) modifiers.push('ctrl');
-    if (event.metaKey) modifiers.push('meta');
-    if (event.shiftKey) modifiers.push('shift');
-    if (event.altKey) modifiers.push('alt');
-
+    const modifiers = getEventModifiers(event);
     const eventKey = createShortcutKey(event.key, modifiers, false, this.isMac);
 
-    const shortcut = this.shortcuts.get(eventKey);
-    if (shortcut) {
-      const result = shortcut.handler(event);
+    const candidates = this.collectCandidates(event, eventKey, modifiers);
+    if (candidates.length === 0) {
+      return false;
+    }
+
+    const activePanel = this.options.getActivePanel?.() ?? null;
+    const platform = getShortcutPlatform();
+
+    const filtered = candidates.filter((entry) =>
+      this.isCandidateEligible(entry.shortcut, activePanel, platform),
+    );
+
+    if (filtered.length === 0) {
+      return false;
+    }
+
+    filtered.sort((a, b) => {
+      const aScope = scopeRank(a.shortcut.scope ?? 'global');
+      const bScope = scopeRank(b.shortcut.scope ?? 'global');
+      if (aScope !== bScope) {
+        return bScope - aScope;
+      }
+      const aPriority = a.shortcut.priority ?? 0;
+      const bPriority = b.shortcut.priority ?? 0;
+      if (aPriority !== bPriority) {
+        return bPriority - aPriority;
+      }
+      return b.order - a.order;
+    });
+
+    for (const entry of filtered) {
+      const result = entry.shortcut.handler(event);
       if (result !== false) {
         event.preventDefault();
         return true;
@@ -217,6 +371,131 @@ export class KeyboardShortcutRegistry {
     document.removeEventListener('keydown', this.boundHandler, true);
     this.boundHandler = null;
   }
+
+  private applyBindingOverrides(shortcut: KeyboardShortcut): KeyboardShortcut {
+    const overrides = this.options.bindingOverrides?.[shortcut.id];
+    if (!overrides || typeof overrides !== 'object') {
+      return shortcut;
+    }
+
+    const nextKey = typeof overrides.key === 'string' ? overrides.key.toLowerCase() : shortcut.key;
+    const nextModifiers = Array.isArray(overrides.modifiers)
+      ? normalizeModifiers(overrides.modifiers)
+      : shortcut.modifiers;
+    const nextCmdOrCtrl =
+      typeof overrides.cmdOrCtrl === 'boolean' ? overrides.cmdOrCtrl : shortcut.cmdOrCtrl;
+    const nextPlatform =
+      overrides.platform && this.isValidPlatform(overrides.platform)
+        ? overrides.platform
+        : shortcut.platform;
+
+    return {
+      ...shortcut,
+      key: nextKey,
+      modifiers: nextModifiers,
+      ...(typeof nextCmdOrCtrl === 'boolean' ? { cmdOrCtrl: nextCmdOrCtrl } : {}),
+      ...(nextPlatform ? { platform: nextPlatform } : {}),
+    };
+  }
+
+  private isValidPlatform(platform: ShortcutPlatform): boolean {
+    return platform === 'mac' || platform === 'win' || platform === 'linux' || platform === 'all';
+  }
+
+  private collectCandidates(
+    event: KeyboardEvent,
+    eventKey: string,
+    modifiers: ModifierKey[],
+  ): ShortcutRegistration[] {
+    const registry = new Map<string, ShortcutRegistration>();
+
+    const primary = this.shortcuts.get(eventKey);
+    if (primary) {
+      for (const entry of primary) {
+        registry.set(entry.shortcut.id, entry);
+      }
+    }
+
+    if (event.shiftKey) {
+      const withoutShift = modifiers.filter((mod) => mod !== 'shift');
+      if (withoutShift.length !== modifiers.length) {
+        const shiftlessKey = createShortcutKey(event.key, withoutShift, false, this.isMac);
+        const shiftless = this.shortcuts.get(shiftlessKey) ?? [];
+        for (const entry of shiftless) {
+          if (entry.shortcut.allowShift) {
+            registry.set(entry.shortcut.id, entry);
+          }
+        }
+      }
+    }
+
+    return Array.from(registry.values());
+  }
+
+  private isCandidateEligible(
+    shortcut: KeyboardShortcut,
+    activePanel: { panelId: string; panelType: string } | null,
+    platform: ShortcutPlatform,
+  ): boolean {
+    const shortcutPlatform = shortcut.platform ?? 'all';
+    if (shortcutPlatform !== 'all' && shortcutPlatform !== platform) {
+      return false;
+    }
+
+    const scope = shortcut.scope ?? 'global';
+    if (scope === 'global') {
+      return true;
+    }
+
+    if (!activePanel) {
+      return false;
+    }
+
+    if (scope === 'activePanel') {
+      return true;
+    }
+
+    if (scope === 'panelType') {
+      if (!shortcut.panelType) {
+        return false;
+      }
+      return shortcut.panelType === activePanel.panelType;
+    }
+
+    if (scope === 'panelInstance') {
+      if (!shortcut.panelId) {
+        return false;
+      }
+      return shortcut.panelId === activePanel.panelId;
+    }
+
+    return false;
+  }
+
+  private removeRegistration(registration: ShortcutRegistration): void {
+    const list = this.shortcuts.get(registration.bindingKey);
+    if (list) {
+      const next = list.filter((entry) => entry.shortcut.id !== registration.shortcut.id);
+      if (next.length === 0) {
+        this.shortcuts.delete(registration.bindingKey);
+      } else {
+        this.shortcuts.set(registration.bindingKey, next);
+      }
+    }
+    this.shortcutsById.delete(registration.shortcut.id);
+  }
+}
+
+export function createShortcutService(
+  registry: KeyboardShortcutRegistry,
+): KeyboardShortcutService {
+  return {
+    register: (shortcut) => {
+      registry.register(shortcut);
+      return () => registry.unregister(shortcut.id);
+    },
+    getAll: () => registry.getAll(),
+  };
 }
 
 /**
@@ -227,6 +506,7 @@ export function cmdShiftShortcut(
   key: string,
   description: string,
   handler: KeyboardShortcut['handler'],
+  options: Partial<Omit<KeyboardShortcut, 'id' | 'key' | 'modifiers' | 'description' | 'handler'>> = {},
 ): KeyboardShortcut {
   return {
     id,
@@ -235,6 +515,7 @@ export function cmdShiftShortcut(
     description,
     handler,
     cmdOrCtrl: true,
+    ...options,
   };
 }
 
@@ -246,6 +527,7 @@ export function ctrlShortcut(
   key: string,
   description: string,
   handler: KeyboardShortcut['handler'],
+  options: Partial<Omit<KeyboardShortcut, 'id' | 'key' | 'modifiers' | 'description' | 'handler'>> = {},
 ): KeyboardShortcut {
   return {
     id,
@@ -254,6 +536,7 @@ export function ctrlShortcut(
     description,
     handler,
     cmdOrCtrl: false,
+    ...options,
   };
 }
 
@@ -265,6 +548,7 @@ export function plainShortcut(
   key: string,
   description: string,
   handler: KeyboardShortcut['handler'],
+  options: Partial<Omit<KeyboardShortcut, 'id' | 'key' | 'modifiers' | 'description' | 'handler'>> = {},
 ): KeyboardShortcut {
   return {
     id,
@@ -272,6 +556,7 @@ export function plainShortcut(
     modifiers: [],
     description,
     handler,
+    ...options,
   };
 }
 
@@ -285,6 +570,7 @@ export function ctrlShiftShortcut(
   key: string,
   description: string,
   handler: KeyboardShortcut['handler'],
+  options: Partial<Omit<KeyboardShortcut, 'id' | 'key' | 'modifiers' | 'description' | 'handler'>> = {},
 ): KeyboardShortcut {
   return {
     id,
@@ -293,5 +579,6 @@ export function ctrlShiftShortcut(
     description,
     handler,
     cmdOrCtrl: false, // Use actual Ctrl, not Cmd on Mac
+    ...options,
   };
 }
