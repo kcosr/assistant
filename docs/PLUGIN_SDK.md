@@ -738,7 +738,9 @@ Current keys include:
 - `dialogManager`
 - `contextMenuManager`
 - `listColumnPreferencesClient`
-- `keyboardShortcuts` (register panel-scoped shortcuts; returns an unsubscribe function)
+- `keyboardShortcuts` (register panel-scoped shortcuts; returns an unsubscribe function; use
+  `allowWhenDisabled` on a shortcut to handle keys even when global shortcuts are disabled, e.g.
+  Escape to close a modal)
 - `focusInput()`
 - `setStatus(text)`
 - `isMobileViewport()`
