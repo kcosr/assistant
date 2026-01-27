@@ -1461,6 +1461,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               const shortcutId = `lists-${panelId}-ref-picker-${refPickerShortcutIndex++}`;
               return services.keyboardShortcuts.register({
                 id: shortcutId,
+                bindingId: 'lists.ref-picker.escape',
                 key: 'escape',
                 modifiers: [],
                 description: 'Close reference picker',
