@@ -1134,6 +1134,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         ): void => {
           registerPanelShortcut({
             id: `notes-${panelId}-${idSuffix}`,
+            bindingId: `notes.${idSuffix}`,
             key,
             modifiers: [],
             description,
