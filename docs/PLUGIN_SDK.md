@@ -746,6 +746,9 @@ Current keys include:
 - `isMobileViewport()`
 - `notifyContextAvailabilityChange()`
 
+Shortcut registrations may include a `bindingId` (stable identifier) so user-configurable
+keybinding overrides apply across all panels of a plugin instead of per panel instance.
+
 Chat panels can also read `host.getContext('core.chat')` to access:
 
 - `getRuntimeOptions()` (shared chat runtime dependencies)

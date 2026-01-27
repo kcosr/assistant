@@ -48,6 +48,8 @@ export interface KeyboardShortcut {
   allowShift?: boolean;
   /** Allow handling even when shortcuts are globally disabled (e.g., modal dialogs). */
   allowWhenDisabled?: boolean;
+  /** Stable id for user-configurable bindings (defaults to id if omitted). */
+  bindingId?: string;
 }
 
 export interface ShortcutRegistryOptions {
@@ -376,7 +378,8 @@ export class KeyboardShortcutRegistry {
   }
 
   private applyBindingOverrides(shortcut: KeyboardShortcut): KeyboardShortcut {
-    const overrides = this.options.bindingOverrides?.[shortcut.id];
+    const overrideKey = shortcut.bindingId ?? shortcut.id;
+    const overrides = this.options.bindingOverrides?.[overrideKey];
     if (!overrides || typeof overrides !== 'object') {
       return shortcut;
     }

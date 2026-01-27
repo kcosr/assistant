@@ -102,4 +102,38 @@ describe('KeyboardShortcutRegistry', () => {
     expect(handled).toBe(true);
     expect(called).toBe(true);
   });
+
+  it('applies binding overrides using bindingId when provided', () => {
+    let called = false;
+    const registry = new KeyboardShortcutRegistry({
+      bindingOverrides: {
+        'lists.toggle-aql': {
+          key: 'z',
+          modifiers: [],
+        },
+      },
+    });
+
+    registry.register({
+      id: 'lists-panel-1-toggle-aql',
+      bindingId: 'lists.toggle-aql',
+      key: 'a',
+      modifiers: [],
+      description: 'Toggle AQL',
+      handler: () => {
+        called = true;
+      },
+    });
+
+    const overridden = new KeyboardEvent('keydown', {
+      key: 'z',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const handled = registry.handleEvent(overridden);
+
+    expect(handled).toBe(true);
+    expect(called).toBe(true);
+  });
 });
