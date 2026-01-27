@@ -1383,6 +1383,46 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         buttonGroup.appendChild(copyWrapper);
 
         let copyMenuOpen = false;
+        let copyMenuShortcutCleanup: (() => void) | null = null;
+        let copyMenuClickHandler: ((event: MouseEvent) => void) | null = null;
+        let copyMenuShortcutIndex = 0;
+
+        const clearCopyMenuListeners = (): void => {
+          if (copyMenuClickHandler) {
+            document.removeEventListener('click', copyMenuClickHandler);
+            copyMenuClickHandler = null;
+          }
+          copyMenuShortcutCleanup?.();
+          copyMenuShortcutCleanup = null;
+        };
+
+        const registerCopyMenuEscape = (): (() => void) => {
+          if (services.keyboardShortcuts) {
+            const shortcutId = `notes-${panelId}-copy-menu-${copyMenuShortcutIndex++}`;
+            return services.keyboardShortcuts.register({
+              id: shortcutId,
+              key: 'escape',
+              modifiers: [],
+              description: 'Close copy menu',
+              scope: 'panelInstance',
+              panelId,
+              handler: () => {
+                setCopyMenuOpen(false);
+              },
+            });
+          }
+
+          const handleCopyMenuKeyDown = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              setCopyMenuOpen(false);
+            }
+          };
+
+          document.addEventListener('keydown', handleCopyMenuKeyDown);
+          return () => document.removeEventListener('keydown', handleCopyMenuKeyDown);
+        };
+
         const setCopyMenuOpen = (open: boolean): void => {
           if (copyMenuOpen === open) {
             return;
@@ -1390,29 +1430,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           copyMenuOpen = open;
           copyMenu.classList.toggle('open', copyMenuOpen);
 
-          const handleDocumentClick = (event: MouseEvent): void => {
+          if (!copyMenuOpen) {
+            clearCopyMenuListeners();
+            return;
+          }
+
+          copyMenuClickHandler = (event: MouseEvent): void => {
             const target = event.target as Node | null;
             if (target && (copyWrapper.contains(target) || target === copyToggleButton)) {
               return;
             }
             setCopyMenuOpen(false);
-            document.removeEventListener('click', handleDocumentClick);
-            document.removeEventListener('keydown', handleCopyMenuKeyDown);
           };
 
-          const handleCopyMenuKeyDown = (event: KeyboardEvent): void => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              setCopyMenuOpen(false);
-              document.removeEventListener('click', handleDocumentClick);
-              document.removeEventListener('keydown', handleCopyMenuKeyDown);
-            }
-          };
-
-          if (copyMenuOpen) {
-            document.addEventListener('click', handleDocumentClick);
-            document.addEventListener('keydown', handleCopyMenuKeyDown);
-          }
+          document.addEventListener('click', copyMenuClickHandler);
+          copyMenuShortcutCleanup = registerCopyMenuEscape();
         };
 
         const showCopySuccess = (): void => {
