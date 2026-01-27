@@ -5,8 +5,8 @@
 ### Breaking Changes
 
 ### Added
-- Added favorites for lists and notes with a heart indicator and `/favorites` command palette view. ([#000](<pr-url>))
-- Added build-service configuration for TypeScript remote builds. ([#000](<pr-url>))
+- Added favorites for lists and notes with a heart indicator and `/favorites` command palette view. ([#46](https://github.com/kcosr/assistant/pull/46))
+- Added build-service configuration for TypeScript remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
 
 ### Changed
 
