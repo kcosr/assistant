@@ -350,7 +350,7 @@ export class KeyboardNavigationController {
     this.shortcutRegistry.register(
       plainShortcut(
         'chat-open-session-picker',
-        'c',
+        's',
         'Open chat session picker',
         () => {
           if (!this.canHandleChatPanelShortcut()) {
