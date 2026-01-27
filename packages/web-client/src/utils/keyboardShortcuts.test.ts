@@ -73,4 +73,33 @@ describe('KeyboardShortcutRegistry', () => {
     expect(handled).toBe(true);
     expect(called).toBe(true);
   });
+
+  it('allows shortcuts with allowWhenDisabled to run even when disabled', () => {
+    let called = false;
+    const registry = new KeyboardShortcutRegistry({
+      isEnabled: () => false,
+    });
+
+    registry.register({
+      id: 'dialog-escape',
+      key: 'escape',
+      modifiers: [],
+      description: 'Dialog escape',
+      allowWhenDisabled: true,
+      handler: () => {
+        called = true;
+      },
+    });
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const handled = registry.handleEvent(event);
+
+    expect(handled).toBe(true);
+    expect(called).toBe(true);
+  });
 });

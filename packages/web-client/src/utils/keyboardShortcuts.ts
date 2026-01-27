@@ -46,6 +46,8 @@ export interface KeyboardShortcut {
   platform?: ShortcutPlatform;
   /** Allow matching when Shift is held even if not in modifiers */
   allowShift?: boolean;
+  /** Allow handling even when shortcuts are globally disabled (e.g., modal dialogs). */
+  allowWhenDisabled?: boolean;
 }
 
 export interface ShortcutRegistryOptions {
@@ -300,10 +302,6 @@ export class KeyboardShortcutRegistry {
    * Handle a keyboard event, returning true if it was handled
    */
   handleEvent(event: KeyboardEvent): boolean {
-    if (this.options.isEnabled && !this.options.isEnabled()) {
-      return false;
-    }
-
     const modifiers = getEventModifiers(event);
     const eventKey = createShortcutKey(event.key, modifiers, false, this.isMac);
 
@@ -320,6 +318,11 @@ export class KeyboardShortcutRegistry {
     );
 
     if (filtered.length === 0) {
+      return false;
+    }
+
+    const allowWhenDisabled = filtered.some((entry) => entry.shortcut.allowWhenDisabled);
+    if (this.options.isEnabled && !this.options.isEnabled() && !allowWhenDisabled) {
       return false;
     }
 

@@ -13,6 +13,7 @@
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 

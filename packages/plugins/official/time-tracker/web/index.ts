@@ -867,7 +867,37 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      const contextKey = getPanelContextKey(host.panelId());
+      const panelId = host.panelId();
+      const contextKey = getPanelContextKey(panelId);
+
+      const registerDialogEscape = (suffix: string, onClose: () => void): (() => void) => {
+        if (services.keyboardShortcuts) {
+          return services.keyboardShortcuts.register({
+            id: `time-tracker-${panelId}-${suffix}-escape`,
+            key: 'escape',
+            modifiers: [],
+            description: 'Close time tracker dialog',
+            scope: 'panelInstance',
+            panelId,
+            allowWhenDisabled: true,
+            handler: () => {
+              onClose();
+            },
+          });
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+      };
 
       function updatePanelContext(): void {
         const task = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) : null;
@@ -1478,21 +1508,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         document.body.appendChild(overlay);
         services.dialogManager.hasOpenDialog = true;
 
+        let escapeCleanup: (() => void) | null = null;
         const closeDialog = (): void => {
           overlay.remove();
-          document.removeEventListener('keydown', handleKeyDown);
+          escapeCleanup?.();
+          escapeCleanup = null;
           services.dialogManager.hasOpenDialog = false;
         };
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            closeDialog();
-          }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
+        escapeCleanup = registerDialogEscape('export', closeDialog);
 
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
@@ -2074,22 +2098,16 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           document.body.appendChild(overlay);
           services.dialogManager.hasOpenDialog = true;
 
+          let escapeCleanup: (() => void) | null = null;
           const closeDialog = (): void => {
             overlay.remove();
-            document.removeEventListener('keydown', handleKeyDown);
+            escapeCleanup?.();
+            escapeCleanup = null;
             services.dialogManager.hasOpenDialog = false;
             resolve();
           };
 
-          const handleKeyDown = (event: KeyboardEvent) => {
-            event.stopPropagation();
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              closeDialog();
-            }
-          };
-
-          document.addEventListener('keydown', handleKeyDown);
+          escapeCleanup = registerDialogEscape('task-edit', closeDialog);
 
           form.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -2267,21 +2285,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         document.body.appendChild(overlay);
         services.dialogManager.hasOpenDialog = true;
 
+        let escapeCleanup: (() => void) | null = null;
         const closeDialog = (): void => {
           overlay.remove();
-          document.removeEventListener('keydown', handleKeyDown);
+          escapeCleanup?.();
+          escapeCleanup = null;
           services.dialogManager.hasOpenDialog = false;
         };
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-          event.stopPropagation();
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            closeDialog();
-          }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
+        escapeCleanup = registerDialogEscape('entry-edit', closeDialog);
 
         form.addEventListener('submit', async (event) => {
           event.preventDefault();
