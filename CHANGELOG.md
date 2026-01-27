@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.12.0] - 2026-01-27
 
 ### Breaking Changes
 
@@ -25,6 +25,7 @@
 - Fixed lists panel to clear prior AQL input and apply list defaults when switching lists. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Removed
+
 
 ## [0.11.0] - 2026-01-26
 

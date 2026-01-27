@@ -1,6 +1,6 @@
 {
   "name": "@assistant/desktop",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Tauri desktop build for AI Assistant",
   "scripts": {

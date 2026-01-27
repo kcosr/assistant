@@ -1,6 +1,6 @@
 {
   "name": "@assistant/mobile-web",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Capacitor mobile build for AI Assistant (Android/iOS)",
   "scripts": {
