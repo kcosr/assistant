@@ -1666,30 +1666,18 @@ button.settings-dropdown-item {
   overflow: hidden;
 }
 
-.panel-frame.is-active {
-  outline: none;
-  box-shadow: none;
-}
-
-.panel-frame.is-active::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid var(--color-accent-primary);
-  box-sizing: border-box;
-  pointer-events: none;
-}
-
+.panel-frame.is-active,
 .panel-frame.is-chat-active {
   outline: none;
   box-shadow: none;
 }
 
+.panel-frame.is-active::after,
 .panel-frame.is-chat-active::after {
   content: '';
   position: absolute;
   inset: 0;
-  border: none;
+  border: 2px solid var(--color-accent-primary);
   box-sizing: border-box;
   pointer-events: none;
 }
@@ -1703,17 +1691,15 @@ button.settings-dropdown-item {
 .panel-frame.is-chat-active > .panel,
 .panel-frame.is-chat-active > .panel-instance,
 .panel-frame.is-chat-active > .chat-panel {
-  box-shadow: none;
-  border-color: var(--color-border-subtle);
+  box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
 .panel-instance.chat-active {
-  box-shadow: none;
-  border-color: var(--color-border-subtle);
+  box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
 .panel-frame.is-chat-active .chat-panel {
-  box-shadow: none;
+  box-shadow: inset 0 0 0 2px var(--color-accent-primary);
 }
 
 body.panel-dragging {

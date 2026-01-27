@@ -18,6 +18,7 @@
 - Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed active chat panels to use the same selection highlight as other panels. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#000](https://github.com/kcosr/assistant/pull/000))
