@@ -110,6 +110,33 @@ describe('PanelWorkspaceController focus history', () => {
     expect(workspace.getActivePanelId()).toBe('time-tracker-1');
   });
 
+  it('falls back to an existing panel when history is empty', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'time-tracker', title: 'Time Tracker' }, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const layout: LayoutPersistence = {
+      layout: { kind: 'panel', panelId: 'time-1' },
+      panels: { 'time-1': { panelId: 'time-1', panelType: 'time-tracker' } },
+      headerPanels: [],
+      headerPanelSizes: {},
+    };
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      loadLayout: () => layout,
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    expect(workspace.focusLastPanelOfType('time-tracker')).toBe(true);
+    expect(workspace.getActivePanelId()).toBe('time-1');
+  });
+
   it('persists focus history across reloads', () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'time-tracker', title: 'Time Tracker' }, createStubPanel);

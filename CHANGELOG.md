@@ -12,7 +12,7 @@
 - Added core services keyboard shortcut registration for panel plugins. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Added a generic instance/profile selector shortcut for the active panel header. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/time tracker (Ctrl+A/C/D/F/L/N/T), persisted locally. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/time tracker (Ctrl+A/C/D/F/L/N/T), persisted locally, and opens a modal panel if none exist. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))

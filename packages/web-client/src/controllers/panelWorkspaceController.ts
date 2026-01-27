@@ -201,7 +201,22 @@ export class PanelWorkspaceController {
       }
       return true;
     }
-    return false;
+    const existing = this.findPanelIdsByType(panelType);
+    if (existing.length === 0) {
+      return false;
+    }
+    const visible = new Set(this.getVisiblePanelIds());
+    const candidate = existing.find((panelId) => visible.has(panelId)) ?? existing[0];
+    if (!candidate) {
+      return false;
+    }
+    if (this.isPanelPinned(candidate)) {
+      this.openHeaderPanel(candidate);
+      this.focusPanel(candidate);
+    } else {
+      this.activatePanel(candidate);
+    }
+    return true;
   }
 
   applyLayoutPreset(preset: PanelLayoutPreset): void {

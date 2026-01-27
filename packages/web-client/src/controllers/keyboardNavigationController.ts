@@ -342,7 +342,10 @@ export class KeyboardNavigationController {
             if (!this.canHandlePanelNavigationShortcut(event)) {
               return false;
             }
-            return panelWorkspace.focusLastPanelOfType(panelType);
+            if (panelWorkspace.focusLastPanelOfType(panelType)) {
+              return true;
+            }
+            return Boolean(panelWorkspace.openModalPanel(panelType));
           },
           { bindingId: `panel.focus-last.${panelType}` },
         ),

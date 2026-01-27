@@ -27,6 +27,7 @@ function buildPanelWorkspace(
     togglePanel: vi.fn(),
     isPanelTypeOpen: vi.fn(() => false),
     openPanel: vi.fn(() => null),
+    openModalPanel: vi.fn(() => null),
     focusLastPanelOfType: vi.fn(() => false),
     listHeaderPanelIds: vi.fn(() => headerPanels),
     toggleHeaderPanelById: vi.fn(),
@@ -607,6 +608,33 @@ describe('KeyboardNavigationController chat shortcuts', () => {
       new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true }),
     );
     expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith(panelType);
+
+    detach();
+  });
+
+  it('opens a modal panel when no last-used panel exists', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const panelWorkspace = options.panelWorkspace as unknown as {
+      focusLastPanelOfType: ReturnType<typeof vi.fn>;
+      openModalPanel: ReturnType<typeof vi.fn>;
+    };
+    panelWorkspace.focusLastPanelOfType = vi.fn(() => false);
+    panelWorkspace.openModalPanel = vi.fn(() => 'modal-1');
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith('lists');
+    expect(panelWorkspace.openModalPanel).toHaveBeenCalledWith('lists');
 
     detach();
   });
