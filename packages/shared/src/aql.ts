@@ -783,11 +783,15 @@ function compileAql(
       if (textFields.length === 0) {
         return buildNeverMatchExpr(field);
       }
-      const clauses = textFields.map((textField) => ({
+      const clauses: AqlExpr[] = textFields.map((textField) => ({
         type: 'clause' as const,
         clause: buildClause(textField, raw),
       }));
-      return clauses.reduce((left, right) => ({ type: 'or', left, right }));
+      let expr = clauses[0]!;
+      for (let i = 1; i < clauses.length; i += 1) {
+        expr = { type: 'or', left: expr, right: clauses[i]! };
+      }
+      return expr;
     }
     return { type: 'clause', clause: buildClause(field, raw) };
   };
