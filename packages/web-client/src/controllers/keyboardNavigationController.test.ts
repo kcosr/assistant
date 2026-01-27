@@ -580,7 +580,15 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     detach();
   });
 
-  it('focuses the last time tracker panel on ctrl+t', () => {
+  it.each([
+    ['a', 'artifacts'],
+    ['c', 'chat'],
+    ['d', 'diff'],
+    ['f', 'files'],
+    ['l', 'lists'],
+    ['n', 'notes'],
+    ['t', 'time-tracker'],
+  ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -596,9 +604,9 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     const { detach } = attachShortcutRegistry(controller);
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true }),
     );
-    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith('time-tracker');
+    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith(panelType);
 
     detach();
   });

@@ -327,14 +327,44 @@ export class KeyboardNavigationController {
       }),
     );
 
-    this.shortcutRegistry.register(
-      ctrlShortcut(
-        'focus-last-time-tracker',
-        't',
-        'Focus last used time tracker panel',
-        () => panelWorkspace.focusLastPanelOfType('time-tracker'),
-        { bindingId: 'panel.focus-last.time-tracker' },
-      ),
+    const registerLastPanelShortcut = (
+      id: string,
+      key: string,
+      description: string,
+      panelType: string,
+    ): void => {
+      this.shortcutRegistry.register(
+        ctrlShortcut(
+          id,
+          key,
+          description,
+          (event) => {
+            if (!this.canHandlePanelNavigationShortcut(event)) {
+              return false;
+            }
+            return panelWorkspace.focusLastPanelOfType(panelType);
+          },
+          { bindingId: `panel.focus-last.${panelType}` },
+        ),
+      );
+    };
+
+    registerLastPanelShortcut(
+      'focus-last-artifacts',
+      'a',
+      'Focus last used artifacts panel',
+      'artifacts',
+    );
+    registerLastPanelShortcut('focus-last-chat', 'c', 'Focus last used chat panel', 'chat');
+    registerLastPanelShortcut('focus-last-diff', 'd', 'Focus last used diff panel', 'diff');
+    registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
+    registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
+    registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
+    registerLastPanelShortcut(
+      'focus-last-time-tracker',
+      't',
+      'Focus last used time tracker panel',
+      'time-tracker',
     );
 
     this.shortcutRegistry.register(
