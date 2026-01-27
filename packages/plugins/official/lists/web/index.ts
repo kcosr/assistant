@@ -1809,6 +1809,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!canHandlePanelShortcuts(event, { requireListMode: mode === 'list' })) {
           return;
         }
+        const lowerKey = event.key.toLowerCase();
+        const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+        if (mode === 'list' && !hasModifier && lowerKey === 'a') {
+          setSearchMode(searchMode === 'aql' ? 'raw' : 'aql');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
           setMode('browser');
           event.preventDefault();

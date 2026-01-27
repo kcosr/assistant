@@ -166,7 +166,7 @@ Panels can register additional shortcuts scoped to the focused panel.
 - Search/filter controls live inside the panel.
 - Lists panels are global (no session binding).
 - Clicking a list item selects it when enabled in the Settings menu.
-- List view supports keyboard navigation (arrow keys to move selection, Shift+Arrow to extend, Enter to edit, Space to toggle complete, `n` to add, `t`/`b` to move, `d` to delete, Esc to clear). `f` focuses the list search.
+- List view supports keyboard navigation (arrow keys to move selection, Shift+Arrow to extend, Enter to edit, Space to toggle complete, `n` to add, `t`/`b` to move, `d` to delete, Esc to clear). `f` focuses the list search, `a` toggles AQL mode.
 - List metadata dialog keeps custom field editor rows compact, with action buttons aligned to the right.
 
 ### Notes Panel

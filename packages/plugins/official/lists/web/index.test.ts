@@ -33,7 +33,7 @@ describe('lists panel keyboard shortcuts', () => {
         factories[panelType] = factory;
       },
     };
-    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    vi.stubGlobal('ASSISTANT_API_HOST', 'http://localhost');
     vi.stubGlobal('fetch', vi.fn(async () => {
       return new Response(JSON.stringify({ ok: true, result: [] }), {
         status: 200,
@@ -454,6 +454,157 @@ describe('lists panel keyboard shortcuts', () => {
     const listItems = container.querySelectorAll<HTMLElement>(listItemSelector);
     listItems[0]?.click();
     await waitFor(() => searchInput?.value === 'status = "Ready"');
+
+    handle.unmount();
+  });
+
+  it('toggles AQL mode with "a" when the list panel is active', async () => {
+    vi.resetModules();
+
+    const respond = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const body =
+        typeof init?.body === 'string' && init.body.length > 0
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      const operation = url.split('/').pop();
+      switch (operation) {
+        case 'instance_list':
+          return respond([{ id: 'default', label: 'Default' }]);
+        case 'list':
+          return respond([{ id: 'list-a', name: 'List A', customFields: [] }]);
+        case 'get':
+          return respond({ id: String(body['id']), name: 'List A', customFields: [] });
+        case 'items-list':
+          return respond([]);
+        case 'aql-query-list':
+          return respond([]);
+        default:
+          return respond([]);
+      }
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    (globalThis as { fetch?: typeof fetchMock }).fetch = fetchMock;
+    if (typeof window !== 'undefined') {
+      window.fetch = fetchMock as typeof window.fetch;
+      (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'http://localhost';
+    }
+    vi.doMock('../../../../web-client/src/utils/api', () => ({
+      apiFetch: (input: RequestInfo | URL, init?: RequestInit) => fetchMock(input, init),
+    }));
+
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'lists-aql-toggle',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'list-a',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+        searchMode: 'raw',
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId() });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const flush = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const waitFor = async (predicate: () => boolean) => {
+      for (let i = 0; i < 10; i += 1) {
+        if (predicate()) {
+          return;
+        }
+        await flush();
+      }
+      throw new Error('Timed out waiting for condition');
+    };
+
+    await waitFor(() => !!container.querySelector('.list-search-mode-toggle'));
+    const toggleButton = container.querySelector<HTMLButtonElement>(
+      '.list-search-mode-toggle',
+    );
+    expect(toggleButton).not.toBeNull();
+    await waitFor(() => toggleButton?.getAttribute('aria-pressed') === 'false');
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'a',
+        bubbles: true,
+      }),
+    );
+
+    await waitFor(() => toggleButton?.getAttribute('aria-pressed') === 'true');
 
     handle.unmount();
   });
