@@ -27,6 +27,9 @@ export interface KeyboardNavigationControllerOptions {
   getInputEl: () => HTMLInputElement | null;
   getActiveChatRuntime: () => ChatRuntime | null;
   openCommandPalette: () => void;
+  openChatSessionPicker?: () => boolean;
+  openChatModelPicker?: () => boolean;
+  openChatThinkingPicker?: () => boolean;
   getFocusedSessionId: () => string | null;
   setFocusedSessionId: (id: string | null) => void;
   isSidebarFocused: () => boolean;
@@ -324,9 +327,68 @@ export class KeyboardNavigationController {
     );
 
     this.shortcutRegistry.register(
-      ctrlShortcut('focus-input', 'i', 'Focus text input', () => {
-        this.focusZone('input');
-      }),
+      ctrlShortcut(
+        'toggle-input-focus',
+        'i',
+        'Toggle text input focus',
+        () => {
+          const inputEl = this.options.getInputEl();
+          if (!inputEl) {
+            return false;
+          }
+          if (document.activeElement === inputEl) {
+            inputEl.blur();
+            return true;
+          }
+          this.focusZone('input');
+        },
+        { bindingId: 'chat.toggle-input' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-session-picker',
+        's',
+        'Open chat session picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatSessionPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-session-picker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-model-picker',
+        'm',
+        'Open chat model picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatModelPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-model-picker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-thinking-picker',
+        't',
+        'Open chat thinking picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatThinkingPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-thinking-picker' },
+      ),
     );
 
     const toggleSpeechInput = (): boolean | void => {
@@ -601,6 +663,33 @@ export class KeyboardNavigationController {
         'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
       ),
     );
+  }
+
+  private isChatPanelActive(): boolean {
+    const activePanelId = this.options.panelWorkspace.getActivePanelId();
+    if (!activePanelId) {
+      return false;
+    }
+    const panelType = this.options.panelWorkspace.getPanelType(activePanelId);
+    return panelType === 'chat';
+  }
+
+  private isChatInputFocused(): boolean {
+    const inputEl = this.options.getInputEl();
+    return Boolean(inputEl && document.activeElement === inputEl);
+  }
+
+  private canHandleChatPanelShortcut(): boolean {
+    if (!this.isChatPanelActive()) {
+      return false;
+    }
+    if (this.isChatInputFocused()) {
+      return false;
+    }
+    if (this.isEditableTarget(document.activeElement)) {
+      return false;
+    }
+    return true;
   }
 
   private preparePanelNavigationShortcut(options?: { closeModal?: boolean }): boolean {

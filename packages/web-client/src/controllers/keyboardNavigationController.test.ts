@@ -68,6 +68,9 @@ function buildOptions(
     getInputEl: () => null,
     getActiveChatRuntime: () => null,
     openCommandPalette: () => {},
+    openChatSessionPicker: () => false,
+    openChatModelPicker: () => false,
+    openChatThinkingPicker: () => false,
     getFocusedSessionId: () => null,
     setFocusedSessionId: () => {},
     isSidebarFocused: () => false,
@@ -532,5 +535,99 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     expect(options.panelWorkspace.closePanel).toHaveBeenCalled();
     expect(options.panelWorkspace.activatePanel).toHaveBeenLastCalledWith('header-1');
+  });
+});
+
+describe('KeyboardNavigationController chat shortcuts', () => {
+  beforeEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  it('toggles input focus on ctrl+i', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    const options = buildOptions(panelFrame);
+    options.getInputEl = () => input;
+    options.focusInput = () => input.focus();
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).toBe(input);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).not.toBe(input);
+
+    detach();
+  });
+
+  it('opens chat session picker on "s" when chat panel is active and input is not focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    let opened = false;
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    options.getInputEl = () => input;
+    options.openChatSessionPicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(opened).toBe(true);
+
+    detach();
+  });
+
+  it('does not open chat session picker when input is focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    let opened = false;
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    options.getInputEl = () => input;
+    options.openChatSessionPicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(opened).toBe(false);
+
+    detach();
   });
 });

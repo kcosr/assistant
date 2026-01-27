@@ -10,11 +10,13 @@
 - Added `build:parallel` and `build:remote` scripts for parallel/remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added keyboard shortcut registry with panel-scoped resolution and per-device binding overrides. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Added core services keyboard shortcut registration for panel plugins. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 

@@ -153,6 +153,8 @@ Panels can register additional shortcuts scoped to the focused panel.
 
 - Chat transcript UI with tool output rendering.
 - Includes its own message composer (input, context toggle, brief toggle, mic).
+- Keyboard: `Ctrl+I` toggles input focus; when the input is not focused, `s` opens the session
+  picker, `m` focuses the model dropdown, and `t` focuses the thinking dropdown.
 - Voice capture auto-submits on recognition end (no spoken "submit" keyword).
 - Mic button and media play/pause key cancel active output; subsequent press starts recording.
 - Long-pressing the mic enables continuous listening and starts recording once the long-press threshold is reached.

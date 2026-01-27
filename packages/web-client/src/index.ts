@@ -720,6 +720,47 @@ async function main(): Promise<void> {
     return null;
   }
 
+  function getActiveChatPanelEntry(): ChatPanelEntry | null {
+    const active =
+      (panelHostController?.getContext('panel.active') as {
+        panelId?: string;
+        panelType?: string;
+      } | null) ?? null;
+    if (active?.panelType !== 'chat' || !active.panelId) {
+      return null;
+    }
+    return chatPanelsById.get(active.panelId) ?? null;
+  }
+
+  function openChatPanelSelect(selectEl: HTMLSelectElement | null): boolean {
+    if (!selectEl || selectEl.disabled || selectEl.classList.contains('hidden')) {
+      return false;
+    }
+    selectEl.focus();
+    selectEl.click();
+    return true;
+  }
+
+  function openActiveChatSessionPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    const anchor = entry?.dom.sessionLabelEl ?? null;
+    if (!anchor) {
+      return false;
+    }
+    anchor.click();
+    return true;
+  }
+
+  function openActiveChatModelPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    return openChatPanelSelect(entry?.dom.modelSelectEl ?? null);
+  }
+
+  function openActiveChatThinkingPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    return openChatPanelSelect(entry?.dom.thinkingSelectEl ?? null);
+  }
+
   function getPrimaryChatInputRuntime(): InputRuntime | null {
     return (
       getActiveChatInputRuntime() ?? chatPanelsById.values().next().value?.inputRuntime ?? null
@@ -3435,6 +3476,9 @@ async function main(): Promise<void> {
       openCommandPalette: () => {
         commandPaletteController?.open();
       },
+      openChatSessionPicker: () => openActiveChatSessionPicker(),
+      openChatModelPicker: () => openActiveChatModelPicker(),
+      openChatThinkingPicker: () => openActiveChatThinkingPicker(),
       getFocusedSessionId: () => focusedSessionId,
       setFocusedSessionId: (id) => {
         focusedSessionId = id;
