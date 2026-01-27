@@ -5,25 +5,27 @@ description: How keyboard shortcuts are wired globally and per-panel in this rep
 
 # Keyboard Shortcuts
 
+## Overview (registry + services)
+- Registry implementation: `packages/web-client/src/utils/keyboardShortcuts.ts`.
+- Registry is created in `packages/web-client/src/index.ts` and wired with:
+  - `isEnabled()` (respects the keyboard shortcuts preference + open dialogs)
+  - `getActivePanel()` (for scope resolution)
+  - binding overrides (from local storage via `clientPreferences`)
+- Core panel services expose `services.keyboardShortcuts.register(...)` so plugins can register panel-scoped shortcuts.
+
 ## Global shortcuts (app-level)
-- Register with `KeyboardNavigationController` via `KeyboardShortcutRegistry`.
+- Register in `KeyboardNavigationController` via `KeyboardShortcutRegistry.register(...)`.
 - Registry attaches a single `document` `keydown` listener (capture phase) and dispatches by key.
-- Handlers should guard on:
-  - `isKeyboardShortcutsEnabled()`
-  - `dialogManager.hasOpenDialog === false`
-  - not inside inputs/contenteditable (use `isEditableTarget` pattern)
+- Handlers should still guard on editable targets (e.g., `isEditableTarget` pattern in `KeyboardNavigationController`).
 - Examples: panel navigation (Ctrl+P / Ctrl+H), command palette (Cmd/Ctrl+K), panel cycling.
 
 ## Panel/plugin shortcuts (panel-scoped)
-- There is no shared panel shortcut registry yet.
-- Each panel/plugin typically attaches a `document.addEventListener('keydown', ..., true)` and uses local gating.
-- Common gating checks (see lists/notes plugins):
-  - panel visible
-  - no dialogs/overlays (`hasBlockingOverlay` style checks)
-  - panel selected (via `panel.active` context) or the target is inside a panel modal/popover
-  - not editable targets (inputs/textareas/contenteditable)
-  - no open context menus or dropdowns
-- When a panel handles an event, call `preventDefault()` and `stopPropagation()`.
+- Use `services.keyboardShortcuts.register(...)` from the panel module (see lists/notes/time-tracker).
+- Set scope explicitly:
+  - `scope: 'panelType'` + `panelType` for a shared binding across all instances of a panel.
+  - `scope: 'panelInstance'` + `panelId` for instance-specific bindings.
+- Always provide a stable `bindingId` to support user-configurable overrides (defaults to `id` if omitted).
+- If a handler consumes the event, call `event.preventDefault()` and `event.stopPropagation()` before returning `true`.
 
 ## Panel focus awareness
 - Panels subscribe to `panel.active` context and cache `isPanelSelected`.
@@ -33,7 +35,13 @@ description: How keyboard shortcuts are wired globally and per-panel in this rep
 - `CommandPaletteController` attaches a `keydown` listener while open and consumes keys like Escape.
 - `PanelWorkspaceController` listens for Escape to close modal panels, but blocks when certain overlays are open.
 
+## Common options on `KeyboardShortcut`
+- `allowShift`: match even when Shift is pressed but not part of the modifiers.
+- `allowWhenDisabled`: allow handling even when global shortcuts are disabled (useful for dialogs).
+- `priority`: resolve conflicts within the same scope.
+- `platform`: restrict to `mac`, `win`, `linux`, or `all`.
+
 ## When adding new shortcuts
 - Prefer global shortcuts for true app-level actions.
-- For panel behavior, follow the panel keydown gating pattern used in lists/notes.
-- Avoid stealing keys from text inputs; always check editable targets.
+- For panel behavior, register through `services.keyboardShortcuts` so bindings can be overridden later.
+- Avoid stealing keys from text inputs; always check editable targets before acting.
