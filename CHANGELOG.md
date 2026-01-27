@@ -12,6 +12,7 @@
 - Added `a` keyboard shortcut to toggle AQL in lists. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Changed
+- Changed AQL status hint copy when clearing a query. ([#44](https://github.com/kcosr/assistant/pull/44))
 
 ### Fixed
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))

@@ -2288,7 +2288,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         const hasAppliedQuery =
           !!(aqlAppliedQueryText && aqlAppliedQueryText.trim()) || !!aqlAppliedQuery;
-        if (aqlDirty || (hasAppliedQuery && !aqlQueryText.trim())) {
+        const isClearing = hasAppliedQuery && !aqlQueryText.trim();
+        if (isClearing) {
+          sharedSearchController.setStatusMessage('Press enter to clear');
+          return;
+        }
+        if (aqlDirty) {
           sharedSearchController.setStatusMessage('Press Enter or Apply to run.');
           return;
         }
