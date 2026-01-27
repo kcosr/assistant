@@ -20,6 +20,7 @@
 - Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
+- Fixed instance dropdown keyboard focus after selecting items with Enter. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 
