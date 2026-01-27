@@ -874,6 +874,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (services.keyboardShortcuts) {
           return services.keyboardShortcuts.register({
             id: `time-tracker-${panelId}-${suffix}-escape`,
+            bindingId: `time-tracker.dialog.${suffix}.escape`,
             key: 'escape',
             modifiers: [],
             description: 'Close time tracker dialog',
