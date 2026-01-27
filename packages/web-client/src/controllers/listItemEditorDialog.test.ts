@@ -3,6 +3,16 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ListItemEditorDialog } from './listItemEditorDialog';
 import type { DialogManager } from './dialogManager';
 
+const createDialogManager = (): DialogManager =>
+  ({
+    hasOpenDialog: false,
+    showConfirmDialog: vi.fn(),
+    showTextInputDialog: vi.fn(),
+    registerExternalDialog: vi.fn(),
+    releaseExternalDialog: vi.fn(),
+    closeOpenDialog: vi.fn(),
+  }) as unknown as DialogManager;
+
 describe('ListItemEditorDialog tag chips', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -11,11 +21,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('removes only the clicked tag chip', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -55,11 +61,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('does not remove tags when clicking the Tags label', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -86,11 +88,7 @@ describe('ListItemEditorDialog tag chips', () => {
     const createListItem = vi.fn(async () => true);
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -166,11 +164,7 @@ describe('ListItemEditorDialog tag chips', () => {
     const createListItem = vi.fn(async () => true);
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -227,11 +221,7 @@ describe('ListItemEditorDialog tag chips', () => {
     }));
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -281,11 +271,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('marks missing references in the editor display', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -314,11 +300,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('cancels review-mode edits for text areas', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -366,11 +348,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('renders review markdown with collapsible sections', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -402,11 +380,7 @@ describe('ListItemEditorDialog tag chips', () => {
 
   it('renders markdown custom fields as full-width review fields', () => {
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -443,11 +417,7 @@ describe('ListItemEditorDialog tag chips', () => {
     const updateListItem = vi.fn(async () => true);
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -509,11 +479,7 @@ describe('ListItemEditorDialog tag chips', () => {
     const updateListItem = vi.fn(async () => true);
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -562,11 +528,7 @@ describe('ListItemEditorDialog tag chips', () => {
     window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'review');
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -588,11 +550,7 @@ describe('ListItemEditorDialog tag chips', () => {
     window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'quick');
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
@@ -616,11 +574,7 @@ describe('ListItemEditorDialog tag chips', () => {
     window.localStorage.setItem('aiAssistantListItemEditorDefaultMode', 'review');
 
     const dialog = new ListItemEditorDialog({
-      dialogManager: {
-        hasOpenDialog: false,
-        showConfirmDialog: vi.fn(),
-        showTextInputDialog: vi.fn(),
-      } as unknown as DialogManager,
+      dialogManager: createDialogManager(),
       setStatus: vi.fn(),
       recentUserItemUpdates: new Set<string>(),
       userUpdateTimeoutMs: 1000,
