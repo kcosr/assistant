@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking Changes
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
 ## [0.12.0] - 2026-01-27
 
 ### Breaking Changes
