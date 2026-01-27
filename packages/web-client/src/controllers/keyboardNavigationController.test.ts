@@ -579,7 +579,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     detach();
   });
 
-  it('opens chat session picker on "s" when chat panel is active and input is not focused', () => {
+  it('opens chat session picker on "c" when chat panel is active and input is not focused', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -599,7 +599,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     const controller = new KeyboardNavigationController(options);
     const { detach } = attachShortcutRegistry(controller);
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
     expect(opened).toBe(true);
 
     detach();
@@ -626,7 +626,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     const controller = new KeyboardNavigationController(options);
     const { detach } = attachShortcutRegistry(controller);
 
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true }));
     expect(opened).toBe(false);
 
     detach();
