@@ -33,7 +33,7 @@ timeout_sec = 900
 
 [workspace]
 reuse = true
-id = "assistant"
+id = "assistant/{branch}"
 create = true
 ttl_sec = 0
 
