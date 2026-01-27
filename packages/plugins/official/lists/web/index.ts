@@ -892,6 +892,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
       let pendingAqlApplyEvent: { listId: string; instanceId: string; query: string } | null = null;
       const panelShortcutUnsubscribers: Array<() => void> = [];
+      let refPickerShortcutIndex = 0;
 
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
@@ -1437,9 +1438,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const previousDialogState = services.dialogManager.hasOpenDialog;
           services.dialogManager.hasOpenDialog = true;
 
+          let escapeCleanup: (() => void) | null = null;
+
           const close = (value: ListItemReference | null): void => {
             overlay.remove();
-            document.removeEventListener('keydown', handleKeyDown, { capture: true });
+            escapeCleanup?.();
+            escapeCleanup = null;
             services.dialogManager.hasOpenDialog = previousDialogState;
             if (underlyingOverlay) {
               underlyingOverlay.style.display = previousOverlayDisplay ?? '';
@@ -1452,14 +1456,38 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             resolve(value);
           };
 
-          const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              event.stopImmediatePropagation();
-              close(null);
+          const registerEscapeHandler = (): (() => void) => {
+            if (services.keyboardShortcuts) {
+              const shortcutId = `lists-${panelId}-ref-picker-${refPickerShortcutIndex++}`;
+              return services.keyboardShortcuts.register({
+                id: shortcutId,
+                key: 'escape',
+                modifiers: [],
+                description: 'Close reference picker',
+                scope: 'panelInstance',
+                panelId,
+                allowWhenDisabled: true,
+                handler: (event) => {
+                  event.preventDefault();
+                  event.stopImmediatePropagation();
+                  close(null);
+                },
+              });
             }
+
+            const handleKeyDown = (event: KeyboardEvent) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                close(null);
+              }
+            };
+
+            document.addEventListener('keydown', handleKeyDown, { capture: true });
+            return () => document.removeEventListener('keydown', handleKeyDown, { capture: true });
           };
-          document.addEventListener('keydown', handleKeyDown, { capture: true });
+
+          escapeCleanup = registerEscapeHandler();
 
           overlay.addEventListener('click', (event) => {
             if (event.target === overlay) {
