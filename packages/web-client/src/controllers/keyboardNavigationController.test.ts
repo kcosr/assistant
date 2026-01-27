@@ -9,6 +9,7 @@ function buildPanelWorkspace(
   panelFrame: HTMLElement,
   headerPanels: string[] = [],
   openHeaderPanelId: string | null = null,
+  panelType: string | null = null,
 ): PanelWorkspaceController {
   const layoutRoot = { kind: 'panel', panelId: 'panel-1' };
   return {
@@ -33,6 +34,7 @@ function buildPanelWorkspace(
     getHeaderDockRoot: vi.fn(() => null),
     getOpenHeaderPanelId: vi.fn(() => openHeaderPanelId),
     getHeaderPopoverElement: vi.fn(() => null),
+    getPanelType: vi.fn((panelId: string) => (panelId === 'panel-1' ? panelType : null)),
   } as unknown as PanelWorkspaceController;
 }
 
@@ -40,8 +42,14 @@ function buildOptions(
   panelFrame: HTMLElement,
   headerPanels: string[] = [],
   openHeaderPanelId: string | null = null,
+  panelType: string | null = null,
 ): KeyboardNavigationControllerOptions {
-  const panelWorkspace = buildPanelWorkspace(panelFrame, headerPanels, openHeaderPanelId);
+  const panelWorkspace = buildPanelWorkspace(
+    panelFrame,
+    headerPanels,
+    openHeaderPanelId,
+    panelType,
+  );
   return {
     getAgentSidebar: () => null,
     getAgentSidebarSections: () => null,
@@ -50,7 +58,7 @@ function buildOptions(
       hasOpenDialog: false,
       showConfirmDialog: vi.fn(),
       showTextInputDialog: vi.fn(),
-    } as DialogManager,
+    } as unknown as DialogManager,
     isKeyboardShortcutsEnabled: () => true,
     getSpeechAudioController: () => null,
     cancelAllActiveOperations: () => false,
@@ -211,6 +219,70 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     );
 
     expect(document.body.classList.contains('panel-nav-header-active')).toBe(true);
+
+    registry.detach();
+  });
+
+  it('does not cancel active operations when pinned chat panel is open', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], 'panel-1', 'chat');
+    const cancelAllActiveOperations = vi.fn(() => true);
+    options.cancelAllActiveOperations = cancelAllActiveOperations;
+
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(cancelAllActiveOperations).not.toHaveBeenCalled();
+
+    registry.detach();
+  });
+
+  it('does not cancel active operations when modal chat panel is open', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame panel-frame-modal is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'panel-modal-overlay open';
+    modalOverlay.appendChild(panelFrame);
+    document.body.appendChild(modalOverlay);
+
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    const cancelAllActiveOperations = vi.fn(() => true);
+    options.cancelAllActiveOperations = cancelAllActiveOperations;
+
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(cancelAllActiveOperations).not.toHaveBeenCalled();
+
+    registry.detach();
+  });
+
+  it('cancels active operations for standard chat panels', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    const cancelAllActiveOperations = vi.fn(() => true);
+    options.cancelAllActiveOperations = cancelAllActiveOperations;
+
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(cancelAllActiveOperations).toHaveBeenCalledTimes(1);
 
     registry.detach();
   });

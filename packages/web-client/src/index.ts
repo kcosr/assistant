@@ -34,7 +34,11 @@ import {
   type SearchableScope,
 } from './controllers/commandPaletteController';
 import { PanelWorkspaceController } from './controllers/panelWorkspaceController';
-import { initShareTarget } from './controllers/shareTargetController';
+import {
+  closeShareModal,
+  initShareTarget,
+  isShareModalVisible,
+} from './controllers/shareTargetController';
 import type { InteractionResponseDraft } from './utils/interactionRenderer';
 import {
   SessionPickerController,
@@ -176,7 +180,11 @@ interface AgentSummary {
 }
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
-import { configureStatusBar, enableAppReloadOnResume } from './utils/capacitor';
+import {
+  configureStatusBar,
+  enableAppReloadOnResume,
+  setupBackButtonHandler,
+} from './utils/capacitor';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
@@ -3412,6 +3420,112 @@ async function main(): Promise<void> {
   }
 
   keyboardNavigationController?.attach();
+
+  const closeWorkspaceSwitcherOverlay = (): boolean => {
+    const overlay = document.querySelector<HTMLElement>('.workspace-switcher-overlay.open');
+    if (!overlay) {
+      return false;
+    }
+    const closeButton = overlay.querySelector<HTMLElement>('.workspace-switcher-close');
+    if (closeButton) {
+      closeButton.click();
+      return true;
+    }
+    overlay.classList.remove('open');
+    return true;
+  };
+
+  const closeSettingsDropdowns = (): boolean => {
+    let closed = false;
+    if (settingsDropdownController.isDropdownOpen()) {
+      settingsDropdownController.close();
+      closed = true;
+    }
+    if (layoutDropdownController?.isDropdownOpen()) {
+      layoutDropdownController.close();
+      closed = true;
+    }
+    return closed;
+  };
+
+  const closeModalPanel = (): boolean => {
+    if (!panelWorkspace) {
+      return false;
+    }
+    const overlay = document.querySelector<HTMLElement>('.panel-modal-overlay.open');
+    if (!overlay) {
+      return false;
+    }
+    const modalFrame = overlay.querySelector<HTMLElement>('.panel-frame[data-panel-id]');
+    const panelId = modalFrame?.dataset['panelId'];
+    if (!panelId) {
+      return false;
+    }
+    panelWorkspace.closePanel(panelId);
+    return true;
+  };
+
+  const handleAndroidBackButton = (_event: { canGoBack: boolean }): boolean => {
+    if (isShareModalVisible()) {
+      closeShareModal();
+      return true;
+    }
+    if (document.querySelector('.confirm-dialog-overlay')) {
+      dialogManager.closeOpenDialog();
+      return true;
+    }
+    if (commandPaletteController?.isPaletteOpen()) {
+      commandPaletteController.close();
+      return true;
+    }
+    if (panelLauncherController?.isLauncherOpen()) {
+      panelLauncherController.close();
+      return true;
+    }
+    if (sessionPickerController?.isOpen()) {
+      sessionPickerController.close();
+      return true;
+    }
+    if (panelWorkspace) {
+      const openHeaderPanelId = panelWorkspace.getOpenHeaderPanelId();
+      if (openHeaderPanelId) {
+        const panelType = panelWorkspace.getPanelType(openHeaderPanelId);
+        if (panelType) {
+          panelWorkspace.togglePanel(panelType);
+        } else {
+          panelWorkspace.closeHeaderPopover();
+        }
+        return true;
+      }
+    }
+    if (closeSettingsDropdowns()) {
+      return true;
+    }
+    if (closeWorkspaceSwitcherOverlay()) {
+      return true;
+    }
+    if (contextMenuManager.isOpen()) {
+      contextMenuManager.close();
+      return true;
+    }
+    if (closeModalPanel()) {
+      return true;
+    }
+    if (panelWorkspace && isMobileViewport() && panelWorkspace.isPanelTypeOpen('sessions')) {
+      panelWorkspace.togglePanel('sessions');
+      return true;
+    }
+    if (keyboardNavigationController?.cancelNavigationModes()) {
+      return true;
+    }
+    if (commandPaletteController) {
+      commandPaletteController.open();
+      return true;
+    }
+    return false;
+  };
+
+  void setupBackButtonHandler(handleAndroidBackButton);
 
   initShareTarget({
     getSelectedSessionId: () => inputSessionId,

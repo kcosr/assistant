@@ -29,6 +29,23 @@ export interface TextInputDialogOptions {
 
 export class DialogManager {
   hasOpenDialog = false;
+  private activeDialogCleanup: (() => void) | null = null;
+  private activeDialogOverlay: HTMLElement | null = null;
+
+  registerExternalDialog(overlay: HTMLElement, close: () => void): void {
+    this.activeDialogOverlay = overlay;
+    this.activeDialogCleanup = close;
+    this.hasOpenDialog = true;
+  }
+
+  releaseExternalDialog(overlay: HTMLElement): void {
+    if (this.activeDialogOverlay !== overlay) {
+      return;
+    }
+    this.activeDialogOverlay = null;
+    this.activeDialogCleanup = null;
+    this.hasOpenDialog = false;
+  }
 
   showConfirmDialog(options: ConfirmDialogOptions): void {
     const {
@@ -82,6 +99,7 @@ export class DialogManager {
     document.body.appendChild(overlay);
 
     this.hasOpenDialog = true;
+    this.activeDialogOverlay = overlay;
 
     if (focusConfirmButton) {
       confirmButton.focus();
@@ -90,8 +108,13 @@ export class DialogManager {
     const closeDialog = (): void => {
       overlay.remove();
       document.removeEventListener('keydown', handleKeyDown);
-      this.hasOpenDialog = false;
+      if (this.activeDialogOverlay === overlay) {
+        this.activeDialogOverlay = null;
+        this.activeDialogCleanup = null;
+        this.hasOpenDialog = false;
+      }
     };
+    this.activeDialogCleanup = closeDialog;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (keydownStopsPropagation) {
@@ -219,9 +242,10 @@ export class DialogManager {
 
       dialog.appendChild(buttons);
       overlay.appendChild(dialog);
-      document.body.appendChild(overlay);
+    document.body.appendChild(overlay);
 
-      this.hasOpenDialog = true;
+    this.hasOpenDialog = true;
+    this.activeDialogOverlay = overlay;
 
       const updateValidity = (options?: { showErrors?: boolean }): boolean => {
         const showErrors = options?.showErrors === true;
@@ -247,8 +271,15 @@ export class DialogManager {
       const closeDialog = (value: string | null): void => {
         overlay.remove();
         document.removeEventListener('keydown', handleKeyDown);
-        this.hasOpenDialog = false;
+        if (this.activeDialogOverlay === overlay) {
+          this.activeDialogOverlay = null;
+          this.activeDialogCleanup = null;
+          this.hasOpenDialog = false;
+        }
         resolve(value);
+      };
+      this.activeDialogCleanup = () => {
+        closeDialog(null);
       };
 
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -294,5 +325,12 @@ export class DialogManager {
       input.focus();
       input.select();
     });
+  }
+
+  closeOpenDialog(): void {
+    if (!this.hasOpenDialog) {
+      return;
+    }
+    this.activeDialogCleanup?.();
   }
 }

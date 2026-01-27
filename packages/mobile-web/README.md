@@ -167,6 +167,7 @@ as part of `android:add`, `android:sync`, `ios:add`, and `ios:sync`.
 - Web assets are pulled from `../web-client/public` as configured in `capacitor.config.json`
 - The generated `android/`, `ios/`, and `node_modules/` directories are gitignored
 - If `android/` or `ios/` is missing, run the corresponding `:add` command first
+- Android back button closes overlays/modals first (command palette, panel launcher, session picker, header popovers, settings/layout dropdowns, context menus, modal panels, mobile sidebar, navigation modes). When nothing is open, it falls back to history back or exits the app.
 
 ## Security Considerations
 

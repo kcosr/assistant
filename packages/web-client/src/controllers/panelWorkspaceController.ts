@@ -793,10 +793,6 @@ export class PanelWorkspaceController {
       }
       const modalId = this.modalPanelIds.values().next().value as string | undefined;
       if (modalId) {
-        // If chat panel has active output, let cancel-all handle it first
-        if (this.options.hasChatPanelActiveOutput?.(modalId)) {
-          return;
-        }
         event.preventDefault();
         this.closePanel(modalId);
       }
@@ -2055,10 +2051,6 @@ export class PanelWorkspaceController {
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') {
-        return;
-      }
-      // If chat panel has active output, let cancel-all handle it first
-      if (this.openHeaderPanelId && this.options.hasChatPanelActiveOutput?.(this.openHeaderPanelId)) {
         return;
       }
       event.preventDefault();

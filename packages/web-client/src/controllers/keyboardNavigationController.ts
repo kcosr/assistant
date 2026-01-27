@@ -354,6 +354,9 @@ export class KeyboardNavigationController {
 
     this.shortcutRegistry.register(
       plainShortcut('cancel-all', 'escape', 'Cancel active operations', () => {
+        if (this.shouldSkipCancelForChatPanelEscape()) {
+          return false;
+        }
         const cancelled = this.options.cancelAllActiveOperations();
 
         if (this.options.isMobileViewport()) {
@@ -368,6 +371,16 @@ export class KeyboardNavigationController {
         }
       }),
     );
+  }
+
+  cancelNavigationModes(): boolean {
+    const hadLayout = Boolean(this.layoutNavState);
+    const hadHeader = Boolean(this.headerNavState);
+    const hadSplit = Boolean(this.splitPlacementState);
+    this.stopLayoutNavigation();
+    this.stopHeaderNavigation();
+    this.stopSplitPlacement();
+    return hadLayout || hadHeader || hadSplit;
   }
 
   private attachPanelNavigation(): void {
@@ -687,6 +700,29 @@ export class KeyboardNavigationController {
       return;
     }
     this.startHeaderNavigation();
+  }
+
+  private shouldSkipCancelForChatPanelEscape(): boolean {
+    const { panelWorkspace } = this.options;
+    const openHeaderPanelId = panelWorkspace.getOpenHeaderPanelId();
+    if (openHeaderPanelId && panelWorkspace.getPanelType(openHeaderPanelId) === 'chat') {
+      return true;
+    }
+
+    const modalFrame = document.querySelector<HTMLElement>(
+      '.panel-modal-overlay.open .panel-frame[data-panel-id]',
+    );
+    const modalPanelId = modalFrame?.dataset['panelId'] ?? null;
+    if (modalPanelId && panelWorkspace.getPanelType(modalPanelId) === 'chat') {
+      return true;
+    }
+
+    const activePanelId = panelWorkspace.getActivePanelId();
+    if (!activePanelId || panelWorkspace.getPanelType(activePanelId) !== 'chat') {
+      return false;
+    }
+    const frame = panelWorkspace.getPanelFrameElement(activePanelId);
+    return Boolean(frame?.classList.contains('panel-frame-modal'));
   }
 
   private startLayoutNavigation(): void {

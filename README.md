@@ -123,7 +123,7 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Shift + Enter` | Submit modal form (e.g., from tags input in notes/lists) |
 | `Cmd + Click` (macOS) / `Ctrl + Click` (others) | Focus a non-chat panel (chat panels focus on regular click) |
 | `Tab` / `Shift + Tab` | Cycle focus between sidebar and input (when input is empty) |
-| `Esc` | Cancel active operations (on mobile, closes sidebar if open) |
+| `Esc` | Cancel active operations (on mobile, closes sidebar if open; in pinned or modal chat panels, closes the panel instead) |
 
 In layout navigation mode: arrows move between panels, `Enter` selects, `Esc` exits, `Tab` cycles tabs, `m` toggles split view, `1-9` select visible panels, `0` cycles pages.
 
