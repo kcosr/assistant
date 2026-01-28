@@ -8,24 +8,24 @@
 - Added favorites for lists and notes with a heart indicator and `/favorites` command palette view. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added build-service configuration for TypeScript remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added `build:parallel` and `build:remote` scripts for parallel/remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
-- Added keyboard shortcut registry with panel-scoped resolution and per-device binding overrides. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added core services keyboard shortcut registration for panel plugins. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added a generic instance/profile selector shortcut for the active panel header. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/sessions/time tracker (Ctrl+A/C/D/F/L/N/S/T), persisted locally, and opens a modal panel if none exist. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added keyboard shortcut registry with panel-scoped resolution and per-device binding overrides. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Added core services keyboard shortcut registration for panel plugins. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Added a generic instance/profile selector shortcut for the active panel header. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/sessions/time tracker (Ctrl+A/C/D/F/L/N/S/T), persisted locally, and opens a modal panel if none exist. ([#47](https://github.com/kcosr/assistant/pull/47))
 
 ### Changed
-- Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed active chat panels to use the same selection highlight as other panels. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Changed split shortcut to Ctrl+Shift+S to free Ctrl+S for sessions. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed lists and notes panels to register shortcuts through the shared registry. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed active chat panels to use the same selection highlight as other panels. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed split shortcut to Ctrl+Shift+S to free Ctrl+S for sessions. ([#47](https://github.com/kcosr/assistant/pull/47))
 
 ### Fixed
-- Fixed instance dropdown keyboard focus after selecting items with Enter. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed focus history to ignore modal-only panels. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Fixed time tracker dialog escape handlers to clean up on unmount. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed instance dropdown keyboard focus after selecting items with Enter. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Fixed focus history to ignore modal-only panels. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Fixed time tracker dialog escape handlers to clean up on unmount. ([#47](https://github.com/kcosr/assistant/pull/47))
 
 ### Removed
 
