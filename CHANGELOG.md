@@ -24,6 +24,8 @@
 
 ### Fixed
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed focus history to ignore modal-only panels. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Fixed time tracker dialog escape handlers to clean up on unmount. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Removed
 

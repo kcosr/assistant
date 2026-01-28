@@ -189,6 +189,9 @@ export class PanelWorkspaceController {
   focusLastPanelOfType(panelType: string): boolean {
     this.pruneFocusHistory();
     for (const panelId of this.focusHistory) {
+      if (this.modalPanelIds.has(panelId)) {
+        continue;
+      }
       const panel = this.layout.panels[panelId];
       if (!panel || panel.panelType !== panelType) {
         continue;
@@ -201,7 +204,9 @@ export class PanelWorkspaceController {
       }
       return true;
     }
-    const existing = this.findPanelIdsByType(panelType);
+    const existing = this.findPanelIdsByType(panelType).filter(
+      (panelId) => !this.modalPanelIds.has(panelId),
+    );
     if (existing.length === 0) {
       return false;
     }
@@ -1111,6 +1116,9 @@ export class PanelWorkspaceController {
 
   private recordPanelFocus(panelId: string): void {
     if (!this.layout.panels[panelId]) {
+      return;
+    }
+    if (this.modalPanelIds.has(panelId)) {
       return;
     }
     const existingIndex = this.focusHistory.indexOf(panelId);

@@ -869,6 +869,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const panelId = host.panelId();
       const contextKey = getPanelContextKey(panelId);
+      const openDialogClosers = new Set<() => void>();
 
       const registerDialogEscape = (suffix: string, onClose: () => void): (() => void) => {
         if (services.keyboardShortcuts) {
@@ -1515,8 +1516,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           escapeCleanup?.();
           escapeCleanup = null;
           services.dialogManager.hasOpenDialog = false;
+          openDialogClosers.delete(closeDialog);
         };
 
+        openDialogClosers.add(closeDialog);
         escapeCleanup = registerDialogEscape('export', closeDialog);
 
         form.addEventListener('submit', async (event) => {
@@ -2106,8 +2109,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             escapeCleanup = null;
             services.dialogManager.hasOpenDialog = false;
             resolve();
+            openDialogClosers.delete(closeDialog);
           };
 
+          openDialogClosers.add(closeDialog);
           escapeCleanup = registerDialogEscape('task-edit', closeDialog);
 
           form.addEventListener('submit', async (event) => {
@@ -2292,8 +2297,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           escapeCleanup?.();
           escapeCleanup = null;
           services.dialogManager.hasOpenDialog = false;
+          openDialogClosers.delete(closeDialog);
         };
 
+        openDialogClosers.add(closeDialog);
         escapeCleanup = registerDialogEscape('entry-edit', closeDialog);
 
         form.addEventListener('submit', async (event) => {
@@ -2787,6 +2794,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           handlePanelEvent(event);
         },
         unmount: () => {
+          for (const closeDialog of Array.from(openDialogClosers)) {
+            closeDialog();
+          }
+          openDialogClosers.clear();
           clearTimerInterval();
           document.removeEventListener('mousedown', handleDocumentClick);
           document.removeEventListener('mouseup', handleDocumentMouseUp);
