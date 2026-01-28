@@ -626,6 +626,7 @@ export class PanelWorkspaceController {
       },
     };
     this.modalPanelIds.add(panelId);
+    this.removeFromFocusHistory(panelId);
 
     const overlay = this.ensureModalOverlay();
     overlay.replaceChildren();
@@ -1153,7 +1154,7 @@ export class PanelWorkspaceController {
     let removed = false;
     for (let index = this.focusHistory.length - 1; index >= 0; index -= 1) {
       const panelId = this.focusHistory[index];
-      if (panelId && !validIds.has(panelId)) {
+      if (panelId && (!validIds.has(panelId) || this.modalPanelIds.has(panelId))) {
         this.focusHistory.splice(index, 1);
         removed = true;
       }
