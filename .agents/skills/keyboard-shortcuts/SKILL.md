@@ -18,6 +18,12 @@ description: How keyboard shortcuts are wired globally and per-panel in this rep
 - Registry attaches a single `document` `keydown` listener (capture phase) and dispatches by key.
 - Handlers should still guard on editable targets (e.g., `isEditableTarget` pattern in `KeyboardNavigationController`).
 - Examples: panel navigation (Ctrl+P / Ctrl+H), command palette (Cmd/Ctrl+K), panel cycling.
+- Split placement uses `Ctrl+Shift+S` (see `split-panel` shortcut in `KeyboardNavigationController`).
+
+## Focus history shortcuts
+- Focus history is tracked in `PanelWorkspaceController` and persisted in local storage (`aiAssistantPanelFocusHistory`).
+- `Ctrl+A/C/D/F/L/N/S/T` focus the last-used artifacts/chat/diff/files/lists/notes/sessions/time-tracker panel.
+- If none exist, the shortcut opens a modal panel of that type.
 
 ## Panel/plugin shortcuts (panel-scoped)
 - Use `services.keyboardShortcuts.register(...)` from the panel module (see lists/notes/time-tracker).
