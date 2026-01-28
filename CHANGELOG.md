@@ -12,7 +12,7 @@
 - Added core services keyboard shortcut registration for panel plugins. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Added a generic instance/profile selector shortcut for the active panel header. ([#000](https://github.com/kcosr/assistant/pull/000))
-- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/time tracker (Ctrl+A/C/D/F/L/N/T), persisted locally, and opens a modal panel if none exist. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/sessions/time tracker (Ctrl+A/C/D/F/L/N/S/T), persisted locally, and opens a modal panel if none exist. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#000](https://github.com/kcosr/assistant/pull/000))
@@ -20,6 +20,7 @@
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#000](https://github.com/kcosr/assistant/pull/000))
 - Changed active chat panels to use the same selection highlight as other panels. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Changed split shortcut to Ctrl+Shift+S to free Ctrl+S for sessions. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Fixed
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#000](https://github.com/kcosr/assistant/pull/000))

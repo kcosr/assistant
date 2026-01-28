@@ -293,7 +293,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
-  it('starts split placement on ctrl+s and inserts an empty panel on enter', () => {
+  it('starts split placement on ctrl+shift+s and inserts an empty panel on enter', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -304,7 +304,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
     );
 
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(true);
@@ -331,7 +331,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
     );
 
     document.dispatchEvent(
@@ -588,6 +588,7 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     ['f', 'files'],
     ['l', 'lists'],
     ['n', 'notes'],
+    ['s', 'sessions'],
     ['t', 'time-tracker'],
   ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {
     const panelFrame = document.createElement('div');

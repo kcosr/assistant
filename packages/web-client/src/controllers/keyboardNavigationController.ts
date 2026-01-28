@@ -274,11 +274,13 @@ export class KeyboardNavigationController {
       },
     });
 
-    this.shortcutRegistry.register(
-      cmdShiftShortcut('toggle-sidebar', 's', 'Toggle sidebar', () => {
-        panelWorkspace.togglePanel('sessions');
-      }),
-    );
+    if (isMacPlatform()) {
+      this.shortcutRegistry.register(
+        cmdShiftShortcut('toggle-sidebar', 's', 'Toggle sidebar', () => {
+          panelWorkspace.togglePanel('sessions');
+        }),
+      );
+    }
 
     this.shortcutRegistry.register(
       cmdShiftShortcut('toggle-chat', 'c', 'Toggle chat panel', () => {
@@ -304,8 +306,12 @@ export class KeyboardNavigationController {
       }),
     );
 
-    this.shortcutRegistry.register(
-      ctrlShortcut('split-panel', 's', 'Split active panel', (event) => {
+    this.shortcutRegistry.register({
+      id: 'split-panel',
+      key: 's',
+      modifiers: ['ctrl', 'shift'],
+      description: 'Split active panel',
+      handler: (event) => {
         if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
           return false;
         }
@@ -324,8 +330,8 @@ export class KeyboardNavigationController {
           return true;
         }
         this.startSplitPlacement(activePanelId);
-      }),
-    );
+      },
+    });
 
     const registerLastPanelShortcut = (
       id: string,
@@ -363,6 +369,12 @@ export class KeyboardNavigationController {
     registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
     registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
     registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
+    registerLastPanelShortcut(
+      'focus-last-sessions',
+      's',
+      'Focus last used sessions panel',
+      'sessions',
+    );
     registerLastPanelShortcut(
       'focus-last-time-tracker',
       't',

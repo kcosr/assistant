@@ -139,8 +139,8 @@ Binding indicator behavior:
 - Layout navigation mode: `Ctrl + Shift + Cmd + P` (macOS) / `Ctrl + Shift + Alt + P` (others) (arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
 - Header panel navigation: `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) (`1-9` toggle pinned header panels, `0` cycles pages, `Esc` exits)
 - Cycle focus: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
-- Split panel: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
-- Focus last panel by type: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + T` time tracker (uses last-used history; opens a modal panel if none exist)
+- Split panel: `Ctrl + Shift + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- Focus last panel by type: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + S` sessions, `Ctrl + T` time tracker (uses last-used history; opens a modal panel if none exist)
 - Close panel: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (panel-focused, replaces with an empty placeholder)
 - Remove panel: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) (removes panel from layout)
 - Reset layout: available in settings (and command palette when implemented)
