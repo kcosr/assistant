@@ -66,6 +66,8 @@ const resolveIconSvg = (iconName: string | null | undefined): string | null => {
   return null;
 };
 
+const FOCUS_HISTORY_STORAGE_KEY = 'aiAssistantPanelFocusHistory';
+
 export interface PanelWorkspaceControllerOptions {
   root: HTMLElement;
   registry: PanelRegistry;
@@ -89,12 +91,14 @@ export interface PanelWorkspaceControllerOptions {
 }
 
 export class PanelWorkspaceController {
+  private static readonly FOCUS_HISTORY_LIMIT = 50;
   private layout: LayoutPersistence;
   private readonly panelElements = new Map<string, HTMLElement>();
   private readonly mountedPanelIds = new Set<string>();
   private readonly panelVisibility = new Map<string, boolean>();
   private readonly resizeObserver: ResizeObserver | null;
   private activePanelId: string | null = null;
+  private readonly focusHistory: string[] = [];
   private activeChatPanelId: string | null = null;
   private activeChatPanelFrame: HTMLElement | null = null;
   private activeChatPanelContent: HTMLElement | null = null;
@@ -126,6 +130,7 @@ export class PanelWorkspaceController {
       }
     }
     this.layout = this.loadInitialLayout();
+    this.loadFocusHistoryFromStorage();
     this.resizeObserver =
       typeof ResizeObserver === 'undefined'
         ? null
@@ -179,6 +184,44 @@ export class PanelWorkspaceController {
       this.persistLayout();
     }
     this.render({ forceRemount: true });
+  }
+
+  focusLastPanelOfType(panelType: string): boolean {
+    this.pruneFocusHistory();
+    for (const panelId of this.focusHistory) {
+      if (this.modalPanelIds.has(panelId)) {
+        continue;
+      }
+      const panel = this.layout.panels[panelId];
+      if (!panel || panel.panelType !== panelType) {
+        continue;
+      }
+      if (this.isPanelPinned(panelId)) {
+        this.openHeaderPanel(panelId);
+        this.focusPanel(panelId);
+      } else {
+        this.activatePanel(panelId);
+      }
+      return true;
+    }
+    const existing = this.findPanelIdsByType(panelType).filter(
+      (panelId) => !this.modalPanelIds.has(panelId),
+    );
+    if (existing.length === 0) {
+      return false;
+    }
+    const visible = new Set(this.getVisiblePanelIds());
+    const candidate = existing.find((panelId) => visible.has(panelId)) ?? existing[0];
+    if (!candidate) {
+      return false;
+    }
+    if (this.isPanelPinned(candidate)) {
+      this.openHeaderPanel(candidate);
+      this.focusPanel(candidate);
+    } else {
+      this.activatePanel(candidate);
+    }
+    return true;
   }
 
   applyLayoutPreset(preset: PanelLayoutPreset): void {
@@ -543,6 +586,7 @@ export class PanelWorkspaceController {
       headerPanels: this.getHeaderPanelIds(),
       headerPanelSizes: this.getHeaderPanelSizes(),
     };
+    this.recordPanelFocus(panelId);
 
     this.persistLayout();
     this.render();
@@ -582,6 +626,7 @@ export class PanelWorkspaceController {
       },
     };
     this.modalPanelIds.add(panelId);
+    this.removeFromFocusHistory(panelId);
 
     const overlay = this.ensureModalOverlay();
     overlay.replaceChildren();
@@ -697,6 +742,7 @@ export class PanelWorkspaceController {
       headerPanels: nextHeaderPanels,
       headerPanelSizes: nextHeaderPanelSizes,
     };
+    this.removeFromFocusHistory(panelId);
 
     if (this.openHeaderPanelId === panelId) {
       this.closeHeaderPopover();
@@ -731,6 +777,7 @@ export class PanelWorkspaceController {
 
     const { [panelId]: _, ...remainingPanels } = this.layout.panels;
     this.layout = { ...this.layout, panels: remainingPanels };
+    this.removeFromFocusHistory(panelId);
 
     const unsubscribe = this.panelContextSubscriptions.get(panelId);
     if (unsubscribe) {
@@ -1068,11 +1115,112 @@ export class PanelWorkspaceController {
     return panel?.state ?? null;
   }
 
+  private recordPanelFocus(panelId: string): void {
+    if (!this.layout.panels[panelId]) {
+      return;
+    }
+    if (this.modalPanelIds.has(panelId)) {
+      return;
+    }
+    const existingIndex = this.focusHistory.indexOf(panelId);
+    if (existingIndex === 0) {
+      return;
+    }
+    if (existingIndex > 0) {
+      this.focusHistory.splice(existingIndex, 1);
+    }
+    this.focusHistory.unshift(panelId);
+    if (this.focusHistory.length > PanelWorkspaceController.FOCUS_HISTORY_LIMIT) {
+      this.focusHistory.length = PanelWorkspaceController.FOCUS_HISTORY_LIMIT;
+    }
+    this.persistFocusHistory();
+  }
+
+  private removeFromFocusHistory(panelId: string): void {
+    let index = this.focusHistory.indexOf(panelId);
+    let removed = false;
+    while (index >= 0) {
+      this.focusHistory.splice(index, 1);
+      removed = true;
+      index = this.focusHistory.indexOf(panelId);
+    }
+    if (removed) {
+      this.persistFocusHistory();
+    }
+  }
+
+  private pruneFocusHistory(): void {
+    const validIds = new Set(Object.keys(this.layout.panels));
+    let removed = false;
+    for (let index = this.focusHistory.length - 1; index >= 0; index -= 1) {
+      const panelId = this.focusHistory[index];
+      if (panelId && (!validIds.has(panelId) || this.modalPanelIds.has(panelId))) {
+        this.focusHistory.splice(index, 1);
+        removed = true;
+      }
+    }
+    if (removed) {
+      this.persistFocusHistory();
+    }
+  }
+
+  private loadFocusHistoryFromStorage(): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(FOCUS_HISTORY_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as unknown;
+      const list = Array.isArray(parsed)
+        ? parsed
+        : typeof parsed === 'object' && parsed && Array.isArray((parsed as { history?: unknown })
+              .history)
+          ? (parsed as { history: unknown[] }).history
+          : null;
+      if (!list) {
+        return;
+      }
+      const seen = new Set<string>();
+      for (const entry of list) {
+        if (typeof entry !== 'string') {
+          continue;
+        }
+        const trimmed = entry.trim();
+        if (!trimmed || seen.has(trimmed)) {
+          continue;
+        }
+        seen.add(trimmed);
+        this.focusHistory.push(trimmed);
+      }
+      this.pruneFocusHistory();
+    } catch {
+      // Ignore localStorage parse errors.
+    }
+  }
+
+  private persistFocusHistory(): void {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        FOCUS_HISTORY_STORAGE_KEY,
+        JSON.stringify(this.focusHistory),
+      );
+    } catch {
+      // Ignore localStorage serialization errors.
+    }
+  }
+
   focusPanel(panelId: string, source: PanelFocusSource = 'program'): void {
     if (this.activePanelId && this.activePanelId !== panelId) {
       this.options.host.setPanelFocus(this.activePanelId, false);
     }
     this.activePanelId = panelId;
+    this.recordPanelFocus(panelId);
     if (isPanelDebugEnabled()) {
       const panel = this.layout.panels[panelId];
       console.log('[panelWorkspace] focusPanel', {
@@ -1364,6 +1512,7 @@ export class PanelWorkspaceController {
     this.closePanelMenu();
     this.stopPanelDrag();
     this.stopPanelReorder();
+    this.pruneFocusHistory();
     this.unmountRemovedPanels(new Set(Object.keys(this.layout.panels)));
     const scrollPositions = this.captureScrollPositions();
     const rootNode = this.renderNode(this.layout.layout);
@@ -2742,6 +2891,7 @@ export class PanelWorkspaceController {
       if (nextPanelIds.has(panelId)) {
         continue;
       }
+      this.removeFromFocusHistory(panelId);
       if (this.activePanelId === panelId) {
         this.activePanelId = null;
         this.setActivePanelContext(null, 'program');

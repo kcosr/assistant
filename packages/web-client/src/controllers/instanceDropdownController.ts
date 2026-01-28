@@ -244,6 +244,7 @@ export class InstanceDropdownController {
       this.updateClearButtonState();
       if (options.closeOnSelect) {
         this.close();
+        this.elements.trigger.focus();
       }
       return;
     }
@@ -283,6 +284,11 @@ export class InstanceDropdownController {
     this.onSelect([...this.selectedIds]);
     if (options.closeOnSelect) {
       this.close();
+      this.elements.trigger.focus();
+      return;
+    }
+    if (this.elements.searchInput) {
+      this.elements.searchInput.focus();
     }
   }
 

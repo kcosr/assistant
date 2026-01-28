@@ -139,11 +139,13 @@ Binding indicator behavior:
 - Layout navigation mode: `Ctrl + Shift + Cmd + P` (macOS) / `Ctrl + Shift + Alt + P` (others) (arrows move between siblings, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
 - Header panel navigation: `Ctrl + Shift + Cmd + H` (macOS) / `Ctrl + Shift + Alt + H` (others) (`1-9` toggle pinned header panels, `0` cycles pages, `Esc` exits)
 - Cycle focus: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
-- Split panel: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- Split panel: `Ctrl + Shift + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- Focus last panel by type: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + S` sessions, `Ctrl + T` time tracker (uses last-used history; opens a modal panel if none exist)
 - Close panel: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (panel-focused, replaces with an empty placeholder)
 - Remove panel: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) (removes panel from layout)
 - Reset layout: available in settings (and command palette when implemented)
 - Reset panel state: clears persisted panel state without changing the layout
+- Instance/profile selector (active panel): `i` (when the active panel provides an instance selector and focus is not in an input)
 
 Panels can register additional shortcuts scoped to the focused panel.
 
@@ -153,6 +155,8 @@ Panels can register additional shortcuts scoped to the focused panel.
 
 - Chat transcript UI with tool output rendering.
 - Includes its own message composer (input, context toggle, brief toggle, mic).
+- Keyboard: `Ctrl+I` toggles input focus; when the input is not focused, `s` opens the session
+  picker, `m` focuses the model dropdown, and `t` focuses the thinking dropdown.
 - Voice capture auto-submits on recognition end (no spoken "submit" keyword).
 - Mic button and media play/pause key cancel active output; subsequent press starts recording.
 - Long-pressing the mic enables continuous listening and starts recording once the long-press threshold is reached.

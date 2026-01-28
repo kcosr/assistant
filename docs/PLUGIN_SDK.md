@@ -738,10 +738,16 @@ Current keys include:
 - `dialogManager`
 - `contextMenuManager`
 - `listColumnPreferencesClient`
+- `keyboardShortcuts` (register panel-scoped shortcuts; returns an unsubscribe function; use
+  `allowWhenDisabled` on a shortcut to handle keys even when global shortcuts are disabled, e.g.
+  Escape to close a modal)
 - `focusInput()`
 - `setStatus(text)`
 - `isMobileViewport()`
 - `notifyContextAvailabilityChange()`
+
+Shortcut registrations may include a `bindingId` (stable identifier) so user-configurable
+keybinding overrides apply across all panels of a plugin instead of per panel instance.
 
 Chat panels can also read `host.getContext('core.chat')` to access:
 

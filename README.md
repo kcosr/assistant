@@ -118,10 +118,11 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Ctrl/Cmd + ]` / `Ctrl/Cmd + [` | Cycle focus between panels |
 | `Ctrl + P` | Toggle layout navigation mode |
 | `Ctrl + H` | Toggle header panel navigation mode |
-| `Ctrl + S` | Split active panel (placement mode) |
-| `Ctrl + I` | Focus text input |
+| `Ctrl + Shift + S` | Split active panel (placement mode) |
+| `Ctrl + I` | Toggle text input focus |
+| `Ctrl + A/C/D/F/L/N/S/T` | Focus last-used artifacts/chat/diff/files/lists/notes/sessions/time tracker (opens modal if none) |
 | `Ctrl + R` | Toggle speech recording (if available) |
-| `Cmd/Ctrl + Shift + S` | Toggle sessions sidebar |
+| `Cmd + Shift + S` (macOS) | Toggle sessions sidebar |
 | `Cmd/Ctrl + Shift + C` | Toggle chat panel |
 | `Cmd/Ctrl + Shift + ↑/↓` | Jump to top/bottom of chat |
 | `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) | Close panel (replace with placeholder) |

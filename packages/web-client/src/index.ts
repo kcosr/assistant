@@ -58,6 +58,10 @@ import {
   type SessionsRuntimeOptions,
 } from './panels/sessions';
 import { getWebClientElements } from './utils/webClientElements';
+import {
+  KeyboardShortcutRegistry,
+  createShortcutService,
+} from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
@@ -90,6 +94,10 @@ import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
+import {
+  getPanelHeaderActionsKey,
+  type PanelHeaderActions,
+} from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 
 const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
@@ -361,6 +369,7 @@ async function main(): Promise<void> {
   const speechFeaturesEnabled = isSpeechFeatureEnabled();
   const AUDIO_RESPONSES_STORAGE_KEY = 'aiAssistantAudioResponsesEnabled';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
+  const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
   const INTERACTION_MODE_STORAGE_KEY = 'aiAssistantInteractiveModeEnabled';
@@ -377,6 +386,7 @@ async function main(): Promise<void> {
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
+    keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
@@ -384,6 +394,7 @@ async function main(): Promise<void> {
 
   const initialAudioResponsesEnabled = initialPreferences.audioResponsesEnabled;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
+  const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
@@ -711,6 +722,58 @@ async function main(): Promise<void> {
       return getChatInputRuntimeForSession(inputSessionId);
     }
     return null;
+  }
+
+  function getActiveChatPanelEntry(): ChatPanelEntry | null {
+    const active =
+      (panelHostController?.getContext('panel.active') as {
+        panelId?: string;
+        panelType?: string;
+      } | null) ?? null;
+    if (active?.panelType !== 'chat' || !active.panelId) {
+      return null;
+    }
+    return chatPanelsById.get(active.panelId) ?? null;
+  }
+
+  function openChatPanelSelect(selectEl: HTMLSelectElement | null): boolean {
+    if (!selectEl || selectEl.disabled || selectEl.classList.contains('hidden')) {
+      return false;
+    }
+    selectEl.focus();
+    selectEl.click();
+    return true;
+  }
+
+  function openActiveChatSessionPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    const anchor = entry?.dom.sessionLabelEl ?? null;
+    if (!anchor) {
+      return false;
+    }
+    anchor.click();
+    return true;
+  }
+
+  function openActiveChatModelPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    return openChatPanelSelect(entry?.dom.modelSelectEl ?? null);
+  }
+
+  function openActiveChatThinkingPicker(): boolean {
+    const entry = getActiveChatPanelEntry();
+    return openChatPanelSelect(entry?.dom.thinkingSelectEl ?? null);
+  }
+
+  function openActivePanelInstancePicker(): boolean {
+    const active = getActivePanelContext();
+    if (!active || !panelHostController) {
+      return false;
+    }
+    const actions = panelHostController.getContext(
+      getPanelHeaderActionsKey(active.panelId),
+    ) as PanelHeaderActions | null;
+    return actions?.openInstancePicker?.() ?? false;
   }
 
   function getPrimaryChatInputRuntime(): InputRuntime | null {
@@ -1428,6 +1491,26 @@ async function main(): Promise<void> {
     updateSessionAttributes,
   });
   panelHostController = panelHostControllerInstance;
+  const keyboardShortcutRegistry = new KeyboardShortcutRegistry({
+    onConflict: (existing, incoming) => {
+      console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
+    },
+    isEnabled: () => keyboardShortcutsEnabled && !dialogManager.hasOpenDialog,
+    getActivePanel: () => {
+      const active =
+        (panelHostControllerInstance.getContext('panel.active') as {
+          panelId?: string;
+          panelType?: string;
+        } | null) ?? null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    },
+    ...(keyboardShortcutBindings
+      ? { bindingOverrides: keyboardShortcutBindings }
+      : {}),
+  });
   panelHostControllerInstance.subscribeContext('panel.active', (value) => {
     if (!value || typeof value !== 'object') {
       return;
@@ -1676,6 +1759,7 @@ async function main(): Promise<void> {
     dialogManager,
     contextMenuManager,
     listColumnPreferencesClient,
+    keyboardShortcuts: createShortcutService(keyboardShortcutRegistry),
     focusInput: () => {
       getActiveChatInputRuntime()?.focusInput();
     },
@@ -3380,6 +3464,7 @@ async function main(): Promise<void> {
       getAgentSidebarSections: () => getSidebarElementsForKeyboardNav().agentSidebarSections,
       panelWorkspace,
       dialogManager,
+      shortcutRegistry: keyboardShortcutRegistry,
       isKeyboardShortcutsEnabled: () => keyboardShortcutsEnabled,
       getSpeechAudioController: () => getActiveChatInputRuntime()?.speechAudioController ?? null,
       cancelAllActiveOperations,
@@ -3406,6 +3491,10 @@ async function main(): Promise<void> {
       openCommandPalette: () => {
         commandPaletteController?.open();
       },
+      openChatSessionPicker: () => openActiveChatSessionPicker(),
+      openChatModelPicker: () => openActiveChatModelPicker(),
+      openChatThinkingPicker: () => openActiveChatThinkingPicker(),
+      openPanelInstancePicker: () => openActivePanelInstancePicker(),
       getFocusedSessionId: () => focusedSessionId,
       setFocusedSessionId: (id) => {
         focusedSessionId = id;

@@ -8,6 +8,7 @@ const createHost = (): PanelHost =>
   ({
     panelId: () => 'panel-1',
     closePanel: vi.fn(),
+    setContext: vi.fn(),
   }) as unknown as PanelHost;
 
 const createRoot = (includeInstance = false): HTMLElement => {

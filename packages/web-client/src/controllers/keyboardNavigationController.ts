@@ -17,6 +17,7 @@ export interface KeyboardNavigationControllerOptions {
   getAgentSidebarSections: () => HTMLElement | null;
   panelWorkspace: PanelWorkspaceController;
   dialogManager: DialogManager;
+  shortcutRegistry?: KeyboardShortcutRegistry;
   isKeyboardShortcutsEnabled: () => boolean;
   getSpeechAudioController: () => SpeechAudioController | null;
   cancelAllActiveOperations: () => boolean;
@@ -26,6 +27,10 @@ export interface KeyboardNavigationControllerOptions {
   getInputEl: () => HTMLInputElement | null;
   getActiveChatRuntime: () => ChatRuntime | null;
   openCommandPalette: () => void;
+  openChatSessionPicker?: () => boolean;
+  openChatModelPicker?: () => boolean;
+  openChatThinkingPicker?: () => boolean;
+  openPanelInstancePicker?: () => boolean;
   getFocusedSessionId: () => string | null;
   setFocusedSessionId: (id: string | null) => void;
   isSidebarFocused: () => boolean;
@@ -74,13 +79,15 @@ export class KeyboardNavigationController {
   private navCleanup: (() => void) | null = null;
 
   constructor(private readonly options: KeyboardNavigationControllerOptions) {
-    this.shortcutRegistry = new KeyboardShortcutRegistry({
-      onConflict: (existing, incoming) => {
-        console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
-      },
-      isEnabled: () =>
-        this.options.isKeyboardShortcutsEnabled() && !this.options.dialogManager.hasOpenDialog,
-    });
+    this.shortcutRegistry =
+      this.options.shortcutRegistry ??
+      new KeyboardShortcutRegistry({
+        onConflict: (existing, incoming) => {
+          console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
+        },
+        isEnabled: () =>
+          this.options.isKeyboardShortcutsEnabled() && !this.options.dialogManager.hasOpenDialog,
+      });
   }
 
   attach(): void {
@@ -267,11 +274,13 @@ export class KeyboardNavigationController {
       },
     });
 
-    this.shortcutRegistry.register(
-      cmdShiftShortcut('toggle-sidebar', 's', 'Toggle sidebar', () => {
-        panelWorkspace.togglePanel('sessions');
-      }),
-    );
+    if (isMacPlatform()) {
+      this.shortcutRegistry.register(
+        cmdShiftShortcut('toggle-sidebar', 's', 'Toggle sidebar', () => {
+          panelWorkspace.togglePanel('sessions');
+        }),
+      );
+    }
 
     this.shortcutRegistry.register(
       cmdShiftShortcut('toggle-chat', 'c', 'Toggle chat panel', () => {
@@ -297,8 +306,12 @@ export class KeyboardNavigationController {
       }),
     );
 
-    this.shortcutRegistry.register(
-      ctrlShortcut('split-panel', 's', 'Split active panel', (event) => {
+    this.shortcutRegistry.register({
+      id: 'split-panel',
+      key: 's',
+      modifiers: ['ctrl', 'shift'],
+      description: 'Split active panel',
+      handler: (event) => {
         if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
           return false;
         }
@@ -317,13 +330,136 @@ export class KeyboardNavigationController {
           return true;
         }
         this.startSplitPlacement(activePanelId);
-      }),
+      },
+    });
+
+    const registerLastPanelShortcut = (
+      id: string,
+      key: string,
+      description: string,
+      panelType: string,
+    ): void => {
+      this.shortcutRegistry.register(
+        ctrlShortcut(
+          id,
+          key,
+          description,
+          (event) => {
+            if (!this.canHandlePanelNavigationShortcut(event)) {
+              return false;
+            }
+            if (panelWorkspace.focusLastPanelOfType(panelType)) {
+              return true;
+            }
+            return Boolean(panelWorkspace.openModalPanel(panelType));
+          },
+          { bindingId: `panel.focus-last.${panelType}` },
+        ),
+      );
+    };
+
+    registerLastPanelShortcut(
+      'focus-last-artifacts',
+      'a',
+      'Focus last used artifacts panel',
+      'artifacts',
+    );
+    registerLastPanelShortcut('focus-last-chat', 'c', 'Focus last used chat panel', 'chat');
+    registerLastPanelShortcut('focus-last-diff', 'd', 'Focus last used diff panel', 'diff');
+    registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
+    registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
+    registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
+    registerLastPanelShortcut(
+      'focus-last-sessions',
+      's',
+      'Focus last used sessions panel',
+      'sessions',
+    );
+    registerLastPanelShortcut(
+      'focus-last-time-tracker',
+      't',
+      'Focus last used time tracker panel',
+      'time-tracker',
     );
 
     this.shortcutRegistry.register(
-      ctrlShortcut('focus-input', 'i', 'Focus text input', () => {
-        this.focusZone('input');
-      }),
+      ctrlShortcut(
+        'toggle-input-focus',
+        'i',
+        'Toggle text input focus',
+        () => {
+          const inputEl = this.options.getInputEl();
+          if (!inputEl) {
+            return false;
+          }
+          if (document.activeElement === inputEl) {
+            inputEl.blur();
+            return true;
+          }
+          this.focusZone('input');
+        },
+        { bindingId: 'chat.toggle-input' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-session-picker',
+        's',
+        'Open chat session picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatSessionPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-session-picker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-model-picker',
+        'm',
+        'Open chat model picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatModelPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-model-picker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'chat-open-thinking-picker',
+        't',
+        'Open chat thinking picker',
+        () => {
+          if (!this.canHandleChatPanelShortcut()) {
+            return false;
+          }
+          return this.options.openChatThinkingPicker?.() ?? false;
+        },
+        { bindingId: 'chat.open-thinking-picker' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
+        'open-panel-instance-picker',
+        'i',
+        'Open panel instance picker',
+        (event) => {
+          if (!this.canHandlePanelHeaderShortcut(event)) {
+            return false;
+          }
+          return this.options.openPanelInstancePicker?.() ?? false;
+        },
+        { bindingId: 'panel.header.instance' },
+      ),
     );
 
     const toggleSpeechInput = (): boolean | void => {
@@ -598,6 +734,47 @@ export class KeyboardNavigationController {
         'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]',
       ),
     );
+  }
+
+  private isChatPanelActive(): boolean {
+    const activePanelId = this.options.panelWorkspace.getActivePanelId();
+    if (!activePanelId) {
+      return false;
+    }
+    const panelType = this.options.panelWorkspace.getPanelType(activePanelId);
+    return panelType === 'chat';
+  }
+
+  private isChatInputFocused(): boolean {
+    const inputEl = this.options.getInputEl();
+    return Boolean(inputEl && document.activeElement === inputEl);
+  }
+
+  private canHandleChatPanelShortcut(): boolean {
+    if (!this.isChatPanelActive()) {
+      return false;
+    }
+    if (this.isChatInputFocused()) {
+      return false;
+    }
+    if (this.isEditableTarget(document.activeElement)) {
+      return false;
+    }
+    return true;
+  }
+
+  private canHandlePanelHeaderShortcut(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented) {
+      return false;
+    }
+    const activePanelId = this.options.panelWorkspace.getActivePanelId();
+    if (!activePanelId) {
+      return false;
+    }
+    if (this.isEditableTarget(event.target) || this.isEditableTarget(document.activeElement)) {
+      return false;
+    }
+    return true;
   }
 
   private preparePanelNavigationShortcut(options?: { closeModal?: boolean }): boolean {

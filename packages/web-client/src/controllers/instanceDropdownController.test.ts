@@ -12,6 +12,7 @@ const createDropdownRoot = (): HTMLElement => {
       </button>
       <div class="panel-chrome-instance-menu" data-role="instance-menu" role="listbox">
         <input type="text" data-role="instance-search" />
+        <button type="button" data-role="instance-clear"></button>
         <div data-role="instance-list"></div>
       </div>
     </div>
@@ -29,7 +30,7 @@ describe('InstanceDropdownController', () => {
 
   beforeEach(() => {
     document.body.innerHTML = '';
-    HTMLElement.prototype.scrollIntoView = () => undefined;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
@@ -176,6 +177,73 @@ describe('InstanceDropdownController', () => {
     expect(root.querySelector('[data-role="instance-menu"]')?.classList.contains('open')).toBe(
       true,
     );
+
+    controller.destroy();
+  });
+
+  it('focuses the trigger after selecting an instance in single mode', () => {
+    const root = createDropdownRoot();
+    const controller = new InstanceDropdownController({
+      root,
+      onSelect: vi.fn(),
+      selectionMode: 'single',
+    });
+    controller.setInstances(
+      [
+        { id: 'default', label: 'Default' },
+        { id: 'work', label: 'Work' },
+      ],
+      ['default'],
+    );
+
+    controller.open();
+    const searchInput = root.querySelector<HTMLInputElement>('[data-role="instance-search"]');
+    const trigger = root.querySelector<HTMLButtonElement>('[data-role="instance-trigger"]');
+    if (!searchInput || !trigger) {
+      throw new Error('Missing dropdown elements');
+    }
+
+    searchInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    searchInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+
+    expect(trigger).toBe(document.activeElement);
+
+    controller.destroy();
+  });
+
+  it('keeps focus in the search input when selecting in multi mode', () => {
+    const root = createDropdownRoot();
+    const controller = new InstanceDropdownController({
+      root,
+      onSelect: vi.fn(),
+      selectionMode: 'multi',
+    });
+    controller.setInstances(
+      [
+        { id: 'default', label: 'Default' },
+        { id: 'work', label: 'Work' },
+      ],
+      ['default'],
+    );
+
+    controller.open();
+    const searchInput = root.querySelector<HTMLInputElement>('[data-role="instance-search"]');
+    if (!searchInput) {
+      throw new Error('Missing search input');
+    }
+
+    searchInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }),
+    );
+    searchInput.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+
+    expect(document.activeElement).toBe(searchInput);
 
     controller.destroy();
   });

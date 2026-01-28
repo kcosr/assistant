@@ -1,6 +1,9 @@
+import type { ShortcutBindingOverrides } from './keyboardShortcuts';
+
 export interface ClientPreferencesState {
   audioResponsesEnabled: boolean;
   keyboardShortcutsEnabled: boolean;
+  keyboardShortcutBindings: ShortcutBindingOverrides | null;
   autoFocusChatOnSessionReady: boolean;
   autoScrollEnabled: boolean;
   showContextEnabled: boolean;
@@ -9,12 +12,14 @@ export interface ClientPreferencesState {
 export function loadClientPreferences(options: {
   audioResponsesStorageKey: string;
   keyboardShortcutsStorageKey: string;
+  keyboardShortcutsBindingsStorageKey: string;
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   showContextStorageKey: string;
 }): ClientPreferencesState {
   let audioResponsesEnabled = false;
   let keyboardShortcutsEnabled = true;
+  let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
   let autoScrollEnabled = true;
   let showContextEnabled = false;
@@ -24,6 +29,13 @@ export function loadClientPreferences(options: {
     const shortcutsStored = localStorage.getItem(options.keyboardShortcutsStorageKey);
     if (shortcutsStored === 'false') {
       keyboardShortcutsEnabled = false;
+    }
+    const bindingsStored = localStorage.getItem(options.keyboardShortcutsBindingsStorageKey);
+    if (bindingsStored) {
+      const parsed = JSON.parse(bindingsStored) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        keyboardShortcutBindings = parsed as ShortcutBindingOverrides;
+      }
     }
     const autoFocusStored = localStorage.getItem(options.autoFocusChatStorageKey);
     if (autoFocusStored === 'false') {
@@ -44,6 +56,7 @@ export function loadClientPreferences(options: {
   return {
     audioResponsesEnabled,
     keyboardShortcutsEnabled,
+    keyboardShortcutBindings,
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
     showContextEnabled,

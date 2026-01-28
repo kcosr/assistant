@@ -27,6 +27,8 @@ function buildPanelWorkspace(
     togglePanel: vi.fn(),
     isPanelTypeOpen: vi.fn(() => false),
     openPanel: vi.fn(() => null),
+    openModalPanel: vi.fn(() => null),
+    focusLastPanelOfType: vi.fn(() => false),
     listHeaderPanelIds: vi.fn(() => headerPanels),
     toggleHeaderPanelById: vi.fn(),
     openHeaderPanel: vi.fn(),
@@ -68,6 +70,10 @@ function buildOptions(
     getInputEl: () => null,
     getActiveChatRuntime: () => null,
     openCommandPalette: () => {},
+    openChatSessionPicker: () => false,
+    openChatModelPicker: () => false,
+    openChatThinkingPicker: () => false,
+    openPanelInstancePicker: () => false,
     getFocusedSessionId: () => null,
     setFocusedSessionId: () => {},
     isSidebarFocused: () => false,
@@ -287,7 +293,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
-  it('starts split placement on ctrl+s and inserts an empty panel on enter', () => {
+  it('starts split placement on ctrl+shift+s and inserts an empty panel on enter', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -298,7 +304,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
     );
 
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(true);
@@ -325,7 +331,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
     );
 
     document.dispatchEvent(
@@ -532,5 +538,192 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     expect(options.panelWorkspace.closePanel).toHaveBeenCalled();
     expect(options.panelWorkspace.activatePanel).toHaveBeenLastCalledWith('header-1');
+  });
+});
+
+describe('KeyboardNavigationController chat shortcuts', () => {
+  beforeEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  it('toggles input focus on ctrl+i', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    const options = buildOptions(panelFrame);
+    options.getInputEl = () => input;
+    options.focusInput = () => input.focus();
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).toBe(input);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true }),
+    );
+    expect(document.activeElement).not.toBe(input);
+
+    detach();
+  });
+
+  it.each([
+    ['a', 'artifacts'],
+    ['c', 'chat'],
+    ['d', 'diff'],
+    ['f', 'files'],
+    ['l', 'lists'],
+    ['n', 'notes'],
+    ['s', 'sessions'],
+    ['t', 'time-tracker'],
+  ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const panelWorkspace = options.panelWorkspace as unknown as {
+      focusLastPanelOfType: ReturnType<typeof vi.fn>;
+    };
+    panelWorkspace.focusLastPanelOfType = vi.fn(() => true);
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true }),
+    );
+    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith(panelType);
+
+    detach();
+  });
+
+  it('opens a modal panel when no last-used panel exists', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const panelWorkspace = options.panelWorkspace as unknown as {
+      focusLastPanelOfType: ReturnType<typeof vi.fn>;
+      openModalPanel: ReturnType<typeof vi.fn>;
+    };
+    panelWorkspace.focusLastPanelOfType = vi.fn(() => false);
+    panelWorkspace.openModalPanel = vi.fn(() => 'modal-1');
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(panelWorkspace.focusLastPanelOfType).toHaveBeenCalledWith('lists');
+    expect(panelWorkspace.openModalPanel).toHaveBeenCalledWith('lists');
+
+    detach();
+  });
+
+  it('opens chat session picker on "s" when chat panel is active and input is not focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    let opened = false;
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    options.getInputEl = () => input;
+    options.openChatSessionPicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(opened).toBe(true);
+
+    detach();
+  });
+
+  it('does not open chat session picker when input is focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+
+    let opened = false;
+    const options = buildOptions(panelFrame, [], null, 'chat');
+    options.getInputEl = () => input;
+    options.openChatSessionPicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true }));
+    expect(opened).toBe(false);
+
+    detach();
+  });
+});
+
+describe('KeyboardNavigationController panel header shortcuts', () => {
+  beforeEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  it('opens the active panel instance picker on "i"', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    let opened = false;
+    const options = buildOptions(panelFrame);
+    options.openPanelInstancePicker = () => {
+      opened = true;
+      return true;
+    };
+
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', bubbles: true }));
+    expect(opened).toBe(true);
+
+    detach();
   });
 });
