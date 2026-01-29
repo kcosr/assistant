@@ -29,6 +29,7 @@ export interface WebClientElements {
   panelLauncherCloseButton: HTMLButtonElement | null;
   panelHeaderDock: HTMLElement | null;
   commandPaletteButton: HTMLButtonElement | null;
+  commandPaletteFab: HTMLButtonElement | null;
   commandPalette: HTMLElement | null;
   commandPalettePanel: HTMLElement | null;
   commandPaletteInput: HTMLInputElement | null;
@@ -106,6 +107,7 @@ export function getWebClientElements(): WebClientElements | null {
     panelLauncherCloseButton: getElement<HTMLButtonElement>('panel-launcher-close'),
     panelHeaderDock: getElement<HTMLElement>('panel-header-dock'),
     commandPaletteButton: getElement<HTMLButtonElement>('command-palette-button'),
+    commandPaletteFab: getElement<HTMLButtonElement>('command-palette-fab'),
     commandPalette: getElement<HTMLElement>('command-palette'),
     commandPalettePanel: getElement<HTMLElement>('command-palette-panel'),
     commandPaletteInput: getElement<HTMLInputElement>('command-palette-input'),

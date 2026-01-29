@@ -1804,11 +1804,9 @@
   color: var(--color-text-primary);
 }
 
-.lists-fab-add,
-.lists-fab-search {
+.lists-fab-add {
   position: absolute;
   right: var(--spacing-lg);
-  bottom: calc(var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px));
   width: 52px;
   height: 52px;
   border: none;
@@ -1828,37 +1826,29 @@
 }
 
 .lists-fab-add {
-  bottom: calc(
-    var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px) + var(--lists-fab-stack-offset, 64px)
-  );
+  bottom: calc(var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px));
 }
 
-.lists-fab-add.is-visible,
-.lists-fab-search.is-visible {
+.lists-fab-add.is-visible {
   display: inline-flex;
 }
 
-.lists-fab-add:hover,
-.lists-fab-search:hover {
+.lists-fab-add:hover {
   background-color: var(--color-accent-primary);
   box-shadow: var(--shadow-lg);
 }
 
-.lists-fab-add:active,
-.lists-fab-search:active {
+.lists-fab-add:active {
   background-color: var(--color-accent-primary);
   transform: translateY(1px);
 }
 
 .lists-fab-add:focus,
-.lists-fab-search:focus,
-.lists-fab-add:focus-visible,
-.lists-fab-search:focus-visible {
+.lists-fab-add:focus-visible {
   background-color: var(--color-accent-primary);
 }
 
-.lists-fab-add .icon-sm,
-.lists-fab-search .icon-sm {
+.lists-fab-add .icon-sm {
   width: 18px;
   height: 18px;
 }
@@ -4396,40 +4386,30 @@ button.tag-chip-remove {
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 
-  .lists-fab-add,
-  .lists-fab-search {
+  .lists-panel .collection-panel-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'center right'
+      'left left';
+    row-gap: var(--spacing-xs);
+  }
+
+  .lists-panel .collection-search-row-left {
+    grid-area: left;
+  }
+
+  .lists-panel .collection-search-row-center {
+    grid-area: center;
+    min-width: 0;
+  }
+
+  .lists-panel .collection-search-row-right {
+    grid-area: right;
+  }
+
+  .lists-fab-add {
     position: fixed;
-  }
-
-  .panel-frame.is-active {
-    outline: none;
-    box-shadow: none;
-  }
-
-  .panel-frame.is-chat-active {
-    outline: none;
-    box-shadow: none;
-  }
-
-  .panel-frame.is-active::after,
-  .panel-frame.is-chat-active::after {
-    border: none;
-  }
-
-  .panel-frame.is-active > .panel,
-  .panel-frame.is-active > .panel-instance,
-  .panel-frame.is-active > .chat-panel {
-    box-shadow: none;
-  }
-
-  .panel-frame.is-chat-active > .panel,
-  .panel-frame.is-chat-active > .panel-instance,
-  .panel-frame.is-chat-active > .chat-panel {
-    box-shadow: none;
-  }
-
-  .panel-instance.chat-active {
-    box-shadow: none;
   }
 
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */

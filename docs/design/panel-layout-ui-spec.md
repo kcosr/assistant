@@ -176,9 +176,11 @@ Right-clicking (or long-pressing) a panel header should expose:
 - **Layout navigation mode**: `Ctrl + P` (arrows move between siblings, `A/S` = left, `D` = right, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
 - **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
-- **Split panel**: `Ctrl + Shift + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
-- **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + S` sessions, `Ctrl + T` time tracker (opens a modal panel if none exist)
-- **Close panel**: `Ctrl/Cmd + W` (panel-focused)
+- **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + T` time tracker (opens a modal panel if none exist)
+- **Close panel**: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (replaces with empty placeholder)
+- **Close/remove panel**: `Ctrl + X` (active panel; replaces with empty placeholder, or removes if already empty)
+- **Remove panel**: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others)
 - **Reset layout**: command palette action
 
 Panel plugins may register additional shortcuts scoped to the focused panel.

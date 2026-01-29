@@ -13,6 +13,8 @@
 - Added chat panel shortcuts for session picker/model/thinking selectors when input is not focused. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Added a generic instance/profile selector shortcut for the active panel header. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/sessions/time tracker (Ctrl+A/C/D/F/L/N/S/T), persisted locally, and opens a modal panel if none exist. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Added a global command palette FAB on mobile/Capacitor layouts. ([#48](https://github.com/kcosr/assistant/pull/48))
+- Added a global Ctrl+X shortcut to close or remove the active panel. ([#48](https://github.com/kcosr/assistant/pull/48))
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#47](https://github.com/kcosr/assistant/pull/47))
@@ -20,12 +22,14 @@
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed active chat panels to use the same selection highlight as other panels. ([#47](https://github.com/kcosr/assistant/pull/47))
-- Changed split shortcut to Ctrl+Shift+S to free Ctrl+S for sessions. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Changed split shortcut to Ctrl+S and removed Ctrl+S sessions focus. ([#48](https://github.com/kcosr/assistant/pull/48))
 
 ### Fixed
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Fixed focus history to ignore modal-only panels. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Fixed time tracker dialog escape handlers to clean up on unmount. ([#47](https://github.com/kcosr/assistant/pull/47))
+- Fixed lists AQL toolbar layout to avoid squeezing the search input on mobile. ([#48](https://github.com/kcosr/assistant/pull/48))
+- Fixed panel selection highlight to appear on mobile. ([#48](https://github.com/kcosr/assistant/pull/48))
 
 ### Removed
 

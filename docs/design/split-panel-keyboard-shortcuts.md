@@ -6,7 +6,7 @@ Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selectin
 ## Context
 - Panel splitting exists in the panel menu under “Split with new panel...”.
 - Dragging a panel shows a dock overlay highlight based on the drop region.
-- `Ctrl + S` is currently bound to focus the sidebar and will be reassigned.
+- `Ctrl + S` was previously bound to focus the sessions panel and is now reassigned.
 
 ## Proposed UX
 - `Ctrl + S` enters **split placement mode** for the active panel. If there is no active panel, do nothing.
@@ -19,7 +19,7 @@ Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selectin
 
 ## Implementation sketch
 - Add a new split-placement state to `KeyboardNavigationController` similar to layout/header navigation modes.
-- Register `Ctrl + S` in `registerShortcuts()` and remove the existing focus-sidebar binding.
+- Register `Ctrl + S` in `registerShortcuts()` and remove the existing sessions focus binding.
 - Reuse `computeHighlightRect()` and overlay styling from panel drag, or add a small helper in `PanelWorkspaceController` to create/manage a split overlay for keyboard usage.
 - On confirm, call `panelWorkspace.openPanel('empty', { placement: { region }, targetPanelId, focus: true })`.
 - Ensure the mode is gated by `isKeyboardShortcutsEnabled`, no open dialogs, and not inside terminal/editor inputs.
