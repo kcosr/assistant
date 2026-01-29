@@ -827,7 +827,7 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   });
 
-  it('shows mobile fabs and opens the command palette on search click', async () => {
+  it('shows the add fab on mobile list mode', async () => {
     vi.resetModules();
     await import('./index');
 
@@ -925,7 +925,6 @@ describe('lists panel keyboard shortcuts', () => {
       }),
     );
 
-    const openCommandPalette = vi.fn();
     const keyboardShortcuts = createShortcutHarness(() => {
       const active = context.get('panel.active') as
         | { panelId?: string; panelType?: string }
@@ -956,7 +955,6 @@ describe('lists panel keyboard shortcuts', () => {
       setStatus: () => undefined,
       isMobileViewport: () => true,
       notifyContextAvailabilityChange: () => undefined,
-      openCommandPalette,
     });
 
     host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
@@ -973,18 +971,7 @@ describe('lists panel keyboard shortcuts', () => {
       throw new Error('Timed out waiting for fabs');
     };
 
-    await waitFor(
-      () =>
-        !!container.querySelector('.lists-fab-add.is-visible') &&
-        !!container.querySelector('.lists-fab-search.is-visible'),
-    );
-
-    const searchButton = container.querySelector<HTMLButtonElement>('.lists-fab-search');
-    expect(searchButton).not.toBeNull();
-
-    searchButton?.click();
-
-    expect(openCommandPalette).toHaveBeenCalledTimes(1);
+    await waitFor(() => !!container.querySelector('.lists-fab-add.is-visible'));
 
     handle.unmount();
   });

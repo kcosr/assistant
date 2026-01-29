@@ -3415,37 +3415,6 @@ button.tag-chip-remove {
     padding: var(--spacing-xs) var(--spacing-sm);
   }
 
-  .panel-frame.is-active {
-    outline: none;
-    box-shadow: none;
-  }
-
-  .panel-frame.is-chat-active {
-    outline: none;
-    box-shadow: none;
-  }
-
-  .panel-frame.is-active::after,
-  .panel-frame.is-chat-active::after {
-    border: none;
-  }
-
-  .panel-frame.is-active > .panel,
-  .panel-frame.is-active > .panel-instance,
-  .panel-frame.is-active > .chat-panel {
-    box-shadow: none;
-  }
-
-  .panel-frame.is-chat-active > .panel,
-  .panel-frame.is-chat-active > .panel-instance,
-  .panel-frame.is-chat-active > .chat-panel {
-    box-shadow: none;
-  }
-
-  .panel-instance.chat-active {
-    box-shadow: none;
-  }
-
   /* List item and note editor dialogs: sit slightly lower on mobile while clearing keyboard */
   .confirm-dialog-overlay.list-item-dialog-overlay,
   .confirm-dialog-overlay.note-editor-dialog-overlay,

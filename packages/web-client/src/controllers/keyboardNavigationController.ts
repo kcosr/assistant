@@ -179,7 +179,7 @@ export class KeyboardNavigationController {
       id: 'open-command-palette',
       key: 'k',
       modifiers: ['ctrl'],
-      cmdOrCtrl: true,
+      cmdOrCtrl: false,
       description: 'Open command palette',
       handler: () => {
         this.options.openCommandPalette();
@@ -226,7 +226,7 @@ export class KeyboardNavigationController {
       id: 'cycle-panel-forward',
       key: ']',
       modifiers: ['ctrl'],
-      cmdOrCtrl: true,
+      cmdOrCtrl: false,
       description: 'Cycle panel focus forward',
       handler: () => {
         panelWorkspace.focusNextPanel(false);
@@ -274,6 +274,34 @@ export class KeyboardNavigationController {
       },
     });
 
+    this.shortcutRegistry.register(
+      ctrlShortcut(
+        'close-or-remove-active-panel',
+        'x',
+        'Close or remove active panel',
+        (event) => {
+          if (!this.preparePanelNavigationShortcut({ closeModal: false })) {
+            return false;
+          }
+          if (!this.canHandlePanelNavigationShortcut(event)) {
+            return false;
+          }
+          const activePanelId = panelWorkspace.getActivePanelId();
+          if (!activePanelId) {
+            return false;
+          }
+          const panelType = panelWorkspace.getPanelType(activePanelId);
+          if (panelType === 'empty') {
+            panelWorkspace.closePanel(activePanelId);
+          } else {
+            panelWorkspace.closePanelToPlaceholder(activePanelId);
+          }
+          return true;
+        },
+        { bindingId: 'panel.close-or-remove' },
+      ),
+    );
+
     if (isMacPlatform()) {
       this.shortcutRegistry.register(
         cmdShiftShortcut('toggle-sidebar', 's', 'Toggle sidebar', () => {
@@ -309,7 +337,8 @@ export class KeyboardNavigationController {
     this.shortcutRegistry.register({
       id: 'split-panel',
       key: 's',
-      modifiers: ['ctrl', 'shift'],
+      modifiers: ['ctrl'],
+      cmdOrCtrl: false,
       description: 'Split active panel',
       handler: (event) => {
         if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
@@ -369,12 +398,6 @@ export class KeyboardNavigationController {
     registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
     registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
     registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
-    registerLastPanelShortcut(
-      'focus-last-sessions',
-      's',
-      'Focus last used sessions panel',
-      'sessions',
-    );
     registerLastPanelShortcut(
       'focus-last-time-tracker',
       't',

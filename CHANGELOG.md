@@ -20,7 +20,6 @@
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed Ctrl+I to toggle chat input focus instead of always focusing. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed active chat panels to use the same selection highlight as other panels. ([#47](https://github.com/kcosr/assistant/pull/47))
-- Changed split shortcut to Ctrl+Shift+S to free Ctrl+S for sessions. ([#47](https://github.com/kcosr/assistant/pull/47))
 
 ### Fixed
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#47](https://github.com/kcosr/assistant/pull/47))

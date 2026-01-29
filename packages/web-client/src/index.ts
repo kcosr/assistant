@@ -63,6 +63,7 @@ import {
   createShortcutService,
 } from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
+import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
   applyThemePreferences,
@@ -191,6 +192,7 @@ import { apiFetch, getWebSocketUrl } from './utils/api';
 import {
   configureStatusBar,
   enableAppReloadOnResume,
+  isCapacitorAndroid,
   setupBackButtonHandler,
 } from './utils/capacitor';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
@@ -325,6 +327,7 @@ async function main(): Promise<void> {
     panelLauncherCloseButton,
     panelHeaderDock,
     commandPaletteButton,
+    commandPaletteFab,
     commandPalette,
     commandPalettePanel,
     commandPaletteInput,
@@ -2748,6 +2751,21 @@ async function main(): Promise<void> {
         })
       : null;
   commandPaletteController?.attach();
+  setupCommandPaletteFab({
+    button: commandPaletteFab,
+    icon: ICONS.search,
+    openCommandPalette: () => {
+      if (commandPaletteController) {
+        commandPaletteController.open();
+        return;
+      }
+      if (commandPaletteButton) {
+        commandPaletteButton.click();
+      }
+    },
+    isMobileViewport,
+    isCapacitorAndroid,
+  });
 
   if (layoutDropdown) {
     const presetButtons = layoutDropdown.querySelectorAll<HTMLButtonElement>('[data-layout]');

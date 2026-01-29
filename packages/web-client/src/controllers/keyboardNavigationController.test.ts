@@ -293,7 +293,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
-  it('starts split placement on ctrl+shift+s and inserts an empty panel on enter', () => {
+  it('starts split placement on ctrl+s and inserts an empty panel on enter', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -304,7 +304,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
     );
 
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(true);
@@ -331,7 +331,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     const registry = attachShortcutRegistry(controller, { panelNavigation: true });
 
     document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, shiftKey: true, bubbles: true }),
+      new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
     );
 
     document.dispatchEvent(
@@ -365,6 +365,44 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(false);
     expect(options.panelWorkspace.openPanel).not.toHaveBeenCalled();
+    registry.detach();
+  });
+
+  it('closes the active panel to a placeholder on ctrl+x', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], null, 'lists');
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(options.panelWorkspace.closePanelToPlaceholder).toHaveBeenCalledWith('panel-1');
+    expect(options.panelWorkspace.closePanel).not.toHaveBeenCalled();
+    registry.detach();
+  });
+
+  it('removes the active panel when it is empty on ctrl+x', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], null, 'empty');
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'x', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(options.panelWorkspace.closePanel).toHaveBeenCalledWith('panel-1');
+    expect(options.panelWorkspace.closePanelToPlaceholder).not.toHaveBeenCalled();
     registry.detach();
   });
 
@@ -588,7 +626,6 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     ['f', 'files'],
     ['l', 'lists'],
     ['n', 'notes'],
-    ['s', 'sessions'],
     ['t', 'time-tracker'],
   ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {
     const panelFrame = document.createElement('div');

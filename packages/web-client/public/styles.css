@@ -1355,6 +1355,54 @@ button.settings-dropdown-item {
   color: var(--color-text-primary);
 }
 
+.command-palette-fab {
+  position: fixed;
+  right: var(--spacing-lg);
+  bottom: calc(
+    var(--spacing-lg) + var(--capacitor-nav-bar-height, 0px) + var(--command-palette-fab-offset, 64px)
+  );
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--color-accent-primary);
+  color: var(--color-text-on-accent);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  transition:
+    background-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
+  z-index: 200;
+}
+
+.command-palette-fab.is-visible {
+  display: inline-flex;
+}
+
+.command-palette-fab:hover {
+  background-color: var(--color-accent-primary);
+  box-shadow: var(--shadow-lg);
+}
+
+.command-palette-fab:active {
+  background-color: var(--color-accent-primary);
+  transform: translateY(1px);
+}
+
+.command-palette-fab:focus,
+.command-palette-fab:focus-visible {
+  background-color: var(--color-accent-primary);
+}
+
+.command-palette-fab .icon-sm {
+  width: 18px;
+  height: 18px;
+}
+
 .command-palette-input {
   padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--color-border-subtle);
