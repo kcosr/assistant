@@ -1170,7 +1170,7 @@ export class PanelWorkspaceController {
       return;
     }
     try {
-      const raw = window.localStorage.getItem(FOCUS_HISTORY_STORAGE_KEY);
+      const raw = window.localStorage.getItem(this.getFocusHistoryStorageKey());
       if (!raw) {
         return;
       }
@@ -1208,12 +1208,17 @@ export class PanelWorkspaceController {
     }
     try {
       window.localStorage.setItem(
-        FOCUS_HISTORY_STORAGE_KEY,
+        this.getFocusHistoryStorageKey(),
         JSON.stringify(this.focusHistory),
       );
     } catch {
       // Ignore localStorage serialization errors.
     }
+  }
+
+  private getFocusHistoryStorageKey(): string {
+    const windowId = this.options.windowId?.trim();
+    return windowId ? `${FOCUS_HISTORY_STORAGE_KEY}:${windowId}` : FOCUS_HISTORY_STORAGE_KEY;
   }
 
   focusPanel(panelId: string, source: PanelFocusSource = 'program'): void {
@@ -1322,7 +1327,9 @@ export class PanelWorkspaceController {
   }
 
   private loadInitialLayout(): LayoutPersistence {
-    const fromStore = this.options.loadLayout ? this.options.loadLayout() : loadPanelLayout();
+    const fromStore = this.options.loadLayout
+      ? this.options.loadLayout()
+      : loadPanelLayout(this.options.windowId);
     if (fromStore) {
       const normalized = this.normalizeLayout(fromStore);
       if (normalized) {
@@ -1461,7 +1468,7 @@ export class PanelWorkspaceController {
     }
 
     try {
-      savePanelLayout(layout);
+      savePanelLayout(layout, this.options.windowId);
     } catch {
       // Ignore localStorage serialization errors.
     }
