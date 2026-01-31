@@ -31,11 +31,6 @@ import {
 import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
-import {
-  type GlobalTagScope,
-  normalizeGlobalTagScope,
-} from '../../../../web-client/src/utils/globalTagScope';
-import { matchesGlobalTagScope } from '../../../../web-client/src/utils/globalTagScopeFilter';
 import { PINNED_TAG, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
 import { buildAqlString, parseAql, type AqlQuery } from '../../../../web-client/src/utils/listItemQuery';
 import type { KeyboardShortcut } from '../../../../web-client/src/utils/keyboardShortcuts';
@@ -876,15 +871,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let refreshToken = 0;
       let refreshInFlight = false;
       let loadToken = 0;
-      let globalTagScope: GlobalTagScope = normalizeGlobalTagScope(null);
-      const listScopeMatchesById = new Map<string, boolean>();
-      let listScopeMatchToken = 0;
       let browserController: CollectionBrowserController | null = null;
       let dropdownController: CollectionDropdownController | null = null;
       let chromeController: PanelChromeController | null = null;
       let unsubscribePanelActive: (() => void) | null = null;
       let unsubscribeViewportResize: (() => void) | null = null;
-      let unsubscribeGlobalTagScope: (() => void) | null = null;
       let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
       let pendingAqlApplyEvent: { listId: string; instanceId: string; query: string } | null = null;
       const panelShortcutUnsubscribers: Array<() => void> = [];
@@ -893,7 +884,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
       const panelShortcutScope = { scope: 'panelInstance' as const, panelId };
-      globalTagScope = normalizeGlobalTagScope(host.getContext('global.tagScope'));
 
       const updatePanelSelection = (value: unknown): void => {
         if (!value || typeof value !== 'object') {
@@ -1172,142 +1162,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           instance_id: instanceId,
         });
 
-      const normalizeTagList = (tags?: string[]): string[] => {
-        if (!Array.isArray(tags)) {
-          return [];
-        }
-        const result: string[] = [];
-        const seen = new Set<string>();
-        for (const tag of tags) {
-          if (typeof tag !== 'string') continue;
-          const trimmed = tag.trim().toLowerCase();
-          if (!trimmed || seen.has(trimmed)) continue;
-          seen.add(trimmed);
-          result.push(trimmed);
-        }
-        return result;
-      };
-
-      const isGlobalScopeActive = (scope: GlobalTagScope): boolean =>
-        scope.include.length > 0 || scope.exclude.length > 0;
-
-      const getListScopeKey = (list: ListSummary): string =>
-        `${list.instanceId ?? DEFAULT_INSTANCE_ID}:${list.id}`;
-
-      const listMatchesScopeByTags = (list: ListSummary, scope: GlobalTagScope): boolean =>
-        matchesGlobalTagScope(list.tags ?? [], isGlobalScopeActive(scope) ? scope : null);
-
-      const listExcludedByTags = (list: ListSummary, scope: GlobalTagScope): boolean => {
-        if (scope.exclude.length === 0) {
-          return false;
-        }
-        const normalized = normalizeTagList(list.tags);
-        return scope.exclude.some((tag) => normalized.includes(tag));
-      };
-
-      const listHasMatchingItems = async (
-        list: ListSummary,
-        scope: GlobalTagScope,
-      ): Promise<boolean> => {
-        if (!isGlobalScopeActive(scope)) {
-          return false;
-        }
-        try {
-          const includeTags = scope.include;
-          const excludeTags = scope.exclude;
-          const args: Record<string, unknown> = {
-            listId: list.id,
-            limit: 0,
-            sort: 'position',
-          };
-          if (includeTags.length > 0) {
-            args['tags'] = includeTags;
-            args['tagMatch'] = 'all';
-          }
-          const targetInstanceId = list.instanceId ?? activeInstanceId;
-          const raw = await callInstanceOperation<unknown>(
-            targetInstanceId,
-            'items-list',
-            args,
-          );
-          const items = parseListItems(raw);
-          if (items.length === 0) {
-            return false;
-          }
-          if (excludeTags.length === 0) {
-            return items.length > 0;
-          }
-          return items.some((item) => {
-            const itemTags = normalizeTagList(item.tags);
-            return !excludeTags.some((tag) => itemTags.includes(tag));
-          });
-        } catch {
-          return false;
-        }
-      };
-
-      const refreshListScopeMatches = async (): Promise<void> => {
-        const token = ++listScopeMatchToken;
-        listScopeMatchesById.clear();
-        if (!globalTagScope.includeListsWithMatchingItems || !isGlobalScopeActive(globalTagScope)) {
-          return;
-        }
-        const candidates = availableLists.filter(
-          (list) =>
-            !listMatchesScopeByTags(list, globalTagScope) &&
-            !listExcludedByTags(list, globalTagScope),
-        );
-        await Promise.all(
-          candidates.map(async (list) => {
-            const matches = await listHasMatchingItems(list, globalTagScope);
-            if (token !== listScopeMatchToken) {
-              return;
-            }
-            if (matches) {
-              listScopeMatchesById.set(getListScopeKey(list), true);
-            }
-          }),
-        );
-        if (token === listScopeMatchToken) {
-          dropdownController?.populate(getAvailableItems());
-          browserController?.refresh();
-        }
-      };
-
-      const updateListScopeMatchForList = async (
-        listId: string,
-        instanceId: string,
-      ): Promise<void> => {
-        const key = `${instanceId}:${listId}`;
-        if (!globalTagScope.includeListsWithMatchingItems || !isGlobalScopeActive(globalTagScope)) {
-          listScopeMatchesById.delete(key);
-          return;
-        }
-        const list = availableLists.find(
-          (entry) => entry.id === listId && entry.instanceId === instanceId,
-        );
-        if (!list) {
-          listScopeMatchesById.delete(key);
-          return;
-        }
-        if (listMatchesScopeByTags(list, globalTagScope)) {
-          listScopeMatchesById.delete(key);
-          return;
-        }
-        if (listExcludedByTags(list, globalTagScope)) {
-          listScopeMatchesById.delete(key);
-          return;
-        }
-        const matches = await listHasMatchingItems(list, globalTagScope);
-        if (matches) {
-          listScopeMatchesById.set(key, true);
-        } else {
-          listScopeMatchesById.delete(key);
-        }
-        dropdownController?.populate(getAvailableItems());
-        browserController?.refresh();
-      };
-
       const refreshNoteInstances = async (): Promise<Instance[]> => {
         try {
           const raw = await callNotesOperation<unknown>('instance_list', {});
@@ -1339,30 +1193,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         availableNotes = summaries;
       };
 
-      const getAvailableItems = (): CollectionItemSummary[] => {
-        const scopeActive = isGlobalScopeActive(globalTagScope);
-        return availableLists.map((list) => {
-          const matchesByTags = scopeActive
-            ? listMatchesScopeByTags(list, globalTagScope)
-            : true;
-          const matchesByItems =
-            scopeActive &&
-            globalTagScope.includeListsWithMatchingItems &&
-            listScopeMatchesById.get(getListScopeKey(list)) === true;
-          const globalScopeMatch = !matchesByTags && matchesByItems ? true : undefined;
-          return {
-            type: 'list',
-            id: list.id,
-            name: list.name,
-            tags: list.tags,
-            ...(globalScopeMatch ? { globalScopeMatch: true } : {}),
-            favorite: list.favorite,
-            updatedAt: list.updatedAt,
-            instanceId: list.instanceId,
-            instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
-          };
-        });
-      };
+      const getAvailableItems = (): CollectionItemSummary[] =>
+        availableLists.map((list) => ({
+          type: 'list',
+          id: list.id,
+          name: list.name,
+          tags: list.tags,
+          favorite: list.favorite,
+          updatedAt: list.updatedAt,
+          instanceId: list.instanceId,
+          instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
+        }));
 
       const buildReferenceItems = (): CollectionItemSummary[] => {
         const listItems = availableLists.map((list) => ({
@@ -2074,7 +1915,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getSearchQuery: () => sharedSearchController.getQuery(),
         getSearchTagController: () => sharedSearchController.getTagController(),
         getActiveInstanceId: () => activeListInstanceId ?? activeInstanceId,
-        getGlobalTagScope: () => globalTagScope,
         callOperation: (operation, args) => {
           const { instanceId, ...rest } = args as Record<string, unknown> & {
             instanceId?: unknown;
@@ -2224,7 +2064,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           return Array.from(tags).sort();
         },
-        getGlobalTagScope: () => globalTagScope,
         getGroupLabel: () => '',
         getActiveItemReference: getActiveReference,
         selectItem: (item) => {
@@ -2345,9 +2184,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         sortModeStorageKey: 'aiAssistantListsBrowserSortMode',
         openNoteEditor: () => undefined,
         shouldShowInstanceBadge: () => selectedInstanceIds.length > 1,
-        getCreateListDefaults: () => ({
-          tags: globalTagScope.include.slice(),
-        }),
         getListInstanceSelection: () => {
           const selection = getInstanceSelectionOptions();
           if (!selection) {
@@ -2396,7 +2232,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           return Array.from(tags).sort();
         },
-        getGlobalTagScope: () => globalTagScope,
         getGroupLabel: () => 'Lists',
         getSupportedTypes: () => ['list'],
         getSortMode: () => browserController?.getSortMode() ?? 'alpha',
@@ -2597,23 +2432,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const controls = listPanelController.render(activeListId, activeListData);
         sharedSearchController.setRightControls(controls.rightControls);
       };
-
-      const updateGlobalTagScope = (value: unknown): void => {
-        globalTagScope = normalizeGlobalTagScope(value);
-        void refreshListScopeMatches();
-        dropdownController?.refreshFilter();
-        browserController?.refresh();
-        if (searchMode === 'aql') {
-          rerenderList();
-        } else {
-          listPanelController.applySearch(sharedSearchController.getQuery());
-        }
-      };
-
-      unsubscribeGlobalTagScope = host.subscribeContext(
-        'global.tagScope',
-        updateGlobalTagScope,
-      );
 
       const setSavedQueries = (queries: SavedAqlQuery[]): void => {
         savedAqlQueries = queries;
@@ -3208,7 +3026,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           availableLists = results.flat();
-          void refreshListScopeMatches();
           dropdownController?.populate(getAvailableItems());
           browserController?.refresh();
           if (activeListId && activeListInstanceId) {
@@ -3459,7 +3276,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
         if (listsChanged) {
           refreshListBrowser();
-          void updateListScopeMatchForList(listId, instanceId);
         }
 
         if (action === 'list_deleted') {
@@ -3468,7 +3284,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         if (action.startsWith('item_')) {
           browserController?.invalidatePreview({ type: 'list', id: listId, instanceId });
-          void updateListScopeMatchForList(listId, instanceId);
         }
 
         if (
@@ -3721,7 +3536,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           chromeController?.destroy();
           unsubscribePanelActive?.();
           unsubscribeViewportResize?.();
-          unsubscribeGlobalTagScope?.();
           host.setContext(contextKey, null);
           if (highlightTimeout) {
             window.clearTimeout(highlightTimeout);

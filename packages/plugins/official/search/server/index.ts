@@ -14,8 +14,6 @@ type SearchArgs = {
   scope?: string;
   instance?: string;
   limit?: number;
-  tags?: string[];
-  excludeTags?: string[];
 };
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -34,30 +32,6 @@ function parseOptionalString(value: unknown): string | undefined {
 }
 
 function parseProfiles(value: unknown): string[] | undefined {
-  if (Array.isArray(value)) {
-    const collected: string[] = [];
-    for (const entry of value) {
-      if (typeof entry !== 'string') {
-        continue;
-      }
-      const trimmed = entry.trim();
-      if (trimmed && !collected.includes(trimmed)) {
-        collected.push(trimmed);
-      }
-    }
-    return collected.length > 0 ? collected : undefined;
-  }
-  if (typeof value === 'string') {
-    const parts = value
-      .split(',')
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-    return parts.length > 0 ? Array.from(new Set(parts)) : undefined;
-  }
-  return undefined;
-}
-
-function parseTags(value: unknown): string[] | undefined {
   if (Array.isArray(value)) {
     const collected: string[] = [];
     for (const entry of value) {
@@ -106,8 +80,6 @@ function parseSearchArgs(raw: Record<string, unknown>): SearchArgs {
   const scope = parseOptionalString(raw['scope']);
   const instance = parseOptionalString(raw['instance']);
   const limit = parseLimit(raw['limit']);
-  const tags = parseTags(raw['tags']);
-  const excludeTags = parseTags(raw['excludeTags']);
 
   return {
     query,
@@ -116,8 +88,6 @@ function parseSearchArgs(raw: Record<string, unknown>): SearchArgs {
     ...(scope ? { scope } : {}),
     ...(instance ? { instance } : {}),
     ...(limit !== undefined ? { limit } : {}),
-    ...(tags ? { tags } : {}),
-    ...(excludeTags ? { excludeTags } : {}),
   };
 }
 

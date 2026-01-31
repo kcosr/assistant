@@ -38,7 +38,6 @@ by an integration with the badlogic/pi-mono agent SDK.
 - **Persistent sessions** with JSONL event logs and optional naming/pinning
 - **Multi-client support** – multiple browser windows can share a session
 - **Theme + font preferences** (auto/light/dark + presets)
-- **Per-window global tag scope** for notes/lists/search with include/exclude filters
 
 ## Quick Start
 

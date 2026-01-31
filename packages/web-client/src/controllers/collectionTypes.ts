@@ -9,7 +9,6 @@ export type CollectionItemSummary = {
   id: string;
   name: string;
   tags?: string[];
-  globalScopeMatch?: boolean;
   favorite?: boolean;
   updatedAt?: string;
   instanceId?: string;

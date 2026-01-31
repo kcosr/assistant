@@ -281,28 +281,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const results: SearchResult[] = [];
       const favoriteQuery = parseFavoriteQuery(trimmed);
       const tagQuery = parseTagQuery(trimmed);
-      const includeTags = normalizeTags(options.tags ?? []);
-      if (tagQuery) {
-        includeTags.push(tagQuery);
-      }
-      const normalizedIncludeTags = normalizeTags(includeTags);
-      const normalizedExcludeTags = normalizeTags(options.excludeTags ?? []);
-
-      const matchesIncludeTags = (tags: string[] | undefined): boolean => {
-        if (normalizedIncludeTags.length === 0) {
-          return true;
-        }
-        const normalized = normalizeTags(tags);
-        return normalizedIncludeTags.every((tag) => normalized.includes(tag));
-      };
-
-      const matchesExcludeTags = (tags: string[] | undefined): boolean => {
-        if (normalizedExcludeTags.length === 0) {
-          return true;
-        }
-        const normalized = normalizeTags(tags);
-        return !normalizedExcludeTags.some((tag) => normalized.includes(tag));
-      };
 
       if (favoriteQuery) {
         for (const instId of targetInstances) {
@@ -312,12 +290,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const store = await getStore(instId);
           const allLists = await store.listLists();
           const listResults = allLists
-            .filter(
-              (list) =>
-                list.favorite === true &&
-                matchesIncludeTags(list.tags) &&
-                matchesExcludeTags(list.tags),
-            )
+            .filter((list) => list.favorite === true)
             .map<SearchResult>((list) => ({
               id: `list:${list.id}`,
               title: list.name,
@@ -343,7 +316,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         return results.slice(0, limit);
       }
 
-      if (tagQuery || (normalizedIncludeTags.length > 0 && !trimmed)) {
+      if (tagQuery) {
         for (const instId of targetInstances) {
           if (!instanceById.has(instId)) {
             continue;
@@ -352,9 +325,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const allLists = await store.listLists();
           const listLookup = new Map(allLists.map((list) => [list.id, list.name]));
           const listResults = allLists
-            .filter(
-              (list) => matchesIncludeTags(list.tags) && matchesExcludeTags(list.tags),
-            )
+            .filter((list) => normalizeTags(list.tags).includes(tagQuery))
             .map<SearchResult>((list) => ({
               id: `list:${list.id}`,
               title: list.name,
@@ -375,15 +346,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           for (const list of allLists) {
             const items = await store.listItems({
               listId: list.id,
-              ...(normalizedIncludeTags.length > 0
-                ? { tags: normalizedIncludeTags, tagMatch: 'all' as const }
-                : {}),
+              tags: [tagQuery],
+              tagMatch: 'all',
               limit: 0,
             });
             for (const item of items) {
-              if (!matchesExcludeTags(item.tags)) {
-                continue;
-              }
               const subtitle = listLookup.get(item.listId) ?? item.listId;
               const snippetSource = item.notes?.trim() || item.url?.trim() || '';
               itemResults.push({
@@ -422,15 +389,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const lists = await store.listLists(
-            normalizedIncludeTags.length > 0
-              ? { tags: normalizedIncludeTags, tagMatch: 'all' }
-              : undefined,
-          );
+          const lists = await store.listLists();
           for (const list of lists) {
-            if (!matchesIncludeTags(list.tags) || !matchesExcludeTags(list.tags)) {
-              continue;
-            }
             results.push({
               id: `list:${list.id}`,
               title: list.name,
@@ -463,9 +423,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const listLookup = new Map(lists.map((list) => [list.id, list.name]));
         const listResults = lists
           .filter((list) => {
-            if (!matchesIncludeTags(list.tags) || !matchesExcludeTags(list.tags)) {
-              return false;
-            }
             const name = list.name.toLowerCase();
             const id = list.id.toLowerCase();
             const description = list.description?.toLowerCase() ?? '';
@@ -492,18 +449,9 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
         const itemLimit = Math.max(limit - listResults.length, 0);
         const items =
-          itemLimit > 0
-            ? await store.searchItems({
-                query: trimmed,
-                limit: itemLimit,
-                ...(normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : {}),
-              })
-            : [];
+          itemLimit > 0 ? await store.searchItems({ query: trimmed, limit: itemLimit }) : [];
         const itemResults: SearchResult[] = [];
         for (const item of items) {
-          if (!matchesExcludeTags(item.tags)) {
-            continue;
-          }
           const subtitle = listLookup.get(item.listId) ?? item.listId;
           const snippetSource = item.notes?.trim() || item.url?.trim() || '';
           itemResults.push({

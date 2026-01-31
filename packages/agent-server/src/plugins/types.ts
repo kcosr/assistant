@@ -40,10 +40,6 @@ export interface SearchOptions {
   instanceId?: string;
   /** Maximum results to return */
   limit?: number;
-  /** Optional tag filters to apply */
-  tags?: string[];
-  /** Optional excluded tags */
-  excludeTags?: string[];
 }
 
 export interface SearchResultLaunch {

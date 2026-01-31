@@ -238,28 +238,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       const results: SearchResult[] = [];
       const favoriteQuery = parseFavoriteQuery(trimmed);
       const tagQuery = parseTagQuery(trimmed);
-      const includeTags = normalizeTags(options.tags ?? []);
-      if (tagQuery) {
-        includeTags.push(tagQuery);
-      }
-      const normalizedIncludeTags = normalizeTags(includeTags);
-      const normalizedExcludeTags = normalizeTags(options.excludeTags ?? []);
-
-      const matchesIncludeTags = (tags: string[] | undefined): boolean => {
-        if (normalizedIncludeTags.length === 0) {
-          return true;
-        }
-        const normalized = normalizeTags(tags);
-        return normalizedIncludeTags.every((tag) => normalized.includes(tag));
-      };
-
-      const matchesExcludeTags = (tags: string[] | undefined): boolean => {
-        if (normalizedExcludeTags.length === 0) {
-          return true;
-        }
-        const normalized = normalizeTags(tags);
-        return !normalizedExcludeTags.some((tag) => normalized.includes(tag));
-      };
 
       if (favoriteQuery) {
         for (const instId of targetInstances) {
@@ -267,15 +245,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list(
-            normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : undefined,
-          );
-          const favorites = notes.filter(
-            (note) =>
-              note.favorite === true &&
-              matchesIncludeTags(note.tags) &&
-              matchesExcludeTags(note.tags),
-          );
+          const notes = await store.list();
+          const favorites = notes.filter((note) => note.favorite === true);
           const sorted = favorites.slice().sort((a, b) => {
             const scoreA = toScore(a.updated ?? a.created);
             const scoreB = toScore(b.updated ?? b.created);
@@ -302,17 +273,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         return results.slice(0, limit);
       }
 
-      if (tagQuery || (normalizedIncludeTags.length > 0 && !trimmed)) {
+      if (tagQuery) {
         for (const instId of targetInstances) {
           if (!instanceById.has(instId)) {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list({ tags: normalizedIncludeTags });
-          const filtered = notes.filter(
-            (note) => matchesIncludeTags(note.tags) && matchesExcludeTags(note.tags),
-          );
-          const sorted = filtered.slice().sort((a, b) => {
+          const notes = await store.list({ tags: [tagQuery] });
+          const sorted = notes.slice().sort((a, b) => {
             const scoreA = toScore(a.updated ?? a.created);
             const scoreB = toScore(b.updated ?? b.created);
             return scoreB - scoreA;
@@ -344,13 +312,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list(
-            normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : undefined,
-          );
+          const notes = await store.list();
           for (const note of notes) {
-            if (!matchesIncludeTags(note.tags) || !matchesExcludeTags(note.tags)) {
-              continue;
-            }
             results.push({
               id: note.title,
               title: note.title,
@@ -378,15 +341,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           continue;
         }
         const store = await getStore(instId);
-        const notes = await store.search({
-          query: trimmed,
-          limit,
-          ...(normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : {}),
-        });
+        const notes = await store.search({ query: trimmed, limit });
         for (const note of notes) {
-          if (!matchesIncludeTags(note.tags) || !matchesExcludeTags(note.tags)) {
-            continue;
-          }
           results.push({
             id: note.title,
             title: note.title,

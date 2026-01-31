@@ -17,7 +17,6 @@ export interface WebClientElements {
   themeSelect: HTMLSelectElement | null;
   uiFontSelect: HTMLSelectElement | null;
   codeFontSelect: HTMLSelectElement | null;
-  globalTagScopeButton: HTMLButtonElement | null;
   tagColorsSettingsButton: HTMLButtonElement | null;
   resetLayoutButton: HTMLButtonElement | null;
   resetPanelStateButton: HTMLButtonElement | null;
@@ -96,7 +95,6 @@ export function getWebClientElements(): WebClientElements | null {
     themeSelect: getElement<HTMLSelectElement>('theme-select'),
     uiFontSelect: getElement<HTMLSelectElement>('ui-font-select'),
     codeFontSelect: getElement<HTMLSelectElement>('code-font-select'),
-    globalTagScopeButton: getElement<HTMLButtonElement>('global-tag-scope-button'),
     tagColorsSettingsButton: getElement<HTMLButtonElement>('tag-colors-settings-button'),
     resetLayoutButton: getElement<HTMLButtonElement>('reset-layout-button'),
     resetPanelStateButton: getElement<HTMLButtonElement>('reset-panel-state-button'),

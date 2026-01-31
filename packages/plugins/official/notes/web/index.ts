@@ -19,10 +19,6 @@ import { DialogManager } from '../../../../web-client/src/controllers/dialogMana
 import { MarkdownViewerController } from '../../../../web-client/src/controllers/markdownViewerController';
 import { ListColumnPreferencesClient } from '../../../../web-client/src/utils/listColumnPreferences';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
-import {
-  type GlobalTagScope,
-  normalizeGlobalTagScope,
-} from '../../../../web-client/src/utils/globalTagScope';
 import type { KeyboardShortcut } from '../../../../web-client/src/utils/keyboardShortcuts';
 import {
   applyPinnedTag,
@@ -738,7 +734,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let refreshToken = 0;
       let refreshInFlight = false;
       let loadToken = 0;
-      let globalTagScope: GlobalTagScope = normalizeGlobalTagScope(null);
       let browserController: CollectionBrowserController | null = null;
       let dropdownController: CollectionDropdownController | null = null;
       let markdownViewer: MarkdownViewerController | null = null;
@@ -747,7 +742,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let chromeController: PanelChromeController | null = null;
       let isPanelSelected = false;
       let unsubscribePanelActive: (() => void) | null = null;
-      let unsubscribeGlobalTagScope: (() => void) | null = null;
       let pendingShowEvent: { title: string; instanceId: string } | null = null;
       const panelShortcutUnsubscribers: Array<() => void> = [];
 
@@ -759,16 +753,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           instanceIds: selectedInstanceIds,
         });
       };
-
-      globalTagScope = normalizeGlobalTagScope(host.getContext('global.tagScope'));
-
-      const updateGlobalTagScope = (value: unknown): void => {
-        globalTagScope = normalizeGlobalTagScope(value);
-        browserController?.refresh();
-        dropdownController?.refreshFilter();
-      };
-
-      unsubscribeGlobalTagScope = host.subscribeContext('global.tagScope', updateGlobalTagScope);
 
       const callInstanceOperation = async <T>(
         instanceId: string,
@@ -1970,11 +1954,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const openNewNoteEditor = (instanceId?: string): void => {
         const resolvedInstanceId =
           instanceId ?? getInstanceSelectionOptions()?.preferredInstanceId ?? activeInstanceId;
-        const scopedTags = globalTagScope.include.slice();
         const draft: Note = {
           title: '',
           content: '',
-          tags: scopedTags,
+          tags: [],
           favorite: false,
           created: '',
           updated: '',
@@ -2008,7 +1991,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getAvailableItems,
         getSupportedTypes: () => ['note'],
         getAllTags: getAllNoteTags,
-        getGlobalTagScope: () => globalTagScope,
         getGroupLabel: () => '',
         getActiveItemReference: getActiveReference,
         selectItem: (item) => {
@@ -2111,7 +2093,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
         },
         getAllTags: getAllNoteTags,
-        getGlobalTagScope: () => globalTagScope,
         getGroupLabel: () => '',
         getSupportedTypes: () => ['note'],
         getSortMode: () => browserController?.getSortMode() ?? 'alpha',
@@ -2531,7 +2512,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             unsubscribe();
           }
           unsubscribePanelActive?.();
-          unsubscribeGlobalTagScope?.();
           chromeController?.destroy();
           host.setContext(contextKey, null);
           container.innerHTML = '';

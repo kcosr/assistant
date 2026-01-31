@@ -18,24 +18,6 @@ const parseProfiles = (params: URLSearchParams): string[] => {
   return collected;
 };
 
-const parseTagList = (params: URLSearchParams, key: string): string[] => {
-  const collected: string[] = [];
-  const values = params.getAll(key);
-  for (const value of values) {
-    if (!value) {
-      continue;
-    }
-    const parts = value.split(',');
-    for (const part of parts) {
-      const trimmed = part.trim();
-      if (trimmed.length > 0) {
-        collected.push(trimmed);
-      }
-    }
-  }
-  return collected;
-};
-
 export const handleSearchRoutes: HttpRouteHandler = async (
   context,
   req,
@@ -72,10 +54,8 @@ export const handleSearchRoutes: HttpRouteHandler = async (
     const scope = url.searchParams.get('scope')?.trim() ?? '';
     const instance = url.searchParams.get('instance')?.trim() ?? '';
     const profiles = parseProfiles(url.searchParams);
-    const tags = parseTagList(url.searchParams, 'tags');
-    const excludeTags = parseTagList(url.searchParams, 'excludeTags');
 
-    if (!query && !plugin && !scope && profiles.length === 0 && tags.length === 0 && excludeTags.length === 0) {
+    if (!query && !plugin && !scope && profiles.length === 0) {
       sendJson(400, { error: 'q is required' });
       return true;
     }
@@ -96,8 +76,6 @@ export const handleSearchRoutes: HttpRouteHandler = async (
       ...(plugin ? { plugin } : {}),
       ...(scope ? { scope } : {}),
       ...(instance ? { instance } : {}),
-      ...(tags.length > 0 ? { tags } : {}),
-      ...(excludeTags.length > 0 ? { excludeTags } : {}),
       ...(limit !== undefined ? { limit } : {}),
     });
     sendJson(200, response);

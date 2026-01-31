@@ -67,23 +67,6 @@ Use `packages/web-client/src/utils/tagColors.ts` for consistent tag styling:
 - `applyTagColorToElement(el, tag)`: sets CSS vars for colored tag pills.
 - `applyTagColorsInTree(root)`: apply tag colors across a DOM subtree.
 
-### Global tag scope (per window)
-
-The client supports a per-window **global tag scope** that limits what notes/lists
-and list items are shown (and filters global search).
-
-- Context key: `global.tagScope` (set by `PanelHostController`)
-- Type: `GlobalTagScope` in `packages/web-client/src/utils/globalTagScope.ts`
-- Helpers: `matchesGlobalTagScope`, `mergeTagArrays` in
-  `packages/web-client/src/utils/globalTagScopeFilter.ts`
-- Controllers: pass `getGlobalTagScope` into `CollectionBrowserController`,
-  `CollectionDropdownController`, and `ListPanelController` to enforce the scope.
-
-For lists, list tags are treated as implicit tags for list items when applying the
-global scope. If you need to show a list because its items match (even when the
-list tags do not), set `CollectionItemSummary.globalScopeMatch = true` when
-building dropdown/browser items.
-
 ## Shared List Utilities
 
 These are commonly reused in list-style views:
