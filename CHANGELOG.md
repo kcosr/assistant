@@ -15,7 +15,7 @@
 - Added last-used panel shortcuts for artifacts/chat/diff/files/lists/notes/sessions/time tracker (Ctrl+A/C/D/F/L/N/S/T), persisted locally, and opens a modal panel if none exist. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Added a global command palette FAB on mobile/Capacitor layouts. ([#48](https://github.com/kcosr/assistant/pull/48))
 - Added a global Ctrl+X shortcut to close or remove the active panel. ([#48](https://github.com/kcosr/assistant/pull/48))
-- Added per-window global tag scope filters for notes, lists, list items, and global search, with optional list-item matching and an untagged toggle. ([#000](https://github.com/kcosr/assistant/pull/000))
+- Added per-window global tag scope filters for notes, lists, list items, and global search, with optional list-item matching for lists. ([#000](https://github.com/kcosr/assistant/pull/000))
 
 ### Changed
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#47](https://github.com/kcosr/assistant/pull/47))

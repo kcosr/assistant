@@ -287,16 +287,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       }
       const normalizedIncludeTags = normalizeTags(includeTags);
       const normalizedExcludeTags = normalizeTags(options.excludeTags ?? []);
-      const includeUntagged = options.includeUntagged === true;
 
       const matchesIncludeTags = (tags: string[] | undefined): boolean => {
         if (normalizedIncludeTags.length === 0) {
           return true;
         }
         const normalized = normalizeTags(tags);
-        if (normalized.length === 0 && includeUntagged) {
-          return true;
-        }
         return normalizedIncludeTags.every((tag) => normalized.includes(tag));
       };
 
@@ -379,15 +375,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           for (const list of allLists) {
             const items = await store.listItems({
               listId: list.id,
-              ...(normalizedIncludeTags.length > 0 && !includeUntagged
+              ...(normalizedIncludeTags.length > 0
                 ? { tags: normalizedIncludeTags, tagMatch: 'all' as const }
                 : {}),
               limit: 0,
             });
             for (const item of items) {
-              if (!matchesIncludeTags(item.tags)) {
-                continue;
-              }
               if (!matchesExcludeTags(item.tags)) {
                 continue;
               }
@@ -430,7 +423,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           }
           const store = await getStore(instId);
           const lists = await store.listLists(
-            normalizedIncludeTags.length > 0 && !includeUntagged
+            normalizedIncludeTags.length > 0
               ? { tags: normalizedIncludeTags, tagMatch: 'all' }
               : undefined,
           );
@@ -502,20 +495,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           itemLimit > 0
             ? await store.searchItems({
                 query: trimmed,
-                limit:
-                  includeUntagged && normalizedIncludeTags.length > 0
-                    ? itemLimit * 3
-                    : itemLimit,
-                ...(normalizedIncludeTags.length > 0 && !includeUntagged
-                  ? { tags: normalizedIncludeTags }
-                  : {}),
+                limit: itemLimit,
+                ...(normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : {}),
               })
             : [];
         const itemResults: SearchResult[] = [];
         for (const item of items) {
-          if (!matchesIncludeTags(item.tags)) {
-            continue;
-          }
           if (!matchesExcludeTags(item.tags)) {
             continue;
           }

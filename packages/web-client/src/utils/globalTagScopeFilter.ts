@@ -38,11 +38,9 @@ export function matchesGlobalTagScope(
   const normalized = normalizeTagArray(tags);
 
   if (scope.include.length > 0) {
-    if (!(normalized.length === 0 && scope.includeUntagged)) {
-      for (const required of scope.include) {
-        if (!normalized.includes(required)) {
-          return false;
-        }
+    for (const required of scope.include) {
+      if (!normalized.includes(required)) {
+        return false;
       }
     }
   }

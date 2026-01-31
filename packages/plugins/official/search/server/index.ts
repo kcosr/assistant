@@ -16,7 +16,6 @@ type SearchArgs = {
   limit?: number;
   tags?: string[];
   excludeTags?: string[];
-  includeUntagged?: boolean;
 };
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -109,7 +108,6 @@ function parseSearchArgs(raw: Record<string, unknown>): SearchArgs {
   const limit = parseLimit(raw['limit']);
   const tags = parseTags(raw['tags']);
   const excludeTags = parseTags(raw['excludeTags']);
-  const includeUntagged = raw['includeUntagged'] === true;
 
   return {
     query,
@@ -120,7 +118,6 @@ function parseSearchArgs(raw: Record<string, unknown>): SearchArgs {
     ...(limit !== undefined ? { limit } : {}),
     ...(tags ? { tags } : {}),
     ...(excludeTags ? { excludeTags } : {}),
-    ...(includeUntagged ? { includeUntagged } : {}),
   };
 }
 

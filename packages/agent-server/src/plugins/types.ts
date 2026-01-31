@@ -44,8 +44,6 @@ export interface SearchOptions {
   tags?: string[];
   /** Optional excluded tags */
   excludeTags?: string[];
-  /** Allow results with no tags when tags are provided */
-  includeUntagged?: boolean;
 }
 
 export interface SearchResultLaunch {

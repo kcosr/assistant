@@ -1215,13 +1215,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         try {
           const includeTags = scope.include;
           const excludeTags = scope.exclude;
-          const includeUntagged = scope.includeUntagged && includeTags.length > 0;
           const args: Record<string, unknown> = {
             listId: list.id,
             limit: 0,
             sort: 'position',
           };
-          if (includeTags.length > 0 && !includeUntagged) {
+          if (includeTags.length > 0) {
             args['tags'] = includeTags;
             args['tagMatch'] = 'all';
           }
@@ -1235,18 +1234,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (items.length === 0) {
             return false;
           }
+          if (excludeTags.length === 0) {
+            return items.length > 0;
+          }
           return items.some((item) => {
             const itemTags = normalizeTagList(item.tags);
-            if (excludeTags.length > 0 && excludeTags.some((tag) => itemTags.includes(tag))) {
-              return false;
-            }
-            if (includeTags.length === 0) {
-              return true;
-            }
-            if (itemTags.length === 0) {
-              return includeUntagged;
-            }
-            return includeTags.every((tag) => itemTags.includes(tag));
+            return !excludeTags.some((tag) => itemTags.includes(tag));
           });
         } catch {
           return false;

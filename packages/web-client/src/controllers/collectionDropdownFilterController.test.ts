@@ -100,12 +100,7 @@ describe('CollectionDropdownFilterController', () => {
       getTotalAvailableItemCount: () => 3,
       tagController,
       itemFocusController: focusController,
-      getGlobalTagScope: () => ({
-        include: ['work'],
-        exclude: [],
-        includeListsWithMatchingItems: false,
-        includeUntagged: false,
-      }),
+      getGlobalTagScope: () => ({ include: ['work'], exclude: [], includeListsWithMatchingItems: false }),
     });
 
     controller.filter('');

@@ -74,8 +74,6 @@ export const handleSearchRoutes: HttpRouteHandler = async (
     const profiles = parseProfiles(url.searchParams);
     const tags = parseTagList(url.searchParams, 'tags');
     const excludeTags = parseTagList(url.searchParams, 'excludeTags');
-    const includeUntaggedRaw = url.searchParams.get('includeUntagged');
-    const includeUntagged = includeUntaggedRaw === '1' || includeUntaggedRaw === 'true';
 
     if (!query && !plugin && !scope && profiles.length === 0 && tags.length === 0 && excludeTags.length === 0) {
       sendJson(400, { error: 'q is required' });
@@ -100,7 +98,6 @@ export const handleSearchRoutes: HttpRouteHandler = async (
       ...(instance ? { instance } : {}),
       ...(tags.length > 0 ? { tags } : {}),
       ...(excludeTags.length > 0 ? { excludeTags } : {}),
-      ...(includeUntagged ? { includeUntagged: true } : {}),
       ...(limit !== undefined ? { limit } : {}),
     });
     sendJson(200, response);

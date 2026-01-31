@@ -2,7 +2,6 @@ export type GlobalTagScope = {
   include: string[];
   exclude: string[];
   includeListsWithMatchingItems: boolean;
-  includeUntagged: boolean;
 };
 
 const STORAGE_KEY = 'assistant:global-tag-scope';
@@ -37,15 +36,14 @@ export function normalizeGlobalTagScope(value: unknown): GlobalTagScope {
   const include = normalizeTagList(raw['include']);
   const exclude = normalizeTagList(raw['exclude']);
   const includeListsWithMatchingItems = raw['includeListsWithMatchingItems'] === true;
-  const includeUntagged = raw['includeUntagged'] === true;
 
   if (exclude.length > 0 && include.length > 0) {
     const includeSet = new Set(include);
     const filteredExclude = exclude.filter((tag) => !includeSet.has(tag));
-    return { include, exclude: filteredExclude, includeListsWithMatchingItems, includeUntagged };
+    return { include, exclude: filteredExclude, includeListsWithMatchingItems };
   }
 
-  return { include, exclude, includeListsWithMatchingItems, includeUntagged };
+  return { include, exclude, includeListsWithMatchingItems };
 }
 
 export function loadGlobalTagScope(

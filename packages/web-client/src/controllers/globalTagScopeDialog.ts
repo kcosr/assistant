@@ -69,17 +69,6 @@ export class GlobalTagScopeDialog {
     toggleRow.appendChild(toggleLabel);
     body.appendChild(toggleRow);
 
-    const untaggedRow = document.createElement('label');
-    untaggedRow.className = 'global-tag-scope-toggle';
-    const untaggedInput = document.createElement('input');
-    untaggedInput.type = 'checkbox';
-    untaggedInput.checked = current.includeUntagged;
-    const untaggedLabel = document.createElement('span');
-    untaggedLabel.textContent = 'Include untagged items';
-    untaggedRow.appendChild(untaggedInput);
-    untaggedRow.appendChild(untaggedLabel);
-    body.appendChild(untaggedRow);
-
     const statusRow = document.createElement('div');
     statusRow.className = 'global-tag-scope-status';
     statusRow.textContent = 'Loading tags…';
@@ -144,7 +133,6 @@ export class GlobalTagScopeDialog {
         include: [],
         exclude: [],
         includeListsWithMatchingItems: toggleInput.checked,
-        includeUntagged: untaggedInput.checked,
       });
       closeDialog();
     });
@@ -156,7 +144,6 @@ export class GlobalTagScopeDialog {
         include: includeInput.getTags(),
         exclude: excludeInput.getTags(),
         includeListsWithMatchingItems: toggleInput.checked,
-        includeUntagged: untaggedInput.checked,
       });
       closeDialog();
     });

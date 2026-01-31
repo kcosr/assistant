@@ -93,7 +93,6 @@ describe('ListPanelController keyboard shortcuts', () => {
         include: ['work'],
         exclude: [],
         includeListsWithMatchingItems: false,
-        includeUntagged: false,
       }),
       icons: {
         copy: '',
@@ -157,88 +156,6 @@ describe('ListPanelController keyboard shortcuts', () => {
 
     expect(workRow?.style.display).toBe('');
     expect(otherRow?.style.display).toBe('none');
-  });
-
-  it('shows untagged items when global scope allows untagged', () => {
-    const bodyEl = document.createElement('div');
-    document.body.appendChild(bodyEl);
-
-    const controller = new ListPanelController({
-      bodyEl,
-      getSearchQuery: () => '',
-      getSearchTagController: () => null,
-      getActiveInstanceId: () => 'default',
-      getGlobalTagScope: () => ({
-        include: ['work'],
-        exclude: [],
-        includeListsWithMatchingItems: false,
-        includeUntagged: true,
-      }),
-      icons: {
-        copy: '',
-        duplicate: '',
-        move: '',
-        plus: '',
-        edit: '',
-        trash: '',
-        moreVertical: '',
-        x: '',
-        clock: '',
-        clockOff: '',
-        moveTop: '',
-        moveBottom: '',
-        pin: '',
-      },
-      renderTags: () => null,
-      setStatus: () => undefined,
-      dialogManager: new DialogManager(),
-      contextMenuManager: new ContextMenuManager({
-        isSessionPinned: () => false,
-        pinSession: () => undefined,
-        clearHistory: () => undefined,
-        deleteSession: () => undefined,
-        renameSession: () => undefined,
-      }),
-      recentUserItemUpdates: new Set<string>(),
-      userUpdateTimeoutMs: 1000,
-      getSelectedItemIds: () => [],
-      getSelectedItemCount: () => 0,
-      onSelectionChange: () => undefined,
-      getMoveTargetLists: () => [],
-      openListMetadataDialog: () => undefined,
-      getListColumnPreferences: () => null,
-      updateListColumnPreferences: () => undefined,
-      getSortState: () => null,
-      updateSortState: () => undefined,
-      getTimelineField: () => null,
-      updateTimelineField: () => undefined,
-      getFocusMarkerItemId: () => null,
-      getFocusMarkerExpanded: () => false,
-      updateFocusMarker: () => undefined,
-      updateFocusMarkerExpanded: () => undefined,
-      setRightControls: () => undefined,
-    });
-
-    controller.render('list-1', {
-      id: 'list-1',
-      name: 'List 1',
-      items: [
-        { id: '1', title: 'Work item', tags: ['work'] },
-        { id: '2', title: 'Other item', tags: ['personal'] },
-        { id: '3', title: 'Untagged item' },
-      ],
-    });
-
-    const rows = Array.from(
-      document.querySelectorAll<HTMLTableRowElement>('.list-item-row[data-item-id]'),
-    );
-    const workRow = rows.find((row) => row.dataset['itemId'] === '1');
-    const otherRow = rows.find((row) => row.dataset['itemId'] === '2');
-    const untaggedRow = rows.find((row) => row.dataset['itemId'] === '3');
-
-    expect(workRow?.style.display).toBe('');
-    expect(otherRow?.style.display).toBe('none');
-    expect(untaggedRow?.style.display).toBe('');
   });
 
   it('stops arrow navigation at list boundaries', () => {
@@ -604,7 +521,6 @@ describe('ListPanelController add dialog', () => {
         include: ['work'],
         exclude: [],
         includeListsWithMatchingItems: false,
-        includeUntagged: false,
       }),
       icons: {
         copy: '',
