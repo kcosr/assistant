@@ -1,6 +1,8 @@
 import type { CollectionDropdownGroupMeta } from './collectionDropdownListRenderer';
 import type { CollectionDropdownItemFocusController } from './collectionDropdownItemFocusController';
 import type { CollectionTagFilterController } from './collectionTagFilterController';
+import type { GlobalTagScope } from '../utils/globalTagScope';
+import { matchesGlobalTagScope } from '../utils/globalTagScopeFilter';
 
 export interface CollectionDropdownFilterControllerOptions {
   getGroupsMeta: () => CollectionDropdownGroupMeta[];
@@ -8,6 +10,7 @@ export interface CollectionDropdownFilterControllerOptions {
   getTotalAvailableItemCount: () => number;
   tagController: CollectionTagFilterController;
   itemFocusController: CollectionDropdownItemFocusController;
+  getGlobalTagScope?: () => GlobalTagScope | null;
 }
 
 export class CollectionDropdownFilterController {
@@ -35,6 +38,7 @@ export class CollectionDropdownFilterController {
     const hasIncludeTagFilters = allIncludeTagFilters.length > 0;
     const hasExcludeTagFilters = allExcludeTagFilters.length > 0;
     const hasPartialTag = partialTag !== null && partialTag.length > 0;
+    const globalScope = this.options.getGlobalTagScope?.() ?? null;
 
     tagController.updateTagSuggestions(partialTag, partialTagIsExcluded);
 
@@ -75,7 +79,10 @@ export class CollectionDropdownFilterController {
 
         const textMatch = !hasTextQuery || name.includes(lowerText);
 
-        const hit = !excludedByItem && tagMatch && partialTagMatch && textMatch;
+        const forceGlobalMatch = item.dataset['globalScopeMatch'] === 'true';
+        const matchesGlobal =
+          forceGlobalMatch || matchesGlobalTagScope(collectionTags, globalScope);
+        const hit = matchesGlobal && !excludedByItem && tagMatch && partialTagMatch && textMatch;
         item.style.display = hit ? '' : 'none';
         if (hit) visibleInGroup++;
       });

@@ -25,6 +25,8 @@ import {
   sortItemsByOrderBy,
 } from '../utils/listItemQuery';
 import type { ListItemReference } from '../utils/listCustomFieldReference';
+import type { GlobalTagScope } from '../utils/globalTagScope';
+import { matchesGlobalTagScope, mergeTagArrays } from '../utils/globalTagScopeFilter';
 
 export interface ListMoveTarget {
   id: string;
@@ -69,6 +71,7 @@ export interface ListPanelControllerOptions {
   getSearchQuery: () => string;
   getSearchTagController: () => CollectionTagFilterController | null;
   getActiveInstanceId: () => string | null;
+  getGlobalTagScope?: () => GlobalTagScope | null;
   callOperation?: <T>(operation: string, args: Record<string, unknown>) => Promise<T>;
   icons: {
     copy: string;
@@ -799,9 +802,24 @@ export class ListPanelController {
 
     this.currentCustomFields = customFields;
 
-    let filteredItems = allItems;
+    const rawScope = this.options.getGlobalTagScope?.() ?? null;
+    const globalScope =
+      rawScope && (rawScope.include.length > 0 || rawScope.exclude.length > 0)
+        ? rawScope
+        : null;
+    const listTags = Array.isArray(data.tags) ? data.tags : [];
+    const scopeFilteredItems =
+      this.currentAqlMode && globalScope
+        ? allItems.filter((item) =>
+            matchesGlobalTagScope(mergeTagArrays(item.tags, listTags), globalScope),
+          )
+        : allItems;
+
+    let filteredItems = scopeFilteredItems;
     if (this.currentAqlQuery?.where) {
-      filteredItems = allItems.filter((item) => evaluateAql(this.currentAqlQuery!, item));
+      filteredItems = scopeFilteredItems.filter((item) =>
+        evaluateAql(this.currentAqlQuery!, item),
+      );
     }
 
     const aqlOrderBy = this.currentAqlQuery?.orderBy ?? [];
@@ -1302,7 +1320,9 @@ export class ListPanelController {
       };
 
       if (Array.isArray(openOptionsOverride?.defaultTags)) {
-        openOptions.defaultTags = openOptionsOverride.defaultTags;
+        for (const tag of openOptionsOverride.defaultTags) {
+          addTag(tag);
+        }
       } else {
         for (const tag of this.currentDefaultTags) {
           if (typeof tag === 'string' && !hasPinnedTag([tag])) {
@@ -1315,9 +1335,14 @@ export class ListPanelController {
             addTag(tag);
           }
         }
-
-        openOptions.defaultTags = collected;
       }
+
+      const scopeTags = this.options.getGlobalTagScope?.()?.include ?? [];
+      for (const tag of scopeTags) {
+        addTag(tag);
+      }
+
+      openOptions.defaultTags = collected;
       openOptions.insertAtTop =
         openOptionsOverride?.insertAtTop ?? this.getInsertAtTopPreference();
     } else if (
@@ -1694,6 +1719,13 @@ export class ListPanelController {
     const hasTagFilters = allTagFilters.length > 0;
     const hasExcludedTagFilters = allExcludedTagFilters.length > 0;
     const hasPartialTag = partialTag !== null && partialTag.length > 0;
+    const rawScope = this.options.getGlobalTagScope?.() ?? null;
+    const globalScope =
+      rawScope && (rawScope.include.length > 0 || rawScope.exclude.length > 0)
+        ? rawScope
+        : null;
+    const hasGlobalScope = !!globalScope;
+    const listTags = Array.isArray(this.currentData?.tags) ? this.currentData!.tags : [];
 
     const rows = Array.from(
       tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row[data-item-id]'),
@@ -1701,7 +1733,13 @@ export class ListPanelController {
 
     let anyVisible = false;
 
-    if (!hasTextQuery && !hasTagFilters && !hasExcludedTagFilters && !hasPartialTag) {
+    if (
+      !hasTextQuery &&
+      !hasTagFilters &&
+      !hasExcludedTagFilters &&
+      !hasPartialTag &&
+      !hasGlobalScope
+    ) {
       for (const row of rows) {
         row.style.display = '';
       }
@@ -1712,6 +1750,20 @@ export class ListPanelController {
           .split(',')
           .map((t) => t.trim())
           .filter((t) => t.length > 0);
+
+        if (globalScope) {
+          const scopeTags = mergeTagArrays(itemTags, listTags);
+          if (!matchesGlobalTagScope(scopeTags, globalScope)) {
+            row.style.display = 'none';
+            continue;
+          }
+        }
+
+        if (!hasTextQuery && !hasTagFilters && !hasExcludedTagFilters && !hasPartialTag) {
+          row.style.display = '';
+          anyVisible = true;
+          continue;
+        }
 
         let tagMatch = true;
         if (hasTagFilters) {

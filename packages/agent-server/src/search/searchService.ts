@@ -14,6 +14,8 @@ export interface GlobalSearchOptions {
   scope?: string;
   instance?: string;
   limit?: number;
+  tags?: string[];
+  excludeTags?: string[];
 }
 
 export interface SearchableScope {
@@ -46,6 +48,26 @@ const normalizeLabel = (raw: string): string => {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+};
+
+const normalizeTagList = (value: string[] | undefined): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const trimmed = entry.trim().toLowerCase();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 };
 
 export class SearchService {
@@ -125,8 +147,10 @@ export class SearchService {
       typeof options.limit === 'number' && Number.isFinite(options.limit)
         ? options.limit
         : undefined;
+    const tags = normalizeTagList(options.tags);
+    const excludeTags = normalizeTagList(options.excludeTags);
     const profiles = this.normalizeProfiles(options.profiles);
-    if (!query && !plugin && profiles.length === 0) {
+    if (!query && !plugin && profiles.length === 0 && tags.length === 0 && excludeTags.length === 0) {
       return { results: [] };
     }
 
@@ -145,6 +169,8 @@ export class SearchService {
           const results = await provider.search(query, {
             instanceId,
             ...(limit !== undefined ? { limit } : {}),
+            ...(tags.length > 0 ? { tags } : {}),
+            ...(excludeTags.length > 0 ? { excludeTags } : {}),
           });
           for (const result of results) {
             collected.push({ ...result, pluginId, instanceId });

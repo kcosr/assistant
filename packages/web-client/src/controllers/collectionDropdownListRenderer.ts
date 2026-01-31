@@ -68,6 +68,9 @@ export function renderCollectionDropdownList(
       if (item.instanceLabel) {
         itemEl.dataset['collectionInstanceLabel'] = item.instanceLabel;
       }
+      if (item.globalScopeMatch) {
+        itemEl.dataset['globalScopeMatch'] = 'true';
+      }
       itemEl.dataset['group'] = String(gi);
       itemEl.dataset['searchTextBase'] = item.name.toLowerCase();
       itemEl.dataset['searchText'] = item.name.toLowerCase();

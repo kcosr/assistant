@@ -11,6 +11,8 @@ export interface GlobalSearchOptions {
   scope?: string;
   instance?: string;
   limit?: number;
+  tags?: string[];
+  excludeTags?: string[];
 }
 
 export interface SearchApiResult {

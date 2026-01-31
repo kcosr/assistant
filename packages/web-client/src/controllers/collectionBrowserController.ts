@@ -18,6 +18,8 @@ import {
   type ListMetadataDialogPayload,
 } from './listMetadataDialog';
 import type { ListCustomFieldDefinition } from './listCustomFields';
+import type { GlobalTagScope } from '../utils/globalTagScope';
+import { matchesGlobalTagScope, mergeTagArrays } from '../utils/globalTagScopeFilter';
 
 export type CollectionBrowserViewMode = 'cards' | 'cards_single' | 'list';
 export type CollectionBrowserSortMode = 'alpha' | 'updated';
@@ -27,6 +29,7 @@ export interface CollectionBrowserControllerOptions {
   getAvailableItems: () => CollectionItemSummary[];
   getSupportedTypes: () => string[] | null;
   getAllTags: () => string[];
+  getGlobalTagScope?: () => GlobalTagScope | null;
   getGroupLabel: (type: string) => string;
   getActiveItemReference: () => CollectionReference | null;
   selectItem: (item: CollectionReference | null) => Promise<void> | void;
@@ -64,6 +67,7 @@ export interface CollectionBrowserControllerOptions {
   onSortModeChanged?: (mode: CollectionBrowserSortMode) => void;
   shouldShowInstanceBadge?: () => boolean;
   getListInstanceSelection?: () => ListMetadataDialogInstanceSelection | null;
+  getCreateListDefaults?: () => ListMetadataDialogInitialData | null;
   showCreateActions?: boolean;
   showListEditActions?: boolean;
 }
@@ -230,6 +234,9 @@ export class CollectionBrowserController {
         getTotalAvailableItemCount: () => this.totalAvailableItemCount,
         tagController: this.tagController,
         itemFocusController: this.itemFocusController,
+        ...(this.options.getGlobalTagScope
+          ? { getGlobalTagScope: this.options.getGlobalTagScope }
+          : {}),
       });
     } else {
       this.filterController = null;
@@ -647,7 +654,8 @@ export class CollectionBrowserController {
   }
 
   private openCreateListDialog(): void {
-    this.listMetadataDialog?.open('create');
+    const defaults = this.options.getCreateListDefaults?.() ?? null;
+    this.listMetadataDialog?.open('create', defaults ?? undefined);
   }
 
   private closeAddMenu(): void {
@@ -1089,7 +1097,15 @@ export class CollectionBrowserController {
     }
 
     const sorted = sortListItems(entry.items);
-    const filtered = filterState ? filterListItems(sorted, filterState) : sorted;
+    const listTagsRaw =
+      previewEl
+        .closest<HTMLElement>('.collection-search-dropdown-item')
+        ?.dataset['tags'] ?? '';
+    const listTags = listTagsRaw
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    const filtered = filterState ? filterListItems(sorted, filterState, listTags) : sorted;
     const maxItems = 20;
     const previewItems = filtered.slice(0, maxItems);
     if (previewItems.length === 0) {
@@ -1176,6 +1192,11 @@ export class CollectionBrowserController {
       new Set([...tagController.getActiveExcludedTagFilters(), ...parsed.excludeTags]),
     );
     const lowerText = parsed.text.trim().toLowerCase();
+    const rawScope = this.options.getGlobalTagScope?.() ?? null;
+    const globalScope =
+      rawScope && (rawScope.include.length > 0 || rawScope.exclude.length > 0)
+        ? rawScope
+        : null;
     return {
       allTagFilters,
       hasTagFilters: allTagFilters.length > 0,
@@ -1183,6 +1204,7 @@ export class CollectionBrowserController {
       hasExcludedTagFilters: allExcludedTagFilters.length > 0,
       lowerText,
       hasTextQuery: lowerText.length > 0,
+      globalScope,
       partialTag: parsed.partialTag,
       partialTagIsExcluded: parsed.partialTagIsExcluded,
       hasPartialTag: parsed.partialTag !== null && parsed.partialTag.length > 0,
@@ -1717,6 +1739,7 @@ type CollectionBrowserSearchFilterState = {
   hasExcludedTagFilters: boolean;
   lowerText: string;
   hasTextQuery: boolean;
+  globalScope: GlobalTagScope | null;
   partialTag: string | null;
   hasPartialTag: boolean;
   partialTagIsExcluded: boolean;
@@ -1746,6 +1769,7 @@ function sortListItems(items: ListPreviewItem[]): ListPreviewItem[] {
 function filterListItems(
   items: ListPreviewItem[],
   filterState: CollectionBrowserSearchFilterState,
+  listTags: string[] = [],
 ): ListPreviewItem[] {
   const {
     hasTextQuery,
@@ -1757,13 +1781,27 @@ function filterListItems(
     hasPartialTag,
     partialTag,
     partialTagIsExcluded,
+    globalScope,
   } = filterState;
 
-  if (!hasTextQuery && !hasTagFilters && !hasExcludedTagFilters && !hasPartialTag) {
+  if (
+    !hasTextQuery &&
+    !hasTagFilters &&
+    !hasExcludedTagFilters &&
+    !hasPartialTag &&
+    !globalScope
+  ) {
     return items;
   }
 
   return items.filter((item) => {
+    if (globalScope) {
+      const scopeTags = mergeTagArrays(item.tags, listTags);
+      if (!matchesGlobalTagScope(scopeTags, globalScope)) {
+        return false;
+      }
+    }
+
     if (hasExcludedTagFilters && allExcludedTagFilters.some((t) => item.tags.includes(t))) {
       return false;
     }

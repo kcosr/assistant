@@ -7,6 +7,7 @@ import {
 } from './collectionDropdownListRenderer';
 import { CollectionDropdownFilterController } from './collectionDropdownFilterController';
 import { handleCollectionSearchKeyDown } from '../utils/collectionSearchKeyboard';
+import type { GlobalTagScope } from '../utils/globalTagScope';
 
 export type CollectionDropdownSortMode = 'alpha' | 'updated';
 
@@ -25,6 +26,7 @@ export interface CollectionDropdownControllerOptions {
   isMobileViewport: () => boolean;
   setPanelOpen: (open: boolean) => void;
   getAllTags: () => string[];
+  getGlobalTagScope?: () => GlobalTagScope | null;
   getGroupLabel: (type: string) => string;
   getSupportedTypes: () => string[] | null;
   getSortMode: () => CollectionDropdownSortMode;
@@ -61,6 +63,9 @@ export class CollectionDropdownController {
       getTotalAvailableItemCount: () => this.totalAvailableItemCount,
       tagController: this.tagController,
       itemFocusController: this.itemFocusController,
+      ...(this.options.getGlobalTagScope
+        ? { getGlobalTagScope: this.options.getGlobalTagScope }
+        : {}),
     });
   }
 

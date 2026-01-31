@@ -20,6 +20,7 @@ import { ServerMessageHandler } from './controllers/serverMessageHandler';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
+import { GlobalTagScopeDialog } from './controllers/globalTagScopeDialog';
 import { SessionTypingIndicatorController } from './controllers/sessionTypingIndicatorController';
 import type { CollectionItemSummary } from './controllers/collectionTypes';
 import { PanelRegistry, type PanelFactory, type PanelHost } from './controllers/panelRegistry';
@@ -63,6 +64,12 @@ import {
   createShortcutService,
 } from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
+import {
+  type GlobalTagScope,
+  loadGlobalTagScope,
+  normalizeGlobalTagScope,
+  saveGlobalTagScope,
+} from './utils/globalTagScope';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
@@ -317,6 +324,7 @@ async function main(): Promise<void> {
     themeSelect,
     uiFontSelect,
     codeFontSelect,
+    globalTagScopeButton,
     tagColorsSettingsButton,
     resetLayoutButton,
     resetPanelStateButton,
@@ -405,6 +413,13 @@ async function main(): Promise<void> {
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
+  let globalTagScope = loadGlobalTagScope(WINDOW_ID);
+
+  const setGlobalTagScope = (scope: GlobalTagScope): void => {
+    globalTagScope = normalizeGlobalTagScope(scope);
+    saveGlobalTagScope(WINDOW_ID, globalTagScope);
+    panelHostController?.setContext('global.tagScope', globalTagScope);
+  };
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
     const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
@@ -1496,6 +1511,7 @@ async function main(): Promise<void> {
     updateSessionAttributes,
   });
   panelHostController = panelHostControllerInstance;
+  panelHostController.setContext('global.tagScope', globalTagScope);
   const keyboardShortcutRegistry = new KeyboardShortcutRegistry({
     onConflict: (existing, incoming) => {
       console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
@@ -1745,6 +1761,12 @@ async function main(): Promise<void> {
     }
     if (typeof options.limit === 'number') {
       params.set('limit', options.limit.toString());
+    }
+    if (globalTagScope.include.length > 0) {
+      params.set('tags', globalTagScope.include.join(','));
+    }
+    if (globalTagScope.exclude.length > 0) {
+      params.set('excludeTags', globalTagScope.exclude.join(','));
     }
     const response = await apiFetch(`/api/search?${params.toString()}`);
     if (!response.ok) {
@@ -2951,6 +2973,18 @@ async function main(): Promise<void> {
     dialogManager,
     getAvailableItems: getTaggableItemsForTagManager,
     fetchAllTags: fetchAllTagsForTagManager,
+  });
+
+  const globalTagScopeDialog = new GlobalTagScopeDialog({
+    dialogManager,
+    getCurrentScope: () => globalTagScope,
+    setScope: setGlobalTagScope,
+    fetchAllTags: fetchAllTagsForTagManager,
+  });
+
+  globalTagScopeButton?.addEventListener('click', () => {
+    settingsDropdownController.toggle(false);
+    globalTagScopeDialog.open();
   });
 
   tagColorsSettingsButton?.addEventListener('click', () => {
