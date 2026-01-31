@@ -397,8 +397,9 @@ export class SessionRuntime {
         });
         return;
       }
+      const windowId = typeof message.windowId === 'string' ? message.windowId : '';
       updatePanelInventory(parsed.data, {
-        windowId: typeof message.windowId === 'string' ? message.windowId : undefined,
+        ...(windowId ? { windowId } : {}),
         connectionId: this.connectionId,
       });
       return;

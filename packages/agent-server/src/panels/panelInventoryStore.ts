@@ -195,7 +195,7 @@ function getPanelInventorySnapshot(
       headerPanels: [...snapshot.headerPanels],
       updatedAt: snapshot.updatedAt,
     },
-    windowId: resolved.entry?.windowId,
+    ...(resolved.entry?.windowId ? { windowId: resolved.entry.windowId } : {}),
   };
 }
 
