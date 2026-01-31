@@ -13,6 +13,21 @@ export interface HttpRequestOptions {
   headers?: Record<string, string>;
 }
 
+function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const redacted = { ...headers };
+  if (redacted.Authorization) {
+    redacted.Authorization = '[redacted]';
+  }
+  return redacted;
+}
+
+function formatBodyForLog(body: unknown): unknown {
+  if (typeof body === 'string') {
+    return body.length > 500 ? `${body.slice(0, 500)}…` : body;
+  }
+  return body;
+}
+
 export async function httpRequest<T>(
   config: AssistantCliConfig,
   init: HttpRequestOptions,
@@ -40,7 +55,18 @@ export async function httpRequest<T>(
     requestInit.body = JSON.stringify(init.body);
   }
 
-  const response = await fetch(url.toString(), requestInit);
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), requestInit);
+  } catch (err) {
+    console.error('[assistant-cli] fetch failed', {
+      url: url.toString(),
+      method: requestInit.method ?? 'GET',
+      headers: redactHeaders(headers),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 
   const text = await response.text();
   const contentType = response.headers.get('content-type') ?? '';
@@ -48,6 +74,13 @@ export async function httpRequest<T>(
   const parsedBody = text && isJson ? JSON.parse(text) : text;
 
   if (!response.ok) {
+    console.error('[assistant-cli] http error', {
+      url: url.toString(),
+      method: requestInit.method ?? 'GET',
+      status: response.status,
+      statusText: response.statusText,
+      body: formatBodyForLog(parsedBody),
+    });
     const error: HttpError = Object.assign(
       new Error(`HTTP ${response.status} ${response.statusText || 'Error'}`.trim()),
       {
