@@ -59,10 +59,8 @@ Required elements:
 
 On first run:
 
-- Chat panel in the center
-- Chat panel includes its own message composer
-- Sessions panel is available from the launcher (not opened by default)
-- Lists and notes panels are available from the launcher (not opened by default)
+- Single empty placeholder panel
+- Panels (chat, sessions, lists, notes, artifacts) are available from the launcher
 
 Implementation notes (current):
 

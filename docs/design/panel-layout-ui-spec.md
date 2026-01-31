@@ -48,9 +48,8 @@ The shell does not assume fixed panel positions. Panels are arranged dynamically
 
 Default layout on first run:
 
-- Chat panel in the center
-- Artifacts panel on the right
-- Sessions panel is available from the launcher (not opened by default)
+- Single empty placeholder panel
+- Panels are available from the launcher (not opened by default)
 
 ### Top Bar
 

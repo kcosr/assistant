@@ -770,7 +770,7 @@ interface LayoutPersistence {
 - Panels can declare default placement and size.
 - Layout engine can enforce min widths/heights per panel type.
 - Layout is global by default (not per-session) unless explicitly scoped.
-- Default layout on first run should open Chat (center) and Artifacts (right); Sessions is available from the panel launcher.
+- Default layout on first run should show a single empty placeholder panel; panels are available from the launcher.
 
 ## URL and Deep Linking
 

@@ -45,4 +45,3 @@ Each chat panel can be bound to a specific session or left unbound.
 | `multiInstance`         | `true`     | Multiple chat panels can be opened |
 | `defaultSessionBinding` | `"fixed"`  | Bound to a session by default      |
 | `sessionScope`          | `"optional"` | Session binding is optional        |
-| `defaultPlacement`      | `center`   | Opens in the center region         |

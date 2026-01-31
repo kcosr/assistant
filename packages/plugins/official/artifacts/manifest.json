@@ -12,7 +12,6 @@
       "multiInstance": true,
       "defaultSessionBinding": "global",
       "sessionScope": "global",
-      "defaultPlacement": { "region": "right", "size": { "width": 320 } },
       "capabilities": ["artifacts.read", "artifacts.write"]
     }
   ],
