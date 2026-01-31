@@ -15,8 +15,8 @@ export interface HttpRequestOptions {
 
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const redacted = { ...headers };
-  if (redacted.Authorization) {
-    redacted.Authorization = '[redacted]';
+  if (redacted['Authorization']) {
+    redacted['Authorization'] = '[redacted]';
   }
   return redacted;
 }
