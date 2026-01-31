@@ -100,12 +100,14 @@ import {
   type PanelHeaderActions,
 } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
+import { getClientWindowId } from './utils/windowId';
 
 const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
 
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
+const WINDOW_ID = getClientWindowId();
 
 const isDebugFlagEnabled = (key: string): boolean => {
   if (typeof window === 'undefined') {
@@ -1803,6 +1805,7 @@ async function main(): Promise<void> {
       openPanelLauncher,
       openSessionPicker,
       hasChatPanelActiveOutput,
+      windowId: WINDOW_ID,
       onLayoutChange: (layout) => {
         panelHostControllerInstance.setContext('panel.layout', layout);
         updateSessionSubscriptions();
@@ -3083,7 +3086,8 @@ async function main(): Promise<void> {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    socket.send(JSON.stringify(event));
+    const payload = event.windowId ? event : { ...event, windowId: WINDOW_ID };
+    socket.send(JSON.stringify(payload));
   }
 
   const normalizeCommandString = (value: unknown): string | null => {
@@ -3387,6 +3391,11 @@ async function main(): Promise<void> {
     cancelQueuedMessage,
     editQueuedMessage,
     handlePanelEvent: (event) => {
+      const eventWindowId =
+        typeof event.windowId === 'string' ? event.windowId.trim() : '';
+      if (eventWindowId && eventWindowId !== WINDOW_ID) {
+        return;
+      }
       if (handleWorkspacePanelEvent(event)) {
         return;
       }

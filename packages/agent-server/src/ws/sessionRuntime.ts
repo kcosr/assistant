@@ -38,7 +38,7 @@ import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { SearchService } from '../search/searchService';
 import type { TtsBackendFactory } from '../tts/types';
 import { selectTtsBackendFactory } from '../tts/selectTtsBackendFactory';
-import { updatePanelInventory } from '../panels/panelInventoryStore';
+import { removePanelInventoryForConnection, updatePanelInventory } from '../panels/panelInventoryStore';
 import { resolveToolExposure } from '../skills';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 
@@ -397,7 +397,10 @@ export class SessionRuntime {
         });
         return;
       }
-      updatePanelInventory(parsed.data);
+      updatePanelInventory(parsed.data, {
+        windowId: typeof message.windowId === 'string' ? message.windowId : undefined,
+        connectionId: this.connectionId,
+      });
       return;
     }
 
@@ -1049,6 +1052,7 @@ export class SessionRuntime {
     this.closed = true;
 
     this.sessionHub.detachConnectionFromAllSessions(this.connection);
+    removePanelInventoryForConnection(this.connectionId);
 
     if (options.closeTransport) {
       this.transport.close(1000, 'session closed');

@@ -88,6 +88,7 @@ export interface PanelWorkspaceControllerOptions {
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;
   headerDockRoot?: HTMLElement | null;
   hasChatPanelActiveOutput?: (panelId: string) => boolean;
+  windowId?: string;
 }
 
 export class PanelWorkspaceController {
@@ -3094,6 +3095,7 @@ export class PanelWorkspaceController {
       selectedChatPanelId,
       layout: this.layout.layout,
       headerPanels: this.getHeaderPanelIds(),
+      ...(this.options.windowId ? { windowId: this.options.windowId } : {}),
     };
     this.options.host.sendPanelEvent({
       type: 'panel_event',

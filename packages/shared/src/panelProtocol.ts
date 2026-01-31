@@ -37,6 +37,7 @@ export const PanelInventoryPayloadSchema = z.object({
   selectedChatPanelId: z.string().min(1).nullable(),
   layout: z.lazy(() => LayoutNodeSchema).optional(),
   headerPanels: z.array(z.string().min(1)).optional(),
+  windowId: z.string().min(1).optional(),
 });
 
 export type PanelInventoryPayload = z.infer<typeof PanelInventoryPayloadSchema>;
@@ -346,6 +347,7 @@ export const PanelEventEnvelopeSchema = z.object({
   panelId: z.string().min(1),
   panelType: z.string().min(1),
   sessionId: z.string().optional(),
+  windowId: z.string().min(1).optional(),
   payload: z.unknown(),
 });
 
