@@ -16,6 +16,7 @@ export interface GlobalSearchOptions {
   limit?: number;
   tags?: string[];
   excludeTags?: string[];
+  includeUntagged?: boolean;
 }
 
 export interface SearchableScope {
@@ -149,6 +150,7 @@ export class SearchService {
         : undefined;
     const tags = normalizeTagList(options.tags);
     const excludeTags = normalizeTagList(options.excludeTags);
+    const includeUntagged = options.includeUntagged === true;
     const profiles = this.normalizeProfiles(options.profiles);
     if (!query && !plugin && profiles.length === 0 && tags.length === 0 && excludeTags.length === 0) {
       return { results: [] };
@@ -171,6 +173,7 @@ export class SearchService {
             ...(limit !== undefined ? { limit } : {}),
             ...(tags.length > 0 ? { tags } : {}),
             ...(excludeTags.length > 0 ? { excludeTags } : {}),
+            ...(includeUntagged && tags.length > 0 ? { includeUntagged: true } : {}),
           });
           for (const result of results) {
             collected.push({ ...result, pluginId, instanceId });

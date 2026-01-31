@@ -244,12 +244,16 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       }
       const normalizedIncludeTags = normalizeTags(includeTags);
       const normalizedExcludeTags = normalizeTags(options.excludeTags ?? []);
+      const includeUntagged = options.includeUntagged === true;
 
       const matchesIncludeTags = (tags: string[] | undefined): boolean => {
         if (normalizedIncludeTags.length === 0) {
           return true;
         }
         const normalized = normalizeTags(tags);
+        if (normalized.length === 0 && includeUntagged) {
+          return true;
+        }
         return normalizedIncludeTags.every((tag) => normalized.includes(tag));
       };
 
@@ -267,9 +271,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list(
-            normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : undefined,
-          );
+          const listOptions =
+            normalizedIncludeTags.length > 0 && !includeUntagged
+              ? { tags: normalizedIncludeTags }
+              : undefined;
+          const notes = await store.list(listOptions);
           const favorites = notes.filter(
             (note) =>
               note.favorite === true &&
@@ -308,7 +314,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list({ tags: normalizedIncludeTags });
+          const listOptions =
+            normalizedIncludeTags.length > 0 && !includeUntagged
+              ? { tags: normalizedIncludeTags }
+              : undefined;
+          const notes = await store.list(listOptions);
           const filtered = notes.filter(
             (note) => matchesIncludeTags(note.tags) && matchesExcludeTags(note.tags),
           );
@@ -344,9 +354,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             continue;
           }
           const store = await getStore(instId);
-          const notes = await store.list(
-            normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : undefined,
-          );
+          const listOptions =
+            normalizedIncludeTags.length > 0 && !includeUntagged
+              ? { tags: normalizedIncludeTags }
+              : undefined;
+          const notes = await store.list(listOptions);
           for (const note of notes) {
             if (!matchesIncludeTags(note.tags) || !matchesExcludeTags(note.tags)) {
               continue;
@@ -378,10 +390,16 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           continue;
         }
         const store = await getStore(instId);
+        const searchLimit =
+          includeUntagged && normalizedIncludeTags.length > 0 && typeof limit === 'number'
+            ? limit * 3
+            : limit;
         const notes = await store.search({
           query: trimmed,
-          limit,
-          ...(normalizedIncludeTags.length > 0 ? { tags: normalizedIncludeTags } : {}),
+          ...(searchLimit !== undefined ? { limit: searchLimit } : {}),
+          ...(normalizedIncludeTags.length > 0 && !includeUntagged
+            ? { tags: normalizedIncludeTags }
+            : {}),
         });
         for (const note of notes) {
           if (!matchesIncludeTags(note.tags) || !matchesExcludeTags(note.tags)) {

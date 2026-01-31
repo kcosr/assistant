@@ -13,6 +13,7 @@ export interface GlobalSearchOptions {
   limit?: number;
   tags?: string[];
   excludeTags?: string[];
+  includeUntagged?: boolean;
 }
 
 export interface SearchApiResult {

@@ -1764,6 +1764,9 @@ async function main(): Promise<void> {
     }
     if (globalTagScope.include.length > 0) {
       params.set('tags', globalTagScope.include.join(','));
+      if (globalTagScope.includeUntagged) {
+        params.set('includeUntagged', 'true');
+      }
     }
     if (globalTagScope.exclude.length > 0) {
       params.set('excludeTags', globalTagScope.exclude.join(','));
