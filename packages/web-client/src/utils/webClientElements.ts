@@ -28,6 +28,8 @@ export interface WebClientElements {
   panelLauncherSearch: HTMLInputElement | null;
   panelLauncherCloseButton: HTMLButtonElement | null;
   panelHeaderDock: HTMLElement | null;
+  globalAqlHeader: HTMLElement | null;
+  globalAqlToggleButton: HTMLButtonElement | null;
   commandPaletteButton: HTMLButtonElement | null;
   commandPaletteFab: HTMLButtonElement | null;
   commandPalette: HTMLElement | null;
@@ -106,6 +108,8 @@ export function getWebClientElements(): WebClientElements | null {
     panelLauncherSearch: getElement<HTMLInputElement>('panel-launcher-search'),
     panelLauncherCloseButton: getElement<HTMLButtonElement>('panel-launcher-close'),
     panelHeaderDock: getElement<HTMLElement>('panel-header-dock'),
+    globalAqlHeader: getElement<HTMLElement>('global-aql-header'),
+    globalAqlToggleButton: getElement<HTMLButtonElement>('global-aql-toggle'),
     commandPaletteButton: getElement<HTMLButtonElement>('command-palette-button'),
     commandPaletteFab: getElement<HTMLButtonElement>('command-palette-fab'),
     commandPalette: getElement<HTMLElement>('command-palette'),

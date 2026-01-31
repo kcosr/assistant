@@ -70,6 +70,7 @@ function buildOptions(
     getInputEl: () => null,
     getActiveChatRuntime: () => null,
     openCommandPalette: () => {},
+    focusGlobalQuery: () => false,
     openChatSessionPicker: () => false,
     openChatModelPicker: () => false,
     openChatThinkingPicker: () => false,
@@ -227,6 +228,27 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     expect(document.body.classList.contains('panel-nav-header-active')).toBe(true);
 
     registry.detach();
+  });
+
+  it('focuses global query on ctrl+g when panel is focused', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const focusGlobalQuery = vi.fn(() => true);
+    options.focusGlobalQuery = focusGlobalQuery;
+    const controller = new KeyboardNavigationController(options);
+    const { detach } = attachShortcutRegistry(controller);
+
+    panelFrame.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'g', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(focusGlobalQuery).toHaveBeenCalledTimes(1);
+
+    detach();
   });
 
   it('does not cancel active operations when pinned chat panel is open', () => {

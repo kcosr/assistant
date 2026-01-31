@@ -8,6 +8,26 @@ Saved queries:
 - Use the Saved dropdown + Save/Delete controls to store and reuse AQL per list + instance.
 - A single saved query can be marked as the default view for that list; it auto-applies when the list opens.
 
+## Global query bar
+
+The main header includes a **global query bar** that filters across panels (lists, notes,
+and collection browsers).
+
+- **Raw mode:** live text search with `@tag` / `!@tag` shortcuts (same tag dropdown behavior).
+- **AQL mode:** applied explicitly with Enter or **Apply** (no live apply).
+- **Shortcut:** `Ctrl+G` focuses the global query bar.
+
+Global AQL uses the same grammar, with a smaller allowed field set and no `ORDER BY` / `SHOW`.
+
+Allowed fields:
+- `tag` / `tags`
+- `instance` / `profile`
+- `text`
+- `favorite`
+- `pinned`
+
+Unsupported fields are treated as non-matching clauses for that item.
+
 ## Syntax
 
 ```

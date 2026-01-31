@@ -10,6 +10,7 @@ import {
   type ServerMessage,
   type SessionAttributesPatch,
   CURRENT_PROTOCOL_VERSION,
+  GLOBAL_QUERY_CONTEXT_KEY,
 } from '@assistant/shared';
 import { DialogManager } from './controllers/dialogManager';
 import { ContextMenuManager } from './controllers/contextMenu';
@@ -21,6 +22,7 @@ import { KeyboardNavigationController } from './controllers/keyboardNavigationCo
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
 import { SessionTypingIndicatorController } from './controllers/sessionTypingIndicatorController';
+import { GlobalAqlHeaderController } from './controllers/globalAqlHeaderController';
 import type { CollectionItemSummary } from './controllers/collectionTypes';
 import { PanelRegistry, type PanelFactory, type PanelHost } from './controllers/panelRegistry';
 import { PanelHostController } from './controllers/panelHostController';
@@ -328,6 +330,8 @@ async function main(): Promise<void> {
     panelLauncherSearch,
     panelLauncherCloseButton,
     panelHeaderDock,
+    globalAqlHeader,
+    globalAqlToggleButton,
     commandPaletteButton,
     commandPaletteFab,
     commandPalette,
@@ -341,6 +345,9 @@ async function main(): Promise<void> {
 
   if (commandPaletteSortButton) {
     commandPaletteSortButton.innerHTML = ICONS.sortAlpha;
+  }
+  if (globalAqlToggleButton) {
+    globalAqlToggleButton.innerHTML = ICONS.search;
   }
 
   const builtInPanels = new Map<string, { manifest: PanelTypeManifest; factory: PanelFactory }>();
@@ -1452,6 +1459,7 @@ async function main(): Promise<void> {
   let commandPaletteController: CommandPaletteController | null = null;
   let sessionPickerController: SessionPickerController | null = null;
   let connectionManager: ConnectionManager | null = null;
+  let globalAqlHeaderController: GlobalAqlHeaderController | null = null;
   const getSidebarElementsForKeyboardNav = (): {
     agentSidebar: HTMLElement | null;
     agentSidebarSections: HTMLElement | null;
@@ -1496,6 +1504,25 @@ async function main(): Promise<void> {
     updateSessionAttributes,
   });
   panelHostController = panelHostControllerInstance;
+
+  if (globalAqlHeader) {
+    globalAqlHeaderController = new GlobalAqlHeaderController({
+      containerEl: globalAqlHeader,
+      toggleButtonEl: globalAqlToggleButton ?? null,
+      dialogManager,
+      windowId: WINDOW_ID,
+      icons: {
+        x: ICONS.x,
+        check: ICONS.check,
+        save: ICONS.save,
+        trash: ICONS.trash,
+      },
+      onQueryChanged: (query) => {
+        panelHostController?.setContext(GLOBAL_QUERY_CONTEXT_KEY, query);
+      },
+      isCollapsed: isMobileViewport,
+    });
+  }
   const keyboardShortcutRegistry = new KeyboardShortcutRegistry({
     onConflict: (existing, incoming) => {
       console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
@@ -3518,6 +3545,7 @@ async function main(): Promise<void> {
       openCommandPalette: () => {
         commandPaletteController?.open();
       },
+      focusGlobalQuery: () => globalAqlHeaderController?.focus() ?? false,
       openChatSessionPicker: () => openActiveChatSessionPicker(),
       openChatModelPicker: () => openActiveChatModelPicker(),
       openChatThinkingPicker: () => openActiveChatThinkingPicker(),

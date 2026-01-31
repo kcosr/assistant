@@ -192,4 +192,28 @@ describe('aql', () => {
     const sorted = sortItemsByOrderBy(items, result.query.orderBy, customFields);
     expect(sorted.map((item) => item.title)).toEqual(['Second', 'Third', 'First']);
   });
+
+  it('rejects ORDER BY when disabled', () => {
+    const result = parseAql('ORDER BY updated DESC', { customFields, allowOrderBy: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('ORDER BY is not supported');
+    }
+  });
+
+  it('rejects SHOW when disabled', () => {
+    const result = parseAql('SHOW title, notes', { customFields, allowShow: false });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('SHOW is not supported');
+    }
+  });
+
+  it('rejects fields outside the allowlist', () => {
+    const result = parseAql('title : "alpha"', { customFields, allowedFields: ['tag'] });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('Field "title" is not supported');
+    }
+  });
 });

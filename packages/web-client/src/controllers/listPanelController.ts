@@ -25,6 +25,7 @@ import {
   sortItemsByOrderBy,
 } from '../utils/listItemQuery';
 import type { ListItemReference } from '../utils/listCustomFieldReference';
+import { matchesGlobalQuery, type GlobalQuery } from '@assistant/shared';
 
 export interface ListMoveTarget {
   id: string;
@@ -69,6 +70,7 @@ export interface ListPanelControllerOptions {
   getSearchQuery: () => string;
   getSearchTagController: () => CollectionTagFilterController | null;
   getActiveInstanceId: () => string | null;
+  getGlobalQuery?: () => GlobalQuery | null;
   callOperation?: <T>(operation: string, args: Record<string, unknown>) => Promise<T>;
   icons: {
     copy: string;
@@ -209,6 +211,7 @@ export class ListPanelController {
   private currentFocusMarkerExpanded: boolean = false;
   private currentAqlQuery: AqlQuery | null = null;
   private currentAqlMode: boolean = false;
+  private currentGlobalQuery: GlobalQuery | null = null;
   private currentListId: string | null = null;
   private currentData: ListPanelData | null = null;
   private currentSortedItems: ListPanelItem[] = [];
@@ -377,6 +380,11 @@ export class ListPanelController {
       (entry) => entry.id ?? '',
     );
 
+    if (this.currentGlobalQuery) {
+      this.rerenderCurrent();
+      return true;
+    }
+
     if (this.currentTimelineField || orderChanged) {
       this.rerenderCurrent();
       return true;
@@ -410,7 +418,9 @@ export class ListPanelController {
       return true;
     }
 
-    this.applySearch(this.options.getSearchQuery());
+    if (this.currentSortedItems.length > 0) {
+      this.applySearch(this.options.getSearchQuery());
+    }
     return true;
   }
 
@@ -799,9 +809,30 @@ export class ListPanelController {
 
     this.currentCustomFields = customFields;
 
-    let filteredItems = allItems;
+    const globalQuery = this.options.getGlobalQuery?.() ?? null;
+    this.currentGlobalQuery = globalQuery;
+    const baseItemCount = allItems.length;
+    const globalFilterActive = !!globalQuery;
+    const instanceId = this.options.getActiveInstanceId();
+    const globalFilteredItems = globalQuery
+      ? allItems.filter((item) => {
+          const target = {
+            title: item.title,
+            ...(typeof item.notes === 'string' ? { notes: item.notes } : {}),
+            ...(typeof item.url === 'string' ? { url: item.url } : {}),
+            ...(Array.isArray(item.tags) ? { tags: item.tags } : {}),
+            pinned: hasPinnedTag(item.tags),
+            ...(typeof instanceId === 'string' && instanceId.trim().length > 0
+              ? { instanceId }
+              : {}),
+          };
+          return matchesGlobalQuery(target, globalQuery);
+        })
+      : allItems;
+
+    let filteredItems = globalFilteredItems;
     if (this.currentAqlQuery?.where) {
-      filteredItems = allItems.filter((item) => evaluateAql(this.currentAqlQuery!, item));
+      filteredItems = filteredItems.filter((item) => evaluateAql(this.currentAqlQuery!, item));
     }
 
     const aqlOrderBy = this.currentAqlQuery?.orderBy ?? [];
@@ -982,6 +1013,18 @@ export class ListPanelController {
     this.currentSortedItems = sortedItems;
     this.currentColumnState = columnState;
     this.currentTable = { tbody, colCount, hasAnyItems };
+
+    const hasFilterQuery =
+      globalFilterActive || Boolean(this.currentAqlQuery?.where);
+    if (hasFilterQuery && baseItemCount > 0 && sortedItems.length === 0) {
+      const emptyRow = tbody.querySelector<HTMLTableRowElement>('.collection-list-empty-row');
+      const cell = emptyRow?.querySelector<HTMLTableCellElement>('td') ?? null;
+      if (emptyRow && cell) {
+        emptyRow.classList.add('collection-list-no-match-row');
+        cell.textContent = 'No items match this search.';
+      }
+    }
+
     this.applySearch(this.options.getSearchQuery());
 
     return controls;

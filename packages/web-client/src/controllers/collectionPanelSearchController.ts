@@ -154,6 +154,10 @@ export class CollectionPanelSearchController {
     return this.searchInput;
   }
 
+  getRootEl(): HTMLElement | null {
+    return this.rootEl;
+  }
+
   getTagsContainerEl(): HTMLElement | null {
     return this.searchTagsContainer;
   }

@@ -27,6 +27,7 @@ export interface KeyboardNavigationControllerOptions {
   getInputEl: () => HTMLInputElement | null;
   getActiveChatRuntime: () => ChatRuntime | null;
   openCommandPalette: () => void;
+  focusGlobalQuery?: () => boolean;
   openChatSessionPicker?: () => boolean;
   openChatModelPicker?: () => boolean;
   openChatThinkingPicker?: () => boolean;
@@ -192,6 +193,24 @@ export class KeyboardNavigationController {
         }),
       );
     }
+
+    this.shortcutRegistry.register(
+      ctrlShortcut(
+        'focus-global-query',
+        'g',
+        'Focus global query',
+        (event) => {
+          if (!this.canHandlePanelNavigationShortcut(event)) {
+            return false;
+          }
+          if (!this.options.focusGlobalQuery) {
+            return false;
+          }
+          return this.options.focusGlobalQuery();
+        },
+        { bindingId: 'global.query.focus' },
+      ),
+    );
 
     this.shortcutRegistry.register(
       ctrlShortcut('toggle-layout-navigation', 'p', 'Toggle layout navigation mode', (event) => {
