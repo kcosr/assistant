@@ -102,7 +102,16 @@ import {
   type PanelHeaderActions,
 } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
-import { getClientWindowId } from './utils/windowId';
+import {
+  createWindowSlot,
+  getClientWindowId,
+  listWindowSlotStatuses,
+  removeWindowSlot,
+  resetWindowSlotState,
+  setWindowSlotName,
+  setClientWindowId,
+  startWindowSlotHeartbeat,
+} from './utils/windowId';
 
 const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
 
@@ -110,6 +119,7 @@ const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
 const WINDOW_ID = getClientWindowId();
+startWindowSlotHeartbeat(WINDOW_ID);
 
 const isDebugFlagEnabled = (key: string): boolean => {
   if (typeof window === 'undefined') {
@@ -315,6 +325,11 @@ async function main(): Promise<void> {
     autoScrollCheckbox: autoScrollCheckboxEl,
     interactionModeCheckbox: interactionModeCheckboxEl,
     panelWorkspace: panelWorkspaceRoot,
+    windowDropdownButton,
+    windowDropdown,
+    windowSlotList,
+    windowSlotNewButton,
+    windowSlotResetButton,
     settingsDropdown,
     themeSelect,
     uiFontSelect,
@@ -2642,6 +2657,141 @@ async function main(): Promise<void> {
         })
       : null;
   layoutDropdownController?.attach();
+  const windowDropdownController =
+    windowDropdownButton && windowDropdown
+      ? new SettingsDropdownController({
+          dropdown: windowDropdown,
+          toggleButton: windowDropdownButton,
+        })
+      : null;
+  windowDropdownController?.attach();
+
+  const renderWindowSlotList = (): void => {
+    if (!windowSlotList) {
+      return;
+    }
+    const slots = listWindowSlotStatuses();
+    windowSlotList.replaceChildren();
+    for (const slot of slots) {
+      const row = document.createElement('div');
+      row.className = 'window-slot-row';
+
+      const selectButton = document.createElement('button');
+      selectButton.type = 'button';
+      selectButton.className = 'window-slot-select';
+      const isActive = slot.status === 'current';
+      const isBusy = slot.status === 'busy';
+      row.classList.toggle('is-busy', isBusy);
+      row.classList.toggle('is-active', isActive);
+      if (isActive) {
+        selectButton.classList.add('active');
+        selectButton.setAttribute('aria-pressed', 'true');
+      } else {
+        selectButton.setAttribute('aria-pressed', 'false');
+      }
+      const label = slot.name?.trim()
+        ? `${slot.name.trim()} (${slot.slotId})`
+        : `Window (${slot.slotId})`;
+      selectButton.textContent = isBusy ? `${label} (in use)` : label;
+      selectButton.disabled = isBusy;
+      const actions = document.createElement('div');
+      actions.className = 'window-slot-actions-inline';
+
+      const renameButton = document.createElement('button');
+      renameButton.type = 'button';
+      renameButton.className = 'window-slot-action';
+      renameButton.innerHTML = ICONS.edit;
+      renameButton.setAttribute('aria-label', `Rename window ${slot.slotId}`);
+      renameButton.title = 'Rename';
+      renameButton.disabled = isBusy;
+      renameButton.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        const currentName = slot.name?.trim() ?? '';
+        const result = await dialogManager.showTextInputDialog({
+          title: 'Rename window slot',
+          message: `Window ${slot.slotId}`,
+          confirmText: 'Save',
+          cancelText: 'Cancel',
+          labelText: 'Name',
+          initialValue: currentName,
+          placeholder: 'Window name',
+          validate: (value) => {
+            if (value.trim().length > 40) {
+              return 'Name must be 40 characters or fewer.';
+            }
+            return null;
+          },
+        });
+        if (result === null) {
+          return;
+        }
+        setWindowSlotName(slot.slotId, result);
+        renderWindowSlotList();
+      });
+
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'window-slot-action';
+      deleteButton.innerHTML = ICONS.trash;
+      deleteButton.setAttribute('aria-label', `Delete window ${slot.slotId}`);
+      deleteButton.title = 'Delete';
+      const canDelete = slot.status === 'available' && slot.slotId !== '0';
+      deleteButton.disabled = !canDelete;
+      deleteButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (!canDelete) {
+          return;
+        }
+        removeWindowSlot(slot.slotId);
+        renderWindowSlotList();
+      });
+
+      actions.appendChild(renameButton);
+      actions.appendChild(deleteButton);
+      row.appendChild(selectButton);
+      row.appendChild(actions);
+      const handleSelect = () => {
+        if (isBusy) {
+          return;
+        }
+        if (slot.slotId === WINDOW_ID) {
+          windowDropdownController?.toggle(false);
+          return;
+        }
+        setClientWindowId(slot.slotId);
+        windowDropdownController?.toggle(false);
+        window.location.reload();
+      };
+
+      row.addEventListener('click', (event) => {
+        const target = event.target as Node | null;
+        if (target && actions.contains(target)) {
+          return;
+        }
+        handleSelect();
+      });
+      windowSlotList.appendChild(row);
+    }
+  };
+
+  windowDropdownButton?.addEventListener('click', () => {
+    settingsDropdownController.toggle(false);
+    layoutDropdownController?.toggle(false);
+    renderWindowSlotList();
+  });
+
+  windowSlotNewButton?.addEventListener('click', () => {
+    const newSlotId = createWindowSlot();
+    setClientWindowId(newSlotId);
+    windowDropdownController?.toggle(false);
+    window.location.reload();
+  });
+
+  windowSlotResetButton?.addEventListener('click', () => {
+    resetWindowSlotState(WINDOW_ID);
+    windowDropdownController?.toggle(false);
+    window.location.reload();
+  });
 
   const layoutReplacePanelButton =
     layoutDropdown?.querySelector<HTMLButtonElement>('#layout-replace-panel') ?? null;
@@ -2657,10 +2807,12 @@ async function main(): Promise<void> {
 
   layoutDropdownButton?.addEventListener('click', () => {
     settingsDropdownController.toggle(false);
+    windowDropdownController?.toggle(false);
     updateLayoutReplacePanelState();
   });
   controlsToggleButtonEl.addEventListener('click', () => {
     layoutDropdownController?.toggle(false);
+    windowDropdownController?.toggle(false);
   });
 
   panelLauncherController = panelWorkspace
@@ -2679,6 +2831,7 @@ async function main(): Promise<void> {
         onOpen: () => {
           settingsDropdownController.toggle(false);
           layoutDropdownController?.toggle(false);
+          windowDropdownController?.toggle(false);
         },
       })
     : null;

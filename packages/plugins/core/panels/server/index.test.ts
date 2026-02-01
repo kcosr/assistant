@@ -344,7 +344,7 @@ describe('panels plugin operations', () => {
     resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
-    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection');
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
 
     updatePanelInventory(
       {

@@ -120,6 +120,7 @@ Binding indicator behavior:
 - Panels launcher button opens the panel picker.
 - Layout presets dropdown gathers open panels into auto/column grids without closing them.
 - Layout presets dropdown includes a replace action for the active panel.
+- Window slots dropdown switches between window layout contexts, shows in-use slots, and supports renaming, resetting, and deleting inactive slots.
 
 ## Panel Launcher
 

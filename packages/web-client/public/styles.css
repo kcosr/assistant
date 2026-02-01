@@ -1406,6 +1406,84 @@ body.preload * {
   min-width: 180px;
 }
 
+.window-dropdown {
+  min-width: 240px;
+}
+
+.window-slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.window-slot-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.window-slot-select {
+  flex: 1;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.window-slot-row:hover .window-slot-select {
+  background-color: var(--color-bg-hover);
+}
+
+.window-slot-row.is-busy .window-slot-select {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.window-slot-row.is-active .window-slot-select {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.window-slot-actions-inline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.window-slot-action {
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-input);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.window-slot-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.window-slot-action .icon {
+  margin: 0;
+}
+
+.window-slot-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
 .settings-dropdown.open {
   display: block;
 }
