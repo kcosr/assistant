@@ -1,18 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_PANEL_MANIFEST } from '../panels/chat/manifest';
-import { SESSIONS_PANEL_MANIFEST } from '../panels/sessions/manifest';
+import { EMPTY_PANEL_MANIFEST } from '../panels/empty/manifest';
+import { INPUT_PANEL_MANIFEST } from '../panels/input/manifest';
 import { collectPanelIds } from './layoutTree';
-import { createDefaultPanelLayout, DEFAULT_PANEL_IDS } from './panelDefaultLayout';
+import { createDefaultPanelLayout } from './panelDefaultLayout';
 
 describe('panelDefaultLayout', () => {
-  it('creates a layout using default placements when provided', () => {
-    const layout = createDefaultPanelLayout([SESSIONS_PANEL_MANIFEST, CHAT_PANEL_MANIFEST]);
-
-    expect(layout.panels[DEFAULT_PANEL_IDS.chat]?.panelType).toBe('chat');
-    expect(layout.panels[DEFAULT_PANEL_IDS.sessions]).toBeUndefined();
+  it('uses the empty panel when available', () => {
+    const layout = createDefaultPanelLayout([INPUT_PANEL_MANIFEST, EMPTY_PANEL_MANIFEST]);
 
     const panelIds = collectPanelIds(layout.layout);
-    expect(panelIds).toEqual([DEFAULT_PANEL_IDS.chat]);
+    expect(panelIds).toEqual(['empty-1']);
+    expect(layout.panels['empty-1']?.panelType).toBe('empty');
     expect(layout.headerPanels).toEqual([]);
     expect(layout.headerPanelSizes).toEqual({});
   });

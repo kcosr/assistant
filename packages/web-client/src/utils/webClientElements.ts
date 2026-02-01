@@ -13,6 +13,11 @@ export interface WebClientElements {
   autoScrollCheckbox: HTMLInputElement;
   interactionModeCheckbox: HTMLInputElement | null;
   panelWorkspace: HTMLElement | null;
+  windowDropdownButton: HTMLButtonElement | null;
+  windowDropdown: HTMLElement | null;
+  windowSlotList: HTMLElement | null;
+  windowSlotNewButton: HTMLButtonElement | null;
+  windowSlotResetButton: HTMLButtonElement | null;
   settingsDropdown: HTMLElement | null;
   themeSelect: HTMLSelectElement | null;
   uiFontSelect: HTMLSelectElement | null;
@@ -28,6 +33,8 @@ export interface WebClientElements {
   panelLauncherSearch: HTMLInputElement | null;
   panelLauncherCloseButton: HTMLButtonElement | null;
   panelHeaderDock: HTMLElement | null;
+  globalAqlHeader: HTMLElement | null;
+  globalAqlToggleButton: HTMLButtonElement | null;
   commandPaletteButton: HTMLButtonElement | null;
   commandPaletteFab: HTMLButtonElement | null;
   commandPalette: HTMLElement | null;
@@ -91,6 +98,11 @@ export function getWebClientElements(): WebClientElements | null {
     autoScrollCheckbox,
     interactionModeCheckbox,
     panelWorkspace,
+    windowDropdownButton: getElement<HTMLButtonElement>('window-dropdown-button'),
+    windowDropdown: getElement<HTMLElement>('window-dropdown'),
+    windowSlotList: getElement<HTMLElement>('window-slot-list'),
+    windowSlotNewButton: getElement<HTMLButtonElement>('window-slot-new'),
+    windowSlotResetButton: getElement<HTMLButtonElement>('window-slot-reset'),
     settingsDropdown: getElement<HTMLElement>('settings-dropdown'),
     themeSelect: getElement<HTMLSelectElement>('theme-select'),
     uiFontSelect: getElement<HTMLSelectElement>('ui-font-select'),
@@ -106,6 +118,8 @@ export function getWebClientElements(): WebClientElements | null {
     panelLauncherSearch: getElement<HTMLInputElement>('panel-launcher-search'),
     panelLauncherCloseButton: getElement<HTMLButtonElement>('panel-launcher-close'),
     panelHeaderDock: getElement<HTMLElement>('panel-header-dock'),
+    globalAqlHeader: getElement<HTMLElement>('global-aql-header'),
+    globalAqlToggleButton: getElement<HTMLButtonElement>('global-aql-toggle'),
     commandPaletteButton: getElement<HTMLButtonElement>('command-palette-button'),
     commandPaletteFab: getElement<HTMLButtonElement>('command-palette-fab'),
     commandPalette: getElement<HTMLElement>('command-palette'),

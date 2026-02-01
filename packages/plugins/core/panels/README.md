@@ -43,12 +43,14 @@ Panel command operations (open/close/remove/replace/move/toggle/close-split)
 require an active websocket client for the target session.
 If no session id is provided from HTTP/CLI, the command is broadcast to all
 connected clients.
+When multiple windows are active, pass `windowId` to target a specific window.
 
 Placement objects use `region` (left/right/top/bottom/center) with optional
 `size` overrides. `position` is accepted as an alias for `region`.
 
 `tree` supports `format: "json" | "text" | "both"` (default: `json`).
 `list` and `selected` accept `includeLayout` to include the layout tree and header panel ids.
+`list`, `selected`, and `tree` accept `windowId` to select a specific window when multiple are active.
 
 HTTP endpoints are available under:
 

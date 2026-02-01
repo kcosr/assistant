@@ -1,5 +1,9 @@
 import type { HttpRouteHandler } from '../types';
-import { getSelectedPanels, listPanels } from '../../panels/panelInventoryStore';
+import {
+  PanelInventoryWindowError,
+  getSelectedPanels,
+  listPanels,
+} from '../../panels/panelInventoryStore';
 
 function parseBooleanParam(value: string | null): boolean | undefined {
   if (value === null) {
@@ -31,6 +35,7 @@ export const handlePanelRoutes: HttpRouteHandler = async (
 
   const includeChat = parseBooleanParam(url.searchParams.get('includeChat'));
   const includeContext = parseBooleanParam(url.searchParams.get('includeContext'));
+  const windowId = url.searchParams.get('windowId');
 
   if (url.searchParams.has('includeChat') && includeChat === undefined) {
     sendJson(400, { error: 'includeChat must be a boolean' });
@@ -45,17 +50,42 @@ export const handlePanelRoutes: HttpRouteHandler = async (
   const options = {
     ...(includeChat !== undefined ? { includeChat } : {}),
     ...(includeContext !== undefined ? { includeContext } : {}),
+    ...(windowId ? { windowId } : {}),
   };
 
   if (req.method === 'GET' && segments.length === 2) {
-    const result = listPanels(options);
-    sendJson(200, result);
+    try {
+      const result = listPanels(options);
+      sendJson(200, result);
+    } catch (err) {
+      if (err instanceof PanelInventoryWindowError) {
+        sendJson(400, {
+          error: err.message,
+          code: err.code,
+          windows: err.windows,
+        });
+      } else {
+        sendJson(500, { error: 'Failed to load panels' });
+      }
+    }
     return true;
   }
 
   if (req.method === 'GET' && segments.length === 3 && segments[2] === 'selected') {
-    const result = getSelectedPanels(options);
-    sendJson(200, result);
+    try {
+      const result = getSelectedPanels(options);
+      sendJson(200, result);
+    } catch (err) {
+      if (err instanceof PanelInventoryWindowError) {
+        sendJson(400, {
+          error: err.message,
+          code: err.code,
+          windows: err.windows,
+        });
+      } else {
+        sendJson(500, { error: 'Failed to load panels' });
+      }
+    }
     return true;
   }
 

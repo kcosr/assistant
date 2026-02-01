@@ -133,7 +133,7 @@ describe('panels plugin operations', () => {
       selectedPanelId: 'p-1',
       selectedChatPanelId: null,
     };
-    updatePanelInventory(payload);
+    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
 
     const withoutContext = (await plugin.operations?.list({ includeContext: false }, ctx)) as {
       panels: Array<{ context?: unknown }>;
@@ -169,7 +169,7 @@ describe('panels plugin operations', () => {
       selectedPanelId: 'p-2',
       selectedChatPanelId: null,
     };
-    updatePanelInventory(payload);
+    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
 
     const selected = (await plugin.operations?.selected({ includeContext: true }, ctx)) as {
       selectedPanelId: string | null;
@@ -205,7 +205,7 @@ describe('panels plugin operations', () => {
       layout: { kind: 'panel', panelId: 'p-1' },
       headerPanels: ['p-2'],
     };
-    updatePanelInventory(payload);
+    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
 
     const tree = (await plugin.operations?.tree({ format: 'both', includeChat: true }, ctx)) as {
       layout?: unknown;
@@ -220,6 +220,7 @@ describe('panels plugin operations', () => {
   });
 
   it('opens panels by broadcasting a panel command', async () => {
+    resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
     const broadcastSpy = vi.spyOn(sessionHub, 'broadcastToSession');
@@ -248,6 +249,7 @@ describe('panels plugin operations', () => {
   });
 
   it('normalizes placement aliases in panel commands', async () => {
+    resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
     const broadcastSpy = vi.spyOn(sessionHub, 'broadcastToSession');
@@ -279,6 +281,7 @@ describe('panels plugin operations', () => {
   });
 
   it('broadcasts panel commands to all sessions from http context', async () => {
+    resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
     ctx.sessionId = 'http';
@@ -305,6 +308,74 @@ describe('panels plugin operations', () => {
         panelType: 'notes',
       },
       sessionId: '*',
+    });
+  });
+
+  it('requires windowId when multiple windows are active', async () => {
+    resetPanelInventoryForTests();
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+
+    updatePanelInventory(
+      {
+        type: 'panel_inventory',
+        panels: [],
+        selectedPanelId: null,
+        selectedChatPanelId: null,
+      },
+      { windowId: 'window-a', connectionId: 'conn-a' },
+    );
+    updatePanelInventory(
+      {
+        type: 'panel_inventory',
+        panels: [],
+        selectedPanelId: null,
+        selectedChatPanelId: null,
+      },
+      { windowId: 'window-b', connectionId: 'conn-b' },
+    );
+
+    await expect(plugin.operations?.list({}, ctx)).rejects.toMatchObject({
+      code: 'window_required',
+    });
+  });
+
+  it('routes panel commands to a specific window', async () => {
+    resetPanelInventoryForTests();
+    const { ctx, sessionHub } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
+
+    updatePanelInventory(
+      {
+        type: 'panel_inventory',
+        panels: [],
+        selectedPanelId: null,
+        selectedChatPanelId: null,
+      },
+      { windowId: 'window-a', connectionId: 'conn-a' },
+    );
+
+    const result = (await plugin.operations?.open(
+      { panelType: 'notes', targetPanelId: 'p-1', windowId: 'window-a' },
+      ctx,
+    )) as { ok?: boolean };
+
+    expect(result.ok).toBe(true);
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const [connectionId, message] = sendSpy.mock.calls[0] ?? [];
+    expect(connectionId).toBe('conn-a');
+    expect(message).toEqual({
+      type: 'panel_event',
+      panelId: 'workspace',
+      panelType: 'workspace',
+      windowId: 'window-a',
+      payload: {
+        type: 'panel_command',
+        command: 'open_panel',
+        panelType: 'notes',
+        targetPanelId: 'p-1',
+      },
     });
   });
 });

@@ -266,6 +266,7 @@ Parameters:
 - `panelType` (string, required): panel type id (for example `chat`)
 - `payload` (any, required): JSON payload delivered to the panel
 - `sessionId` (string, optional): session id to target (defaults to the current session)
+- `windowId` (string, optional): target a specific window when multiple are active
 - `scope` (`"session"` or `"all"`, optional): set to `"all"` to broadcast to all clients
 
 Example (current session):
@@ -287,12 +288,14 @@ Example (broadcast):
 #### panels_list
 
 List the latest panel inventory snapshot from the connected client.
+If multiple windows are active, `windowId` is required.
 
 Parameters:
 
 - `includeChat` (boolean, optional): include chat panels (default: false).
 - `includeContext` (boolean, optional): include panel context when available (default: true).
 - `includeLayout` (boolean, optional): include layout tree and header panel ids (default: false).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 Example:
 
@@ -303,12 +306,14 @@ Example:
 #### panels_selected
 
 Return the currently selected non-chat panel and (optionally) the selected chat panel.
+If multiple windows are active, `windowId` is required.
 
 Parameters:
 
 - `includeChat` (boolean, optional): include the selected chat panel when present.
 - `includeContext` (boolean, optional): include panel context when available (default: true).
 - `includeLayout` (boolean, optional): include layout tree and header panel ids.
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 Example:
 
@@ -319,12 +324,14 @@ Example:
 #### panels_tree
 
 Return the current panel layout tree.
+If multiple windows are active, `windowId` is required.
 
 Parameters:
 
 - `includeChat` (boolean, optional): include chat panels (default: true).
 - `includeContext` (boolean, optional): include panel context when available (default: true).
 - `format` (`"json"`, `"text"`, or `"both"`, optional): output format (default: `"json"`).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 Example:
 
@@ -347,6 +354,7 @@ Parameters:
 - `pinToHeader` (boolean, optional): pin the panel to the header (default: false).
 - `binding` (object, optional): `{ mode: "fixed" | "global", sessionId?: string }` (`sessionId` required for `fixed`).
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 Example:
 
@@ -362,6 +370,7 @@ Parameters:
 
 - `panelId` (string, required): panel instance id to close.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 #### panels_remove
 
@@ -371,6 +380,7 @@ Parameters:
 
 - `panelId` (string, required): panel instance id to remove.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 #### panels_replace
 
@@ -382,6 +392,7 @@ Parameters:
 - `panelType` (string, required): replacement panel type.
 - `binding` (object, optional): `{ mode: "fixed" | "global", sessionId?: string }`.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 #### panels_move
 
@@ -393,6 +404,7 @@ Parameters:
 - `placement` (object, required): placement definition.
 - `targetPanelId` (string, optional): panel id to place relative to.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 #### panels_toggle-split-view
 
@@ -403,6 +415,7 @@ Parameters:
 - `splitId` (string, optional): split id to toggle.
 - `panelId` (string, optional): panel id within the split to toggle.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 #### panels_close-split
 
@@ -412,6 +425,7 @@ Parameters:
 
 - `splitId` (string, required): split id to close.
 - `sessionId` (string, optional): target session id (defaults to current session).
+- `windowId` (string, optional): target a specific window when multiple are active.
 
 **MCP Tool Host** (optional)
 

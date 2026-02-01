@@ -59,10 +59,8 @@ Required elements:
 
 On first run:
 
-- Chat panel in the center
-- Chat panel includes its own message composer
-- Sessions panel is available from the launcher (not opened by default)
-- Lists and notes panels are available from the launcher (not opened by default)
+- Single empty placeholder panel
+- Panels (chat, sessions, lists, notes, artifacts) are available from the launcher
 
 Implementation notes (current):
 
@@ -122,6 +120,7 @@ Binding indicator behavior:
 - Panels launcher button opens the panel picker.
 - Layout presets dropdown gathers open panels into auto/column grids without closing them.
 - Layout presets dropdown includes a replace action for the active panel.
+- Window slots dropdown switches between window layout contexts, shows in-use slots, and supports renaming, resetting, and deleting inactive slots.
 
 ## Panel Launcher
 

@@ -1,4 +1,10 @@
-import type { PanelEventEnvelope } from '@assistant/shared';
+import {
+  GLOBAL_QUERY_CONTEXT_KEY,
+  isGlobalQuery,
+  matchesGlobalQuery,
+  type GlobalQuery,
+  type PanelEventEnvelope,
+} from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
 import { apiFetch } from '../../../../web-client/src/utils/api';
@@ -31,7 +37,7 @@ import {
 import { isCapacitorAndroid } from '../../../../web-client/src/utils/capacitor';
 import { ICONS } from '../../../../web-client/src/utils/icons';
 import { applyTagColorToElement, normalizeTag } from '../../../../web-client/src/utils/tagColors';
-import { PINNED_TAG, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
+import { PINNED_TAG, hasPinnedTag, isPinnedTag } from '../../../../web-client/src/utils/pinnedTag';
 import { buildAqlString, parseAql, type AqlQuery } from '../../../../web-client/src/utils/listItemQuery';
 import type { KeyboardShortcut } from '../../../../web-client/src/utils/keyboardShortcuts';
 import {
@@ -855,6 +861,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let activeListSummary: ListSummary | null = null;
       let activeListData: ListPanelData | null = null;
       let panelListViewPrefs: Record<string, ListViewPreferences> = {};
+      let globalQuery: GlobalQuery | null = null;
       let searchMode: 'raw' | 'aql' = 'raw';
       let rawQueryText = '';
       let aqlQueryText = '';
@@ -876,6 +883,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let chromeController: PanelChromeController | null = null;
       let unsubscribePanelActive: (() => void) | null = null;
       let unsubscribeViewportResize: (() => void) | null = null;
+      let unsubscribeGlobalQuery: (() => void) | null = null;
       let pendingShowEvent: { listId: string; instanceId: string; itemId?: string } | null = null;
       let pendingAqlApplyEvent: { listId: string; instanceId: string; query: string } | null = null;
       const panelShortcutUnsubscribers: Array<() => void> = [];
@@ -884,6 +892,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const contextKey = getPanelContextKey(host.panelId());
       const panelId = host.panelId();
       const panelShortcutScope = { scope: 'panelInstance' as const, panelId };
+      const readGlobalQuery = (value: unknown): GlobalQuery | null =>
+        isGlobalQuery(value) ? value : null;
+      globalQuery = readGlobalQuery(host.getContext(GLOBAL_QUERY_CONTEXT_KEY));
 
       const updatePanelSelection = (value: unknown): void => {
         if (!value || typeof value !== 'object') {
@@ -1193,17 +1204,68 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         availableNotes = summaries;
       };
 
+      const matchesGlobalQueryForList = (list: ListSummary): boolean => {
+        if (!globalQuery) {
+          return true;
+        }
+        return matchesGlobalQuery(
+          {
+            title: list.name,
+            notes: list.description,
+            tags: list.tags,
+            favorite: list.favorite,
+            pinned: hasPinnedTag(list.tags),
+            instanceId: list.instanceId,
+          },
+          globalQuery,
+        );
+      };
+
       const getAvailableItems = (): CollectionItemSummary[] =>
-        availableLists.map((list) => ({
-          type: 'list',
-          id: list.id,
-          name: list.name,
-          tags: list.tags,
-          favorite: list.favorite,
-          updatedAt: list.updatedAt,
-          instanceId: list.instanceId,
-          instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
-        }));
+        availableLists
+          .filter((list) => matchesGlobalQueryForList(list))
+          .map((list) => ({
+            type: 'list',
+            id: list.id,
+            name: list.name,
+            tags: list.tags,
+            favorite: list.favorite,
+            updatedAt: list.updatedAt,
+            instanceId: list.instanceId,
+            instanceLabel: list.instanceLabel ?? getInstanceLabel(list.instanceId),
+          }));
+
+      const emitGlobalTags = (): void => {
+        const tags = new Set<string>();
+        for (const list of availableLists) {
+          for (const tag of list.tags ?? []) {
+            tags.add(tag.toLowerCase());
+          }
+          for (const tag of list.defaultTags ?? []) {
+            tags.add(tag.toLowerCase());
+          }
+        }
+        if (activeListData?.items) {
+          for (const item of activeListData.items) {
+            if (!Array.isArray(item.tags)) {
+              continue;
+            }
+            for (const tag of item.tags) {
+              if (typeof tag === 'string') {
+                const normalized = tag.trim().toLowerCase();
+                if (normalized) {
+                  tags.add(normalized);
+                }
+              }
+            }
+          }
+        }
+        window.dispatchEvent(
+          new CustomEvent('assistant:global-tags', {
+            detail: { source: 'lists', tags: Array.from(tags) },
+          }),
+        );
+      };
 
       const buildReferenceItems = (): CollectionItemSummary[] => {
         const listItems = availableLists.map((list) => ({
@@ -1684,6 +1746,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         activeListInstanceId = null;
         activeListSummary = null;
         activeListData = null;
+        emitGlobalTags();
         loadToken += 1;
         refreshInFlight = false;
         refreshToken += 1;
@@ -1915,6 +1978,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         getSearchQuery: () => sharedSearchController.getQuery(),
         getSearchTagController: () => sharedSearchController.getTagController(),
         getActiveInstanceId: () => activeListInstanceId ?? activeInstanceId,
+        getGlobalQuery: () => globalQuery,
         callOperation: (operation, args) => {
           const { instanceId, ...rest } = args as Record<string, unknown> & {
             instanceId?: unknown;
@@ -2983,6 +3047,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             activeListInstanceId = null;
             activeListSummary = null;
             activeListData = null;
+            emitGlobalTags();
             updatePanelContext();
             updateDropdownSelection(null);
             refreshListBrowser();
@@ -3026,6 +3091,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           availableLists = results.flat();
+          emitGlobalTags();
           dropdownController?.populate(getAvailableItems());
           browserController?.refresh();
           if (activeListId && activeListInstanceId) {
@@ -3123,6 +3189,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           activeListInstanceId = instanceId;
           activeListSummary = list;
           activeListData = data;
+          emitGlobalTags();
           updateDropdownSelection({ type: 'list', id: list.id, instanceId });
           const controls = listPanelController.render(list.id, data);
           sharedSearchController.setRightControls(controls.rightControls);
@@ -3183,6 +3250,21 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         updateDropdownSelection(getActiveReference());
       };
 
+      const applyGlobalQueryUpdate = (value: unknown): void => {
+        globalQuery = readGlobalQuery(value);
+        refreshListBrowser();
+        if (mode === 'list' && activeListId && activeListData) {
+          const controls = listPanelController.render(activeListId, activeListData);
+          sharedSearchController.setRightControls(controls.rightControls);
+        }
+      };
+
+      applyGlobalQueryUpdate(host.getContext(GLOBAL_QUERY_CONTEXT_KEY));
+      unsubscribeGlobalQuery = host.subscribeContext(
+        GLOBAL_QUERY_CONTEXT_KEY,
+        applyGlobalQueryUpdate,
+      );
+
       const updateListUpdatedAt = (
         listId: string,
         instanceId: string,
@@ -3215,6 +3297,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           activeListData.defaultTags = list.defaultTags;
           activeListData.customFields = list.customFields;
         }
+        emitGlobalTags();
         updatePanelContext();
       };
 
@@ -3227,6 +3310,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return false;
         }
         activeListData.items[index] = item;
+        emitGlobalTags();
         return true;
       };
 
@@ -3275,6 +3359,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           setMode('browser');
         }
         if (listsChanged) {
+          emitGlobalTags();
           refreshListBrowser();
         }
 
@@ -3315,6 +3400,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             } else {
               updateActiveListItem(item);
             }
+            emitGlobalTags();
             updatePanelContext();
             if (mode === 'list') {
               sharedSearchController.setTagsProvider(() => listPanelController.getAvailableTags());
@@ -3536,6 +3622,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           chromeController?.destroy();
           unsubscribePanelActive?.();
           unsubscribeViewportResize?.();
+          unsubscribeGlobalQuery?.();
           host.setContext(contextKey, null);
           if (highlightTimeout) {
             window.clearTimeout(highlightTimeout);

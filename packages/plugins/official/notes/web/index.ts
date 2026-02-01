@@ -1,4 +1,10 @@
-import type { PanelEventEnvelope } from '@assistant/shared';
+import {
+  GLOBAL_QUERY_CONTEXT_KEY,
+  isGlobalQuery,
+  matchesGlobalQuery,
+  type GlobalQuery,
+  type PanelEventEnvelope,
+} from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
 import { apiFetch } from '../../../../web-client/src/utils/api';
@@ -725,6 +731,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let selectedInstanceIds: string[] = [DEFAULT_INSTANCE_ID];
       let activeInstanceId = DEFAULT_INSTANCE_ID;
       let availableNotes: NoteSummary[] = [];
+      let globalQuery: GlobalQuery | null = null;
       let activeNoteTitle: string | null = null;
       let activeNoteInstanceId: string | null = null;
       let activeNote: Note | null = null;
@@ -742,6 +749,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let chromeController: PanelChromeController | null = null;
       let isPanelSelected = false;
       let unsubscribePanelActive: (() => void) | null = null;
+      let unsubscribeGlobalQuery: (() => void) | null = null;
       let pendingShowEvent: { title: string; instanceId: string } | null = null;
       const panelShortcutUnsubscribers: Array<() => void> = [];
 
@@ -788,6 +796,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const panelId = host.panelId();
       const contextKey = getPanelContextKey(panelId);
       const panelShortcutScope = { scope: 'panelInstance' as const, panelId };
+      const readGlobalQuery = (value: unknown): GlobalQuery | null =>
+        isGlobalQuery(value) ? value : null;
+      globalQuery = readGlobalQuery(host.getContext(GLOBAL_QUERY_CONTEXT_KEY));
 
       const updatePanelSelection = (value: unknown): void => {
         if (!value || typeof value !== 'object') {
@@ -818,17 +829,36 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         void selectNote(title, instanceId, { focus: false });
       };
 
+      const matchesGlobalQueryForNote = (note: NoteSummary): boolean => {
+        if (!globalQuery) {
+          return true;
+        }
+        return matchesGlobalQuery(
+          {
+            title: note.title,
+            notes: note.description,
+            tags: note.tags,
+            favorite: note.favorite,
+            pinned: hasPinnedTag(note.tags),
+            instanceId: note.instanceId,
+          },
+          globalQuery,
+        );
+      };
+
       const getAvailableItems = (): CollectionItemSummary[] =>
-        availableNotes.map((note) => ({
-          type: 'note',
-          id: note.title,
-          name: note.title,
-          tags: note.tags,
-          favorite: note.favorite,
-          updatedAt: note.updated,
-          instanceId: note.instanceId,
-          instanceLabel: note.instanceLabel ?? getInstanceLabel(note.instanceId),
-        }));
+        availableNotes
+          .filter((note) => matchesGlobalQueryForNote(note))
+          .map((note) => ({
+            type: 'note',
+            id: note.title,
+            name: note.title,
+            tags: note.tags,
+            favorite: note.favorite,
+            updatedAt: note.updated,
+            instanceId: note.instanceId,
+            instanceLabel: note.instanceLabel ?? getInstanceLabel(note.instanceId),
+          }));
 
       const getActiveReference = (): CollectionReference | null =>
         activeNoteTitle && activeNoteInstanceId
@@ -952,6 +982,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         activeNoteTitle = null;
         activeNoteInstanceId = null;
         activeNote = null;
+        emitGlobalTags();
         loadToken += 1;
         refreshInFlight = false;
         refreshToken += 1;
@@ -1171,6 +1202,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             activeNoteTitle = null;
             activeNoteInstanceId = null;
             activeNote = null;
+            emitGlobalTags();
             updatePanelContext();
             updateDropdownSelection(null);
             refreshBrowser();
@@ -1291,6 +1323,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         return Array.from(tags).sort();
       };
 
+      const emitGlobalTags = (): void => {
+        window.dispatchEvent(
+          new CustomEvent('assistant:global-tags', {
+            detail: { source: 'notes', tags: getAllNoteTags() },
+          }),
+        );
+      };
+
       const updateAvailableNote = (note: NoteSummary): void => {
         const index = availableNotes.findIndex(
           (entry) => entry.title === note.title && entry.instanceId === note.instanceId,
@@ -1301,12 +1341,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           availableNotes.push(note);
         }
         availableNotes = sortNotes(availableNotes);
+        emitGlobalTags();
       };
 
       const removeAvailableNote = (title: string, instanceId: string): void => {
         availableNotes = availableNotes.filter(
           (entry) => !(entry.title === title && entry.instanceId === instanceId),
         );
+        emitGlobalTags();
       };
 
       const refreshBrowser = (): void => {
@@ -1315,6 +1357,17 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         browserController?.refresh();
         updateDropdownSelection(getActiveReference());
       };
+
+      const applyGlobalQueryUpdate = (value: unknown): void => {
+        globalQuery = readGlobalQuery(value);
+        refreshBrowser();
+      };
+
+      applyGlobalQueryUpdate(host.getContext(GLOBAL_QUERY_CONTEXT_KEY));
+      unsubscribeGlobalQuery = host.subscribeContext(
+        GLOBAL_QUERY_CONTEXT_KEY,
+        applyGlobalQueryUpdate,
+      );
 
       const applyNoteSearch = (query: string): void => {
         if (!markdownViewer || isEditing) {
@@ -2215,6 +2268,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return;
           }
           availableNotes = sortNotes(results.flat());
+          emitGlobalTags();
           refreshBrowser();
 
           if (activeNoteTitle && activeNoteInstanceId) {
@@ -2512,6 +2566,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             unsubscribe();
           }
           unsubscribePanelActive?.();
+          unsubscribeGlobalQuery?.();
           chromeController?.destroy();
           host.setContext(contextKey, null);
           container.innerHTML = '';

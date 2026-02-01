@@ -5,3 +5,4 @@ export * from './panelProtocol';
 export * from './sessionTypes';
 export * from './tags';
 export * from './aql';
+export * from './globalQuery';

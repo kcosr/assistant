@@ -8,6 +8,5 @@ export const CHAT_PANEL_MANIFEST: PanelTypeManifest = {
   multiInstance: true,
   defaultSessionBinding: 'fixed',
   sessionScope: 'optional',
-  defaultPlacement: { region: 'center' },
   capabilities: ['chat.read', 'chat.write'],
 };

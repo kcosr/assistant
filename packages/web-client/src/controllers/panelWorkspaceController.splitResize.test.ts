@@ -93,7 +93,29 @@ describe('PanelWorkspaceController split resize', () => {
     const root = document.createElement('div');
     document.body.appendChild(root);
 
-    const workspace = new PanelWorkspaceController({ root, registry, host });
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      defaultLayout: () => ({
+        layout: {
+          kind: 'split',
+          splitId: 'split-1',
+          direction: 'vertical',
+          sizes: [1, 1],
+          children: [
+            { kind: 'panel', panelId: 'chat-1' },
+            { kind: 'panel', panelId: 'input-1' },
+          ],
+        },
+        panels: {
+          'chat-1': { panelId: 'chat-1', panelType: 'chat' },
+          'input-1': { panelId: 'input-1', panelType: 'input' },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+    });
     host.setPanelWorkspace(workspace);
     workspace.attach();
 

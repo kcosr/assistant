@@ -29,6 +29,9 @@ export interface AqlItem {
   position?: number;
   completed?: boolean;
   completedAt?: string;
+  instanceId?: string;
+  favorite?: boolean;
+  pinned?: boolean;
 }
 
 export type AqlParseResult =
@@ -99,7 +102,13 @@ export interface AqlQuery {
 
 export interface AqlParseOptions {
   customFields: ListCustomFieldDefinition[];
+  builtinFields?: AqlBuiltinField[];
+  allowedFields?: string[];
+  allowOrderBy?: boolean;
+  allowShow?: boolean;
 }
+
+export type AqlBuiltinField = Omit<AqlField, 'label'> & { name: string; label: string };
 
 type TokenType =
   | 'identifier'
@@ -132,7 +141,7 @@ const KEYWORDS = new Set([
   'DESC',
 ]);
 
-const BUILTIN_FIELDS: Array<Omit<AqlField, 'label'> & { name: string; label: string }> = [
+export const DEFAULT_AQL_BUILTIN_FIELDS: AqlBuiltinField[] = [
   { name: 'text', key: 'text', label: 'Text', type: 'text', kind: 'builtin', displayable: false },
   { name: 'title', key: 'title', label: 'Title', type: 'text', kind: 'builtin', displayable: true },
   { name: 'notes', key: 'notes', label: 'Notes', type: 'text', kind: 'builtin', displayable: true },
@@ -146,7 +155,10 @@ const BUILTIN_FIELDS: Array<Omit<AqlField, 'label'> & { name: string; label: str
   { name: 'position', key: 'position', label: 'Position', type: 'position', kind: 'builtin', displayable: false },
 ];
 
-function buildFieldMap(customFields: ListCustomFieldDefinition[]): {
+function buildFieldMap(
+  customFields: ListCustomFieldDefinition[],
+  builtinFields: AqlBuiltinField[],
+): {
   map: Map<string, AqlField>;
   ambiguous: Set<string>;
 } {
@@ -166,7 +178,7 @@ function buildFieldMap(customFields: ListCustomFieldDefinition[]): {
     map.set(key, field);
   };
 
-  for (const entry of BUILTIN_FIELDS) {
+  for (const entry of builtinFields) {
     addField(entry.name, {
       key: entry.key,
       label: entry.label,
@@ -598,7 +610,59 @@ function compileAql(
   },
   options: AqlParseOptions,
 ): AqlParseResult {
-  const { map, ambiguous } = buildFieldMap(options.customFields);
+  const builtinFields = options.builtinFields ?? DEFAULT_AQL_BUILTIN_FIELDS;
+  const allowOrderBy = options.allowOrderBy !== false;
+  const allowShow = options.allowShow !== false;
+  const allowedFields = options.allowedFields
+    ? new Set(options.allowedFields.map((field) => field.trim().toLowerCase()).filter(Boolean))
+    : null;
+
+  if (!allowOrderBy && parsed.orderBy.length > 0) {
+    throw new Error('ORDER BY is not supported in this query');
+  }
+  if (!allowShow && parsed.show && parsed.show.length > 0) {
+    throw new Error('SHOW is not supported in this query');
+  }
+
+  const assertAllowedField = (raw: string, context?: string) => {
+    if (!allowedFields) {
+      return;
+    }
+    const key = raw.trim().toLowerCase();
+    if (!key || !allowedFields.has(key)) {
+      const location = context ? ` in ${context}` : '';
+      throw new Error(`Field "${raw}" is not supported${location}`);
+    }
+  };
+
+  const validateExpr = (expr: RawAqlExpr): void => {
+    if (expr.type === 'clause') {
+      assertAllowedField(expr.clause.field);
+      return;
+    }
+    if (expr.type === 'not') {
+      validateExpr(expr.expr);
+      return;
+    }
+    validateExpr(expr.left);
+    validateExpr(expr.right);
+  };
+
+  if (parsed.where) {
+    validateExpr(parsed.where);
+  }
+  if (parsed.orderBy.length > 0) {
+    for (const entry of parsed.orderBy) {
+      assertAllowedField(entry.field, 'ORDER BY');
+    }
+  }
+  if (parsed.show) {
+    for (const entry of parsed.show) {
+      assertAllowedField(entry, 'SHOW');
+    }
+  }
+
+  const { map, ambiguous } = buildFieldMap(options.customFields, builtinFields);
 
   const resolveField = (raw: string): AqlField | null => {
     const key = raw.trim().toLowerCase();
@@ -699,7 +763,7 @@ function compileAql(
     const fields: AqlField[] = [];
     const seen = new Set<string>();
 
-    for (const entry of BUILTIN_FIELDS) {
+    for (const entry of builtinFields) {
       if (entry.key === 'text') {
         continue;
       }
@@ -844,29 +908,51 @@ function compileAql(
   return { ok: true, query: { where, orderBy, show, base: parsed.base } };
 }
 
+export interface AqlEvaluateOptions {
+  isFieldSupported?: (field: AqlField) => boolean;
+  getFieldValue?: (item: AqlItem, field: AqlField) => string | number | boolean | string[] | null;
+}
+
 export function evaluateAql(query: AqlQuery, item: AqlItem): boolean {
+  return evaluateAqlWithOptions(query, item);
+}
+
+export function evaluateAqlWithOptions(
+  query: AqlQuery,
+  item: AqlItem,
+  options?: AqlEvaluateOptions,
+): boolean {
   if (!query.where) {
     return true;
   }
-  return evaluateExpr(query.where, item);
+  return evaluateExpr(query.where, item, options);
 }
 
-function evaluateExpr(expr: AqlExpr, item: AqlItem): boolean {
+function evaluateExpr(expr: AqlExpr, item: AqlItem, options?: AqlEvaluateOptions): boolean {
   if (expr.type === 'and') {
-    return evaluateExpr(expr.left, item) && evaluateExpr(expr.right, item);
+    return evaluateExpr(expr.left, item, options) && evaluateExpr(expr.right, item, options);
   }
   if (expr.type === 'or') {
-    return evaluateExpr(expr.left, item) || evaluateExpr(expr.right, item);
+    return evaluateExpr(expr.left, item, options) || evaluateExpr(expr.right, item, options);
   }
   if (expr.type === 'not') {
-    return !evaluateExpr(expr.expr, item);
+    return !evaluateExpr(expr.expr, item, options);
   }
-  return evaluateClause(expr.clause, item);
+  return evaluateClause(expr.clause, item, options);
 }
 
-function evaluateClause(clause: AqlClause, item: AqlItem): boolean {
+function evaluateClause(
+  clause: AqlClause,
+  item: AqlItem,
+  options?: AqlEvaluateOptions,
+): boolean {
+  if (options?.isFieldSupported && !options.isFieldSupported(clause.field)) {
+    return false;
+  }
   const { field, op } = clause;
-  const value = getFieldValue(item, field);
+  const value = options?.getFieldValue
+    ? options.getFieldValue(item, field)
+    : getFieldValue(item, field);
 
   if (op === 'is_empty') {
     return isEmptyValue(value, field.type);
@@ -1048,6 +1134,12 @@ function getFieldValue(
       return parseDatetimeToTimestamp(item.touchedAt ?? '') ?? null;
     case 'completed':
       return typeof item.completed === 'boolean' ? item.completed : false;
+    case 'instance':
+      return typeof item.instanceId === 'string' ? item.instanceId.toLowerCase() : null;
+    case 'favorite':
+      return typeof item.favorite === 'boolean' ? item.favorite : null;
+    case 'pinned':
+      return typeof item.pinned === 'boolean' ? item.pinned : null;
     case 'position':
       return typeof item.position === 'number' ? item.position : null;
     default:

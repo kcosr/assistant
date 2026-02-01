@@ -58,6 +58,7 @@ describe('client message validation', () => {
       type: 'panel_event',
       panelId: 'panel-1',
       panelType: 'diff',
+      windowId: 'window-1',
       payload: { kind: 'ping' },
     };
 
@@ -192,6 +193,7 @@ describe('server message validation', () => {
       panelId: 'panel-2',
       panelType: 'terminal',
       sessionId: 'session-9',
+      windowId: 'window-2',
       payload: { kind: 'status', value: 'ready' },
     };
 

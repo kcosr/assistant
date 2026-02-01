@@ -13,7 +13,6 @@
       "multiInstance": true,
       "defaultSessionBinding": "fixed",
       "sessionScope": "optional",
-      "defaultPlacement": { "region": "center" },
       "capabilities": ["chat.read", "chat.write"]
     }
   ],

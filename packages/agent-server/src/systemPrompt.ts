@@ -166,6 +166,7 @@ export function buildSystemPrompt(
       '',
       'Always rely on this context line for the current panel and selection when it is present.',
       'If no context line is available (headless agents), call panels_list or panels_selected (includeContext true) to find the target panel and its context.',
+      'If multiple windows are active, include windowId in panels_* calls.',
       'Use the panel-id for panel-specific tools when required.',
       'Use the appropriate tools (lists_* for lists, notes_* for notes) or CLI skills if tools are not exposed.',
     ];

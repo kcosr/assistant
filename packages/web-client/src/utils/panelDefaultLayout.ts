@@ -21,10 +21,19 @@ const REGION_ORDER: Record<PanelPlacement['region'], number> = {
 };
 
 export function createDefaultPanelLayout(manifests: PanelTypeManifest[]): LayoutPersistence {
-  const openManifests = manifests.filter((manifest) => manifest.defaultPlacement);
-  const resolvedManifests = openManifests.length > 0 ? openManifests : manifests;
-  if (resolvedManifests.length === 0) {
+  if (manifests.length === 0) {
     throw new Error('No panels registered.');
+  }
+
+  const emptyManifest = manifests.find((manifest) => manifest.type === 'empty');
+  const openManifests = manifests.filter((manifest) => manifest.defaultPlacement);
+  let resolvedManifests: PanelTypeManifest[];
+  if (emptyManifest) {
+    resolvedManifests = [emptyManifest];
+  } else if (openManifests.length > 0) {
+    resolvedManifests = openManifests;
+  } else {
+    resolvedManifests = manifests;
   }
 
   const usedIds = new Set<string>();
