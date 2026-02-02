@@ -884,13 +884,14 @@ export class LocalExecutor implements ToolExecutor {
         : DEFAULT_FIND_LIMIT;
 
     const fdPath = await ensureTool('fd', true);
+    const hasPathSeparator = pattern.includes('/') || pattern.includes('\\');
 
     if (abortSignal?.aborted) {
       return createFindResultFromPaths([], limit);
     }
 
     let candidatePaths: string[];
-    if (fdPath) {
+    if (fdPath && !hasPathSeparator) {
       candidatePaths = await this.findWithFd(fdPath, searchDir, pattern, limit, abortSignal);
     } else {
       candidatePaths = await this.findWithGlob(searchDir, pattern, limit, abortSignal);

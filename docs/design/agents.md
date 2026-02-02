@@ -45,7 +45,7 @@ An agent has:
 - **agentId**: Unique identifier (e.g., `"reading-list"`, `"todo"`, `"journal"`)
 - **displayName**: Human-readable name (e.g., `"Reading List Manager"`)
 - **type**: Runtime type (`"chat"` or `"external"`)
-- **chat.provider**: Chat backend for `"chat"` agents (`"openai"` (default), `"openai-compatible"`, `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`)
+- **chat.provider**: Chat backend for `"chat"` agents (`"pi"` (default), `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`)
 - **systemPrompt**: Custom instructions that shape the agent's behavior
 - **toolAllowlist** / **toolDenylist**: Optional glob patterns to allow/deny tools (if omitted, all tools are available)
 - **toolExposure**: Optional tool exposure mode (`"tools"` default, `"skills"`, or `"mixed"`)

@@ -210,10 +210,10 @@ describe('SessionScopedEventStore', () => {
         },
       ],
       [
-        'openai-session',
+        'codex-session',
         {
-          sessionId: 'openai-session',
-          agentId: 'openai',
+          sessionId: 'codex-session',
+          agentId: 'codex',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
@@ -234,10 +234,10 @@ describe('SessionScopedEventStore', () => {
             chat: { provider: 'pi-cli' },
           },
           {
-            agentId: 'openai',
-            displayName: 'OpenAI',
-            description: 'OpenAI',
-            chat: { provider: 'openai' },
+            agentId: 'codex',
+            displayName: 'Codex',
+            description: 'Codex CLI',
+            chat: { provider: 'codex-cli' },
           },
         ]),
       shouldPersistSessionEvents: (summary: SessionSummary) => {
@@ -301,8 +301,8 @@ describe('SessionScopedEventStore', () => {
     await store.append('pi-session', piPending);
     expect(baseStore.append).toHaveBeenCalledWith('pi-session', piPending);
 
-    const openaiEvent = createEvent({ id: 'e-openai', sessionId: 'openai-session' });
-    await store.append('openai-session', openaiEvent);
-    expect(baseStore.append).toHaveBeenCalledWith('openai-session', openaiEvent);
+    const codexEvent = createEvent({ id: 'e-codex', sessionId: 'codex-session' });
+    await store.append('codex-session', codexEvent);
+    expect(baseStore.append).toHaveBeenCalledWith('codex-session', codexEvent);
   });
 });

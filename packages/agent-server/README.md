@@ -1,6 +1,6 @@
 # @assistant/agent-server
 
-Node.js backend for the AI Assistant. Handles WebSocket connections, OpenAI integration, TTS, and tool hosting.
+Node.js backend for the AI Assistant. Handles WebSocket connections, Pi SDK chat integration, TTS, and tool hosting.
 
 ## Table of Contents
 
@@ -21,9 +21,8 @@ Node.js backend for the AI Assistant. Handles WebSocket connections, OpenAI inte
 # Build first
 npm run build
 
-# Set required environment variables
+# Set required environment variables for your Pi providers (example)
 export OPENAI_API_KEY=sk-...
-export OPENAI_CHAT_MODEL=gpt-4o
 
 # Start server
 npm run start
@@ -70,7 +69,7 @@ Server listens on `http://localhost:3000` (configurable via `PORT`).
 │  WebSocket Server (/ws)                                       │
 │  └── Session                                                  │
 │      ├── Client protocol handling                             │
-│      ├── OpenAI Chat Completions (streaming)                  │
+│      ├── Pi SDK Chat (streaming)                              │
 │      ├── TTS Backend (OpenAI or ElevenLabs)                   │
 │      └── Tool calls via MCP                                   │
 ├──────────────────────────────────────────────────────────────┤
@@ -441,12 +440,12 @@ The `CompositeToolHost` aggregates tools from both sources, allowing the agent t
 
 See root README for complete list.
 
-### OpenAI (optional)
+### Provider API keys (Pi SDK)
 
-These are required only when using built-in OpenAI chat or TTS backends. The server can start without them; in that case OpenAI-based agents are disabled but CLI agents (Claude, Codex, Pi) continue to work.
-
-- `OPENAI_API_KEY`
-- `OPENAI_CHAT_MODEL`
+Pi SDK chat reads provider-specific environment variables (for example `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`/`ANTHROPIC_OAUTH_TOKEN`, `GEMINI_API_KEY`, etc.). The server can
+start without them; in that case Pi-backed chat is unavailable but CLI agents
+(Claude, Codex, Pi) continue to work. OpenAI TTS requires `OPENAI_API_KEY`.
 
 ### TTS
 
@@ -462,7 +461,7 @@ These are required only when using built-in OpenAI chat or TTS backends. The ser
 
 ### Debug
 
-- `DEBUG_CHAT_COMPLETIONS` - Log chat requests/responses to console
+- `DEBUG_CHAT_COMPLETIONS` - Log Pi SDK request/response payloads (tools included, auth redacted)
 
 ## Files
 
@@ -963,10 +962,20 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `"chat"`: in-process chat completions (default behavior)
   - `"external"`: forwards user messages to `external.inputUrl` and accepts assistant messages via callback
   - `chat` (only for `type: "chat"` or when `type` is omitted)
-  - `provider` (default `"openai"`): `"openai"`, `"claude-cli"`, `"codex-cli"`, `"pi-cli"`, or `"openai-compatible"`
-  - `models` (optional array): allowed model ids for `"openai"` and CLI providers; first is default. For `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model`.
-  - `thinking` (optional array): allowed thinking levels for `"pi-cli"` and `"codex-cli"`; first is default (Codex maps to `model_reasoning_effort`)
+  - `provider` (default `"pi"`): `"pi"`, `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`
+  - `models` (optional array): allowed model ids for `"pi"` and CLI providers; first is default. For `"pi"` and `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model` (Pi CLI only).
+  - `thinking` (optional array): allowed thinking levels for `"pi"`, `"pi-cli"`, and `"codex-cli"`; first is default (Pi passes through to SDK reasoning; Codex maps to `model_reasoning_effort`)
   - `config`:
+    - for `provider: "pi"`:
+      - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
+      - `apiKey` (optional): API key override for the configured provider
+      - `baseUrl` (optional): base URL override for the configured provider
+      - `headers` (optional): custom HTTP headers to send with each request
+      - connection overrides apply only when the resolved provider matches `config.provider`
+      - `timeoutMs` (optional): request timeout in milliseconds
+      - `maxTokens` (optional): positive integer completion limit
+      - `temperature` (optional): temperature to use for generation
+      - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
     - for `provider: "claude-cli"`:
       - `workdir` (optional): working directory for the Claude CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`)
@@ -976,13 +985,6 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
     - for `provider: "pi-cli"`:
       - `workdir` (optional): working directory for the Pi CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`; when `chat.models` is set, `--model` and `--provider` are also managed by the server; when `chat.thinking` is set, `--thinking` is also managed by the server)
-    - for `provider: "openai-compatible"` (OpenAI-compatible HTTP APIs such as llama.cpp, vLLM, Ollama, Together, Groq, etc.):
-      - `baseUrl` (required): base URL for the API, for example `http://localhost:8080/v1`
-      - `apiKey` (optional): API key for the backend; if the value contains `${VARNAME}`, it will be substituted from `process.env.VARNAME`
-      - `model` (required): model name to use for chat completions
-      - `maxTokens` (optional): positive integer `max_tokens` limit for completions
-      - `temperature` (optional): temperature to use for generation
-      - `headers` (optional): object with custom HTTP headers to send with each request, for example `{"X-Custom-Auth": "token123"}`
   - For CLI providers (`"claude-cli"`, `"codex-cli"`, `"pi-cli"`), the agent server starts each CLI in its own POSIX process group and, on user cancel, sends a `SIGTERM` followed by a `SIGKILL` to that group. This ensures any subprocesses launched by the CLI (for example `bash` commands) are cleaned up when a chat run is aborted.
   - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
 - `external` (only for `type: "external"`)
@@ -1017,16 +1019,17 @@ Example:
       "agentAllowlist": ["todo", "journal"]
     },
     {
-      "agentId": "local-llama",
-      "displayName": "Local LLaMA",
-      "description": "Local LLaMA via an OpenAI-compatible endpoint.",
+      "agentId": "pi-sdk",
+      "displayName": "Pi",
+      "description": "Pi SDK chat provider.",
       "type": "chat",
       "chat": {
-        "provider": "openai-compatible",
+        "provider": "pi",
+        "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
+        "thinking": ["off", "low", "medium", "high", "xhigh"],
         "config": {
-          "baseUrl": "http://localhost:8080/v1",
-          "apiKey": "${LOCAL_LLM_KEY}",
-          "model": "llama-3.1-70b",
+          "provider": "anthropic",
+          "apiKey": "${ANTHROPIC_API_KEY}",
           "maxTokens": 4096,
           "temperature": 0.7
         }

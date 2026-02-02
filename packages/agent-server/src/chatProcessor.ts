@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import OpenAI from 'openai';
-
 import type { ServerTextDoneMessage, ServerUserMessageMessage } from '@assistant/shared';
 import type { ChatEvent, TurnStartTrigger } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from './chatCompletionTypes';
+import type { PiSdkChatConfig } from './agents';
 import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { SessionConnection } from './ws/sessionConnection';
@@ -19,10 +18,11 @@ import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chat
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
-  ensureOpenAiConfigured,
   resolveChatProvider,
   runChatCompletionCore,
 } from './chatRunCore';
+import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
+import { attachPiSdkMessageToLastAssistant } from './history/piSessionSync';
 
 export interface ChatProcessorOptions {
   sessionId: string;
@@ -31,7 +31,6 @@ export interface ChatProcessorOptions {
   responseId?: string;
   sessionHub: SessionHub;
   envConfig: EnvConfig;
-  openaiClient?: OpenAI;
   chatCompletionTools: unknown[];
   availableTools?: Tool[];
   availableSkills?: SkillSummary[];
@@ -96,7 +95,6 @@ export async function processUserMessage(
     text,
     sessionHub,
     envConfig,
-    openaiClient,
     chatCompletionTools,
     availableTools,
     availableSkills,
@@ -157,9 +155,6 @@ export async function processUserMessage(
   const agentId = state.summary.agentId;
   const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
-  const hadPriorUserMessages = state.chatMessages.some(
-    (chatMessage) => chatMessage.role === 'user',
-  );
   if (shouldEmitChatEvents && eventStore && turnId) {
     const trigger: TurnStartTrigger = agentMessageContext
       ? agentMessageContext.logType === 'none'
@@ -287,10 +282,6 @@ export async function processUserMessage(
     };
   }
 
-  if (chatProvider === 'openai') {
-    ensureOpenAiConfigured(envConfig);
-  }
-
   const abortController = new AbortController();
   const abortSignal = abortController.signal;
   const ttsAudioOut =
@@ -330,7 +321,6 @@ export async function processUserMessage(
       text: trimmedText,
       responseId,
       provider: chatProvider,
-      hadPriorUserMessages,
       envConfig,
       chatCompletionTools,
       handleChatToolCalls,
@@ -345,10 +335,38 @@ export async function processUserMessage(
       },
       log,
       ...(agent ? { agent } : {}),
-      ...(openaiClient ? { openaiClient } : {}),
       ...(eventStore ? { eventStore } : {}),
       ...(turnId ? { turnId } : {}),
     });
+
+    const wasAborted = runResult.aborted || abortSignal.aborted;
+    if (wasAborted) {
+      const piSessionWriter = sessionHub.getPiSessionWriter?.();
+      if (piSessionWriter && runResult.provider === 'pi') {
+        try {
+          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
+          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const messages = attachPiSdkMessageToLastAssistant({
+            messages: state.chatMessages,
+            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+          });
+          const updatedSummary = await piSessionWriter.sync({
+            summary: state.summary,
+            messages,
+            ...(modelSpec ? { modelSpec } : {}),
+            ...(defaultProvider ? { defaultProvider } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+          if (updatedSummary) {
+            state.summary = updatedSummary;
+          }
+        } catch (err) {
+          log('failed to sync Pi session history', err);
+        }
+      }
+    }
 
     if (runResult.aborted) {
       throw new Error('Chat run aborted');
@@ -422,7 +440,30 @@ export async function processUserMessage(
       state.chatMessages.push({
         role: 'assistant',
         content: fullText,
+        ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
+
+      const piSessionWriter = sessionHub.getPiSessionWriter?.();
+      if (piSessionWriter && runResult.provider === 'pi') {
+        try {
+          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
+          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const updatedSummary = await piSessionWriter.sync({
+            summary: state.summary,
+            messages: state.chatMessages,
+            ...(modelSpec ? { modelSpec } : {}),
+            ...(defaultProvider ? { defaultProvider } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+          if (updatedSummary) {
+            state.summary = updatedSummary;
+          }
+        } catch (err) {
+          log('failed to sync Pi session history', err);
+        }
+      }
     }
 
     const durationMs = Date.now() - startTime;

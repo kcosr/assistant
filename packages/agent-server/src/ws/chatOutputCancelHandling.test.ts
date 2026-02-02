@@ -110,8 +110,77 @@ describe('handleChatOutputCancel', () => {
     }
 
     expect(state.activeChatRun?.activeToolCalls?.size).toBe(0);
+    expect(state.chatMessages).toHaveLength(2);
+    expect(state.chatMessages.every((msg) => msg.role === 'tool')).toBe(true);
 
     const interruptEvent = events.find((event) => event.type === 'interrupt');
     expect(interruptEvent).toBeDefined();
+  });
+
+  it('persists the partial assistant message when no tools are running', async () => {
+    const sessionId = 'session-2';
+    const responseId = 'resp-2';
+
+    const broadcastMessages: ServerMessage[] = [];
+    const recordSessionActivity = vi.fn(async () => undefined);
+
+    const sessionHub = {
+      broadcastToSession: (_id: string, message: ServerMessage) => {
+        broadcastMessages.push(message);
+      },
+      recordSessionActivity,
+    } as unknown as SessionHub;
+
+    const abortController = new AbortController();
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as LogicalSessionState['summary'],
+      chatMessages: [],
+      activeChatRun: {
+        responseId,
+        turnId: 'turn-2',
+        abortController,
+        accumulatedText: 'Partial answer',
+      },
+      messageQueue: [],
+    };
+
+    const message: ClientControlMessage = {
+      type: 'control',
+      action: 'cancel',
+      target: 'output',
+    };
+
+    handleChatOutputCancel({
+      message,
+      activeRunState: { sessionId, state },
+      sessionHub,
+      broadcastOutputCancelled: vi.fn(),
+      log: vi.fn(),
+      eventStore,
+    });
+
+    expect(state.chatMessages).toHaveLength(1);
+    expect(state.chatMessages[0]).toEqual({ role: 'assistant', content: 'Partial answer' });
+    expect(recordSessionActivity).toHaveBeenCalledWith(sessionId, 'Partial answer');
+    expect(broadcastMessages.find((m) => m.type === 'tool_result')).toBeUndefined();
   });
 });

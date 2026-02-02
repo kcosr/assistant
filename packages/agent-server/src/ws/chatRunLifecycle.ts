@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import OpenAI from 'openai';
-
 import type {
   ChatEvent,
   ClientAudioCapabilities,
@@ -12,6 +10,7 @@ import type {
 } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
+import type { PiSdkChatConfig } from '../agents';
 import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { TtsBackendFactory } from '../tts/types';
@@ -23,11 +22,12 @@ import { buildExternalCallbackUrl, postExternalUserInput } from '../externalAgen
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
-  ensureOpenAiConfigured,
   isChatRunError,
   resolveChatProvider,
   runChatCompletionCore,
 } from '../chatRunCore';
+import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
+import { attachPiSdkMessageToLastAssistant } from '../history/piSessionSync';
 
 export async function handleTextInputWithChatCompletions(options: {
   ready: boolean;
@@ -36,7 +36,6 @@ export async function handleTextInputWithChatCompletions(options: {
   sessionId: string | undefined;
   connection: SessionConnection;
   sessionHub: SessionHub;
-  openaiClient?: OpenAI;
   config: EnvConfig;
   chatCompletionTools: unknown[];
   outputMode: OutputMode;
@@ -65,7 +64,6 @@ export async function handleTextInputWithChatCompletions(options: {
     sessionId,
     connection,
     sessionHub,
-    openaiClient,
     config: envConfig,
     chatCompletionTools,
     outputMode,
@@ -137,9 +135,6 @@ export async function handleTextInputWithChatCompletions(options: {
   const agentId = state.summary.agentId;
   const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
-  const hadPriorUserMessages = state.chatMessages.some(
-    (chatMessage) => chatMessage.role === 'user',
-  );
 
   const shouldEmitChatEvents = !!eventStore;
   const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
@@ -229,18 +224,6 @@ export async function handleTextInputWithChatCompletions(options: {
     return;
   }
 
-  if (chatProvider === 'openai') {
-    try {
-      ensureOpenAiConfigured(envConfig);
-    } catch (err) {
-      if (isChatRunError(err)) {
-        sendError(err.code, err.message, err.details);
-        return;
-      }
-      throw err;
-    }
-  }
-
   const responseId = randomUUID();
   const abortController = new AbortController();
   const ttsAudioOut =
@@ -278,7 +261,6 @@ export async function handleTextInputWithChatCompletions(options: {
       text,
       responseId,
       provider: chatProvider,
-      hadPriorUserMessages,
       envConfig,
       chatCompletionTools,
       handleChatToolCalls,
@@ -290,12 +272,37 @@ export async function handleTextInputWithChatCompletions(options: {
       trackTextStartedAt: true,
       log,
       ...(agent ? { agent } : {}),
-      ...(openaiClient ? { openaiClient } : {}),
       ...(eventStore ? { eventStore } : {}),
       ...(turnId ? { turnId } : {}),
     });
 
-    if (runResult.aborted) {
+    const wasAborted = runResult.aborted || abortController.signal.aborted;
+    if (wasAborted) {
+      const piSessionWriter = sessionHub.getPiSessionWriter?.();
+      if (piSessionWriter && runResult.provider === 'pi') {
+        try {
+          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
+          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const messages = attachPiSdkMessageToLastAssistant({
+            messages: state.chatMessages,
+            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+          });
+          const updatedSummary = await piSessionWriter.sync({
+            summary: state.summary,
+            messages,
+            ...(modelSpec ? { modelSpec } : {}),
+            ...(defaultProvider ? { defaultProvider } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+          if (updatedSummary) {
+            state.summary = updatedSummary;
+          }
+        } catch (err) {
+          log('failed to sync Pi session history', err);
+        }
+      }
       return;
     }
 
@@ -353,7 +360,30 @@ export async function handleTextInputWithChatCompletions(options: {
       state.chatMessages.push({
         role: 'assistant',
         content: fullText,
+        ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
+
+      const piSessionWriter = sessionHub.getPiSessionWriter?.();
+      if (piSessionWriter && runResult.provider === 'pi') {
+        try {
+          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
+          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const updatedSummary = await piSessionWriter.sync({
+            summary: state.summary,
+            messages: state.chatMessages,
+            ...(modelSpec ? { modelSpec } : {}),
+            ...(defaultProvider ? { defaultProvider } : {}),
+            ...(thinkingLevel ? { thinkingLevel } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+          if (updatedSummary) {
+            state.summary = updatedSummary;
+          }
+        } catch (err) {
+          log('failed to sync Pi session history', err);
+        }
+      }
     }
 
     // Always send turn_end when the run completes (not aborted) to hide typing indicators

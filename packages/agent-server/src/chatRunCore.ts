@@ -1,5 +1,3 @@
-import OpenAI from 'openai';
-
 import type {
   ChatEvent,
   ServerMessage,
@@ -10,13 +8,14 @@ import type {
   ServerToolCallStartMessage,
 } from '@assistant/shared';
 
-import type { AgentDefinition, OpenAiCompatibleChatConfig } from './agents';
+import type { AgentDefinition, PiSdkChatConfig } from './agents';
 import type {
   ChatCompletionMessage,
   ChatCompletionToolCallMessageToolCall,
   ChatCompletionToolCallState,
 } from './chatCompletionTypes';
-import { openaiConfigured, type EnvConfig } from './envConfig';
+import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { EnvConfig } from './envConfig';
 import type { EventStore } from './events';
 import {
   appendAndBroadcastChatEvents,
@@ -28,16 +27,24 @@ import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
 import os from 'node:os';
+import { resolvePiAgentAuthApiKey } from './llm/piAgentAuth';
 
-import { resolveCliModelForRun, resolveSessionThinkingForRun } from './sessionModel';
+import {
+  resolveCliModelForRun,
+  resolveSessionModelForRun,
+  resolveSessionThinkingForRun,
+} from './sessionModel';
 import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
-import { runChatCompletionIteration } from './ws/chatCompletionStreaming';
 import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
+import {
+  resolvePiSdkModel,
+  runPiSdkChatCompletionIteration,
+} from './llm/piSdkProvider';
 
-type ChatProvider = 'openai' | 'openai-compatible' | 'claude-cli' | 'codex-cli' | 'pi-cli';
+type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
 
 export interface ChatRunOutputAdapter {
@@ -62,9 +69,7 @@ export interface ChatRunCoreOptions {
   responseId: string;
   agent?: AgentDefinition;
   provider: ChatProvider;
-  hadPriorUserMessages: boolean;
   envConfig: EnvConfig;
-  openaiClient?: OpenAI;
   chatCompletionTools: unknown[];
   handleChatToolCalls: (
     sessionId: string,
@@ -88,6 +93,7 @@ export interface ChatRunCoreResult {
   thinkingText: string;
   provider: ChatProvider;
   aborted: boolean;
+  piSdkMessage?: PiSdkMessage;
 }
 
 export class ChatRunError extends Error {
@@ -105,22 +111,92 @@ export function isChatRunError(err: unknown): err is ChatRunError {
   return err instanceof ChatRunError;
 }
 
+function isPiReasoningLevel(
+  value: string,
+): value is 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
+  return (
+    value === 'minimal' ||
+    value === 'low' ||
+    value === 'medium' ||
+    value === 'high' ||
+    value === 'xhigh'
+  );
+}
+
+const SENSITIVE_DEBUG_KEYS = new Set([
+  'apikey',
+  'api_key',
+  'authorization',
+  'proxy-authorization',
+  'x-api-key',
+  'openai-api-key',
+  'anthropic-api-key',
+  'anthropic-oauth-token',
+]);
+
+function redactDebugPayload(value: unknown): unknown {
+  const seen = new WeakSet<object>();
+
+  const redactHeaders = (headers: Record<string, unknown>) => {
+    const result: Record<string, unknown> = {};
+    for (const [key, headerValue] of Object.entries(headers)) {
+      const lower = key.toLowerCase();
+      if (SENSITIVE_DEBUG_KEYS.has(lower)) {
+        result[key] = '[redacted]';
+      } else {
+        result[key] = headerValue;
+      }
+    }
+    return result;
+  };
+
+  const redactValue = (input: unknown, key?: string): unknown => {
+    if (typeof input === 'string') {
+      if (key?.toLowerCase() === 'data' && input.length > 200) {
+        return `[base64 ${input.length} chars]`;
+      }
+      return input;
+    }
+
+    if (!input || typeof input !== 'object') {
+      return input;
+    }
+
+    if (seen.has(input)) {
+      return '[Circular]';
+    }
+    seen.add(input);
+
+    if (Array.isArray(input)) {
+      return input.map((item) => redactValue(item));
+    }
+
+    const result: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(input)) {
+      const lower = childKey.toLowerCase();
+      if (SENSITIVE_DEBUG_KEYS.has(lower)) {
+        result[childKey] = '[redacted]';
+        continue;
+      }
+      if (lower === 'headers' && childValue && typeof childValue === 'object') {
+        result[childKey] = redactHeaders(childValue as Record<string, unknown>);
+        continue;
+      }
+      result[childKey] = redactValue(childValue, childKey);
+    }
+    return result;
+  };
+
+  return redactValue(value);
+}
+
 export function resolveChatProvider(agent?: AgentDefinition): {
   agentType: 'chat' | 'external';
   provider: ChatProvider;
 } {
   const agentType = agent?.type ?? 'chat';
-  const provider = agent?.chat?.provider ?? 'openai';
+  const provider = agent?.chat?.provider ?? 'pi';
   return { agentType, provider };
-}
-
-export function ensureOpenAiConfigured(envConfig: EnvConfig): void {
-  if (!openaiConfigured(envConfig)) {
-    throw new ChatRunError(
-      'openai_not_configured',
-      'OpenAI is not configured. Set OPENAI_API_KEY and OPENAI_CHAT_MODEL to use this agent, or choose a CLI-based agent instead.',
-    );
-  }
 }
 
 export function createTtsSession(options: {
@@ -360,103 +436,6 @@ function createChatRunStreamHandlers(options: {
   };
 }
 
-function resolveOpenAiRunConfig(options: {
-  provider: ChatProvider;
-  agent?: AgentDefinition;
-  state: LogicalSessionState;
-  envConfig: EnvConfig;
-  openaiClient?: OpenAI;
-}): {
-  openaiClient: OpenAI;
-  model: string;
-  maxTokens?: number;
-  temperature?: number;
-} {
-  const { provider, agent, state, envConfig, openaiClient } = options;
-
-  if (provider === 'openai-compatible') {
-    const rawConfig = agent?.chat?.config as OpenAiCompatibleChatConfig | undefined;
-    if (!rawConfig) {
-      throw new ChatRunError(
-        'agent_config_error',
-        'Missing chat configuration for openai-compatible provider',
-      );
-    }
-
-    const baseUrl = rawConfig.baseUrl?.trim();
-    const models = Array.isArray(rawConfig.models)
-      ? rawConfig.models.map((model) => model.trim()).filter((model) => model.length > 0)
-      : [];
-
-    if (!baseUrl || models.length === 0) {
-      throw new ChatRunError(
-        'agent_config_error',
-        'openai-compatible provider requires non-empty baseUrl and at least one model',
-      );
-    }
-
-    const apiKey =
-      typeof rawConfig.apiKey === 'string' && rawConfig.apiKey.trim().length > 0
-        ? rawConfig.apiKey.trim()
-        : envConfig.apiKey;
-
-    const openaiClientForRun = new OpenAI({
-      apiKey: apiKey || 'sk-no-api-key',
-      baseURL: baseUrl,
-      ...(rawConfig.headers ? { defaultHeaders: rawConfig.headers } : {}),
-    });
-
-    const sessionModel =
-      typeof state.summary.model === 'string' && state.summary.model.trim().length > 0
-        ? state.summary.model.trim()
-        : undefined;
-    const modelForRun =
-      sessionModel && models.includes(sessionModel)
-        ? sessionModel
-        : (models[0] ?? envConfig.chatModel ?? '');
-
-    return {
-      openaiClient: openaiClientForRun,
-      model: modelForRun,
-      ...(rawConfig.maxTokens !== undefined ? { maxTokens: rawConfig.maxTokens } : {}),
-      ...(rawConfig.temperature !== undefined ? { temperature: rawConfig.temperature } : {}),
-    };
-  }
-
-  if (!openaiClient && !envConfig.apiKey) {
-    throw new ChatRunError(
-      'openai_not_configured',
-      'OpenAI is not configured. Set OPENAI_API_KEY and OPENAI_CHAT_MODEL to use this agent.',
-    );
-  }
-  if (!envConfig.chatModel) {
-    throw new ChatRunError(
-      'openai_not_configured',
-      'OpenAI is not configured. OPENAI_CHAT_MODEL is required to use this agent.',
-    );
-  }
-
-  const models =
-    agent && agent.chat && Array.isArray(agent.chat.models)
-      ? agent.chat.models.map((model) => model.trim()).filter((model) => model.length > 0)
-      : [];
-  const sessionModel =
-    typeof state.summary.model === 'string' && state.summary.model.trim().length > 0
-      ? state.summary.model.trim()
-      : undefined;
-  const modelForRun =
-    sessionModel && (models.length === 0 || models.includes(sessionModel))
-      ? sessionModel
-      : (models[0] ?? envConfig.chatModel);
-
-  const openaiClientForRun = openaiClient ?? new OpenAI({ apiKey: envConfig.apiKey });
-
-  return {
-    openaiClient: openaiClientForRun,
-    model: modelForRun,
-  };
-}
-
 export async function runChatCompletionCore(
   options: ChatRunCoreOptions,
 ): Promise<ChatRunCoreResult> {
@@ -467,9 +446,7 @@ export async function runChatCompletionCore(
     responseId,
     agent,
     provider,
-    hadPriorUserMessages,
     envConfig,
-    openaiClient,
     chatCompletionTools,
     handleChatToolCalls,
     sessionHub,
@@ -502,6 +479,8 @@ export async function runChatCompletionCore(
 
   let fullText = '';
   let aborted = false;
+  let finalPiSdkMessage: PiSdkMessage | undefined;
+  let lastPiSdkMessage: PiSdkMessage | undefined;
 
   if (provider === 'claude-cli') {
     const claudeConfig = agent?.chat?.config as ClaudeCliChatConfig | undefined;
@@ -801,70 +780,139 @@ export async function runChatCompletionCore(
 
     aborted = cliAborted;
     fullText = piText;
-  } else {
+  } else if (provider === 'pi') {
     let iterations = 0;
-    const maxIterations = 4;
 
-    const {
-      openaiClient: openaiClientForRun,
-      model,
-      maxTokens,
-      temperature,
-    } = resolveOpenAiRunConfig({
-      provider,
-      state,
-      envConfig,
-      ...(agent ? { agent } : {}),
-      ...(openaiClient ? { openaiClient } : {}),
+    const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
+    const maxToolIterations = piConfig?.maxToolIterations ?? 100;
+    const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+    if (!modelSpec) {
+      throw new ChatRunError(
+        'agent_config_error',
+        'Pi chat requires at least one model in chat.models or a session override.',
+      );
+    }
+
+    let resolvedModel: ReturnType<typeof resolvePiSdkModel>;
+    try {
+      const defaultProvider = piConfig?.provider;
+      resolvedModel =
+        defaultProvider === undefined
+          ? resolvePiSdkModel({ modelSpec })
+          : resolvePiSdkModel({ modelSpec, defaultProvider });
+    } catch (err) {
+      throw new ChatRunError(
+        'agent_config_error',
+        err instanceof Error ? err.message : 'Failed to resolve Pi model',
+      );
+    }
+
+    const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
+    const reasoning = thinking && isPiReasoningLevel(thinking) ? thinking : undefined;
+
+
+    const configProvider = piConfig?.provider?.trim();
+    const providerMatchesConfig =
+      !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
+
+    // Resolve auth in this order:
+    // 1) explicit agent config apiKey (only applies when provider matches config.provider)
+    // 2) ~/.pi/agent/auth.json OAuth token for supported providers (anthropic, openai-codex)
+    const piAgentAuthApiKey = await resolvePiAgentAuthApiKey({
+      providerId: resolvedModel.providerId,
+      log,
     });
+
+    const apiKey = providerMatchesConfig ? piConfig?.apiKey ?? piAgentAuthApiKey : piAgentAuthApiKey;
+    const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
+    const headers = providerMatchesConfig ? piConfig?.headers : undefined;
 
     // Track cumulative offsets for tool input streaming
     const toolInputOffsets = new Map<string, number>();
+    const debugChatCompletions = envConfig.debugChatCompletions;
+    let hitToolIterationLimit = false;
 
-    while (!abortController.signal.aborted && iterations < maxIterations) {
+    while (!abortController.signal.aborted && iterations < maxToolIterations) {
       // Clear offsets for new iteration (tool calls are new per iteration)
       toolInputOffsets.clear();
+      const iterationIndex = iterations + 1;
 
-      const { text: iterationText, toolCalls } = await runChatCompletionIteration({
-        openaiClient: openaiClientForRun,
-        model,
-        messages: state.chatMessages,
-        tools: chatCompletionTools,
-        abortSignal: abortController.signal,
-        debug: envConfig.debugChatCompletions,
-        onToolCallStart: (info) => {
-          const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
-          const message: ServerToolCallStartMessage = {
-            type: 'tool_call_start',
-            callId: info.id,
-            toolName: info.name,
-            arguments: '{}',
-            ...(agentExchangeId ? { agentExchangeId } : {}),
-          };
-          output.send(message);
-
-          toolInputOffsets.set(info.id, 0);
-        },
-        onToolInputDelta: (info) => {
-          if (shouldEmitChatEvents && turnId) {
-            const currentOffset = toolInputOffsets.get(info.id) ?? 0;
-            emitToolInputChunkEvent({
-              sessionHub,
-              sessionId,
-              turnId,
-              responseId,
-              toolCallId: info.id,
+      const { text: iterationText, toolCalls, aborted: piAborted, assistantMessage } =
+        await runPiSdkChatCompletionIteration({
+          model: resolvedModel.model,
+          messages: state.chatMessages,
+          tools: chatCompletionTools,
+          abortSignal: abortController.signal,
+          onToolCallStart: (info) => {
+            const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
+            const message: ServerToolCallStartMessage = {
+              type: 'tool_call_start',
+              callId: info.id,
               toolName: info.name,
-              chunk: info.argumentsDelta,
-              offset: currentOffset,
-            });
-            toolInputOffsets.set(info.id, currentOffset + info.argumentsDelta.length);
-          }
-        },
-        onDeltaText: streamHandlers.emitTextDelta,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-        ...(temperature !== undefined ? { temperature } : {}),
-      });
+              arguments: '{}',
+              ...(agentExchangeId ? { agentExchangeId } : {}),
+            };
+            output.send(message);
+
+            toolInputOffsets.set(info.id, 0);
+          },
+          onToolInputDelta: (info) => {
+            if (shouldEmitChatEvents && turnId) {
+              const currentOffset = toolInputOffsets.get(info.id) ?? 0;
+              emitToolInputChunkEvent({
+                sessionHub,
+                sessionId,
+                turnId,
+                responseId,
+                toolCallId: info.id,
+                toolName: info.name,
+                chunk: info.argumentsDelta,
+                offset: currentOffset,
+              });
+              toolInputOffsets.set(info.id, currentOffset + info.argumentsDelta.length);
+            }
+          },
+          onDeltaText: streamHandlers.emitTextDelta,
+          onThinkingStart: streamHandlers.emitThinkingStart,
+          onThinkingDelta: streamHandlers.emitThinkingDelta,
+          onThinkingDone: streamHandlers.emitThinkingDone,
+          ...(piConfig?.maxTokens !== undefined ? { maxTokens: piConfig.maxTokens } : {}),
+          ...(piConfig?.temperature !== undefined ? { temperature: piConfig.temperature } : {}),
+          ...(reasoning ? { reasoning } : {}),
+          ...(apiKey ? { apiKey } : {}),
+          ...(baseUrl ? { baseUrl } : {}),
+          ...(headers ? { headers } : {}),
+          ...(piConfig?.timeoutMs !== undefined ? { timeoutMs: piConfig.timeoutMs } : {}),
+          ...(debugChatCompletions
+            ? {
+                onPayload: (payload) => {
+                  log('pi chat request', {
+                    sessionId,
+                    responseId,
+                    iteration: iterationIndex,
+                    provider: resolvedModel.providerId,
+                    model: resolvedModel.model.id,
+                    payload: redactDebugPayload(payload),
+                  });
+                },
+                onResponse: (response) => {
+                  log('pi chat response', {
+                    sessionId,
+                    responseId,
+                    iteration: iterationIndex,
+                    provider: resolvedModel.providerId,
+                    model: resolvedModel.model.id,
+                    response: {
+                      text: response.text,
+                      toolCalls: response.toolCalls,
+                      aborted: response.aborted,
+                      message: redactDebugPayload(response.message),
+                    },
+                  });
+                },
+              }
+            : {}),
+        });
 
       if (iterationText.length > 0) {
         fullText += iterationText;
@@ -873,13 +921,22 @@ export async function runChatCompletionCore(
         }
       }
 
+      lastPiSdkMessage = assistantMessage;
+
+      if (piAborted) {
+        aborted = true;
+        finalPiSdkMessage = assistantMessage;
+        break;
+      }
+
       if (!toolCalls || toolCalls.length === 0) {
+        finalPiSdkMessage = assistantMessage;
         break;
       }
 
       const assistantToolCallMessage: ChatCompletionMessage = {
         role: 'assistant',
-        content: '',
+        content: iterationText,
         tool_calls: toolCalls.map<ChatCompletionToolCallMessageToolCall>((call) => ({
           id: call.id,
           type: 'function',
@@ -888,6 +945,7 @@ export async function runChatCompletionCore(
             arguments: call.argumentsJson,
           },
         })),
+        piSdkMessage: assistantMessage,
       };
 
       state.chatMessages.push(assistantToolCallMessage);
@@ -903,13 +961,44 @@ export async function runChatCompletionCore(
       }
 
       iterations += 1;
+      if (iterations >= maxToolIterations) {
+        hitToolIterationLimit = true;
+        break;
+      }
     }
+
+    if (hitToolIterationLimit) {
+      log('pi tool iteration limit reached', {
+        sessionId,
+        responseId,
+        maxToolIterations,
+        iterations,
+      });
+      throw new ChatRunError(
+        'tool_iteration_limit',
+        `Tool iteration limit reached (${maxToolIterations}).`,
+        {
+          maxToolIterations,
+          iterations,
+        },
+      );
+    }
+  } else {
+    throw new ChatRunError(
+      'agent_config_error',
+      `Unsupported chat provider "${provider}"`,
+    );
   }
+
+  const resolvedPiSdkMessage = finalPiSdkMessage ?? lastPiSdkMessage;
 
   return {
     fullText,
     thinkingText: streamHandlers.getThinkingText(),
     provider,
     aborted,
+    ...(provider === 'pi' && resolvedPiSdkMessage
+      ? { piSdkMessage: resolvedPiSdkMessage }
+      : {}),
   };
 }

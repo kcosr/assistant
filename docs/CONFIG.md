@@ -6,7 +6,7 @@ This document describes the application configuration file used by the agent ser
 
 - [Source files](#source-files)
 - [Environment variables](#environment-variables)
-  - [OpenAI (optional)](#openai-optional)
+  - [Provider API keys (Pi SDK)](#provider-api-keys-pi-sdk)
   - [Server](#server)
   - [TTS](#tts)
   - [ElevenLabs TTS](#elevenlabs-tts)
@@ -29,14 +29,28 @@ This document describes the application configuration file used by the agent ser
 
 ## Environment variables
 
-### OpenAI (optional)
+### Provider API keys (Pi SDK)
 
-These are only required when using built-in OpenAI chat or TTS backends. CLI agents (`claude-cli`, `codex-cli`, `pi-cli`) and OpenAI-compatible endpoints do not require them.
+Pi SDK chat uses provider-specific environment variables. Common examples include:
 
-| Variable            | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| `OPENAI_API_KEY`    | OpenAI API key                                  |
-| `OPENAI_CHAT_MODEL` | Chat model name (e.g., `gpt-4o`, `gpt-4o-mini`) |
+- OpenAI: `OPENAI_API_KEY`
+- Anthropic: `ANTHROPIC_OAUTH_TOKEN` (preferred) or `ANTHROPIC_API_KEY`
+- Google Gemini: `GEMINI_API_KEY`
+- Groq: `GROQ_API_KEY`
+- Mistral: `MISTRAL_API_KEY`
+- OpenRouter: `OPENROUTER_API_KEY`
+- XAI: `XAI_API_KEY`
+- Cerebras: `CEREBRAS_API_KEY`
+- Minimax: `MINIMAX_API_KEY`
+- Minimax (CN): `MINIMAX_CN_API_KEY`
+- ZAI: `ZAI_API_KEY`
+- Vercel AI Gateway: `AI_GATEWAY_API_KEY`
+- OpenCode: `OPENCODE_API_KEY`
+- Azure OpenAI: `AZURE_OPENAI_API_KEY` (with `AZURE_OPENAI_BASE_URL`/`AZURE_OPENAI_RESOURCE_NAME`)
+
+The assistant does not resolve these itself; it passes requests to the Pi SDK, which
+reads the provider environment variables directly. For a complete list, see the
+`@mariozechner/pi-ai` README.
 
 ### Server
 
@@ -55,6 +69,8 @@ These are only required when using built-in OpenAI chat or TTS backends. CLI age
 | `TTS_VOICE`          | `alloy`           | Voice name for TTS output             |
 | `TTS_FRAME_DURATION_MS` | `250`         | PCM frame duration for TTS output; larger values reduce client scheduling overhead |
 | `AUDIO_OUTPUT_SPEED` | -                 | Playback speed multiplier (e.g., `1.2`) |
+
+OpenAI TTS requires `OPENAI_API_KEY`.
 
 ### ElevenLabs TTS
 
@@ -97,7 +113,7 @@ Per session, 1-minute sliding window.
 
 | Variable                 | Default | Description                            |
 | ------------------------ | ------- | -------------------------------------- |
-| `DEBUG_CHAT_COMPLETIONS` | `false` | Log chat completion requests/responses |
+| `DEBUG_CHAT_COMPLETIONS` | `false` | Log Pi SDK request/response payloads (tools included, auth redacted) |
 | `DEBUG_HTTP_REQUESTS`    | `false` | Log HTTP request details               |
 
 ## Application configuration (config.json)
@@ -173,10 +189,12 @@ Examples:
 Controls session cache behavior.
 
 ```json
-{ "sessions": { "maxCached": 100 } }
+{ "sessions": { "maxCached": 100, "mirrorPiSessionHistory": true } }
 ```
 
 - `maxCached`: maximum number of sessions cached in memory
+- `mirrorPiSessionHistory`: when `true`, Pi SDK sessions are mirrored to Pi JSONL history
+  files for pi-mono CLI resume (default: `true`)
 
 #### `agents`
 
@@ -192,7 +210,7 @@ Defines agent personas and chat providers.
       "systemPrompt": "You are a helpful assistant.",
       "toolAllowlist": ["*"],
       "chat": {
-        "provider": "openai"
+        "provider": "pi"
       }
     }
   ]
@@ -466,16 +484,14 @@ External agents receive messages via POST and respond asynchronously via callbac
 
 Supported providers:
 
-- `openai` (default)
-- `openai-compatible`
+- `pi` (default)
 - `claude-cli`
 - `codex-cli`
 - `pi-cli`
 
 | Provider | CLI Tool | Description |
 | --- | --- | --- |
-| `openai` | - | OpenAI Chat Completions API. |
-| `openai-compatible` | - | OpenAI-compatible APIs (llama.cpp, vLLM, Ollama, etc.). |
+| `pi` | - | Pi SDK in-process chat (upstream providers configured via Pi). |
 | `claude-cli` | `claude` | Anthropic Claude CLI with tool use. |
 | `codex-cli` | `codex` | OpenAI Codex CLI with file editing and shell. |
 | `pi-cli` | `pi` | Pi CLI agent. |
@@ -557,31 +573,21 @@ Notes:
 - `enabled: false` disables automatic runs; manual runs via the scheduled-sessions plugin/API ignore `enabled` but still respect `maxConcurrent` unless `force` is set.
 - Enable the `scheduled-sessions` plugin to view status, toggle schedules, and trigger runs.
 
-#### `openai` Provider
+#### `pi` Provider
 
 ```json
 {
   "chat": {
-    "provider": "openai",
-    "models": ["gpt-4o", "gpt-4o-mini"]
-  }
-}
-```
-
-- `models`: optional list of allowed model ids (first is default)
-
-#### `openai-compatible` Provider
-
-```json
-{
-  "chat": {
-    "provider": "openai-compatible",
+    "provider": "pi",
+    "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
+    "thinking": ["off", "low", "medium", "high", "xhigh"],
     "config": {
-      "baseUrl": "http://localhost:8080/v1",
-      "apiKey": "${LOCAL_LLM_KEY}",
-      "models": ["llama-3.1-70b"],
+      "provider": "anthropic",
+      "apiKey": "${ANTHROPIC_API_KEY}",
+      "baseUrl": "https://api.anthropic.com",
       "maxTokens": 4096,
       "temperature": 0.7,
+      "maxToolIterations": 100,
       "headers": {
         "X-Request-Source": "assistant"
       }
@@ -590,10 +596,23 @@ Notes:
 }
 ```
 
-- `baseUrl`: required
-- `models`: required (or `model` legacy field)
-- `apiKey`: optional (supports `${ENV}`)
-- `maxTokens`, `temperature`, `headers`: optional
+- `models`: optional list of allowed model ids (first is default). Entries may be `provider/model`.
+- `thinking`: optional list of allowed thinking levels (first is default). Selected level is passed
+  to the Pi SDK reasoning option; use `off` to disable reasoning.
+- `config.provider`: default provider used when a model omits a prefix (required if any model omits a prefix).
+- `config.apiKey`, `config.baseUrl`, `config.headers`: optional connection overrides applied when
+  the resolved provider matches `config.provider`.
+- `config.maxTokens`, `config.temperature`, `config.timeoutMs`: optional Pi SDK request overrides.
+- `config.maxToolIterations`: max consecutive tool iterations before aborting with an error
+  (default: 100).
+
+Pi SDK sessions are mirrored to the Pi JSONL format so they can be resumed by the
+pi-mono CLI. Sessions are written to:
+`~/.pi/agent/sessions/<encoded-cwd>/*_<pi-session-id>.jsonl`.
+The `cwd` comes from `attributes.core.workingDir` when available (otherwise the
+server working directory).
+Canceled runs still write partial assistant/tool entries so the pi-mono CLI can resume.
+Disable mirroring by setting `sessions.mirrorPiSessionHistory` to `false`.
 
 #### CLI Providers (`claude-cli`, `codex-cli`, `pi-cli`)
 

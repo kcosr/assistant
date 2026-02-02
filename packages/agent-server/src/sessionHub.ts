@@ -22,6 +22,7 @@ import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
 import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
+import type { PiSessionWriter } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
@@ -119,6 +120,7 @@ export class SessionHub {
   private readonly interactionRegistry = new InteractionRegistry();
   private readonly cliToolCallRendezvous = new CliToolCallRendezvous();
   private readonly pluginRegistry: PluginRegistry | undefined;
+  private readonly piSessionWriter: PiSessionWriter | undefined;
   private readonly queuedMessageTasks = new Map<string, QueuedMessageTask>();
   private readonly maxCachedSessions: number;
   private readonly sessionAccessOrder: string[] = [];
@@ -136,6 +138,7 @@ export class SessionHub {
     resolveSessionWorkingDir?: (sessionId: string) => string | null;
     historyProvider?: HistoryProviderRegistry;
     eventStore?: EventStore;
+    piSessionWriter?: PiSessionWriter;
   }) {
     this.sessionIndex = options.sessionIndex;
     this.agentRegistry = options.agentRegistry;
@@ -143,6 +146,7 @@ export class SessionHub {
     this.resolveSessionWorkingDir = options.resolveSessionWorkingDir;
     this.historyProvider = options.historyProvider;
     this.eventStore = options.eventStore;
+    this.piSessionWriter = options.piSessionWriter;
 
     const rawMaxCached = options.maxCachedSessions;
     if (rawMaxCached !== undefined && Number.isFinite(rawMaxCached) && rawMaxCached > 0) {
@@ -154,6 +158,10 @@ export class SessionHub {
 
   getSessionIndex(): SessionIndex {
     return this.sessionIndex;
+  }
+
+  getPiSessionWriter(): PiSessionWriter | undefined {
+    return this.piSessionWriter;
   }
 
   getAgentRegistry(): AgentRegistry {

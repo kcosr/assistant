@@ -196,13 +196,7 @@ const ExternalAgentConfigSchema = z.object({
   callbackBaseUrl: NonEmptyTrimmedStringSchema,
 });
 
-const ChatProviderSchema = z.enum([
-  'openai',
-  'claude-cli',
-  'codex-cli',
-  'pi-cli',
-  'openai-compatible',
-]);
+const ChatProviderSchema = z.enum(['pi', 'claude-cli', 'codex-cli', 'pi-cli']);
 
 const CliChatConfigSchema = z.object({
   workdir: NonEmptyTrimmedStringSchema.optional(),
@@ -216,47 +210,27 @@ const PiCliChatConfigSchema = z.object({
   wrapper: CliWrapperConfigSchema.optional(),
 });
 
-const OpenAiCompatibleChatConfigSchema = z
-  .object({
-    baseUrl: NonEmptyTrimmedStringSchema,
-    apiKey: NonEmptyTrimmedStringSchema.optional(),
-    /**
-     * Legacy single-model configuration. When provided, this will be
-     * normalised into a single-element models array.
-     */
-    model: NonEmptyTrimmedStringSchema.optional(),
-    /**
-     * Preferred configuration: list of allowed model ids. At least one
-     * model is required at runtime (either via models or model).
-     */
-    models: z.array(NonEmptyTrimmedStringSchema).optional(),
-    maxTokens: z.number().int().min(1).optional(),
-    temperature: z.number().min(0).max(2).optional(),
-    headers: z.record(z.string(), z.string()).optional(),
-  })
-  .superRefine((value, ctx) => {
-    const hasModels = Array.isArray(value.models) && value.models.length > 0;
-    const hasModel = typeof value.model === 'string' && value.model.trim().length > 0;
-    if (!hasModels && !hasModel) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['models'],
-        message:
-          'Either "models" (non-empty array) or "model" (string) is required for openai-compatible chat.config',
-      });
-    }
-  });
+const PiSdkChatConfigSchema = z.object({
+  provider: NonEmptyTrimmedStringSchema.optional(),
+  apiKey: NonEmptyTrimmedStringSchema.optional(),
+  baseUrl: NonEmptyTrimmedStringSchema.optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  timeoutMs: z.number().int().min(1).optional(),
+  maxTokens: z.number().int().min(1).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxToolIterations: z.number().int().min(1).optional(),
+});
 
 const ChatConfigSchema = z.object({
   provider: ChatProviderSchema.optional().nullable(),
   config: z.unknown().optional().nullable(),
   /**
-   * For provider "openai" and CLI providers: list of allowed model ids.
+   * For provider "pi" and CLI providers: list of allowed model ids.
    * The first model is used as the default for new sessions.
    */
   models: z.array(NonEmptyTrimmedStringSchema).optional().nullable(),
   /**
-   * For providers "pi-cli" and "codex-cli": list of allowed thinking levels.
+   * For providers "pi" and "codex-cli": list of allowed thinking levels.
    * The first level is used as the default for new sessions.
    */
   thinking: z.array(NonEmptyTrimmedStringSchema).optional().nullable(),
@@ -377,29 +351,43 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
 
   if (type === 'chat' && rawChat) {
     const providerRaw = rawChat.provider ?? undefined;
-    const provider: 'openai' | 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible' =
+    const provider: 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli' =
+      providerRaw === 'pi' ||
       providerRaw === 'claude-cli' ||
       providerRaw === 'codex-cli' ||
-      providerRaw === 'pi-cli' ||
-      providerRaw === 'openai-compatible'
+      providerRaw === 'pi-cli'
         ? providerRaw
-        : 'openai';
+        : 'pi';
 
-    if (provider === 'openai') {
-      if (rawChat.config) {
-        throw new Error(
-          `agents[${agentId}].chat.config is only valid when chat.provider is "claude-cli", "codex-cli", "pi-cli", or "openai-compatible"`,
-        );
-      }
+    if (provider === 'pi') {
+      const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
+      const thinking = parseChatThinking({ agentId, thinkingRaw: rawChat.thinking });
+      const config =
+        rawChat.config !== undefined && rawChat.config !== null
+          ? PiSdkChatConfigSchema.parse(rawChat.config)
+          : undefined;
 
-      const modelsList = parseChatModels({ agentId, modelsRaw: rawChat.models }) ?? [];
-
-      if (providerRaw === 'openai') {
-        base.chat = {
-          provider: 'openai',
-          ...(modelsList.length > 0 ? { models: modelsList } : {}),
-        };
-      }
+      base.chat = {
+        provider: 'pi',
+        ...(models ? { models } : {}),
+        ...(thinking ? { thinking } : {}),
+        ...(config
+          ? {
+              config: {
+                ...(config.provider ? { provider: config.provider } : {}),
+                ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+                ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+                ...(config.headers ? { headers: config.headers } : {}),
+                ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
+                ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+                ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
+                ...(config.maxToolIterations !== undefined
+                  ? { maxToolIterations: config.maxToolIterations }
+                  : {}),
+              },
+            }
+          : {}),
+      };
     } else if (provider === 'claude-cli' || provider === 'codex-cli') {
       const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
       const thinking =
@@ -523,46 +511,6 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
               },
             }
           : {}),
-      };
-    } else {
-      const config =
-        rawChat.config !== undefined && rawChat.config !== null
-          ? OpenAiCompatibleChatConfigSchema.parse(rawChat.config)
-          : undefined;
-      if (!config) {
-        throw new Error(
-          `agents[${agentId}].chat.config is required when chat.provider is "openai-compatible"`,
-        );
-      }
-
-      const modelsFromConfig =
-        config.models && Array.isArray(config.models)
-          ? config.models.filter((m) => typeof m === 'string' && m.trim().length > 0)
-          : [];
-      const singleModel =
-        typeof config.model === 'string' && config.model.trim().length > 0
-          ? config.model.trim()
-          : undefined;
-
-      const finalModels =
-        modelsFromConfig.length > 0 ? modelsFromConfig : singleModel ? [singleModel] : [];
-
-      if (finalModels.length === 0) {
-        throw new Error(
-          `agents[${agentId}].chat.config.models must contain at least one model when chat.provider is "openai-compatible"`,
-        );
-      }
-
-      base.chat = {
-        provider: 'openai-compatible',
-        config: {
-          baseUrl: config.baseUrl,
-          models: finalModels,
-          ...(config.apiKey ? { apiKey: config.apiKey } : {}),
-          ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
-          ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
-          ...(config.headers ? { headers: config.headers } : {}),
-        },
       };
     }
   }
@@ -706,6 +654,7 @@ export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
 export const SessionsConfigSchema = z.object({
   maxCached: z.number().int().min(1).default(100),
+  mirrorPiSessionHistory: z.boolean().default(true),
 });
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;

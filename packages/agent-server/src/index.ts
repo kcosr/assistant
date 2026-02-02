@@ -10,7 +10,7 @@ import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './pl
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
 import { CompositeToolHost, createToolHost, type McpServerConfig, type ToolHost } from './tools';
-import { loadEnvConfig, openaiConfigured, type EnvConfig } from './envConfig';
+import { loadEnvConfig, type EnvConfig } from './envConfig';
 import { createHttpServer } from './http/server';
 import { MultiplexedConnection } from './ws/multiplexedConnection';
 import { killAllCliProcesses } from './ws/cliProcessRegistry';
@@ -24,6 +24,7 @@ import {
   HistoryProviderRegistry,
   PiSessionHistoryProvider,
 } from './history/historyProvider';
+import { PiSessionWriter } from './history/piSessionWriter';
 
 export {
   buildSystemPrompt,
@@ -110,6 +111,8 @@ export async function startServer(
     new PiSessionHistoryProvider({ eventStore }),
     new EventStoreHistoryProvider(eventStore),
   ]);
+  const mirrorPiSessionHistory = appConfig?.sessions?.mirrorPiSessionHistory ?? true;
+  const piSessionWriter = mirrorPiSessionHistory ? new PiSessionWriter() : undefined;
 
   const maxCachedSessions =
     appConfig?.sessions && typeof appConfig.sessions.maxCached === 'number'
@@ -130,6 +133,7 @@ export async function startServer(
     ...(resolveSessionWorkingDir ? { resolveSessionWorkingDir } : {}),
     historyProvider,
     eventStore,
+    ...(piSessionWriter ? { piSessionWriter } : {}),
   });
   const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub);
 
@@ -271,30 +275,7 @@ export async function runServer(): Promise<void> {
 
   const appConfig: AppConfig = loadAppConfig(appConfigPath);
 
-  const openaiEnabled = openaiConfigured(envConfig);
-  const agentDefinitions = openaiEnabled
-    ? appConfig.agents
-    : appConfig.agents.map((definition) => {
-        const chat = definition.chat;
-        const provider =
-          chat &&
-          (chat.provider === 'claude-cli' ||
-            chat.provider === 'codex-cli' ||
-            chat.provider === 'pi-cli' ||
-            chat.provider === 'openai-compatible')
-            ? chat.provider
-            : 'openai';
-
-        if (provider !== 'openai') {
-          return definition;
-        }
-
-        return {
-          ...definition,
-          uiVisible: false,
-          ...(definition.apiExposed ? { apiExposed: false } : {}),
-        };
-      });
+  const agentDefinitions = appConfig.agents;
 
   agentRegistry = new AgentRegistry(agentDefinitions);
 

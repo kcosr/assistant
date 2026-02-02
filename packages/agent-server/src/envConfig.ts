@@ -6,15 +6,9 @@ import type { AudioInputMode } from './modes';
 export interface EnvConfig {
   port: number;
   /**
-   * Global OpenAI API key. When unset, OpenAI-based chat providers are disabled
-   * but CLI providers (claude-cli, codex-cli, pi-cli) may still be used.
+   * OpenAI API key for OpenAI-backed features (e.g., TTS).
    */
   apiKey?: string;
-  /**
-   * Default OpenAI chat model id for built-in OpenAI provider.
-   * When unset, OpenAI-based chat providers are disabled.
-   */
-  chatModel?: string;
   mcpServers?: McpServerConfig[];
   toolsEnabled: boolean;
   /**
@@ -68,7 +62,6 @@ export function loadEnvConfig(): EnvConfig {
   const apiKeyEnv = process.env['OPENAI_API_KEY'];
   const apiKey =
     typeof apiKeyEnv === 'string' && apiKeyEnv.trim().length > 0 ? apiKeyEnv.trim() : undefined;
-  const chatModelEnvRaw = process.env['OPENAI_CHAT_MODEL'];
 
   const toolsEnabledEnv = process.env['MCP_TOOLS_ENABLED'];
   const toolsEnabled =
@@ -195,29 +188,15 @@ export function loadEnvConfig(): EnvConfig {
   const debugHttpRequestsEnv = process.env['DEBUG_HTTP_REQUESTS'];
   const debugHttpRequests = debugHttpRequestsEnv === 'true' || debugHttpRequestsEnv === '1';
 
-  const chatModel =
-    typeof chatModelEnvRaw === 'string' && chatModelEnvRaw.trim().length > 0
-      ? chatModelEnvRaw.trim()
-      : undefined;
-
-  if (!apiKey || !chatModel) {
-    const missing: string[] = [];
-    if (!apiKey) missing.push('OPENAI_API_KEY');
-    if (!chatModel) missing.push('OPENAI_CHAT_MODEL');
-
+  if (ttsBackend === 'openai' && !apiKey) {
     console.warn(
-      missing.length > 0
-        ? `OpenAI is not fully configured (missing ${missing.join(
-            ', ',
-          )}); OpenAI-based chat providers will be disabled. CLI agents (Claude, Codex, Pi) will continue to work.`
-        : 'OpenAI is not fully configured; OpenAI-based chat providers will be disabled.',
+      'TTS_BACKEND=openai requires OPENAI_API_KEY; OpenAI TTS backend will be disabled.',
     );
   }
 
   return {
     port,
     ...(apiKey ? { apiKey } : {}),
-    ...(chatModel ? { chatModel } : {}),
     toolsEnabled,
     dataDir,
     audioInputMode,
@@ -243,6 +222,5 @@ export function loadEnvConfig(): EnvConfig {
 
 export function openaiConfigured(config: EnvConfig): boolean {
   const hasApiKey = typeof config.apiKey === 'string' && config.apiKey.trim().length > 0;
-  const hasChatModel = typeof config.chatModel === 'string' && config.chatModel.trim().length > 0;
-  return hasApiKey && hasChatModel;
+  return hasApiKey;
 }

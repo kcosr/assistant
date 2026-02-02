@@ -61,6 +61,9 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     void run.ttsSession.cancel();
   }
 
+  const activeToolCalls = run.activeToolCalls;
+  const hadActiveToolCalls = !!(activeToolCalls && activeToolCalls.size > 0);
+
   const partialText = run.accumulatedText.trim();
   if (partialText.length > 0) {
     if (eventStore) {
@@ -85,10 +88,12 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
       );
     }
 
-    state.chatMessages.push({
-      role: 'assistant',
-      content: partialText,
-    });
+    if (!hadActiveToolCalls) {
+      state.chatMessages.push({
+        role: 'assistant',
+        content: partialText,
+      });
+    }
 
     void sessionHub.recordSessionActivity(
       sessionId,
@@ -96,7 +101,6 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     );
   }
 
-  const activeToolCalls = run.activeToolCalls;
   if (activeToolCalls && activeToolCalls.size > 0) {
     for (const [, call] of activeToolCalls) {
       const errorPayload = {

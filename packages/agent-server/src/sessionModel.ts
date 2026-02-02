@@ -1,6 +1,5 @@
-import type { AgentDefinition, OpenAiCompatibleChatConfig } from './agents';
+import type { AgentDefinition } from './agents';
 import type { SessionSummary } from './sessionIndex';
-import type { EnvConfig } from './envConfig';
 
 function normaliseModels(models: unknown): string[] {
   if (!Array.isArray(models)) {
@@ -46,29 +45,15 @@ export function getAgentAvailableModels(agent: AgentDefinition | undefined): str
   }
 
   const provider =
+    agent.chat.provider === 'pi' ||
     agent.chat.provider === 'claude-cli' ||
     agent.chat.provider === 'codex-cli' ||
-    agent.chat.provider === 'pi-cli' ||
-    agent.chat.provider === 'openai-compatible'
+    agent.chat.provider === 'pi-cli'
       ? agent.chat.provider
-      : 'openai';
+      : 'pi';
 
-  if (
-    provider === 'openai' ||
-    provider === 'claude-cli' ||
-    provider === 'codex-cli' ||
-    provider === 'pi-cli'
-  ) {
-    const models = (agent.chat as { models?: unknown }).models;
-    return normaliseModels(models);
-  }
-
-  if (provider === 'openai-compatible') {
-    const config = agent.chat.config as OpenAiCompatibleChatConfig | undefined;
-    return config ? normaliseModels(config.models) : [];
-  }
-
-  return [];
+  const models = (agent.chat as { models?: unknown }).models;
+  return normaliseModels(models);
 }
 
 export function getAgentAvailableThinkingLevels(agent: AgentDefinition | undefined): string[] {
@@ -76,7 +61,11 @@ export function getAgentAvailableThinkingLevels(agent: AgentDefinition | undefin
     return [];
   }
 
-  if (agent.chat.provider !== 'pi-cli' && agent.chat.provider !== 'codex-cli') {
+  if (
+    agent.chat.provider !== 'pi' &&
+    agent.chat.provider !== 'pi-cli' &&
+    agent.chat.provider !== 'codex-cli'
+  ) {
     return [];
   }
 
@@ -101,9 +90,8 @@ export function getDefaultThinkingForNewSession(
 export function resolveSessionModelForRun(options: {
   agent: AgentDefinition | undefined;
   summary: SessionSummary;
-  envConfig: EnvConfig;
 }): string | undefined {
-  const { agent, summary, envConfig } = options;
+  const { agent, summary } = options;
   const availableModels = getAgentAvailableModels(agent);
 
   const sessionModelRaw = summary.model;
@@ -117,10 +105,10 @@ export function resolveSessionModelForRun(options: {
   }
 
   if (availableModels.length > 0) {
-    return availableModels[0] ?? envConfig.chatModel;
+    return availableModels[0];
   }
 
-  return envConfig.chatModel;
+  return undefined;
 }
 
 export function resolveSessionThinkingForRun(options: {

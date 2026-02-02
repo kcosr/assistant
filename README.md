@@ -387,7 +387,7 @@ npm run build
         │                 │               │               │               │               │                 │
         ▼                 ▼               ▼               ▼               ▼               ▼                 ▼
 ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ OpenAI Chat  │  │  Claude CLI  │  │  Codex CLI   │  │    Pi CLI    │  │  TTS Backend │  │ MCP Tools    │  │   Plugins    │
+│  Pi SDK Chat │  │  Claude CLI  │  │  Codex CLI   │  │    Pi CLI    │  │  TTS Backend │  │ MCP Tools    │  │   Plugins    │
 │    (API)     │  │  (subprocess)│  │  (subprocess)│  │  (subprocess)│  │    (API)     │  │ (subprocess) │  │   (files)    │
 └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘
 ```

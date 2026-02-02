@@ -7,7 +7,7 @@ import type { ServerMessage } from '@assistant/shared';
 import type { ToolHost } from '../tools';
 import type { EventStore } from '../events';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
-import { openaiConfigured, type EnvConfig } from '../envConfig';
+import type { EnvConfig } from '../envConfig';
 import type { ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 import type { SearchService } from '../search/searchService';
@@ -43,10 +43,9 @@ export class MultiplexedConnection implements SessionConnection {
   constructor(options: MultiplexedConnectionOptions) {
     this.id = options.connectionId ?? randomUUID();
     const transport = createWsTransport(options.clientSocket);
-    const openaiClient =
-      openaiConfigured(options.config) && options.config.apiKey
-        ? new OpenAI({ apiKey: options.config.apiKey })
-        : undefined;
+    const openaiClient = options.config.apiKey
+      ? new OpenAI({ apiKey: options.config.apiKey })
+      : undefined;
 
     this.runtime = new SessionRuntime({
       transport,

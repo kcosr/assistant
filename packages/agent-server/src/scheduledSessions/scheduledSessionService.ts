@@ -757,7 +757,7 @@ export class ScheduledSessionService {
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
     }
-    const provider = agent.chat?.provider ?? 'openai';
+    const provider = agent.chat?.provider ?? 'pi';
     if (provider !== 'claude-cli' && provider !== 'codex-cli' && provider !== 'pi-cli') {
       throw new Error(`Agent ${agentId} uses unsupported provider: ${provider}`);
     }

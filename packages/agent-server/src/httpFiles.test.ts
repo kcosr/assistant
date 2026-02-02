@@ -31,7 +31,6 @@ function createEnvConfig(overrides?: Partial<HttpEnvConfig>): HttpEnvConfig {
   return {
     port: 0,
     apiKey: 'test-api-key',
-    chatModel: 'test-model',
     toolsEnabled: false,
     dataDir: path.join(os.tmpdir(), `http-files-data-${Date.now()}-${Math.random().toString(16)}`),
     audioInputMode: 'manual',

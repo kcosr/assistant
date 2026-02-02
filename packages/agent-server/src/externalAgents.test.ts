@@ -2,7 +2,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type OpenAI from 'openai';
 
 import { AgentRegistry } from './agents';
 import { SessionHub } from './sessionHub';
@@ -94,11 +93,9 @@ describe('ws external forwarding', () => {
         sendErrorFromHub: () => undefined,
       },
       sessionHub,
-      openaiClient: {} as unknown as OpenAI,
       config: {
         port: 0,
         apiKey: 'test-api-key',
-        chatModel: 'test-model',
         toolsEnabled: false,
         dataDir: os.tmpdir(),
         audioInputMode: 'manual',
@@ -195,11 +192,9 @@ describe('ws external forwarding', () => {
         sendErrorFromHub: () => undefined,
       },
       sessionHub,
-      openaiClient: {} as unknown as OpenAI,
       config: {
         port: 0,
         apiKey: 'test-api-key',
-        chatModel: 'test-model',
         toolsEnabled: false,
         dataDir: os.tmpdir(),
         audioInputMode: 'manual',

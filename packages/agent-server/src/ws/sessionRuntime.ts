@@ -975,7 +975,6 @@ export class SessionRuntime {
       sessionId: sessionIdForRun,
       connection: this.connection,
       sessionHub: this.sessionHub,
-      ...(this.openaiClient ? { openaiClient: this.openaiClient } : {}),
       config: this.config,
       chatCompletionTools: chatCompletionToolsForRun,
       outputMode: this.outputMode,

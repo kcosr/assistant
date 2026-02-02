@@ -1,11 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import OpenAI from 'openai';
-
 import type { AgentDefinition, AgentRegistry } from './agents';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
 import type { EnvConfig } from './envConfig';
-import { openaiConfigured } from './envConfig';
 import type { EventStore } from './events';
 import type { SessionHub } from './sessionHub';
 import type { SessionIndex, SessionSummary } from './sessionIndex';
@@ -198,11 +195,6 @@ export async function startSessionMessage(options: {
     };
   }
 
-  const openaiClient =
-    openaiConfigured(envConfig) && envConfig.apiKey
-      ? new OpenAI({ apiKey: envConfig.apiKey })
-      : undefined;
-
   const handleChatToolCalls = async (
     runSessionId: string,
     runState: typeof state,
@@ -246,7 +238,6 @@ export async function startSessionMessage(options: {
           text: content,
           sessionHub,
           envConfig,
-          ...(openaiClient ? { openaiClient } : {}),
           chatCompletionTools: chatTools,
           ...(availableTools !== undefined ? { availableTools } : {}),
           ...(availableSkills ? { availableSkills } : {}),
@@ -313,7 +304,6 @@ export async function startSessionMessage(options: {
         responseId,
         sessionHub,
         envConfig,
-        ...(openaiClient ? { openaiClient } : {}),
         chatCompletionTools: chatTools,
         ...(availableTools !== undefined ? { availableTools } : {}),
         ...(availableSkills ? { availableSkills } : {}),

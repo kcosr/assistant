@@ -228,6 +228,7 @@ describe('loadConfig', () => {
     const configJson = {
       sessions: {
         maxCached: 42,
+        mirrorPiSessionHistory: false,
       },
     };
 
@@ -236,6 +237,7 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     expect(config.sessions).toBeDefined();
     expect(config.sessions?.maxCached).toBe(42);
+    expect(config.sessions?.mirrorPiSessionHistory).toBe(false);
   });
 
   it('supports claude-cli chat provider config', async () => {
@@ -662,29 +664,36 @@ describe('loadConfig', () => {
     expect(config.agents[0]?.schedules?.[0]?.sessionTitle).toBe('Daily Review');
   });
 
-  it('supports openai-compatible chat provider config with env substitution', async () => {
-    const filePath = createTempFile('config-openai-compatible');
+  it('supports pi chat provider config with env substitution', async () => {
+    const filePath = createTempFile('config-pi');
     const configJson = {
       agents: [
         {
-          agentId: 'local-llama',
-          displayName: 'Local LLaMA',
-          description: 'Local LLaMA via OpenAI-compatible endpoint.',
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi SDK agent.',
           chat: {
-            provider: 'openai-compatible',
+            provider: 'pi',
+            models: ['anthropic/claude-sonnet-4-5'],
+            thinking: ['low'],
             config: {
-              baseUrl: 'http://localhost:8080/v1',
-              apiKey: '${LOCAL_LLM_KEY}',
-              model: 'llama-3.1-70b',
+              provider: 'anthropic',
+              baseUrl: 'https://api.anthropic.com',
+              apiKey: '${PI_API_KEY}',
+              headers: {
+                'X-Request-Source': '${PI_HEADER_SOURCE}',
+              },
               maxTokens: 4096,
               temperature: 0.7,
+              maxToolIterations: 25,
             },
           },
         },
       ],
     };
 
-    process.env['LOCAL_LLM_KEY'] = 'test-local-key';
+    process.env['PI_API_KEY'] = 'test-pi-key';
+    process.env['PI_HEADER_SOURCE'] = 'assistant';
 
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
@@ -695,13 +704,19 @@ describe('loadConfig', () => {
       throw new Error('Expected agent to be defined');
     }
     expect(agent.chat).toEqual({
-      provider: 'openai-compatible',
+      provider: 'pi',
+      models: ['anthropic/claude-sonnet-4-5'],
+      thinking: ['low'],
       config: {
-        baseUrl: 'http://localhost:8080/v1',
-        apiKey: 'test-local-key',
-        models: ['llama-3.1-70b'],
+        provider: 'anthropic',
+        baseUrl: 'https://api.anthropic.com',
+        apiKey: 'test-pi-key',
+        headers: {
+          'X-Request-Source': 'assistant',
+        },
         maxTokens: 4096,
         temperature: 0.7,
+        maxToolIterations: 25,
       },
     });
   });
@@ -1009,6 +1024,7 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
 
     expect(config.sessions?.maxCached).toBe(100);
+    expect(config.sessions?.mirrorPiSessionHistory).toBe(true);
     expect(config.plugins['coding']?.enabled).toBe(true);
     expect(config.plugins['coding']?.local?.sharedWorkspace).toBe(false);
     expect(config.plugins['coding']?.container?.resources?.cpus).toBe(2);

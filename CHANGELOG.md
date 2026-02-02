@@ -3,12 +3,22 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Removed `openai` and `openai-compatible` chat providers; use `pi` instead. ([#000](<pr-url>))
 
 ### Added
+- Added Pi SDK-backed `pi` chat provider for in-process completions. ([#000](<pr-url>))
+- Added Pi SDK session mirroring to the pi-mono JSONL format for CLI resume. ([#000](<pr-url>))
+- Added Pi SDK debug logging for requests/responses when `DEBUG_CHAT_COMPLETIONS` is enabled. ([#000](<pr-url>))
+- Added configurable Pi tool-iteration limit (default 100) with an error when exceeded. ([#000](<pr-url>))
+- Added automatic OAuth credential reuse from `~/.pi/agent/auth.json` for `anthropic` and `openai-codex` providers. ([#000](<pr-url>))
 
 ### Changed
+- Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#000](<pr-url>))
+- Made Pi session mirror files configurable via `sessions.mirrorPiSessionHistory` (default true). ([#000](<pr-url>))
 
 ### Fixed
+- Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#000](<pr-url>))
+- Fixed Pi SDK session mirroring to include aborted/canceled turns for pi-mono resume. ([#000](<pr-url>))
 
 ### Removed
 

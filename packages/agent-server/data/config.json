@@ -48,7 +48,7 @@
       "displayName": "pi",
       "description": "pi",
       "chat": {
-        "provider": "pi-cli",
+        "provider": "pi",
         "models": [
           "anthropic/claude-sonnet-4-5",
           "openai-codex/gpt-5.2-codex"

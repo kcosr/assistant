@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type OpenAI from 'openai';
-
 import type { ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from '../agents';
@@ -27,6 +25,33 @@ function createTestEventStore(): EventStore {
     subscribe: () => () => {},
     clearSession: async () => {},
     deleteSession: async () => {},
+  };
+}
+
+function createEnvConfig(): EnvConfig {
+  return {
+    port: 0,
+    apiKey: 'test-api-key',
+    toolsEnabled: false,
+    dataDir: '/tmp/assistant-tests',
+    audioInputMode: 'manual',
+    audioSampleRate: 24000,
+    audioTranscriptionEnabled: false,
+    audioOutputVoice: undefined,
+    audioOutputSpeed: undefined,
+    ttsModel: 'gpt-4o-mini-tts',
+    ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
+    ttsBackend: 'openai',
+    elevenLabsApiKey: undefined,
+    elevenLabsVoiceId: undefined,
+    elevenLabsModelId: undefined,
+    elevenLabsBaseUrl: undefined,
+    maxMessagesPerMinute: 60,
+    maxAudioBytesPerMinute: 2_000_000,
+    maxToolCallsPerMinute: 30,
+    debugChatCompletions: false,
+    debugHttpRequests: false,
   };
 }
 
@@ -90,8 +115,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       sessionId: 's1',
       connection: {} as never,
       sessionHub,
-      openaiClient: {} as OpenAI,
-      config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
+      config: createEnvConfig(),
       chatCompletionTools: [],
       outputMode: 'text',
       clientAudioCapabilities: undefined,
@@ -176,8 +200,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       sessionId: 's1',
       connection: {} as never,
       sessionHub,
-      openaiClient: {} as OpenAI,
-      config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
+      config: createEnvConfig(),
       chatCompletionTools: [],
       outputMode: 'text',
       clientAudioCapabilities: undefined,
@@ -253,8 +276,7 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
       sessionId: 's1',
       connection: {} as never,
       sessionHub,
-      openaiClient: {} as OpenAI,
-      config: { chatModel: 'gpt-4o-mini' } as EnvConfig,
+      config: createEnvConfig(),
       chatCompletionTools: [],
       outputMode: 'text',
       clientAudioCapabilities: undefined,
