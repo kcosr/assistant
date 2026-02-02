@@ -322,27 +322,24 @@ Plugins can opt into automatic git snapshots of their data directories using `gi
 
 ##### Execution Mode (Coding Plugins)
 
-Plugins that execute code (like the coding/terminal plugin) can run in `local` or `container` mode:
+Plugins that execute code (like the coding/terminal plugin) can run in `local` or `sidecar` mode.
+All operations are rooted at a single workspace root (no per-session directories).
 
 ```json
 {
   "plugins": {
     "coding": {
       "enabled": true,
-      "mode": "container",
+      "mode": "sidecar",
       "local": {
-        "workspaceRoot": "/path/to/workspaces",
-        "sharedWorkspace": false
+        "workspaceRoot": "/path/to/workspaces"
       },
-      "container": {
-        "runtime": "docker",
-        "image": "assistant-sandbox:latest",
-        "socketPath": "/var/run/docker.sock",
-        "workspaceVolume": "assistant-workspaces",
-        "sharedWorkspace": false,
-        "resources": {
-          "memory": "4g",
-          "cpus": 2
+      "sidecar": {
+        "socketPath": "/var/run/assistant/coding-sidecar.sock",
+        "waitForReadyMs": 10000,
+        "auth": {
+          "token": "${SIDECAR_AUTH_TOKEN}",
+          "required": false
         }
       }
     }
@@ -352,17 +349,17 @@ Plugins that execute code (like the coding/terminal plugin) can run in `local` o
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `mode` | string | Execution mode: `local` or `container`. |
+| `mode` | string | Execution mode: `local` or `sidecar`. |
 | `local.workspaceRoot` | string | Root directory for local workspaces. |
-| `local.sharedWorkspace` | boolean | If `true`, all sessions share one workspace. |
-| `container.runtime` | string | Container runtime: `docker` or `podman`. |
-| `container.image` | string | Container image to use. |
-| `container.socketPath` | string | Path to container runtime socket. |
-| `container.socketDir` | string | Directory for container communication sockets. |
-| `container.workspaceVolume` | string | Named volume for persistent workspaces. |
-| `container.sharedWorkspace` | boolean | If `true`, all sessions share one workspace. |
-| `container.resources.memory` | string | Memory limit (e.g., `4g`). |
-| `container.resources.cpus` | number | CPU limit. |
+| `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
+| `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |
+| `sidecar.tcp.port` | number | TCP port for sidecar access. |
+| `sidecar.waitForReadyMs` | number | Wait time before failing readiness checks (milliseconds). |
+| `sidecar.auth.token` | string | Bearer token sent as `Authorization: Bearer <token>`. |
+| `sidecar.auth.required` | boolean | When `true`, sidecar rejects requests without a valid token. |
+
+Notes:
+- Configure exactly one endpoint: `sidecar.socketPath` or `sidecar.tcp` (host/port).
 
 ##### Agents plugin tools (when enabled)
 

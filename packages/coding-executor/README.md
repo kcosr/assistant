@@ -14,9 +14,9 @@ used by the coding plugin.
 
 ## Overview
 
-The coding executor provides safe, session-scoped file and command execution:
+The coding executor provides safe, workspace-rooted file and command execution:
 
-- **Session isolation**: Each session has its own workspace directory
+- **Single workspace root**: All operations are rooted at the configured workspace directory
 - **Path traversal protection**: All paths are resolved within the workspace
 - **Output truncation**: Large outputs are automatically truncated with metadata
 - **Abort support**: Long-running operations can be cancelled via AbortSignal
@@ -32,13 +32,13 @@ The coding executor provides safe, session-scoped file and command execution:
 
 ```typescript
 interface ToolExecutor {
-  runBash(sessionId: string, command: string, options?: BashRunOptions): Promise<BashResult>;
-  readFile(sessionId: string, path: string, options?: { offset?: number; limit?: number }): Promise<ReadResult>;
-  writeFile(sessionId: string, path: string, content: string): Promise<WriteResult>;
-  editFile(sessionId: string, path: string, oldText: string, newText: string): Promise<EditResult>;
-  ls(sessionId: string, path?: string, options?: LsOptions): Promise<LsResult>;
-  find(sessionId: string, options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult>;
-  grep(sessionId: string, options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult>;
+  runBash(command: string, options?: BashRunOptions): Promise<BashResult>;
+  readFile(path: string, options?: { offset?: number; limit?: number }): Promise<ReadResult>;
+  writeFile(path: string, content: string): Promise<WriteResult>;
+  editFile(path: string, oldText: string, newText: string): Promise<EditResult>;
+  ls(path?: string, options?: LsOptions): Promise<LsResult>;
+  find(options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult>;
+  grep(options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult>;
 }
 ```
 
@@ -46,7 +46,7 @@ interface ToolExecutor {
 
 ### `runBash`
 
-Execute a bash command in the session workspace.
+Execute a bash command in the workspace root.
 
 **Options:**
 - `timeoutSeconds` - Command timeout (default: 300)

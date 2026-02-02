@@ -595,25 +595,26 @@ export const PluginConfigSchema = z
       })
       .optional(),
     workspaceRoot: NonEmptyTrimmedStringSchema.optional(),
-    mode: z.enum(['local', 'container']).optional(),
+    mode: z.enum(['local', 'sidecar']).optional(),
     local: z
       .object({
         workspaceRoot: NonEmptyTrimmedStringSchema.optional(),
-        sharedWorkspace: z.boolean().optional(),
       })
       .optional(),
-    container: z
+    sidecar: z
       .object({
-        runtime: z.enum(['docker', 'podman']).optional(),
         socketPath: NonEmptyTrimmedStringSchema.optional(),
-        image: NonEmptyTrimmedStringSchema.optional(),
-        socketDir: NonEmptyTrimmedStringSchema.optional(),
-        workspaceVolume: NonEmptyTrimmedStringSchema.optional(),
-        sharedWorkspace: z.boolean().optional(),
-        resources: z
+        tcp: z
           .object({
-            memory: NonEmptyTrimmedStringSchema.optional(),
-            cpus: z.number().positive().optional(),
+            host: NonEmptyTrimmedStringSchema,
+            port: z.number().int().positive(),
+          })
+          .optional(),
+        waitForReadyMs: z.number().int().positive().optional(),
+        auth: z
+          .object({
+            token: NonEmptyTrimmedStringSchema.optional(),
+            required: z.boolean().optional(),
           })
           .optional(),
       })

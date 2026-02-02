@@ -43,40 +43,30 @@ export let agentRegistry: AgentRegistry | undefined;
 function resolveCodingWorkspaceRoot(
   appConfig: AppConfig | undefined,
   dataDir: string,
-): { workspaceRoot: string; sharedWorkspace: boolean } | null {
+): { workspaceRoot: string } | null {
   const codingConfig = appConfig?.plugins?.['coding'];
   if (!codingConfig?.enabled) {
     return null;
   }
 
-  const mode = codingConfig.mode === 'container' ? 'container' : 'local';
+  const mode = codingConfig.mode === 'sidecar' ? 'sidecar' : 'local';
   let workspaceRoot: string | null = null;
-  let sharedWorkspace = false;
 
   if (mode === 'local') {
-    sharedWorkspace = codingConfig.local?.sharedWorkspace === true;
     if (codingConfig.local?.workspaceRoot && codingConfig.local.workspaceRoot.trim().length > 0) {
       workspaceRoot = codingConfig.local.workspaceRoot.trim();
     } else {
       workspaceRoot = path.join(dataDir, 'plugins', 'coding', 'coding-workspaces');
     }
   } else {
-    sharedWorkspace = codingConfig.container?.sharedWorkspace === true;
-    if (
-      codingConfig.container?.workspaceVolume &&
-      codingConfig.container.workspaceVolume.trim().length > 0
-    ) {
-      workspaceRoot = codingConfig.container.workspaceVolume.trim();
-    } else {
-      return null;
-    }
+    return null;
   }
 
   if (!workspaceRoot || !path.isAbsolute(workspaceRoot)) {
     return null;
   }
 
-  return { workspaceRoot, sharedWorkspace };
+  return { workspaceRoot };
 }
 
 function createSessionWorkingDirResolver(
@@ -91,9 +81,8 @@ function createSessionWorkingDirResolver(
   if (!resolved) {
     return undefined;
   }
-  const { workspaceRoot, sharedWorkspace } = resolved;
-  return (sessionId: string) =>
-    getSessionWorkspaceRoot({ workspaceRoot, sessionId, sharedWorkspace });
+  const { workspaceRoot } = resolved;
+  return () => getSessionWorkspaceRoot({ workspaceRoot });
 }
 
 export async function startServer(

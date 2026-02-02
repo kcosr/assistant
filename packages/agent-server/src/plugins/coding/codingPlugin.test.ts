@@ -59,14 +59,14 @@ describe('coding plugin tools', () => {
     expect(lsResult.output).toContain('plugin.txt');
   });
 
-  it('initializes in container mode when configured', async () => {
-    const dataDir = createTempDir('coding-plugin-container');
+  it('initializes in sidecar mode when configured', async () => {
+    const dataDir = createTempDir('coding-plugin-sidecar');
 
     const pluginConfig: PluginConfig = {
       enabled: true,
-      mode: 'container',
-      container: {
-        image: 'ghcr.io/example/assistant-sidecar:latest',
+      mode: 'sidecar',
+      sidecar: {
+        socketPath: '/var/run/assistant/coding-sidecar.sock',
       },
     };
 

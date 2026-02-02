@@ -129,7 +129,6 @@ describe('loadConfig', () => {
           mode: 'local',
           local: {
             workspaceRoot: '/var/lib/assistant/coding-workspaces',
-            sharedWorkspace: true,
           },
         },
       },
@@ -144,26 +143,24 @@ describe('loadConfig', () => {
     expect(codingPlugin?.enabled).toBe(true);
     expect(codingPlugin?.mode).toBe('local');
     expect(codingPlugin?.local?.workspaceRoot).toBe('/var/lib/assistant/coding-workspaces');
-    expect(codingPlugin?.local?.sharedWorkspace).toBe(true);
   });
 
-  it('parses coding plugin configuration for container mode', async () => {
-    const filePath = createTempFile('config-coding-plugin-container');
+  it('parses coding plugin configuration for sidecar mode', async () => {
+    const filePath = createTempFile('config-coding-plugin-sidecar');
     const configJson = {
       plugins: {
         coding: {
           enabled: true,
-          mode: 'container',
-          container: {
-            runtime: 'podman',
-            socketPath: '/run/user/1000/podman/podman.sock',
-            image: 'ghcr.io/example/assistant-sidecar:latest',
-            socketDir: '/var/run/assistant',
-            workspaceVolume: '/var/lib/assistant/coding-workspaces',
-            sharedWorkspace: true,
-            resources: {
-              memory: '2g',
-              cpus: 2,
+          mode: 'sidecar',
+          sidecar: {
+            tcp: {
+              host: '127.0.0.1',
+              port: 8765,
+            },
+            waitForReadyMs: 5000,
+            auth: {
+              token: 'test-token',
+              required: true,
             },
           },
         },
@@ -177,15 +174,12 @@ describe('loadConfig', () => {
 
     expect(codingPlugin).toBeDefined();
     expect(codingPlugin?.enabled).toBe(true);
-    expect(codingPlugin?.mode).toBe('container');
-    expect(codingPlugin?.container?.runtime).toBe('podman');
-    expect(codingPlugin?.container?.socketPath).toBe('/run/user/1000/podman/podman.sock');
-    expect(codingPlugin?.container?.image).toBe('ghcr.io/example/assistant-sidecar:latest');
-    expect(codingPlugin?.container?.socketDir).toBe('/var/run/assistant');
-    expect(codingPlugin?.container?.workspaceVolume).toBe('/var/lib/assistant/coding-workspaces');
-    expect(codingPlugin?.container?.sharedWorkspace).toBe(true);
-    expect(codingPlugin?.container?.resources?.memory).toBe('2g');
-    expect(codingPlugin?.container?.resources?.cpus).toBe(2);
+    expect(codingPlugin?.mode).toBe('sidecar');
+    expect(codingPlugin?.sidecar?.tcp?.host).toBe('127.0.0.1');
+    expect(codingPlugin?.sidecar?.tcp?.port).toBe(8765);
+    expect(codingPlugin?.sidecar?.waitForReadyMs).toBe(5000);
+    expect(codingPlugin?.sidecar?.auth?.token).toBe('test-token');
+    expect(codingPlugin?.sidecar?.auth?.required).toBe(true);
   });
 
   it('preserves plugin-specific configuration fields', async () => {
@@ -747,7 +741,6 @@ describe('loadConfig', () => {
           workspaceRoot: '${HOME}/workspaces',
           local: {
             workspaceRoot: '${HOME}/local-workspaces',
-            sharedWorkspace: true,
           },
         },
       },
@@ -764,19 +757,19 @@ describe('loadConfig', () => {
     expect(codingPlugin?.local?.workspaceRoot).toBe('/home/testuser/local-workspaces');
   });
 
-  it('substitutes env vars in plugin container config paths', async () => {
-    const filePath = createTempFile('config-plugin-container');
+  it('substitutes env vars in plugin sidecar config paths', async () => {
+    const filePath = createTempFile('config-plugin-sidecar');
     const configJson = {
       plugins: {
         coding: {
           enabled: true,
-          mode: 'container',
-          container: {
-            runtime: 'podman',
-            socketPath: '${XDG_RUNTIME_DIR}/podman/podman.sock',
-            image: 'assistant-sidecar:latest',
-            socketDir: '${HOME}/.assistant/sockets',
-            workspaceVolume: '${HOME}/coding-workspaces',
+          mode: 'sidecar',
+          sidecar: {
+            socketPath: '${XDG_RUNTIME_DIR}/assistant/coding-sidecar.sock',
+            auth: {
+              token: '${HOME}/token',
+              required: false,
+            },
           },
         },
       },
@@ -790,9 +783,10 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     const codingPlugin = config.plugins['coding'];
 
-    expect(codingPlugin?.container?.socketPath).toBe('/run/user/1000/podman/podman.sock');
-    expect(codingPlugin?.container?.socketDir).toBe('/home/testuser/.assistant/sockets');
-    expect(codingPlugin?.container?.workspaceVolume).toBe('/home/testuser/coding-workspaces');
+    expect(codingPlugin?.sidecar?.socketPath).toBe(
+      '/run/user/1000/assistant/coding-sidecar.sock',
+    );
+    expect(codingPlugin?.sidecar?.auth?.token).toBe('/home/testuser/token');
   });
 
   it('substitutes env vars in plugin source path', async () => {
@@ -1007,12 +1001,16 @@ describe('loadConfig', () => {
         coding: {
           enabled: true,
           local: {
-            sharedWorkspace: false,
+            workspaceRoot: '/tmp/workspaces',
           },
-          container: {
-            resources: {
-              cpus: 2,
-              memory: '4g',
+          sidecar: {
+            tcp: {
+              host: '127.0.0.1',
+              port: 8765,
+            },
+            waitForReadyMs: 2500,
+            auth: {
+              required: false,
             },
           },
         },
@@ -1026,8 +1024,9 @@ describe('loadConfig', () => {
     expect(config.sessions?.maxCached).toBe(100);
     expect(config.sessions?.mirrorPiSessionHistory).toBe(true);
     expect(config.plugins['coding']?.enabled).toBe(true);
-    expect(config.plugins['coding']?.local?.sharedWorkspace).toBe(false);
-    expect(config.plugins['coding']?.container?.resources?.cpus).toBe(2);
-    expect(config.plugins['coding']?.container?.resources?.memory).toBe('4g');
+    expect(config.plugins['coding']?.local?.workspaceRoot).toBe('/tmp/workspaces');
+    expect(config.plugins['coding']?.sidecar?.tcp?.port).toBe(8765);
+    expect(config.plugins['coding']?.sidecar?.waitForReadyMs).toBe(2500);
+    expect(config.plugins['coding']?.sidecar?.auth?.required).toBe(false);
   });
 });

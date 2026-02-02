@@ -131,9 +131,9 @@ High-level map of `packages/agent-server/src/` after the backend refactor:
 
 ## Coding plugin tools
 
-The `coding` plugin provides tools for interacting with a session-scoped workspace:
+The `coding` plugin provides tools for interacting with the configured workspace root:
 
-- `bash` – run shell commands in the session workspace with streaming output and truncation via `truncateTail`.
+- `bash` – run shell commands in the workspace root with streaming output and truncation via `truncateTail`.
 - `read` – read text or image files with pagination and truncation handled by `truncateHead`.
 - `write` – create or overwrite files, creating parent directories as needed.
 - `edit` – apply precise text replacements to a file, returning a human-readable diff.
@@ -519,13 +519,13 @@ Plugins can opt into periodic git snapshots of their data directories:
 
 ### Coding Plugin
 
-The coding plugin provides tools for working with a session‑scoped workspace (files live under a per‑session directory on disk, or a shared workspace when configured). Tools are designed to be safe by default (no path traversal outside the workspace) and to truncate very large outputs.
+The coding plugin provides tools for working with the configured workspace root. Tools are designed to be safe by default (no path traversal outside the workspace) and to truncate very large outputs.
 
 | Tool    | Description                                                                                     |
 | ------- | ----------------------------------------------------------------------------------------------- |
-| `bash`  | Run a bash command in the session workspace and return combined stdout/stderr (tail‑truncated). |
-| `read`  | Read a text or image file from the session workspace with optional line offsets and limits.     |
-| `write` | Write/overwrite a text file in the session workspace, creating parent directories as needed.    |
+| `bash`  | Run a bash command in the workspace root and return combined stdout/stderr (tail‑truncated). |
+| `read`  | Read a text or image file from the workspace root with optional line offsets and limits.     |
+| `write` | Write/overwrite a text file in the workspace root, creating parent directories as needed.    |
 | `edit`  | Replace an exact, unique text span in a file and return a human‑readable diff.                  |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a "/" suffix for directories. |
 | `find`  | Find files by glob pattern. Uses `fd` when available, falling back to Node.js glob.             |
@@ -533,13 +533,13 @@ The coding plugin provides tools for working with a session‑scoped workspace (
 
 #### `grep`
 
-Search file contents within the session workspace and return matching lines with file paths and line numbers. When `rg` (ripgrep) is available on `PATH`, the plugin executes:
+Search file contents within the workspace root and return matching lines with file paths and line numbers. When `rg` (ripgrep) is available on `PATH`, the plugin executes:
 
 - `rg --json --line-number --color=never --hidden`
 
 and parses its JSON output. If ripgrep is not available, it falls back to a Node.js implementation that:
 
-- Recursively walks the session workspace (or a subdirectory under it)
+- Recursively walks the workspace root (or a subdirectory under it)
 - Skips `.git` and `node_modules` directories
 - Applies an optional glob filter to relative paths
 - Matches using either a literal substring or a regular expression
@@ -549,7 +549,7 @@ and parses its JSON output. If ripgrep is not available, it falls back to a Node
 - `pattern` (string, required): Pattern to search for. Interpreted as:
   - literal substring when `literal: true`
   - JavaScript regular expression when `literal` is absent/false
-- `path` (string, optional): Directory or file to search, relative to the session workspace. Defaults to `"."` (the workspace root).
+- `path` (string, optional): Directory or file to search, relative to the workspace root. Defaults to `"."` (the workspace root).
 - `glob` (string, optional): Glob filter for files, e.g. `"*.ts"` or `"src/*.tsx"`.
   - When running with ripgrep, this is passed through as `--glob`.
   - In the Node.js fallback, a simple `*` / `?` glob is converted to a regular expression and applied to relative paths.
@@ -705,7 +705,7 @@ label is stored under `sessionInfo.label` in session attributes and broadcast to
 
 ### Coding Plugin
 
-The coding plugin provides tools for working with a session-scoped workspace on disk:
+The coding plugin provides tools for working with the configured workspace root on disk:
 
 | Tool    | Description                                                                                                     |
 | ------- | --------------------------------------------------------------------------------------------------------------- |
@@ -717,7 +717,7 @@ The coding plugin provides tools for working with a session-scoped workspace on 
 
 `ls` parameters:
 
-- `path` (optional): Directory to list. Defaults to the workspace root for the current session.
+- `path` (optional): Directory to list. Defaults to the workspace root.
 - `limit` (optional): Maximum number of entries to return. Defaults to `500`. Output is truncated to approximately 50KB.
 
 ### Files Plugin

@@ -3,15 +3,17 @@
 ## Summary
 
 The `coding` tool plugin currently supports host execution (`local`) and a managed-container mode (`container`).
+This proposal removes managed containers in favor of a connect-only sidecar and simplifies all coding execution to a single workspace root (no per-session directories).
 
-This document proposes simplifying the system to a single containerized execution strategy: **connect to an already-running sidecar over a Unix domain socket** ("sidecar" mode).
+This document proposes a connect-only execution strategy: **connect to an already-running sidecar** ("sidecar" mode) over a Unix domain socket or TCP. Managed container mode is removed.
 
 In the target end state:
 
 - The agent-server does not create/start/stop containers (no Docker/Podman socket access, no `dockerode`).
 - The sidecar container is started and supervised externally (your existing always-on container).
-- The socket path is configured globally via the coding plugin config.
-- The sidecar runs against a single explicit workspace root (no per-session subdirectories).
+- The socket path (or TCP host/port) is configured globally via the coding plugin config.
+- Workspace semantics are simplified: operations are rooted at a single workspace root with no per-session directories.
+- TCP access supports optional token auth (configurable to require or allow anonymous).
 
 ---
 
@@ -37,12 +39,14 @@ we need a **connect-only** mode.
 - Execute the existing coding tools (`bash`, `read`, `write`, `edit`, `ls`, `find`, `grep`) inside a container.
 - Reuse the existing `@assistant/coding-sidecar` HTTP API and `SidecarClient` implementation.
 - Avoid requiring the agent-server to manage containers (no dockerode, no daemon socket).
+- Support Unix sockets and TCP endpoints for sidecar connectivity.
+- Support optional token auth for TCP (configurable whether it is required).
 - Provide clear operational guidance for running the sidecar server in an existing long-lived container.
 
 ## Non-goals
 
 - Redesign the tool API surface.
-- Replace Unix socket transport with TCP (unless explicitly desired later).
+- Remove Unix socket support (TCP is additive).
 - Provide multi-tenant isolation beyond what the sidecar already implements.
 - Design a general “containerize any tool plugin” framework (this proposal is scoped to the existing coding sidecar).
 
@@ -50,7 +54,7 @@ we need a **connect-only** mode.
 
 ## Current implementation (baseline)
 
-### Legacy: managed container mode today (planned removal)
+### Legacy: managed container mode today (removed)
 
 Code locations:
 
@@ -77,17 +81,22 @@ In `container` mode, `ContainerExecutor`:
 - starts an HTTP server that listens on a Unix domain socket (`SOCKET_PATH`)
 - executes operations via `LocalExecutor({ workspaceRoot: WORKSPACE_ROOT })`
 
-Target behavior for this proposal is a **single explicit workspace root** inside the sidecar container (no per-session subdirectories).
+Change in this proposal:
 
-In the target end state we remove the shared/per-session toggle entirely:
+- allow an optional TCP listener (configurable host/port) in addition to the Unix socket
+- remove `sessionId` from request bodies
+- add optional token auth (configurable required vs optional)
 
-- `coding-executor` always resolves paths relative to `WORKSPACE_ROOT` directly.
-- `sessionId` remains part of the sidecar API for compatibility and logging, but it does **not** affect path resolution.
+Target behavior for this proposal is a single explicit workspace root inside the sidecar container (no per-session subdirectories):
+
+- `coding-executor` resolves paths relative to `WORKSPACE_ROOT` directly.
+- The sidecar API does not accept `sessionId`; paths are always resolved from `WORKSPACE_ROOT`.
 - There is no `sharedWorkspace` flag in assistant config, and no `SHARED_WORKSPACE` env var to manage.
+- The same root-only semantics apply to `local` mode to keep behavior consistent across executors.
 
 ---
 
-## Proposed design: connect-only sidecar mode (Option A)
+## Proposed design: connect-only sidecar mode
 
 ### High-level behavior
 
@@ -95,7 +104,7 @@ Add a new coding executor that:
 
 - does **not** create containers
 - does **not** require Docker/Podman sockets
-- only connects to an existing Unix socket file and uses `SidecarClient`
+- only connects to an existing Unix socket file **or** TCP endpoint and uses `SidecarClient`
 
 The sidecar container is managed externally.
 
@@ -103,7 +112,7 @@ The sidecar container is managed externally.
 
 Add a new `plugins.coding.mode` value and configuration block.
 
-#### Proposed config shape (example)
+#### Proposed config shape (Unix socket example)
 
 ```json
 {
@@ -113,7 +122,11 @@ Add a new `plugins.coding.mode` value and configuration block.
       "mode": "sidecar",
       "sidecar": {
         "socketPath": "/var/run/assistant/coding-sidecar.sock",
-        "waitForReadyMs": 10000
+        "waitForReadyMs": 10000,
+        "auth": {
+          "token": "${SIDECAR_AUTH_TOKEN}",
+          "required": false
+        }
       }
     }
   }
@@ -124,12 +137,42 @@ Notes:
 
 - `socketPath` is the **host path** to the Unix socket file.
 - The socket file must be created by the sidecar server inside the long-lived container, and exposed to the host via a bind mount.
+- `tcp.host` + `tcp.port` are used when TCP is preferred (e.g., localhost or a shared network).
+- Exactly one endpoint should be configured: Unix socket **or** TCP.
 - `waitForReadyMs` mirrors the existing 10s polling behavior in `ContainerExecutor.waitForSocketReady()`.
+- Workspace root is configured in the sidecar container via `WORKSPACE_ROOT`.
+- Standardize documentation on a single default socket path (current sidecar README default differs from container mode).
+- `auth.token` enables token auth (sent as `Authorization: Bearer <token>`). When `auth.required` is `true`,
+  the sidecar rejects requests without a valid token.
 
 #### Rationale
 
-- We cannot reuse `plugins.coding.container.socketPath` because that field currently means the **Docker/Podman daemon socket**, not the sidecar Unix socket.
-- The existing `socketDir` + fixed filename scheme is convenient for managed mode, but connect-only mode benefits from an explicit `socketPath` to match whatever your container setup uses.
+- We should not overload the existing `plugins.coding.container.socketPath` field (it currently means the Docker/Podman daemon socket), and that block is removed.
+- Connect-only mode benefits from an explicit `socketPath` to match whatever your container setup uses.
+
+#### TCP config example
+
+```json
+{
+  "plugins": {
+    "coding": {
+      "enabled": true,
+      "mode": "sidecar",
+      "sidecar": {
+        "tcp": {
+          "host": "127.0.0.1",
+          "port": 8765
+        },
+        "waitForReadyMs": 10000,
+        "auth": {
+          "token": "${SIDECAR_AUTH_TOKEN}",
+          "required": true
+        }
+      }
+    }
+  }
+}
+```
 
 ### Implementation sketch
 
@@ -137,12 +180,16 @@ Notes:
 
 Create `SidecarSocketExecutor` (name flexible) implementing `ToolExecutor`:
 
-- constructor takes `{ socketPath, waitForReadyMs? }`
+- constructor takes `{ socketPath?, tcpHost?, tcpPort?, waitForReadyMs? }`
 - `ensureReady()`:
-  - wait for `socketPath` to appear and be a socket (poll)
-  - optionally: call `GET /health` via `SidecarClient` once the socket exists
+  - wait for the endpoint to be reachable
+  - for Unix sockets, wait for `socketPath` to appear and be a socket (poll)
+  - for TCP, attempt a `GET /health` until success or timeout
 - methods delegate to `SidecarClient`:
   - `runBash`, `readFile`, `writeFile`, `editFile`, `ls`, `find`, `grep`
+
+Update `SidecarClient` to accept either a Unix socket path or TCP host/port, and to include
+`Authorization: Bearer <token>` when `auth.token` is configured.
 
 #### Coding plugin wiring
 
@@ -158,6 +205,8 @@ In `packages/agent-server/src/plugins/coding/index.ts`:
 
 ---
 
+---
+
 ## Operational guide: what you need to do in your existing container
 
 Your long-lived container must run the sidecar server and expose its Unix socket to the host.
@@ -170,6 +219,8 @@ If you use the existing `@assistant/coding-sidecar` image behavior:
 - it reads environment variables:
   - `SOCKET_PATH` (where it will create the Unix socket)
   - `WORKSPACE_ROOT` (root directory for file operations)
+  - `TCP_HOST` / `TCP_PORT` (optional TCP listener; if unset, TCP is disabled)
+  - `SIDECAR_AUTH_TOKEN` / `SIDECAR_REQUIRE_AUTH` (optional auth; when required, reject requests without a valid token)
 
 So your container entrypoint/start script must ensure the sidecar server is started and remains running.
 
@@ -210,6 +261,8 @@ docker run -d \
   -v /var/run/assistant:/var/run/assistant \
   -v /srv/assistant-workspaces:/workspace \
   -e SOCKET_PATH=/var/run/assistant/coding-sidecar.sock \
+  -e SIDECAR_AUTH_TOKEN=changeme \
+  -e SIDECAR_REQUIRE_AUTH=false \
   -e WORKSPACE_ROOT=/workspace \
   <your-image-with-coding-sidecar>
 ```
@@ -230,18 +283,53 @@ Then configure the agent-server:
 }
 ```
 
+### Example: TCP listener (illustrative)
+
+```bash
+docker run -d \
+  --name assistant-sidecar \
+  -v /srv/assistant-workspaces:/workspace \
+  -p 8765:8765 \
+  -e TCP_HOST=0.0.0.0 \
+  -e TCP_PORT=8765 \
+  -e SIDECAR_AUTH_TOKEN=changeme \
+  -e SIDECAR_REQUIRE_AUTH=true \
+  -e WORKSPACE_ROOT=/workspace \
+  <your-image-with-coding-sidecar>
+```
+
+Then configure the agent-server:
+
+```json
+{
+  "plugins": {
+    "coding": {
+      "enabled": true,
+      "mode": "sidecar",
+      "sidecar": {
+        "tcp": { "host": "127.0.0.1", "port": 8765 }
+      }
+    }
+  }
+}
+```
+
 ### Kubernetes / orchestrators
 
 Use a `hostPath` (or shared volume) mount for the socket directory so the host agent-server process can access the Unix socket. If the agent-server itself is also in a container, ensure both containers share the same volume for the socket path.
+
+If using TCP, ensure the service/network policy allows the agent-server to reach the sidecar port.
+If `SIDECAR_REQUIRE_AUTH=true`, ensure the agent-server is configured with the matching `auth.token`.
 
 ---
 
 ## Compatibility and migration
 
 - `local` mode can remain for development/testing (optional).
-- `container` (managed) mode is deprecated and planned for removal once sidecar deployments are validated.
-- `sidecar` mode becomes the recommended/primary containerized execution mode.
-- In the target end state, workspace behavior is always “shared”: `WORKSPACE_ROOT` is used directly (no per-session subdirectories).
+- `container` (managed) mode is removed along with dockerode usage.
+- `sidecar` mode becomes the only containerized execution mode.
+- Per-session isolation is removed; workflows relying on isolated workspaces must run separate sidecars or separate agent-server instances per workspace root.
+- Remove `sharedWorkspace` config fields and `SHARED_WORKSPACE` env usage.
 
 ---
 
@@ -254,8 +342,20 @@ Use a `hostPath` (or shared volume) mount for the socket directory so the host a
 
 ---
 
-## Open questions
+## Files to update
 
-1. Do we want connect-only mode to support TCP (localhost port) as an alternative to Unix sockets?
-2. Should we add a lightweight auth token to the sidecar protocol (even on Unix sockets) for defense-in-depth?
-3. Should `sessionId` remain a required parameter in the sidecar API even though it no longer affects path resolution?
+- `packages/agent-server/src/plugins/coding/index.ts` (config parsing + mode wiring)
+- `packages/agent-server/src/plugins/coding/sidecarClient.ts` (support Unix socket + TCP)
+- `packages/agent-server/src/plugins/coding/sidecarSocketExecutor.ts` (new connect-only executor)
+- `packages/agent-server/src/plugins/coding/containerExecutor.ts` (remove)
+- `packages/agent-server/src/plugins/coding/codingPlugin.test.ts` (add sidecar mode coverage)
+- `docs/CONFIG.md` (document `sidecar` mode and config block)
+- `packages/agent-server/README.md` (coding plugin mode docs)
+- `packages/coding-sidecar/README.md` (operational guide and external mode notes)
+- `packages/coding-sidecar/src/server.ts` (remove sessionId handling; workspace root only; auth token)
+- `packages/coding-executor/src/utils/pathUtils.ts` (root-only path resolution; remove shared/session)
+- `packages/coding-executor/src/localExecutor.ts` (align with root-only paths)
+- `packages/coding-executor/src/types.ts` (remove `sessionId` from ToolExecutor API)
+- `packages/coding-executor/README.md` (update semantics)
+- `packages/coding-executor/src/utils/pathUtils.test.ts` (update expectations)
+- `packages/coding-executor/src/localExecutor.test.ts` (remove per-session isolation tests; add root-only coverage)

@@ -13,7 +13,7 @@ import type { CombinedPluginManifest } from '@assistant/shared';
 import type { ToolContext } from '../../tools';
 import { ToolError } from '../../tools';
 import type { PluginToolDefinition, PluginConfig, ToolPlugin } from '../types';
-import { ContainerExecutor, type ContainerExecutorOptions } from './containerExecutor';
+import { SidecarSocketExecutor } from './sidecarSocketExecutor';
 
 const CODING_PLUGIN_MANIFEST: CombinedPluginManifest = {
   id: 'coding',
@@ -24,30 +24,21 @@ const CODING_PLUGIN_MANIFEST: CombinedPluginManifest = {
   },
 };
 
-function requireSessionId(ctx: ToolContext): string {
-  const { sessionId } = ctx;
-  if (!sessionId) {
-    throw new Error('Tool context is missing sessionId');
-  }
-  return sessionId;
-}
-
 interface CodingPluginConfig extends PluginConfig {
-  mode?: 'local' | 'container';
+  mode?: 'local' | 'sidecar';
   local?: {
     workspaceRoot?: string;
-    sharedWorkspace?: boolean;
   };
-  container?: {
-    runtime?: 'docker' | 'podman';
+  sidecar?: {
     socketPath?: string;
-    image?: string;
-    socketDir?: string;
-    workspaceVolume?: string;
-    sharedWorkspace?: boolean;
-    resources?: {
-      memory?: string;
-      cpus?: number;
+    tcp?: {
+      host: string;
+      port: number;
+    };
+    waitForReadyMs?: number;
+    auth?: {
+      token?: string;
+      required?: boolean;
     };
   };
 }
@@ -65,60 +56,83 @@ export function createCodingPlugin(): ToolPlugin {
   function initializeExecutor(dataDir: string, pluginConfig?: CodingPluginConfig): void {
     const mode = pluginConfig?.mode ?? 'local';
     if (mode === 'local') {
-      const sharedWorkspace = pluginConfig?.local?.sharedWorkspace === true;
       const workspaceRoot =
         pluginConfig?.local?.workspaceRoot && pluginConfig.local.workspaceRoot.trim().length > 0
           ? pluginConfig.local.workspaceRoot
           : path.join(dataDir, 'coding-workspaces');
 
-      executor = new LocalExecutor({ workspaceRoot, sharedWorkspace });
+      executor = new LocalExecutor({ workspaceRoot });
       return;
     }
 
-    if (mode === 'container') {
-      const containerCfg = pluginConfig?.container ?? {};
-      const image =
-        containerCfg.image && containerCfg.image.trim().length > 0
-          ? containerCfg.image.trim()
+    if (mode === 'sidecar') {
+      const sidecarCfg = pluginConfig?.sidecar ?? {};
+      const socketPath =
+        sidecarCfg.socketPath && sidecarCfg.socketPath.trim().length > 0
+          ? sidecarCfg.socketPath.trim()
           : undefined;
+      const tcpCfg = sidecarCfg.tcp;
+      const authToken =
+        sidecarCfg.auth?.token && sidecarCfg.auth.token.trim().length > 0
+          ? sidecarCfg.auth.token.trim()
+          : undefined;
+      const authRequired = sidecarCfg.auth?.required === true;
 
-      if (!image) {
+      if (authRequired && !authToken) {
         throw new ToolError(
           'invalid_plugin_config',
-          'plugins.coding.container.image is required when mode is "container"',
+          'plugins.coding.sidecar.auth.token is required when auth.required is true',
         );
       }
 
-      const socketDir =
-        containerCfg.socketDir && containerCfg.socketDir.trim().length > 0
-          ? containerCfg.socketDir
-          : '/var/run/assistant';
+      if (socketPath && tcpCfg) {
+        throw new ToolError(
+          'invalid_plugin_config',
+          'Configure either plugins.coding.sidecar.socketPath or plugins.coding.sidecar.tcp (not both)',
+        );
+      }
 
-      const runtime: 'docker' | 'podman' = containerCfg.runtime === 'podman' ? 'podman' : 'docker';
+      if (!socketPath && !tcpCfg) {
+        throw new ToolError(
+          'invalid_plugin_config',
+          'plugins.coding.sidecar.socketPath or plugins.coding.sidecar.tcp is required when mode is "sidecar"',
+        );
+      }
 
-      const dockerSocketPath =
-        containerCfg.socketPath && containerCfg.socketPath.trim().length > 0
-          ? containerCfg.socketPath.trim()
-          : undefined;
+      let tcpHost: string | undefined;
+      if (tcpCfg) {
+        tcpHost = tcpCfg.host?.trim();
+        if (!tcpHost) {
+          throw new ToolError(
+            'invalid_plugin_config',
+            'plugins.coding.sidecar.tcp.host is required when tcp is configured',
+          );
+        }
+        if (!Number.isFinite(tcpCfg.port) || tcpCfg.port <= 0) {
+          throw new ToolError(
+            'invalid_plugin_config',
+            'plugins.coding.sidecar.tcp.port must be a positive number',
+          );
+        }
+      }
 
-      const options: ContainerExecutorOptions = {
-        image,
-        socketDir,
-        runtime,
-        sharedWorkspace: containerCfg.sharedWorkspace === true,
+      const executorOptions = {
+        ...(socketPath ? { socketPath } : {}),
+        ...(tcpCfg
+          ? {
+              tcp: {
+                host: tcpHost!,
+                port: tcpCfg.port,
+              },
+            }
+          : {}),
+        ...(sidecarCfg.waitForReadyMs !== undefined
+          ? { waitForReadyMs: sidecarCfg.waitForReadyMs }
+          : {}),
+        ...(authToken ? { authToken } : {}),
       };
 
-      if (containerCfg.workspaceVolume && containerCfg.workspaceVolume.trim().length > 0) {
-        options.workspaceVolume = containerCfg.workspaceVolume;
-      }
-      if (dockerSocketPath) {
-        options.dockerSocketPath = dockerSocketPath;
-      }
-      if (containerCfg.resources) {
-        options.resources = containerCfg.resources;
-      }
-
-      executor = new ContainerExecutor(options);
+      executor = new SidecarSocketExecutor(executorOptions);
       return;
     }
 
@@ -134,7 +148,7 @@ export function createCodingPlugin(): ToolPlugin {
   const bashTool: PluginToolDefinition = {
     name: 'bash',
     description:
-      'Execute a bash command in a session-scoped workspace. Returns combined stdout and stderr.',
+      'Execute a bash command in the configured workspace root. Returns combined stdout and stderr.',
     capabilities: ['terminal.exec'],
     inputSchema: {
       type: 'object',
@@ -161,7 +175,6 @@ export function createCodingPlugin(): ToolPlugin {
         timeoutSeconds = timeoutRaw;
       }
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
 
       const options: BashRunOptions = {};
@@ -186,7 +199,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       options.abortSignal = ctx.signal;
 
-      const result = await exec.runBash(sessionId, command, options);
+      const result = await exec.runBash(command, options);
       if (ctx.signal.aborted) {
         throw new ToolError('tool_aborted', 'Tool execution aborted');
       }
@@ -197,14 +210,14 @@ export function createCodingPlugin(): ToolPlugin {
   const readTool: PluginToolDefinition = {
     name: 'read',
     description:
-      'Read the contents of a file in the session workspace. Supports text files and common image formats.',
+      'Read the contents of a file in the workspace root. Supports text files and common image formats.',
     capabilities: ['files.read'],
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'File path relative to the session workspace',
+          description: 'File path relative to the workspace root',
         },
         offset: {
           type: 'number',
@@ -238,7 +251,6 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
       const options: { offset?: number; limit?: number } = {};
       if (offset !== undefined) {
@@ -248,22 +260,22 @@ export function createCodingPlugin(): ToolPlugin {
         options.limit = limit;
       }
       return Object.keys(options).length > 0
-        ? exec.readFile(sessionId, rawPath, options)
-        : exec.readFile(sessionId, rawPath);
+        ? exec.readFile(rawPath, options)
+        : exec.readFile(rawPath);
     },
   };
 
   const writeTool: PluginToolDefinition = {
     name: 'write',
     description:
-      'Write content to a file in the session workspace. Creates parent directories if needed and overwrites existing files.',
+      'Write content to a file in the workspace root. Creates parent directories if needed and overwrites existing files.',
     capabilities: ['files.write'],
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'File path relative to the session workspace',
+          description: 'File path relative to the workspace root',
         },
         content: {
           type: 'string',
@@ -285,23 +297,22 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
-      return exec.writeFile(sessionId, rawPath, content);
+      return exec.writeFile(rawPath, content);
     },
   };
 
   const editTool: PluginToolDefinition = {
     name: 'edit',
     description:
-      'Edit a file by replacing an exact text match in the session workspace. The oldText must be unique.',
+      'Edit a file by replacing an exact text match in the workspace root. The oldText must be unique.',
     capabilities: ['files.write'],
     inputSchema: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'File path relative to the session workspace',
+          description: 'File path relative to the workspace root',
         },
         oldText: {
           type: 'string',
@@ -331,9 +342,8 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
-      return exec.editFile(sessionId, rawPath, oldText, newText);
+      return exec.editFile(rawPath, oldText, newText);
     },
   };
 
@@ -371,12 +381,11 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
 
       return Object.keys(options).length > 0
-        ? exec.ls(sessionId, pathArg, options)
-        : exec.ls(sessionId, pathArg);
+        ? exec.ls(pathArg, options)
+        : exec.ls(pathArg);
     },
   };
 
@@ -422,7 +431,6 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
 
       const options: FindOptions = {
@@ -435,7 +443,7 @@ export function createCodingPlugin(): ToolPlugin {
         options.limit = limit;
       }
 
-      const result = await exec.find(sessionId, options, ctx.signal);
+      const result = await exec.find(options, ctx.signal);
       if (ctx.signal.aborted) {
         throw new ToolError('tool_aborted', 'Tool execution aborted');
       }
@@ -519,9 +527,8 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const sessionId = requireSessionId(ctx);
       const exec = requireExecutor();
-      const result = await exec.grep(sessionId, options, ctx.signal);
+      const result = await exec.grep(options, ctx.signal);
       if (ctx.signal.aborted) {
         throw new ToolError('tool_aborted', 'Tool execution aborted');
       }

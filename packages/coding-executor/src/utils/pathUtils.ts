@@ -3,22 +3,10 @@ import path from 'node:path';
 
 export interface SessionPathOptions {
   workspaceRoot: string;
-  sessionId: string;
-  sharedWorkspace?: boolean;
-}
-
-function sanitizeSessionId(sessionId: string): string {
-  const trimmed = sessionId.trim();
-  const safe = trimmed.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return safe || 'session';
 }
 
 export function getSessionWorkspaceRoot(options: SessionPathOptions): string {
-  if (options.sharedWorkspace) {
-    return options.workspaceRoot;
-  }
-  const safeSessionId = sanitizeSessionId(options.sessionId);
-  return path.join(options.workspaceRoot, safeSessionId);
+  return path.resolve(options.workspaceRoot);
 }
 
 export async function ensureSessionWorkspace(options: SessionPathOptions): Promise<string> {
