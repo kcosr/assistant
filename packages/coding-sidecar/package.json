@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node bundle.mjs",
     "start": "node dist/server.js",
     "test": "vitest --run"
   },
