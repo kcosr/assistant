@@ -272,15 +272,74 @@ export class SessionScopedEventStore implements EventStore {
     );
   }
 
+  private resolveSessionProvider(summary: SessionSummary | undefined): string | null {
+    const agentId = summary?.agentId;
+    if (!agentId) {
+      return null;
+    }
+    const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
+    return agent?.chat?.provider ?? null;
+  }
+
+  private async mirrorOverlayEventToPiSession(
+    sessionId: string,
+    summary: SessionSummary,
+    event: ChatEvent,
+  ): Promise<void> {
+    const writer = this.sessionHub.getPiSessionWriter?.();
+    if (!writer) {
+      return;
+    }
+    await writer.appendAssistantEvent({
+      summary,
+      eventType: event.type,
+      payload: event.payload,
+      ...(event.turnId ? { turnId: event.turnId } : {}),
+      ...(event.responseId ? { responseId: event.responseId } : {}),
+      updateAttributes: (patch) => this.sessionHub.updateSessionAttributes(sessionId, patch),
+    });
+  }
+
+  private assertEventSessionMatches(sessionId: string, event: ChatEvent): void {
+    if (event.sessionId.trim() !== sessionId) {
+      throw new Error(
+        `ChatEvent.sessionId "${event.sessionId}" does not match target session "${sessionId}"`,
+      );
+    }
+  }
+
   async append(sessionId: string, event: ChatEvent): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
-    if (await this.shouldPersist(trimmed)) {
+
+    const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
+    if (activeSummary) {
+      if (this.sessionHub.shouldPersistSessionEvents(activeSummary)) {
+        return this.base.append(trimmed, event);
+      }
+      if (!this.isOverlayEvent(event)) {
+        return;
+      }
+      this.assertEventSessionMatches(trimmed, event);
+      if (this.resolveSessionProvider(activeSummary) === 'pi') {
+        await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+        return;
+      }
       return this.base.append(trimmed, event);
     }
-    this.validateEventForSession(trimmed, event);
-    if (this.isOverlayEvent(event)) {
+
+    const summary = await this.sessionHub.getSessionIndex().getSession(trimmed);
+    if (!summary || this.sessionHub.shouldPersistSessionEvents(summary)) {
       return this.base.append(trimmed, event);
     }
+    if (!this.isOverlayEvent(event)) {
+      return;
+    }
+    this.assertEventSessionMatches(trimmed, event);
+    if (this.resolveSessionProvider(summary) === 'pi') {
+      await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+      return;
+    }
+    return this.base.append(trimmed, event);
   }
 
   async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
@@ -288,16 +347,47 @@ export class SessionScopedEventStore implements EventStore {
     if (events.length === 0) {
       return;
     }
-    if (await this.shouldPersist(trimmed)) {
-      return this.base.appendBatch(trimmed, events);
-    }
-    for (const event of events) {
-      this.validateEventForSession(trimmed, event);
-    }
-    const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
-    if (overlayEvents.length > 0) {
+
+    const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
+    if (activeSummary) {
+      if (this.sessionHub.shouldPersistSessionEvents(activeSummary)) {
+        return this.base.appendBatch(trimmed, events);
+      }
+      const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
+      if (overlayEvents.length === 0) {
+        return;
+      }
+      for (const event of overlayEvents) {
+        this.assertEventSessionMatches(trimmed, event);
+      }
+      if (this.resolveSessionProvider(activeSummary) === 'pi') {
+        for (const event of overlayEvents) {
+          await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+        }
+        return;
+      }
       return this.base.appendBatch(trimmed, overlayEvents);
     }
+
+    const summary = await this.sessionHub.getSessionIndex().getSession(trimmed);
+    if (!summary || this.sessionHub.shouldPersistSessionEvents(summary)) {
+      return this.base.appendBatch(trimmed, events);
+    }
+
+    const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
+    if (overlayEvents.length === 0) {
+      return;
+    }
+    for (const event of overlayEvents) {
+      this.assertEventSessionMatches(trimmed, event);
+    }
+    if (this.resolveSessionProvider(summary) === 'pi') {
+      for (const event of overlayEvents) {
+        await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+      }
+      return;
+    }
+    return this.base.appendBatch(trimmed, overlayEvents);
   }
 
   async getEvents(sessionId: string): Promise<ChatEvent[]> {
@@ -344,7 +434,12 @@ export class SessionScopedEventStore implements EventStore {
   }
 
   private async shouldPersist(sessionId: string): Promise<boolean> {
-    const summary = await this.resolveSummary(sessionId);
+    const activeSummary = this.sessionHub.getSessionState(sessionId)?.summary;
+    if (activeSummary) {
+      return this.sessionHub.shouldPersistSessionEvents(activeSummary);
+    }
+
+    const summary = await this.sessionHub.getSessionIndex().getSession(sessionId);
     if (!summary) {
       return true;
     }
@@ -357,22 +452,5 @@ export class SessionScopedEventStore implements EventStore {
       throw new Error('sessionId must not be empty');
     }
     return trimmed;
-  }
-
-  private async resolveSummary(sessionId: string): Promise<SessionSummary | undefined> {
-    const state = this.sessionHub.getSessionState(sessionId);
-    if (state?.summary) {
-      return state.summary;
-    }
-    return this.sessionHub.getSessionIndex().getSession(sessionId);
-  }
-
-  private validateEventForSession(sessionId: string, event: ChatEvent): void {
-    const validated = validateChatEvent(event);
-    if (validated.sessionId.trim() !== sessionId) {
-      throw new Error(
-        `ChatEvent.sessionId "${validated.sessionId}" does not match target session "${sessionId}"`,
-      );
-    }
   }
 }

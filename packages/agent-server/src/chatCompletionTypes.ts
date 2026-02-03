@@ -6,6 +6,17 @@ export interface ChatCompletionToolCallState {
   argumentsJson: string;
 }
 
+export interface ChatCompletionMessageMeta {
+  /**
+   * Provenance information for user messages so history writers can
+   * persist special cases (agent-attributed inputs, hidden callback turns).
+   */
+  source?: 'user' | 'agent' | 'callback';
+  fromAgentId?: string;
+  fromSessionId?: string;
+  visibility?: 'visible' | 'hidden';
+}
+
 export interface ChatCompletionToolCallMessageToolCall {
   id: string;
   type: 'function';
@@ -17,8 +28,13 @@ export interface ChatCompletionToolCallMessageToolCall {
 
 export type ChatCompletionMessage =
   | {
-      role: 'system' | 'user';
+      role: 'system';
       content: string;
+    }
+  | {
+      role: 'user';
+      content: string;
+      meta?: ChatCompletionMessageMeta;
     }
   | {
       role: 'assistant';

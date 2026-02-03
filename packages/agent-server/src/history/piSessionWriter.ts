@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { SessionAttributesPatch } from '@assistant/shared';
+import type { ChatEvent, SessionAttributesPatch } from '@assistant/shared';
 import type {
   Message as PiSdkMessage,
   AssistantMessage,
@@ -57,7 +57,26 @@ type PiSessionThinkingChangeEntry = PiSessionEntryBase & {
   thinkingLevel: PiThinkingLevel;
 };
 
-type PiSessionEntry = PiSessionMessageEntry | PiSessionModelChangeEntry | PiSessionThinkingChangeEntry;
+type PiSessionCustomEntry = PiSessionEntryBase & {
+  type: 'custom';
+  customType: string;
+  data?: unknown;
+};
+
+type PiSessionCustomMessageEntry = PiSessionEntryBase & {
+  type: 'custom_message';
+  customType: string;
+  content: string | unknown[];
+  details?: unknown;
+  display: boolean;
+};
+
+type PiSessionEntry =
+  | PiSessionMessageEntry
+  | PiSessionModelChangeEntry
+  | PiSessionThinkingChangeEntry
+  | PiSessionCustomEntry
+  | PiSessionCustomMessageEntry;
 
 type PiSessionWriterState = {
   sessionId: string;
@@ -427,6 +446,13 @@ async function loadExistingPiSessionState(
         }
       }
     }
+    if (entryType === 'custom_message') {
+      // Count assistant-injected inputs as "messages" for sync deduplication.
+      const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
+      if (customType === 'assistant.input') {
+        messageCount += 1;
+      }
+    }
     if (entryType === 'model_change') {
       const provider = typeof entry['provider'] === 'string' ? entry['provider'] : undefined;
       const modelId = typeof entry['modelId'] === 'string' ? entry['modelId'] : undefined;
@@ -547,11 +573,68 @@ export class PiSessionWriter {
 
     for (const message of newMessages) {
       const messageTimestampValue = nextMessageTimestamp();
-      let piMessage: PiSdkMessage;
       if (message.role === 'user') {
-        piMessage = buildUserMessage(message.content ?? '', messageTimestampValue);
+        const text = message.content ?? '';
+        const meta = message.meta;
+
+        if (meta?.source === 'agent') {
+          const details: Record<string, unknown> = {
+            kind: 'agent',
+            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+          };
+          const entry: PiSessionCustomMessageEntry = {
+            type: 'custom_message',
+            id: generateEntryId(),
+            parentId: leafId,
+            timestamp: this.now().toISOString(),
+            customType: 'assistant.input',
+            content: text,
+            details,
+            display: true,
+          };
+          entries.push(entry);
+          leafId = entry.id;
+          messageCount += 1;
+          continue;
+        }
+
+        if (meta?.source === 'callback') {
+          const details: Record<string, unknown> = {
+            kind: 'callback',
+            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+          };
+          const entry: PiSessionCustomMessageEntry = {
+            type: 'custom_message',
+            id: generateEntryId(),
+            parentId: leafId,
+            timestamp: this.now().toISOString(),
+            customType: 'assistant.input',
+            content: text,
+            details,
+            display: meta.visibility === 'visible',
+          };
+          entries.push(entry);
+          leafId = entry.id;
+          messageCount += 1;
+          continue;
+        }
+
+        const piMessage = buildUserMessage(text, messageTimestampValue);
+        const entry: PiSessionMessageEntry = {
+          type: 'message',
+          id: generateEntryId(),
+          parentId: leafId,
+          timestamp: this.now().toISOString(),
+          message: piMessage,
+        };
+        entries.push(entry);
+        leafId = entry.id;
+        messageCount += 1;
+        continue;
       } else if (message.role === 'assistant') {
-        piMessage = buildAssistantMessage({
+        const piMessage = buildAssistantMessage({
           message,
           modelInfo,
           timestamp: messageTimestampValue,
@@ -559,26 +642,35 @@ export class PiSessionWriter {
         if (piMessage.role === 'assistant') {
           hasAssistant = true;
         }
+        const entry: PiSessionMessageEntry = {
+          type: 'message',
+          id: generateEntryId(),
+          parentId: leafId,
+          timestamp: this.now().toISOString(),
+          message: piMessage,
+        };
+        entries.push(entry);
+        leafId = entry.id;
+        messageCount += 1;
+        continue;
       } else if (message.role === 'tool') {
-        piMessage = buildToolResultMessage({
+        const piMessage = buildToolResultMessage({
           message,
           toolCallNameMap,
           timestamp: messageTimestampValue,
         });
-      } else {
+        const entry: PiSessionMessageEntry = {
+          type: 'message',
+          id: generateEntryId(),
+          parentId: leafId,
+          timestamp: this.now().toISOString(),
+          message: piMessage,
+        };
+        entries.push(entry);
+        leafId = entry.id;
+        messageCount += 1;
         continue;
       }
-
-      const entry: PiSessionMessageEntry = {
-        type: 'message',
-        id: generateEntryId(),
-        parentId: leafId,
-        timestamp: this.now().toISOString(),
-        message: piMessage,
-      };
-      entries.push(entry);
-      leafId = entry.id;
-      messageCount += 1;
     }
 
     if (entries.length === 0) {
@@ -602,6 +694,62 @@ export class PiSessionWriter {
     state.leafId = leafId;
     state.writtenMessageCount = messageCount;
     state.hasAssistant = hasAssistant;
+
+    return currentSummary === summary ? undefined : currentSummary;
+  }
+
+  async appendAssistantEvent(options: {
+    summary: SessionSummary;
+    eventType: ChatEvent['type'];
+    payload: unknown;
+    turnId?: string;
+    responseId?: string;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, eventType, payload, turnId, responseId, updateAttributes } = options;
+
+    let currentSummary = summary;
+    const stateInfo = await this.ensureSessionState({
+      summary: currentSummary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    currentSummary = stateInfo.summary;
+    const state = stateInfo.state;
+
+    const entry: PiSessionCustomEntry = {
+      type: 'custom',
+      id: generateEntryId(),
+      parentId: state.leafId,
+      timestamp: this.now().toISOString(),
+      customType: 'assistant.event',
+      data: {
+        chatEventType: eventType,
+        payload,
+        ...(typeof turnId === 'string' && turnId.trim() ? { turnId: turnId.trim() } : {}),
+        ...(typeof responseId === 'string' && responseId.trim()
+          ? { responseId: responseId.trim() }
+          : {}),
+      },
+    };
+
+    const nextLeafId = entry.id;
+    await this.queueWrite(state, async () => {
+      if (!state.flushed && !state.hasAssistant) {
+        state.pendingEntries.push(entry);
+        return;
+      }
+
+      if (!state.flushed) {
+        await this.flushPending(state, [entry], state.hasAssistant);
+        return;
+      }
+
+      await this.appendEntries(state, [entry]);
+    });
+
+    state.leafId = nextLeafId;
 
     return currentSummary === summary ? undefined : currentSummary;
   }

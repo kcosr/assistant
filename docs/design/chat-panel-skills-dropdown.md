@@ -6,7 +6,7 @@ Add a **Skills** dropdown to the **chat panel header** that lets the user select
 This is primarily a UX + protocol feature:
 - **UX:** discover + multi-select skills with fast search and sensible grouping by subdirectory.
 - **Behavior:** the selected skills are included in the agent’s **system prompt** as “Available CLI skills” for that session (and therefore influence what the agent uses).
-- **Config:** the skills directory root(s) are configurable (e.g. `~/skills`).
+- **Config:** the skills directory root(s) are configurable via `config.json` **per agent** (e.g. `worktrees/assistant/skills`).
 
 Non-goals:
 - Replacing the existing tool exposure model.
@@ -26,7 +26,7 @@ What’s missing is:
 - A client-facing list of available skills.
 - A UX to select skills.
 - A protocol path to send selected skill ids with a message (or persist them per session).
-- Configurable skills roots (e.g. `~/skills`) and preserving subdir structure for grouping.
+- Configurable skills roots (via `config.json`, per agent; e.g. `worktrees/assistant/skills`) and preserving subdir structure for grouping.
 
 ## Proposed UX
 ### Header control
@@ -89,12 +89,23 @@ ServerSessionReadyMessageSchema.extend({
 
 ## Server-side behavior
 ### Configurable skills roots
-Add env var support in `packages/agent-server/src/envConfig.ts`:
-- `SKILLS_DIRS` (comma-separated list)
-- Each entry can be absolute, relative to CWD, or `~/...`.
+Add `skillsRoots` configuration in `config.json` **per agent** (e.g. `agents[].skillsRoots`).
+
+Example:
+```json
+{
+  "agentId": "coding",
+  "toolExposure": "mixed",
+  "skillsRoots": ["worktrees/assistant/skills"]
+}
+```
+
+Notes:
+- `skillsRoots` should be interpreted as paths (absolute or relative to the agent-server CWD).
+- The UI dropdown should show skills discovered beneath these roots.
 
 Plumb into skill resolution:
-- Pass `skillsRoots` into `resolveToolExposure({ skillsRoots })`.
+- Pass `agent.skillsRoots` into `resolveToolExposure({ skillsRoots })` (via `resolveAgentToolExposureForHost`).
 
 ### Subdirectory support
 Allow skills roots to be either:
@@ -143,7 +154,8 @@ Update `packages/web-client/src/controllers/textInputController.ts`:
 - `packages/web-client/src/index.ts` (UI state + handlers)
 - `packages/web-client/src/controllers/textInputController.ts` (send `skillIds`)
 - `packages/shared/src/protocol.ts` (message schema changes)
-- `packages/agent-server/src/envConfig.ts` (SKILLS_DIRS)
+- `packages/agent-server/src/config.ts` (add per-agent `skillsRoots`)
+- `packages/agent-server/src/toolExposure.ts` (plumb `agent.skillsRoots` into `resolveToolExposure`)
 - `packages/agent-server/src/ws/sessionRuntime.ts` (apply skill selection per turn)
 - `packages/agent-server/src/skills.ts` (skillsRoots + recursive resolution + relativePath)
 

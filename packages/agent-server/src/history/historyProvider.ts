@@ -96,7 +96,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
     return providerId === 'claude-cli';
   }
 
-  shouldPersist(request: HistoryRequest): boolean {
+  shouldPersist(_request: HistoryRequest): boolean {
     return false;
   }
 
@@ -177,10 +177,10 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   ) {}
 
   supports(providerId?: string | null): boolean {
-    return providerId === 'pi-cli';
+    return providerId === 'pi-cli' || providerId === 'pi';
   }
 
-  shouldPersist(request: HistoryRequest): boolean {
+  shouldPersist(_request: HistoryRequest): boolean {
     return false;
   }
 
@@ -222,7 +222,9 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
+      return request.providerId === 'pi'
+        ? cached.events
+        : mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -241,7 +243,9 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
+    return request.providerId === 'pi'
+      ? events
+      : mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
@@ -266,7 +270,7 @@ export class CodexSessionHistoryProvider implements HistoryProvider {
     return providerId === 'codex-cli';
   }
 
-  shouldPersist(request: HistoryRequest): boolean {
+  shouldPersist(_request: HistoryRequest): boolean {
     return false;
   }
 
@@ -841,7 +845,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
     currentResponseId = null;
   };
 
-  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+  const startTurn = (turnId: string, trigger: 'user' | 'system' | 'callback', timestamp: number): void => {
     currentTurnId = turnId;
     currentResponseId = null;
     events.push({
@@ -1167,7 +1171,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     currentResponseId = null;
   };
 
-  const startTurn = (turnId: string, trigger: 'user' | 'system', timestamp: number): void => {
+  const startTurn = (turnId: string, trigger: 'user' | 'system' | 'callback', timestamp: number): void => {
     currentTurnId = turnId;
     currentResponseId = null;
     events.push({
@@ -1281,6 +1285,91 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       continue;
     }
 
+    if (entryType === 'custom') {
+      const customType = getString(entry['customType']);
+      if (customType !== 'assistant.event') {
+        continue;
+      }
+      const timestamp = resolveTimestamp(entry);
+      const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+      const chatEventType = data ? getString(data['chatEventType']) : '';
+      const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
+      const turnIdFromEntry = data ? getString(data['turnId']) : '';
+      const responseIdFromEntry = data ? getString(data['responseId']) : '';
+
+      if (chatEventType === 'agent_callback' && payload) {
+        const messageId = getString(payload['messageId']) || randomUUID();
+        const fromAgentId = getString(payload['fromAgentId']);
+        const fromSessionId = getString(payload['fromSessionId']);
+        const result = getString(payload['result']);
+        if (!fromSessionId || !result) {
+          continue;
+        }
+        const turnId = turnIdFromEntry || currentTurnId || '';
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+          ...(responseIdFromEntry ? { responseId: responseIdFromEntry } : {}),
+          type: 'agent_callback',
+          payload: {
+            messageId,
+            fromAgentId: fromAgentId || 'unknown',
+            fromSessionId,
+            result,
+          },
+        });
+        continue;
+      }
+
+      if (
+        (chatEventType === 'interaction_request' ||
+          chatEventType === 'interaction_response' ||
+          chatEventType === 'interaction_pending') &&
+        payload
+      ) {
+        const turnId = turnIdFromEntry || currentTurnId || '';
+        const responseId = responseIdFromEntry || '';
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+          ...(responseId ? { responseId } : {}),
+          type: chatEventType,
+          // Payload comes from a previously validated ChatEvent (when written).
+          payload: payload as unknown,
+        } as ChatEvent);
+        continue;
+      }
+
+      if (chatEventType === 'interrupt') {
+        const reason =
+          payload && typeof payload['reason'] === 'string' ? (payload['reason'] as string) : '';
+        if (!reason) {
+          continue;
+        }
+        const normalizedReason =
+          reason === 'user_cancel' || reason === 'timeout' || reason === 'error'
+            ? reason
+            : 'user_cancel';
+        const turnId = turnIdFromEntry || currentTurnId || '';
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+          ...(responseIdFromEntry ? { responseId: responseIdFromEntry } : {}),
+          type: 'interrupt',
+          payload: { reason: normalizedReason },
+        });
+        continue;
+      }
+
+      continue;
+    }
+
     if (entryType === 'compaction' || entryType === 'branch_summary') {
       const timestamp = resolveTimestamp(entry);
       endTurn(timestamp);
@@ -1302,6 +1391,59 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
 
     if (entryType === 'custom_message') {
+      const customType = getString(entry['customType']);
+      if (customType === 'assistant.input') {
+        const timestamp = resolveTimestamp(entry);
+        const details = isRecord(entry['details']) ? (entry['details'] as Record<string, unknown>) : null;
+        const kind = details ? getString(details['kind']) : '';
+        const text = extractText(entry).trim();
+        if (!text) {
+          continue;
+        }
+        if (kind === 'agent') {
+          endTurn(timestamp);
+          const turnId = getTurnId(entry);
+          startTurn(turnId, 'user', timestamp);
+          const fromAgentId = details ? getString(details['fromAgentId']) : '';
+          const fromSessionId = details ? getString(details['fromSessionId']) : '';
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            type: 'user_message',
+            payload: {
+              text,
+              ...(fromAgentId ? { fromAgentId } : {}),
+              ...(fromSessionId ? { fromSessionId } : {}),
+            },
+          });
+          continue;
+        }
+
+        if (kind === 'callback') {
+          endTurn(timestamp);
+          const turnId = getTurnId(entry);
+          startTurn(turnId, 'callback', timestamp);
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId,
+            type: 'agent_message',
+            payload: {
+              messageId: getString(entry['id']) || randomUUID(),
+              targetAgentId: 'callback',
+              targetSessionId: sessionId,
+              message: text,
+              wait: false,
+            },
+          });
+          continue;
+        }
+
+        // Unknown assistant.input shape - fall back to a generic custom_message event.
+      }
       const timestamp = resolveTimestamp(entry);
       endTurn(timestamp);
       const turnId = getTurnId(entry);
@@ -1895,7 +2037,7 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         entries.push(parsed as Record<string, unknown>);
       }
-    } catch (err) {
+    } catch (_err) {
       console.error('[history] Failed to parse session line', line);
     }
   }
@@ -1979,7 +2121,7 @@ function extractTextValue(value: unknown): string {
 }
 
 function extractLabel(entry: Record<string, unknown>): string | null {
-  const raw = entry['label'] ?? entry['title'] ?? entry['name'] ?? entry['kind'];
+  const raw = entry['label'] ?? entry['title'] ?? entry['name'] ?? entry['kind'] ?? entry['customType'];
   const label = getString(raw);
   return label || null;
 }

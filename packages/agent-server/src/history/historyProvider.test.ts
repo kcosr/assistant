@@ -140,6 +140,154 @@ describe('PiSessionHistoryProvider', () => {
     expect(Array.isArray(toolResult?.payload.result)).toBe(true);
   });
 
+  it('replays assistant extension entries (assistant.input + assistant.event)', async () => {
+    const baseDir = await createTempDir('pi-session-history-ext');
+    const sessionId = 'session-ext';
+    const piSessionId = 'pi-session-ext';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-20T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom_message',
+        id: 'input-agent-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:00.000Z',
+        customType: 'assistant.input',
+        content: 'Hello from agent',
+        display: true,
+        details: { kind: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-1',
+          content: [{ type: 'text', text: 'Hi back' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom_message',
+        id: 'input-callback-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:01.000Z',
+        customType: 'assistant.input',
+        content: 'Hidden callback input',
+        display: false,
+        details: { kind: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-2',
+          content: [{ type: 'text', text: 'Callback handled' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'event-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:02.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'agent_callback',
+          payload: {
+            messageId: 'mid-1',
+            fromAgentId: 'agent-a',
+            fromSessionId: 'sess-a',
+            result: 'Async result',
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'event-interaction-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:02.500Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'interaction_request',
+          payload: {
+            toolCallId: 'call-1',
+            toolName: 'questions_ask',
+            interactionId: 'interaction-1',
+            interactionType: 'input',
+            presentation: 'questionnaire',
+            inputSchema: {
+              title: 'Quick question',
+              fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+            },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'event-2',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:03.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'interrupt',
+          payload: { reason: 'user_cancel' },
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi',
+      chat: {
+        provider: 'pi',
+      },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const agentInput = events.find(
+      (event) => event.type === 'user_message' && event.payload.text === 'Hello from agent',
+    ) as Extract<ChatEvent, { type: 'user_message' }> | undefined;
+    expect(agentInput?.payload.fromAgentId).toBe('agent-a');
+    expect(agentInput?.payload.fromSessionId).toBe('sess-a');
+
+    const callbackInput = events.find(
+      (event) => event.type === 'agent_message' && event.payload.message === 'Hidden callback input',
+    ) as Extract<ChatEvent, { type: 'agent_message' }> | undefined;
+    expect(callbackInput).toBeDefined();
+
+    const callbackEvent = events.find((event) => event.type === 'agent_callback') as
+      | Extract<ChatEvent, { type: 'agent_callback' }>
+      | undefined;
+    expect(callbackEvent?.payload.messageId).toBe('mid-1');
+    expect(callbackEvent?.payload.result).toBe('Async result');
+
+    const interruptEvent = events.find((event) => event.type === 'interrupt') as
+      | Extract<ChatEvent, { type: 'interrupt' }>
+      | undefined;
+    expect(interruptEvent?.payload.reason).toBe('user_cancel');
+
+    const interactionEvent = events.find((event) => event.type === 'interaction_request') as
+      | Extract<ChatEvent, { type: 'interaction_request' }>
+      | undefined;
+    expect(interactionEvent?.payload.toolCallId).toBe('call-1');
+  });
+
   it('merges overlay interaction events from the event store', async () => {
     const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-2';
@@ -252,6 +400,31 @@ describe('PiSessionHistoryProvider', () => {
       attributes: {},
     });
     expect(fallback).toBe(false);
+  });
+
+  it('keeps verbose persistence for providerId="pi" until Pi session metadata exists', async () => {
+    const provider = new PiSessionHistoryProvider({});
+
+    const before = provider.shouldPersist?.({
+      sessionId: 'session-1',
+      providerId: 'pi',
+      attributes: {},
+    });
+    expect(before).toBe(false);
+
+    const after = provider.shouldPersist?.({
+      sessionId: 'session-2',
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: 'pi-session-1',
+            cwd: '/home/kevin',
+          },
+        },
+      },
+    });
+    expect(after).toBe(false);
   });
 
   it('splits thinking blocks around tool calls', async () => {

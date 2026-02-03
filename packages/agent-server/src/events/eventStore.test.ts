@@ -305,4 +305,91 @@ describe('SessionScopedEventStore', () => {
     await store.append('codex-session', codexEvent);
     expect(baseStore.append).toHaveBeenCalledWith('codex-session', codexEvent);
   });
+
+  it('mirrors overlay events into Pi session JSONL and skips persistence for providerId=pi', async () => {
+    const nowIso = new Date().toISOString();
+    const summaries = new Map<string, SessionSummary>([
+      [
+        'pi-sdk-session',
+        {
+          sessionId: 'pi-sdk-session',
+          agentId: 'pi',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          attributes: {
+            providers: {
+              pi: {
+                sessionId: 'pi-session-id',
+                cwd: '/home/pi',
+              },
+            },
+          },
+        },
+      ],
+    ]);
+
+    const appendAssistantEvent = vi.fn(async () => undefined);
+
+    const sessionHub = {
+      getSessionState: () => undefined,
+      getSessionIndex: () => ({
+        getSession: async (sessionId: string) => summaries.get(sessionId),
+      }),
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi SDK',
+            chat: { provider: 'pi' },
+          },
+        ]),
+      shouldPersistSessionEvents: () => false,
+      getPiSessionWriter: () =>
+        ({
+          appendAssistantEvent,
+        }) as unknown as { appendAssistantEvent: typeof appendAssistantEvent },
+      updateSessionAttributes: vi.fn(async () => summaries.get('pi-sdk-session')),
+    } as unknown as SessionHub;
+
+    const baseStore: EventStore = {
+      append: vi.fn(async () => undefined),
+      appendBatch: vi.fn(async () => undefined),
+      getEvents: vi.fn(async () => []),
+      getEventsSince: vi.fn(async () => []),
+      subscribe: vi.fn(() => () => undefined),
+      clearSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const store = new SessionScopedEventStore(baseStore, sessionHub);
+
+    const interaction: ChatEvent = {
+      id: 'i-1',
+      timestamp: Date.now(),
+      sessionId: 'pi-sdk-session',
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'call-1',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+
+    await store.append('pi-sdk-session', interaction);
+    expect(baseStore.append).not.toHaveBeenCalled();
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
+    expect(appendAssistantEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: summaries.get('pi-sdk-session'),
+        eventType: 'interaction_request',
+      }),
+    );
+  });
 });

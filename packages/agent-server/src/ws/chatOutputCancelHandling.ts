@@ -183,5 +183,25 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     );
   }
 
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  if (piSessionWriter) {
+    const agentId = state.summary.agentId;
+    const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
+    if (agent?.chat?.provider === 'pi') {
+      void piSessionWriter
+        .appendAssistantEvent({
+          summary: state.summary,
+          eventType: 'interrupt',
+          payload: { reason: 'user_cancel' },
+          ...(run.turnId ? { turnId: run.turnId } : {}),
+          ...(run.responseId ? { responseId: run.responseId } : {}),
+          updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+        })
+        .catch((err) => {
+          log('failed to persist interrupt into Pi session history', err);
+        });
+    }
+  }
+
   broadcastOutputCancelled(sessionId, run.responseId);
 }
