@@ -26,6 +26,8 @@ export interface SessionPickerOpenOptions {
   onSelectSession: (sessionId: string) => void;
   onSelectUnbound?: () => void;
   onDeleteSession?: (sessionId: string) => void;
+  onClearSession?: (sessionId: string) => void;
+  onRenameSession?: (sessionId: string) => void;
 }
 
 export interface SessionPickerControllerOptions {
@@ -44,6 +46,7 @@ interface SessionPickerItemEntry {
 
 export class SessionPickerController {
   private activeMenu: HTMLDivElement | null = null;
+  private activeSubmenu: HTMLDivElement | null = null;
   private cleanup: (() => void) | null = null;
   private searchInput: HTMLInputElement | null = null;
   private listEl: HTMLDivElement | null = null;
@@ -125,6 +128,7 @@ export class SessionPickerController {
         return;
       }
 
+      this.closeSubmenu();
       this.listEl.innerHTML = '';
       this.items = [];
       this.focusedIndex = -1;
@@ -164,6 +168,9 @@ export class SessionPickerController {
         const item = document.createElement('div');
         item.className = 'session-picker-item';
         item.setAttribute('role', 'button');
+        if (itemOptions?.sessionId) {
+          item.dataset['sessionId'] = itemOptions.sessionId;
+        }
 
         const normalState = document.createElement('div');
         normalState.className = 'session-picker-item-normal';
@@ -174,6 +181,36 @@ export class SessionPickerController {
         normalState.appendChild(labelSpan);
 
         let confirmState: HTMLDivElement | null = null;
+
+        if (itemOptions?.sessionId && options.onRenameSession) {
+          const renameBtn = document.createElement('button');
+          renameBtn.type = 'button';
+          renameBtn.className = 'session-picker-rename-btn';
+          renameBtn.innerHTML = ICONS.edit;
+          renameBtn.title = 'Rename session';
+          renameBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.close();
+            options.onRenameSession?.(itemOptions.sessionId!);
+          });
+          normalState.appendChild(renameBtn);
+        }
+
+        if (itemOptions?.sessionId && options.onClearSession) {
+          const clearBtn = document.createElement('button');
+          clearBtn.type = 'button';
+          clearBtn.className = 'session-picker-clear-btn';
+          clearBtn.innerHTML = ICONS.reset;
+          clearBtn.title = 'Clear session history';
+          clearBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.close();
+            options.onClearSession?.(itemOptions.sessionId!);
+          });
+          normalState.appendChild(clearBtn);
+        }
 
         if (itemOptions?.sessionId && options.onDeleteSession) {
           const deleteBtn = document.createElement('button');
@@ -224,6 +261,32 @@ export class SessionPickerController {
           });
 
           normalState.appendChild(deleteBtn);
+        }
+
+        if (itemOptions?.sessionId && this.isTouchDevice()) {
+          const hasActions = Boolean(
+            options.onRenameSession || options.onClearSession || options.onDeleteSession,
+          );
+          if (hasActions) {
+            const moreBtn = document.createElement('button');
+            moreBtn.type = 'button';
+            moreBtn.className = 'session-picker-more-btn';
+            moreBtn.innerHTML = ICONS.moreVertical;
+            moreBtn.title = 'Session actions';
+            moreBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              this.openSubmenu({
+                anchor: moreBtn,
+                item,
+                sessionId: itemOptions.sessionId!,
+                ...(options.onRenameSession ? { onRename: options.onRenameSession } : {}),
+                ...(options.onClearSession ? { onClear: options.onClearSession } : {}),
+                canDelete: Boolean(options.onDeleteSession),
+              });
+            });
+            normalState.appendChild(moreBtn);
+          }
         }
 
         item.appendChild(normalState);
@@ -366,6 +429,10 @@ export class SessionPickerController {
       }
       if (event.key === 'Escape') {
         event.preventDefault();
+        if (this.activeSubmenu) {
+          this.closeSubmenu();
+          return;
+        }
         this.close();
         if (options.anchor.isConnected) {
           options.anchor.focus();
@@ -373,12 +440,30 @@ export class SessionPickerController {
       }
     };
 
+    const handleMenuClick = (event: MouseEvent) => {
+      if (!this.activeSubmenu) {
+        return;
+      }
+      const target = event.target as Node | null;
+      if (!target) {
+        return;
+      }
+      const keepOpen =
+        Boolean((target as Element | null)?.closest?.('.session-picker-submenu')) ||
+        Boolean((target as Element | null)?.closest?.('.session-picker-more-btn'));
+      if (!keepOpen) {
+        this.closeSubmenu();
+      }
+    };
+
     searchInput.addEventListener('input', renderList);
     menu.addEventListener('keydown', handleKeyDown);
+    menu.addEventListener('click', handleMenuClick);
     window.addEventListener('mousedown', handlePointerDown);
     this.cleanup = () => {
       searchInput.removeEventListener('input', renderList);
       menu.removeEventListener('keydown', handleKeyDown);
+      menu.removeEventListener('click', handleMenuClick);
       window.removeEventListener('mousedown', handlePointerDown);
     };
   }
@@ -386,6 +471,7 @@ export class SessionPickerController {
   close(): void {
     this.cleanup?.();
     this.cleanup = null;
+    this.closeSubmenu();
     if (this.activeMenu) {
       this.activeMenu.remove();
       this.activeMenu = null;
@@ -478,7 +564,9 @@ export class SessionPickerController {
 
   private positionMenu(menu: HTMLDivElement, anchor: HTMLElement): void {
     const anchorRect = anchor.getBoundingClientRect();
-    menu.style.minWidth = `${Math.max(240, anchorRect.width)}px`;
+    const targetWidth = Math.min(360, Math.max(280, anchorRect.width));
+    menu.style.minWidth = `${targetWidth}px`;
+    menu.style.width = `${targetWidth}px`;
     const menuRect = menu.getBoundingClientRect();
     const padding = 8;
 
@@ -501,5 +589,135 @@ export class SessionPickerController {
 
     menu.style.left = `${left}px`;
     menu.style.top = `${top}px`;
+  }
+
+  private isTouchDevice(): boolean {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const matchMedia = window.matchMedia;
+    if (typeof matchMedia !== 'function') {
+      return false;
+    }
+    try {
+      return matchMedia('(hover: none)').matches;
+    } catch {
+      return false;
+    }
+  }
+
+  private closeSubmenu(): void {
+    if (!this.activeSubmenu) {
+      return;
+    }
+    this.activeSubmenu.remove();
+    this.activeSubmenu = null;
+  }
+
+  private openSubmenu(options: {
+    anchor: HTMLElement;
+    item: HTMLElement;
+    sessionId: string;
+    onRename?: (sessionId: string) => void;
+    onClear?: (sessionId: string) => void;
+    canDelete: boolean;
+  }): void {
+    if (!this.activeMenu) {
+      return;
+    }
+
+    this.closeSubmenu();
+    options.item.classList.remove('confirming');
+
+    const submenu = document.createElement('div');
+    submenu.className = 'session-picker-submenu';
+    submenu.setAttribute('role', 'menu');
+
+    const addItem = (itemOptions: {
+      label: string;
+      icon: string;
+      danger?: boolean;
+      onSelect: () => void;
+    }): void => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'session-picker-submenu-item';
+      if (itemOptions.danger) {
+        button.classList.add('danger');
+      }
+      button.innerHTML = `<span class="session-picker-submenu-icon">${itemOptions.icon}</span><span>${itemOptions.label}</span>`;
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        itemOptions.onSelect();
+      });
+      submenu.appendChild(button);
+    };
+
+    if (options.onRename) {
+      addItem({
+        label: 'Rename',
+        icon: ICONS.edit,
+        onSelect: () => {
+          this.closeSubmenu();
+          this.close();
+          options.onRename?.(options.sessionId);
+        },
+      });
+    }
+
+    if (options.onClear) {
+      addItem({
+        label: 'Clear history',
+        icon: ICONS.reset,
+        onSelect: () => {
+          this.closeSubmenu();
+          this.close();
+          options.onClear?.(options.sessionId);
+        },
+      });
+    }
+
+    if (options.canDelete) {
+      addItem({
+        label: 'Delete',
+        icon: ICONS.trash,
+        danger: true,
+        onSelect: () => {
+          this.closeSubmenu();
+          options.item.classList.add('confirming');
+        },
+      });
+    }
+
+    const anchorRect = options.anchor.getBoundingClientRect();
+    const menuRect = this.activeMenu.getBoundingClientRect();
+
+    submenu.style.visibility = 'hidden';
+    submenu.style.left = '0px';
+    submenu.style.top = '0px';
+    this.activeMenu.appendChild(submenu);
+    const submenuRect = submenu.getBoundingClientRect();
+    submenu.style.visibility = '';
+
+    const padding = 8;
+    let top = anchorRect.bottom - menuRect.top + 4;
+    let left = anchorRect.right - menuRect.left - submenuRect.width;
+
+    if (left < padding) {
+      left = padding;
+    }
+    if (left + submenuRect.width > menuRect.width - padding) {
+      left = Math.max(padding, menuRect.width - submenuRect.width - padding);
+    }
+
+    if (top + submenuRect.height > menuRect.height - padding) {
+      top = Math.max(padding, menuRect.height - submenuRect.height - padding);
+    }
+
+    submenu.style.left = `${left}px`;
+    submenu.style.top = `${top}px`;
+
+    this.activeSubmenu = submenu;
   }
 }

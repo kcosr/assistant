@@ -44,7 +44,7 @@ Each session row shows action icons on hover (right side):
 └────────────────────────────────────┘
 ```
 
-Icon order (left to right): **rename** (✏️), **delete** (🗑️), **clear** (🧹)
+Icon order (left to right): **rename** (✏️), **clear** (reset), **delete** (🗑️)
 
 Each action has a confirmation state (like delete currently does):
 - **Rename:** inline text input replaces label, confirm/cancel buttons
