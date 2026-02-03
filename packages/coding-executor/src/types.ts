@@ -111,15 +111,11 @@ export interface GrepResult {
 }
 
 export interface ToolExecutor {
-  runBash(sessionId: string, command: string, options?: BashRunOptions): Promise<BashResult>;
-  readFile(
-    sessionId: string,
-    path: string,
-    options?: { offset?: number; limit?: number },
-  ): Promise<ReadResult>;
-  writeFile(sessionId: string, path: string, content: string): Promise<WriteResult>;
-  editFile(sessionId: string, path: string, oldText: string, newText: string): Promise<EditResult>;
-  ls(sessionId: string, path?: string, options?: LsOptions): Promise<LsResult>;
-  find(sessionId: string, options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult>;
-  grep(sessionId: string, options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult>;
+  runBash(command: string, options?: BashRunOptions): Promise<BashResult>;
+  readFile(path: string, options?: { offset?: number; limit?: number }): Promise<ReadResult>;
+  writeFile(path: string, content: string): Promise<WriteResult>;
+  editFile(path: string, oldText: string, newText: string): Promise<EditResult>;
+  ls(path?: string, options?: LsOptions): Promise<LsResult>;
+  find(options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult>;
+  grep(options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult>;
 }

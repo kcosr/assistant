@@ -1,6 +1,6 @@
 # @assistant/agent-server
 
-Node.js backend for the AI Assistant. Handles WebSocket connections, OpenAI integration, TTS, and tool hosting.
+Node.js backend for the AI Assistant. Handles WebSocket connections, Pi SDK chat integration, TTS, and tool hosting.
 
 ## Table of Contents
 
@@ -21,9 +21,8 @@ Node.js backend for the AI Assistant. Handles WebSocket connections, OpenAI inte
 # Build first
 npm run build
 
-# Set required environment variables
+# Set required environment variables for your Pi providers (example)
 export OPENAI_API_KEY=sk-...
-export OPENAI_CHAT_MODEL=gpt-4o
 
 # Start server
 npm run start
@@ -70,7 +69,7 @@ Server listens on `http://localhost:3000` (configurable via `PORT`).
 │  WebSocket Server (/ws)                                       │
 │  └── Session                                                  │
 │      ├── Client protocol handling                             │
-│      ├── OpenAI Chat Completions (streaming)                  │
+│      ├── Pi SDK Chat (streaming)                              │
 │      ├── TTS Backend (OpenAI or ElevenLabs)                   │
 │      └── Tool calls via MCP                                   │
 ├──────────────────────────────────────────────────────────────┤
@@ -132,9 +131,9 @@ High-level map of `packages/agent-server/src/` after the backend refactor:
 
 ## Coding plugin tools
 
-The `coding` plugin provides tools for interacting with a session-scoped workspace:
+The `coding` plugin provides tools for interacting with the configured workspace root:
 
-- `bash` – run shell commands in the session workspace with streaming output and truncation via `truncateTail`.
+- `bash` – run shell commands in the workspace root with streaming output and truncation via `truncateTail`.
 - `read` – read text or image files with pagination and truncation handled by `truncateHead`.
 - `write` – create or overwrite files, creating parent directories as needed.
 - `edit` – apply precise text replacements to a file, returning a human-readable diff.
@@ -441,12 +440,12 @@ The `CompositeToolHost` aggregates tools from both sources, allowing the agent t
 
 See root README for complete list.
 
-### OpenAI (optional)
+### Provider API keys (Pi SDK)
 
-These are required only when using built-in OpenAI chat or TTS backends. The server can start without them; in that case OpenAI-based agents are disabled but CLI agents (Claude, Codex, Pi) continue to work.
-
-- `OPENAI_API_KEY`
-- `OPENAI_CHAT_MODEL`
+Pi SDK chat reads provider-specific environment variables (for example `OPENAI_API_KEY`,
+`ANTHROPIC_API_KEY`/`ANTHROPIC_OAUTH_TOKEN`, `GEMINI_API_KEY`, etc.). The server can
+start without them; in that case Pi-backed chat is unavailable but CLI agents
+(Claude, Codex, Pi) continue to work. OpenAI TTS requires `OPENAI_API_KEY`.
 
 ### TTS
 
@@ -462,7 +461,7 @@ These are required only when using built-in OpenAI chat or TTS backends. The ser
 
 ### Debug
 
-- `DEBUG_CHAT_COMPLETIONS` - Log chat requests/responses to console
+- `DEBUG_CHAT_COMPLETIONS` - Log Pi SDK request/response payloads (tools included, auth redacted)
 
 ## Files
 
@@ -520,13 +519,13 @@ Plugins can opt into periodic git snapshots of their data directories:
 
 ### Coding Plugin
 
-The coding plugin provides tools for working with a session‑scoped workspace (files live under a per‑session directory on disk, or a shared workspace when configured). Tools are designed to be safe by default (no path traversal outside the workspace) and to truncate very large outputs.
+The coding plugin provides tools for working with the configured workspace root. Tools are designed to be safe by default (no path traversal outside the workspace) and to truncate very large outputs.
 
 | Tool    | Description                                                                                     |
 | ------- | ----------------------------------------------------------------------------------------------- |
-| `bash`  | Run a bash command in the session workspace and return combined stdout/stderr (tail‑truncated). |
-| `read`  | Read a text or image file from the session workspace with optional line offsets and limits.     |
-| `write` | Write/overwrite a text file in the session workspace, creating parent directories as needed.    |
+| `bash`  | Run a bash command in the workspace root and return combined stdout/stderr (tail‑truncated). |
+| `read`  | Read a text or image file from the workspace root with optional line offsets and limits.     |
+| `write` | Write/overwrite a text file in the workspace root, creating parent directories as needed.    |
 | `edit`  | Replace an exact, unique text span in a file and return a human‑readable diff.                  |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a "/" suffix for directories. |
 | `find`  | Find files by glob pattern. Uses `fd` when available, falling back to Node.js glob.             |
@@ -534,13 +533,13 @@ The coding plugin provides tools for working with a session‑scoped workspace (
 
 #### `grep`
 
-Search file contents within the session workspace and return matching lines with file paths and line numbers. When `rg` (ripgrep) is available on `PATH`, the plugin executes:
+Search file contents within the workspace root and return matching lines with file paths and line numbers. When `rg` (ripgrep) is available on `PATH`, the plugin executes:
 
 - `rg --json --line-number --color=never --hidden`
 
 and parses its JSON output. If ripgrep is not available, it falls back to a Node.js implementation that:
 
-- Recursively walks the session workspace (or a subdirectory under it)
+- Recursively walks the workspace root (or a subdirectory under it)
 - Skips `.git` and `node_modules` directories
 - Applies an optional glob filter to relative paths
 - Matches using either a literal substring or a regular expression
@@ -550,7 +549,7 @@ and parses its JSON output. If ripgrep is not available, it falls back to a Node
 - `pattern` (string, required): Pattern to search for. Interpreted as:
   - literal substring when `literal: true`
   - JavaScript regular expression when `literal` is absent/false
-- `path` (string, optional): Directory or file to search, relative to the session workspace. Defaults to `"."` (the workspace root).
+- `path` (string, optional): Directory or file to search, relative to the workspace root. Defaults to `"."` (the workspace root).
 - `glob` (string, optional): Glob filter for files, e.g. `"*.ts"` or `"src/*.tsx"`.
   - When running with ripgrep, this is passed through as `--glob`.
   - In the Node.js fallback, a simple `*` / `?` glob is converted to a regular expression and applied to relative paths.
@@ -706,7 +705,7 @@ label is stored under `sessionInfo.label` in session attributes and broadcast to
 
 ### Coding Plugin
 
-The coding plugin provides tools for working with a session-scoped workspace on disk:
+The coding plugin provides tools for working with the configured workspace root on disk:
 
 | Tool    | Description                                                                                                     |
 | ------- | --------------------------------------------------------------------------------------------------------------- |
@@ -718,7 +717,7 @@ The coding plugin provides tools for working with a session-scoped workspace on 
 
 `ls` parameters:
 
-- `path` (optional): Directory to list. Defaults to the workspace root for the current session.
+- `path` (optional): Directory to list. Defaults to the workspace root.
 - `limit` (optional): Maximum number of entries to return. Defaults to `500`. Output is truncated to approximately 50KB.
 
 ### Files Plugin
@@ -963,10 +962,20 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `"chat"`: in-process chat completions (default behavior)
   - `"external"`: forwards user messages to `external.inputUrl` and accepts assistant messages via callback
   - `chat` (only for `type: "chat"` or when `type` is omitted)
-  - `provider` (default `"openai"`): `"openai"`, `"claude-cli"`, `"codex-cli"`, `"pi-cli"`, or `"openai-compatible"`
-  - `models` (optional array): allowed model ids for `"openai"` and CLI providers; first is default. For `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model`.
-  - `thinking` (optional array): allowed thinking levels for `"pi-cli"` and `"codex-cli"`; first is default (Codex maps to `model_reasoning_effort`)
+  - `provider` (default `"pi"`): `"pi"`, `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`
+  - `models` (optional array): allowed model ids for `"pi"` and CLI providers; first is default. For `"pi"` and `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model` (Pi CLI only).
+  - `thinking` (optional array): allowed thinking levels for `"pi"`, `"pi-cli"`, and `"codex-cli"`; first is default (Pi passes through to SDK reasoning; Codex maps to `model_reasoning_effort`)
   - `config`:
+    - for `provider: "pi"`:
+      - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
+      - `apiKey` (optional): API key override for the configured provider
+      - `baseUrl` (optional): base URL override for the configured provider
+      - `headers` (optional): custom HTTP headers to send with each request
+      - connection overrides apply only when the resolved provider matches `config.provider`
+      - `timeoutMs` (optional): request timeout in milliseconds
+      - `maxTokens` (optional): positive integer completion limit
+      - `temperature` (optional): temperature to use for generation
+      - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
     - for `provider: "claude-cli"`:
       - `workdir` (optional): working directory for the Claude CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`)
@@ -976,13 +985,6 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
     - for `provider: "pi-cli"`:
       - `workdir` (optional): working directory for the Pi CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`; when `chat.models` is set, `--model` and `--provider` are also managed by the server; when `chat.thinking` is set, `--thinking` is also managed by the server)
-    - for `provider: "openai-compatible"` (OpenAI-compatible HTTP APIs such as llama.cpp, vLLM, Ollama, Together, Groq, etc.):
-      - `baseUrl` (required): base URL for the API, for example `http://localhost:8080/v1`
-      - `apiKey` (optional): API key for the backend; if the value contains `${VARNAME}`, it will be substituted from `process.env.VARNAME`
-      - `model` (required): model name to use for chat completions
-      - `maxTokens` (optional): positive integer `max_tokens` limit for completions
-      - `temperature` (optional): temperature to use for generation
-      - `headers` (optional): object with custom HTTP headers to send with each request, for example `{"X-Custom-Auth": "token123"}`
   - For CLI providers (`"claude-cli"`, `"codex-cli"`, `"pi-cli"`), the agent server starts each CLI in its own POSIX process group and, on user cancel, sends a `SIGTERM` followed by a `SIGKILL` to that group. This ensures any subprocesses launched by the CLI (for example `bash` commands) are cleaned up when a chat run is aborted.
   - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
 - `external` (only for `type: "external"`)
@@ -1017,16 +1019,17 @@ Example:
       "agentAllowlist": ["todo", "journal"]
     },
     {
-      "agentId": "local-llama",
-      "displayName": "Local LLaMA",
-      "description": "Local LLaMA via an OpenAI-compatible endpoint.",
+      "agentId": "pi-sdk",
+      "displayName": "Pi",
+      "description": "Pi SDK chat provider.",
       "type": "chat",
       "chat": {
-        "provider": "openai-compatible",
+        "provider": "pi",
+        "models": ["anthropic/claude-sonnet-4-5", "openai-codex/gpt-5.2-codex"],
+        "thinking": ["off", "low", "medium", "high", "xhigh"],
         "config": {
-          "baseUrl": "http://localhost:8080/v1",
-          "apiKey": "${LOCAL_LLM_KEY}",
-          "model": "llama-3.1-70b",
+          "provider": "anthropic",
+          "apiKey": "${ANTHROPIC_API_KEY}",
           "maxTokens": 4096,
           "temperature": 0.7
         }

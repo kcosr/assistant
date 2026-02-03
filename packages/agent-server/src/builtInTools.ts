@@ -1,9 +1,8 @@
 import type { ChatEvent } from '@assistant/shared';
 import { randomUUID } from 'node:crypto';
-import OpenAI from 'openai';
 
 import type { SessionHub, SessionIndex } from './index';
-import { openaiConfigured, type EnvConfig } from './envConfig';
+import type { EnvConfig } from './envConfig';
 import type { AgentDefinition, AgentRegistry } from './agents';
 import type { BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
@@ -199,7 +198,6 @@ interface AsyncAgentMessageContext {
   availableSkills?: SkillSummary[];
   sessionHub: SessionHub;
   envConfig: EnvConfig;
-  openaiClient?: OpenAI;
   eventStore?: EventStore;
   scheduledSessionService?: ScheduledSessionService;
   searchService?: SearchService;
@@ -231,7 +229,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     availableSkills,
     sessionHub,
     envConfig,
-    openaiClient,
     eventStore,
     handleChatToolCalls,
   } = ctx;
@@ -243,7 +240,6 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     responseId,
     sessionHub,
     envConfig,
-    ...(openaiClient ? { openaiClient } : {}),
     chatCompletionTools: chatTools,
     ...(availableTools !== undefined ? { availableTools } : {}),
     ...(availableSkills ? { availableSkills } : {}),
@@ -409,9 +405,9 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
           fromSessionId: sessionId,
           responseId: result.responseId,
         });
-        // Note: We don't pass openaiClient here. processUserMessage will create the
-        // appropriate client based on the caller's agent configuration (callerState).
-        // This ensures the callback uses the caller's provider, not the target's.
+        // Note: We don't pass a chat client here. processUserMessage will use the
+        // caller's agent configuration (callerState), ensuring the callback uses
+        // the caller's provider, not the target's.
         await processUserMessage({
           sessionId: callerSessionId,
           state: callerState,
@@ -474,23 +470,6 @@ export async function handleAgentMessage(
   const agent = agentRegistry.getAgent(parsed.agentId);
   if (!agent) {
     throw createToolError('agent_not_found', `Agent not found: ${parsed.agentId}`);
-  }
-
-  const provider =
-    agent.chat &&
-    (agent.chat.provider === 'claude-cli' ||
-      agent.chat.provider === 'codex-cli' ||
-      agent.chat.provider === 'pi-cli' ||
-      agent.chat.provider === 'openai-compatible')
-      ? agent.chat.provider
-      : 'openai';
-
-  if (provider === 'openai' && !openaiConfigured(envConfig)) {
-    throw createToolError(
-      'agent_not_available',
-      `Agent "${agent.agentId}" requires OpenAI, but OpenAI is not configured. ` +
-        'Set OPENAI_API_KEY and OPENAI_CHAT_MODEL to use this agent.',
-    );
   }
 
   const effectiveSessionIndex = ctx.sessionIndex ?? sessionIndex;
@@ -579,11 +558,6 @@ export async function handleAgentMessage(
     sessionHub,
   });
 
-  const openaiClient =
-    provider === 'openai' && envConfig.apiKey
-      ? new OpenAI({ apiKey: envConfig.apiKey })
-      : undefined;
-
   // Forward tool output chunks to the caller session if we have the caller's tool call ID
   const forwardChunksTo =
     fromSessionId && ctx.toolCallId
@@ -648,7 +622,6 @@ export async function handleAgentMessage(
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
-      ...(openaiClient ? { openaiClient } : {}),
       ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
       ...(ctx.scheduledSessionService
         ? { scheduledSessionService: ctx.scheduledSessionService }
@@ -711,7 +684,6 @@ export async function handleAgentMessage(
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),
-      ...(openaiClient ? { openaiClient } : {}),
       ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
       ...(ctx.scheduledSessionService
         ? { scheduledSessionService: ctx.scheduledSessionService }
@@ -749,7 +721,6 @@ export async function handleAgentMessage(
         text: parsed.content,
         sessionHub,
         envConfig,
-        ...(openaiClient ? { openaiClient } : {}),
         chatCompletionTools: chatTools,
         ...(availableTools !== undefined ? { availableTools } : {}),
         ...(availableSkills ? { availableSkills } : {}),

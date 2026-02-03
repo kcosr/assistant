@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { getSessionWorkspaceRoot } from './utils/pathUtils';
 import { LocalExecutor } from './localExecutor';
 
 function createTempDir(prefix: string): string {
@@ -11,15 +10,14 @@ function createTempDir(prefix: string): string {
 }
 
 describe('LocalExecutor (coding-sidecar)', () => {
-  it('writes and reads files within a session workspace', async () => {
+  it('writes and reads files within the workspace root', async () => {
     const workspaceRoot = createTempDir('coding-sidecar-io');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'session-a';
     const content = 'hello\nworld';
 
-    await executor.writeFile(sessionId, 'test.txt', content);
-    const result = await executor.readFile(sessionId, 'test.txt');
+    await executor.writeFile('test.txt', content);
+    const result = await executor.readFile('test.txt');
 
     expect(result.type).toBe('text');
     expect(result.content).toContain('hello');
@@ -27,94 +25,41 @@ describe('LocalExecutor (coding-sidecar)', () => {
     expect(result.hasMore).toBe(false);
   });
 
-  it('prevents path traversal outside the session workspace', async () => {
+  it('prevents path traversal outside the workspace root', async () => {
     const workspaceRoot = createTempDir('coding-sidecar-traversal');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'session-b';
-
-    await expect(executor.writeFile(sessionId, '../outside.txt', 'escape')).rejects.toThrow(
-      /outside workspace/i,
-    );
+    await expect(executor.writeFile('../outside.txt', 'escape')).rejects.toThrow(/outside workspace/i);
   });
 
-  it('isolates files between sessions', async () => {
-    const workspaceRoot = createTempDir('coding-sidecar-isolation');
+  it('uses a single workspace root across sessions', async () => {
+    const workspaceRoot = createTempDir('coding-sidecar-root-only');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const session1 = 's1';
-    const session2 = 's2';
+    await executor.writeFile('shared.txt', 'from session one');
+    const readSession2 = await executor.readFile('shared.txt');
 
-    await executor.writeFile(session1, 'shared.txt', 'session one');
-
-    const session1Root = getSessionWorkspaceRoot({ workspaceRoot, sessionId: session1 });
-    const session2Root = getSessionWorkspaceRoot({ workspaceRoot, sessionId: session2 });
-
-    expect(session1Root).not.toBe(session2Root);
-
-    const readSession1 = await executor.readFile(session1, 'shared.txt');
-    expect(readSession1.type).toBe('text');
-
-    await expect(executor.readFile(session2, 'shared.txt')).rejects.toThrow();
-  });
-
-  it('shares workspace between sessions when SHARED_WORKSPACE is true', async () => {
-    const previous = process.env['SHARED_WORKSPACE'];
-    process.env['SHARED_WORKSPACE'] = 'true';
-
-    const workspaceRoot = createTempDir('coding-sidecar-shared');
-    const executor = new LocalExecutor({ workspaceRoot });
-
-    const session1 = 's1';
-    const session2 = 's2';
-
-    await executor.writeFile(session1, 'shared.txt', 'from session one');
-
-    const session1Root = getSessionWorkspaceRoot({
-      workspaceRoot,
-      sessionId: session1,
-      sharedWorkspace: true,
-    });
-    const session2Root = getSessionWorkspaceRoot({
-      workspaceRoot,
-      sessionId: session2,
-      sharedWorkspace: true,
-    });
-
-    expect(session1Root).toBe(session2Root);
-
-    const readSession2 = await executor.readFile(session2, 'shared.txt');
     expect(readSession2.type).toBe('text');
     expect(readSession2.content).toContain('from session one');
-
-    if (previous === undefined) {
-      delete process.env['SHARED_WORKSPACE'];
-    } else {
-      process.env['SHARED_WORKSPACE'] = previous;
-    }
   });
 
-  it('runs bash commands in the session workspace', async () => {
+  it('runs bash commands in the workspace root', async () => {
     const workspaceRoot = createTempDir('coding-sidecar-bash');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'bash-session';
-    const sessionRoot = getSessionWorkspaceRoot({ workspaceRoot, sessionId });
-
-    const result = await executor.runBash(sessionId, 'pwd');
+    const result = await executor.runBash('pwd');
 
     expect(result.exitCode).toBe(0);
-    expect(result.output.trim().split('\n')[0]).toBe(sessionRoot);
+    expect(result.output.trim().split('\n')[0]).toBe(workspaceRoot);
   });
 
   it('accepts abortSignal option for bash commands', async () => {
     const workspaceRoot = createTempDir('coding-sidecar-bash-signal');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'bash-signal-session';
     const controller = new AbortController();
 
-    const result = await executor.runBash(sessionId, 'echo hello', {
+    const result = await executor.runBash('echo hello', {
       abortSignal: controller.signal,
     });
 
@@ -126,24 +71,22 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-ls');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'ls-session';
+    await executor.writeFile('dir/subfile.txt', 'sub');
+    await executor.writeFile('file.txt', 'file');
+    await executor.writeFile('.hidden', 'hidden');
 
-    await executor.writeFile(sessionId, 'dir/subfile.txt', 'sub');
-    await executor.writeFile(sessionId, 'file.txt', 'file');
-    await executor.writeFile(sessionId, '.hidden', 'hidden');
-
-    const rootListing = await executor.ls(sessionId);
+    const rootListing = await executor.ls();
     const rootLines = rootListing.output.split('\n').filter((line) => line.trim().length > 0);
 
     expect(rootLines).toContain('dir/');
     expect(rootLines).toContain('file.txt');
     expect(rootLines).toContain('.hidden');
 
-    const limitedListing = await executor.ls(sessionId, undefined, { limit: 1 });
+    const limitedListing = await executor.ls(undefined, { limit: 1 });
     const limitedLines = limitedListing.output.split('\n').filter((line) => line.trim().length > 0);
     expect(limitedLines.length).toBe(1);
 
-    const dirListing = await executor.ls(sessionId, 'dir');
+    const dirListing = await executor.ls('dir');
     expect(dirListing.output.trim()).toBe('subfile.txt');
   });
 
@@ -151,18 +94,17 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-edit');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'edit-session';
     const initial = ['line1', 'target line', 'line3'].join('\n');
 
-    await executor.writeFile(sessionId, 'edit.txt', initial);
+    await executor.writeFile('edit.txt', initial);
 
-    const result = await executor.editFile(sessionId, 'edit.txt', 'target line', 'updated line');
+    const result = await executor.editFile('edit.txt', 'target line', 'updated line');
 
     expect(result.ok).toBe(true);
     expect(result.diff).toContain('-2 target line');
     expect(result.diff).toContain('+2 updated line');
 
-    const readBack = await executor.readFile(sessionId, 'edit.txt');
+    const readBack = await executor.readFile('edit.txt');
     expect(readBack.content).toContain('updated line');
   });
 
@@ -170,13 +112,11 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-find');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'find-session';
+    await executor.writeFile('src/index.ts', 'console.log("index");');
+    await executor.writeFile('src/utils/helper.ts', 'console.log("helper");');
+    await executor.writeFile('notes/ignore.md', '# ignore');
 
-    await executor.writeFile(sessionId, 'src/index.ts', 'console.log("index");');
-    await executor.writeFile(sessionId, 'src/utils/helper.ts', 'console.log("helper");');
-    await executor.writeFile(sessionId, 'notes/ignore.md', '# ignore');
-
-    const result = await executor.find(sessionId, { pattern: '**/*.ts', path: 'src' });
+    const result = await executor.find({ pattern: '**/*.ts', path: 'src' });
 
     expect(result.files.length).toBeGreaterThanOrEqual(2);
     expect(result.files).toContain('index.ts');
@@ -189,9 +129,7 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-find-empty');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'find-empty';
-
-    const result = await executor.find(sessionId, {
+    const result = await executor.find({
       pattern: 'does-not-exist-*.ts',
       path: '.',
     });
@@ -204,14 +142,12 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-find-truncate');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'find-truncate';
-
     for (let i = 0; i < 10; i += 1) {
-      await executor.writeFile(sessionId, `src/file-${i}.ts`, `// file ${i}`);
+      await executor.writeFile(`src/file-${i}.ts`, `// file ${i}`);
     }
 
     const limit = 3;
-    const result = await executor.find(sessionId, {
+    const result = await executor.find({
       pattern: 'src/*.ts',
       path: '.',
       limit,
@@ -225,12 +161,10 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-find-hidden');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'find-hidden';
+    await executor.writeFile('src/.hidden.ts', '// hidden');
+    await executor.writeFile('src/visible.ts', '// visible');
 
-    await executor.writeFile(sessionId, 'src/.hidden.ts', '// hidden');
-    await executor.writeFile(sessionId, 'src/visible.ts', '// visible');
-
-    const result = await executor.find(sessionId, {
+    const result = await executor.find({
       pattern: '**/*.ts',
       path: 'src',
     });
@@ -243,17 +177,16 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-grep-fallback');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'grep-session';
     const fileContent = ['alpha', 'beta match', 'gamma match'].join('\n');
 
-    await executor.writeFile(sessionId, 'src/example.txt', fileContent);
+    await executor.writeFile('src/example.txt', fileContent);
 
     const originalPath = process.env['PATH'];
     const tempPath = createTempDir('coding-sidecar-grep-path');
     process.env['PATH'] = tempPath;
 
     try {
-      const result = await executor.grep(sessionId, {
+      const result = await executor.grep({
         pattern: 'match',
         path: '.',
         glob: 'src/*.txt',
@@ -272,15 +205,14 @@ describe('LocalExecutor (coding-sidecar)', () => {
     const workspaceRoot = createTempDir('coding-sidecar-grep-empty');
     const executor = new LocalExecutor({ workspaceRoot });
 
-    const sessionId = 'grep-session-empty';
-    await executor.writeFile(sessionId, 'file.txt', 'one\ntwo\nthree');
+    await executor.writeFile('file.txt', 'one\ntwo\nthree');
 
     const originalPath = process.env['PATH'];
     const tempPath = createTempDir('coding-sidecar-grep-path-empty');
     process.env['PATH'] = tempPath;
 
     try {
-      const result = await executor.grep(sessionId, {
+      const result = await executor.grep({
         pattern: 'not-present',
         path: '.',
         literal: true,

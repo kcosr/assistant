@@ -64,7 +64,7 @@ describe('plugin instances', () => {
     const pluginConfig: PluginConfig = {
       enabled: true,
       workspaceRoot: '/base',
-      local: { workspaceRoot: '/base/local', sharedWorkspace: true },
+      local: { workspaceRoot: '/base/local' },
       instances: [
         'work',
         { id: 'client', label: 'Client', workspaceRoot: '/client' },
@@ -82,7 +82,7 @@ describe('plugin instances', () => {
         config: {
           enabled: true,
           workspaceRoot: '/primary',
-          local: { workspaceRoot: '/base/local', sharedWorkspace: true },
+          local: { workspaceRoot: '/base/local' },
         },
       },
       {
@@ -91,7 +91,7 @@ describe('plugin instances', () => {
         config: {
           enabled: true,
           workspaceRoot: '/base',
-          local: { workspaceRoot: '/base/local', sharedWorkspace: true },
+          local: { workspaceRoot: '/base/local' },
         },
       },
       {
@@ -100,7 +100,7 @@ describe('plugin instances', () => {
         config: {
           enabled: true,
           workspaceRoot: '/client',
-          local: { workspaceRoot: '/base/local', sharedWorkspace: true },
+          local: { workspaceRoot: '/base/local' },
         },
       },
       {
@@ -109,7 +109,7 @@ describe('plugin instances', () => {
         config: {
           enabled: true,
           workspaceRoot: '/override',
-          local: { workspaceRoot: '/base/local', sharedWorkspace: true },
+          local: { workspaceRoot: '/base/local' },
         },
       },
     ]);

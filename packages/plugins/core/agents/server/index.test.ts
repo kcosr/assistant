@@ -73,7 +73,6 @@ function createEnvConfig(dataDir: string): EnvConfig {
   return {
     port: 0,
     apiKey: 'test-key',
-    chatModel: 'gpt-4o',
     toolsEnabled: false,
     dataDir,
     audioInputMode: 'manual',
@@ -83,6 +82,7 @@ function createEnvConfig(dataDir: string): EnvConfig {
     audioOutputSpeed: undefined,
     ttsModel: 'gpt-4o-mini-tts',
     ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
     ttsBackend: 'openai',
     elevenLabsApiKey: undefined,
     elevenLabsVoiceId: undefined,

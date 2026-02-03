@@ -15,7 +15,12 @@ import type {
 } from '@assistant/coding-executor';
 
 export interface SidecarClientOptions {
-  socketPath: string;
+  socketPath?: string;
+  tcp?: {
+    host: string;
+    port: number;
+  };
+  authToken?: string;
 }
 
 interface SidecarResponseEnvelope<T> {
@@ -25,10 +30,55 @@ interface SidecarResponseEnvelope<T> {
 }
 
 export class SidecarClient implements ToolExecutor {
-  private readonly socketPath: string;
+  private readonly socketPath: string | undefined;
+  private readonly tcpHost: string | undefined;
+  private readonly tcpPort: number | undefined;
+  private readonly authToken: string | undefined;
 
   constructor(options: SidecarClientOptions) {
+    if (options.socketPath && options.tcp) {
+      throw new Error('SidecarClient must be configured with either socketPath or tcp, not both');
+    }
+    if (!options.socketPath && !options.tcp) {
+      throw new Error('SidecarClient requires socketPath or tcp configuration');
+    }
+    if (options.tcp && (!options.tcp.host || !options.tcp.port)) {
+      throw new Error('SidecarClient tcp configuration requires host and port');
+    }
+
     this.socketPath = options.socketPath;
+    this.tcpHost = options.tcp?.host;
+    this.tcpPort = options.tcp?.port;
+    this.authToken = options.authToken;
+  }
+
+  private buildHeaders(payload?: string): Record<string, string> | undefined {
+    const headers: Record<string, string> = {};
+    if (payload !== undefined) {
+      headers['content-type'] = 'application/json';
+      headers['content-length'] = Buffer.byteLength(payload, 'utf8').toString();
+    }
+    if (this.authToken) {
+      headers['authorization'] = `Bearer ${this.authToken}`;
+    }
+    return Object.keys(headers).length > 0 ? headers : undefined;
+  }
+
+  private buildRequestOptions(
+    method: 'GET' | 'POST',
+    path: string,
+    headers?: Record<string, string>,
+  ): http.RequestOptions {
+    const baseOptions = this.socketPath
+      ? { socketPath: this.socketPath }
+      : { hostname: this.tcpHost, port: this.tcpPort };
+
+    return {
+      ...baseOptions,
+      method,
+      path,
+      headers,
+    };
   }
 
   private async request<TResponse>(
@@ -38,21 +88,11 @@ export class SidecarClient implements ToolExecutor {
     abortSignal?: AbortSignal,
   ): Promise<TResponse> {
     const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    const headers = this.buildHeaders(payload);
 
     return new Promise<TResponse>((resolve, reject) => {
       const req = http.request(
-        {
-          method,
-          socketPath: this.socketPath,
-          path,
-          headers:
-            payload !== undefined
-              ? {
-                  'content-type': 'application/json',
-                  'content-length': Buffer.byteLength(payload, 'utf8'),
-                }
-              : undefined,
-        },
+        this.buildRequestOptions(method, path, headers),
         (res) => {
           const { statusCode } = res;
           if (!statusCode) {
@@ -148,26 +188,77 @@ export class SidecarClient implements ToolExecutor {
     });
   }
 
-  async runBash(sessionId: string, command: string, options?: BashRunOptions): Promise<BashResult> {
+  async health(): Promise<{ ok: boolean; version?: string }> {
+    const headers = this.buildHeaders();
+
+    return new Promise((resolve, reject) => {
+      const req = http.request(this.buildRequestOptions('GET', '/health', headers), (res) => {
+        const { statusCode } = res;
+        if (!statusCode) {
+          reject(new Error('Sidecar response did not include a status code'));
+          return;
+        }
+
+        let raw = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          raw += chunk;
+        });
+        res.on('end', () => {
+          if (statusCode < 200 || statusCode >= 300) {
+            const message =
+              raw && raw.length > 0
+                ? `Sidecar error ${statusCode}: ${raw}`
+                : `Sidecar error ${statusCode}`;
+            reject(new Error(message));
+            return;
+          }
+
+          if (!raw) {
+            reject(new Error('Sidecar response body was empty'));
+            return;
+          }
+
+          try {
+            const parsed = JSON.parse(raw) as { ok?: boolean; version?: string };
+            if (typeof parsed.ok !== 'boolean') {
+              reject(new Error('Sidecar health response missing ok field'));
+              return;
+            }
+            resolve({
+              ok: parsed.ok,
+              ...(parsed.version ? { version: parsed.version } : {}),
+            });
+          } catch (err) {
+            reject(
+              new Error(
+                `Sidecar response was not valid JSON: ${(err as Error).message ?? String(err)}`,
+              ),
+            );
+          }
+        });
+      });
+
+      req.on('error', (err: Error) => {
+        reject(new Error(`Failed to connect to coding sidecar: ${String(err)}`));
+      });
+
+      req.end();
+    });
+  }
+
+  async runBash(command: string, options?: BashRunOptions): Promise<BashResult> {
     const payload = {
-      sessionId,
       command,
       ...(options?.timeoutSeconds !== undefined ? { timeoutSeconds: options.timeoutSeconds } : {}),
     };
     const body = JSON.stringify(payload);
+    const headers = this.buildHeaders(body);
     const abortSignal = options?.abortSignal;
 
     return new Promise<BashResult>((resolve, reject) => {
       const req = http.request(
-        {
-          method: 'POST',
-          socketPath: this.socketPath,
-          path: '/bash',
-          headers: {
-            'content-type': 'application/json',
-            'content-length': Buffer.byteLength(body, 'utf8'),
-          },
-        },
+        this.buildRequestOptions('POST', '/bash', headers),
         (res) => {
           const { statusCode } = res;
           if (!statusCode) {
@@ -338,43 +429,30 @@ export class SidecarClient implements ToolExecutor {
     });
   }
 
-  async readFile(
-    sessionId: string,
-    path: string,
-    options?: { offset?: number; limit?: number },
-  ): Promise<ReadResult> {
+  async readFile(path: string, options?: { offset?: number; limit?: number }): Promise<ReadResult> {
     return this.request<ReadResult>('POST', '/read', {
-      sessionId,
       path,
       ...(options?.offset !== undefined ? { offset: options.offset } : {}),
       ...(options?.limit !== undefined ? { limit: options.limit } : {}),
     });
   }
 
-  async writeFile(sessionId: string, path: string, content: string): Promise<WriteResult> {
+  async writeFile(path: string, content: string): Promise<WriteResult> {
     return this.request<WriteResult>('POST', '/write', {
-      sessionId,
       path,
       content,
     });
   }
 
-  async editFile(
-    sessionId: string,
-    path: string,
-    oldText: string,
-    newText: string,
-  ): Promise<EditResult> {
+  async editFile(path: string, oldText: string, newText: string): Promise<EditResult> {
     return this.request<EditResult>('POST', '/edit', {
-      sessionId,
       path,
       oldText,
       newText,
     });
   }
-  async ls(sessionId: string, path?: string, options?: { limit?: number }): Promise<LsResult> {
+  async ls(path?: string, options?: { limit?: number }): Promise<LsResult> {
     return this.request<LsResult>('POST', '/ls', {
-      sessionId,
       ...(typeof path === 'string' && path.trim().length > 0 ? { path } : {}),
       ...(options?.limit !== undefined && Number.isFinite(options.limit) && options.limit > 0
         ? { limit: options.limit }
@@ -382,9 +460,12 @@ export class SidecarClient implements ToolExecutor {
     });
   }
 
-  async find(sessionId: string, options: FindOptions): Promise<FindResult> {
-    const payload: { sessionId: string; pattern: string; path?: string; limit?: number } = {
-      sessionId,
+  async find(options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult> {
+    const payload: {
+      pattern: string;
+      path?: string;
+      limit?: number;
+    } = {
       pattern: options.pattern,
     };
     if (typeof options.path === 'string' && options.path.trim().length > 0) {
@@ -394,13 +475,10 @@ export class SidecarClient implements ToolExecutor {
       payload.limit = Math.floor(options.limit);
     }
 
-    return this.request<FindResult>('POST', '/find', payload);
+    return this.request<FindResult>('POST', '/find', payload, abortSignal);
   }
 
-  async grep(sessionId: string, options: GrepOptions): Promise<GrepResult> {
-    return this.request<GrepResult>('POST', '/grep', {
-      sessionId,
-      ...options,
-    });
+  async grep(options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult> {
+    return this.request<GrepResult>('POST', '/grep', options, abortSignal);
   }
 }

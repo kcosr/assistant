@@ -20,7 +20,6 @@ function createTestConfig(dataDir: string): unknown {
   return {
     port: 0,
     apiKey: 'test-api-key',
-    chatModel: 'gpt-4o-mini',
     mcpServers: undefined,
     toolsEnabled: true,
     dataDir,

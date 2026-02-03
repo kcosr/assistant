@@ -27,31 +27,24 @@ import { ensureTool } from './utils/toolsManager';
 
 export interface LocalExecutorOptions {
   workspaceRoot: string;
-  sharedWorkspace?: boolean;
 }
 
 const DEFAULT_FIND_LIMIT = 1000;
 
 export class LocalExecutor implements ToolExecutor {
   private readonly workspaceRoot: string;
-  private readonly sharedWorkspace: boolean;
 
   constructor(options: LocalExecutorOptions) {
     this.workspaceRoot = options.workspaceRoot;
-    this.sharedWorkspace = options.sharedWorkspace ?? determineSharedWorkspaceFromEnv();
   }
 
-  async ls(sessionId: string, requestedPath?: string, options?: LsOptions): Promise<LsResult> {
+  async ls(requestedPath?: string, options?: LsOptions): Promise<LsResult> {
     await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
 
     const sessionOptions = {
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     };
 
     const effectivePath =
@@ -101,14 +94,11 @@ export class LocalExecutor implements ToolExecutor {
   }
 
   async runBash(
-    sessionId: string,
     command: string,
     options?: BashRunOptions,
   ): Promise<{ ok: boolean; output: string; exitCode: number; timedOut?: boolean }> {
-    const sessionRoot = await ensureSessionWorkspace({
+    const workspaceRoot = await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
 
     const abortSignal = options?.abortSignal;
@@ -126,7 +116,7 @@ export class LocalExecutor implements ToolExecutor {
 
     return new Promise((resolve, reject) => {
       const child = spawn(command, {
-        cwd: sessionRoot,
+        cwd: workspaceRoot,
         shell: true,
       });
 
@@ -217,18 +207,12 @@ export class LocalExecutor implements ToolExecutor {
     });
   }
 
-  async readFile(
-    sessionId: string,
-    filePath: string,
-    options?: { offset?: number; limit?: number },
-  ): Promise<ReadResult> {
+  async readFile(filePath: string, options?: { offset?: number; limit?: number }): Promise<ReadResult> {
     await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot, sessionId, sharedWorkspace: this.sharedWorkspace },
+      { workspaceRoot: this.workspaceRoot },
       filePath,
     );
 
@@ -294,14 +278,12 @@ export class LocalExecutor implements ToolExecutor {
     };
   }
 
-  async writeFile(sessionId: string, filePath: string, content: string): Promise<WriteResult> {
-    const sessionRoot = await ensureSessionWorkspace({
+  async writeFile(filePath: string, content: string): Promise<WriteResult> {
+    const workspaceRoot = await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot, sessionId, sharedWorkspace: this.sharedWorkspace },
+      { workspaceRoot: this.workspaceRoot },
       filePath,
     );
     const dir = path.dirname(absolutePath);
@@ -313,24 +295,17 @@ export class LocalExecutor implements ToolExecutor {
 
     return {
       ok: true,
-      path: path.relative(sessionRoot, absolutePath) || '.',
+      path: path.relative(workspaceRoot, absolutePath) || '.',
       bytes,
     };
   }
 
-  async editFile(
-    sessionId: string,
-    filePath: string,
-    oldText: string,
-    newText: string,
-  ): Promise<EditResult> {
+  async editFile(filePath: string, oldText: string, newText: string): Promise<EditResult> {
     await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot, sessionId, sharedWorkspace: this.sharedWorkspace },
+      { workspaceRoot: this.workspaceRoot },
       filePath,
     );
 
@@ -373,15 +348,9 @@ export class LocalExecutor implements ToolExecutor {
       diff,
     };
   }
-  async grep(
-    sessionId: string,
-    options: GrepOptions,
-    abortSignal?: AbortSignal,
-  ): Promise<GrepResult> {
+  async grep(options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult> {
     const sessionOptions = {
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     } as const;
     const sessionRoot = await ensureSessionWorkspace(sessionOptions);
 
@@ -855,15 +824,9 @@ export class LocalExecutor implements ToolExecutor {
     return result;
   }
 
-  async find(
-    sessionId: string,
-    options: FindOptions,
-    abortSignal?: AbortSignal,
-  ): Promise<FindResult> {
+  async find(options: FindOptions, abortSignal?: AbortSignal): Promise<FindResult> {
     await ensureSessionWorkspace({
       workspaceRoot: this.workspaceRoot,
-      sessionId,
-      sharedWorkspace: this.sharedWorkspace,
     });
 
     const pattern = options.pattern;
@@ -874,7 +837,7 @@ export class LocalExecutor implements ToolExecutor {
     const rawSearchPath =
       options.path && options.path.trim().length > 0 ? options.path.trim() : '.';
     const searchDir = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot, sessionId, sharedWorkspace: this.sharedWorkspace },
+      { workspaceRoot: this.workspaceRoot },
       rawSearchPath,
     );
 
@@ -884,13 +847,14 @@ export class LocalExecutor implements ToolExecutor {
         : DEFAULT_FIND_LIMIT;
 
     const fdPath = await ensureTool('fd', true);
+    const hasPathSeparator = pattern.includes('/') || pattern.includes('\\');
 
     if (abortSignal?.aborted) {
       return createFindResultFromPaths([], limit);
     }
 
     let candidatePaths: string[];
-    if (fdPath) {
+    if (fdPath && !hasPathSeparator) {
       candidatePaths = await this.findWithFd(fdPath, searchDir, pattern, limit, abortSignal);
     } else {
       candidatePaths = await this.findWithGlob(searchDir, pattern, limit, abortSignal);
@@ -1200,22 +1164,4 @@ function globToRegExp(glob: string): RegExp {
   const withWildcards = escaped.replace(/__GLOB_STAR__/g, '.*').replace(/__GLOB_QM__/g, '.');
 
   return new RegExp(`^${withWildcards}$`);
-}
-
-/**
- * Determine sharedWorkspace from SHARED_WORKSPACE environment variable.
- * Used by coding-sidecar where config comes from env vars.
- */
-function determineSharedWorkspaceFromEnv(): boolean {
-  const raw = process.env['SHARED_WORKSPACE'];
-  if (!raw) {
-    return false;
-  }
-
-  const normalized = raw.trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-
-  return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }

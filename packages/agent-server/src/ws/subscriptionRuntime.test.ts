@@ -35,7 +35,6 @@ function createTestConfig(dataDir: string): EnvConfig {
   return {
     port: 0,
     apiKey: 'test-api-key',
-    chatModel: 'gpt-4o-mini',
     toolsEnabled: false,
     dataDir,
     audioInputMode: 'manual',

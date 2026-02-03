@@ -43,10 +43,16 @@ function requestJson<T = unknown>(
 describe('coding sidecar HTTP server', () => {
   let server: http.Server | undefined;
   let baseUrl: URL;
+  let previousAuthToken: string | undefined;
+  let previousAuthRequired: string | undefined;
 
   beforeEach(async () => {
     const workspaceRoot = path.join(os.tmpdir(), `coding-sidecar-http-${Date.now()}`);
     process.env['WORKSPACE_ROOT'] = workspaceRoot;
+    previousAuthToken = process.env['SIDECAR_AUTH_TOKEN'];
+    previousAuthRequired = process.env['SIDECAR_REQUIRE_AUTH'];
+    delete process.env['SIDECAR_AUTH_TOKEN'];
+    delete process.env['SIDECAR_REQUIRE_AUTH'];
 
     server = createServer();
     await new Promise<void>((resolve) => {
@@ -66,6 +72,16 @@ describe('coding sidecar HTTP server', () => {
       });
       server = undefined;
     }
+    if (previousAuthToken === undefined) {
+      delete process.env['SIDECAR_AUTH_TOKEN'];
+    } else {
+      process.env['SIDECAR_AUTH_TOKEN'] = previousAuthToken;
+    }
+    if (previousAuthRequired === undefined) {
+      delete process.env['SIDECAR_REQUIRE_AUTH'];
+    } else {
+      process.env['SIDECAR_REQUIRE_AUTH'] = previousAuthRequired;
+    }
   });
 
   it('responds to /health with version info', async () => {
@@ -84,8 +100,6 @@ describe('coding sidecar HTTP server', () => {
   });
 
   it('writes and reads a file via HTTP endpoints', async () => {
-    const sessionId = 'http-session';
-
     const writeUrl = new URL('/write', baseUrl);
     const writeResponse = await requestJson<{
       ok: boolean;
@@ -96,7 +110,6 @@ describe('coding sidecar HTTP server', () => {
       port: writeUrl.port,
       path: writeUrl.pathname,
       body: {
-        sessionId,
         path: 'test.txt',
         content: 'hello from http',
       },
@@ -116,7 +129,6 @@ describe('coding sidecar HTTP server', () => {
       port: readUrl.port,
       path: readUrl.pathname,
       body: {
-        sessionId,
         path: 'test.txt',
       },
     });
@@ -128,8 +140,6 @@ describe('coding sidecar HTTP server', () => {
   });
 
   it('finds files via the /find endpoint', async () => {
-    const sessionId = 'http-find-session';
-
     const writeUrl = new URL('/write', baseUrl);
     await requestJson<{
       ok: boolean;
@@ -140,7 +150,6 @@ describe('coding sidecar HTTP server', () => {
       port: writeUrl.port,
       path: writeUrl.pathname,
       body: {
-        sessionId,
         path: 'src/app.ts',
         content: 'console.log("app");',
       },
@@ -155,7 +164,6 @@ describe('coding sidecar HTTP server', () => {
       port: writeUrl.port,
       path: writeUrl.pathname,
       body: {
-        sessionId,
         path: 'src/utils/helper.ts',
         content: 'console.log("helper");',
       },
@@ -171,7 +179,6 @@ describe('coding sidecar HTTP server', () => {
       port: findUrl.port,
       path: findUrl.pathname,
       body: {
-        sessionId,
         pattern: '**/*.ts',
         path: 'src',
       },
@@ -182,5 +189,50 @@ describe('coding sidecar HTTP server', () => {
     expect(Array.isArray(findResponse.body.result?.files)).toBe(true);
     expect(findResponse.body.result?.files).toContain('app.ts');
     expect(findResponse.body.result?.files).toContain('utils/helper.ts');
+  });
+
+  it('enforces auth when required', async () => {
+    if (server) {
+      await new Promise<void>((resolve) => {
+        server!.close(() => resolve());
+      });
+      server = undefined;
+    }
+
+    process.env['SIDECAR_AUTH_TOKEN'] = 'secret-token';
+    process.env['SIDECAR_REQUIRE_AUTH'] = 'true';
+
+    server = createServer();
+    await new Promise<void>((resolve) => {
+      server!.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Failed to get server address');
+    }
+    baseUrl = new URL(`http://127.0.0.1:${address.port}`);
+
+    const writeUrl = new URL('/write', baseUrl);
+    const unauthorized = await requestJson<{ ok?: boolean; error?: string }>({
+      method: 'POST',
+      hostname: writeUrl.hostname,
+      port: writeUrl.port,
+      path: writeUrl.pathname,
+      body: { path: 'test.txt', content: 'blocked' },
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+
+    const authorized = await requestJson<{ ok?: boolean }>({
+      method: 'POST',
+      hostname: writeUrl.hostname,
+      port: writeUrl.port,
+      path: writeUrl.pathname,
+      headers: { Authorization: 'Bearer secret-token' },
+      body: { path: 'test.txt', content: 'allowed' },
+    });
+
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.body.ok).toBe(true);
   });
 });

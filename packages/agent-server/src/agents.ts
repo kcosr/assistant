@@ -27,17 +27,17 @@ export interface AgentDefinition {
   type?: 'chat' | 'external';
   /**
    * Chat provider configuration (only valid when type is "chat" or omitted).
-   * Defaults to OpenAI chat completions when omitted.
+   * Defaults to Pi SDK chat when omitted.
    */
   chat?: {
-    provider?: 'openai' | 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible';
+    provider?: 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
     /**
-     * For provider "openai" and CLI providers: list of allowed model ids.
+     * For provider "pi" and CLI providers: list of allowed model ids.
      * The first model (when present) is used as the default for new sessions.
      */
     models?: string[];
     /**
-     * For providers "pi-cli" and "codex-cli": list of allowed thinking levels.
+     * For providers "pi" and "codex-cli": list of allowed thinking levels.
      * The first level (when present) is used as the default for new sessions.
      * For Codex, the level maps to model_reasoning_effort via --config.
      */
@@ -57,7 +57,7 @@ export interface AgentDefinition {
            */
           wrapper?: CliWrapperConfig;
         }
-      | OpenAiCompatibleChatConfig;
+      | PiSdkChatConfig;
   };
   /**
    * External agent configuration. Required when type is "external".
@@ -141,20 +141,19 @@ export interface AgentDefinition {
   schedules?: ScheduleConfig[];
 }
 
-export interface OpenAiCompatibleChatConfig {
-  baseUrl: string;
-  apiKey?: string;
+export interface PiSdkChatConfig {
   /**
-   * List of allowed model ids for this OpenAI-compatible endpoint. The first
-   * model is used as the default for new sessions. At least one model is
-   * required at runtime; legacy configurations that specify a single "model"
-   * string are normalised into a single-element models array.
+   * Default provider to use when models omit a prefix.
+   * Example: "anthropic" for "claude-sonnet-4-5".
    */
-  models: string[];
+  provider?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+  timeoutMs?: number;
   maxTokens?: number;
   temperature?: number;
-  /** Custom headers to send with each request to the OpenAI-compatible API. */
-  headers?: Record<string, string>;
+  maxToolIterations?: number;
 }
 
 const CLAUDE_CLI_RESERVED_ARGS = [
@@ -638,24 +637,23 @@ function validateAgentDefinitionConfig(
     if (
       providerRaw !== undefined &&
       providerRaw !== null &&
-      providerRaw !== 'openai' &&
+      providerRaw !== 'pi' &&
       providerRaw !== 'claude-cli' &&
       providerRaw !== 'codex-cli' &&
-      providerRaw !== 'pi-cli' &&
-      providerRaw !== 'openai-compatible'
+      providerRaw !== 'pi-cli'
     ) {
       throw new Error(
-        `agents[${index}].chat.provider must be "openai", "claude-cli", "codex-cli", "pi-cli", "openai-compatible", null, or omitted`,
+        `agents[${index}].chat.provider must be "pi", "claude-cli", "codex-cli", "pi-cli", null, or omitted`,
       );
     }
 
     const provider =
+      providerRaw === 'pi' ||
       providerRaw === 'claude-cli' ||
       providerRaw === 'codex-cli' ||
-      providerRaw === 'pi-cli' ||
-      providerRaw === 'openai-compatible'
-        ? (providerRaw as 'claude-cli' | 'codex-cli' | 'pi-cli' | 'openai-compatible')
-        : 'openai';
+      providerRaw === 'pi-cli'
+        ? (providerRaw as 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli')
+        : 'pi';
 
     const configRaw = chat.config;
     const modelsRaw = chat.models;
@@ -667,22 +665,179 @@ function validateAgentDefinitionConfig(
       throw new Error(`agents[${index}].chat.config must be an object, null, or omitted`);
     }
 
-    if (provider === 'openai') {
-      if (configRaw !== undefined && configRaw !== null) {
+    if (provider === 'pi') {
+      const models = parseChatModels({ index, modelsRaw });
+      const thinking = parseChatThinking({ index, thinkingRaw: chat.thinking });
+      const config = configRaw as
+        | {
+            provider?: unknown;
+            apiKey?: unknown;
+            baseUrl?: unknown;
+            headers?: unknown;
+            timeoutMs?: unknown;
+            maxTokens?: unknown;
+            temperature?: unknown;
+            maxToolIterations?: unknown;
+          }
+        | undefined
+        | null;
+
+      const providerRawConfig = config?.provider;
+      const apiKeyRaw = config?.apiKey;
+      const baseUrlRaw = config?.baseUrl;
+      const headersRaw = config?.headers;
+      const timeoutMsRaw = config?.timeoutMs;
+      const maxTokensRaw = config?.maxTokens;
+      const temperatureRaw = config?.temperature;
+      const maxToolIterationsRaw = config?.maxToolIterations;
+
+      const providerName =
+        typeof providerRawConfig === 'string' && providerRawConfig.trim().length > 0
+          ? providerRawConfig.trim()
+          : undefined;
+      const apiKey =
+        typeof apiKeyRaw === 'string' && apiKeyRaw.trim().length > 0 ? apiKeyRaw.trim() : undefined;
+      const baseUrl =
+        typeof baseUrlRaw === 'string' && baseUrlRaw.trim().length > 0
+          ? baseUrlRaw.trim()
+          : undefined;
+      const timeoutMs =
+        typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0
+          ? Math.floor(timeoutMsRaw)
+          : undefined;
+      const maxTokens =
+        typeof maxTokensRaw === 'number' && Number.isFinite(maxTokensRaw) && maxTokensRaw > 0
+          ? Math.floor(maxTokensRaw)
+          : undefined;
+      const temperature =
+        typeof temperatureRaw === 'number' && Number.isFinite(temperatureRaw)
+          ? temperatureRaw
+          : undefined;
+      const maxToolIterations =
+        typeof maxToolIterationsRaw === 'number' &&
+        Number.isFinite(maxToolIterationsRaw) &&
+        maxToolIterationsRaw > 0
+          ? Math.floor(maxToolIterationsRaw)
+          : undefined;
+
+      let headers: Record<string, string> | undefined;
+      if (headersRaw !== undefined && headersRaw !== null) {
+        if (typeof headersRaw !== 'object' || Array.isArray(headersRaw)) {
+          throw new Error(
+            `agents[${index}].chat.config.headers must be an object with string values when provided`,
+          );
+        }
+        headers = {};
+        for (const [key, value] of Object.entries(headersRaw)) {
+          if (typeof value !== 'string') {
+            throw new Error(`agents[${index}].chat.config.headers["${key}"] must be a string`);
+          }
+          headers[key] = value;
+        }
+        if (Object.keys(headers).length === 0) {
+          headers = undefined;
+        }
+      }
+
+      if (
+        providerRawConfig !== undefined &&
+        providerRawConfig !== null &&
+        (typeof providerRawConfig !== 'string' || !providerRawConfig.trim())
+      ) {
         throw new Error(
-          `agents[${index}].chat.config is only valid when chat.provider is "claude-cli", "codex-cli", "pi-cli", or "openai-compatible"`,
+          `agents[${index}].chat.config.provider must be a non-empty string when provided`,
+        );
+      }
+      if (
+        apiKeyRaw !== undefined &&
+        apiKeyRaw !== null &&
+        (typeof apiKeyRaw !== 'string' || !apiKeyRaw.trim())
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.apiKey must be a non-empty string when provided`,
+        );
+      }
+      if (
+        baseUrlRaw !== undefined &&
+        baseUrlRaw !== null &&
+        (typeof baseUrlRaw !== 'string' || !baseUrlRaw.trim())
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.baseUrl must be a non-empty string when provided`,
+        );
+      }
+      if (
+        timeoutMsRaw !== undefined &&
+        timeoutMsRaw !== null &&
+        (typeof timeoutMsRaw !== 'number' ||
+          !Number.isFinite(timeoutMsRaw) ||
+          Math.floor(timeoutMsRaw) <= 0)
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.timeoutMs must be a positive number when provided`,
+        );
+      }
+      if (
+        maxTokensRaw !== undefined &&
+        maxTokensRaw !== null &&
+        (typeof maxTokensRaw !== 'number' ||
+          !Number.isFinite(maxTokensRaw) ||
+          Math.floor(maxTokensRaw) <= 0)
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.maxTokens must be a positive integer when provided`,
+        );
+      }
+      if (
+        temperatureRaw !== undefined &&
+        temperatureRaw !== null &&
+        (typeof temperatureRaw !== 'number' || !Number.isFinite(temperatureRaw))
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.temperature must be a finite number when provided`,
+        );
+      }
+      if (
+        maxToolIterationsRaw !== undefined &&
+        maxToolIterationsRaw !== null &&
+        (typeof maxToolIterationsRaw !== 'number' ||
+          !Number.isFinite(maxToolIterationsRaw) ||
+          Math.floor(maxToolIterationsRaw) <= 0)
+      ) {
+        throw new Error(
+          `agents[${index}].chat.config.maxToolIterations must be a positive integer when provided`,
         );
       }
 
-      const models = parseChatModels({ index, modelsRaw });
+      const configHasValues =
+        providerName ||
+        apiKey ||
+        baseUrl ||
+        headers ||
+        timeoutMs !== undefined ||
+        maxTokens !== undefined ||
+        temperature !== undefined ||
+        maxToolIterations !== undefined;
 
-      // Attach chat config for openai provider (explicit or implicit default)
-      if (models) {
-        base.chat = {
-          provider: 'openai',
-          models,
-        };
-      }
+      base.chat = {
+        provider: 'pi',
+        ...(models ? { models } : {}),
+        ...(thinking ? { thinking } : {}),
+        ...(configHasValues
+          ? {
+              config: {
+                ...(providerName ? { provider: providerName } : {}),
+                ...(apiKey ? { apiKey } : {}),
+                ...(baseUrl ? { baseUrl } : {}),
+                ...(headers ? { headers } : {}),
+                ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+                ...(maxTokens !== undefined ? { maxTokens } : {}),
+                ...(temperature !== undefined ? { temperature } : {}),
+                ...(maxToolIterations !== undefined ? { maxToolIterations } : {}),
+              },
+            }
+          : {}),
+      };
     } else if (provider === 'claude-cli') {
       const models = parseChatModels({ index, modelsRaw });
       const config = configRaw as
@@ -885,146 +1040,6 @@ function validateAgentDefinitionConfig(
               },
             }
           : {}),
-      };
-    } else {
-      const config = configRaw as
-        | {
-            baseUrl?: unknown;
-            apiKey?: unknown;
-            model?: unknown;
-            models?: unknown;
-            maxTokens?: unknown;
-            temperature?: unknown;
-            headers?: unknown;
-          }
-        | undefined
-        | null;
-
-      const baseUrlRaw = config?.baseUrl;
-      const apiKeyRaw = config?.apiKey;
-      const modelRaw = config?.model;
-      const modelsRaw = config?.models;
-      const maxTokensRaw = config?.maxTokens;
-      const temperatureRaw = config?.temperature;
-      const headersRaw = config?.headers;
-
-      const baseUrl = typeof baseUrlRaw === 'string' ? baseUrlRaw.trim() : '';
-      const apiKey =
-        typeof apiKeyRaw === 'string' && apiKeyRaw.trim().length > 0 ? apiKeyRaw.trim() : undefined;
-      const singleModel = typeof modelRaw === 'string' ? modelRaw.trim() : '';
-      const maxTokens =
-        typeof maxTokensRaw === 'number' && Number.isFinite(maxTokensRaw) && maxTokensRaw > 0
-          ? Math.floor(maxTokensRaw)
-          : undefined;
-      const temperature =
-        typeof temperatureRaw === 'number' && Number.isFinite(temperatureRaw)
-          ? temperatureRaw
-          : undefined;
-
-      let models: string[] | undefined;
-      if (Array.isArray(modelsRaw)) {
-        const collected: string[] = [];
-        for (let i = 0; i < modelsRaw.length; i += 1) {
-          const value = modelsRaw[i];
-          if (typeof value !== 'string' || !value.trim()) {
-            throw new Error(
-              `agents[${index}].chat.config.models[${i}] must be a non-empty string when provided`,
-            );
-          }
-          collected.push(value.trim());
-        }
-        models = collected;
-      } else if (modelsRaw !== undefined && modelsRaw !== null) {
-        throw new Error(
-          `agents[${index}].chat.config.models must be an array of non-empty strings, null, or omitted`,
-        );
-      }
-
-      // Parse headers: must be a plain object with string keys and string values
-      let headers: Record<string, string> | undefined;
-      if (headersRaw !== undefined && headersRaw !== null) {
-        if (typeof headersRaw !== 'object' || Array.isArray(headersRaw)) {
-          throw new Error(
-            `agents[${index}].chat.config.headers must be an object with string values when provided`,
-          );
-        }
-        headers = {};
-        for (const [key, value] of Object.entries(headersRaw)) {
-          if (typeof value !== 'string') {
-            throw new Error(`agents[${index}].chat.config.headers["${key}"] must be a string`);
-          }
-          headers[key] = value;
-        }
-        if (Object.keys(headers).length === 0) {
-          headers = undefined;
-        }
-      }
-
-      if (!baseUrl) {
-        throw new Error(
-          `agents[${index}].chat.config.baseUrl must be a non-empty string when chat.provider is "openai-compatible"`,
-        );
-      }
-      if (modelRaw !== undefined && modelRaw !== null && !singleModel) {
-        throw new Error(
-          `agents[${index}].chat.config.model must be a non-empty string when provided`,
-        );
-      }
-      if (
-        apiKeyRaw !== undefined &&
-        apiKeyRaw !== null &&
-        (typeof apiKeyRaw !== 'string' || !apiKeyRaw.trim())
-      ) {
-        throw new Error(
-          `agents[${index}].chat.config.apiKey must be a non-empty string when provided`,
-        );
-      }
-      if (
-        maxTokensRaw !== undefined &&
-        maxTokensRaw !== null &&
-        (typeof maxTokensRaw !== 'number' ||
-          !Number.isFinite(maxTokensRaw) ||
-          Math.floor(maxTokensRaw) <= 0)
-      ) {
-        throw new Error(
-          `agents[${index}].chat.config.maxTokens must be a positive integer when provided`,
-        );
-      }
-      if (
-        temperatureRaw !== undefined &&
-        temperatureRaw !== null &&
-        (typeof temperatureRaw !== 'number' || !Number.isFinite(temperatureRaw))
-      ) {
-        throw new Error(
-          `agents[${index}].chat.config.temperature must be a finite number when provided`,
-        );
-      }
-
-      let finalModels: string[] | undefined;
-      if (models && models.length > 0) {
-        finalModels = models;
-      } else if (singleModel) {
-        finalModels = [singleModel];
-      }
-
-      if (!finalModels || finalModels.length === 0) {
-        throw new Error(
-          `agents[${index}].chat.config.models must contain at least one model when chat.provider is "openai-compatible"`,
-        );
-      }
-
-      const compatibleConfig: OpenAiCompatibleChatConfig = {
-        baseUrl,
-        models: finalModels,
-        ...(apiKey ? { apiKey } : {}),
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(headers ? { headers } : {}),
-      };
-
-      base.chat = {
-        provider: 'openai-compatible',
-        config: compatibleConfig,
       };
     }
   }

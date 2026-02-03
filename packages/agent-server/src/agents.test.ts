@@ -293,22 +293,25 @@ describe('loadAgentDefinitionsFromFile', () => {
     });
   });
 
-  it('loads chat provider configuration for openai-compatible', async () => {
-    const filePath = createTempFile('agents-config-openai-compatible');
+  it('loads chat provider configuration for pi', async () => {
+    const filePath = createTempFile('agents-config-pi');
     const config = {
       agents: [
         {
-          agentId: 'local-llama',
-          displayName: 'Local LLaMA',
-          description: 'Local LLaMA via OpenAI-compatible endpoint.',
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi SDK agent.',
           chat: {
-            provider: 'openai-compatible',
+            provider: 'pi',
+            models: ['anthropic/claude-sonnet-4-5'],
+            thinking: ['low'],
             config: {
-              baseUrl: 'http://localhost:8080/v1',
-              apiKey: '${LOCAL_LLM_KEY}',
-              model: 'llama-3.1-70b',
+              provider: 'anthropic',
+              baseUrl: 'https://api.anthropic.com',
+              apiKey: 'pi-key',
               maxTokens: 4096,
               temperature: 0.7,
+              maxToolIterations: 12,
             },
           },
         },
@@ -320,30 +323,33 @@ describe('loadAgentDefinitionsFromFile', () => {
     const definitions = loadAgentDefinitionsFromFile(filePath);
     expect(definitions).toHaveLength(1);
     expect(definitions[0]?.chat).toEqual({
-      provider: 'openai-compatible',
+      provider: 'pi',
+      models: ['anthropic/claude-sonnet-4-5'],
+      thinking: ['low'],
       config: {
-        baseUrl: 'http://localhost:8080/v1',
-        apiKey: '${LOCAL_LLM_KEY}',
-        models: ['llama-3.1-70b'],
+        provider: 'anthropic',
+        baseUrl: 'https://api.anthropic.com',
+        apiKey: 'pi-key',
         maxTokens: 4096,
         temperature: 0.7,
+        maxToolIterations: 12,
       },
     });
   });
 
-  it('loads openai-compatible config with custom headers', async () => {
-    const filePath = createTempFile('agents-config-openai-compatible-headers');
+  it('loads pi config with custom headers', async () => {
+    const filePath = createTempFile('agents-config-pi-headers');
     const config = {
       agents: [
         {
-          agentId: 'custom-llm',
-          displayName: 'Custom LLM',
-          description: 'LLM with custom headers.',
+          agentId: 'pi-custom',
+          displayName: 'Pi Custom',
+          description: 'Pi SDK with custom headers.',
           chat: {
-            provider: 'openai-compatible',
+            provider: 'pi',
             config: {
-              baseUrl: 'https://api.example.com/v1',
-              model: 'custom-model',
+              provider: 'openai',
+              baseUrl: 'https://api.example.com',
               headers: {
                 'X-Custom-Auth': 'token123',
                 'X-Request-Source': 'assistant',
@@ -359,10 +365,10 @@ describe('loadAgentDefinitionsFromFile', () => {
     const definitions = loadAgentDefinitionsFromFile(filePath);
     expect(definitions).toHaveLength(1);
     expect(definitions[0]?.chat).toEqual({
-      provider: 'openai-compatible',
+      provider: 'pi',
       config: {
-        baseUrl: 'https://api.example.com/v1',
-        models: ['custom-model'],
+        provider: 'openai',
+        baseUrl: 'https://api.example.com',
         headers: {
           'X-Custom-Auth': 'token123',
           'X-Request-Source': 'assistant',
@@ -371,8 +377,8 @@ describe('loadAgentDefinitionsFromFile', () => {
     });
   });
 
-  it('rejects openai-compatible headers with non-string values', async () => {
-    const filePath = createTempFile('agents-config-openai-compatible-bad-headers');
+  it('rejects pi headers with non-string values', async () => {
+    const filePath = createTempFile('agents-config-pi-bad-headers');
     const config = {
       agents: [
         {
@@ -380,10 +386,10 @@ describe('loadAgentDefinitionsFromFile', () => {
           displayName: 'Bad Headers',
           description: 'Invalid headers config.',
           chat: {
-            provider: 'openai-compatible',
+            provider: 'pi',
             config: {
-              baseUrl: 'https://api.example.com/v1',
-              model: 'custom-model',
+              provider: 'openai',
+              baseUrl: 'https://api.example.com',
               headers: {
                 'X-Valid': 'string',
                 'X-Invalid': 123,
@@ -401,14 +407,17 @@ describe('loadAgentDefinitionsFromFile', () => {
     );
   });
 
-  it('defaults chat provider to openai when omitted', async () => {
+  it('defaults chat provider to pi when omitted', async () => {
     const filePath = createTempFile('agents-config-chat-default');
     const config = {
       agents: [
         {
           agentId: 'default-chat',
           displayName: 'Default',
-          description: 'Defaults to openai.',
+          description: 'Defaults to pi.',
+          chat: {
+            models: ['anthropic/claude-sonnet-4-5'],
+          },
         },
       ],
     };
@@ -417,7 +426,10 @@ describe('loadAgentDefinitionsFromFile', () => {
 
     const definitions = loadAgentDefinitionsFromFile(filePath);
     expect(definitions).toHaveLength(1);
-    expect(definitions[0]?.chat).toBeUndefined();
+    expect(definitions[0]?.chat).toEqual({
+      provider: 'pi',
+      models: ['anthropic/claude-sonnet-4-5'],
+    });
   });
 
   it('loads agentAllowlist and agentDenylist from configuration', async () => {
@@ -713,8 +725,8 @@ describe('loadAgentDefinitionsFromFile', () => {
     expect(readingList?.toolAllowlist).toEqual(['reading_list_*']);
   });
 
-  it('throws when chat.config is provided for openai provider', async () => {
-    const filePath = createTempFile('agents-config-invalid-chat-openai-config');
+  it('throws when chat.provider is invalid', async () => {
+    const filePath = createTempFile('agents-config-invalid-chat-provider');
     const invalidConfig = {
       agents: [
         {
@@ -723,7 +735,6 @@ describe('loadAgentDefinitionsFromFile', () => {
           description: 'Bad config.',
           chat: {
             provider: 'openai',
-            config: { model: 'should-not-be-allowed' },
           },
         },
       ],
@@ -732,7 +743,7 @@ describe('loadAgentDefinitionsFromFile', () => {
     await fs.writeFile(filePath, JSON.stringify(invalidConfig), 'utf8');
 
     expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(
-      /chat\.config is only valid when chat\.provider is "claude-cli", "codex-cli", "pi-cli", or "openai-compatible"/,
+      /chat\.provider must be "pi", "claude-cli", "codex-cli", "pi-cli", null, or omitted/,
     );
   });
 
