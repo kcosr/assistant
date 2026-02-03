@@ -197,6 +197,16 @@ After this change:
 - New entries (`custom`, `custom_message`) are additive.
 - Reader remains lenient; unknown entries are ignored or rendered as generic custom messages.
 
+## Pi session invariants / repair
+
+Pi’s native session replayer expects every `toolResult` to reference a prior `toolCall` (same `toolCallId`). If the JSONL contains a `toolResult` without a matching `toolCall`, Pi-native tools may error while loading the session.
+
+To keep mirrored sessions robust:
+- Mirroring should never emit orphan `toolResult` entries; when encountered, prefer a non-breaking placeholder entry (custom entry) rather than writing an invalid tool result.
+- For existing logs that already contain orphan tool results, use the repair helper:
+  - `node scripts/repair-pi-session-jsonl.mjs <path-to-session.jsonl>`
+  - `node scripts/repair-pi-session-jsonl.mjs <path-to-session.jsonl> --dry-run`
+
 ## Testing plan
 
 ### Unit tests

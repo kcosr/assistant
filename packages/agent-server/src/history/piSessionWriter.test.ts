@@ -334,4 +334,70 @@ describe('PiSessionWriter', () => {
     expect(last?.['customType']).toBe('assistant.event');
     expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
   });
+
+  it('replaces orphan tool results with a non-breaking placeholder and avoids duplicate writes on restart', async () => {
+    const baseDir = await createTempDir('pi-session-writer-orphan-tool');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-5',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Ack' },
+      {
+        role: 'tool',
+        tool_call_id: 'call-orphan-1',
+        content: JSON.stringify({ ok: true, result: 'orphan tool output' }),
+      },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const first = await fs.readFile(filePath, 'utf8');
+
+    const entries = parseJsonLines(first);
+    const orphanPlaceholder = entries.find(
+      (entry) => entry['type'] === 'custom_message' && entry['customType'] === 'assistant.orphan_tool_result',
+    );
+    expect(orphanPlaceholder).toBeTruthy();
+    expect(orphanPlaceholder?.['display']).toBe(false);
+
+    const toolResultEntries = entries.filter((entry) => {
+      if (entry['type'] !== 'message') return false;
+      const message = entry['message'];
+      return message && typeof message === 'object' && (message as Record<string, unknown>)['role'] === 'toolResult';
+    });
+    expect(toolResultEntries.length).toBe(0);
+
+    // Simulate a restart by constructing a fresh writer instance; file should be unchanged.
+    const writer2 = new PiSessionWriter({ baseDir, now });
+    await writer2.sync({ summary, messages });
+    const second = await fs.readFile(filePath, 'utf8');
+    expect(second).toBe(first);
+  });
 });

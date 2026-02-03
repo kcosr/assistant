@@ -88,6 +88,7 @@ type PiSessionWriterState = {
   leafId: string | null;
   writtenMessageCount: number;
   hasAssistant: boolean;
+  toolCallIds: Set<string>;
   lastModel?: ModelInfo;
   lastThinking?: PiThinkingLevel;
   flushed: boolean;
@@ -102,6 +103,7 @@ export type PiSessionWriterOptions = {
 };
 
 const CURRENT_SESSION_VERSION = 3;
+const ORPHAN_TOOL_RESULT_CUSTOM_TYPE = 'assistant.orphan_tool_result';
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -269,6 +271,36 @@ function buildToolCallNameMap(messages: ChatCompletionMessage[]): Map<string, st
   return map;
 }
 
+function collectToolCallIdsFromPiMessage(message: PiSdkMessage): string[] {
+  if (!message || message.role !== 'assistant') {
+    return [];
+  }
+  const ids: string[] = [];
+  for (const block of message.content) {
+    if (block.type === 'toolCall' && typeof block.id === 'string' && block.id.trim().length > 0) {
+      ids.push(block.id);
+    }
+  }
+  return ids;
+}
+
+function collectToolCallIdsFromAssistantMessage(message: ChatCompletionMessage & { role: 'assistant' }): string[] {
+  const piSdkMessage = message.piSdkMessage;
+  if (piSdkMessage) {
+    return collectToolCallIdsFromPiMessage(piSdkMessage);
+  }
+  const ids: string[] = [];
+  if (Array.isArray(message.tool_calls)) {
+    for (const call of message.tool_calls) {
+      const id = call.id ?? '';
+      if (id) {
+        ids.push(id);
+      }
+    }
+  }
+  return ids;
+}
+
 function resolveModelInfo(options: {
   messages: ChatCompletionMessage[];
   modelSpec?: string;
@@ -387,6 +419,7 @@ async function loadExistingPiSessionState(
   leafId: string | null;
   messageCount: number;
   hasAssistant: boolean;
+  toolCallIds: Set<string>;
   lastModel?: ModelInfo;
   lastThinking?: PiThinkingLevel;
 }> {
@@ -405,6 +438,7 @@ async function loadExistingPiSessionState(
       leafId: null,
       messageCount: 0,
       hasAssistant: false,
+      toolCallIds: new Set<string>(),
     };
   }
 
@@ -416,6 +450,7 @@ async function loadExistingPiSessionState(
   let leafId: string | null = null;
   let messageCount = 0;
   let hasAssistant = false;
+  const toolCallIds = new Set<string>();
   let lastModel: ModelInfo | undefined;
   let lastThinking: PiThinkingLevel | undefined;
 
@@ -438,6 +473,20 @@ async function loadExistingPiSessionState(
       const message = entry['message'] as Record<string, unknown> | undefined;
       if (message && message['role'] === 'assistant') {
         hasAssistant = true;
+        const contentBlocks = message['content'];
+        if (Array.isArray(contentBlocks)) {
+          for (const block of contentBlocks) {
+            if (!block || typeof block !== 'object') {
+              continue;
+            }
+            const record = block as Record<string, unknown>;
+            const type = record['type'];
+            const id = record['id'];
+            if (type === 'toolCall' && typeof id === 'string' && id.trim().length > 0) {
+              toolCallIds.add(id.trim());
+            }
+          }
+        }
         const provider = typeof message['provider'] === 'string' ? message['provider'] : undefined;
         const modelId = typeof message['model'] === 'string' ? message['model'] : undefined;
         const api = typeof message['api'] === 'string' ? message['api'] : undefined;
@@ -449,7 +498,7 @@ async function loadExistingPiSessionState(
     if (entryType === 'custom_message') {
       // Count assistant-injected inputs as "messages" for sync deduplication.
       const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
-      if (customType === 'assistant.input') {
+      if (customType === 'assistant.input' || customType === ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
         messageCount += 1;
       }
     }
@@ -477,6 +526,7 @@ async function loadExistingPiSessionState(
     leafId,
     messageCount,
     hasAssistant,
+    toolCallIds,
     ...(lastModel ? { lastModel } : {}),
     ...(lastThinking ? { lastThinking } : {}),
   };
@@ -541,6 +591,7 @@ export class PiSessionWriter {
     let leafId = state.leafId;
     let messageCount = state.writtenMessageCount;
     let hasAssistant = state.hasAssistant;
+    const knownToolCallIds = new Set(state.toolCallIds);
 
     const entries: PiSessionEntry[] = [];
 
@@ -642,6 +693,9 @@ export class PiSessionWriter {
         if (piMessage.role === 'assistant') {
           hasAssistant = true;
         }
+        for (const id of collectToolCallIdsFromAssistantMessage(message)) {
+          knownToolCallIds.add(id);
+        }
         const entry: PiSessionMessageEntry = {
           type: 'message',
           id: generateEntryId(),
@@ -654,6 +708,29 @@ export class PiSessionWriter {
         messageCount += 1;
         continue;
       } else if (message.role === 'tool') {
+        const toolCallId = message.tool_call_id;
+        if (!knownToolCallIds.has(toolCallId)) {
+          const toolName = toolCallNameMap.get(toolCallId) ?? 'tool';
+          const entry: PiSessionCustomMessageEntry = {
+            type: 'custom_message',
+            id: generateEntryId(),
+            parentId: leafId,
+            timestamp: this.now().toISOString(),
+            customType: ORPHAN_TOOL_RESULT_CUSTOM_TYPE,
+            content: '',
+            details: {
+              toolCallId,
+              toolName,
+              note: 'Tool result dropped because matching toolCall was not found in session log.',
+            },
+            display: false,
+          };
+          entries.push(entry);
+          leafId = entry.id;
+          messageCount += 1;
+          continue;
+        }
+
         const piMessage = buildToolResultMessage({
           message,
           toolCallNameMap,
@@ -694,6 +771,7 @@ export class PiSessionWriter {
     state.leafId = leafId;
     state.writtenMessageCount = messageCount;
     state.hasAssistant = hasAssistant;
+    state.toolCallIds = knownToolCallIds;
 
     return currentSummary === summary ? undefined : currentSummary;
   }
@@ -810,6 +888,7 @@ export class PiSessionWriter {
     let leafId: string | null = null;
     let messageCount = 0;
     let hasAssistant = false;
+    let toolCallIds = new Set<string>();
     let lastModel: ModelInfo | undefined;
     let lastThinking: PiThinkingLevel | undefined;
     let flushed = false;
@@ -822,6 +901,7 @@ export class PiSessionWriter {
           leafId = existingState.leafId;
           messageCount = existingState.messageCount;
           hasAssistant = existingState.hasAssistant;
+          toolCallIds = existingState.toolCallIds;
           lastModel = existingState.lastModel;
           lastThinking = existingState.lastThinking;
           flushed = true;
@@ -852,6 +932,7 @@ export class PiSessionWriter {
       leafId,
       writtenMessageCount: messageCount,
       hasAssistant,
+      toolCallIds,
       ...(lastModel ? { lastModel } : {}),
       ...(lastThinking ? { lastThinking } : {}),
       flushed,
