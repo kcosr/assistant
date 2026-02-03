@@ -19,6 +19,7 @@
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Made Pi session mirror files configurable via `sessions.mirrorPiSessionHistory` (default true). ([#50](https://github.com/kcosr/assistant/pull/50))
 - Changed coding-sidecar build to emit a bundled server artifact. ([#51](https://github.com/kcosr/assistant/pull/51))
+- Changed Pi provider (`pi`) reload/history replay to use Pi session JSONL (and mirror overlay/callback/interrupt events) instead of verbose EventStore logs. ([#52](https://github.com/kcosr/assistant/pull/52))
 
 ### Fixed
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
