@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 - Removed `openai` and `openai-compatible` chat providers; use `pi` instead. ([#50](https://github.com/kcosr/assistant/pull/50))
+- Removed managed container mode for the coding plugin; sidecar must be externally managed and connected via socket/TCP. ([#51](https://github.com/kcosr/assistant/pull/51))
+- Removed `sessionId` from the coding sidecar API and executor interface; all operations use the workspace root. ([#51](https://github.com/kcosr/assistant/pull/51))
 
 ### Added
 - Added Pi SDK-backed `pi` chat provider for in-process completions. ([#50](https://github.com/kcosr/assistant/pull/50))
@@ -11,10 +13,12 @@
 - Added Pi SDK debug logging for requests/responses when `DEBUG_CHAT_COMPLETIONS` is enabled. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added configurable Pi tool-iteration limit (default 100) with an error when exceeded. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added automatic OAuth credential reuse from `~/.pi/agent/auth.json` for `anthropic` and `openai-codex` providers. ([#50](https://github.com/kcosr/assistant/pull/50))
+- Added connect-only coding sidecar configuration (Unix socket or TCP) with optional auth. ([#51](https://github.com/kcosr/assistant/pull/51))
 
 ### Changed
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Made Pi session mirror files configurable via `sessions.mirrorPiSessionHistory` (default true). ([#50](https://github.com/kcosr/assistant/pull/50))
+- Changed coding-sidecar build to emit a bundled server artifact. ([#51](https://github.com/kcosr/assistant/pull/51))
 
 ### Fixed
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
