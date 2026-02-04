@@ -192,6 +192,30 @@ export function buildPiContext(options: {
   const systemPromptParts: string[] = [];
   const piMessages: Message[] = [];
   const toolCallNameById = new Map<string, string>();
+  // When we reconstruct tool calls from ChatCompletion tool_calls (rather than
+  // preserving the Pi SDK assistant message), the toolCallId might include
+  // OpenAI Responses item ids (e.g. "...|fc_..."). Replaying those ids without
+  // the associated reasoning item can trigger a 400 from the OpenAI provider.
+  //
+  // To avoid this, remap such ids to fresh call ids when we are in the
+  // reconstruction path.
+  const shouldRemapOpenAiResponseItemIds = model.api === 'openai-responses';
+  const toolCallIdRemap = new Map<string, string>();
+  const maybeRemapToolCallId = (rawId: string): string => {
+    if (!shouldRemapOpenAiResponseItemIds) {
+      return rawId;
+    }
+    if (!rawId.includes('|fc_') && !rawId.startsWith('fc_')) {
+      return rawId;
+    }
+    const existing = toolCallIdRemap.get(rawId);
+    if (existing) {
+      return existing;
+    }
+    const next = `call_${randomUUID()}`;
+    toolCallIdRemap.set(rawId, next);
+    return next;
+  };
   let timestamp = Date.now();
   const nextTimestamp = () => timestamp++;
 
@@ -238,7 +262,8 @@ export function buildPiContext(options: {
       if (Array.isArray(message.tool_calls)) {
         for (const call of message.tool_calls) {
           const name = call.function?.name ?? '';
-          const id = call.id || randomUUID();
+          const rawId = call.id || randomUUID();
+          const id = maybeRemapToolCallId(rawId);
           if (name) {
             toolCallNameById.set(id, name);
           }
@@ -269,12 +294,13 @@ export function buildPiContext(options: {
     }
 
     if (message.role === 'tool') {
-      const toolCallId = message.tool_call_id;
-      const toolName = toolCallNameById.get(toolCallId) || 'tool';
+      const rawToolCallId = message.tool_call_id;
+      const remappedToolCallId = toolCallIdRemap.get(rawToolCallId) ?? rawToolCallId;
+      const toolName = toolCallNameById.get(remappedToolCallId) || 'tool';
       const isError = parseToolResultIsError(message.content);
       const toolResult: ToolResultMessage = {
         role: 'toolResult',
-        toolCallId,
+        toolCallId: remappedToolCallId,
         toolName,
         content: [{ type: 'text', text: message.content }],
         isError,

@@ -27,6 +27,8 @@
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi SDK session mirroring to include aborted/canceled turns for pi-mono resume. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi session mirroring to avoid orphan tool results that break Pi-native session replay. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#000](<pr-url>))
+- Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#000](<pr-url>))
 
 ### Removed
 

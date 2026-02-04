@@ -399,7 +399,7 @@ describe('PiSessionHistoryProvider', () => {
       providerId: 'pi-cli',
       attributes: {},
     });
-    expect(fallback).toBe(false);
+    expect(fallback).toBe(true);
   });
 
   it('keeps verbose persistence for providerId="pi" until Pi session metadata exists', async () => {
@@ -410,7 +410,7 @@ describe('PiSessionHistoryProvider', () => {
       providerId: 'pi',
       attributes: {},
     });
-    expect(before).toBe(false);
+    expect(before).toBe(true);
 
     const after = provider.shouldPersist?.({
       sessionId: 'session-2',
@@ -425,6 +425,38 @@ describe('PiSessionHistoryProvider', () => {
       },
     });
     expect(after).toBe(false);
+  });
+
+  it('falls back to the event store when Pi session metadata is missing', async () => {
+    const sessionId = 'session-fallback';
+    const userEvent: ChatEvent = {
+      id: 'event-1',
+      timestamp: Date.now(),
+      sessionId,
+      turnId: 'turn-1',
+      type: 'user_message',
+      payload: { text: 'Hello' },
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => [userEvent],
+      getEventsSince: async () => [userEvent],
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new PiSessionHistoryProvider({ eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      attributes: {},
+    });
+
+    expect(events.length).toBe(1);
+    expect(events[0]?.type).toBe('user_message');
   });
 
   it('splits thinking blocks around tool calls', async () => {

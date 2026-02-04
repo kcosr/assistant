@@ -180,20 +180,33 @@ export class PiSessionHistoryProvider implements HistoryProvider {
     return providerId === 'pi-cli' || providerId === 'pi';
   }
 
-  shouldPersist(_request: HistoryRequest): boolean {
-    return false;
+  shouldPersist(request: HistoryRequest): boolean {
+    // Persist events until we have enough metadata to resolve the Pi session JSONL.
+    // This avoids a "blank transcript" gap before the Pi session file exists.
+    const sessionInfo = resolvePiSessionInfo(request.attributes);
+    return !sessionInfo;
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
-    const { sessionId, force } = request;
+    const { sessionId, force, after } = request;
+    const fallbackToEventStore = async (): Promise<ChatEvent[]> => {
+      if (!this.options.eventStore) {
+        return [];
+      }
+      if (after) {
+        return this.options.eventStore.getEventsSince(sessionId, after);
+      }
+      return this.options.eventStore.getEvents(sessionId);
+    };
+
     const sessionInfo = resolvePiSessionInfo(request.attributes);
     if (!sessionInfo) {
-      return [];
+      return fallbackToEventStore();
     }
     const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
     const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
     if (!sessionPath) {
-      return [];
+      return fallbackToEventStore();
     }
 
     let stats: { mtimeMs: number } | null = null;
@@ -222,9 +235,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const cached = this.cache.get(sessionPath);
     if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return request.providerId === 'pi'
-        ? cached.events
-        : mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
+      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
     }
 
     let content: string;
@@ -243,9 +254,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
 
     const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return request.providerId === 'pi'
-      ? events
-      : mergeOverlayEvents(events, sessionId, this.options.eventStore);
+    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }
 }
 
