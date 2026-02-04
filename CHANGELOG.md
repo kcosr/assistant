@@ -14,8 +14,8 @@
 - Added configurable Pi tool-iteration limit (default 100) with an error when exceeded. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added automatic OAuth credential reuse from `~/.pi/agent/auth.json` for `anthropic` and `openai-codex` providers. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added connect-only coding sidecar configuration (Unix socket or TCP) with optional auth. ([#51](https://github.com/kcosr/assistant/pull/51))
-- Added rename/clear/delete actions to the session picker (desktop hover icons; touch sub-menu). ([#000](<pr-url>))
-- Added per-agent instruction skills discovery + prompt inclusion via `agents[].skills` (Pi-style `<available_skills>` + inline `<skill>` blocks). ([#000](<pr-url>))
+- Added rename/clear/delete actions to the session picker (desktop hover icons; touch sub-menu). ([#52](https://github.com/kcosr/assistant/pull/52))
+- Added per-agent instruction skills discovery + prompt inclusion via `agents[].skills` (Pi-style `<available_skills>` + inline `<skill>` blocks). ([#52](https://github.com/kcosr/assistant/pull/52))
 
 ### Changed
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
@@ -27,8 +27,8 @@
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi SDK session mirroring to include aborted/canceled turns for pi-mono resume. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi session mirroring to avoid orphan tool results that break Pi-native session replay. ([#52](https://github.com/kcosr/assistant/pull/52))
-- Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#000](<pr-url>))
-- Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#000](<pr-url>))
+- Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#52](https://github.com/kcosr/assistant/pull/52))
 
 ### Removed
 
