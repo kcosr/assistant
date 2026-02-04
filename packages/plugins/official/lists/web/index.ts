@@ -3138,7 +3138,6 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const currentToken = ++loadToken;
         const isSwitchingLists =
           !!activeListId && (activeListId !== listId || activeListInstanceId !== instanceId);
-        bodyManager.renderLoading({ type: 'list', id: listId });
         try {
           const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
           const list = parseListSummary(rawList, instanceId);

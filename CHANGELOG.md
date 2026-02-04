@@ -31,6 +31,7 @@
 - Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#52](https://github.com/kcosr/assistant/pull/52))
 - Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#52](https://github.com/kcosr/assistant/pull/52))
 - Fixed coding executor absolute path handling when paths already point within the workspace root. ([#0000](https://github.com/kcosr/assistant/pull/0000))
+- Fixed lists panel flashing "Loading list" placeholder on load. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 
 ### Removed
 
