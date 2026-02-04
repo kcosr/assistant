@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.0] - 2026-02-04
 
 ### Breaking Changes
 - Removed `openai` and `openai-compatible` chat providers; use `pi` instead. ([#50](https://github.com/kcosr/assistant/pull/50))
@@ -37,6 +37,7 @@
 - Fixed session clear to drop provider history metadata and reset Pi JSONL replay. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Removed
+
 
 ## [0.13.0] - 2026-02-01
 
