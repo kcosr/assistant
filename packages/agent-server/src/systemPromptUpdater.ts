@@ -30,5 +30,6 @@ export async function updateSystemPromptWithTools(options: {
     tools,
     ...(skills ? { skills } : {}),
     sessionId: state.summary.sessionId,
+    workingDir: state.summary.attributes?.core?.workingDir,
   });
 }

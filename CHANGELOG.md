@@ -39,6 +39,7 @@
 - Fixed output-cancel handling to avoid logging interrupts when no output has started. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 - Fixed session clear to drop provider history metadata and reset Pi JSONL replay. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 - Fixed agent-server build by correcting session attributes test access. ([#0000](https://github.com/kcosr/assistant/pull/0000))
+- Fixed system prompt refresh to retain the selected project directory. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 
 ### Removed
 
