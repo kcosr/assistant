@@ -28,6 +28,7 @@ interface CodingPluginConfig extends PluginConfig {
   mode?: 'local' | 'sidecar';
   local?: {
     workspaceRoot?: string;
+    allowOutsideWorkspaceRoot?: boolean;
   };
   sidecar?: {
     socketPath?: string;
@@ -61,7 +62,10 @@ export function createCodingPlugin(): ToolPlugin {
           ? pluginConfig.local.workspaceRoot
           : path.join(dataDir, 'coding-workspaces');
 
-      executor = new LocalExecutor({ workspaceRoot });
+      executor = new LocalExecutor({
+        workspaceRoot,
+        allowOutsideWorkspaceRoot: pluginConfig?.local?.allowOutsideWorkspaceRoot === true,
+      });
       return;
     }
 

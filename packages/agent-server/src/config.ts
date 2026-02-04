@@ -623,6 +623,7 @@ export const PluginConfigSchema = z
     local: z
       .object({
         workspaceRoot: NonEmptyTrimmedStringSchema.optional(),
+        allowOutsideWorkspaceRoot: z.boolean().optional(),
       })
       .optional(),
     sidecar: z

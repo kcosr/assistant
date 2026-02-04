@@ -50,6 +50,7 @@ Environment variables:
 | `TCP_HOST`             | (unset)                         | TCP host to bind (set with `TCP_PORT`)           |
 | `TCP_PORT`             | (unset)                         | TCP port to bind                                 |
 | `WORKSPACE_ROOT`       | `/workspace`                    | Root directory for operations                    |
+| `SIDECAR_ALLOW_OUTSIDE_WORKSPACE_ROOT` | `false` | Allow file operations on paths outside `WORKSPACE_ROOT` (unsafe) |
 | `SIDECAR_AUTH_TOKEN`   | (unset)                         | Bearer token for HTTP auth                       |
 | `SIDECAR_REQUIRE_AUTH` | `false`                         | Require auth token for all requests when `true`  |
 

@@ -129,6 +129,7 @@ describe('loadConfig', () => {
           mode: 'local',
           local: {
             workspaceRoot: '/var/lib/assistant/coding-workspaces',
+            allowOutsideWorkspaceRoot: true,
           },
         },
       },
@@ -143,6 +144,7 @@ describe('loadConfig', () => {
     expect(codingPlugin?.enabled).toBe(true);
     expect(codingPlugin?.mode).toBe('local');
     expect(codingPlugin?.local?.workspaceRoot).toBe('/var/lib/assistant/coding-workspaces');
+    expect(codingPlugin?.local?.allowOutsideWorkspaceRoot).toBe(true);
   });
 
   it('parses coding plugin configuration for sidecar mode', async () => {

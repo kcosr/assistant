@@ -219,6 +219,7 @@ If you use the existing `@assistant/coding-sidecar` image behavior:
 - it reads environment variables:
   - `SOCKET_PATH` (where it will create the Unix socket)
   - `WORKSPACE_ROOT` (root directory for file operations)
+  - `SIDECAR_ALLOW_OUTSIDE_WORKSPACE_ROOT` (when true, allow file operations outside `WORKSPACE_ROOT`; unsafe)
   - `TCP_HOST` / `TCP_PORT` (optional TCP listener; if unset, TCP is disabled)
   - `SIDECAR_AUTH_TOKEN` / `SIDECAR_REQUIRE_AUTH` (optional auth; when required, reject requests without a valid token)
 

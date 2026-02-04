@@ -16,6 +16,7 @@
 - Added connect-only coding sidecar configuration (Unix socket or TCP) with optional auth. ([#51](https://github.com/kcosr/assistant/pull/51))
 - Added rename/clear/delete actions to the session picker (desktop hover icons; touch sub-menu). ([#52](https://github.com/kcosr/assistant/pull/52))
 - Added per-agent instruction skills discovery + prompt inclusion via `agents[].skills` (Pi-style `<available_skills>` + inline `<skill>` blocks). ([#52](https://github.com/kcosr/assistant/pull/52))
+- Added `allowOutsideWorkspaceRoot` escape hatch for coding executor path resolution. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 
 ### Changed
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
@@ -29,6 +30,7 @@
 - Fixed Pi session mirroring to avoid orphan tool results that break Pi-native session replay. ([#52](https://github.com/kcosr/assistant/pull/52))
 - Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#52](https://github.com/kcosr/assistant/pull/52))
 - Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed coding executor absolute path handling when paths already point within the workspace root. ([#0000](https://github.com/kcosr/assistant/pull/0000))
 
 ### Removed
 

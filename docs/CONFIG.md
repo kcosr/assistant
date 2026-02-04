@@ -351,6 +351,7 @@ All operations are rooted at a single workspace root (no per-session directories
 | ----- | ---- | ----------- |
 | `mode` | string | Execution mode: `local` or `sidecar`. |
 | `local.workspaceRoot` | string | Root directory for local workspaces. |
+| `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe). |
 | `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
 | `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |
 | `sidecar.tcp.port` | number | TCP port for sidecar access. |
