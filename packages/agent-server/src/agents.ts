@@ -15,10 +15,37 @@ export interface CliWrapperConfig {
   env?: Record<string, string>;
 }
 
+export type InstructionSkillSource = {
+  /**
+   * Directory to recursively scan for SKILL.md files.
+   */
+  root: string;
+  /**
+   * Glob patterns over discovered skill names to include in the reference listing.
+   * Defaults to ["*"] when both available and inline are omitted.
+   */
+  available?: string[];
+  /**
+   * Glob patterns over discovered skill names to include inline in the system prompt.
+   * Defaults to [] when both available and inline are omitted.
+   */
+  inline?: string[];
+};
+
 export interface AgentDefinition {
   agentId: string;
   displayName: string;
   description: string;
+  /**
+   * Controls whether the UI prompts for a working directory when creating sessions.
+   * - "auto": use defaults (no picker)
+   * - "prompt": show a working dir picker for configured roots
+   */
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  /**
+   * Base directories offered in the working directory picker.
+   */
+  sessionWorkingDirRoots?: string[];
   /**
    * Runtime type for this agent.
    * - "chat": in-process chat completions (default)
@@ -139,6 +166,10 @@ export interface AgentDefinition {
    * Optional scheduled sessions for this agent.
    */
   schedules?: ScheduleConfig[];
+  /**
+   * Optional instruction skills configuration (Pi-style SKILL.md discovery + prompt inclusion).
+   */
+  skills?: InstructionSkillSource[];
 }
 
 export interface PiSdkChatConfig {
@@ -351,6 +382,9 @@ interface AgentDefinitionConfigShape {
   uiVisible?: unknown;
   apiExposed?: unknown;
   schedules?: unknown;
+  skills?: unknown;
+  sessionWorkingDirMode?: unknown;
+  sessionWorkingDirRoots?: unknown;
 }
 
 interface AgentsConfigFileShape {
@@ -371,6 +405,8 @@ function validateAgentDefinitionConfig(
   const rawUiVisible = config.uiVisible;
   const rawApiExposed = config.apiExposed;
   const rawToolExposure = config.toolExposure;
+  const rawSessionWorkingDirMode = config.sessionWorkingDirMode;
+  const rawSessionWorkingDirRoots = config.sessionWorkingDirRoots;
 
   if (typeof rawAgentId !== 'string' || !rawAgentId.trim()) {
     throw new Error(`agents[${index}].agentId must be a non-empty string`);
@@ -408,6 +444,16 @@ function validateAgentDefinitionConfig(
       `agents[${index}].toolExposure must be "tools", "skills", "mixed", null, or omitted`,
     );
   }
+  if (
+    rawSessionWorkingDirMode !== undefined &&
+    rawSessionWorkingDirMode !== null &&
+    rawSessionWorkingDirMode !== 'auto' &&
+    rawSessionWorkingDirMode !== 'prompt'
+  ) {
+    throw new Error(
+      `agents[${index}].sessionWorkingDirMode must be "auto", "prompt", null, or omitted`,
+    );
+  }
 
   const agentId = rawAgentId.trim();
   const displayName = rawDisplayName.trim();
@@ -420,6 +466,10 @@ function validateAgentDefinitionConfig(
   const toolExposure =
     rawToolExposure === 'tools' || rawToolExposure === 'skills' || rawToolExposure === 'mixed'
       ? rawToolExposure
+      : undefined;
+  const sessionWorkingDirMode =
+    rawSessionWorkingDirMode === 'auto' || rawSessionWorkingDirMode === 'prompt'
+      ? rawSessionWorkingDirMode
       : undefined;
 
   const {
@@ -466,6 +516,37 @@ function validateAgentDefinitionConfig(
   const capabilityDeny = parsePatternList(capabilityDenylist, 'capabilityDenylist');
   const agentAllow = parsePatternList(agentAllowlist, 'agentAllowlist');
   const agentDeny = parsePatternList(agentDenylist, 'agentDenylist');
+  const parseAbsolutePathList = (raw: unknown, fieldName: string): string[] | undefined => {
+    if (raw === null || raw === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(
+        `agents[${index}].${fieldName} must be an array of absolute paths, null, or omitted`,
+      );
+    }
+    const paths: string[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const value = raw[i];
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(
+          `agents[${index}].${fieldName}[${i}] must be a non-empty string when provided`,
+        );
+      }
+      const trimmed = value.trim();
+      if (!path.isAbsolute(trimmed)) {
+        throw new Error(
+          `agents[${index}].${fieldName}[${i}] must be an absolute path when provided`,
+        );
+      }
+      paths.push(trimmed);
+    }
+    return paths.length > 0 ? paths : undefined;
+  };
+  const sessionWorkingDirRoots = parseAbsolutePathList(
+    rawSessionWorkingDirRoots,
+    'sessionWorkingDirRoots',
+  );
 
   const parseSchedules = (raw: unknown): ScheduleConfig[] | undefined => {
     if (raw === undefined || raw === null) {
@@ -578,6 +659,61 @@ function validateAgentDefinitionConfig(
   };
 
   const schedules = parseSchedules(config.schedules);
+
+  const parseInstructionSkills = (raw: unknown): InstructionSkillSource[] | undefined => {
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(`agents[${index}].skills must be an array when provided`);
+    }
+
+    const sources: InstructionSkillSource[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const entry = raw[i];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`agents[${index}].skills[${i}] must be an object`);
+      }
+      const source = entry as { root?: unknown; available?: unknown; inline?: unknown };
+      const root = typeof source.root === 'string' ? source.root.trim() : '';
+      if (!root) {
+        throw new Error(`agents[${index}].skills[${i}].root must be a non-empty string`);
+      }
+
+      const parseOptionalPatternList = (value: unknown, field: 'available' | 'inline'): string[] | undefined => {
+        if (value === undefined || value === null) {
+          return undefined;
+        }
+        if (!Array.isArray(value)) {
+          throw new Error(`agents[${index}].skills[${i}].${field} must be an array of strings when provided`);
+        }
+        const patterns: string[] = [];
+        for (let j = 0; j < value.length; j += 1) {
+          const pattern = value[j];
+          if (typeof pattern !== 'string' || !pattern.trim()) {
+            throw new Error(
+              `agents[${index}].skills[${i}].${field}[${j}] must be a non-empty string when provided`,
+            );
+          }
+          patterns.push(pattern.trim());
+        }
+        return patterns.length > 0 ? patterns : undefined;
+      };
+
+      const available = parseOptionalPatternList(source.available, 'available');
+      const inline = parseOptionalPatternList(source.inline, 'inline');
+
+      sources.push({
+        root,
+        ...(available ? { available } : {}),
+        ...(inline ? { inline } : {}),
+      });
+    }
+
+    return sources.length > 0 ? sources : undefined;
+  };
+
+  const instructionSkills = parseInstructionSkills(config.skills);
 
   const base: AgentDefinition = {
     agentId,
@@ -1079,11 +1215,20 @@ function validateAgentDefinitionConfig(
   if (schedules) {
     extended.schedules = schedules;
   }
+  if (instructionSkills) {
+    extended.skills = instructionSkills;
+  }
   if (uiVisible !== undefined) {
     extended.uiVisible = uiVisible;
   }
   if (apiExposed !== undefined) {
     extended.apiExposed = apiExposed;
+  }
+  if (sessionWorkingDirMode) {
+    extended.sessionWorkingDirMode = sessionWorkingDirMode;
+  }
+  if (sessionWorkingDirRoots) {
+    extended.sessionWorkingDirRoots = sessionWorkingDirRoots;
   }
 
   return extended;

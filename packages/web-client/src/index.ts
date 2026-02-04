@@ -200,6 +200,8 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  sessionWorkingDirRoots?: string[];
 }
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
@@ -1798,7 +1800,10 @@ async function main(): Promise<void> {
   const openSessionPicker = (options: SessionPickerOpenOptions): void => {
     requireSessionPicker().open({
       ...options,
+      onClearSession:
+        options.onClearSession ?? ((sessionId) => showClearHistoryConfirmation(sessionId)),
       onDeleteSession: options.onDeleteSession ?? ((sessionId) => void deleteSession(sessionId)),
+      onRenameSession: options.onRenameSession ?? ((sessionId) => void renameSession(sessionId)),
     });
   };
 

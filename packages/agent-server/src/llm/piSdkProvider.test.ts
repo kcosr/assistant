@@ -176,6 +176,46 @@ describe('buildPiContext', () => {
     expect(toolResult.role).toBe('toolResult');
     expect(toolResult.toolName).toBe('doThing');
   });
+
+  it('remaps OpenAI Responses tool-call ids when reconstructing tool calls from events', () => {
+    const messages: ChatCompletionMessage[] = [
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'call_abc|fc_123',
+            type: 'function',
+            function: { name: 'doThing', arguments: '{"foo":"bar"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call_abc|fc_123', content: '{"ok":true}' },
+    ];
+
+    const context = buildPiContext({
+      messages,
+      tools: [],
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
+    });
+
+    const assistant = context.messages[0] as {
+      role: string;
+      content: Array<{ type: string; id?: string; name?: string }>;
+    };
+    expect(assistant.role).toBe('assistant');
+    const toolCall = assistant.content.find((block) => block.type === 'toolCall') as
+      | { id?: string }
+      | undefined;
+    expect(toolCall?.id).toBeDefined();
+    expect(toolCall?.id).not.toBe('call_abc|fc_123');
+    expect(String(toolCall?.id)).not.toContain('|fc_');
+    expect(String(toolCall?.id)).not.toMatch(/^fc_/);
+
+    const toolResult = context.messages[1] as { role: string; toolCallId?: string };
+    expect(toolResult.role).toBe('toolResult');
+    expect(toolResult.toolCallId).toBe(toolCall?.id);
+  });
 });
 
 describe('runPiSdkChatCompletionIteration', () => {

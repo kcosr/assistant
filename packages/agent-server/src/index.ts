@@ -17,6 +17,7 @@ import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
 import { ScheduledSessionService } from './scheduledSessions';
 import { SearchService } from './search/searchService';
+import { preloadInstructionSkillsForAgents } from './instructionSkills';
 import {
   ClaudeSessionHistoryProvider,
   CodexSessionHistoryProvider,
@@ -267,6 +268,7 @@ export async function runServer(): Promise<void> {
   const agentDefinitions = appConfig.agents;
 
   agentRegistry = new AgentRegistry(agentDefinitions);
+  preloadInstructionSkillsForAgents(agentDefinitions);
 
   const pluginRegistry = new DefaultPluginRegistry();
   await pluginRegistry.initialize(appConfig, envConfig.dataDir, {

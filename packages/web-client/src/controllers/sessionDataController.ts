@@ -40,6 +40,8 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  sessionWorkingDirRoots?: string[];
 }
 
 interface OperationResponse<T> {
@@ -115,6 +117,8 @@ export class SessionDataController {
           displayName?: unknown;
           description?: unknown;
           type?: unknown;
+          sessionWorkingDirMode?: unknown;
+          sessionWorkingDirRoots?: unknown;
         };
 
         const agentId = typeof anyAgent.agentId === 'string' ? anyAgent.agentId.trim() : '';
@@ -134,11 +138,32 @@ export class SessionDataController {
         const typeRaw = typeof anyAgent.type === 'string' ? anyAgent.type.trim() : '';
         const type = typeRaw === 'external' || typeRaw === 'chat' ? typeRaw : undefined;
 
+        const sessionWorkingDirModeRaw =
+          typeof anyAgent.sessionWorkingDirMode === 'string'
+            ? anyAgent.sessionWorkingDirMode.trim()
+            : '';
+        const sessionWorkingDirMode =
+          sessionWorkingDirModeRaw === 'auto' || sessionWorkingDirModeRaw === 'prompt'
+            ? sessionWorkingDirModeRaw
+            : undefined;
+
+        const rawRoots = anyAgent.sessionWorkingDirRoots;
+        const sessionWorkingDirRoots = Array.isArray(rawRoots)
+          ? rawRoots
+              .filter((root) => typeof root === 'string')
+              .map((root) => root.trim())
+              .filter((root) => root.length > 0)
+          : undefined;
+
         parsedAgents.push({
           agentId,
           displayName,
           ...(description ? { description } : {}),
           ...(type ? { type } : {}),
+          ...(sessionWorkingDirMode ? { sessionWorkingDirMode } : {}),
+          ...(sessionWorkingDirRoots && sessionWorkingDirRoots.length > 0
+            ? { sessionWorkingDirRoots }
+            : {}),
         });
       }
 

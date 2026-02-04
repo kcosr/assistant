@@ -85,6 +85,10 @@ function getWorkspaceRoot(): string {
   return DEFAULT_WORKSPACE_ROOT;
 }
 
+function allowOutsideWorkspaceRoot(): boolean {
+  return parseBooleanEnv(process.env['SIDECAR_ALLOW_OUTSIDE_WORKSPACE_ROOT']);
+}
+
 function getTcpHost(): string | undefined {
   const raw = process.env['TCP_HOST'];
   if (typeof raw !== 'string') {
@@ -469,7 +473,10 @@ async function handleGrep(
 }
 
 export function createServer(): http.Server {
-  const executor = new LocalExecutor({ workspaceRoot: getWorkspaceRoot() });
+  const executor = new LocalExecutor({
+    workspaceRoot: getWorkspaceRoot(),
+    allowOutsideWorkspaceRoot: allowOutsideWorkspaceRoot(),
+  });
   const authToken = getAuthToken();
   const authRequired = isAuthRequired();
 

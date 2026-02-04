@@ -53,6 +53,25 @@
         "required": ["agentId", "content"]
       },
       "capabilities": ["agents.write"]
+    },
+    {
+      "id": "list-working-dirs",
+      "summary": "List working directory subfolders for an agent.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "description": "Agent id to resolve working dir roots for."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional substring filter (case-insensitive)."
+          }
+        },
+        "required": ["agentId"]
+      },
+      "capabilities": ["agents.read"]
     }
   ]
 }

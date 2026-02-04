@@ -27,15 +27,18 @@ import { ensureTool } from './utils/toolsManager';
 
 export interface LocalExecutorOptions {
   workspaceRoot: string;
+  allowOutsideWorkspaceRoot?: boolean;
 }
 
 const DEFAULT_FIND_LIMIT = 1000;
 
 export class LocalExecutor implements ToolExecutor {
   private readonly workspaceRoot: string;
+  private readonly allowOutsideWorkspaceRoot: boolean;
 
   constructor(options: LocalExecutorOptions) {
     this.workspaceRoot = options.workspaceRoot;
+    this.allowOutsideWorkspaceRoot = options.allowOutsideWorkspaceRoot === true;
   }
 
   async ls(requestedPath?: string, options?: LsOptions): Promise<LsResult> {
@@ -45,6 +48,7 @@ export class LocalExecutor implements ToolExecutor {
 
     const sessionOptions = {
       workspaceRoot: this.workspaceRoot,
+      allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot,
     };
 
     const effectivePath =
@@ -212,7 +216,7 @@ export class LocalExecutor implements ToolExecutor {
       workspaceRoot: this.workspaceRoot,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot },
+      { workspaceRoot: this.workspaceRoot, allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot },
       filePath,
     );
 
@@ -283,7 +287,7 @@ export class LocalExecutor implements ToolExecutor {
       workspaceRoot: this.workspaceRoot,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot },
+      { workspaceRoot: this.workspaceRoot, allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot },
       filePath,
     );
     const dir = path.dirname(absolutePath);
@@ -305,7 +309,7 @@ export class LocalExecutor implements ToolExecutor {
       workspaceRoot: this.workspaceRoot,
     });
     const absolutePath = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot },
+      { workspaceRoot: this.workspaceRoot, allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot },
       filePath,
     );
 
@@ -351,6 +355,7 @@ export class LocalExecutor implements ToolExecutor {
   async grep(options: GrepOptions, abortSignal?: AbortSignal): Promise<GrepResult> {
     const sessionOptions = {
       workspaceRoot: this.workspaceRoot,
+      allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot,
     } as const;
     const sessionRoot = await ensureSessionWorkspace(sessionOptions);
 
@@ -837,7 +842,7 @@ export class LocalExecutor implements ToolExecutor {
     const rawSearchPath =
       options.path && options.path.trim().length > 0 ? options.path.trim() : '.';
     const searchDir = resolvePathWithinSession(
-      { workspaceRoot: this.workspaceRoot },
+      { workspaceRoot: this.workspaceRoot, allowOutsideWorkspaceRoot: this.allowOutsideWorkspaceRoot },
       rawSearchPath,
     );
 

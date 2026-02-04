@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -130,6 +131,45 @@ function createTestPlugin() {
 }
 
 describe('agents plugin operations', () => {
+  it('lists working directory subfolders for an agent', async () => {
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+    const root = createTempDir('agent-workspaces');
+    const appDir = path.join(root, 'app');
+    const docsDir = path.join(root, 'docs');
+    await fs.mkdir(appDir, { recursive: true });
+    await fs.mkdir(docsDir, { recursive: true });
+
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+        sessionWorkingDirMode: 'prompt',
+        sessionWorkingDirRoots: [root],
+      },
+    ]);
+
+    const ctxWithAgents: ToolContext = {
+      ...ctx,
+      agentRegistry,
+    };
+
+    const result = await plugin.operations?.['list-working-dirs'](
+      { agentId: 'general' },
+      ctxWithAgents,
+    );
+
+    expect(result).toEqual({
+      roots: [
+        {
+          root,
+          directories: [appDir, docsDir],
+        },
+      ],
+    });
+  });
+
   describe('message', () => {
     it('rejects messaging agents that are not visible from the current agent session', async () => {
       const { ctx, sessionIndex, eventStore, sessionHub, host } =

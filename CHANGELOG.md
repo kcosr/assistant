@@ -14,15 +14,27 @@
 - Added configurable Pi tool-iteration limit (default 100) with an error when exceeded. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added automatic OAuth credential reuse from `~/.pi/agent/auth.json` for `anthropic` and `openai-codex` providers. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added connect-only coding sidecar configuration (Unix socket or TCP) with optional auth. ([#51](https://github.com/kcosr/assistant/pull/51))
+- Added rename/clear/delete actions to the session picker (desktop hover icons; touch sub-menu). ([#52](https://github.com/kcosr/assistant/pull/52))
+- Added per-agent instruction skills discovery + prompt inclusion via `agents[].skills` (Pi-style `<available_skills>` + inline `<skill>` blocks). ([#52](https://github.com/kcosr/assistant/pull/52))
+- Added per-agent working directory picker options for new session creation. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Changed
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Made Pi session mirror files configurable via `sessions.mirrorPiSessionHistory` (default true). ([#50](https://github.com/kcosr/assistant/pull/50))
 - Changed coding-sidecar build to emit a bundled server artifact. ([#51](https://github.com/kcosr/assistant/pull/51))
+- Changed Pi provider (`pi`) reload/history replay to use Pi session JSONL (and mirror overlay/callback/interrupt events) instead of verbose EventStore logs. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Changed working directory picker to list immediate subfolders and show folder names; selection adds project directory to the system prompt. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Fixed
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi SDK session mirroring to include aborted/canceled turns for pi-mono resume. ([#50](https://github.com/kcosr/assistant/pull/50))
+- Fixed Pi session mirroring to avoid orphan tool results that break Pi-native session replay. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed Pi session `/events` replay returning an empty transcript before Pi session metadata exists. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed OpenAI Responses history replay to avoid reusing `function_call` item ids without their paired `reasoning` item. ([#52](https://github.com/kcosr/assistant/pull/52))
+- Fixed coding executor absolute path handling when paths already point within the workspace root. ([#53](https://github.com/kcosr/assistant/pull/53))
+- Fixed lists panel flashing "Loading list" placeholder on load. ([#53](https://github.com/kcosr/assistant/pull/53))
+- Fixed session history replay/cancel handling (skip aborted turns, avoid logging interrupts without output). ([#53](https://github.com/kcosr/assistant/pull/53))
+- Fixed session clear to drop provider history metadata and reset Pi JSONL replay. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Removed
 

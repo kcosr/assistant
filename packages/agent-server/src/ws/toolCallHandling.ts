@@ -508,6 +508,9 @@ export async function handleChatToolCalls(options: {
       ...(agentExchangeId ? { agentExchangeId } : {}),
     };
     sessionHub.broadcastToSession(sessionId, toolCallStartMessage);
+    if (runForSignal) {
+      runForSignal.outputStarted = true;
+    }
 
     if (shouldEmitChatEvents && eventStore && turnId && responseId) {
       let args: Record<string, unknown> = {};

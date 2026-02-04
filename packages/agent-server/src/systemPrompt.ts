@@ -1,6 +1,7 @@
 import { matchesGlobPattern, type Tool } from './tools';
 import type { SkillSummary } from './skills';
 import { AgentRegistry, type AgentDefinition } from './agents';
+import { buildInstructionSkillsPrompt } from './instructionSkills';
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant. Always respond in English unless the user explicitly asks for a different language.
 
@@ -52,6 +53,7 @@ export interface BuildSystemPromptOptions {
   tools?: Tool[];
   skills?: SkillSummary[];
   sessionId?: string;
+  workingDir?: string;
 }
 
 function collectToolNames(
@@ -89,7 +91,8 @@ export function buildSystemPrompt(
   let agentRegistry: AgentRegistry;
   let agentId: string | undefined;
   let tools: Tool[] | undefined;
-  let skills: SkillSummary[] | undefined;
+  let cliSkills: SkillSummary[] | undefined;
+  let workingDir: string | undefined;
 
   if (optionsOrRegistry instanceof AgentRegistry) {
     agentRegistry = optionsOrRegistry;
@@ -99,7 +102,8 @@ export function buildSystemPrompt(
     agentRegistry = optionsOrRegistry.agentRegistry;
     agentId = optionsOrRegistry.agentId;
     tools = optionsOrRegistry.tools;
-    skills = optionsOrRegistry.skills;
+    cliSkills = optionsOrRegistry.skills;
+    workingDir = optionsOrRegistry.workingDir;
   }
 
   let basePrompt = DEFAULT_SYSTEM_PROMPT;
@@ -117,9 +121,18 @@ export function buildSystemPrompt(
   }
 
   const sections: string[] = [basePrompt.trimEnd()];
+  if (workingDir && workingDir.trim().length > 0) {
+    sections.push(`Project directory: ${workingDir.trim()}`);
+  }
+  if (agent?.skills && agent.skills.length > 0) {
+    const skillsPrompt = buildInstructionSkillsPrompt(agent);
+    if (skillsPrompt) {
+      sections.push(skillsPrompt);
+    }
+  }
 
-  const toolNames = collectToolNames(tools, skills);
-  const hasToolContext = (tools && tools.length > 0) || (skills && skills.length > 0);
+  const toolNames = collectToolNames(tools, cliSkills);
+  const hasToolContext = (tools && tools.length > 0) || (cliSkills && cliSkills.length > 0);
 
   // Add tools section if tools are provided
   if (tools && tools.length > 0) {
@@ -135,13 +148,13 @@ export function buildSystemPrompt(
     }
   }
 
-  if (skills && skills.length > 0) {
+  if (cliSkills && cliSkills.length > 0) {
     const skillLines: string[] = ['', 'Available CLI skills:', ''];
     skillLines.push(
       'Use bash to read each SKILL.md file and invoke the CLI for that skill.',
       'Each skill lists its operations plus usage details.',
     );
-    for (const skill of skills) {
+    for (const skill of cliSkills) {
       skillLines.push(
         `- ${skill.id}: ${skill.description} (SKILLS: ${skill.skillsPath}, CLI: ${skill.cliPath})`,
       );

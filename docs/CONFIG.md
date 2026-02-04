@@ -351,6 +351,7 @@ All operations are rooted at a single workspace root (no per-session directories
 | ----- | ---- | ----------- |
 | `mode` | string | Execution mode: `local` or `sidecar`. |
 | `local.workspaceRoot` | string | Root directory for local workspaces. |
+| `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe). |
 | `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
 | `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |
 | `sidecar.tcp.port` | number | TCP port for sidecar access. |
@@ -411,6 +412,12 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
   "toolDenylist": [],
   "toolExposure": "skills",
   "skillAllowlist": ["notes"],
+  "sessionWorkingDirMode": "prompt",
+  "sessionWorkingDirRoots": ["/home/kevin/worktrees"],
+  "skills": [
+    { "root": "~/skills", "available": ["*"], "inline": ["my-critical-*"] },
+    { "root": "worktrees/assistant/skills" }
+  ],
   "capabilityAllowlist": ["*"],
   "agentAllowlist": ["*"],
   "uiVisible": true,
@@ -430,13 +437,50 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `toolExposure` | string | `tools`, `skills`, or `mixed`. |
 | `skillAllowlist` | array | Plugin ids exposed as CLI skills. |
 | `skillDenylist` | array | Plugin ids blocked from skill exposure. |
+| `skills` | array | Instruction skills (filesystem `SKILL.md` discovery + Pi-style prompt inclusion). |
 | `capabilityAllowlist` | array | Glob patterns for capability access. |
 | `capabilityDenylist` | array | Glob patterns for capability denylist. |
 | `agentAllowlist` | array | Glob patterns for agents this agent can delegate to. |
 | `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
+| `sessionWorkingDirMode` | string | Controls working directory picker on new session (`auto` or `prompt`). |
+| `sessionWorkingDirRoots` | array | Absolute base directories whose immediate subfolders are offered in the picker. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
 | `schedules` | array | Optional scheduled session definitions (CLI providers only). |
+
+#### Working directory picker
+
+When `sessionWorkingDirMode` is set to `prompt`, the UI shows a working directory picker for
+new sessions created with that agent. The options are the immediate subdirectories of each
+path in `sessionWorkingDirRoots` (all of which must be absolute paths).
+
+The picker displays only the folder name in the list (full path is used internally). When a
+directory is selected, the system prompt includes a line `Project directory: <full-path>`.
+
+#### Instruction skills (`skills`)
+
+The `skills` field is for **instruction skills** discovered from `SKILL.md` files on disk and injected
+into the agent's system prompt. This is separate from plugin/manifest-driven “CLI skills” controlled by
+`toolExposure` + `skillAllowlist`.
+
+Each entry is a “source”:
+
+```jsonc
+{
+  "skills": [
+    {
+      "root": "~/skills",
+      "available": ["*"],
+      "inline": ["my-critical-*"]
+    }
+  ]
+}
+```
+
+- `root`: directory to recursively scan for `SKILL.md`.
+- `available`: glob patterns over skill `name` to include in `<available_skills>`.
+- `inline`: glob patterns over skill `name` to inline as `<skill name="...">...</skill>`.
+- If both `available` and `inline` are omitted for a source, it defaults to `available: ["*"]`.
 
 #### External Agents
 

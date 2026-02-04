@@ -57,6 +57,7 @@ describe('loadAgentDefinitionsFromFile', () => {
           skillDenylist: ['lists-private'],
           capabilityAllowlist: ['lists.*'],
           capabilityDenylist: ['lists.write'],
+          skills: [{ root: '~/skills', available: ['*'], inline: ['my-critical-*'] }],
         },
         {
           agentId: 'general',
@@ -83,6 +84,9 @@ describe('loadAgentDefinitionsFromFile', () => {
     expect(readingList?.skillDenylist).toEqual(['lists-private']);
     expect(readingList?.capabilityAllowlist).toEqual(['lists.*']);
     expect(readingList?.capabilityDenylist).toEqual(['lists.write']);
+    expect(readingList?.skills).toEqual([
+      { root: '~/skills', available: ['*'], inline: ['my-critical-*'] },
+    ]);
 
     const general = definitions.find((agent) => agent.agentId === 'general');
     expect(general).toBeDefined();

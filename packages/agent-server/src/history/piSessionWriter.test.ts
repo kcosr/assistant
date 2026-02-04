@@ -152,4 +152,252 @@ describe('PiSessionWriter', () => {
       | undefined;
     expect(toolResultMessage?.toolName).toBe('read');
   });
+
+  it('writes agent-attributed and callback inputs as assistant.input custom_message entries', async () => {
+    const baseDir = await createTempDir('pi-session-writer-custom-message');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-2',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      {
+        role: 'user',
+        content: 'Hello from agent',
+        meta: { source: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a', visibility: 'visible' },
+      },
+      {
+        role: 'user',
+        content: 'Hidden callback input',
+        meta: { source: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b', visibility: 'hidden' },
+      },
+      { role: 'assistant', content: 'Ack' },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const customEntries = entries.filter((entry) => entry['type'] === 'custom_message');
+    expect(customEntries.length).toBe(2);
+
+    const agentInput = customEntries.find((entry) => {
+      const details = entry['details'];
+      const kind = details && typeof details === 'object' ? (details as Record<string, unknown>)['kind'] : undefined;
+      return entry['customType'] === 'assistant.input' && kind === 'agent';
+    });
+    expect(agentInput?.['display']).toBe(true);
+    expect(agentInput?.['content']).toBe('Hello from agent');
+    expect((agentInput?.['details'] as Record<string, unknown> | undefined)?.['fromAgentId']).toBe('agent-a');
+    expect((agentInput?.['details'] as Record<string, unknown> | undefined)?.['fromSessionId']).toBe('sess-a');
+
+    const callbackInput = customEntries.find((entry) => {
+      const details = entry['details'];
+      const kind = details && typeof details === 'object' ? (details as Record<string, unknown>)['kind'] : undefined;
+      return entry['customType'] === 'assistant.input' && kind === 'callback';
+    });
+    expect(callbackInput?.['display']).toBe(false);
+    expect(callbackInput?.['content']).toBe('Hidden callback input');
+
+    const userMessageEntries = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+      .filter(Boolean)
+      .filter((message) => message?.['role'] === 'user');
+    expect(userMessageEntries.length).toBe(0);
+  });
+
+  it('counts assistant.input entries when resuming to avoid duplicate writes', async () => {
+    const baseDir = await createTempDir('pi-session-writer-resume');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-3',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      {
+        role: 'user',
+        content: 'Hello from agent',
+        meta: { source: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a', visibility: 'visible' },
+      },
+      { role: 'assistant', content: 'Ack' },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const first = await fs.readFile(filePath, 'utf8');
+
+    // Simulate a restart by constructing a fresh writer instance.
+    const writer2 = new PiSessionWriter({ baseDir, now });
+    await writer2.sync({
+      summary,
+      messages,
+    });
+
+    const second = await fs.readFile(filePath, 'utf8');
+    expect(second).toBe(first);
+  });
+
+  it('appends assistant.event custom entries without affecting message sync', async () => {
+    const baseDir = await createTempDir('pi-session-writer-custom');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-4',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.sync({
+      summary,
+      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    await writer.appendAssistantEvent({
+      summary,
+      eventType: 'interrupt',
+      payload: { reason: 'user_cancel' },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const last = entries[entries.length - 1] as Record<string, unknown> | undefined;
+    expect(last?.['type']).toBe('custom');
+    expect(last?.['customType']).toBe('assistant.event');
+    expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
+  });
+
+  it('replaces orphan tool results with a non-breaking placeholder and avoids duplicate writes on restart', async () => {
+    const baseDir = await createTempDir('pi-session-writer-orphan-tool');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-5',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Ack' },
+      {
+        role: 'tool',
+        tool_call_id: 'call-orphan-1',
+        content: JSON.stringify({ ok: true, result: 'orphan tool output' }),
+      },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const first = await fs.readFile(filePath, 'utf8');
+
+    const entries = parseJsonLines(first);
+    const orphanPlaceholder = entries.find(
+      (entry) => entry['type'] === 'custom_message' && entry['customType'] === 'assistant.orphan_tool_result',
+    );
+    expect(orphanPlaceholder).toBeTruthy();
+    expect(orphanPlaceholder?.['display']).toBe(false);
+
+    const toolResultEntries = entries.filter((entry) => {
+      if (entry['type'] !== 'message') return false;
+      const message = entry['message'];
+      return message && typeof message === 'object' && (message as Record<string, unknown>)['role'] === 'toolResult';
+    });
+    expect(toolResultEntries.length).toBe(0);
+
+    // Simulate a restart by constructing a fresh writer instance; file should be unchanged.
+    const writer2 = new PiSessionWriter({ baseDir, now });
+    await writer2.sync({ summary, messages });
+    const second = await fs.readFile(filePath, 'utf8');
+    expect(second).toBe(first);
+  });
 });

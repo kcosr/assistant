@@ -2981,6 +2981,75 @@ body.panel-reordering {
   background-color: var(--color-bg-hover);
 }
 
+.session-picker-rename-btn,
+.session-picker-clear-btn {
+  display: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-left: var(--spacing-xs);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.session-picker-item:hover .session-picker-rename-btn,
+.session-picker-item.focused .session-picker-rename-btn,
+.session-picker-item:hover .session-picker-clear-btn,
+.session-picker-item.focused .session-picker-clear-btn {
+  display: inline-flex;
+}
+
+.session-picker-rename-btn:hover,
+.session-picker-clear-btn:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.session-picker-more-btn {
+  display: none;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-left: var(--spacing-xs);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.session-picker-more-btn:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+@media (hover: none) {
+  .session-picker-item .session-picker-more-btn {
+    display: inline-flex;
+  }
+
+  .session-picker-item .session-picker-delete-btn,
+  .session-picker-item .session-picker-rename-btn,
+  .session-picker-item .session-picker-clear-btn {
+    display: none !important;
+  }
+}
+
 /* Confirmation state */
 .session-picker-item-confirm {
   display: none;
@@ -3038,6 +3107,48 @@ body.panel-reordering {
   color: var(--color-text-primary);
 }
 
+.session-picker-submenu {
+  position: absolute;
+  z-index: 2;
+  min-width: 180px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding: var(--spacing-xs) 0;
+}
+
+.session-picker-submenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: var(--font-size-sm);
+}
+
+.session-picker-submenu-item:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.session-picker-submenu-item.danger {
+  color: var(--theme-danger);
+}
+
+.session-picker-submenu-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .session-picker-item:hover,
 .session-picker-item.focused {
   background-color: var(--color-bg-hover);
@@ -3048,8 +3159,11 @@ body.panel-reordering {
   opacity: 0.6;
 }
 
-.session-picker-item.disabled .session-picker-delete-btn {
-  display: none;
+.session-picker-item.disabled .session-picker-delete-btn,
+.session-picker-item.disabled .session-picker-rename-btn,
+.session-picker-item.disabled .session-picker-clear-btn,
+.session-picker-item.disabled .session-picker-more-btn {
+  display: none !important;
 }
 
 .session-picker-empty {
@@ -3058,6 +3172,22 @@ body.panel-reordering {
   color: var(--color-text-muted);
   text-align: center;
   font-style: italic;
+}
+
+.working-dir-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1103;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.35);
+  padding: var(--spacing-md);
+}
+
+.working-dir-picker-popover {
+  max-width: min(520px, 90vw);
+  max-height: min(420px, 70vh);
 }
 
 .panel-header-button,

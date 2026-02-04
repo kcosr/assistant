@@ -3,7 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { ServerTextDoneMessage, ServerUserMessageMessage } from '@assistant/shared';
 import type { ChatEvent, TurnStartTrigger } from '@assistant/shared';
 
-import type { ChatCompletionMessage, ChatCompletionToolCallState } from './chatCompletionTypes';
+import type {
+  ChatCompletionMessage,
+  ChatCompletionMessageMeta,
+  ChatCompletionToolCallState,
+} from './chatCompletionTypes';
 import type { PiSdkChatConfig } from './agents';
 import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
@@ -157,7 +161,7 @@ export async function processUserMessage(
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
   if (shouldEmitChatEvents && eventStore && turnId) {
     const trigger: TurnStartTrigger = agentMessageContext
-      ? agentMessageContext.logType === 'none'
+      ? logType === 'callback'
         ? 'callback'
         : 'system'
       : 'user';
@@ -228,7 +232,7 @@ export async function processUserMessage(
             ? { fromAgentId: agentMessageContext.fromAgentId }
             : {}),
           agentMessageType:
-            agentMessageContext.logType === 'none' ? 'agent_callback' : 'agent_message',
+            logType === 'callback' ? 'agent_callback' : 'agent_message',
           ...(agentExchangeId ? { agentExchangeId } : {}),
         }
       : {}),
@@ -239,9 +243,37 @@ export async function processUserMessage(
     sessionHub.broadcastToSession(sessionId, userBroadcast);
   }
 
+  let userMeta: ChatCompletionMessageMeta | undefined;
+  if (agentMessageContext) {
+    const fromAgentId =
+      typeof agentMessageContext.fromAgentId === 'string'
+        ? agentMessageContext.fromAgentId.trim()
+        : '';
+    const fromSessionId =
+      typeof agentMessageContext.fromSessionId === 'string'
+        ? agentMessageContext.fromSessionId.trim()
+        : '';
+    if (agentMessageContext.logType === 'callback') {
+      userMeta = {
+        source: 'callback',
+        visibility: 'hidden',
+        ...(fromAgentId ? { fromAgentId } : {}),
+        ...(fromSessionId ? { fromSessionId } : {}),
+      };
+    } else {
+      userMeta = {
+        source: 'agent',
+        visibility: 'visible',
+        ...(fromAgentId ? { fromAgentId } : {}),
+        ...(fromSessionId ? { fromSessionId } : {}),
+      };
+    }
+  }
+
   const userMessage: ChatCompletionMessage = {
     role: 'user',
     content: trimmedText,
+    ...(userMeta ? { meta: userMeta } : {}),
   };
   state.chatMessages.push(userMessage);
 
@@ -428,11 +460,6 @@ export async function processUserMessage(
       if (ttsSessionForRun) {
         await ttsSessionForRun.finish();
       }
-      const ttsGenerated = ttsSessionForRun?.hasOutput() ?? false;
-      const audioTruncatedAtMs =
-        active && typeof active.audioTruncatedAtMs === 'number'
-          ? active.audioTruncatedAtMs
-          : undefined;
       void sessionHub.recordSessionActivity(
         sessionId,
         fullText.length > 120 ? `${fullText.slice(0, 117)}…` : fullText,

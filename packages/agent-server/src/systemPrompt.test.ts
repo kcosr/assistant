@@ -1,8 +1,30 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentRegistry } from './agents';
 import { buildSystemPrompt } from './index';
 import type { SkillSummary } from './skills';
 import type { Tool } from './tools';
+
+function createTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
+}
+
+function writeSkill(options: {
+  root: string;
+  dirName: string;
+  frontmatter: string;
+  body: string;
+}): string {
+  const { root, dirName, frontmatter, body } = options;
+  const dirPath = path.join(root, dirName);
+  fs.mkdirSync(dirPath, { recursive: true });
+  const skillPath = path.join(dirPath, 'SKILL.md');
+  fs.writeFileSync(skillPath, `${frontmatter.trim()}\n\n${body}\n`, 'utf8');
+  return skillPath;
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -268,5 +290,175 @@ describe('buildSystemPrompt', () => {
     });
 
     expect(prompt).toContain('## Message Context');
+  });
+
+  it('includes Pi-style instruction skills blocks when configured on the agent', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const root = createTempDir('instruction-skills');
+    const listsPath = writeSkill({
+      root,
+      dirName: 'lists',
+      frontmatter: `---
+name: lists
+description: Lists skill
+---`,
+      body: '# Lists Skill\n\nDo list things.',
+    });
+    const criticalPath = writeSkill({
+      root,
+      dirName: 'my-critical-x',
+      frontmatter: `---
+name: my-critical-x
+description: Critical skill
+---`,
+      body: '# Critical Skill\n\nDo critical things.',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['*'], inline: ['my-critical-*'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+
+    expect(prompt).toContain('<available_skills>');
+    expect(prompt).toContain(`<location>${listsPath}</location>`);
+    expect(prompt).not.toContain('<name>my-critical-x</name>');
+    expect(prompt).toContain(`<skill name="my-critical-x" location="${criticalPath}">`);
+    expect(prompt).toContain(`References are relative to ${path.dirname(criticalPath)}.`);
+    expect(prompt).toContain('# Critical Skill');
+    expect(prompt).not.toContain('name: my-critical-x');
+
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('defaults a skills source with only root to available: [\"*\"]', () => {
+    const root = createTempDir('instruction-skills-defaults');
+    writeSkill({
+      root,
+      dirName: 'alpha',
+      frontmatter: `---
+name: alpha
+description: Alpha skill
+---`,
+      body: '# Alpha Skill',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+
+    expect(prompt).toContain('<available_skills>');
+    expect(prompt).toContain('<name>alpha</name>');
+    expect(prompt).not.toContain('<skill name="alpha"');
+  });
+
+  it('warns and keeps the first discovered skill when names collide within a root', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const root = createTempDir('instruction-skills-collision');
+    const first = writeSkill({
+      root,
+      dirName: 'a',
+      frontmatter: `---
+name: dup
+description: First dup
+---`,
+      body: '# First',
+    });
+    const second = writeSkill({
+      root,
+      dirName: 'b',
+      frontmatter: `---
+name: dup
+description: Second dup
+---`,
+      body: '# Second',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['dup'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+
+    expect(prompt).toContain(`<location>${first}</location>`);
+    expect(prompt).not.toContain(`<location>${second}</location>`);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Duplicate skill name "dup"'));
+  });
+
+  it('warns and skips skills with missing or empty description', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const root = createTempDir('instruction-skills-missing-desc');
+    writeSkill({
+      root,
+      dirName: 'no-desc',
+      frontmatter: `---
+name: no-desc
+---`,
+      body: '# No Desc',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+
+    expect(prompt).not.toContain('<name>no-desc</name>');
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('missing or empty description'),
+    );
+  });
+
+  it('warns and falls back to parent directory name when frontmatter name is missing', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const root = createTempDir('instruction-skills-missing-name');
+    writeSkill({
+      root,
+      dirName: 'fallback-name',
+      frontmatter: `---
+description: Has description
+---`,
+      body: '# Fallback',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['fallback-name'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+
+    expect(prompt).toContain('<name>fallback-name</name>');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('falling back to "fallback-name"'));
   });
 });

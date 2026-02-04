@@ -29,6 +29,8 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  sessionWorkingDirRoots?: string[];
 }
 
 export type SidebarViewMode = 'by-agent' | 'all-sessions';

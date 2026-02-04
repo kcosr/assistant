@@ -31,6 +31,7 @@ export interface CreateSessionOptions {
   agentDisplayName?: string;
   openChatPanel?: boolean;
   selectSession?: boolean;
+  workingDir?: string;
 }
 
 export class SessionManager {
@@ -193,11 +194,16 @@ export class SessionManager {
       }
 
       const buildRequest = (sessionId?: string): RequestInit => {
+        const workingDir =
+          typeof options?.workingDir === 'string' ? options.workingDir.trim() : '';
+        const attributes =
+          workingDir.length > 0 ? { core: { workingDir } } : undefined;
         const request: RequestInit = { method: 'POST' };
         request.headers = { 'Content-Type': 'application/json' };
         request.body = JSON.stringify({
           agentId: normalizedAgentId,
           ...(sessionId ? { sessionId } : {}),
+          ...(attributes ? { attributes } : {}),
         });
         return request;
       };

@@ -289,6 +289,36 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     );
   }
 
+  // Persist callback updates into Pi session JSONL so providerId="pi" can replay
+  // without relying on verbose EventStore history.
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  if (piSessionWriter && fromSessionId.trim()) {
+    const callerSessionId = fromSessionId.trim();
+    try {
+      const callerState = await sessionHub.ensureSessionState(callerSessionId);
+      const callerAgentId = callerState.summary.agentId;
+      const callerAgent = callerAgentId ? agentRegistry.getAgent(callerAgentId) : undefined;
+      if (callerAgent?.chat?.provider === 'pi') {
+        const updatedSummary = await piSessionWriter.appendAssistantEvent({
+          summary: callerState.summary,
+          eventType: 'agent_callback',
+          payload: {
+            messageId,
+            fromAgentId: agent.agentId,
+            fromSessionId: sessionId,
+            result: text,
+          },
+          updateAttributes: (patch) => sessionHub.updateSessionAttributes(callerSessionId, patch),
+        });
+        if (updatedSummary) {
+          callerState.summary = updatedSummary;
+        }
+      }
+    } catch (err) {
+      console.error('[agents_message async] failed to persist agent_callback into Pi session', err);
+    }
+  }
+
   // Broadcast callback result to caller session
   try {
     const callerSessionId = fromSessionId.trim();
