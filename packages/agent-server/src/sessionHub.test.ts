@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
+import fs from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -8,6 +9,7 @@ import { AgentRegistry } from './agents';
 import { SessionHub } from './sessionHub';
 import { SessionIndex } from './sessionIndex';
 import type { EventStore } from './events';
+import { PiSessionWriter } from './history/piSessionWriter';
 
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
@@ -15,6 +17,10 @@ function createTempFile(prefix: string): string {
 
 function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
+}
+
+function encodePiCwd(cwd: string): string {
+  return `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
 }
 
 function createTestEventStore(): EventStore {
@@ -122,5 +128,50 @@ describe('SessionHub workingDir defaults', () => {
 
     const stats = await stat(existingWorkingDir);
     expect(stats.isDirectory()).toBe(true);
+  });
+});
+
+describe('SessionHub clearSession', () => {
+  it('clears provider history metadata and Pi session file', async () => {
+    const sessionsFile = createTempFile('session-hub-clear');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const baseDir = createTempDir('pi-sessions');
+    const piSessionWriter = new PiSessionWriter({ baseDir });
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-clear-1',
+      agentId: 'general',
+    });
+    await sessionIndex.updateSessionAttributes(session.sessionId, {
+      providers: {
+        pi: {
+          sessionId: 'pi-session-1',
+          cwd: '/home/kevin',
+        },
+      },
+    });
+
+    const encoded = encodePiCwd('/home/kevin');
+    const sessionDir = path.join(baseDir, encoded);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const sessionFile = path.join(
+      sessionDir,
+      `2026-02-04T00-00-00-000Z_pi-session-1.jsonl`,
+    );
+    await fs.writeFile(sessionFile, '{"type":"session"}\n', 'utf8');
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter,
+    });
+
+    await sessionHub.clearSession(session.sessionId);
+
+    await expect(fs.stat(sessionFile)).rejects.toThrow();
+    const updated = await sessionIndex.getSession(session.sessionId);
+    expect(updated?.attributes?.['providers']).toBeUndefined();
   });
 });

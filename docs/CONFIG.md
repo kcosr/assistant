@@ -412,6 +412,8 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
   "toolDenylist": [],
   "toolExposure": "skills",
   "skillAllowlist": ["notes"],
+  "sessionWorkingDirMode": "prompt",
+  "sessionWorkingDirRoots": ["/home/kevin/worktrees"],
   "skills": [
     { "root": "~/skills", "available": ["*"], "inline": ["my-critical-*"] },
     { "root": "worktrees/assistant/skills" }
@@ -440,9 +442,20 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `capabilityDenylist` | array | Glob patterns for capability denylist. |
 | `agentAllowlist` | array | Glob patterns for agents this agent can delegate to. |
 | `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
+| `sessionWorkingDirMode` | string | Controls working directory picker on new session (`auto` or `prompt`). |
+| `sessionWorkingDirRoots` | array | Absolute base directories whose immediate subfolders are offered in the picker. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
 | `schedules` | array | Optional scheduled session definitions (CLI providers only). |
+
+#### Working directory picker
+
+When `sessionWorkingDirMode` is set to `prompt`, the UI shows a working directory picker for
+new sessions created with that agent. The options are the immediate subdirectories of each
+path in `sessionWorkingDirRoots` (all of which must be absolute paths).
+
+The picker displays only the folder name in the list (full path is used internally). When a
+directory is selected, the system prompt includes a line `Project directory: <full-path>`.
 
 #### Instruction skills (`skills`)
 

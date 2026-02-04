@@ -544,6 +544,49 @@ export class PiSessionWriter {
     this.log = options.log ?? ((...args) => console.log('[pi-session]', ...args));
   }
 
+  async clearSession(options: {
+    summary: SessionSummary;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, updateAttributes } = options;
+    const providerInfo = getProviderAttributes(summary.attributes, 'pi', ['pi-cli']);
+    const storedSessionId = isNonEmptyString(providerInfo?.['sessionId'])
+      ? String(providerInfo?.['sessionId']).trim()
+      : '';
+    const storedCwd = isNonEmptyString(providerInfo?.['cwd'])
+      ? String(providerInfo?.['cwd']).trim()
+      : '';
+
+    if (storedSessionId && storedCwd) {
+      try {
+        const sessionFile = await findPiSessionFile(this.baseDir, storedCwd, storedSessionId);
+        if (sessionFile) {
+          await fs.unlink(sessionFile);
+        }
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        if (error.code !== 'ENOENT') {
+          this.log('Failed to clear Pi session file', err);
+        }
+      }
+    }
+
+    this.sessions.delete(summary.sessionId);
+
+    if (updateAttributes) {
+      try {
+        const updated = await updateAttributes({ providers: null });
+        return updated;
+      } catch (err) {
+        this.log('Failed to clear Pi provider attributes', err);
+      }
+    }
+
+    return undefined;
+  }
+
   async sync(options: {
     summary: SessionSummary;
     messages: ChatCompletionMessage[];

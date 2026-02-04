@@ -3174,6 +3174,22 @@ body.panel-reordering {
   font-style: italic;
 }
 
+.working-dir-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1103;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.35);
+  padding: var(--spacing-md);
+}
+
+.working-dir-picker-popover {
+  max-width: min(520px, 90vw);
+  max-height: min(420px, 70vh);
+}
+
 .panel-header-button,
 .panel-close-button {
   width: 24px;

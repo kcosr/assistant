@@ -1,5 +1,10 @@
 # assistant
 
+> **⚠️ Experimental Software**
+>
+> This is personal software shared with the community for educational purposes.
+> Contributions are welcome, but don't expect stability or support.
+
 A personal AI assistant with a panel-based plugin system, multi-agent CLI integrations, and text/voice UI.
 Plugins define panels and operations so agents can collaborate on lists, notes, and diff reviews,
 or extend the app with custom user-provided plugins.

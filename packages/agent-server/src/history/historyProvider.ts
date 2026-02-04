@@ -1526,6 +1526,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
     if (role === 'assistant') {
       const timestamp = resolveTimestamp(messageEntry, entry);
+      const stopReason = getString(messageEntry['stopReason']);
+      if (stopReason === 'aborted' || stopReason === 'error') {
+        continue;
+      }
       if (!currentTurnId) {
         const turnId = getTurnId(messageEntry);
         startTurn(turnId, 'system', timestamp);

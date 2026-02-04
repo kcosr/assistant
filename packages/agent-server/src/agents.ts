@@ -37,6 +37,16 @@ export interface AgentDefinition {
   displayName: string;
   description: string;
   /**
+   * Controls whether the UI prompts for a working directory when creating sessions.
+   * - "auto": use defaults (no picker)
+   * - "prompt": show a working dir picker for configured roots
+   */
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  /**
+   * Base directories offered in the working directory picker.
+   */
+  sessionWorkingDirRoots?: string[];
+  /**
    * Runtime type for this agent.
    * - "chat": in-process chat completions (default)
    * - "external": async external connector (inputUrl + callback endpoint)
@@ -373,6 +383,8 @@ interface AgentDefinitionConfigShape {
   apiExposed?: unknown;
   schedules?: unknown;
   skills?: unknown;
+  sessionWorkingDirMode?: unknown;
+  sessionWorkingDirRoots?: unknown;
 }
 
 interface AgentsConfigFileShape {
@@ -393,6 +405,8 @@ function validateAgentDefinitionConfig(
   const rawUiVisible = config.uiVisible;
   const rawApiExposed = config.apiExposed;
   const rawToolExposure = config.toolExposure;
+  const rawSessionWorkingDirMode = config.sessionWorkingDirMode;
+  const rawSessionWorkingDirRoots = config.sessionWorkingDirRoots;
 
   if (typeof rawAgentId !== 'string' || !rawAgentId.trim()) {
     throw new Error(`agents[${index}].agentId must be a non-empty string`);
@@ -430,6 +444,16 @@ function validateAgentDefinitionConfig(
       `agents[${index}].toolExposure must be "tools", "skills", "mixed", null, or omitted`,
     );
   }
+  if (
+    rawSessionWorkingDirMode !== undefined &&
+    rawSessionWorkingDirMode !== null &&
+    rawSessionWorkingDirMode !== 'auto' &&
+    rawSessionWorkingDirMode !== 'prompt'
+  ) {
+    throw new Error(
+      `agents[${index}].sessionWorkingDirMode must be "auto", "prompt", null, or omitted`,
+    );
+  }
 
   const agentId = rawAgentId.trim();
   const displayName = rawDisplayName.trim();
@@ -442,6 +466,10 @@ function validateAgentDefinitionConfig(
   const toolExposure =
     rawToolExposure === 'tools' || rawToolExposure === 'skills' || rawToolExposure === 'mixed'
       ? rawToolExposure
+      : undefined;
+  const sessionWorkingDirMode =
+    rawSessionWorkingDirMode === 'auto' || rawSessionWorkingDirMode === 'prompt'
+      ? rawSessionWorkingDirMode
       : undefined;
 
   const {
@@ -488,6 +516,37 @@ function validateAgentDefinitionConfig(
   const capabilityDeny = parsePatternList(capabilityDenylist, 'capabilityDenylist');
   const agentAllow = parsePatternList(agentAllowlist, 'agentAllowlist');
   const agentDeny = parsePatternList(agentDenylist, 'agentDenylist');
+  const parseAbsolutePathList = (raw: unknown, fieldName: string): string[] | undefined => {
+    if (raw === null || raw === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(
+        `agents[${index}].${fieldName} must be an array of absolute paths, null, or omitted`,
+      );
+    }
+    const paths: string[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const value = raw[i];
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new Error(
+          `agents[${index}].${fieldName}[${i}] must be a non-empty string when provided`,
+        );
+      }
+      const trimmed = value.trim();
+      if (!path.isAbsolute(trimmed)) {
+        throw new Error(
+          `agents[${index}].${fieldName}[${i}] must be an absolute path when provided`,
+        );
+      }
+      paths.push(trimmed);
+    }
+    return paths.length > 0 ? paths : undefined;
+  };
+  const sessionWorkingDirRoots = parseAbsolutePathList(
+    rawSessionWorkingDirRoots,
+    'sessionWorkingDirRoots',
+  );
 
   const parseSchedules = (raw: unknown): ScheduleConfig[] | undefined => {
     if (raw === undefined || raw === null) {
@@ -1164,6 +1223,12 @@ function validateAgentDefinitionConfig(
   }
   if (apiExposed !== undefined) {
     extended.apiExposed = apiExposed;
+  }
+  if (sessionWorkingDirMode) {
+    extended.sessionWorkingDirMode = sessionWorkingDirMode;
+  }
+  if (sessionWorkingDirRoots) {
+    extended.sessionWorkingDirRoots = sessionWorkingDirRoots;
   }
 
   return extended;

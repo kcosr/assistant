@@ -6,9 +6,24 @@ import type { AgentDefinition } from './agents';
 import { isValidCron5Field } from './scheduledSessions/cronUtils';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
+const AbsolutePathSchema = NonEmptyTrimmedStringSchema.refine(
+  (value) => path.isAbsolute(value),
+  'must be an absolute path',
+);
 
 const GlobPatternListSchema = z
   .array(NonEmptyTrimmedStringSchema)
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (!value || value.length === 0) {
+      return undefined;
+    }
+    return value;
+  });
+
+const AbsolutePathListSchema = z
+  .array(AbsolutePathSchema)
   .optional()
   .nullable()
   .transform((value) => {
@@ -276,6 +291,8 @@ const RawAgentConfigSchema = z.object({
   agentDenylist: GlobPatternListSchema,
   uiVisible: z.boolean().optional().nullable(),
   apiExposed: z.boolean().optional().nullable(),
+  sessionWorkingDirMode: z.enum(['auto', 'prompt']).optional().nullable(),
+  sessionWorkingDirRoots: AbsolutePathListSchema,
   schedules: z.array(ScheduleConfigSchema).optional(),
   skills: InstructionSkillsConfigSchema,
 }).superRefine((value, ctx) => {
@@ -331,6 +348,8 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     agentDenylist,
     uiVisible,
     apiExposed,
+    sessionWorkingDirMode,
+    sessionWorkingDirRoots,
     schedules,
     skills,
   } = value;
@@ -351,6 +370,8 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     description,
     ...(normalizedSchedules ? { schedules: normalizedSchedules } : {}),
     ...(skills !== undefined ? { skills } : {}),
+    ...(sessionWorkingDirMode ? { sessionWorkingDirMode } : {}),
+    ...(sessionWorkingDirRoots ? { sessionWorkingDirRoots } : {}),
   };
 
   const type = rawType === 'external' ? 'external' : 'chat';

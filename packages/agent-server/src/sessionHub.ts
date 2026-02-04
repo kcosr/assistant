@@ -67,6 +67,11 @@ export interface LogicalSessionState {
          */
         accumulatedText: string;
         /**
+         * True once any assistant output begins (thinking/text/tool).
+         * Used to distinguish "cancel before output" from real interruptions.
+         */
+        outputStarted?: boolean;
+        /**
          * Timestamp of the first text delta. Used to ensure interrupted
          * assistant messages are logged with correct ordering.
          */
@@ -430,7 +435,20 @@ export class SessionHub {
       await this.eventStore.clearSession(sessionId);
     }
     this.cliToolCallRendezvous.clearSession(sessionId);
-    const summary = await this.sessionIndex.clearSession(sessionId);
+    let summary = await this.sessionIndex.clearSession(sessionId);
+    if (this.piSessionWriter) {
+      try {
+        const updated = await this.piSessionWriter.clearSession({
+          summary,
+          updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
+        });
+        if (updated) {
+          summary = updated;
+        }
+      } catch (err) {
+        console.error('[sessionHub] Failed to clear Pi session history', err);
+      }
+    }
 
     const state = this.sessions.get(sessionId);
     if (state) {
@@ -584,6 +602,7 @@ export class SessionHub {
       summary.agentId,
       undefined,
       summary.sessionId,
+      summary.attributes?.core?.workingDir,
     );
   }
 

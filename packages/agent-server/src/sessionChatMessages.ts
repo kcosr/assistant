@@ -16,12 +16,21 @@ export function buildChatMessagesFromEvents(
   agentId: string | undefined,
   tools?: Tool[],
   sessionId?: string,
+  workingDir?: string,
 ): ChatCompletionMessage[] {
+  const interruptedResponseIds = new Set(
+    events
+      .filter((event) => event.type === 'interrupt')
+      .map((event) => event.responseId?.trim())
+      .filter((responseId): responseId is string => Boolean(responseId)),
+  );
+
   const promptOptions = {
     agentRegistry,
     agentId,
     ...(tools !== undefined ? { tools } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(workingDir !== undefined ? { workingDir } : {}),
   };
   const messages: ChatCompletionMessage[] = [
     {
@@ -101,6 +110,9 @@ export function buildChatMessagesFromEvents(
         if (!responseId) {
           break;
         }
+        if (interruptedResponseIds.has(responseId)) {
+          break;
+        }
         const delta = event.payload.text;
         if (!delta) {
           break;
@@ -114,12 +126,29 @@ export function buildChatMessagesFromEvents(
         if (!responseId) {
           break;
         }
+        if (interruptedResponseIds.has(responseId)) {
+          break;
+        }
         const text = event.payload.text.trim();
         if (!text) {
           break;
         }
         const message = ensureAssistantMessage(responseId, text);
         message.content = text;
+        break;
+      }
+      case 'thinking_chunk': {
+        const responseId = event.responseId?.trim();
+        if (responseId && interruptedResponseIds.has(responseId)) {
+          break;
+        }
+        break;
+      }
+      case 'thinking_done': {
+        const responseId = event.responseId?.trim();
+        if (responseId && interruptedResponseIds.has(responseId)) {
+          break;
+        }
         break;
       }
       case 'tool_call': {

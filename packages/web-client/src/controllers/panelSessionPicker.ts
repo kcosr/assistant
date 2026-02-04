@@ -1,4 +1,5 @@
 import type { CreateSessionOptions } from './sessionManager';
+import { apiFetch } from '../utils/api';
 import { formatSessionLabel, resolveAutoTitle } from '../utils/sessionLabel';
 import { ICONS } from '../utils/icons';
 
@@ -15,6 +16,8 @@ export interface AgentSummary {
   agentId: string;
   displayName: string;
   type?: 'chat' | 'external';
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  sessionWorkingDirRoots?: string[];
 }
 
 export interface SessionPickerOpenOptions {
@@ -52,6 +55,11 @@ export class SessionPickerController {
   private listEl: HTMLDivElement | null = null;
   private items: SessionPickerItemEntry[] = [];
   private focusedIndex = -1;
+  private workingDirOverlay: HTMLDivElement | null = null;
+  private workingDirCleanup: (() => void) | null = null;
+  private workingDirAbort: AbortController | null = null;
+  private workingDirItems: SessionPickerItemEntry[] = [];
+  private workingDirFocusedIndex = -1;
 
   constructor(private readonly options: SessionPickerControllerOptions) {}
 
@@ -372,15 +380,29 @@ export class SessionPickerController {
         if (filteredAgents.length === 0) {
           addEmpty('No agents available.');
         } else {
+          const createSessionForAgent = async (agent: AgentSummary) => {
+            let workingDir: string | undefined;
+            if (agent.sessionWorkingDirMode === 'prompt') {
+              const entries = await this.fetchWorkingDirEntries(agent.agentId);
+              if (entries.length > 0) {
+                workingDir = await this.promptForWorkingDir({
+                  agentLabel: agent.displayName,
+                  entries,
+                });
+              }
+            }
+            const createOptions = options.createSessionOptions;
+            const sessionId = await this.options.createSessionForAgent(agent.agentId, {
+              ...(createOptions ? createOptions : {}),
+              ...(workingDir ? { workingDir } : {}),
+            });
+            if (sessionId) {
+              options.onSelectSession(sessionId);
+            }
+          };
           for (const agent of filteredAgents) {
             addItem(agent.displayName, async () => {
-              const sessionId = await this.options.createSessionForAgent(
-                agent.agentId,
-                options.createSessionOptions,
-              );
-              if (sessionId) {
-                options.onSelectSession(sessionId);
-              }
+              await createSessionForAgent(agent);
             });
           }
         }
@@ -472,6 +494,7 @@ export class SessionPickerController {
     this.cleanup?.();
     this.cleanup = null;
     this.closeSubmenu();
+    this.closeWorkingDirPicker();
     if (this.activeMenu) {
       this.activeMenu.remove();
       this.activeMenu = null;
@@ -484,6 +507,288 @@ export class SessionPickerController {
 
   isOpen(): boolean {
     return Boolean(this.activeMenu);
+  }
+
+  private closeWorkingDirPicker(): void {
+    this.workingDirCleanup?.();
+    this.workingDirCleanup = null;
+    if (this.workingDirAbort) {
+      this.workingDirAbort.abort();
+      this.workingDirAbort = null;
+    }
+    if (this.workingDirOverlay) {
+      this.workingDirOverlay.remove();
+      this.workingDirOverlay = null;
+    }
+    this.workingDirItems = [];
+    this.workingDirFocusedIndex = -1;
+  }
+
+  private async fetchWorkingDirEntries(
+    agentId: string,
+  ): Promise<Array<{ root: string; directories: string[] }>> {
+    try {
+      const controller = new AbortController();
+      this.workingDirAbort = controller;
+      const response = await apiFetch('/api/plugins/agents/operations/list-working-dirs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ agentId }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return [];
+      }
+      const data = (await response.json()) as unknown;
+      const roots =
+        data && typeof data === 'object'
+          ? (data as { roots?: unknown }).roots ??
+            (data as { result?: { roots?: unknown } }).result?.roots
+          : undefined;
+      if (!Array.isArray(roots)) {
+        return [];
+      }
+      const parsed: Array<{ root: string; directories: string[] }> = [];
+      for (const entry of roots) {
+        if (!entry || typeof entry !== 'object') {
+          continue;
+        }
+        const anyEntry = entry as { root?: unknown; directories?: unknown };
+        const root = typeof anyEntry.root === 'string' ? anyEntry.root.trim() : '';
+        if (!root) {
+          continue;
+        }
+        const directories = Array.isArray(anyEntry.directories)
+          ? anyEntry.directories
+              .filter((dir) => typeof dir === 'string')
+              .map((dir) => dir.trim())
+              .filter((dir) => dir.length > 0)
+          : [];
+        parsed.push({ root, directories });
+      }
+      return parsed;
+    } catch {
+      return [];
+    } finally {
+      this.workingDirAbort = null;
+    }
+  }
+
+  private async promptForWorkingDir(options: {
+    entries: Array<{ root: string; directories: string[] }>;
+    agentLabel?: string;
+  }): Promise<string | undefined> {
+    const entries = options.entries.filter(
+      (entry) => entry.root.trim().length > 0 && entry.directories.length >= 0,
+    );
+    if (entries.length === 0) {
+      return undefined;
+    }
+
+    this.closeWorkingDirPicker();
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finalize = (value?: string) => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        this.closeWorkingDirPicker();
+        resolve(value);
+      };
+
+      const overlay = document.createElement('div');
+      overlay.className = 'working-dir-picker-overlay';
+
+      const popover = document.createElement('div');
+      popover.className = 'session-picker-popover working-dir-picker-popover';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'session-picker-title';
+      titleEl.textContent = options.agentLabel
+        ? `Working directory (${options.agentLabel})`
+        : 'Working directory';
+      popover.appendChild(titleEl);
+
+      const searchInput = document.createElement('input');
+      searchInput.type = 'text';
+      searchInput.className = 'session-picker-search';
+      searchInput.placeholder = 'Search directories...';
+      searchInput.autocomplete = 'off';
+      searchInput.setAttribute('aria-label', titleEl.textContent ?? 'Working directory');
+      popover.appendChild(searchInput);
+
+      const listEl = document.createElement('div');
+      listEl.className = 'session-picker-list';
+      popover.appendChild(listEl);
+
+      overlay.appendChild(popover);
+      document.body.appendChild(overlay);
+      this.workingDirOverlay = overlay;
+
+      const renderList = (): void => {
+        listEl.innerHTML = '';
+        this.workingDirItems = [];
+        this.workingDirFocusedIndex = -1;
+        const filter = searchInput.value.trim().toLowerCase();
+
+        const addSection = (label: string): void => {
+          const section = document.createElement('div');
+          section.className = 'session-picker-section';
+          section.textContent = label;
+          listEl.appendChild(section);
+        };
+
+        const addEmpty = (label: string): void => {
+          const empty = document.createElement('div');
+          empty.className = 'session-picker-empty';
+          empty.textContent = label;
+          listEl.appendChild(empty);
+        };
+
+        const addItem = (label: string, onSelect: () => void, fullValue?: string): void => {
+          const item = document.createElement('div');
+          item.className = 'session-picker-item';
+          item.setAttribute('role', 'button');
+          item.tabIndex = 0;
+
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'session-picker-item-label';
+          labelSpan.textContent = label;
+          if (fullValue) {
+            labelSpan.title = fullValue;
+          }
+          item.appendChild(labelSpan);
+
+          const handleSelect = () => {
+            onSelect();
+          };
+          item.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleSelect();
+          });
+          item.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleSelect();
+            }
+          });
+
+          listEl.appendChild(item);
+          this.workingDirItems.push({ element: item, onSelect: handleSelect });
+        };
+
+        addSection('Options');
+        addItem('Use default', () => finalize(undefined));
+
+        let matches = 0;
+        for (const entry of entries) {
+          const directories = filter
+            ? entry.directories.filter((dir) => dir.toLowerCase().includes(filter))
+            : entry.directories;
+          if (directories.length === 0) {
+            continue;
+          }
+          addSection(entry.root);
+          for (const dir of directories) {
+            const label = dir.replace(/\/+$/, '').split('/').filter(Boolean).pop() ?? dir;
+            addItem(label, () => finalize(dir), dir);
+            matches += 1;
+          }
+        }
+        if (matches === 0) {
+          addEmpty(filter ? 'No matching directories.' : 'No directories available.');
+        }
+
+        if (this.workingDirItems.length > 0) {
+          this.setWorkingDirFocusedIndex(0);
+        }
+      };
+
+      renderList();
+      setTimeout(() => searchInput.focus(), 0);
+
+      const handleOverlayClick = (event: MouseEvent) => {
+        if (event.target === overlay) {
+          finalize(undefined);
+        }
+      };
+
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          this.moveWorkingDirFocus(1);
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          this.moveWorkingDirFocus(-1);
+          return;
+        }
+        if (event.key === 'Enter') {
+          const didSelect = this.selectWorkingDirFocusedItem();
+          if (didSelect) {
+            event.preventDefault();
+          }
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          finalize(undefined);
+        }
+      };
+
+      searchInput.addEventListener('input', renderList);
+      overlay.addEventListener('click', handleOverlayClick);
+      popover.addEventListener('keydown', handleKeyDown);
+
+      this.workingDirCleanup = () => {
+        searchInput.removeEventListener('input', renderList);
+        overlay.removeEventListener('click', handleOverlayClick);
+        popover.removeEventListener('keydown', handleKeyDown);
+      };
+    });
+  }
+
+  private setWorkingDirFocusedIndex(nextIndex: number): void {
+    if (this.workingDirItems.length === 0) {
+      return;
+    }
+    const clamped = Math.max(0, Math.min(this.workingDirItems.length - 1, nextIndex));
+    if (this.workingDirFocusedIndex === clamped) {
+      return;
+    }
+    if (this.workingDirFocusedIndex >= 0) {
+      const previous = this.workingDirItems[this.workingDirFocusedIndex];
+      previous?.element.classList.remove('focused');
+    }
+    this.workingDirFocusedIndex = clamped;
+    const current = this.workingDirItems[this.workingDirFocusedIndex];
+    if (current) {
+      current.element.classList.add('focused');
+      current.element.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  private moveWorkingDirFocus(delta: number): void {
+    if (this.workingDirItems.length === 0) {
+      return;
+    }
+    const next = this.workingDirFocusedIndex + delta;
+    this.setWorkingDirFocusedIndex(next);
+  }
+
+  private selectWorkingDirFocusedItem(): boolean {
+    if (this.workingDirItems.length === 0 || this.workingDirFocusedIndex < 0) {
+      return false;
+    }
+    const entry = this.workingDirItems[this.workingDirFocusedIndex];
+    if (!entry) {
+      return false;
+    }
+    entry.onSelect();
+    return true;
   }
 
   private getOrderedSessions(): SessionSummary[] {

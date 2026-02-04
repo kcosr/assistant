@@ -288,6 +288,66 @@ describe('PiSessionHistoryProvider', () => {
     expect(interactionEvent?.payload.toolCallId).toBe('call-1');
   });
 
+  it('skips aborted assistant messages when mapping Pi history', async () => {
+    const baseDir = await createTempDir('pi-session-history-aborted');
+    const sessionId = 'session-aborted';
+    const piSessionId = 'pi-session-aborted';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-22T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-1',
+          content: 'Hello there',
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-aborted',
+          stopReason: 'aborted',
+          errorMessage: 'Request was aborted',
+          content: [{ type: 'text', text: 'Partial that should be dropped' }],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi',
+      chat: {
+        provider: 'pi',
+      },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const assistantEvents = events.filter((event) => event.type === 'assistant_done');
+    expect(assistantEvents).toHaveLength(0);
+    const userEvents = events.filter((event) => event.type === 'user_message');
+    expect(userEvents).toHaveLength(1);
+  });
+
   it('merges overlay interaction events from the event store', async () => {
     const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-2';

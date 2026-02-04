@@ -178,9 +178,74 @@ describe('handleChatOutputCancel', () => {
       eventStore,
     });
 
-    expect(state.chatMessages).toHaveLength(1);
-    expect(state.chatMessages[0]).toEqual({ role: 'assistant', content: 'Partial answer' });
+    expect(state.chatMessages).toHaveLength(0);
     expect(recordSessionActivity).toHaveBeenCalledWith(sessionId, 'Partial answer');
     expect(broadcastMessages.find((m) => m.type === 'tool_result')).toBeUndefined();
+  });
+
+  it('skips interrupt logging when no output has started', async () => {
+    const sessionId = 'session-3';
+    const responseId = 'resp-3';
+
+    const recordSessionActivity = vi.fn(async () => undefined);
+    const sessionHub = {
+      broadcastToSession: vi.fn(),
+      recordSessionActivity,
+      getPiSessionWriter: () => undefined,
+      getAgentRegistry: () => undefined,
+      updateSessionAttributes: vi.fn(),
+    } as unknown as SessionHub;
+
+    const abortController = new AbortController();
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as LogicalSessionState['summary'],
+      chatMessages: [],
+      activeChatRun: {
+        responseId,
+        turnId: 'turn-3',
+        abortController,
+        accumulatedText: '',
+      },
+      messageQueue: [],
+    };
+
+    const message: ClientControlMessage = {
+      type: 'control',
+      action: 'cancel',
+      target: 'output',
+    };
+
+    handleChatOutputCancel({
+      message,
+      activeRunState: { sessionId, state },
+      sessionHub,
+      broadcastOutputCancelled: vi.fn(),
+      log: vi.fn(),
+      eventStore,
+    });
+
+    expect(abortController.signal.aborted).toBe(true);
+    expect(events.some((event) => event.type === 'interrupt')).toBe(false);
+    expect(events.some((event) => event.type === 'assistant_done')).toBe(false);
+    expect(recordSessionActivity).not.toHaveBeenCalled();
   });
 });

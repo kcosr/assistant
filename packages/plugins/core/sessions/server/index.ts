@@ -94,6 +94,15 @@ function parseAttributesPatch(args: Record<string, unknown>): SessionAttributesP
   return patch as SessionAttributesPatch;
 }
 
+function parseOptionalAttributesPatch(
+  args: Record<string, unknown>,
+): SessionAttributesPatch | undefined {
+  if (!('attributes' in args) && !('patch' in args)) {
+    return undefined;
+  }
+  return parseAttributesPatch(args);
+}
+
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
   return {
     operations: {
@@ -109,6 +118,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const parsed = asObject(args);
         const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
         const sessionId = parseSessionIdOverride(parsed['sessionId']);
+        const attributesPatch = parseOptionalAttributesPatch(parsed);
 
         const agent = registry.getAgent(agentId);
         if (!agent) {
@@ -121,11 +131,20 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
         try {
           const model = getDefaultModelForNewSession(agent);
-          const summary = await sessionIndex.createSession({
+          let summary = await sessionIndex.createSession({
             agentId,
             ...(sessionId ? { sessionId } : {}),
             ...(model ? { model } : {}),
           });
+          if (attributesPatch) {
+            const patched = await sessionIndex.updateSessionAttributes(
+              summary.sessionId,
+              attributesPatch,
+            );
+            if (patched) {
+              summary = patched;
+            }
+          }
           await sessionHub.ensureSessionState(summary.sessionId, summary, true);
           sessionHub.broadcastSessionCreated(summary);
           return summary;

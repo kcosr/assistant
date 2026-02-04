@@ -25,6 +25,8 @@
       "displayName": "General Assistant",
       "description": "A helpful general-purpose assistant for everyday tasks.",
       "systemPrompt": "You are a helpful assistant.",
+      "sessionWorkingDirMode": "prompt",
+      "sessionWorkingDirRoots": ["/path/to/workspaces"],
       "toolAllowlist": ["*"],
       "skills": [
         {

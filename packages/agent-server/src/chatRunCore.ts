@@ -290,6 +290,9 @@ function createChatRunStreamHandlers(options: {
       return;
     }
     thinkingStarted = true;
+    if (state.activeChatRun) {
+      state.activeChatRun.outputStarted = true;
+    }
     const message: ServerThinkingStartMessage = {
       type: 'thinking_start',
       responseId,
@@ -381,6 +384,7 @@ function createChatRunStreamHandlers(options: {
   const emitTextDelta = async (deltaText: string, textSoFar: string): Promise<void> => {
     if (state.activeChatRun) {
       state.activeChatRun.accumulatedText = textSoFar;
+      state.activeChatRun.outputStarted = true;
       if (trackTextStartedAt && !state.activeChatRun.textStartedAt) {
         state.activeChatRun.textStartedAt = new Date().toISOString();
       }

@@ -53,6 +53,7 @@ export interface BuildSystemPromptOptions {
   tools?: Tool[];
   skills?: SkillSummary[];
   sessionId?: string;
+  workingDir?: string;
 }
 
 function collectToolNames(
@@ -91,6 +92,7 @@ export function buildSystemPrompt(
   let agentId: string | undefined;
   let tools: Tool[] | undefined;
   let cliSkills: SkillSummary[] | undefined;
+  let workingDir: string | undefined;
 
   if (optionsOrRegistry instanceof AgentRegistry) {
     agentRegistry = optionsOrRegistry;
@@ -101,6 +103,7 @@ export function buildSystemPrompt(
     agentId = optionsOrRegistry.agentId;
     tools = optionsOrRegistry.tools;
     cliSkills = optionsOrRegistry.skills;
+    workingDir = optionsOrRegistry.workingDir;
   }
 
   let basePrompt = DEFAULT_SYSTEM_PROMPT;
@@ -118,6 +121,9 @@ export function buildSystemPrompt(
   }
 
   const sections: string[] = [basePrompt.trimEnd()];
+  if (workingDir && workingDir.trim().length > 0) {
+    sections.push(`Project directory: ${workingDir.trim()}`);
+  }
   if (agent?.skills && agent.skills.length > 0) {
     const skillsPrompt = buildInstructionSkillsPrompt(agent);
     if (skillsPrompt) {

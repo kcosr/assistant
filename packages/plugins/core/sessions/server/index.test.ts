@@ -46,4 +46,39 @@ describe('sessions plugin operations', () => {
       expect.objectContaining({ sessionId: (result as { sessionId: string }).sessionId }),
     );
   });
+
+  it('sets core.workingDir when provided at create time', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const workingDir = path.join(os.tmpdir(), 'sessions-plugin-workdir');
+
+    const result = await plugin.operations?.create(
+      { agentId: 'general', attributes: { core: { workingDir } } },
+      ctx,
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        sessionId: expect.any(String),
+        attributes: { core: { workingDir } },
+      }),
+    );
+  });
 });

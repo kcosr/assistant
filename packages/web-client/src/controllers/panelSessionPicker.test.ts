@@ -6,6 +6,7 @@ import { SessionPickerController } from './panelSessionPicker';
 describe('SessionPickerController', () => {
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
   const originalMatchMedia = window.matchMedia;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -15,6 +16,7 @@ describe('SessionPickerController', () => {
   afterEach(() => {
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     window.matchMedia = originalMatchMedia;
+    globalThis.fetch = originalFetch;
     document.body.innerHTML = '';
   });
 
@@ -135,5 +137,70 @@ describe('SessionPickerController', () => {
 
     controller.close();
   });
-});
 
+  it('prompts for working directory before creating a new session', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        roots: [
+          {
+            root: '/workspaces',
+            directories: ['/workspaces/app'],
+          },
+        ],
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const createSessionForAgent = vi.fn().mockResolvedValue('new-session');
+    const onSelectSession = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [],
+      getAgentSummaries: () => [
+        {
+          agentId: 'general',
+          displayName: 'General',
+          sessionWorkingDirMode: 'prompt',
+          sessionWorkingDirRoots: ['/workspaces'],
+        },
+      ],
+      createSessionForAgent,
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession,
+    });
+
+    const agentItem = document.querySelector<HTMLDivElement>('.session-picker-item');
+    expect(agentItem).toBeTruthy();
+    agentItem?.click();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const overlay = document.querySelector('.working-dir-picker-overlay');
+    expect(overlay).toBeTruthy();
+
+    const rootItem = Array.from(
+      document.querySelectorAll<HTMLDivElement>(
+        '.working-dir-picker-overlay .session-picker-item',
+      ),
+    ).find((item) => item.textContent?.includes('app'));
+    expect(rootItem).toBeTruthy();
+    rootItem?.click();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(createSessionForAgent).toHaveBeenCalledWith(
+      'general',
+      expect.objectContaining({ workingDir: '/workspaces/app' }),
+    );
+    expect(onSelectSession).toHaveBeenCalledWith('new-session');
+
+    controller.close();
+  });
+});

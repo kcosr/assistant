@@ -200,6 +200,8 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  sessionWorkingDirMode?: 'auto' | 'prompt';
+  sessionWorkingDirRoots?: string[];
 }
 
 import { apiFetch, getWebSocketUrl } from './utils/api';

@@ -65,6 +65,8 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   const hadActiveToolCalls = !!(activeToolCalls && activeToolCalls.size > 0);
 
   const partialText = run.accumulatedText.trim();
+  const hasOutputActivity =
+    Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || partialText.length > 0;
   if (partialText.length > 0) {
     if (eventStore) {
       const events: ChatEvent[] = [
@@ -86,13 +88,6 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         },
         events,
       );
-    }
-
-    if (!hadActiveToolCalls) {
-      state.chatMessages.push({
-        role: 'assistant',
-        content: partialText,
-      });
     }
 
     void sessionHub.recordSessionActivity(
@@ -159,7 +154,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
 
   // Best-effort: emit a unified interrupt event so ChatRenderer can render
   // cancellation consistently with other chat events.
-  if (eventStore) {
+  if (eventStore && hasOutputActivity) {
     const turnId = run.turnId;
     const responseId = run.responseId;
     const events: ChatEvent[] = [
@@ -184,7 +179,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   }
 
   const piSessionWriter = sessionHub.getPiSessionWriter?.();
-  if (piSessionWriter) {
+  if (piSessionWriter && hasOutputActivity) {
     const agentId = state.summary.agentId;
     const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
     if (agent?.chat?.provider === 'pi') {

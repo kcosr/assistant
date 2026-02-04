@@ -100,7 +100,7 @@ When user presses Escape:
 
 1. Sets `run.outputCancelled = true`
 2. Aborts the `abortController`
-3. Logs partial `accumulatedText` as interrupted assistant message (using `textStartedAt` for proper ordering)
+3. Logs partial `accumulatedText` as interrupted assistant message (using `textStartedAt` for proper ordering). This is emitted as an `assistant_done` event for UI replay, but is **not** added to prompt history.
 4. For each active tool call:
    - Logs `tool_interrupted` error
    - Adds tool result to `chatMessages` (prevents OpenAI API errors)
