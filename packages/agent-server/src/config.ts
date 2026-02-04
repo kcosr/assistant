@@ -236,6 +236,27 @@ const ChatConfigSchema = z.object({
   thinking: z.array(NonEmptyTrimmedStringSchema).optional().nullable(),
 });
 
+const InstructionSkillSourceConfigSchema = z.object({
+  root: NonEmptyTrimmedStringSchema,
+  available: GlobPatternListSchema,
+  inline: GlobPatternListSchema,
+});
+
+const InstructionSkillsConfigSchema = z
+  .array(InstructionSkillSourceConfigSchema)
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (!value || value.length === 0) {
+      return undefined;
+    }
+    return value.map((source) => ({
+      root: source.root,
+      ...(source.available !== undefined ? { available: source.available } : {}),
+      ...(source.inline !== undefined ? { inline: source.inline } : {}),
+    }));
+  });
+
 const RawAgentConfigSchema = z.object({
   agentId: NonEmptyTrimmedStringSchema,
   displayName: NonEmptyTrimmedStringSchema,
@@ -256,6 +277,7 @@ const RawAgentConfigSchema = z.object({
   uiVisible: z.boolean().optional().nullable(),
   apiExposed: z.boolean().optional().nullable(),
   schedules: z.array(ScheduleConfigSchema).optional(),
+  skills: InstructionSkillsConfigSchema,
 }).superRefine((value, ctx) => {
   if (!value.schedules || value.schedules.length === 0) {
     return;
@@ -310,6 +332,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     uiVisible,
     apiExposed,
     schedules,
+    skills,
   } = value;
 
   const normalizedSchedules = schedules?.map((schedule) => ({
@@ -327,6 +350,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     displayName,
     description,
     ...(normalizedSchedules ? { schedules: normalizedSchedules } : {}),
+    ...(skills !== undefined ? { skills } : {}),
   };
 
   const type = rawType === 'external' ? 'external' : 'chat';

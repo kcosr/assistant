@@ -996,6 +996,9 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `"skills"` hides plugin tools and lists CLI skills instead (run via `bash`)
   - `"mixed"` exposes both; use `skillAllowlist` to choose which plugins are CLI-only
 - `skillAllowlist` / `skillDenylist` glob patterns for plugin skills (matches plugin ids)
+- `skills` (optional) instruction skills (filesystem `SKILL.md` discovery + Pi-style system-prompt inclusion)
+  - Each entry has `root` (directory to scan), plus optional `available` / `inline` glob patterns over skill names.
+  - Injects a combined `<available_skills>` reference listing and optional inline `<skill name="...">...</skill>` blocks into the system prompt.
 - `capabilityAllowlist` / `capabilityDenylist` glob patterns for tool capability scoping
 - `agentAllowlist` / `agentDenylist` glob patterns controlling which other agents are visible/reachable from this agent (UI + `agents_*` tools)
 - `uiVisible` (default true) to hide from built-in clients when false

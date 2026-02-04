@@ -15,6 +15,23 @@ export interface CliWrapperConfig {
   env?: Record<string, string>;
 }
 
+export type InstructionSkillSource = {
+  /**
+   * Directory to recursively scan for SKILL.md files.
+   */
+  root: string;
+  /**
+   * Glob patterns over discovered skill names to include in the reference listing.
+   * Defaults to ["*"] when both available and inline are omitted.
+   */
+  available?: string[];
+  /**
+   * Glob patterns over discovered skill names to include inline in the system prompt.
+   * Defaults to [] when both available and inline are omitted.
+   */
+  inline?: string[];
+};
+
 export interface AgentDefinition {
   agentId: string;
   displayName: string;
@@ -139,6 +156,10 @@ export interface AgentDefinition {
    * Optional scheduled sessions for this agent.
    */
   schedules?: ScheduleConfig[];
+  /**
+   * Optional instruction skills configuration (Pi-style SKILL.md discovery + prompt inclusion).
+   */
+  skills?: InstructionSkillSource[];
 }
 
 export interface PiSdkChatConfig {
@@ -351,6 +372,7 @@ interface AgentDefinitionConfigShape {
   uiVisible?: unknown;
   apiExposed?: unknown;
   schedules?: unknown;
+  skills?: unknown;
 }
 
 interface AgentsConfigFileShape {
@@ -578,6 +600,61 @@ function validateAgentDefinitionConfig(
   };
 
   const schedules = parseSchedules(config.schedules);
+
+  const parseInstructionSkills = (raw: unknown): InstructionSkillSource[] | undefined => {
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(`agents[${index}].skills must be an array when provided`);
+    }
+
+    const sources: InstructionSkillSource[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const entry = raw[i];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`agents[${index}].skills[${i}] must be an object`);
+      }
+      const source = entry as { root?: unknown; available?: unknown; inline?: unknown };
+      const root = typeof source.root === 'string' ? source.root.trim() : '';
+      if (!root) {
+        throw new Error(`agents[${index}].skills[${i}].root must be a non-empty string`);
+      }
+
+      const parseOptionalPatternList = (value: unknown, field: 'available' | 'inline'): string[] | undefined => {
+        if (value === undefined || value === null) {
+          return undefined;
+        }
+        if (!Array.isArray(value)) {
+          throw new Error(`agents[${index}].skills[${i}].${field} must be an array of strings when provided`);
+        }
+        const patterns: string[] = [];
+        for (let j = 0; j < value.length; j += 1) {
+          const pattern = value[j];
+          if (typeof pattern !== 'string' || !pattern.trim()) {
+            throw new Error(
+              `agents[${index}].skills[${i}].${field}[${j}] must be a non-empty string when provided`,
+            );
+          }
+          patterns.push(pattern.trim());
+        }
+        return patterns.length > 0 ? patterns : undefined;
+      };
+
+      const available = parseOptionalPatternList(source.available, 'available');
+      const inline = parseOptionalPatternList(source.inline, 'inline');
+
+      sources.push({
+        root,
+        ...(available ? { available } : {}),
+        ...(inline ? { inline } : {}),
+      });
+    }
+
+    return sources.length > 0 ? sources : undefined;
+  };
+
+  const instructionSkills = parseInstructionSkills(config.skills);
 
   const base: AgentDefinition = {
     agentId,
@@ -1078,6 +1155,9 @@ function validateAgentDefinitionConfig(
   }
   if (schedules) {
     extended.schedules = schedules;
+  }
+  if (instructionSkills) {
+    extended.skills = instructionSkills;
   }
   if (uiVisible !== undefined) {
     extended.uiVisible = uiVisible;

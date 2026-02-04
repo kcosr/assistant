@@ -25,7 +25,14 @@
       "displayName": "General Assistant",
       "description": "A helpful general-purpose assistant for everyday tasks.",
       "systemPrompt": "You are a helpful assistant.",
-      "toolAllowlist": ["*"]
+      "toolAllowlist": ["*"],
+      "skills": [
+        {
+          "root": "./dist/skills",
+          "available": ["*"],
+          "inline": []
+        }
+      ]
     },
     {
       "agentId": "claude-cli",
