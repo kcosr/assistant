@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed session model/thinking updates to cancel active chat runs to avoid stuck queued messages. ([#54](https://github.com/kcosr/assistant/pull/54))
 
 ### Removed
 

@@ -601,6 +601,10 @@ export class SessionRuntime {
       return;
     }
 
+    if (state.activeChatRun) {
+      this.cancelActiveRun(sessionId, state);
+    }
+
     try {
       const updatedSummary = await this.sessionHub
         .getSessionIndex()
@@ -707,6 +711,10 @@ export class SessionRuntime {
       return;
     }
 
+    if (state.activeChatRun) {
+      this.cancelActiveRun(sessionId, state);
+    }
+
     try {
       const updatedSummary = await this.sessionHub
         .getSessionIndex()
@@ -723,6 +731,28 @@ export class SessionRuntime {
         { retryable: true },
       );
     }
+  }
+
+  private cancelActiveRun(sessionId: string, state: LogicalSessionState): void {
+    if (!state.activeChatRun) {
+      return;
+    }
+    handleChatOutputCancelInternal({
+      message: {
+        type: 'control',
+        action: 'cancel',
+        target: 'output',
+        sessionId,
+      },
+      activeRunState: { sessionId, state },
+      sessionHub: this.sessionHub,
+      broadcastOutputCancelled: (targetSessionId, responseId) =>
+        this.sendOutputCancelled(targetSessionId, responseId),
+      log: (logMessage, details) => {
+        this.log(logMessage, details);
+      },
+      eventStore: this.eventStore,
+    });
   }
 
   private async handleCancelQueuedMessage(message: ClientCancelQueuedMessage): Promise<void> {
@@ -1096,7 +1126,19 @@ export class SessionRuntime {
 
   private handleChatOutputCancel(message: ClientControlMessage): void {
     const sessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
-    const activeRunState = sessionId ? this.activeRunStates.get(sessionId) : undefined;
+    let activeRunState = sessionId ? this.activeRunStates.get(sessionId) : undefined;
+    if (!activeRunState && sessionId) {
+      const isSubscribed =
+        typeof this.connection.isSubscribedTo === 'function'
+          ? this.connection.isSubscribedTo(sessionId)
+          : true;
+      if (isSubscribed) {
+        const state = this.sessionHub.getSessionState(sessionId);
+        if (state?.activeChatRun) {
+          activeRunState = { sessionId, state };
+        }
+      }
+    }
     handleChatOutputCancelInternal({
       message,
       activeRunState,
