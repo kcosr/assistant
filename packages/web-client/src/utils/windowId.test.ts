@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createWindowSlot,
+  deactivateWindowSlot,
   getClientWindowId,
   listWindowSlots,
   removeWindowSlot,
@@ -167,5 +168,21 @@ describe('windowId', () => {
     const removedInactive = removeWindowSlot('1');
     expect(removedInactive).toBe(true);
     expect(listWindowSlots()).toEqual(['0']);
+  });
+
+  it('can deactivate the current window slot lease', () => {
+    const windowId = getClientWindowId();
+    expect(windowId).toBe('0');
+
+    const rawActiveBefore = window.localStorage.getItem('aiAssistantWindowActive');
+    expect(rawActiveBefore).toBeTruthy();
+    const parsedBefore = JSON.parse(rawActiveBefore ?? '{}') as Record<string, unknown>;
+    expect(parsedBefore['0']).toBeTruthy();
+
+    deactivateWindowSlot('0');
+
+    const rawActiveAfter = window.localStorage.getItem('aiAssistantWindowActive');
+    const parsedAfter = JSON.parse(rawActiveAfter ?? '{}') as Record<string, unknown>;
+    expect(parsedAfter['0']).toBeUndefined();
   });
 });

@@ -629,6 +629,19 @@ export function touchWindowSlot(windowId: string): void {
   setActiveSlot(storage, normalized, ownerId, Date.now());
 }
 
+export function deactivateWindowSlot(windowId: string): void {
+  const normalized = normalizeSlotId(windowId);
+  if (!normalized) {
+    return;
+  }
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
+  }
+  const ownerId = getWindowOwnerId();
+  releaseActiveSlot(storage, normalized, ownerId);
+}
+
 export function startWindowSlotHeartbeat(
   windowId: string,
   intervalMs: number = WINDOW_HEARTBEAT_INTERVAL_MS,
