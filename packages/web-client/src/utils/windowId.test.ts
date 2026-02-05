@@ -44,6 +44,7 @@ const createWindow = (
   return {
     localStorage,
     sessionStorage,
+    location: { origin: 'http://example.test' } as Location,
     crypto: {
       randomUUID: () => 'uuid-1234',
       getRandomValues: ((arr: Uint8Array) => arr) as Crypto['getRandomValues'],
@@ -119,6 +120,27 @@ describe('windowId', () => {
     const windowId = getClientWindowId();
 
     expect(windowId).toBe('2');
+    vi.restoreAllMocks();
+  });
+
+  it('reuses the most recent slot on Capacitor even when lower slots are free', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(30000);
+    (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor = {
+      getPlatform: () => 'android',
+    };
+    window.localStorage.setItem('aiAssistantWindowSlots', JSON.stringify(['0', '1', '2']));
+    window.localStorage.setItem(
+      'aiAssistantWindowActive',
+      JSON.stringify({
+        '2': { ownerId: 'cap-owner', lastSeen: 2000 },
+      }),
+    );
+
+    const windowId = getClientWindowId();
+
+    expect(windowId).toBe('2');
+    expect(window.sessionStorage.getItem('aiAssistantWindowId')).toBe('2');
+    expect(window.localStorage.getItem('aiAssistantWindowOwnerId')).toBe('cap-owner');
     vi.restoreAllMocks();
   });
 

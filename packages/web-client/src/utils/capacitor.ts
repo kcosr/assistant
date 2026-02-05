@@ -14,6 +14,19 @@ const importModule = new Function('specifier', 'return import(specifier)') as <T
 /**
  * Check if running in Capacitor Android context.
  */
+export function isCapacitor(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const cap = (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+  const platform = cap?.getPlatform?.();
+  if (platform) {
+    return platform !== 'web';
+  }
+  const origin = window.location?.origin;
+  return origin === 'capacitor://localhost';
+}
+
 export function isCapacitorAndroid(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -23,7 +36,7 @@ export function isCapacitorAndroid(): boolean {
   if (platform) {
     return platform === 'android';
   }
-  const origin = window.location.origin;
+  const origin = window.location?.origin;
   return origin === 'https://localhost' || origin === 'capacitor://localhost';
 }
 
