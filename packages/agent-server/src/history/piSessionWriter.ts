@@ -57,6 +57,11 @@ type PiSessionThinkingChangeEntry = PiSessionEntryBase & {
   thinkingLevel: PiThinkingLevel;
 };
 
+type PiSessionInfoEntry = PiSessionEntryBase & {
+  type: 'session_info';
+  name: string;
+};
+
 type PiSessionCustomEntry = PiSessionEntryBase & {
   type: 'custom';
   customType: string;
@@ -75,6 +80,7 @@ type PiSessionEntry =
   | PiSessionMessageEntry
   | PiSessionModelChangeEntry
   | PiSessionThinkingChangeEntry
+  | PiSessionInfoEntry
   | PiSessionCustomEntry
   | PiSessionCustomMessageEntry;
 
@@ -867,6 +873,78 @@ export class PiSessionWriter {
         return;
       }
 
+      await this.appendEntries(state, [entry]);
+    });
+
+    state.leafId = nextLeafId;
+
+    return currentSummary === summary ? undefined : currentSummary;
+  }
+
+  async appendSessionInfo(options: {
+    summary: SessionSummary;
+    name: string;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, name, updateAttributes } = options;
+
+    let currentSummary = summary;
+    const stateInfo = await this.ensureSessionState({
+      summary: currentSummary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    currentSummary = stateInfo.summary;
+    const state = stateInfo.state;
+
+    const entry: PiSessionInfoEntry = {
+      type: 'session_info',
+      id: generateEntryId(),
+      parentId: state.leafId,
+      timestamp: this.now().toISOString(),
+      name: name.trim(),
+    };
+
+    this.log('appendSessionInfo requested', {
+      sessionId: summary.sessionId,
+      piSessionId: state.piSessionId,
+      cwd: state.cwd,
+      flushed: state.flushed,
+      hasAssistant: state.hasAssistant,
+      sessionFile: state.sessionFile,
+      name: entry.name,
+    });
+
+    const nextLeafId = entry.id;
+    await this.queueWrite(state, async () => {
+      if (!state.flushed && !state.hasAssistant) {
+        state.pendingEntries.push(entry);
+        this.log('appendSessionInfo queued (pending until assistant output)', {
+          sessionId: summary.sessionId,
+          piSessionId: state.piSessionId,
+          pendingCount: state.pendingEntries.length,
+          sessionFile: state.sessionFile,
+        });
+        return;
+      }
+
+      if (!state.flushed) {
+        this.log('appendSessionInfo flushing pending entries', {
+          sessionId: summary.sessionId,
+          piSessionId: state.piSessionId,
+          pendingCount: state.pendingEntries.length,
+          sessionFile: state.sessionFile,
+        });
+        await this.flushPending(state, [entry], state.hasAssistant);
+        return;
+      }
+
+      this.log('appendSessionInfo appending entry', {
+        sessionId: summary.sessionId,
+        piSessionId: state.piSessionId,
+        sessionFile: state.sessionFile,
+      });
       await this.appendEntries(state, [entry]);
     });
 

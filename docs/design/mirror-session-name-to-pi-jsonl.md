@@ -76,7 +76,7 @@ So, when assistant clears the name (`null`), write a `session_info` entry with `
    - confirm `pi -r` (or session picker) can search by that name
 
 ## Decisions
-- Mirror session names **only for Pi SDK provider sessions** (`agent.chat.provider === "pi"`).
+- Mirror session names for Pi-backed sessions (`agent.chat.provider === "pi"` or `"pi-cli"`).
 - If the Pi session JSONL does not exist yet, still record the rename by storing the `session_info` entry in `PiSessionWriter` pending state until the first flush.
 - Renames are **append-only** (multiple renames create multiple `session_info` entries), matching pi-mono semantics.
 

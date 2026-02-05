@@ -188,6 +188,51 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             name,
             ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
           });
+
+          const piSessionWriter = sessionHub.getPiSessionWriter?.();
+          if (!piSessionWriter) {
+            console.log('[sessions] Pi session writer unavailable; skipping session_info mirror', {
+              sessionId,
+              agentId: summary.agentId ?? null,
+              name: typeof summary.name === 'string' ? summary.name : null,
+            });
+          } else {
+            const registry = requireAgentRegistry(ctx, sessionHub);
+            const agentId = summary.agentId;
+            const agent = agentId ? registry.getAgent(agentId) : undefined;
+            const provider = agent?.type === 'external' ? null : (agent?.chat?.provider ?? 'pi');
+
+            if (provider !== 'pi' && provider !== 'pi-cli') {
+              console.log(
+                '[sessions] Session provider is not Pi-backed; skipping session_info mirror',
+                { sessionId, agentId: summary.agentId ?? null, provider },
+              );
+            } else {
+              console.log('[sessions] Mirroring session rename into Pi session log', {
+                sessionId,
+                agentId: summary.agentId ?? null,
+                provider,
+                name: typeof summary.name === 'string' ? summary.name : null,
+              });
+              try {
+                const updatedSummary = await piSessionWriter.appendSessionInfo({
+                  summary,
+                  name: typeof summary.name === 'string' ? summary.name : '',
+                  updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+                });
+                if (updatedSummary) {
+                  summary = updatedSummary;
+                }
+                console.log('[sessions] Mirrored session_info into Pi session log', {
+                  sessionId,
+                  agentId: summary.agentId ?? null,
+                  provider,
+                });
+              } catch (err) {
+                console.error('[sessions] Failed to mirror session name to Pi session log', err);
+              }
+            }
+          }
         }
 
         if (pinnedAt !== undefined) {
