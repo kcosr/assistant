@@ -8,6 +8,7 @@ import type {
   ClientSubscribeMessage,
   ClientUnsubscribeMessage,
   ClientTextInputMessage,
+  ClientSetSessionModelMessage,
   ServerMessage,
 } from '@assistant/shared';
 
@@ -218,6 +219,91 @@ describe('SessionRuntime subscription message handlers', () => {
       } as SessionConnection),
     );
     expect(remainingSessionIds.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('cancels active chat run when setting session model', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-model-cancel-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'test-agent',
+        displayName: 'Test Agent',
+        description: 'Test agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai/gpt-5.2', 'openai/gpt-4o-mini'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
+    const { runtime } = createRuntime({
+      sessionHub,
+      sessionId: summary.sessionId,
+      subscriptions: [summary.sessionId],
+    });
+
+    const state = await sessionHub.ensureSessionState(summary.sessionId);
+    const abortController = new AbortController();
+    state.activeChatRun = {
+      responseId: 'resp-1',
+      abortController,
+      accumulatedText: '',
+    };
+
+    const message: ClientSetSessionModelMessage = {
+      type: 'set_session_model',
+      sessionId: summary.sessionId,
+      model: 'openai/gpt-4o-mini',
+    };
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleSetSessionModel(message);
+
+    expect(abortController.signal.aborted).toBe(true);
+    expect(state.activeChatRun?.outputCancelled).toBe(true);
+  });
+
+  it('handles output cancel when active run is not tracked on the connection', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-output-cancel-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'test-agent',
+        displayName: 'Test Agent',
+        description: 'Test agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai/gpt-5.2'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
+    const { runtime } = createRuntime({
+      sessionHub,
+      sessionId: summary.sessionId,
+      subscriptions: [summary.sessionId],
+    });
+
+    const state = await sessionHub.ensureSessionState(summary.sessionId);
+    const abortController = new AbortController();
+    state.activeChatRun = {
+      responseId: 'resp-2',
+      abortController,
+      accumulatedText: '',
+    };
+
+    // @ts-expect-error accessing private method for test
+    runtime.handleChatOutputCancel({
+      type: 'control',
+      action: 'cancel',
+      target: 'output',
+      sessionId: summary.sessionId,
+    });
+
+    expect(abortController.signal.aborted).toBe(true);
+    expect(state.activeChatRun?.outputCancelled).toBe(true);
   });
 
   it('rejects text_input for sessions the connection is not subscribed to', async () => {
