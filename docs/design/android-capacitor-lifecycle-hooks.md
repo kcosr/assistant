@@ -11,6 +11,7 @@
 
 ## Proposed Solution
 - Add an exported helper in `packages/web-client/src/utils/windowId.ts` to mark a slot inactive (release the active slot entry for the current owner), e.g., `deactivateWindowSlot(windowId: string)`.
+- In Capacitor builds, treat window slots as single-instance: on startup reuse the last-used slot and persist/adopt a stable owner id across restarts so the previous slot is not temporarily shown as “in use”.
 - Replace `enableAppReloadOnResume` with a lifecycle helper in `packages/web-client/src/utils/capacitor.ts`:
   - Register `App.addListener('appStateChange', ...)`.
   - When `isActive` becomes `false`, invoke an `onBackground` callback (release the window slot).
@@ -23,7 +24,7 @@
   - `onResume`: refresh sessions list/sidebar and force-refresh all bound chat panels:
     - `refreshSessions(...)` to update the sidebar.
     - `refreshOpenChatPanelTranscripts()` to loop over `getChatPanelSessionIds()` and run `loadSessionTranscript(sessionId, { force: true })` (matches the refresh button behavior).
-  - Optionally `touchWindowSlot(WINDOW_ID)` on resume to re-assert the active slot.
+  - Restart the window-slot heartbeat on resume to re-assert the active slot.
 
 ## Files to Update
 - `packages/web-client/src/utils/windowId.ts` (export slot deactivation helper)

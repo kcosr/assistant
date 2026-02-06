@@ -106,6 +106,7 @@ import {
   createWindowSlot,
   getClientWindowId,
   listWindowSlotStatuses,
+  deactivateWindowSlot,
   removeWindowSlot,
   resetWindowSlotState,
   setWindowSlotName,
@@ -119,7 +120,18 @@ const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
 const WINDOW_ID = getClientWindowId();
-startWindowSlotHeartbeat(WINDOW_ID);
+let stopWindowSlotHeartbeat: (() => void) | null = null;
+const startHeartbeat = (): void => {
+  if (stopWindowSlotHeartbeat) {
+    return;
+  }
+  stopWindowSlotHeartbeat = startWindowSlotHeartbeat(WINDOW_ID);
+};
+const stopHeartbeat = (): void => {
+  stopWindowSlotHeartbeat?.();
+  stopWindowSlotHeartbeat = null;
+};
+startHeartbeat();
 
 const isDebugFlagEnabled = (key: string): boolean => {
   if (typeof window === 'undefined') {
@@ -207,8 +219,8 @@ interface AgentSummary {
 import { apiFetch, getWebSocketUrl } from './utils/api';
 import {
   configureStatusBar,
-  enableAppReloadOnResume,
   isCapacitorAndroid,
+  setupAndroidAppLifecycleHandlers,
   setupBackButtonHandler,
 } from './utils/capacitor';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
@@ -250,8 +262,19 @@ async function main(): Promise<void> {
   // Configure Capacitor status bar (no-op if not in Capacitor)
   void configureStatusBar();
 
-  // Reload app on resume for Capacitor builds (no-op if not in Capacitor)
-  void enableAppReloadOnResume();
+  // Android app lifecycle hooks (no-op if not in Capacitor Android)
+  void setupAndroidAppLifecycleHandlers({
+    onBackground: () => {
+      stopHeartbeat();
+      deactivateWindowSlot(WINDOW_ID);
+    },
+    onResume: () => {
+      startHeartbeat();
+      ensureConnected('capacitor-resume');
+      void refreshSessions();
+      refreshOpenChatPanelTranscripts();
+    },
+  });
 
   // Initialize push notifications (no-op if not in Capacitor)
   void initPushNotifications();
@@ -3200,6 +3223,12 @@ async function main(): Promise<void> {
   function loadOpenChatPanelTranscripts(): void {
     for (const sessionId of getChatPanelSessionIds()) {
       void loadSessionTranscript(sessionId);
+    }
+  }
+
+  function refreshOpenChatPanelTranscripts(): void {
+    for (const sessionId of getChatPanelSessionIds()) {
+      void loadSessionTranscript(sessionId, { force: true });
     }
   }
 

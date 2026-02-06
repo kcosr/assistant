@@ -1,3 +1,5 @@
+import { isCapacitor } from './capacitor';
+
 const WINDOW_ID_STORAGE_KEY = 'aiAssistantWindowId';
 const WINDOW_SLOT_LIST_STORAGE_KEY = 'aiAssistantWindowSlots';
 const WINDOW_SLOT_ACTIVE_KEY = 'aiAssistantWindowActive';
@@ -146,20 +148,79 @@ function setGlobalWindowId(windowId: string): void {
 }
 
 function getWindowOwnerId(): string {
+  const localStorage = getLocalStorage();
   const sessionStorage = getSessionStorage();
+
+  const singleInstance = isCapacitor();
+  if (!singleInstance) {
+    try {
+      const existing = sessionStorage?.getItem(WINDOW_OWNER_ID_STORAGE_KEY);
+      if (existing) {
+        return existing;
+      }
+    } catch {
+      // Ignore sessionStorage errors.
+    }
+    const ownerId = generateWindowId();
+    try {
+      sessionStorage?.setItem(WINDOW_OWNER_ID_STORAGE_KEY, ownerId);
+    } catch {
+      // Ignore sessionStorage errors.
+    }
+    return ownerId;
+  }
+
+  // Capacitor builds are effectively single-instance; persist owner id across restarts so we
+  // don't temporarily mark the last slot as "in use" (and allocate a new one) on fast relaunch.
+  try {
+    const existing = localStorage?.getItem(WINDOW_OWNER_ID_STORAGE_KEY);
+    if (existing) {
+      return existing;
+    }
+  } catch {
+    // Ignore localStorage errors.
+  }
+
   try {
     const existing = sessionStorage?.getItem(WINDOW_OWNER_ID_STORAGE_KEY);
     if (existing) {
+      try {
+        localStorage?.setItem(WINDOW_OWNER_ID_STORAGE_KEY, existing);
+      } catch {
+        // Ignore storage errors.
+      }
       return existing;
     }
   } catch {
     // Ignore sessionStorage errors.
   }
+
+  // Adopt the most recent active-slot owner id so upgrades/restarts don't change ownership.
+  if (localStorage) {
+    const rawActive = readActiveSlots(localStorage);
+    let recentOwnerId: string | null = null;
+    let recentSeen = -Infinity;
+    for (const entry of Object.values(rawActive)) {
+      if (entry.lastSeen > recentSeen) {
+        recentSeen = entry.lastSeen;
+        recentOwnerId = entry.ownerId;
+      }
+    }
+    if (recentOwnerId) {
+      try {
+        localStorage.setItem(WINDOW_OWNER_ID_STORAGE_KEY, recentOwnerId);
+      } catch {
+        // Ignore storage errors.
+      }
+      return recentOwnerId;
+    }
+  }
+
   const ownerId = generateWindowId();
   try {
-    sessionStorage?.setItem(WINDOW_OWNER_ID_STORAGE_KEY, ownerId);
+    localStorage?.setItem(WINDOW_OWNER_ID_STORAGE_KEY, ownerId);
   } catch {
-    // Ignore sessionStorage errors.
+    // Ignore storage errors.
   }
   return ownerId;
 }
@@ -285,6 +346,40 @@ function resolveWindowSlot(
   }
 }
 
+function resolveSingleInstanceWindowSlot(
+  storage: Storage,
+  ownerId: string,
+  preferredSlot?: string | null,
+): string {
+  const now = Date.now();
+  const slots = ensureWindowSlots(storage);
+  const normalizedPreferred = normalizeSlotId(preferredSlot ?? null);
+  if (normalizedPreferred && slots.includes(normalizedPreferred)) {
+    setActiveSlot(storage, normalizedPreferred, ownerId, now);
+    return normalizedPreferred;
+  }
+
+  const rawActive = readActiveSlots(storage);
+  let recentSlot: string | null = null;
+  let recentSeen = -Infinity;
+  for (const [slotId, entry] of Object.entries(rawActive)) {
+    if (!slots.includes(slotId)) {
+      continue;
+    }
+    if (entry.lastSeen > recentSeen) {
+      recentSeen = entry.lastSeen;
+      recentSlot = slotId;
+    }
+  }
+  if (recentSlot) {
+    setActiveSlot(storage, recentSlot, ownerId, now);
+    return recentSlot;
+  }
+
+  setActiveSlot(storage, DEFAULT_WINDOW_SLOT_ID, ownerId, now);
+  return DEFAULT_WINDOW_SLOT_ID;
+}
+
 function migrateStorageKey(storage: Storage, fromKey: string, toKey: string): void {
   if (fromKey === toKey) {
     return;
@@ -365,7 +460,9 @@ export function getClientWindowId(): string {
     const normalized = normalizeSlotId(existing);
     const ownerId = getWindowOwnerId();
     if (localStorage) {
-      const resolved = resolveWindowSlot(localStorage, ownerId, normalized);
+      const resolved = isCapacitor()
+        ? resolveSingleInstanceWindowSlot(localStorage, ownerId, normalized)
+        : resolveWindowSlot(localStorage, ownerId, normalized);
       if (existing && !normalized) {
         migrateLegacyWindowState(localStorage, existing, resolved);
       }
@@ -530,6 +627,19 @@ export function touchWindowSlot(windowId: string): void {
   }
   const ownerId = getWindowOwnerId();
   setActiveSlot(storage, normalized, ownerId, Date.now());
+}
+
+export function deactivateWindowSlot(windowId: string): void {
+  const normalized = normalizeSlotId(windowId);
+  if (!normalized) {
+    return;
+  }
+  const storage = getLocalStorage();
+  if (!storage) {
+    return;
+  }
+  const ownerId = getWindowOwnerId();
+  releaseActiveSlot(storage, normalized, ownerId);
 }
 
 export function startWindowSlotHeartbeat(

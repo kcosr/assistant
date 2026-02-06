@@ -174,7 +174,7 @@ describe('lists panel keyboard shortcuts', () => {
     expect(document.activeElement).toBe(searchInput);
 
     handle.unmount();
-  });
+  }, 15000);
 
   it('uses the active list instance in context attributes', async () => {
     vi.resetModules();

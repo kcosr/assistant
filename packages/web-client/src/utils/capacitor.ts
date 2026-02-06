@@ -14,6 +14,19 @@ const importModule = new Function('specifier', 'return import(specifier)') as <T
 /**
  * Check if running in Capacitor Android context.
  */
+export function isCapacitor(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const cap = (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+  const platform = cap?.getPlatform?.();
+  if (platform) {
+    return platform !== 'web';
+  }
+  const origin = window.location?.origin;
+  return origin === 'capacitor://localhost';
+}
+
 export function isCapacitorAndroid(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -23,7 +36,7 @@ export function isCapacitorAndroid(): boolean {
   if (platform) {
     return platform === 'android';
   }
-  const origin = window.location.origin;
+  const origin = window.location?.origin;
   return origin === 'https://localhost' || origin === 'capacitor://localhost';
 }
 
@@ -180,34 +193,112 @@ export async function configureStatusBar(): Promise<void> {
   }
 }
 
-export async function enableAppReloadOnResume(): Promise<void> {
-  if (!isCapacitorAndroid()) {
+export async function setupAndroidAppLifecycleHandlers(
+  handlers: {
+    onBackground?: () => void;
+    onResume?: () => void;
+  },
+  options?: {
+    importModule?: typeof importModule;
+    isAndroid?: () => boolean;
+    document?: Document;
+  },
+): Promise<void> {
+  const isAndroid = options?.isAndroid ?? (() => isCapacitor() && isCapacitorAndroid());
+  if (!isAndroid()) {
+    return;
+  }
+
+  const doc = options?.document ?? (typeof document !== 'undefined' ? document : null);
+  const importer = options?.importModule ?? importModule;
+
+  const onBackground = typeof handlers.onBackground === 'function' ? handlers.onBackground : null;
+  const onResume = typeof handlers.onResume === 'function' ? handlers.onResume : null;
+  if (!onBackground && !onResume) {
     return;
   }
 
   try {
-    const { App } = await importModule<{
-      App: {
-        addListener: (
-          eventName: 'appStateChange',
-          listenerFunc: (state: { isActive: boolean }) => void,
-        ) => { remove: () => Promise<void> };
-      };
-    }>('@capacitor/app');
+    type AppPlugin = {
+      addListener: (
+        eventName: 'appStateChange',
+        listenerFunc: (state: { isActive: boolean }) => void,
+      ) => { remove: () => Promise<void> };
+    };
 
-    let hasBackgrounded = false;
-    App.addListener('appStateChange', (state) => {
+    const loadAppPlugin = async (): Promise<AppPlugin | null> => {
+      try {
+        const { App } = await importer<{ App: AppPlugin }>('@capacitor/app');
+        if (App && typeof App.addListener === 'function') {
+          return App;
+        }
+        return null;
+      } catch {
+        const cap = (window as unknown as {
+          Capacitor?: { Plugins?: { App?: unknown }; App?: unknown };
+        }).Capacitor;
+        const appPlugin = (
+          (cap?.Plugins?.App as {
+            addListener?: (
+              eventName: 'appStateChange',
+              listenerFunc: (state: { isActive: boolean }) => void,
+            ) => { remove: () => Promise<void> };
+          }) ??
+          (cap?.App as {
+            addListener?: (
+              eventName: 'appStateChange',
+              listenerFunc: (state: { isActive: boolean }) => void,
+            ) => { remove: () => Promise<void> };
+          })
+        ) ?? null;
+        if (appPlugin && typeof appPlugin.addListener === 'function') {
+          return appPlugin as AppPlugin;
+        }
+        return null;
+      }
+    };
+
+    const appPlugin = await loadAppPlugin();
+    if (!appPlugin) {
+      return;
+    }
+
+    let isBackgrounded = false;
+    const emitBackground = (): void => {
+      if (isBackgrounded) {
+        return;
+      }
+      isBackgrounded = true;
+      onBackground?.();
+    };
+    const emitResume = (): void => {
+      if (!isBackgrounded) {
+        return;
+      }
+      isBackgrounded = false;
+      onResume?.();
+    };
+
+    appPlugin.addListener('appStateChange', (state) => {
       if (!state || typeof state.isActive !== 'boolean') {
         return;
       }
       if (state.isActive) {
-        if (hasBackgrounded) {
-          window.location.reload();
-        }
+        emitResume();
       } else {
-        hasBackgrounded = true;
+        emitBackground();
       }
     });
+
+    if (doc) {
+      doc.addEventListener('visibilitychange', () => {
+        if (doc.visibilityState === 'visible') {
+          emitResume();
+        } else if (doc.visibilityState === 'hidden') {
+          emitBackground();
+        }
+      });
+    }
   } catch {
     // Not in Capacitor context or plugin not available.
   }

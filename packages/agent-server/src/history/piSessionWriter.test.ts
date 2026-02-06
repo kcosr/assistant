@@ -335,6 +335,97 @@ describe('PiSessionWriter', () => {
     expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
   });
 
+  it('appends session_info entries after the session is flushed', async () => {
+    const baseDir = await createTempDir('pi-session-writer-session-info');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-6',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.sync({
+      summary,
+      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    await writer.appendSessionInfo({ summary, name: '  Refactor auth module  ' });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const last = entries[entries.length - 1] as Record<string, unknown> | undefined;
+    expect(last?.['type']).toBe('session_info');
+    expect(last?.['name']).toBe('Refactor auth module');
+  });
+
+  it('queues session_info entries before flush and writes them once an assistant message exists', async () => {
+    const baseDir = await createTempDir('pi-session-writer-session-info-pending');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-7',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.appendSessionInfo({ summary, name: '' });
+    await writer.appendSessionInfo({ summary, name: 'New Name' });
+
+    await writer.sync({
+      summary,
+      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const sessionInfoEntries = entries.filter((entry) => entry['type'] === 'session_info');
+    expect(sessionInfoEntries).toHaveLength(2);
+    expect(sessionInfoEntries[0]?.['name']).toBe('');
+    expect(sessionInfoEntries[1]?.['name']).toBe('New Name');
+
+    const firstNonHeader = entries[1] as Record<string, unknown> | undefined;
+    expect(firstNonHeader?.['type']).toBe('session_info');
+  });
+
   it('replaces orphan tool results with a non-breaking placeholder and avoids duplicate writes on restart', async () => {
     const baseDir = await createTempDir('pi-session-writer-orphan-tool');
     const now = () => new Date('2026-02-01T00:00:00.000Z');

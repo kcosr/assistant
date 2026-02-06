@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { setupBackButtonHandler } from './capacitor';
+import { setupAndroidAppLifecycleHandlers, setupBackButtonHandler } from './capacitor';
 
 type BackButtonListener = (event: { canGoBack?: boolean }) => void;
 
@@ -94,5 +94,91 @@ describe('setupBackButtonHandler', () => {
     expect(handler).toHaveBeenCalledWith({ canGoBack: false });
     expect(historySpy).not.toHaveBeenCalled();
     expect(appMock.App.exitApp).toHaveBeenCalledTimes(1);
+  });
+});
+
+type AppStateListener = (state: { isActive: boolean }) => void;
+
+const createAppStateMock = () => {
+  let listener: AppStateListener | null = null;
+  const addListener = vi.fn((eventName: string, callback: AppStateListener) => {
+    if (eventName === 'appStateChange') {
+      listener = callback;
+    }
+    return { remove: vi.fn(async () => {}) };
+  });
+  return {
+    App: { addListener },
+    getListener: () => listener,
+  };
+};
+
+describe('setupAndroidAppLifecycleHandlers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('invokes background/resume handlers only on transitions', async () => {
+    const appMock = createAppStateMock();
+    const onBackground = vi.fn();
+    const onResume = vi.fn();
+
+    const importModule = (async () => ({ App: appMock.App })) as unknown as <T>(
+      specifier: string,
+    ) => Promise<T>;
+
+    await setupAndroidAppLifecycleHandlers(
+      { onBackground, onResume },
+      {
+        importModule,
+        isAndroid: () => true,
+        document,
+      },
+    );
+
+    const listener = appMock.getListener();
+    expect(listener).toBeTruthy();
+
+    listener?.({ isActive: true });
+    expect(onResume).not.toHaveBeenCalled();
+
+    listener?.({ isActive: false });
+    expect(onBackground).toHaveBeenCalledTimes(1);
+
+    listener?.({ isActive: false });
+    expect(onBackground).toHaveBeenCalledTimes(1);
+
+    listener?.({ isActive: true });
+    expect(onResume).toHaveBeenCalledTimes(1);
+
+    listener?.({ isActive: true });
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to document visibilitychange when available', async () => {
+    const appMock = createAppStateMock();
+    const onBackground = vi.fn();
+    const onResume = vi.fn();
+
+    const importModule = (async () => ({ App: appMock.App })) as unknown as <T>(
+      specifier: string,
+    ) => Promise<T>;
+
+    await setupAndroidAppLifecycleHandlers(
+      { onBackground, onResume },
+      {
+        importModule,
+        isAndroid: () => true,
+        document,
+      },
+    );
+
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(onBackground).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(onResume).toHaveBeenCalledTimes(1);
   });
 });

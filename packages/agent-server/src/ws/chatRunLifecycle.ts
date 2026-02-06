@@ -278,6 +278,15 @@ export async function handleTextInputWithChatCompletions(options: {
 
     const wasAborted = runResult.aborted || abortController.signal.aborted;
     if (wasAborted) {
+      // If the run was aborted before any assistant message was added (e.g. cancel
+      // during streaming before tool calls), the user message we pushed above is
+      // left dangling.  Remove it so the next turn doesn't send two consecutive
+      // user messages which can confuse the model.
+      const lastMsg = state.chatMessages[state.chatMessages.length - 1];
+      if (lastMsg && lastMsg.role === 'user' && lastMsg === userMessage) {
+        state.chatMessages.pop();
+      }
+
       const piSessionWriter = sessionHub.getPiSessionWriter?.();
       if (piSessionWriter && runResult.provider === 'pi') {
         try {

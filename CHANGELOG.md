@@ -5,11 +5,15 @@
 ### Breaking Changes
 
 ### Added
+- Added session rename mirroring into Pi session JSONL (`session_info`) for Pi-backed sessions (`pi`, `pi-cli`). ([#55](https://github.com/kcosr/assistant/pull/55))
 
 ### Changed
 
 ### Fixed
 - Fixed session model/thinking updates to cancel active chat runs to avoid stuck queued messages. ([#54](https://github.com/kcosr/assistant/pull/54))
+- Fixed Android/Capacitor lifecycle to release window profile leases on background and reuse the last-used profile on relaunch. ([#55](https://github.com/kcosr/assistant/pull/55))
+- Fixed Android/Capacitor resume to refresh bound chat transcripts without a full page reload. ([#55](https://github.com/kcosr/assistant/pull/55))
+- Fixed aborted runs to drop a dangling user message when aborting before assistant output. ([#55](https://github.com/kcosr/assistant/pull/55))
 
 ### Removed
 
