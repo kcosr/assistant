@@ -6,10 +6,14 @@
 
 ### Added
 - Added session rename mirroring into Pi session JSONL (`session_info`) for Pi-backed sessions (`pi`, `pi-cli`). ([#55](https://github.com/kcosr/assistant/pull/55))
+- Added reverse proxy sub-path support: auto-detect base path from page URL for API requests, WebSocket connections, and static assets when served behind a proxy at a sub-path (e.g., `/assistant`).
+- Added build flavor system for mobile apps to support side-by-side installs with different identities and API endpoints.
 
 ### Changed
 
 ### Fixed
+- Fixed static asset loading (`config.js`, `client.js`) when served behind a reverse proxy at a sub-path by using relative paths in `index.html`.
+- Fixed `apiFetch` to prepend the detected base path to absolute URLs so API calls work without explicit `ASSISTANT_API_HOST` configuration behind a reverse proxy.
 - Fixed session model/thinking updates to cancel active chat runs to avoid stuck queued messages. ([#54](https://github.com/kcosr/assistant/pull/54))
 - Fixed Android/Capacitor lifecycle to release window profile leases on background and reuse the last-used profile on relaunch. ([#55](https://github.com/kcosr/assistant/pull/55))
 - Fixed Android/Capacitor resume to refresh bound chat transcripts without a full page reload. ([#55](https://github.com/kcosr/assistant/pull/55))

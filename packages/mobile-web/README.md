@@ -162,6 +162,66 @@ Capacitor app icons are generated from `resources/icon.svg` (copied from the des
 Run `npm run icons:generate` after updating the source. Icon generation runs automatically
 as part of `android:add`, `android:sync`, `ios:add`, and `ios:sync`.
 
+## Build Flavors
+
+Flavors let you build multiple app instances with different identities and API
+endpoints so they can be installed side-by-side on the same device.
+
+Flavor definitions live in `flavors.json`:
+
+```json
+{
+  "default": {
+    "appId": "com.assistant.app",
+    "appName": "Assistant",
+    "apiHost": "https://assistant"
+  },
+  "work": {
+    "appId": "com.assistant.work",
+    "appName": "Assistant Work",
+    "apiHost": "https://assistant/assistant-work"
+  }
+}
+```
+
+Each flavor specifies:
+
+- **appId** – Android package name / iOS bundle ID (must differ for side-by-side installs)
+- **appName** – Display name shown on the home screen
+- **apiHost** – Value written to `ASSISTANT_API_HOST` in the built `config.js`
+
+### Applying a flavor
+
+```bash
+# See available flavors
+npm run flavor
+
+# Apply the "work" flavor
+npm run flavor work
+```
+
+This updates `capacitor.config.json` with the flavor's `appId` and `appName`.
+Since the `appId` determines the Android Java package structure, **you must
+regenerate the native project** whenever the `appId` changes:
+
+```bash
+npm run flavor work
+rm -rf android/
+ASSISTANT_API_HOST='https://assistant/assistant-work' npm run android:add
+```
+
+For subsequent builds after the project already exists:
+
+```bash
+ASSISTANT_API_HOST='https://assistant/assistant-work' npm run android:build
+```
+
+### Adding a new flavor
+
+Add an entry to `flavors.json` with a unique `appId`. For Firebase push
+notifications, each flavor needs its own `google-services.json` from a
+matching Firebase app registration.
+
 ## Notes
 
 - Web assets are pulled from `../web-client/public` as configured in `capacitor.config.json`

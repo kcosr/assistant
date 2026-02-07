@@ -3,6 +3,11 @@
  *
  * Uses window.ASSISTANT_API_HOST from config.js if set,
  * otherwise falls back to the current page host.
+ *
+ * When served behind a reverse proxy at a sub-path (e.g., /assistant),
+ * the base path is auto-detected from the page URL so that API requests,
+ * WebSocket connections, and static assets resolve correctly without
+ * requiring explicit configuration.
  */
 
 declare global {
@@ -46,6 +51,25 @@ function getConfiguredApiUrl(): URL | null {
 }
 
 /**
+ * Detect the base path from the current page URL.
+ *
+ * When the app is served behind a reverse proxy at a sub-path
+ * (e.g., https://host/assistant/), this returns the sub-path
+ * (e.g., "/assistant"). When served at the root, returns "".
+ *
+ * The detection strips known page filenames like "/index.html"
+ * and trailing slashes to produce a clean path prefix.
+ */
+function getLocationBasePath(): string {
+  let pathname = window.location.pathname;
+  // Strip known page filenames
+  if (pathname.endsWith('/index.html')) {
+    pathname = pathname.slice(0, -'/index.html'.length);
+  }
+  return stripTrailingSlash(pathname);
+}
+
+/**
  * Get the API host for backend connections.
  */
 export function getApiHost(): string {
@@ -70,7 +94,11 @@ function useInsecure(): boolean {
 }
 
 /**
- * Get the base URL for API requests (e.g., "https://assistant").
+ * Get the base URL for API requests (e.g., "https://host/assistant").
+ *
+ * When ASSISTANT_API_HOST is set, uses that as the base.
+ * Otherwise, auto-detects the base path from the page URL to support
+ * reverse proxy sub-path deployments.
  */
 export function getApiBaseUrl(): string {
   const configuredUrl = getConfiguredApiUrl();
@@ -82,8 +110,9 @@ export function getApiBaseUrl(): string {
   }
 
   const host = getApiHost();
+  const basePath = getLocationBasePath();
   if (useInsecure()) {
-    return `http://${host}`;
+    return `http://${host}${basePath}`;
   }
   // Use https for configured host, or match current protocol when known.
   const locationProtocol = window.location.protocol;
@@ -93,7 +122,7 @@ export function getApiBaseUrl(): string {
       : locationProtocol === 'http:'
         ? 'http:'
         : 'https:';
-  return `${protocol}//${host}`;
+  return `${protocol}//${host}${basePath}`;
 }
 
 /**
@@ -116,24 +145,36 @@ export function getWebSocketUrl(): string {
   }
 
   const host = getApiHost();
+  const basePath = getLocationBasePath();
+  const wsPath = basePath ? `${basePath}/ws` : '/ws';
   if (useInsecure()) {
-    return `ws://${host}/ws`;
+    return `ws://${host}${wsPath}`;
   }
   // Use wss for configured host (assumes https), or match current protocol
   const wsProtocol =
     window.ASSISTANT_API_HOST || window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProtocol}//${host}/ws`;
+  return `${wsProtocol}//${host}${wsPath}`;
 }
 
 /**
  * Make a fetch request to the API.
- * Converts relative URLs to absolute URLs using the API base when a custom host is configured.
- * When no custom host is set, keeps URLs relative so they work with the current page origin.
+ *
+ * Transforms absolute-path URLs (starting with "/") by prepending the
+ * appropriate base URL:
+ * - When ASSISTANT_API_HOST is set, uses the configured API base URL.
+ * - Otherwise, prepends the auto-detected base path from the page URL
+ *   so requests work correctly behind a reverse proxy at a sub-path.
  */
 export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  // Only transform URLs when a custom API host is configured
-  if (window.ASSISTANT_API_HOST && typeof input === 'string' && input.startsWith('/')) {
-    input = `${getApiBaseUrl()}${input}`;
+  if (typeof input === 'string' && input.startsWith('/')) {
+    if (window.ASSISTANT_API_HOST) {
+      input = `${getApiBaseUrl()}${input}`;
+    } else {
+      const basePath = getLocationBasePath();
+      if (basePath) {
+        input = `${basePath}${input}`;
+      }
+    }
   }
   return fetch(input, init);
 }
