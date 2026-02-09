@@ -18,6 +18,9 @@
 - Fixed Android/Capacitor lifecycle to release window profile leases on background and reuse the last-used profile on relaunch. ([#55](https://github.com/kcosr/assistant/pull/55))
 - Fixed Android/Capacitor resume to refresh bound chat transcripts without a full page reload. ([#55](https://github.com/kcosr/assistant/pull/55))
 - Fixed aborted runs to drop a dangling user message when aborting before assistant output. ([#55](https://github.com/kcosr/assistant/pull/55))
+- Fixed time tracker range picker to use click-based start/end selection with reset-on-next-click behavior for desktop and mobile. ([#56](https://github.com/kcosr/assistant/pull/56))
+- Fixed toolbar dropdown menus to stay within viewport height and scroll when content is long. ([#56](https://github.com/kcosr/assistant/pull/56))
+- Fixed mobile header toolbar alignment so the right-side icon group remains right-aligned when the global AQL center section is hidden. ([#56](https://github.com/kcosr/assistant/pull/56))
 
 ### Removed
 
