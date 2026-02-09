@@ -3,6 +3,9 @@ export interface SettingsDropdownControllerOptions {
   toggleButton: HTMLElement;
 }
 
+const DROPDOWN_VIEWPORT_PADDING_PX = 8;
+const DROPDOWN_MIN_HEIGHT_PX = 120;
+
 export class SettingsDropdownController {
   private isOpen = false;
 
@@ -42,6 +45,13 @@ export class SettingsDropdownController {
         this.toggle(false);
       }
     });
+
+    window.addEventListener('resize', () => {
+      if (!this.isOpen) {
+        return;
+      }
+      this.updateDropdownMaxHeight();
+    });
   }
 
   toggle(open?: boolean): void {
@@ -50,6 +60,11 @@ export class SettingsDropdownController {
     const { dropdown, toggleButton } = this.options;
     if (dropdown) {
       dropdown.classList.toggle('open', this.isOpen);
+      if (this.isOpen) {
+        this.updateDropdownMaxHeight();
+      } else {
+        dropdown.style.maxHeight = '';
+      }
     }
 
     toggleButton.classList.toggle('active', this.isOpen);
@@ -65,5 +80,20 @@ export class SettingsDropdownController {
       return;
     }
     this.toggle(false);
+  }
+
+  private updateDropdownMaxHeight(): void {
+    const { dropdown } = this.options;
+    if (!dropdown) {
+      return;
+    }
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
+      return;
+    }
+    const dropdownRect = dropdown.getBoundingClientRect();
+    const availableHeight = Math.floor(viewportHeight - dropdownRect.top - DROPDOWN_VIEWPORT_PADDING_PX);
+    const maxHeight = Math.max(DROPDOWN_MIN_HEIGHT_PX, availableHeight);
+    dropdown.style.maxHeight = `${maxHeight}px`;
   }
 }
