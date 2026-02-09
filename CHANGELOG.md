@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.1] - 2026-02-09
 
 ### Breaking Changes
 
@@ -16,6 +16,7 @@
 - Fixed aborted runs to drop a dangling user message when aborting before assistant output. ([#55](https://github.com/kcosr/assistant/pull/55))
 
 ### Removed
+
 
 ## [0.14.0] - 2026-02-04
 
