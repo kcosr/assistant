@@ -52,6 +52,9 @@
 - Fixed lists panel flashing "Loading list" placeholder on load. ([#53](https://github.com/kcosr/assistant/pull/53))
 - Fixed session history replay/cancel handling (skip aborted turns, avoid logging interrupts without output). ([#53](https://github.com/kcosr/assistant/pull/53))
 - Fixed session clear to drop provider history metadata and reset Pi JSONL replay. ([#53](https://github.com/kcosr/assistant/pull/53))
+- Fixed time tracker range picker to use click-based start/end selection with reset-on-next-click behavior for desktop and mobile. ([#58](https://github.com/kcosr/assistant/pull/58))
+- Fixed toolbar dropdown menus to stay within viewport height and scroll when content is long. ([#58](https://github.com/kcosr/assistant/pull/58))
+- Fixed mobile header toolbar alignment so the right-side icon group remains right-aligned when the global AQL center section is hidden. ([#58](https://github.com/kcosr/assistant/pull/58))
 
 ### Removed
 
