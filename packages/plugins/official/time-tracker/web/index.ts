@@ -834,7 +834,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let rangeDraftStart = dateRange.start;
       let rangeDraftEnd = dateRange.end;
       let rangeDraftMonth = new Date();
-      let isRangeDragging = false;
+      let rangeDraftAwaitingEnd = false;
       let chromeController: PanelChromeController | null = null;
 
       const stored = host.loadPanelState();
@@ -2399,42 +2399,19 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (inRange) {
             cell.classList.add('in-range');
           }
-          cell.addEventListener('mousedown', (event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            isRangeDragging = true;
-            const dateStr = cell.dataset['date'];
-            if (!dateStr) {
-              return;
-            }
-            updateRangeDraft(dateStr, dateStr);
-            renderRangeCalendar();
-          });
-          cell.addEventListener('mouseenter', () => {
-            if (!isRangeDragging) {
-              return;
-            }
-            const dateStr = cell.dataset['date'];
-            if (!dateStr) {
-              return;
-            }
-            updateRangeDraft(rangeDraftStart, dateStr);
-            normalizeDraftRange();
-            renderRangeCalendar();
-          });
           cell.addEventListener('click', (event) => {
             event.stopPropagation();
             const dateStr = cell.dataset['date'];
             if (!dateStr) {
               return;
             }
-            if (rangeDraftStart && rangeDraftEnd && rangeDraftStart !== rangeDraftEnd) {
-              updateRangeDraft(dateStr, dateStr);
-            } else if (rangeDraftStart && rangeDraftStart !== dateStr) {
+            if (rangeDraftAwaitingEnd) {
               updateRangeDraft(rangeDraftStart, dateStr);
               normalizeDraftRange();
+              rangeDraftAwaitingEnd = false;
             } else {
               updateRangeDraft(dateStr, dateStr);
+              rangeDraftAwaitingEnd = true;
             }
             renderRangeCalendar();
           });
@@ -2453,6 +2430,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       function openRangePopover(): void {
         rangeDraftStart = dateRange.start;
         rangeDraftEnd = dateRange.end;
+        rangeDraftAwaitingEnd = false;
         const startDate = parseDateString(rangeDraftStart);
         rangeDraftMonth = startDate ?? new Date();
         renderRangeCalendar();
@@ -2460,6 +2438,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       }
 
       function closeRangePopover(): void {
+        rangeDraftAwaitingEnd = false;
         rangePopover.classList.remove('open');
       }
 
@@ -2514,7 +2493,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      function handleDocumentClick(event: MouseEvent): void {
+      function handleDocumentPointerDown(event: PointerEvent): void {
         const target = event.target as Node;
         const taskControlClicked = taskInput.contains(target) || taskToggle.contains(target);
         if (taskDropdownOpen && !taskDropdown.contains(target) && !taskControlClicked) {
@@ -2532,14 +2511,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
       }
 
-      const handleDocumentMouseUp = (): void => {
-        if (isRangeDragging) {
-          isRangeDragging = false;
-        }
-      };
-
-      document.addEventListener('mousedown', handleDocumentClick);
-      document.addEventListener('mouseup', handleDocumentMouseUp);
+      document.addEventListener('pointerdown', handleDocumentPointerDown);
 
       chromeController = new PanelChromeController({
         root,
@@ -2799,8 +2771,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           openDialogClosers.clear();
           clearTimerInterval();
-          document.removeEventListener('mousedown', handleDocumentClick);
-          document.removeEventListener('mouseup', handleDocumentMouseUp);
+          document.removeEventListener('pointerdown', handleDocumentPointerDown);
           chromeController?.destroy();
         },
       };
