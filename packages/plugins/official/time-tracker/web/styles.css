@@ -460,9 +460,11 @@
   border: none;
   background: transparent;
   border-radius: var(--radius-sm);
-  padding: 4px 0;
+  padding: 6px 0;
   font-size: var(--font-size-xs);
   cursor: pointer;
+  user-select: none;
+  touch-action: none;
 }
 
 .time-tracker-range-day.outside {
@@ -784,5 +786,10 @@
 
   .time-tracker-entry-actions {
     align-self: flex-end;
+  }
+
+  .time-tracker-range-popover {
+    right: 0;
+    width: min(360px, calc(100vw - 24px));
   }
 }

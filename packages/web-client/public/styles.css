@@ -766,6 +766,19 @@ body.preload * {
   z-index: 101; /* Above mobile overlay (99) and panels (100) */
 }
 
+.toolbar > .toolbar-group:first-of-type {
+  grid-column: 1;
+}
+
+.toolbar > .toolbar-center {
+  grid-column: 2;
+}
+
+.toolbar > .toolbar-group:last-of-type {
+  grid-column: 3;
+  justify-self: end;
+}
+
 .toolbar-group {
   display: flex;
   align-items: center;
@@ -1398,6 +1411,9 @@ body.preload * {
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   padding: var(--spacing-sm);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .layout-dropdown {
