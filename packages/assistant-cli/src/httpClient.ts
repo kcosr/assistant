@@ -13,6 +13,23 @@ export interface HttpRequestOptions {
   headers?: Record<string, string>;
 }
 
+function stripTrailingSlashes(value: string): string {
+  if (value === '/') {
+    return '';
+  }
+  return value.replace(/\/+$/, '');
+}
+
+function resolveRequestUrl(baseUrl: string, requestPath: string): URL {
+  const url = new URL(baseUrl);
+  const basePathPrefix = stripTrailingSlashes(url.pathname);
+  const normalizedRequestPath = requestPath.startsWith('/') ? requestPath : `/${requestPath}`;
+  url.pathname = `${basePathPrefix}${normalizedRequestPath}`.replace(/\/{2,}/g, '/');
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const redacted = { ...headers };
   if (redacted['Authorization']) {
@@ -32,7 +49,7 @@ export async function httpRequest<T>(
   config: AssistantCliConfig,
   init: HttpRequestOptions,
 ): Promise<T> {
-  const url = new URL(init.path, config.baseUrl);
+  const url = resolveRequestUrl(config.baseUrl, init.path);
   if (init.query) {
     for (const [key, value] of Object.entries(init.query)) {
       if (value === undefined) continue;

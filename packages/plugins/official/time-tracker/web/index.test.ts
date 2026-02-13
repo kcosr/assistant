@@ -108,7 +108,10 @@ describe('time tracker range picker', () => {
     document.body.innerHTML = '';
   });
 
-  const mountPanel = async (options?: { isMobileViewport?: boolean }) => {
+  const mountPanel = async (options?: {
+    isMobileViewport?: boolean;
+    panelState?: Record<string, unknown> | null;
+  }) => {
     vi.resetModules();
     await import('./index');
 
@@ -133,7 +136,7 @@ describe('time tracker range picker', () => {
       updateSessionAttributes: async () => undefined,
       setPanelMetadata: () => undefined,
       persistPanelState: () => undefined,
-      loadPanelState: () => null,
+      loadPanelState: () => options?.panelState ?? null,
       openPanel: () => null,
       closePanel: () => undefined,
       activatePanel: () => undefined,
@@ -234,4 +237,29 @@ describe('time tracker range picker', () => {
       }
     },
   );
+
+  it('sends client-local entry_date when starting a timer', async () => {
+    const { container, handle } = await mountPanel({
+      panelState: { selectedTaskId: 'task-1' },
+    });
+
+    try {
+      const expectedEntryDate = toDateString(new Date());
+      const startButton = container.querySelector<HTMLButtonElement>('[data-role="timer-start"]');
+      expect(startButton).not.toBeNull();
+      expect(startButton?.disabled).toBe(false);
+
+      startButton?.click();
+      await flushPromises();
+
+      const timerStartCall = [...operationCalls]
+        .reverse()
+        .find((call) => call.operation === 'timer_start');
+      expect(timerStartCall).toBeTruthy();
+      expect(timerStartCall?.body['task_id']).toBe('task-1');
+      expect(timerStartCall?.body['entry_date']).toBe(expectedEntryDate);
+    } finally {
+      handle.unmount();
+    }
+  });
 });

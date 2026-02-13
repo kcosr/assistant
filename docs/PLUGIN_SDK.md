@@ -471,6 +471,10 @@ npm install && npm run build:plugins
 export ASSISTANT_URL=http://localhost:3000
 ```
 
+`ASSISTANT_URL` can include a path prefix (for example `https://host/path/to/service`).
+Generated plugin CLIs will preserve that prefix and call
+`https://host/path/to/service/api/plugins/...`.
+
 Each plugin output goes to:
 
 ```bash

@@ -1903,7 +1903,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return;
         }
         try {
-          const raw = await callInstanceOperation<unknown>('timer_start', { task_id: taskId });
+          const raw = await callInstanceOperation<unknown>('timer_start', {
+            task_id: taskId,
+            entry_date: toDateString(new Date()),
+          });
           activeTimer = parseTimer(raw);
           updateTrackState();
           startTimerInterval();
