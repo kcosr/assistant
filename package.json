@@ -4,7 +4,7 @@
   "version": "0.14.1",
   "private": true,
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.18.1"
   },
   "workspaces": [
     "packages/coding-executor",

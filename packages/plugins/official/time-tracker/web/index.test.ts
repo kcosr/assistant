@@ -6,6 +6,7 @@ import type {
   PanelHost,
   PanelModule,
 } from '../../../../web-client/src/controllers/panelRegistry';
+import { toDateString } from './dateUtils';
 
 const apiFetch = vi.fn();
 
@@ -23,13 +24,6 @@ const flushPromises = async (): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
-const toDateString = (date: Date): string => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
 const getDateCell = (root: ParentNode, date: string): HTMLButtonElement | null => {
   const cells = Array.from(
     root.querySelectorAll<HTMLButtonElement>(`.time-tracker-range-day[data-date="${date}"]`),
@@ -40,6 +34,7 @@ const getDateCell = (root: ParentNode, date: string): HTMLButtonElement | null =
 describe('time tracker range picker', () => {
   const originalRegistry = (globalThis as { ASSISTANT_PANEL_REGISTRY?: unknown })
     .ASSISTANT_PANEL_REGISTRY;
+  const originalTz = process.env.TZ;
   let panelFactory: PanelFactory | null = null;
   let operationCalls: OperationCall[] = [];
 
@@ -105,6 +100,12 @@ describe('time tracker range picker', () => {
         originalRegistry;
     }
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    if (originalTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = originalTz;
+    }
     document.body.innerHTML = '';
   });
 
@@ -237,6 +238,16 @@ describe('time tracker range picker', () => {
       }
     },
   );
+
+  it('uses client-local timezone when deriving YYYY-MM-DD at UTC boundary', () => {
+    const instant = '2026-01-01T00:30:00.000Z';
+
+    process.env.TZ = 'UTC';
+    expect(toDateString(new Date(instant))).toBe('2026-01-01');
+
+    process.env.TZ = 'America/Los_Angeles';
+    expect(toDateString(new Date(instant))).toBe('2025-12-31');
+  });
 
   it('sends client-local entry_date when starting a timer', async () => {
     const { container, handle } = await mountPanel({
