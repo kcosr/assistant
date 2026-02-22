@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Changed exported plugin skill names to use the `assistant-` prefix (for example `assistant-notes`, `assistant-lists`, `assistant-search`). ([#123](<pr-url>))
 
 ### Added
 
