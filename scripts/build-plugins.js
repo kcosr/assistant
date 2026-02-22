@@ -155,7 +155,7 @@ function getSkillDirName(pluginId) {
 }
 
 function getSkillCliName(pluginId) {
-  return `${pluginId}-cli`;
+  return `${SKILL_NAME_PREFIX}${pluginId}-cli`;
 }
 
 function normalizeSchemaType(value) {

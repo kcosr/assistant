@@ -8,7 +8,13 @@ describe('build-plugins skill helpers', () => {
       id: 'demo',
       description: 'Demo plugin',
       version: '0.1.0',
-      operations: [],
+      operations: [
+        {
+          id: 'list',
+          summary: 'List items',
+          inputSchema: { type: 'object', properties: {}, required: [] },
+        },
+      ],
     };
 
     const doc = formatSkillsDocument({
@@ -18,6 +24,7 @@ describe('build-plugins skill helpers', () => {
     });
 
     expect(doc).toContain('name: assistant-demo');
+    expect(doc).toContain('Use `assistant-demo-cli`');
     expect(doc).toContain('metadata:');
     expect(doc).toContain('  author: "kcosr"');
     expect(doc).toContain('  version: "0.10.0"');
