@@ -17,6 +17,7 @@ describe('build-plugins skill helpers', () => {
       metadata: { author: 'kcosr', version: '0.10.0' },
     });
 
+    expect(doc).toContain('name: assistant-demo');
     expect(doc).toContain('metadata:');
     expect(doc).toContain('  author: "kcosr"');
     expect(doc).toContain('  version: "0.10.0"');

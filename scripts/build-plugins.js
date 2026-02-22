@@ -8,6 +8,7 @@ const pluginsRoot = path.join(repoRoot, 'packages', 'plugins');
 const distRoot = path.join(repoRoot, 'dist', 'plugins');
 const defaultSkillsRoot = path.join(repoRoot, 'dist', 'skills');
 const rootPackagePath = path.join(repoRoot, 'package.json');
+const SKILL_NAME_PREFIX = 'assistant-';
 
 function parseSkillsDirs(argv) {
   const dirs = [];
@@ -150,7 +151,7 @@ function normalizeToolSegment(value) {
 }
 
 function getSkillDirName(pluginId) {
-  return pluginId;
+  return `${SKILL_NAME_PREFIX}${pluginId}`;
 }
 
 function getSkillCliName(pluginId) {
@@ -237,10 +238,11 @@ function formatSkillsDocument({ manifest, extra, metadata }) {
   const cliEnabled = surfaces.cli !== false && surfaces.http !== false;
   const toolsEnabled = surfaces.tool !== false && operations.length > 0;
   const cliName = getSkillCliName(manifest.id);
+  const skillName = getSkillDirName(manifest.id);
 
   const lines = [
     '---',
-    `name: ${manifest.id}`,
+    `name: ${skillName}`,
     `description: ${description}`,
   ];
 
