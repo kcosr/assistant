@@ -3,12 +3,17 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Changed exported plugin skill names and generated plugin CLI executable names to use the `assistant-` prefix (for example `assistant-notes` and `assistant-notes-cli`). ([#123](<pr-url>))
 
 ### Added
 
 ### Changed
+- Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.54.0`. ([#123](<pr-url>))
+- Raised the root Node.js engine requirement to `>=20.18.1` to match transitive `undici` runtime requirements. ([#123](<pr-url>))
 
 ### Fixed
+- Fixed generated skill/plugin CLIs to preserve path-prefixed `ASSISTANT_URL` values when calling plugin operations. ([#123](<pr-url>))
+- Fixed time tracker timer starts to use the client-local `entry_date` so late-night entries remain visible under "Today" when server and client time zones differ. ([#123](<pr-url>))
 
 ### Removed
 

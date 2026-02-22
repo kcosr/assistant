@@ -12,6 +12,7 @@ import {
 } from '../../../../web-client/src/utils/panelServices';
 import { getPanelContextKey } from '../../../../web-client/src/utils/panelContext';
 import { ICONS } from '../../../../web-client/src/utils/icons';
+import { toDateString } from './dateUtils';
 
 const TIME_TRACKER_PANEL_TEMPLATE = `
   <aside class="time-tracker-panel" aria-label="Time tracker panel">
@@ -423,13 +424,6 @@ function buildArtifactsDownloadUrl(options: {
   return `${base}/api/plugins/artifacts/files/${encodeURIComponent(
     options.instanceId,
   )}/${encodeURIComponent(options.artifactId)}?download=1`;
-}
-
-function toDateString(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
 
 function parseDateString(value: string): Date | null {
@@ -1903,7 +1897,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return;
         }
         try {
-          const raw = await callInstanceOperation<unknown>('timer_start', { task_id: taskId });
+          const raw = await callInstanceOperation<unknown>('timer_start', {
+            task_id: taskId,
+            entry_date: toDateString(new Date()),
+          });
           activeTimer = parseTimer(raw);
           updateTrackState();
           startTimerInterval();
