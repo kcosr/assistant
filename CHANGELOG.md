@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.2] - 2026-02-22
 
 ### Breaking Changes
 - Changed exported plugin skill names and generated plugin CLI executable names to use the `assistant-` prefix (for example `assistant-notes` and `assistant-notes-cli`). ([#123](<pr-url>))
@@ -16,6 +16,7 @@
 - Fixed time tracker timer starts to use the client-local `entry_date` so late-night entries remain visible under "Today" when server and client time zones differ. ([#123](<pr-url>))
 
 ### Removed
+
 
 ## [0.14.1] - 2026-02-09
 
