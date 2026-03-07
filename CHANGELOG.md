@@ -5,16 +5,16 @@
 ### Breaking Changes
 
 ### Added
-- Added reverse proxy sub-path support: auto-detect base path from page URL for API requests, WebSocket connections, and static assets when served behind a proxy at a sub-path (for example `/assistant`). ([#123](<pr-url>))
-- Added a mobile build flavor system (`flavors.json` + `npm run flavor`) to support side-by-side app installs with different app IDs and API hosts. ([#123](<pr-url>))
-- Added automated Android flavor deployment scripts (`android:deploy:flavors`, `android:deploy:default`, `android:deploy:work`) to rebuild/install selected flavors on all connected ADB devices. ([#123](<pr-url>))
+- Added reverse proxy sub-path support: auto-detect base path from page URL for API requests, WebSocket connections, and static assets when served behind a proxy at a sub-path (for example `/assistant`). ([#60](https://github.com/kcosr/assistant/pull/60))
+- Added a mobile build flavor system (`flavors.json` + `npm run flavor`) to support side-by-side app installs with different app IDs and API hosts. ([#60](https://github.com/kcosr/assistant/pull/60))
+- Added automated Android flavor deployment scripts (`android:deploy:flavors`, `android:deploy:default`, `android:deploy:work`) to rebuild/install selected flavors on all connected ADB devices. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Changed
-- Changed `npm run flavor` to list available flavors when no flavor name is provided. ([#123](<pr-url>))
+- Changed `npm run flavor` to list available flavors when no flavor name is provided. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Fixed
-- Fixed static asset loading (`config.js`, `client.js`) behind reverse-proxy sub-path deployments by using relative script paths in `index.html`. ([#123](<pr-url>))
-- Fixed `apiFetch` to prepend the detected base path for absolute-path API requests when `ASSISTANT_API_HOST` is not set. ([#123](<pr-url>))
+- Fixed static asset loading (`config.js`, `client.js`) behind reverse-proxy sub-path deployments by using relative script paths in `index.html`. ([#60](https://github.com/kcosr/assistant/pull/60))
+- Fixed `apiFetch` to prepend the detected base path for absolute-path API requests when `ASSISTANT_API_HOST` is not set. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Removed
 
