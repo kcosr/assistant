@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.3] - 2026-03-07
 
 ### Breaking Changes
 
@@ -17,6 +17,7 @@
 - Fixed `apiFetch` to prepend the detected base path for absolute-path API requests when `ASSISTANT_API_HOST` is not set. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Removed
+
 
 ## [0.14.2] - 2026-02-22
 
