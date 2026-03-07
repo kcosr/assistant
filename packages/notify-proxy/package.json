@@ -1,6 +1,6 @@
 {
   "name": "@assistant/notify-proxy",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "private": true,
   "description": "Standalone HTTP service that proxies agent-server webhooks to Android push notifications via FCM",
   "type": "module",
