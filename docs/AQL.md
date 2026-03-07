@@ -16,6 +16,9 @@ and collection browsers).
 - **Raw mode:** live text search with `@tag` / `!@tag` shortcuts (same tag dropdown behavior).
 - **AQL mode:** applied explicitly with Enter or **Apply** (no live apply).
 - **Shortcut:** `Ctrl+G` focuses the global query bar.
+- **Tag chip shortcut:** clicking a tag chip in list/note item rows adds that tag as a global AQL clause.
+  Use Settings -> `Tag chip click (global AQL)` to choose:
+  `Append with AND` (default) or `Replace query`.
 
 Global AQL uses the same grammar, with a smaller allowed field set and no `ORDER BY` / `SHOW`.
 

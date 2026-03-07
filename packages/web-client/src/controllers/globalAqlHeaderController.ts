@@ -13,6 +13,7 @@ import {
 } from '../utils/globalQueryStore';
 
 type SavedQuery = { id: string; name: string; query: string };
+export type GlobalAqlTagChipClickBehavior = 'append-and' | 'replace';
 
 export interface GlobalAqlHeaderControllerOptions {
   containerEl: HTMLElement | null;
@@ -27,6 +28,7 @@ export interface GlobalAqlHeaderControllerOptions {
   };
   onQueryChanged: (query: GlobalQuery | null) => void;
   isCollapsed?: () => boolean;
+  tagChipClickBehavior?: GlobalAqlTagChipClickBehavior;
 }
 
 const GLOBAL_AQL_ALLOWED_FIELDS = new Set([
@@ -38,6 +40,7 @@ const GLOBAL_AQL_ALLOWED_FIELDS = new Set([
   'favorite',
   'pinned',
 ]);
+const GLOBAL_AQL_TAG_CHIP_SELECTOR = '.collection-tag, .collection-browser-item-tag';
 
 const GLOBAL_AQL_BUILTINS: AqlBuiltinField[] = [
   ...DEFAULT_AQL_BUILTIN_FIELDS,
@@ -137,6 +140,7 @@ export class GlobalAqlHeaderController {
   private modalContent: HTMLElement | null = null;
   private modalCloseButton: HTMLButtonElement | null = null;
   private isModalOpen = false;
+  private tagChipClickBehavior: GlobalAqlTagChipClickBehavior;
 
   constructor(private readonly options: GlobalAqlHeaderControllerOptions) {
     this.dialogManager = options.dialogManager;
@@ -144,6 +148,7 @@ export class GlobalAqlHeaderController {
     this.onQueryChanged = options.onQueryChanged;
     this.windowId = options.windowId;
     this.isCollapsed = options.isCollapsed ?? (() => false);
+    this.tagChipClickBehavior = options.tagChipClickBehavior ?? 'append-and';
 
     this.searchController = new CollectionPanelSearchController({
       containerEl: options.containerEl,
@@ -162,6 +167,7 @@ export class GlobalAqlHeaderController {
     this.searchController.setOnQueryChanged((query) => this.handleSearchInputChange(query));
 
     this.attachTagListener();
+    this.attachTagChipClickListener();
     this.attachToggleListener();
     this.attachViewportListener();
   }
@@ -171,6 +177,10 @@ export class GlobalAqlHeaderController {
       this.openModal();
     }
     return this.searchController.focus(select);
+  }
+
+  setTagChipClickBehavior(behavior: GlobalAqlTagChipClickBehavior): void {
+    this.tagChipClickBehavior = behavior;
   }
 
   private buildAqlControls(icons: GlobalAqlHeaderControllerOptions['icons']): HTMLElement {
@@ -764,6 +774,73 @@ export class GlobalAqlHeaderController {
       this.tagSources.set(source, tags);
       this.searchController.setTagsProvider(() => this.getAllTags());
     });
+  }
+
+  private attachTagChipClickListener(): void {
+    window.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        const tagEl = target.closest<HTMLElement>(GLOBAL_AQL_TAG_CHIP_SELECTOR);
+        if (!tagEl) {
+          return;
+        }
+        const rawTag =
+          typeof tagEl.dataset['tag'] === 'string' ? tagEl.dataset['tag'] : tagEl.textContent;
+        const tag = (rawTag ?? '').trim().toLowerCase();
+        if (!tag) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.applyTagChipAql(tag);
+      },
+      true,
+    );
+  }
+
+  private applyTagChipAql(tag: string): void {
+    const normalizedTag = tag.trim().toLowerCase();
+    if (!normalizedTag) {
+      return;
+    }
+    if (this.searchMode !== 'aql') {
+      this.setSearchMode('aql', { skipPublish: true });
+    }
+
+    const tagClause = `tag = ${JSON.stringify(normalizedTag)}`;
+    let nextText = tagClause;
+    if (this.tagChipClickBehavior === 'append-and') {
+      const currentText = this.aqlQueryText.trim();
+      const appliedText = this.aqlAppliedQueryText?.trim() ?? '';
+      let baseText = '';
+      if (currentText && this.isValidGlobalAql(currentText)) {
+        baseText = currentText;
+      } else if (appliedText && this.isValidGlobalAql(appliedText)) {
+        baseText = appliedText;
+      }
+      nextText = baseText ? `(${baseText}) AND ${tagClause}` : tagClause;
+    }
+
+    this.applyAqlQueryText(nextText, true);
+  }
+
+  private isValidGlobalAql(queryText: string): boolean {
+    const trimmed = queryText.trim();
+    if (!trimmed) {
+      return false;
+    }
+    const parsed = parseAql(trimmed, {
+      customFields: [],
+      builtinFields: GLOBAL_AQL_BUILTINS,
+      allowedFields: Array.from(GLOBAL_AQL_ALLOWED_FIELDS),
+      allowOrderBy: false,
+      allowShow: false,
+    });
+    return parsed.ok;
   }
 
   private getAllTags(): string[] {
