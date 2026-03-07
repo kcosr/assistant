@@ -6,6 +6,7 @@ export interface WebClientElements {
   showContextCheckbox: HTMLInputElement | null;
   listInsertAtTopCheckbox: HTMLInputElement | null;
   listItemSingleClickSelect: HTMLSelectElement | null;
+  globalAqlTagChipClickBehaviorSelect: HTMLSelectElement | null;
   listInlineCustomFieldEditingCheckbox: HTMLInputElement | null;
   listItemEditorModeSelect: HTMLSelectElement | null;
   autoFocusChatCheckbox: HTMLInputElement;
@@ -60,6 +61,9 @@ export function getWebClientElements(): WebClientElements | null {
   const listItemSingleClickSelect = getElement<HTMLSelectElement>(
     'list-item-single-click-select',
   );
+  const globalAqlTagChipClickBehaviorSelect = getElement<HTMLSelectElement>(
+    'global-aql-tag-chip-click-select',
+  );
   const listInlineCustomFieldEditingCheckbox = getElement<HTMLInputElement>(
     'list-inline-custom-field-editing-checkbox',
   );
@@ -91,6 +95,7 @@ export function getWebClientElements(): WebClientElements | null {
     showContextCheckbox,
     listInsertAtTopCheckbox,
     listItemSingleClickSelect,
+    globalAqlTagChipClickBehaviorSelect,
     listInlineCustomFieldEditingCheckbox,
     listItemEditorModeSelect,
     autoFocusChatCheckbox,

@@ -22,7 +22,10 @@ import { KeyboardNavigationController } from './controllers/keyboardNavigationCo
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
 import { SessionTypingIndicatorController } from './controllers/sessionTypingIndicatorController';
-import { GlobalAqlHeaderController } from './controllers/globalAqlHeaderController';
+import {
+  GlobalAqlHeaderController,
+  type GlobalAqlTagChipClickBehavior,
+} from './controllers/globalAqlHeaderController';
 import type { CollectionItemSummary } from './controllers/collectionTypes';
 import { PanelRegistry, type PanelFactory, type PanelHost } from './controllers/panelRegistry';
 import { PanelHostController } from './controllers/panelHostController';
@@ -343,6 +346,7 @@ async function main(): Promise<void> {
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
     listItemSingleClickSelect: listItemSingleClickSelectEl,
+    globalAqlTagChipClickBehaviorSelect: globalAqlTagChipClickBehaviorSelectEl,
     listInlineCustomFieldEditingCheckbox: listInlineCustomFieldEditingCheckboxEl,
     listItemEditorModeSelect: listItemEditorModeSelectEl,
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
@@ -431,6 +435,8 @@ async function main(): Promise<void> {
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
   const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY =
     'aiAssistantListSingleClickSelectionEnabled';
+  const GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY =
+    'aiAssistantGlobalAqlTagChipClickBehavior';
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
@@ -509,6 +515,7 @@ async function main(): Promise<void> {
   let briefModeEnabled = false;
   let listInsertAtTopEnabled = false;
   let listItemSingleClickBehavior: 'none' | 'select' | 'open' | 'open-review' = 'select';
+  let globalAqlTagChipClickBehavior: GlobalAqlTagChipClickBehavior = 'append-and';
 
   const normalizeListItemSingleClickBehavior = (
     value: string | null,
@@ -526,6 +533,14 @@ async function main(): Promise<void> {
       return 'select';
     }
     return 'select';
+  };
+  const normalizeGlobalAqlTagChipClickBehavior = (
+    value: string | null,
+  ): GlobalAqlTagChipClickBehavior => {
+    if (value === 'replace') {
+      return 'replace';
+    }
+    return 'append-and';
   };
   let listInlineCustomFieldEditingEnabled = true;
   let listItemEditorDefaultMode: 'quick' | 'review' = 'quick';
@@ -554,6 +569,12 @@ async function main(): Promise<void> {
     );
     listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(
       storedSingleClickBehavior,
+    );
+    const storedTagChipClickBehavior = localStorage.getItem(
+      GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY,
+    );
+    globalAqlTagChipClickBehavior = normalizeGlobalAqlTagChipClickBehavior(
+      storedTagChipClickBehavior,
     );
     const storedInlineCustomFields = localStorage.getItem(
       LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY,
@@ -1561,6 +1582,7 @@ async function main(): Promise<void> {
         panelHostController?.setContext(GLOBAL_QUERY_CONTEXT_KEY, query);
       },
       isCollapsed: isMobileViewport,
+      tagChipClickBehavior: globalAqlTagChipClickBehavior,
     });
   }
   const keyboardShortcutRegistry = new KeyboardShortcutRegistry({
@@ -2631,6 +2653,23 @@ async function main(): Promise<void> {
         localStorage.setItem(
           LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY,
           listItemSingleClickBehavior,
+        );
+      } catch {
+        // Ignore localStorage errors.
+      }
+    });
+  }
+  if (globalAqlTagChipClickBehaviorSelectEl) {
+    globalAqlTagChipClickBehaviorSelectEl.value = globalAqlTagChipClickBehavior;
+    globalAqlTagChipClickBehaviorSelectEl.addEventListener('change', () => {
+      globalAqlTagChipClickBehavior = normalizeGlobalAqlTagChipClickBehavior(
+        globalAqlTagChipClickBehaviorSelectEl.value,
+      );
+      globalAqlHeaderController?.setTagChipClickBehavior(globalAqlTagChipClickBehavior);
+      try {
+        localStorage.setItem(
+          GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY,
+          globalAqlTagChipClickBehavior,
         );
       } catch {
         // Ignore localStorage errors.

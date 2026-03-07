@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- Changed list/note item tag chip clicks to apply global AQL with a configurable behavior setting (`Append with AND` or `Replace query`). ([#123](<pr-url>))
 
 ### Fixed
 
