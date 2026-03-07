@@ -4,6 +4,10 @@
   "private": true,
   "description": "Capacitor mobile build for AI Assistant (Android/iOS)",
   "scripts": {
+    "flavor": "node scripts/apply-flavor.mjs",
+    "android:deploy:flavors": "node scripts/deploy-android-flavors.mjs",
+    "android:deploy:default": "node scripts/deploy-android-flavors.mjs default",
+    "android:deploy:work": "node scripts/deploy-android-flavors.mjs work",
     "android:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add android && npm run icons:generate && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
     "android:sync": "npx @capacitor/cli sync android && npm run icons:generate && node scripts/patch-android-security.mjs && node scripts/patch-android-fontscale.mjs && node scripts/patch-android-share.mjs && node scripts/patch-android-firebase.mjs && node scripts/patch-web-config.mjs",
     "android:open": "npx cap open android",

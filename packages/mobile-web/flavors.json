@@ -1,0 +1,12 @@
+{
+  "default": {
+    "appId": "com.assistant.app",
+    "appName": "Assistant",
+    "apiHost": "https://assistant"
+  },
+  "work": {
+    "appId": "com.assistant.work",
+    "appName": "Assistant Work",
+    "apiHost": "https://assistant/assistant-work"
+  }
+}
