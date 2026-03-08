@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.5] - 2026-03-08
 
 ### Breaking Changes
 
@@ -13,6 +13,7 @@
 - Fixed `@assistant/agent-server` startup failures with Pi SDK `0.57.1` by lazy-loading Pi SDK modules in the CommonJS runtime. ([#62](https://github.com/kcosr/assistant/pull/62))
 
 ### Removed
+
 
 ## [0.14.4] - 2026-03-07
 
