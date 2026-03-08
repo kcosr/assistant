@@ -32,7 +32,7 @@ function createStream(events: unknown[], result: unknown) {
 }
 
 describe('resolvePiSdkModel', () => {
-  it('resolves provider/model using the default provider', () => {
+  it('resolves provider/model using the default provider', async () => {
     vi.mocked(getProviders).mockReturnValue(['openai', 'anthropic']);
     vi.mocked(getModels).mockImplementation((provider: string) => {
       if (provider === 'openai') {
@@ -41,7 +41,7 @@ describe('resolvePiSdkModel', () => {
       return [];
     });
 
-    const resolved = resolvePiSdkModel({
+    const resolved = await resolvePiSdkModel({
       modelSpec: 'gpt-4o-mini',
       defaultProvider: 'openai',
     });
@@ -50,15 +50,15 @@ describe('resolvePiSdkModel', () => {
     expect(resolved.modelId).toBe('gpt-4o-mini');
   });
 
-  it('throws when provider is missing and no default provider is configured', () => {
+  it('throws when provider is missing and no default provider is configured', async () => {
     vi.mocked(getProviders).mockReturnValue(['openai']);
     vi.mocked(getModels).mockReturnValue([]);
 
-    expect(() =>
+    await expect(
       resolvePiSdkModel({
         modelSpec: 'gpt-4o-mini',
       }),
-    ).toThrow(/provider\/model format/i);
+    ).rejects.toThrow(/provider\/model format/i);
   });
 });
 

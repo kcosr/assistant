@@ -2,13 +2,23 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { getOAuthApiKey, type OAuthCredentials } from '@mariozechner/pi-ai';
+import type { OAuthCredentials } from '@mariozechner/pi-ai';
 
 type StoredOAuthCredential = { type: 'oauth' } & OAuthCredentials & Record<string, unknown>;
 type StoredApiKeyCredential = { type: 'api_key'; key: string };
 type StoredCredential = StoredOAuthCredential | StoredApiKeyCredential;
 
 type AuthFileData = Record<string, StoredCredential>;
+
+type PiAiOAuthModule = typeof import('@mariozechner/pi-ai/oauth');
+let oauthModulePromise: Promise<PiAiOAuthModule> | null = null;
+
+async function loadOAuthModule(): Promise<PiAiOAuthModule> {
+  if (!oauthModulePromise) {
+    oauthModulePromise = import('@mariozechner/pi-ai/oauth');
+  }
+  return oauthModulePromise;
+}
 
 function expandHomeDir(input: string): string {
   if (input === '~') {
@@ -127,6 +137,7 @@ export async function resolvePiAgentAuthApiKey(options: {
   };
 
   try {
+    const { getOAuthApiKey } = await loadOAuthModule();
     const resolved = await getOAuthApiKey(providerKey as any, credsByProvider as any);
     if (!resolved) {
       return undefined;

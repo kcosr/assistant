@@ -1,20 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
-import {
-  getModels,
-  getProviders,
-  streamSimple,
-  type Api,
-  type AssistantMessage,
-  type Context,
-  type Model,
-  type Tool as PiTool,
-  type SimpleStreamOptions,
-  type Message,
-  type TextContent,
-  type ToolCall,
-  type ToolResultMessage,
-  type Usage,
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  Message,
+  SimpleStreamOptions,
+  TextContent,
+  Tool as PiTool,
+  ToolCall,
+  ToolResultMessage,
+  Usage,
 } from '@mariozechner/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -37,6 +34,16 @@ export interface PiSdkModelResolution {
   modelId: string;
 }
 
+type PiAiModule = typeof import('@mariozechner/pi-ai');
+let piAiModulePromise: Promise<PiAiModule> | null = null;
+
+async function loadPiAiModule(): Promise<PiAiModule> {
+  if (!piAiModulePromise) {
+    piAiModulePromise = import('@mariozechner/pi-ai');
+  }
+  return piAiModulePromise;
+}
+
 function createEmptyUsage(): Usage {
   return {
     input: 0,
@@ -54,21 +61,22 @@ function createEmptyUsage(): Usage {
   };
 }
 
-function resolveProviderId(providerRaw: string): string | undefined {
+async function resolveProviderId(providerRaw: string): Promise<string | undefined> {
   const trimmed = providerRaw.trim();
   if (!trimmed) {
     return undefined;
   }
   const target = trimmed.toLowerCase();
+  const { getProviders } = await loadPiAiModule();
   const providers = getProviders();
   const match = providers.find((provider) => provider.toLowerCase() === target);
   return match ?? trimmed;
 }
 
-export function resolvePiSdkModel(options: {
+export async function resolvePiSdkModel(options: {
   modelSpec: string;
   defaultProvider?: string;
-}): PiSdkModelResolution {
+}): Promise<PiSdkModelResolution> {
   const { modelSpec, defaultProvider } = options;
   const trimmedSpec = modelSpec.trim();
   if (!trimmedSpec) {
@@ -92,11 +100,12 @@ export function resolvePiSdkModel(options: {
     );
   }
 
-  const providerId = resolveProviderId(providerRaw);
+  const providerId = await resolveProviderId(providerRaw);
   if (!providerId) {
     throw new Error(`Pi chat provider "${providerRaw}" is not available`);
   }
 
+  const { getModels } = await loadPiAiModule();
   const models = getModels(providerId as any);
   if (!models || models.length === 0) {
     throw new Error(`No Pi models found for provider "${providerId}"`);
@@ -436,6 +445,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   const seenToolCallIds = new Set<string>();
   let aborted = false;
 
+  const { streamSimple } = await loadPiAiModule();
   const stream = streamSimple(resolvedModel, context, streamOptions);
 
   try {

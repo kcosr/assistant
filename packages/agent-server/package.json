@@ -14,7 +14,7 @@
   "dependencies": {
     "@assistant/coding-executor": "*",
     "@assistant/shared": "*",
-    "@mariozechner/pi-ai": "^0.54.0",
+    "@mariozechner/pi-ai": "^0.57.1",
     "@mozilla/readability": "^0.5.0",
     "cron-parser": "^4.9.0",
     "cronstrue": "^2.50.0",

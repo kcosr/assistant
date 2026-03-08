@@ -7,8 +7,10 @@
 ### Added
 
 ### Changed
+- Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.57.1`. ([#62](https://github.com/kcosr/assistant/pull/62))
 
 ### Fixed
+- Fixed `@assistant/agent-server` startup failures with Pi SDK `0.57.1` by lazy-loading Pi SDK modules in the CommonJS runtime. ([#62](https://github.com/kcosr/assistant/pull/62))
 
 ### Removed
 

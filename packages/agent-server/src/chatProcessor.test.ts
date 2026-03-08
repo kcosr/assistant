@@ -22,7 +22,7 @@ describe('processUserMessage stream event emission', () => {
   });
 
   it('emits assistant_chunk and assistant_done events for pi runs', async () => {
-    vi.mocked(resolvePiSdkModel).mockReturnValue({
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
       providerId: 'openai',
       modelId: 'gpt-4o-mini',
@@ -145,7 +145,7 @@ describe('processUserMessage stream event emission', () => {
   });
 
   it('throws when the pi tool iteration limit is reached', async () => {
-    vi.mocked(resolvePiSdkModel).mockReturnValue({
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
       providerId: 'openai',
       modelId: 'gpt-4o-mini',
