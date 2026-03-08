@@ -797,13 +797,13 @@ export async function runChatCompletionCore(
       );
     }
 
-    let resolvedModel: ReturnType<typeof resolvePiSdkModel>;
+    let resolvedModel: Awaited<ReturnType<typeof resolvePiSdkModel>>;
     try {
       const defaultProvider = piConfig?.provider;
       resolvedModel =
         defaultProvider === undefined
-          ? resolvePiSdkModel({ modelSpec })
-          : resolvePiSdkModel({ modelSpec, defaultProvider });
+          ? await resolvePiSdkModel({ modelSpec })
+          : await resolvePiSdkModel({ modelSpec, defaultProvider });
     } catch (err) {
       throw new ChatRunError(
         'agent_config_error',
@@ -827,7 +827,8 @@ export async function runChatCompletionCore(
       log,
     });
 
-    const apiKey = providerMatchesConfig ? piConfig?.apiKey ?? piAgentAuthApiKey : piAgentAuthApiKey;
+    const apiKey =
+      providerMatchesConfig ? piConfig?.apiKey ?? piAgentAuthApiKey : piAgentAuthApiKey;
     const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
     const headers = providerMatchesConfig ? piConfig?.headers : undefined;
 
