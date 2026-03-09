@@ -1,6 +1,6 @@
 {
   "name": "@assistant/coding-sidecar",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "private": true,
   "main": "dist/server.js",
   "types": "dist/server.d.ts",
