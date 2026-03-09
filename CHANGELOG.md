@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- Changed desktop build variants to support an env-configurable default backend URL via `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL` (default build falls back to `https://assistant`; work build sets `https://assistant/assistant-work`). ([#63](https://github.com/kcosr/assistant/pull/63))
 
 ### Fixed
 

@@ -9,6 +9,7 @@ This package contains the Tauri scaffolding to build the AI Assistant web client
 - [Initial Setup](#initial-setup)
 - [Development](#development)
 - [Production Build](#production-build)
+- [Default + Work Variant (macOS)](#default--work-variant-macos)
 - [Configuration](#configuration)
 - [Icons](#icons)
 
@@ -92,13 +93,57 @@ Output locations:
 - **Windows**: `src-tauri/target/release/bundle/msi/` or `nsis/`
 - **Linux**: `src-tauri/target/release/bundle/deb/` or `appimage/`
 
+## Default + Work Variant (macOS)
+
+The default desktop build and scripts stay unchanged:
+
+```bash
+npm run tauri:dev
+npm run tauri:build
+```
+
+The work variant uses a Tauri config override (`src-tauri/tauri.work.conf.json`) with a
+different app identifier and product name:
+
+```bash
+npm run tauri:dev:work
+npm run tauri:build:work
+```
+
+Those scripts also set `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work`
+at build time. The default scripts keep the built-in fallback `https://assistant`.
+
+You can override the default build URL explicitly if needed:
+
+```bash
+ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant npm run tauri:build
+```
+
+This allows installing both apps side-by-side on macOS:
+
+- Default app bundle: `Assistant.app`
+- Work app bundle: `Assistant Work.app`
+
+Because the identifiers differ, each app gets its own persisted desktop settings file:
+
+- Default: `~/Library/Application Support/com.assistant.desktop/settings.json`
+- Work: `~/Library/Application Support/com.assistant.desktop.work/settings.json`
+
+To keep backend data isolated, run each backend with a different `PORT` and `DATA_DIR`.
+Example:
+
+```bash
+PORT=3001 DATA_DIR=~/assistant-default-data npm run start -w @assistant/agent-server
+PORT=3002 DATA_DIR=~/assistant-work-data npm run start -w @assistant/agent-server
+```
+
 ## Configuration
 
 ### Backend URL
 
 The desktop app can connect to any Assistant backend. Configure via:
 
-1. **Default**: Uses `window.ASSISTANT_API_HOST` from `web-client/public/config.js`
+1. **Build-time default**: Desktop fallback URL is `https://assistant`, or `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL` when set during `tauri dev/build`
 2. **Runtime**: The app persists settings to `~/.local/share/com.assistant.desktop/settings.json` (Linux) or equivalent platform paths
 
 `window.ASSISTANT_API_HOST` can be either a host (`assistant`) or a full URL (`https://assistant/api`).

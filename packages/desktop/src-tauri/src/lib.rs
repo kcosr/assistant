@@ -39,7 +39,7 @@ pub struct AppSettings {
 }
 
 fn default_backend_url() -> String {
-    "https://assistant".to_string()
+    resolve_default_backend_url(option_env!("ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL"))
 }
 
 fn default_skip_cert_validation() -> bool {
@@ -48,6 +48,39 @@ fn default_skip_cert_validation() -> bool {
 
 const HTTP_PROXY_CONNECT_TIMEOUT_SECS: u64 = 10;
 const HTTP_PROXY_REQUEST_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_BACKEND_URL: &str = "https://assistant";
+
+fn resolve_default_backend_url(env_value: Option<&str>) -> String {
+    let trimmed = env_value.unwrap_or_default().trim();
+    if trimmed.is_empty() {
+        DEFAULT_BACKEND_URL.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_default_backend_url, DEFAULT_BACKEND_URL};
+
+    #[test]
+    fn falls_back_to_default_backend_url_when_env_missing() {
+        assert_eq!(resolve_default_backend_url(None), DEFAULT_BACKEND_URL);
+    }
+
+    #[test]
+    fn uses_env_backend_url_when_present() {
+        assert_eq!(
+            resolve_default_backend_url(Some("https://assistant/assistant-work")),
+            "https://assistant/assistant-work"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_default_backend_url_when_env_blank() {
+        assert_eq!(resolve_default_backend_url(Some("   ")), DEFAULT_BACKEND_URL);
+    }
+}
 
 impl Default for AppSettings {
     fn default() -> Self {

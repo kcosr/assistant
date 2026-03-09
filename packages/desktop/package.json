@@ -7,10 +7,14 @@
     "icons:generate": "node scripts/generate-icons.mjs && node scripts/generate-icns.mjs",
     "build:plugins": "node scripts/build-plugins.mjs",
     "pretauri:dev": "npm run bundle -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "pretauri:dev:work": "npm run pretauri:dev",
     "pretauri:build": "npm run build -w @assistant/web-client && npm run build:plugins && node scripts/sync-plugin-assets.mjs",
+    "pretauri:build:work": "npm run pretauri:build",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "tauri:dev:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri dev -c src-tauri/tauri.work.conf.json",
     "tauri:build": "tauri build",
+    "tauri:build:work": "ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL=https://assistant/assistant-work tauri build -c src-tauri/tauri.work.conf.json",
     "tauri:icon": "tauri icon"
   },
   "devDependencies": {
