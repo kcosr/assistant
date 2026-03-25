@@ -62,10 +62,10 @@ describe('prepareForMarkdown', () => {
     expect(result).toBe(input);
   });
 
-  it('should close unclosed italic underscore markers outside code', () => {
+  it('should not auto-close unclosed underscore markers outside code', () => {
     const input = 'This is _italic';
     const result = prepareForMarkdown(input);
-    expect(result).toBe('This is _italic_');
+    expect(result).toBe(input);
   });
 
   it('should handle empty code blocks', () => {

@@ -717,6 +717,7 @@ export class ListPanelController {
     const { header, controls } = renderListPanelHeader({
       listId,
       data,
+      selectedCount: this.options.getSelectedItemCount(),
       icons: {
         plus: this.options.icons.plus,
         trash: this.options.icons.trash,

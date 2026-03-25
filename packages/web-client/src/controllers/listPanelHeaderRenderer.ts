@@ -10,6 +10,7 @@ export interface TimelineFieldOption {
 export interface ListPanelHeaderRendererOptions {
   listId: string;
   data: ListPanelData;
+  selectedCount: number;
   icons: {
     plus: string;
     trash: string;
@@ -82,9 +83,18 @@ export function renderListPanelHeader(
   actionsButton.type = 'button';
   actionsButton.className = 'collection-list-actions-button';
   actionsButton.textContent = 'Actions';
+  actionsButton.dataset['role'] = 'list-actions-button';
   actionsButton.setAttribute('aria-haspopup', 'menu');
   actionsButton.setAttribute('aria-expanded', 'false');
   actionsWrapper.appendChild(actionsButton);
+
+  const selectionStatus = document.createElement('span');
+  selectionStatus.className = 'collection-list-selection-status';
+  selectionStatus.dataset['role'] = 'selection-status';
+  selectionStatus.textContent =
+    options.selectedCount > 0 ? `${options.selectedCount} selected` : 'No items selected';
+  selectionStatus.classList.toggle('visible', options.selectedCount > 0);
+  actionsWrapper.appendChild(selectionStatus);
 
   const actionsMenu = document.createElement('div');
   actionsMenu.className = 'collection-list-actions-menu';
@@ -147,18 +157,20 @@ export function renderListPanelHeader(
     return btn;
   };
 
-  addMenuItem('Select visible', options.onSelectVisible, {
+  const selectVisibleBtn = addMenuItem('Select visible', options.onSelectVisible, {
     className: 'collection-list-actions-menu-item',
   });
+  selectVisibleBtn.dataset['role'] = 'select-visible-button';
 
-  addMenuItem('Select all', options.onSelectAll, {
+  const selectAllBtn = addMenuItem('Select all', options.onSelectAll, {
     className: 'collection-list-actions-menu-item',
   });
+  selectAllBtn.dataset['role'] = 'select-all-button';
 
   const moveSelectedBtn = document.createElement('button');
   moveSelectedBtn.type = 'button';
-  moveSelectedBtn.id = 'move-selected-button';
   moveSelectedBtn.className = 'collection-list-actions-menu-item move-selected-button';
+  moveSelectedBtn.dataset['role'] = 'move-selected-button';
   moveSelectedBtn.textContent = 'Move Selected';
   moveSelectedBtn.setAttribute('aria-haspopup', 'menu');
   moveSelectedBtn.setAttribute('aria-expanded', 'false');
@@ -176,8 +188,7 @@ export function renderListPanelHeader(
 
     const targets = options
       .getMoveTargetLists()
-      .filter((target) => target.id !== options.listId)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((target) => target.id !== options.listId);
 
     if (targets.length === 0) {
       const empty = document.createElement('div');
@@ -245,6 +256,19 @@ export function renderListPanelHeader(
     openMoveSubmenu();
   });
 
+  moveSelectedBtn.addEventListener('click', (event) => {
+    if (!moveSelectedBtn.classList.contains('visible')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (moveSubmenu?.classList.contains('open')) {
+      closeMoveSubmenu();
+    } else {
+      openMoveSubmenu();
+    }
+  });
+
   moveSelectedBtn.addEventListener('mouseleave', (event) => {
     closeMoveSubmenu(event);
   });
@@ -257,8 +281,8 @@ export function renderListPanelHeader(
 
   const copySelectedBtn = document.createElement('button');
   copySelectedBtn.type = 'button';
-  copySelectedBtn.id = 'copy-selected-button';
   copySelectedBtn.className = 'collection-list-actions-menu-item copy-selected-button';
+  copySelectedBtn.dataset['role'] = 'copy-selected-button';
   copySelectedBtn.textContent = 'Copy Selected';
   copySelectedBtn.setAttribute('aria-haspopup', 'menu');
   copySelectedBtn.setAttribute('aria-expanded', 'false');
@@ -276,8 +300,7 @@ export function renderListPanelHeader(
 
     const targets = options
       .getMoveTargetLists()
-      .filter((target) => target.id !== options.listId)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((target) => target.id !== options.listId);
 
     if (targets.length === 0) {
       const empty = document.createElement('div');
@@ -345,6 +368,19 @@ export function renderListPanelHeader(
     openCopySubmenu();
   });
 
+  copySelectedBtn.addEventListener('click', (event) => {
+    if (!copySelectedBtn.classList.contains('visible')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (copySubmenu?.classList.contains('open')) {
+      closeCopySubmenu();
+    } else {
+      openCopySubmenu();
+    }
+  });
+
   copySelectedBtn.addEventListener('mouseleave', (event) => {
     closeCopySubmenu(event);
   });
@@ -356,19 +392,30 @@ export function renderListPanelHeader(
   }
 
   const clearBtn = addMenuItem('Clear Selected', options.onClearSelection, {
-    id: 'clear-selection-button',
     className: 'collection-list-actions-menu-item clear-selection-button',
   });
+  clearBtn.dataset['role'] = 'clear-selection-button';
   clearBtn.title = 'Clear selection';
 
   const deleteBtn = addMenuItem('Delete Selected', options.onDeleteSelection, {
-    id: 'delete-selection-button',
     className:
       'collection-list-actions-menu-item delete-selection-button collection-list-actions-menu-item-danger',
     iconHtml: options.icons.trash,
   });
+  deleteBtn.dataset['role'] = 'delete-selection-button';
   deleteBtn.setAttribute('aria-label', 'Delete selected items');
   deleteBtn.title = 'Delete selected items';
+
+  const updateSelectionActionVisibility = (hasSelection: boolean): void => {
+    selectVisibleBtn.hidden = hasSelection;
+    selectAllBtn.hidden = hasSelection;
+    clearBtn.classList.toggle('visible', hasSelection);
+    deleteBtn.classList.toggle('visible', hasSelection);
+    moveSelectedBtn.classList.toggle('visible', hasSelection);
+    copySelectedBtn.classList.toggle('visible', hasSelection);
+  };
+
+  updateSelectionActionVisibility(options.selectedCount > 0);
 
   const toggleLabel = options.showAllColumns ? 'Compact view' : 'Expand view';
   addMenuItem(toggleLabel, options.onToggleView, {

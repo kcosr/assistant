@@ -774,7 +774,7 @@ export class ListsStore {
       return sort === 'newest' ? bTime - aTime : aTime - bTime;
     });
 
-    const limit = params.limit ?? 20;
+    const limit = params.limit ?? 100;
     if (limit > 0) {
       items = items.slice(0, limit);
     }
@@ -826,7 +826,7 @@ export class ListsStore {
       return bTime - aTime;
     });
 
-    const limit = params.limit ?? 20;
+    const limit = params.limit ?? 100;
     if (limit > 0) {
       items = items.slice(0, limit);
     }

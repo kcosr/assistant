@@ -79,4 +79,77 @@ describe('ListItemMenuController', () => {
 
     expect(writeText).toHaveBeenCalledWith('item-123');
   });
+
+  it('preserves provided target order in the move submenu', () => {
+    const contextMenuManager = new ContextMenuManager({
+      isSessionPinned: () => false,
+      pinSession: vi.fn(),
+      clearHistory: vi.fn(),
+      deleteSession: vi.fn(),
+      renameSession: vi.fn(),
+    });
+
+    const controller = new ListItemMenuController({
+      contextMenuManager,
+      icons: {
+        edit: '<svg></svg>',
+        trash: '<svg></svg>',
+        copy: '<svg></svg>',
+        duplicate: '<svg></svg>',
+        move: '<svg></svg>',
+        clock: '<svg></svg>',
+        clockOff: '<svg></svg>',
+        moveTop: '<svg></svg>',
+        moveBottom: '<svg></svg>',
+      },
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getMoveTargetLists: () => [
+        { id: 'list-1', name: 'Current' },
+        { id: 'list-3', name: 'Zulu' },
+        { id: 'list-2', name: 'Alpha' },
+      ],
+      updateListItem: vi.fn(),
+      onEditItem: vi.fn(),
+      onDeleteItem: vi.fn(),
+      onMoveItemToList: vi.fn(),
+      onCopyItemToList: vi.fn(),
+      onTouchItem: vi.fn(),
+      onClearTouchItem: vi.fn(),
+    });
+
+    const trigger = document.createElement('button');
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 20,
+      bottom: 20,
+      width: 20,
+      height: 20,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    document.body.appendChild(trigger);
+
+    const item: ListPanelItem = {
+      id: 'item-123',
+      title: 'My item',
+    };
+    const row = document.createElement('tr');
+
+    controller.open(trigger, 'list-1', item, 'item-123', row);
+
+    const moveButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.list-item-menu-item'),
+    ).find((btn) => btn.getAttribute('aria-label') === 'Move to list');
+    expect(moveButton).toBeDefined();
+    moveButton?.click();
+
+    const labels = Array.from(
+      document.querySelectorAll<HTMLElement>('.list-item-menu-submenu-item'),
+    ).map((el) => el.textContent);
+
+    expect(labels).toEqual(['Zulu', 'Alpha']);
+  });
 });

@@ -428,6 +428,46 @@ describe('lists plugin operations', () => {
     });
   });
 
+  it('defaults items-list to 100 items', async () => {
+    const dataDir = createTempDataDir();
+    const plugin = createTestPlugin();
+
+    await plugin.initialize(dataDir);
+
+    const ctx = createTestContext();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    await ops.create({ id: 'reading', name: 'Reading List' }, ctx);
+    for (let index = 0; index < 105; index += 1) {
+      await ops['item-add'](
+        {
+          listId: 'reading',
+          title: `Item ${index + 1}`,
+        },
+        ctx,
+      );
+    }
+
+    const listedItems = (await ops['items-list'](
+      {
+        listId: 'reading',
+      },
+      ctx,
+    )) as ListItem[];
+
+    expect(listedItems).toHaveLength(100);
+    expect(listedItems[0]?.title).toBe('Item 1');
+    expect(listedItems[99]?.title).toBe('Item 100');
+
+    if (plugin.shutdown) {
+      await plugin.shutdown();
+    }
+    await fs.rm(dataDir, { recursive: true, force: true });
+  });
+
   it('search provider returns list titles for empty query', async () => {
     const dataDir = createTempDataDir();
     const plugin = createTestPlugin();

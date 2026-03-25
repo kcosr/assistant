@@ -448,6 +448,38 @@ describe('CollectionBrowserController list CRUD UI', () => {
     expect(beta?.style.display).toBe('none');
   });
 
+  it('clears search on first Escape and blurs on second Escape in browser mode', async () => {
+    const { controller, sharedSearchController } = makeController({
+      getAvailableItems: () => [{ type: 'list', id: 'l1', name: 'Alpha' }],
+    });
+
+    controller.show(false);
+    controller.setSharedSearchElements({
+      searchInput: sharedSearchController.getSearchInputEl(),
+      tagController: sharedSearchController.getTagController(),
+      tagsContainer: sharedSearchController.getTagsContainerEl(),
+      activeTagsContainer: null,
+    });
+    sharedSearchController.setTagsProvider(() => controller.getAllKnownTags());
+    sharedSearchController.setOnQueryChanged((query) => controller.applySearchQuery(query));
+    sharedSearchController.setKeydownHandler((event) => controller.handleSharedSearchKeyDown(event));
+
+    const search = sharedSearchController.getSearchInputEl();
+    expect(search).not.toBeNull();
+    if (!search) return;
+
+    search.value = 'alpha';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    search.focus();
+
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(search.value).toBe('');
+    expect(document.activeElement).toBe(search);
+
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(document.activeElement).not.toBe(search);
+  });
+
   it('invalidates list preview on updates so browser reflects reorders', async () => {
     const responses: Record<'before' | 'after', CollectionPreviewCacheEntry> = {
       before: {

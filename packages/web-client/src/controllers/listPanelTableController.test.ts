@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ListPanelTableController } from './listPanelTableController';
 
 const originalPointerEvent = globalThis.PointerEvent;
+const originalMatchMedia = window.matchMedia;
 
 class MockPointerEvent extends MouseEvent {
   pointerId: number;
@@ -13,6 +14,42 @@ class MockPointerEvent extends MouseEvent {
     this.pointerId = init.pointerId ?? 0;
     this.pointerType = init.pointerType ?? 'mouse';
   }
+}
+
+function mockMatchMedia(matches: boolean): void {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
+}
+
+function dispatchTouchEvent(
+  element: EventTarget,
+  type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel',
+  coords: { x: number; y: number },
+): void {
+  const event = new Event(type, {
+    bubbles: true,
+    cancelable: true,
+  }) as TouchEvent;
+  const touch = {
+    clientX: coords.x,
+    clientY: coords.y,
+    target: element,
+  };
+  Object.defineProperty(event, 'touches', {
+    value: type === 'touchend' || type === 'touchcancel' ? [] : [touch],
+  });
+  Object.defineProperty(event, 'changedTouches', {
+    value: [touch],
+  });
+  element.dispatchEvent(event);
 }
 
 describe('ListPanelTableController double-click edit', () => {
@@ -44,6 +81,7 @@ describe('ListPanelTableController double-click edit', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';
+    window.matchMedia = originalMatchMedia;
 
     if (originalPointerEvent) {
       (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent = originalPointerEvent;
@@ -131,6 +169,7 @@ describe('ListPanelTableController drag reorder and selection', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     document.body.innerHTML = '';
+    window.matchMedia = originalMatchMedia;
 
     if (originalPointerEvent) {
       (globalThis as { PointerEvent?: typeof PointerEvent }).PointerEvent = originalPointerEvent;
@@ -849,9 +888,16 @@ describe('ListPanelTableController drag reorder and selection', () => {
       ],
     });
 
+    const panelRoot = document.createElement('aside');
+    panelRoot.className = 'lists-panel collection-panel';
+    const searchControls = document.createElement('div');
+    searchControls.className = 'collection-panel-shared-search';
     const bodyEl = document.createElement('div');
+    bodyEl.className = 'collection-panel-content';
     bodyEl.appendChild(table);
-    document.body.appendChild(bodyEl);
+    panelRoot.appendChild(searchControls);
+    panelRoot.appendChild(bodyEl);
+    document.body.appendChild(panelRoot);
 
     const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
     expect(rows).toHaveLength(3);
@@ -889,25 +935,40 @@ describe('ListPanelTableController drag reorder and selection', () => {
       ],
     });
 
+    const panelRoot = document.createElement('aside');
+    panelRoot.className = 'lists-panel collection-panel';
+    const searchControls = document.createElement('div');
+    searchControls.className = 'collection-panel-shared-search';
     const bodyEl = document.createElement('div');
+    bodyEl.className = 'collection-panel-content';
     bodyEl.appendChild(table);
-    document.body.appendChild(bodyEl);
+    panelRoot.appendChild(searchControls);
+    panelRoot.appendChild(bodyEl);
+    document.body.appendChild(panelRoot);
 
     const clearButton = document.createElement('button');
-    clearButton.id = 'clear-selection-button';
-    document.body.appendChild(clearButton);
+    clearButton.dataset['role'] = 'clear-selection-button';
+    searchControls.appendChild(clearButton);
 
     const deleteButton = document.createElement('button');
-    deleteButton.id = 'delete-selection-button';
-    document.body.appendChild(deleteButton);
+    deleteButton.dataset['role'] = 'delete-selection-button';
+    searchControls.appendChild(deleteButton);
 
     const moveButton = document.createElement('button');
-    moveButton.id = 'move-selected-button';
-    document.body.appendChild(moveButton);
+    moveButton.dataset['role'] = 'move-selected-button';
+    searchControls.appendChild(moveButton);
 
     const copyButton = document.createElement('button');
-    copyButton.id = 'copy-selected-button';
-    document.body.appendChild(copyButton);
+    copyButton.dataset['role'] = 'copy-selected-button';
+    searchControls.appendChild(copyButton);
+
+    const selectVisibleButton = document.createElement('button');
+    selectVisibleButton.dataset['role'] = 'select-visible-button';
+    searchControls.appendChild(selectVisibleButton);
+
+    const selectAllButton = document.createElement('button');
+    selectAllButton.dataset['role'] = 'select-all-button';
+    searchControls.appendChild(selectAllButton);
 
     controller.selectAll(bodyEl);
 
@@ -915,6 +976,8 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(deleteButton.classList.contains('visible')).toBe(true);
     expect(moveButton.classList.contains('visible')).toBe(true);
     expect(copyButton.classList.contains('visible')).toBe(true);
+    expect(selectVisibleButton.hidden).toBe(true);
+    expect(selectAllButton.hidden).toBe(true);
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
 
     controller.clearSelection(bodyEl);
@@ -923,6 +986,8 @@ describe('ListPanelTableController drag reorder and selection', () => {
     expect(deleteButton.classList.contains('visible')).toBe(false);
     expect(moveButton.classList.contains('visible')).toBe(false);
     expect(copyButton.classList.contains('visible')).toBe(false);
+    expect(selectVisibleButton.hidden).toBe(false);
+    expect(selectAllButton.hidden).toBe(false);
     expect(onSelectionChange).toHaveBeenCalledTimes(2);
   });
 
@@ -953,6 +1018,191 @@ describe('ListPanelTableController drag reorder and selection', () => {
     menuTrigger?.dispatchEvent(dragEvent);
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'exported payload');
+  });
+});
+
+describe('ListPanelTableController touch selection mode', () => {
+  const listId = 'list1';
+  const recentUserItemUpdates = new Set<string>();
+
+  const baseRenderOptions = {
+    listId,
+    sortedItems: [
+      { id: 'item1', title: 'Item 1' },
+      { id: 'item2', title: 'Item 2' },
+    ],
+    showUrlColumn: false,
+    showNotesColumn: false,
+    showTagsColumn: false,
+    showAddedColumn: false,
+    showUpdatedColumn: false,
+    showTouchedColumn: false,
+    rerender: () => {},
+  };
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+    mockMatchMedia(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    document.body.innerHTML = '';
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('enters selection mode after a longer press and restores normal clicks after clearing selection', () => {
+    const onEditItem = vi.fn();
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () =>
+        document.querySelectorAll('.list-item-row.list-item-selected').length,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+      onEditItem,
+    });
+
+    window.localStorage.setItem('aiAssistantListSingleClickSelectionEnabled', 'open');
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+    if (!firstRow || !secondRow) {
+      throw new Error('Expected rows');
+    }
+
+    dispatchTouchEvent(firstRow, 'touchstart', { x: 0, y: 0 });
+    vi.advanceTimersByTime(800);
+    expect(firstRow.classList.contains('list-item-selected')).toBe(true);
+
+    dispatchTouchEvent(firstRow, 'touchend', { x: 0, y: 0 });
+
+    secondRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow.classList.contains('list-item-selected')).toBe(true);
+    expect(secondRow.classList.contains('list-item-selected')).toBe(true);
+    expect(onEditItem).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+    firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow.classList.contains('list-item-selected')).toBe(false);
+    expect(secondRow.classList.contains('list-item-selected')).toBe(true);
+
+    secondRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(secondRow.classList.contains('list-item-selected')).toBe(false);
+
+    firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onEditItem).toHaveBeenCalledTimes(1);
+
+    window.localStorage.removeItem('aiAssistantListSingleClickSelectionEnabled');
+  });
+
+  it('suppresses only the immediate follow-up click on the long-pressed row', () => {
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () =>
+        document.querySelectorAll('.list-item-row.list-item-selected').length,
+      showListItemMenu: vi.fn(),
+      updateListItem: vi.fn(async () => true),
+    });
+
+    const { table, tbody } = controller.renderTable(baseRenderOptions);
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.appendChild(table);
+    document.body.appendChild(panelFrame);
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const firstRow = rows[0];
+    expect(firstRow).not.toBeNull();
+    if (!firstRow) {
+      throw new Error('Expected row');
+    }
+
+    dispatchTouchEvent(firstRow, 'touchstart', { x: 0, y: 0 });
+    vi.advanceTimersByTime(800);
+    dispatchTouchEvent(firstRow, 'touchend', { x: 0, y: 0 });
+
+    firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow.classList.contains('list-item-selected')).toBe(true);
+
+    vi.advanceTimersByTime(300);
+    firstRow.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstRow.classList.contains('list-item-selected')).toBe(false);
+  });
+
+  it('starts drag on movement after the shorter hold without entering selection mode', async () => {
+    const updateListItem = vi.fn(async () => true);
+    const controller = new ListPanelTableController({
+      icons: { moreVertical: '', pin: '' },
+      renderTags: () => null,
+      recentUserItemUpdates,
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemCount: () =>
+        document.querySelectorAll('.list-item-row.list-item-selected').length,
+      showListItemMenu: vi.fn(),
+      updateListItem,
+    });
+
+    const { table, tbody } = controller.renderTable({
+      ...baseRenderOptions,
+      sortedItems: [
+        { id: 'item1', title: 'Item 1' },
+        { id: 'item2', title: 'Item 2' },
+      ],
+    });
+    document.body.appendChild(table);
+
+    const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    const firstRow = rows[0];
+    const secondRow = rows[1];
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+    if (!firstRow || !secondRow) {
+      throw new Error('Expected rows');
+    }
+
+    const originalElementFromPoint = document.elementFromPoint;
+    if (!originalElementFromPoint) {
+      Object.defineProperty(document, 'elementFromPoint', {
+        value: () => null,
+        configurable: true,
+      });
+    }
+    const elementFromPointSpy = vi
+      .spyOn(document, 'elementFromPoint')
+      .mockImplementation(() => secondRow);
+
+    dispatchTouchEvent(firstRow, 'touchstart', { x: 0, y: 0 });
+    vi.advanceTimersByTime(400);
+    dispatchTouchEvent(firstRow, 'touchmove', { x: 16, y: 0 });
+
+    expect(firstRow.classList.contains('dragging')).toBe(true);
+    expect(firstRow.classList.contains('list-item-selected')).toBe(false);
+
+    dispatchTouchEvent(firstRow, 'touchend', { x: 16, y: 0 });
+    await Promise.resolve();
+    expect(updateListItem).toHaveBeenCalledTimes(1);
+
+    elementFromPointSpy.mockRestore();
+    if (!originalElementFromPoint) {
+      delete (document as { elementFromPoint?: typeof document.elementFromPoint }).elementFromPoint;
+    }
   });
 });
 

@@ -827,6 +827,166 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   });
 
+  it('closes modal list panels on Escape instead of switching to browser mode', async () => {
+    vi.resetModules();
+
+    const respond = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal('ASSISTANT_API_HOST', 'localhost');
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const body =
+        typeof init?.body === 'string' && init.body.length > 0
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : {};
+      const operation = url.split('/').pop();
+      switch (operation) {
+        case 'instance_list':
+          return respond([{ id: 'default', label: 'Default' }]);
+        case 'list':
+          return respond([{ id: 'list-a', name: 'List A', customFields: [] }]);
+        case 'get':
+          return respond({ id: String(body['id']), name: 'List A', customFields: [] });
+        case 'items-list':
+          return respond([]);
+        case 'aql-query-list':
+          return respond([]);
+        default:
+          return respond([]);
+      }
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    (globalThis as { fetch?: typeof fetchMock }).fetch = fetchMock;
+    if (typeof window !== 'undefined') {
+      window.fetch = fetchMock as typeof window.fetch;
+      (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST = 'http://localhost';
+    }
+    vi.doMock('../../../../web-client/src/utils/api', () => ({
+      apiFetch: (input: RequestInfo | URL, init?: RequestInit) => fetchMock(input, init),
+    }));
+
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const modalContainer = document.createElement('div');
+    modalContainer.className = 'panel-modal';
+    const container = document.createElement('div');
+    modalContainer.appendChild(container);
+    document.body.appendChild(modalContainer);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const panelId = 'lists-modal-escape';
+    const closePanel = vi.fn();
+    const host = {
+      panelId: () => panelId,
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'list-a',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+        searchMode: 'raw',
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      keyboardShortcuts,
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId, panelType: 'lists' });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const flush = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const waitFor = async (predicate: () => boolean) => {
+      for (let i = 0; i < 10; i += 1) {
+        if (predicate()) {
+          return;
+        }
+        await flush();
+      }
+      throw new Error('Timed out waiting for condition');
+    };
+
+    const listButton = container.querySelector<HTMLButtonElement>('[data-role="lists-mode-list"]');
+    expect(listButton).not.toBeNull();
+    await waitFor(() => listButton?.getAttribute('aria-selected') === 'true');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(closePanel).toHaveBeenCalledTimes(1);
+    expect(closePanel).toHaveBeenCalledWith(panelId);
+    expect(listButton?.getAttribute('aria-selected')).toBe('true');
+
+    handle.unmount();
+  });
+
   it('shows the add fab on mobile list mode', async () => {
     vi.resetModules();
     await import('./index');

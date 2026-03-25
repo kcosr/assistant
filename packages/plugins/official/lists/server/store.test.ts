@@ -504,6 +504,30 @@ describe('ListsStore (plugin)', () => {
     expect(searchScopedToList.map((item) => item.title)).toEqual(['First Item']);
   });
 
+  it('defaults item listing and search limits to 100', async () => {
+    const filePath = createTempFilePath();
+    const store = createStore(filePath);
+
+    await store.createList({ id: 'reading', name: 'Reading' });
+
+    for (let index = 0; index < 105; index += 1) {
+      await store.addItem({
+        listId: 'reading',
+        title: `Milk item ${index + 1}`,
+      });
+    }
+
+    const listedItems = await store.listItems({ listId: 'reading' });
+    expect(listedItems).toHaveLength(100);
+    expect(listedItems[0]?.title).toBe('Milk item 1');
+    expect(listedItems[99]?.title).toBe('Milk item 100');
+
+    const searchedItems = await store.searchItems({ query: 'milk' });
+    expect(searchedItems).toHaveLength(100);
+    expect(searchedItems.map((item) => item.title)).toContain('Milk item 1');
+    expect(searchedItems.map((item) => item.title)).toContain('Milk item 100');
+  });
+
   it('finds items by title (case-insensitive)', async () => {
     const filePath = createTempFilePath();
     const store = createStore(filePath);

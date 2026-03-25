@@ -5,10 +5,18 @@
 ### Breaking Changes
 
 ### Added
+- Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#123](<pr-url>))
 
 ### Changed
+- Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#123](<pr-url>))
+- Changed lists item listing and search defaults to return up to 100 items when no explicit limit is provided. ([#123](<pr-url>))
 
 ### Fixed
+- Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#123](<pr-url>))
+- Fixed modal lists panels to close on Escape from list mode instead of switching to browser mode. ([#123](<pr-url>))
+- Fixed confirm dialog button flows leaving `hasOpenDialog` stuck true, which could disable keyboard shortcuts until refresh. ([#123](<pr-url>))
+- Fixed lists touch multi-select to use a longer hold-without-movement selection mode while preserving short-hold drag, and made selected rows more prominent across platforms. ([#123](<pr-url>))
+- Fixed markdown preparation to stop auto-closing unmatched underscore emphasis markers. ([#123](<pr-url>))
 
 ### Removed
 

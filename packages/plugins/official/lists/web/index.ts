@@ -12,6 +12,7 @@ import { PanelChromeController } from '../../../../web-client/src/controllers/pa
 import { CollectionPanelSearchController } from '../../../../web-client/src/controllers/collectionPanelSearchController';
 import {
   CollectionBrowserController,
+  type CollectionBrowserSortMode,
   type CollectionPreviewCacheEntry,
 } from '../../../../web-client/src/controllers/collectionBrowserController';
 import { CollectionDropdownController } from '../../../../web-client/src/controllers/collectionDropdown';
@@ -261,6 +262,7 @@ const LISTS_PANEL_TEMPLATE = `
 
 const USER_UPDATE_TIMEOUT_MS = 5000;
 const DEFAULT_INSTANCE_ID = 'default';
+const LISTS_BROWSER_SORT_MODE_KEY = 'aiAssistantListsBrowserSortMode';
 
 type ViewMode = 'browser' | 'list';
 
@@ -322,6 +324,30 @@ function formatInstanceLabel(id: string): string {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function parseUpdatedAtMs(updatedAt: string | undefined): number {
+  if (typeof updatedAt !== 'string') {
+    return 0;
+  }
+  const parsed = Date.parse(updatedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortListSummariesForMoveTargets(
+  lists: ListSummary[],
+  sortMode: CollectionBrowserSortMode,
+): ListSummary[] {
+  return [...lists].sort((a, b) => {
+    if (sortMode === 'updated') {
+      const timeA = parseUpdatedAtMs(a.updatedAt);
+      const timeB = parseUpdatedAtMs(b.updatedAt);
+      if (timeA !== timeB) {
+        return timeB - timeA;
+      }
+    }
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
 }
 
 function parseInstance(value: unknown): Instance | null {
@@ -1901,6 +1927,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return true;
         }
         if (mode === 'list' && event.key === 'Escape' && bodyManager.getSelectedItemCount() === 0) {
+          if (isPanelOverlay()) {
+            host.closePanel(panelId);
+            return true;
+          }
           setMode('browser');
           return true;
         }
@@ -2013,8 +2043,20 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         onSelectionChange: updatePanelContext,
         getMoveTargetLists: () => {
           const instanceId = activeListInstanceId ?? activeInstanceId;
-          return availableLists
-            .filter((list) => list.instanceId === instanceId)
+          const sortMode =
+            browserController?.getSortMode() ??
+            (() => {
+              try {
+                const stored = window.localStorage.getItem(LISTS_BROWSER_SORT_MODE_KEY);
+                return stored === 'updated' ? 'updated' : 'alpha';
+              } catch {
+                return 'alpha';
+              }
+            })();
+          return sortListSummariesForMoveTargets(
+            availableLists.filter((list) => list.instanceId === instanceId),
+            sortMode,
+          )
             .map((list) => ({
               id: list.id,
               name: list.name,
