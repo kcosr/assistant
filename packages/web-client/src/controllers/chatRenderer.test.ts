@@ -211,6 +211,44 @@ describe('ChatRenderer', () => {
     expect(blocks).toHaveLength(2);
   });
 
+  it('renders commentary and final assistant text as separate segments', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('assistant_done', {
+        id: 'e-commentary',
+        payload: {
+          text: 'Let me check.',
+          phase: 'commentary',
+          textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e-final',
+        payload: {
+          text: 'All set.',
+          phase: 'final_answer',
+          textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+        },
+      }),
+    ]);
+
+    const segments = Array.from(
+      container.querySelectorAll<HTMLDivElement>('.assistant-response .assistant-text'),
+    ).map((element) => ({
+      phase: element.dataset['phase'],
+      text: element.textContent?.trim(),
+    }));
+
+    expect(segments).toEqual([
+      { phase: 'commentary', text: 'Let me check.' },
+      { phase: 'final_answer', text: 'All set.' },
+    ]);
+  });
+
   it('formats tool_result content arrays as tool output', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

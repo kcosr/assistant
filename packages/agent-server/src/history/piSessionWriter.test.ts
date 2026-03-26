@@ -236,6 +236,82 @@ describe('PiSessionWriter', () => {
     expect(userMessageEntries.length).toBe(0);
   });
 
+  it('writes replayable assistant text signatures for reconstructed assistant text messages', async () => {
+    const baseDir = await createTempDir('pi-session-writer-signatures');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-signatures',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Hello' },
+      {
+        role: 'assistant',
+        content: 'Internal note',
+        assistantTextPhase: 'commentary',
+        assistantTextSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+      },
+      {
+        role: 'assistant',
+        content: 'Visible answer',
+        assistantTextPhase: 'final_answer',
+        assistantTextSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+      },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      modelSpec: 'openai/gpt-4.1',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const assistantMessages = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as AssistantMessage | Record<string, unknown> | undefined)
+      .filter(
+        (message): message is AssistantMessage =>
+          Boolean(message) &&
+          typeof message === 'object' &&
+          'role' in message &&
+          message.role === 'assistant',
+      );
+
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0]?.content[0]).toMatchObject({
+      type: 'text',
+      text: 'Internal note',
+      textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+    });
+    expect(assistantMessages[1]?.content[0]).toMatchObject({
+      type: 'text',
+      text: 'Visible answer',
+      textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+    });
+  });
+
   it('counts assistant.input entries when resuming to avoid duplicate writes', async () => {
     const baseDir = await createTempDir('pi-session-writer-resume');
     const now = () => new Date('2026-02-01T00:00:00.000Z');

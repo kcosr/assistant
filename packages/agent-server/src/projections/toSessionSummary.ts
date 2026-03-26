@@ -15,6 +15,10 @@ function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }):
   return `[Callback from ${fromAgentId}]: ${result}`;
 }
 
+function isSummaryAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
+  return event.payload.phase !== 'commentary';
+}
+
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
     return text;
@@ -42,6 +46,15 @@ export function toSessionSummary(events: ChatEvent[]): {
       lastMessage = text;
       messageCount += 1;
     } else if (event.type === 'assistant_done') {
+      if (
+        !isSummaryAssistantText(
+          event as ChatEvent & {
+            type: 'assistant_done';
+          },
+        )
+      ) {
+        continue;
+      }
       const text = event.payload.text.trim();
       if (!text) {
         continue;

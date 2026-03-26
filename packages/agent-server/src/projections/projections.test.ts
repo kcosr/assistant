@@ -122,6 +122,35 @@ describe('toOpenAIMessages', () => {
     expect(callbackMessage.role).toBe('user');
     expect(callbackMessage.content).toBe('[Callback from code-agent]: Task completed');
   });
+
+  it('skips commentary-only assistant text in generic projections', () => {
+    const events: ChatEvent[] = [
+      {
+        ...baseEvent('assistant_done'),
+        type: 'assistant_done',
+        payload: { text: 'Internal note', phase: 'commentary' },
+      },
+      {
+        ...baseEvent('assistant_done'),
+        id: 'assistant-done-final',
+        type: 'assistant_done',
+        payload: { text: 'Visible answer', phase: 'final_answer' },
+      },
+    ];
+
+    const messages = toOpenAIMessages(events);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: 'assistant',
+      content: 'Visible answer',
+    });
+
+    const summary = toSessionSummary(events);
+    expect(summary.lastMessage).toBe('Visible answer');
+
+    expect(toClaudeCLIPrompt(events)).toContain('Assistant: Visible answer');
+    expect(toClaudeCLIPrompt(events)).not.toContain('Internal note');
+  });
 });
 
 describe('CLI prompt projections', () => {

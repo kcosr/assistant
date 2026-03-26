@@ -1,4 +1,5 @@
 import type {
+  AssistantTextPhase,
   ChatEvent,
   ServerMessage,
   ServerTextDeltaMessage,
@@ -39,6 +40,7 @@ import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
 import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
+import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import {
   resolvePiSdkModel,
   runPiSdkChatCompletionIteration,
@@ -381,7 +383,11 @@ function createChatRunStreamHandlers(options: {
     }
   };
 
-  const emitTextDelta = async (deltaText: string, textSoFar: string): Promise<void> => {
+  const emitTextDelta = async (
+    deltaText: string,
+    textSoFar: string,
+    phase?: AssistantTextPhase,
+  ): Promise<void> => {
     if (state.activeChatRun) {
       state.activeChatRun.accumulatedText = textSoFar;
       state.activeChatRun.outputStarted = true;
@@ -394,6 +400,7 @@ function createChatRunStreamHandlers(options: {
       type: 'text_delta',
       responseId,
       delta: deltaText,
+      ...(phase ? { phase } : {}),
       ...buildAgentExchangePayload(),
     };
     output.send(message);
@@ -407,7 +414,10 @@ function createChatRunStreamHandlers(options: {
             responseId,
           }),
           type: 'assistant_chunk',
-          payload: { text: deltaText },
+          payload: {
+            text: deltaText,
+            ...(phase ? { phase } : {}),
+          },
         },
       ];
       void appendAndBroadcastChatEvents(
@@ -786,6 +796,30 @@ export async function runChatCompletionCore(
     fullText = piText;
   } else if (provider === 'pi') {
     let iterations = 0;
+
+    const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
+      summary: state.summary,
+    });
+    if (canonicalReplayMessages) {
+      const systemMessage =
+        state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
+      const currentUserMessage =
+        state.chatMessages[state.chatMessages.length - 1]?.role === 'user'
+          ? state.chatMessages[state.chatMessages.length - 1]
+          : undefined;
+      const lastCanonical = canonicalReplayMessages[canonicalReplayMessages.length - 1];
+      const shouldAppendCurrentUser =
+        currentUserMessage?.role === 'user' &&
+        !(
+          lastCanonical?.role === 'user' &&
+          lastCanonical.content === currentUserMessage.content
+        );
+      state.chatMessages = [
+        ...(systemMessage ? [systemMessage] : []),
+        ...canonicalReplayMessages,
+        ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
+      ];
+    }
 
     const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
     const maxToolIterations = piConfig?.maxToolIterations ?? 100;

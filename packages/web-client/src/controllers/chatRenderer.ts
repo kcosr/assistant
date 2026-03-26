@@ -73,6 +73,7 @@ export class ChatRenderer {
   private readonly responseElements = new Map<string, HTMLDivElement>();
   private readonly assistantTextElements = new Map<string, HTMLDivElement>();
   private readonly assistantTextBuffers = new Map<string, string>();
+  private readonly assistantTextSegmentTokens = new Map<string, string>();
   private readonly thinkingElements = new Map<string, HTMLDivElement>();
   private readonly thinkingTextBuffers = new Map<string, string>();
   private readonly toolCallElements = new Map<string, HTMLDivElement>();
@@ -302,6 +303,7 @@ export class ChatRenderer {
     this.responseElements.clear();
     this.assistantTextElements.clear();
     this.assistantTextBuffers.clear();
+    this.assistantTextSegmentTokens.clear();
     this.thinkingElements.clear();
     this.thinkingTextBuffers.clear();
     this.toolCallElements.clear();
@@ -312,6 +314,7 @@ export class ChatRenderer {
     this.toolOutputOffsets.clear();
     this.toolOutputToolNames.clear();
     this.agentMessageElements.clear();
+    this.textSegmentIndex.clear();
     this.needsNewTextSegment.clear();
     this.interactionElements.clear();
     this.pendingInteractionRequests.clear();
@@ -422,14 +425,14 @@ export class ChatRenderer {
       return;
     }
 
-    this.ensureTextSegment(responseId);
+    this.ensureAssistantTextSegment(responseId, event.payload.phase);
 
     const responseEl = this.getOrCreateAssistantResponseContainer(
       event.turnId,
       event.id,
       responseId,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl);
+    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -450,14 +453,14 @@ export class ChatRenderer {
       return;
     }
 
-    this.ensureTextSegment(responseId);
+    this.ensureAssistantTextSegment(responseId, event.payload.phase);
 
     const responseEl = this.getOrCreateAssistantResponseContainer(
       event.turnId,
       event.id,
       responseId,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl);
+    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -1645,6 +1648,7 @@ export class ChatRenderer {
   private getOrCreateAssistantTextElement(
     responseId: string,
     responseEl: HTMLDivElement,
+    phase?: AssistantChunkEvent['payload']['phase'],
   ): HTMLDivElement {
     // Get current segment index (0 = before any tools, incremented after each tool block)
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -1658,6 +1662,9 @@ export class ChatRenderer {
     const textEl = document.createElement('div');
     textEl.className = 'assistant-text';
     textEl.dataset['segment'] = String(segmentIdx);
+    if (phase) {
+      textEl.dataset['phase'] = phase;
+    }
     responseEl.appendChild(textEl);
 
     this.assistantTextElements.set(segmentKey, textEl);
@@ -1672,12 +1679,29 @@ export class ChatRenderer {
     this.textSegmentIndex.set(responseId, current + 1);
   }
 
+  private ensureAssistantTextSegment(
+    responseId: string,
+    phase?: AssistantChunkEvent['payload']['phase'],
+  ): void {
+    this.ensureTextSegment(responseId);
+    const nextToken = phase ?? 'default';
+    const currentToken = this.assistantTextSegmentTokens.get(responseId);
+    if (currentToken === nextToken) {
+      return;
+    }
+    if (currentToken !== undefined) {
+      this.advanceTextSegment(responseId);
+    }
+    this.assistantTextSegmentTokens.set(responseId, nextToken);
+  }
+
   private ensureTextSegment(responseId: string): void {
     if (!this.needsNewTextSegment.has(responseId)) {
       return;
     }
     this.advanceTextSegment(responseId);
     this.needsNewTextSegment.delete(responseId);
+    this.assistantTextSegmentTokens.delete(responseId);
   }
 
   private markTextSegmentBreak(responseId: string): void {

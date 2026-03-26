@@ -9,6 +9,7 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
+import { parseAssistantTextSignature } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
 
 const HISTORY_DEBUG = process.env['ASSISTANT_HISTORY_DEBUG'] === '1';
@@ -1545,6 +1546,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (Array.isArray(content)) {
         let thinkingBuffer = '';
         let textBuffer = '';
+        let textPhase: 'commentary' | 'final_answer' | undefined;
+        let textSignature: string | undefined;
 
         const flushThinking = (): void => {
           if (!thinkingBuffer) {
@@ -1573,9 +1576,15 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             turnId,
             responseId,
             type: 'assistant_done',
-            payload: { text: textBuffer },
+            payload: {
+              text: textBuffer,
+              ...(textPhase ? { phase: textPhase } : {}),
+              ...(textSignature ? { textSignature } : {}),
+            },
           });
           textBuffer = '';
+          textPhase = undefined;
+          textSignature = undefined;
         };
 
         for (const item of content) {
@@ -1600,9 +1609,18 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           }
 
           if (normalized === 'text') {
-            const text = extractAssistantTextBlock(block);
-            if (text) {
-              textBuffer += text;
+            const assistantText = extractAssistantTextBlock(block);
+            if (assistantText.text) {
+              if (
+                textBuffer &&
+                (textPhase !== assistantText.phase ||
+                  textSignature !== assistantText.textSignature)
+              ) {
+                flushText();
+              }
+              textBuffer += assistantText.text;
+              textPhase = assistantText.phase;
+              textSignature = assistantText.textSignature;
             }
             continue;
           }
@@ -1618,9 +1636,18 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             continue;
           }
 
-          const text = extractAssistantTextBlock(block);
-          if (text) {
-            textBuffer += text;
+          const assistantText = extractAssistantTextBlock(block);
+          if (assistantText.text) {
+            if (
+              textBuffer &&
+              (textPhase !== assistantText.phase ||
+                textSignature !== assistantText.textSignature)
+            ) {
+              flushText();
+            }
+            textBuffer += assistantText.text;
+            textPhase = assistantText.phase;
+            textSignature = assistantText.textSignature;
           }
         }
 
@@ -2133,26 +2160,21 @@ function extractTextValue(value: unknown): string {
   return '';
 }
 
-function extractAssistantTextBlock(block: Record<string, unknown>): string {
-  if (getTextSignaturePhase(block['textSignature']) === 'commentary') {
-    return '';
-  }
-  return extractTextValue(block['text'] ?? block['content']);
-}
-
-function getTextSignaturePhase(signature: unknown): 'commentary' | 'final_answer' | null {
-  if (typeof signature !== 'string' || !signature.startsWith('{')) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(signature) as { phase?: unknown };
-    if (parsed.phase === 'commentary' || parsed.phase === 'final_answer') {
-      return parsed.phase;
-    }
-  } catch {
-    return null;
-  }
-  return null;
+function extractAssistantTextBlock(block: Record<string, unknown>): {
+  text: string;
+  phase?: 'commentary' | 'final_answer';
+  textSignature?: string;
+} {
+  const textSignature =
+    typeof block['textSignature'] === 'string' && block['textSignature'].length > 0
+      ? block['textSignature']
+      : undefined;
+  const parsedSignature = parseAssistantTextSignature(textSignature);
+  return {
+    text: extractTextValue(block['text'] ?? block['content']),
+    ...(parsedSignature?.phase ? { phase: parsedSignature.phase } : {}),
+    ...(textSignature ? { textSignature } : {}),
+  };
 }
 
 function extractLabel(entry: Record<string, unknown>): string | null {

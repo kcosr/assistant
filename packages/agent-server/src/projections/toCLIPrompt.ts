@@ -15,6 +15,10 @@ function formatAgentCallbackLine(event: ChatEvent & { type: 'agent_callback' }):
   return `[Callback from ${fromAgentId}]: ${result}`;
 }
 
+function isPromptAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
+  return event.payload.phase !== 'commentary';
+}
+
 function buildTranscript(events: ChatEvent[]): string {
   const lines: string[] = [];
 
@@ -26,6 +30,15 @@ function buildTranscript(events: ChatEvent[]): string {
       }
       lines.push(`User: ${text}`);
     } else if (event.type === 'assistant_done') {
+      if (
+        !isPromptAssistantText(
+          event as ChatEvent & {
+            type: 'assistant_done';
+          },
+        )
+      ) {
+        continue;
+      }
       const text = event.payload.text.trim();
       if (!text) {
         continue;

@@ -220,4 +220,59 @@ describe('buildChatMessagesFromEvents', () => {
       content: 'Finished.',
     });
   });
+
+  it('preserves assistant text phase segments when rebuilding prompt messages', () => {
+    const registry = new AgentRegistry([]);
+    const sessionId = 'session-phase';
+    const timestamp = Date.now();
+    const events: ChatEvent[] = [
+      {
+        id: 'evt-user',
+        timestamp,
+        sessionId,
+        type: 'user_message',
+        payload: { text: 'What happened?' },
+      },
+      {
+        id: 'evt-commentary',
+        timestamp: timestamp + 1,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'assistant_done',
+        payload: {
+          text: 'Let me check.',
+          phase: 'commentary',
+          textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+        },
+      },
+      {
+        id: 'evt-final',
+        timestamp: timestamp + 2,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'assistant_done',
+        payload: {
+          text: 'All set.',
+          phase: 'final_answer',
+          textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+        },
+      },
+    ];
+
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
+
+    expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'assistant']);
+    expect(messages[2]).toMatchObject({
+      role: 'assistant',
+      content: 'Let me check.',
+      assistantTextPhase: 'commentary',
+      assistantTextSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+    });
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
+      content: 'All set.',
+      assistantTextPhase: 'final_answer',
+      assistantTextSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+    });
+  });
 });

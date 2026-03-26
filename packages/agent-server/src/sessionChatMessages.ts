@@ -9,6 +9,11 @@ import type {
 } from './chatCompletionTypes';
 
 type AssistantMessage = ChatCompletionMessage & { role: 'assistant' };
+type OpenAssistantTextSegment = {
+  responseId: string;
+  phase?: AssistantMessage['assistantTextPhase'];
+  message: AssistantMessage;
+};
 
 export function buildChatMessagesFromEvents(
   events: ChatEvent[],
@@ -39,18 +44,37 @@ export function buildChatMessagesFromEvents(
     },
   ];
 
-  const assistantTextMessages = new Map<string, AssistantMessage>();
-  const ensureAssistantMessage = (responseId: string, initialText: string): AssistantMessage => {
-    const existing = assistantTextMessages.get(responseId);
-    if (existing) {
-      return existing;
+  const openAssistantTextSegments = new Map<string, OpenAssistantTextSegment>();
+  const closeAssistantTextSegment = (responseId?: string): void => {
+    if (!responseId) {
+      return;
     }
+    openAssistantTextSegments.delete(responseId);
+  };
+  const createAssistantMessage = (
+    initialText: string,
+    phase?: AssistantMessage['assistantTextPhase'],
+    textSignature?: string,
+  ): AssistantMessage => {
     const message: AssistantMessage = {
       role: 'assistant',
       content: initialText,
+      ...(phase ? { assistantTextPhase: phase } : {}),
+      ...(textSignature ? { assistantTextSignature: textSignature } : {}),
     };
     messages.push(message);
-    assistantTextMessages.set(responseId, message);
+    return message;
+  };
+  const ensureOpenAssistantTextSegment = (
+    responseId: string,
+    phase?: AssistantMessage['assistantTextPhase'],
+  ): AssistantMessage => {
+    const existing = openAssistantTextSegments.get(responseId);
+    if (existing && existing.phase === phase) {
+      return existing.message;
+    }
+    const message = createAssistantMessage('', phase);
+    openAssistantTextSegments.set(responseId, { responseId, phase, message });
     return message;
   };
 
@@ -100,8 +124,14 @@ export function buildChatMessagesFromEvents(
         if (!delta) {
           break;
         }
-        const message = ensureAssistantMessage(responseId, '');
+        const message = ensureOpenAssistantTextSegment(responseId, event.payload.phase);
         message.content = `${message.content}${delta}`;
+        if (event.payload.phase) {
+          message.assistantTextPhase = event.payload.phase;
+        }
+        if (event.payload.textSignature) {
+          message.assistantTextSignature = event.payload.textSignature;
+        }
         break;
       }
       case 'assistant_done': {
@@ -116,8 +146,19 @@ export function buildChatMessagesFromEvents(
         if (!text) {
           break;
         }
-        const message = ensureAssistantMessage(responseId, text);
-        message.content = text;
+        const existing = openAssistantTextSegments.get(responseId);
+        if (existing && existing.phase === event.payload.phase) {
+          existing.message.content = text;
+          if (event.payload.phase) {
+            existing.message.assistantTextPhase = event.payload.phase;
+          }
+          if (event.payload.textSignature) {
+            existing.message.assistantTextSignature = event.payload.textSignature;
+          }
+          closeAssistantTextSegment(responseId);
+          break;
+        }
+        createAssistantMessage(text, event.payload.phase, event.payload.textSignature);
         break;
       }
       case 'thinking_chunk': {
@@ -135,6 +176,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'tool_call': {
+        closeAssistantTextSegment(event.responseId?.trim());
         let argsJson = '{}';
         try {
           argsJson = JSON.stringify(event.payload.args ?? {});
@@ -157,6 +199,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'tool_result': {
+        closeAssistantTextSegment(event.responseId?.trim());
         const content = JSON.stringify({
           ok: !event.payload.error,
           result: event.payload.result,

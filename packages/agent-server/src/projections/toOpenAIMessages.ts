@@ -20,6 +20,10 @@ function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }):
   return `[Callback from ${fromAgentId}]: ${result}`;
 }
 
+function isReplayableAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
+  return event.payload.phase !== 'commentary';
+}
+
 export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
   const messages: ChatCompletionMessage[] = [];
 
@@ -39,6 +43,15 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
       }
 
       case 'assistant_done': {
+        if (
+          !isReplayableAssistantText(
+            event as ChatEvent & {
+              type: 'assistant_done';
+            },
+          )
+        ) {
+          break;
+        }
         const text = event.payload.text.trim();
         if (!text) {
           break;

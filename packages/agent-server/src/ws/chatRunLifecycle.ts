@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 import type {
   ChatEvent,
   ClientAudioCapabilities,
@@ -26,8 +27,51 @@ import {
   resolveChatProvider,
   runChatCompletionCore,
 } from '../chatRunCore';
+import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
+import { resolveVisibleAssistantText } from '../piAssistantText';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
 import { attachPiSdkMessageToLastAssistant } from '../history/piSessionSync';
+
+function buildAssistantDoneEvents(options: {
+  sessionId: string;
+  turnId?: string;
+  responseId: string;
+  fullText: string;
+  piSdkMessage: PiSdkMessage | undefined;
+}): ChatEvent[] {
+  const { sessionId, turnId, responseId, fullText, piSdkMessage } = options;
+  const base = createChatEventBase({
+    sessionId,
+    ...(turnId ? { turnId } : {}),
+    responseId,
+  });
+  const piBlocks = extractAssistantTextBlocksFromPiMessage(piSdkMessage);
+  if (piBlocks.length > 0) {
+    return piBlocks
+      .filter((block) => block.text.trim().length > 0)
+      .map((block) => ({
+        ...base,
+        id: randomUUID(),
+        type: 'assistant_done' as const,
+        payload: {
+          text: block.text,
+          ...(block.phase ? { phase: block.phase } : {}),
+          ...(block.textSignature ? { textSignature: block.textSignature } : {}),
+        },
+      }));
+  }
+  if (!fullText.trim()) {
+    return [];
+  }
+  return [
+    {
+      ...base,
+      id: randomUUID(),
+      type: 'assistant_done',
+      payload: { text: fullText },
+    },
+  ];
+}
 
 export async function handleTextInputWithChatCompletions(options: {
   ready: boolean;
@@ -324,25 +368,29 @@ export async function handleTextInputWithChatCompletions(options: {
     if (shouldLogAssistant) {
       const active = state.activeChatRun;
       const ttsSessionForRun = active?.ttsSession;
+      const visibleAssistant = resolveVisibleAssistantText({
+        fullText,
+        ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+      });
 
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
         responseId,
-        text: fullText,
+        text: visibleAssistant.text,
+        ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
+        ...(visibleAssistant.textSignature ? { textSignature: visibleAssistant.textSignature } : {}),
       };
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
       if (shouldEmitChatEvents && eventStore && turnId) {
         const events: ChatEvent[] = [
-          {
-            ...createChatEventBase({
-              sessionId,
-              ...(turnId ? { turnId } : {}),
-              responseId,
-            }),
-            type: 'assistant_done',
-            payload: { text: fullText },
-          },
+          ...buildAssistantDoneEvents({
+            sessionId,
+            turnId,
+            responseId,
+            fullText,
+            piSdkMessage: runResult.piSdkMessage,
+          }),
         ];
         void appendAndBroadcastChatEvents(
           {
@@ -364,11 +412,13 @@ export async function handleTextInputWithChatCompletions(options: {
           : undefined;
       void sessionHub.recordSessionActivity(
         sessionId,
-        fullText.length > 120 ? `${fullText.slice(0, 117)}…` : fullText,
+        visibleAssistant.text.length > 120
+          ? `${visibleAssistant.text.slice(0, 117)}…`
+          : visibleAssistant.text,
       );
       state.chatMessages.push({
         role: 'assistant',
-        content: fullText,
+        content: visibleAssistant.text,
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 

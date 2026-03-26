@@ -11,6 +11,7 @@
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#123](<pr-url>))
 - Changed lists item listing and search defaults to return up to 100 items when no explicit limit is provided. ([#123](<pr-url>))
 - Updated `@mariozechner/pi-ai` in `@assistant/agent-server` to the latest 0.62.x release. ([#123](<pr-url>))
+- Changed Pi-backed OpenAI Responses transcript handling to preserve assistant text `phase` metadata (`commentary`, `final_answer`) across session replay and Pi session writes. ([#123](<pr-url>))
 
 ### Fixed
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#123](<pr-url>))
@@ -18,8 +19,11 @@
 - Fixed confirm dialog button flows leaving `hasOpenDialog` stuck true, which could disable keyboard shortcuts until refresh. ([#123](<pr-url>))
 - Fixed lists bulk selection to use a longer hold-without-movement selection mode while preserving short-hold drag, made selected rows more prominent across platforms, and kept bulk Actions menus in sync with the current selection. ([#123](<pr-url>))
 - Fixed markdown preparation to stop auto-closing unmatched underscore emphasis markers. ([#123](<pr-url>))
-- Fixed Pi-backed session reloads to skip OpenAI Responses `commentary` text blocks instead of replaying them as normal assistant history. ([#123](<pr-url>))
+- Fixed Pi-backed transcript replay and live rendering to keep commentary/final assistant text segments separate without polluting generic summaries or non-Pi replay contexts. ([#123](<pr-url>))
 - Fixed Pi-backed session reloads to preserve tool-call message boundaries so later syncs do not drop user turns or reorder tool history after a restart/reload. ([#64](https://github.com/kcosr/assistant/pull/64))
+- Fixed Pi-backed chat runs to use the canonical Pi session transcript for replay instead of the flattened generic message projection, and limited final message/sidebar snippet text to the final-answer block rather than merged commentary text. ([#123](<pr-url>))
+- Fixed interrupted chat runs to stop persisting partial streamed assistant text into session history and sidebar snippets when a response is cancelled mid-stream, including automatic cancels from session model/thinking changes. ([#123](<pr-url>))
+- Fixed session model and thinking changes to apply on the next turn without cancelling the currently running response. ([#123](<pr-url>))
 - Fixed Android share-target cold starts to retain the first incoming share until the web app listener is ready. ([#123](<pr-url>))
 
 ### Removed

@@ -580,7 +580,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(toolCallIndex).toBeLessThan(secondThinkingIndex);
   });
 
-  it('drops commentary-phase assistant text and keeps final answers', async () => {
+  it('preserves commentary-phase assistant text with phase metadata', async () => {
     const baseDir = await createTempDir('pi-session-history-phase');
     const sessionId = 'session-phase';
     const piSessionId = 'pi-session-phase';
@@ -641,7 +641,29 @@ describe('PiSessionHistoryProvider', () => {
     const assistantEvents = events.filter(
       (event) => event.type === 'assistant_done',
     ) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
-    expect(assistantEvents.map((event) => event.payload.text)).toEqual(['Actual answer']);
+    expect(
+      assistantEvents.map((event) => ({
+        text: event.payload.text,
+        phase: event.payload.phase,
+        textSignature: event.payload.textSignature,
+      })),
+    ).toEqual([
+      {
+        text: '{"tool":"noop"}',
+        phase: 'commentary',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-1', phase: 'commentary' }),
+      },
+      {
+        text: 'Actual answer',
+        phase: 'final_answer',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-final-1', phase: 'final_answer' }),
+      },
+      {
+        text: 'internal commentary only',
+        phase: 'commentary',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-2', phase: 'commentary' }),
+      },
+    ]);
   });
 });
 

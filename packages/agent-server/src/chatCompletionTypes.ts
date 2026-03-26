@@ -1,4 +1,5 @@
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { AssistantTextPhase } from '@assistant/shared';
 
 export interface ChatCompletionToolCallState {
   id: string;
@@ -40,6 +41,8 @@ export type ChatCompletionMessage =
       role: 'assistant';
       content: string;
       tool_calls?: ChatCompletionToolCallMessageToolCall[];
+      assistantTextPhase?: AssistantTextPhase;
+      assistantTextSignature?: string;
       /**
        * Optional Pi SDK message payload (includes thinking/toolcall signatures).
        * Used only by the Pi SDK provider to preserve reasoning items across turns.

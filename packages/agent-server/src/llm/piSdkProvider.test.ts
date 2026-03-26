@@ -11,6 +11,7 @@ import { getModels, getProviders, streamSimple } from '@mariozechner/pi-ai';
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import {
   buildPiContext,
+  extractAssistantTextBlocksFromPiMessage,
   mapChatCompletionToolsToPiTools,
   resolvePiSdkModel,
   runPiSdkChatCompletionIteration,
@@ -215,6 +216,95 @@ describe('buildPiContext', () => {
     const toolResult = context.messages[1] as { role: string; toolCallId?: string };
     expect(toolResult.role).toBe('toolResult');
     expect(toolResult.toolCallId).toBe(toolCall?.id);
+  });
+
+  it('preserves assistant text signatures when reconstructing Pi context', () => {
+    const messages: ChatCompletionMessage[] = [
+      {
+        role: 'assistant',
+        content: 'Internal note',
+        assistantTextPhase: 'commentary',
+        assistantTextSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+      },
+      {
+        role: 'assistant',
+        content: 'Final answer',
+        assistantTextPhase: 'final_answer',
+        assistantTextSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+      },
+    ];
+
+    const context = buildPiContext({
+      messages,
+      tools: [],
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
+    });
+
+    expect(context.messages).toHaveLength(2);
+    expect(context.messages[0]).toMatchObject({
+      role: 'assistant',
+      content: [
+        {
+          type: 'text',
+          text: 'Internal note',
+          textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+        },
+      ],
+    });
+    expect(context.messages[1]).toMatchObject({
+      role: 'assistant',
+      content: [
+        {
+          type: 'text',
+          text: 'Final answer',
+          textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+        },
+      ],
+    });
+  });
+
+  it('extracts assistant text block phase metadata from Pi assistant messages', () => {
+    const blocks = extractAssistantTextBlocksFromPiMessage({
+      role: 'assistant',
+      content: [
+        {
+          type: 'text',
+          text: 'Internal note',
+          textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+        },
+        {
+          type: 'text',
+          text: 'Final answer',
+          textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+        },
+      ],
+      api: 'openai-responses',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    } as never);
+
+    expect(blocks).toEqual([
+      {
+        text: 'Internal note',
+        phase: 'commentary',
+        textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+      },
+      {
+        text: 'Final answer',
+        phase: 'final_answer',
+        textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+      },
+    ]);
   });
 });
 

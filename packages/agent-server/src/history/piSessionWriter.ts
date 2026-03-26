@@ -15,6 +15,7 @@ import type {
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
+import { encodeAssistantTextSignature } from '../llm/piSdkProvider';
 import { buildProviderAttributesPatch, getProviderAttributes } from './providerAttributes';
 
 type PiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -371,7 +372,16 @@ function buildAssistantMessage(options: {
 
   const blocks: Array<TextContent | ToolCall> = [];
   if (message.content) {
-    blocks.push({ type: 'text', text: message.content });
+    const textSignature =
+      message.assistantTextSignature ??
+      (message.assistantTextPhase
+        ? encodeAssistantTextSignature({ phase: message.assistantTextPhase })
+        : undefined);
+    blocks.push({
+      type: 'text',
+      text: message.content,
+      ...(textSignature ? { textSignature } : {}),
+    });
   }
   if (Array.isArray(message.tool_calls)) {
     for (const call of message.tool_calls) {

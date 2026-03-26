@@ -1,0 +1,296 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { ServerMessage } from '@assistant/shared';
+
+import { AgentRegistry } from '../agents';
+import type { EnvConfig } from '../envConfig';
+import type { EventStore } from '../events';
+import type { LogicalSessionState, SessionHub } from '../sessionHub';
+
+vi.mock('../llm/piSdkProvider', async () => {
+  const actual = await vi.importActual<typeof import('../llm/piSdkProvider')>('../llm/piSdkProvider');
+  return {
+    ...actual,
+    resolvePiSdkModel: vi.fn(),
+    runPiSdkChatCompletionIteration: vi.fn(),
+  };
+});
+
+vi.mock('../llm/piAgentAuth', () => ({
+  resolvePiAgentAuthApiKey: vi.fn(async () => undefined),
+}));
+
+import { handleTextInputWithChatCompletions } from './chatRunLifecycle';
+import { resolvePiSdkModel, runPiSdkChatCompletionIteration } from '../llm/piSdkProvider';
+
+function createTestEventStore(): EventStore {
+  return {
+    append: async () => {},
+    appendBatch: async () => {},
+    getEvents: async () => [],
+    getEventsSince: async () => [],
+    subscribe: () => () => {},
+    clearSession: async () => {},
+    deleteSession: async () => {},
+  };
+}
+
+function createEnvConfig(): EnvConfig {
+  return {
+    port: 0,
+    apiKey: 'test-api-key',
+    toolsEnabled: false,
+    dataDir: '/tmp/assistant-tests',
+    audioInputMode: 'manual',
+    audioSampleRate: 24000,
+    audioTranscriptionEnabled: false,
+    audioOutputVoice: undefined,
+    audioOutputSpeed: undefined,
+    ttsModel: 'gpt-4o-mini-tts',
+    ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
+    ttsBackend: 'openai',
+    elevenLabsApiKey: undefined,
+    elevenLabsVoiceId: undefined,
+    elevenLabsModelId: undefined,
+    elevenLabsBaseUrl: undefined,
+    maxMessagesPerMinute: 60,
+    maxAudioBytesPerMinute: 2_000_000,
+    maxToolCallsPerMinute: 30,
+    debugChatCompletions: false,
+    debugHttpRequests: false,
+  };
+}
+
+function encodePiCwd(cwd: string): string {
+  const stripped = cwd.replace(/^[/\\]/, '');
+  return `--${stripped.replace(/[\\/:]/g, '-')}--`;
+}
+
+describe('handleTextInputWithChatCompletions (pi)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses the canonical Pi transcript for replay and records only the final answer text', async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-replay-'));
+    const baseDir = path.join(os.homedir(), '.pi', 'agent', 'sessions', encodePiCwd(cwd));
+    await fs.mkdir(baseDir, { recursive: true });
+    const piSessionId = 'pi-session-1';
+    const sessionPath = path.join(baseDir, `2026-03-26T00-00-00-000Z_${piSessionId}.jsonl`);
+    const rawPiSession = [
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: piSessionId,
+        timestamp: '2026-03-26T00:00:00.000Z',
+        cwd,
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'u1',
+        parentId: null,
+        timestamp: '2026-03-26T00:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Earlier request' }],
+          timestamp: 1,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'a1',
+        parentId: 'u1',
+        timestamp: '2026-03-26T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'Working on it',
+              textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+            },
+            {
+              type: 'text',
+              text: 'Stored final answer',
+              textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: 2,
+        },
+      }),
+    ].join('\n');
+    await fs.writeFile(sessionPath, rawPiSession, 'utf8');
+
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const broadcast: ServerMessage[] = [];
+    const recordSessionActivity = vi.fn(async () => undefined);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {
+          providers: {
+            pi: {
+              sessionId: piSessionId,
+              cwd,
+            },
+          },
+        },
+      },
+      chatMessages: [
+        { role: 'system', content: 'System prompt' },
+        { role: 'assistant', content: 'polluted to=lists_items_list ...' },
+      ],
+    } as unknown as LogicalSessionState;
+
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    let replayMessagesAtCall:
+      | Array<{
+          role: string;
+          content?: string;
+          piSdkMessage?: unknown;
+        }>
+      | undefined;
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      replayMessagesAtCall = options.messages.map((message) => structuredClone(message));
+      return {
+        text: 'Working on itStored final answer',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'Working on it',
+              textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+            },
+            {
+              type: 'text',
+              text: 'Stored final answer',
+              textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        } as never,
+      };
+    });
+
+    await handleTextInputWithChatCompletions({
+      ready: true,
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(runPiSdkChatCompletionIteration).toHaveBeenCalledTimes(1);
+    expect(replayMessagesAtCall).toMatchObject([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'Earlier request' },
+      {
+        role: 'assistant',
+        content: 'Stored final answer',
+        piSdkMessage: {
+          role: 'assistant',
+          provider: 'openai-codex',
+        },
+      },
+      { role: 'user', content: 'Current request' },
+    ]);
+    expect(
+      replayMessagesAtCall?.some(
+        (message) =>
+          message.role === 'assistant' &&
+          typeof message.content === 'string' &&
+          message.content.includes('polluted'),
+      ),
+    ).toBe(false);
+
+    const textDone = broadcast.find((message) => message.type === 'text_done') as
+      | { text?: string }
+      | undefined;
+    expect(textDone?.text).toBe('Stored final answer');
+    expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
+    expect(state.chatMessages[state.chatMessages.length - 1]).toMatchObject({
+      role: 'assistant',
+      content: 'Stored final answer',
+    });
+  });
+});

@@ -67,34 +67,6 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   const partialText = run.accumulatedText.trim();
   const hasOutputActivity =
     Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || partialText.length > 0;
-  if (partialText.length > 0) {
-    if (eventStore) {
-      const events: ChatEvent[] = [
-        {
-          ...createChatEventBase({
-            sessionId,
-            ...(run.turnId ? { turnId: run.turnId } : {}),
-            ...(run.responseId ? { responseId: run.responseId } : {}),
-          }),
-          type: 'assistant_done',
-          payload: { text: partialText },
-        },
-      ];
-      void appendAndBroadcastChatEvents(
-        {
-          eventStore,
-          sessionHub,
-          sessionId,
-        },
-        events,
-      );
-    }
-
-    void sessionHub.recordSessionActivity(
-      sessionId,
-      partialText.length > 120 ? `${partialText.slice(0, 117)}…` : partialText,
-    );
-  }
 
   if (activeToolCalls && activeToolCalls.size > 0) {
     for (const [, call] of activeToolCalls) {

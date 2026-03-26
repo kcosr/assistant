@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ChatEventSchema } from './chatEvents';
+import { AssistantTextPhaseSchema, ChatEventSchema } from './chatEvents';
 import { PanelEventEnvelopeSchema } from './panelProtocol';
 
 export const CURRENT_PROTOCOL_VERSION = 2 as const;
@@ -318,6 +318,8 @@ export const ServerTextDeltaMessageSchema = z.object({
   responseId: z.string(),
   sessionId: z.string().optional(),
   delta: z.string().min(1),
+  phase: AssistantTextPhaseSchema.optional(),
+  textSignature: z.string().optional(),
 });
 
 export const ServerTextDoneMessageSchema = z.object({
@@ -325,6 +327,8 @@ export const ServerTextDoneMessageSchema = z.object({
   responseId: z.string(),
   sessionId: z.string().optional(),
   text: z.string(),
+  phase: AssistantTextPhaseSchema.optional(),
+  textSignature: z.string().optional(),
   /**
    * Optional identifier used to group messages that belong to a single
    * agent-to-agent exchange initiated via agents_message.

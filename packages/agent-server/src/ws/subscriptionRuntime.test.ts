@@ -221,7 +221,7 @@ describe('SessionRuntime subscription message handlers', () => {
     expect(remainingSessionIds.length).toBeGreaterThanOrEqual(0);
   });
 
-  it('cancels active chat run when setting session model', async () => {
+  it('updates session model without cancelling the active chat run', async () => {
     const sessionsFile = createTempFile('subscription-runtime-model-cancel-sessions');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -260,8 +260,63 @@ describe('SessionRuntime subscription message handlers', () => {
     // @ts-expect-error accessing private method for test
     await runtime.handleSetSessionModel(message);
 
-    expect(abortController.signal.aborted).toBe(true);
-    expect(state.activeChatRun?.outputCancelled).toBe(true);
+    expect(abortController.signal.aborted).toBe(false);
+    expect(state.activeChatRun?.outputCancelled).not.toBe(true);
+    expect(state.summary.model).toBe('openai/gpt-4o-mini');
+
+    const persisted = await sessionIndex.getSession(summary.sessionId);
+    expect(persisted?.model).toBe('openai/gpt-4o-mini');
+  });
+
+  it('updates session thinking without cancelling the active chat run', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-thinking-pending-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'test-agent',
+        displayName: 'Test Agent',
+        description: 'Test agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai/gpt-5.2', 'openai/gpt-4o-mini'],
+          thinking: ['medium', 'xhigh'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({
+      agentId: 'test-agent',
+      thinking: 'medium',
+    });
+    const { runtime } = createRuntime({
+      sessionHub,
+      sessionId: summary.sessionId,
+      subscriptions: [summary.sessionId],
+    });
+
+    const state = await sessionHub.ensureSessionState(summary.sessionId);
+    const abortController = new AbortController();
+    state.activeChatRun = {
+      responseId: 'resp-2',
+      abortController,
+      accumulatedText: '',
+    };
+
+    const message = {
+      type: 'set_session_thinking',
+      sessionId: summary.sessionId,
+      thinking: 'xhigh',
+    } as const;
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleSetSessionThinking(message);
+
+    expect(abortController.signal.aborted).toBe(false);
+    expect(state.activeChatRun?.outputCancelled).not.toBe(true);
+    expect(state.summary.thinking).toBe('xhigh');
+
+    const persisted = await sessionIndex.getSession(summary.sessionId);
+    expect(persisted?.thinking).toBe('xhigh');
   });
 
   it('handles output cancel when active run is not tracked on the connection', async () => {

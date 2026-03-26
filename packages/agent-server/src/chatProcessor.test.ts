@@ -10,6 +10,37 @@ vi.mock('./llm/piSdkProvider', () => {
   return {
     runPiSdkChatCompletionIteration: vi.fn(),
     resolvePiSdkModel: vi.fn(),
+    extractAssistantTextBlocksFromPiMessage: vi.fn((message: { content?: Array<Record<string, unknown>> } | undefined) => {
+      const content = Array.isArray(message?.content) ? message.content : [];
+      return content
+        .filter(
+          (block): block is Record<string, unknown> =>
+            Boolean(block) &&
+            typeof block === 'object' &&
+            block['type'] === 'text' &&
+            typeof block['text'] === 'string',
+        )
+        .map((block) => {
+          const textSignature =
+            typeof block['textSignature'] === 'string' ? block['textSignature'] : undefined;
+          let phase: 'commentary' | 'final_answer' | undefined;
+          if (textSignature?.startsWith('{')) {
+            try {
+              const parsed = JSON.parse(textSignature) as { phase?: unknown };
+              if (parsed.phase === 'commentary' || parsed.phase === 'final_answer') {
+                phase = parsed.phase;
+              }
+            } catch {
+              // ignore malformed signatures in tests
+            }
+          }
+          return {
+            text: String(block['text']),
+            ...(phase ? { phase } : {}),
+            ...(textSignature ? { textSignature } : {}),
+          };
+        });
+    }),
   };
 });
 
@@ -254,5 +285,138 @@ describe('processUserMessage stream event emission', () => {
         ttsBackendFactory: null,
       }),
     ).rejects.toMatchObject({ code: 'tool_iteration_limit' });
+  });
+
+  it('emits commentary and final assistant_done events from Pi assistant text blocks', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      await options.onDeltaText?.('Final answer', 'Final answer', 'final_answer');
+      return {
+        text: 'Final answer',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'Internal note',
+              textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+            },
+            {
+              type: 'text',
+              text: 'Final answer',
+              textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        },
+      };
+    });
+
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const sessionHub: SessionHub = {
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await processUserMessage({
+      sessionId: 's1',
+      state,
+      text: 'hi',
+      sessionHub,
+      envConfig: {
+        apiKey: 'test-api-key',
+        port: 0,
+        toolsEnabled: false,
+        dataDir: '/tmp/assistant-tests',
+        audioInputMode: 'manual',
+        audioSampleRate: 24000,
+        audioTranscriptionEnabled: false,
+        audioOutputVoice: undefined,
+        audioOutputSpeed: undefined,
+        ttsModel: 'gpt-4o-mini-tts',
+        ttsVoice: undefined,
+        ttsFrameDurationMs: 250,
+        ttsBackend: 'openai',
+        elevenLabsApiKey: undefined,
+        elevenLabsVoiceId: undefined,
+        elevenLabsModelId: undefined,
+        elevenLabsBaseUrl: undefined,
+        maxMessagesPerMinute: 60,
+        maxAudioBytesPerMinute: 2_000_000,
+        maxToolCallsPerMinute: 30,
+        debugChatCompletions: false,
+        debugHttpRequests: false,
+      } as EnvConfig,
+      chatCompletionTools: [],
+      handleChatToolCalls: async () => undefined,
+      outputMode: 'text',
+      ttsBackendFactory: null,
+      eventStore,
+    });
+
+    const assistantDoneEvents = events.filter(
+      (event) => event.type === 'assistant_done',
+    ) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+    expect(
+      assistantDoneEvents.map((event) => ({
+        text: event.payload.text,
+        phase: event.payload.phase,
+      })),
+    ).toEqual([
+      { text: 'Internal note', phase: 'commentary' },
+      { text: 'Final answer', phase: 'final_answer' },
+    ]);
   });
 });
