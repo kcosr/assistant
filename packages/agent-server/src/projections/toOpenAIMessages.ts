@@ -21,7 +21,7 @@ function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }):
 }
 
 function isReplayableAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
-  return event.payload.phase !== 'commentary';
+  return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
 }
 
 export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {

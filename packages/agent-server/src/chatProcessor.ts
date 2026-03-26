@@ -423,8 +423,9 @@ export async function processUserMessage(
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const messagesForPiSync = runResult.piReplayMessages ?? state.chatMessages;
           const messages = attachPiSdkMessageToLastAssistant({
-            messages: state.chatMessages,
+            messages: messagesForPiSync,
             ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
           });
           const updatedSummary = await piSessionWriter.sync({
@@ -526,9 +527,19 @@ export async function processUserMessage(
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const messagesForPiSync = runResult.piReplayMessages
+            ? [
+                ...runResult.piReplayMessages,
+                {
+                  role: 'assistant' as const,
+                  content: visibleAssistant.text,
+                  ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+                },
+              ]
+            : state.chatMessages;
           const updatedSummary = await piSessionWriter.sync({
             summary: state.summary,
-            messages: state.chatMessages,
+            messages: messagesForPiSync,
             ...(modelSpec ? { modelSpec } : {}),
             ...(defaultProvider ? { defaultProvider } : {}),
             ...(thinkingLevel ? { thinkingLevel } : {}),

@@ -1354,6 +1354,36 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         continue;
       }
 
+      if (chatEventType === 'assistant_done' && payload) {
+        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+        if (!text.trim()) {
+          continue;
+        }
+        const phase =
+          payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
+            ? payload['phase']
+            : undefined;
+        const textSignature =
+          typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
+        const interrupted = payload['interrupted'] === true ? true : undefined;
+        const turnId = turnIdFromEntry || currentTurnId || '';
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+          ...(responseIdFromEntry ? { responseId: responseIdFromEntry } : {}),
+          type: 'assistant_done',
+          payload: {
+            text,
+            ...(phase ? { phase } : {}),
+            ...(textSignature ? { textSignature } : {}),
+            ...(interrupted ? { interrupted } : {}),
+          },
+        });
+        continue;
+      }
+
       if (chatEventType === 'interrupt') {
         const reason =
           payload && typeof payload['reason'] === 'string' ? (payload['reason'] as string) : '';

@@ -64,10 +64,12 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   const activeToolCalls = run.activeToolCalls;
   const hadActiveToolCalls = !!(activeToolCalls && activeToolCalls.size > 0);
 
-  const partialText = run.accumulatedText.trim();
+  const partialText = run.accumulatedText;
+  const hasPartialText = partialText.trim().length > 0;
   const hasOutputActivity =
-    Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || partialText.length > 0;
+    Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || hasPartialText;
 
+  const toolResultEvents: ChatEvent[] = [];
   if (activeToolCalls && activeToolCalls.size > 0) {
     for (const [, call] of activeToolCalls) {
       const errorPayload = {
@@ -97,28 +99,19 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
       sessionHub.broadcastToSession(sessionId, messagePayload);
 
       if (eventStore && run.turnId && run.responseId) {
-        void appendAndBroadcastChatEvents(
-          {
-            eventStore,
-            sessionHub,
+        toolResultEvents.push({
+          ...createChatEventBase({
             sessionId,
+            ...(run.turnId ? { turnId: run.turnId } : {}),
+            ...(run.responseId ? { responseId: run.responseId } : {}),
+          }),
+          type: 'tool_result',
+          payload: {
+            toolCallId: call.callId,
+            result: null,
+            error: errorPayload,
           },
-          [
-            {
-              ...createChatEventBase({
-                sessionId,
-                ...(run.turnId ? { turnId: run.turnId } : {}),
-                ...(run.responseId ? { responseId: run.responseId } : {}),
-              }),
-              type: 'tool_result',
-              payload: {
-                toolCallId: call.callId,
-                result: null,
-                error: errorPayload,
-              },
-            },
-          ],
-        );
+        });
       }
     }
     activeToolCalls.clear();
@@ -129,7 +122,23 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   if (eventStore && hasOutputActivity) {
     const turnId = run.turnId;
     const responseId = run.responseId;
-    const events: ChatEvent[] = [
+    const events: ChatEvent[] = [];
+    if (hasPartialText) {
+      events.push({
+        ...createChatEventBase({
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+          ...(responseId ? { responseId } : {}),
+        }),
+        type: 'assistant_done',
+        payload: {
+          text: partialText,
+          interrupted: true,
+        },
+      });
+    }
+    events.push(...toolResultEvents);
+    events.push(
       {
         ...createChatEventBase({
           sessionId,
@@ -139,7 +148,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         type: 'interrupt',
         payload: { reason: 'user_cancel' },
       },
-    ];
+    );
     void appendAndBroadcastChatEvents(
       {
         eventStore,
@@ -155,18 +164,33 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     const agentId = state.summary.agentId;
     const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
     if (agent?.chat?.provider === 'pi') {
-      void piSessionWriter
-        .appendAssistantEvent({
-          summary: state.summary,
-          eventType: 'interrupt',
-          payload: { reason: 'user_cancel' },
-          ...(run.turnId ? { turnId: run.turnId } : {}),
-          ...(run.responseId ? { responseId: run.responseId } : {}),
-          updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-        })
-        .catch((err) => {
+      void (async () => {
+        try {
+          if (hasPartialText) {
+            await piSessionWriter.appendAssistantEvent({
+              summary: state.summary,
+              eventType: 'assistant_done',
+              payload: {
+                text: partialText,
+                interrupted: true,
+              },
+              ...(run.turnId ? { turnId: run.turnId } : {}),
+              ...(run.responseId ? { responseId: run.responseId } : {}),
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+          }
+          await piSessionWriter.appendAssistantEvent({
+            summary: state.summary,
+            eventType: 'interrupt',
+            payload: { reason: 'user_cancel' },
+            ...(run.turnId ? { turnId: run.turnId } : {}),
+            ...(run.responseId ? { responseId: run.responseId } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+        } catch (err) {
           log('failed to persist interrupt into Pi session history', err);
-        });
+        }
+      })();
     }
   }
 

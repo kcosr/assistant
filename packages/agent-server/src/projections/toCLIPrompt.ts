@@ -16,7 +16,7 @@ function formatAgentCallbackLine(event: ChatEvent & { type: 'agent_callback' }):
 }
 
 function isPromptAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
-  return event.payload.phase !== 'commentary';
+  return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
 }
 
 function buildTranscript(events: ChatEvent[]): string {

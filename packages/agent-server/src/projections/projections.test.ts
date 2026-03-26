@@ -151,6 +151,40 @@ describe('toOpenAIMessages', () => {
     expect(toClaudeCLIPrompt(events)).toContain('Assistant: Visible answer');
     expect(toClaudeCLIPrompt(events)).not.toContain('Internal note');
   });
+
+  it('skips interrupted assistant text in generic replay and summary projections', () => {
+    const events: ChatEvent[] = [
+      {
+        ...baseEvent('assistant_done'),
+        type: 'assistant_done',
+        payload: { text: 'Partial answer', interrupted: true },
+      },
+      {
+        ...baseEvent('interrupt'),
+        type: 'interrupt',
+        payload: { reason: 'user_cancel' },
+      },
+      {
+        ...baseEvent('assistant_done'),
+        id: 'assistant-done-final-2',
+        type: 'assistant_done',
+        payload: { text: 'Visible answer' },
+      },
+    ];
+
+    const messages = toOpenAIMessages(events);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: 'assistant',
+      content: 'Visible answer',
+    });
+
+    const summary = toSessionSummary(events);
+    expect(summary.lastMessage).toBe('Visible answer');
+
+    expect(toClaudeCLIPrompt(events)).toContain('Assistant: Visible answer');
+    expect(toClaudeCLIPrompt(events)).not.toContain('Partial answer');
+  });
 });
 
 describe('CLI prompt projections', () => {

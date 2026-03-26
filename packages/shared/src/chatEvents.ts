@@ -61,6 +61,7 @@ export const AssistantDonePayloadSchema = z.object({
   text: z.string(),
   phase: AssistantTextPhaseSchema.optional(),
   textSignature: z.string().optional(),
+  interrupted: z.boolean().optional(),
 });
 export type AssistantDonePayload = z.infer<typeof AssistantDonePayloadSchema>;
 

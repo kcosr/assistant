@@ -287,6 +287,17 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       | undefined;
     expect(textDone?.text).toBe('Stored final answer');
     expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
+    expect(state.chatMessages).toMatchObject([
+      { role: 'system', content: 'System prompt' },
+      { role: 'assistant', content: 'polluted to=lists_items_list ...' },
+      { role: 'user', content: 'Current request' },
+      { role: 'assistant', content: 'Stored final answer' },
+    ]);
+    expect(
+      state.chatMessages.some(
+        (message) => message.role === 'user' && message.content === 'Earlier request',
+      ),
+    ).toBe(false);
     expect(state.chatMessages[state.chatMessages.length - 1]).toMatchObject({
       role: 'assistant',
       content: 'Stored final answer',

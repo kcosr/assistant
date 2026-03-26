@@ -223,6 +223,21 @@ describe('PiSessionHistoryProvider', () => {
       }),
       JSON.stringify({
         type: 'custom',
+        id: 'event-partial-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:02.750Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'assistant_done',
+          payload: {
+            text: 'Interrupted partial',
+            interrupted: true,
+          },
+          responseId: 'resp-2',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
         id: 'event-2',
         parentId: null,
         timestamp: '2026-01-20T00:00:03.000Z',
@@ -281,6 +296,14 @@ describe('PiSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'interrupt' }>
       | undefined;
     expect(interruptEvent?.payload.reason).toBe('user_cancel');
+
+    const interruptedAssistant = events.find(
+      (event) => event.type === 'assistant_done' && event.payload.text === 'Interrupted partial',
+    ) as Extract<ChatEvent, { type: 'assistant_done' }> | undefined;
+    expect(interruptedAssistant?.payload).toMatchObject({
+      text: 'Interrupted partial',
+      interrupted: true,
+    });
 
     const interactionEvent = events.find((event) => event.type === 'interaction_request') as
       | Extract<ChatEvent, { type: 'interaction_request' }>

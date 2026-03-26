@@ -139,6 +139,9 @@ export function buildChatMessagesFromEvents(
         if (!responseId) {
           break;
         }
+        if (event.payload.interrupted === true) {
+          break;
+        }
         if (interruptedResponseIds.has(responseId)) {
           break;
         }

@@ -99,6 +99,7 @@ export interface ChatRunCoreResult {
   provider: ChatProvider;
   aborted: boolean;
   piSdkMessage?: PiSdkMessage;
+  piReplayMessages?: ChatCompletionMessage[];
 }
 
 export class ChatRunError extends Error {
@@ -530,6 +531,7 @@ export async function runChatCompletionCore(
   let aborted = false;
   let finalPiSdkMessage: PiSdkMessage | undefined;
   let lastPiSdkMessage: PiSdkMessage | undefined;
+  let piReplayMessages: ChatCompletionMessage[] | undefined;
 
   if (provider === 'claude-cli') {
     const claudeConfig = agent?.chat?.config as ClaudeCliChatConfig | undefined;
@@ -831,6 +833,7 @@ export async function runChatCompletionCore(
     fullText = piText;
   } else if (provider === 'pi') {
     let iterations = 0;
+    piReplayMessages = state.chatMessages;
 
     const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
       summary: state.summary,
@@ -849,12 +852,14 @@ export async function runChatCompletionCore(
           lastCanonical?.role === 'user' &&
           lastCanonical.content === currentUserMessage.content
         );
-      state.chatMessages = [
+      piReplayMessages = [
         ...(systemMessage ? [systemMessage] : []),
         ...canonicalReplayMessages,
         ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
       ];
     }
+    const piStateForRun =
+      piReplayMessages === state.chatMessages ? state : { ...state, chatMessages: piReplayMessages };
 
     const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
     const maxToolIterations = piConfig?.maxToolIterations ?? 100;
@@ -914,7 +919,7 @@ export async function runChatCompletionCore(
       const { text: iterationText, toolCalls, aborted: piAborted, assistantMessage } =
         await runPiSdkChatCompletionIteration({
           model: resolvedModel.model,
-          messages: state.chatMessages,
+          messages: piStateForRun.chatMessages,
           tools: chatCompletionTools,
           abortSignal: abortController.signal,
           onToolCallStart: (info) => {
@@ -1052,11 +1057,18 @@ export async function runChatCompletionCore(
         piSdkMessage: assistantMessage,
       };
 
-      state.chatMessages.push(assistantToolCallMessage);
+      piStateForRun.chatMessages.push(assistantToolCallMessage);
+      if (piStateForRun !== state) {
+        state.chatMessages.push(assistantToolCallMessage);
+      }
 
+      const toolMessagesStart = piStateForRun.chatMessages.length;
       const toolRunStart = Date.now();
-      await handleChatToolCalls(sessionId, state, toolCalls);
+      await handleChatToolCalls(sessionId, piStateForRun, toolCalls);
       const toolRunDurationMs = Date.now() - toolRunStart;
+      if (piStateForRun !== state && piStateForRun.chatMessages.length > toolMessagesStart) {
+        state.chatMessages.push(...piStateForRun.chatMessages.slice(toolMessagesStart));
+      }
 
       if (onToolCallMetric) {
         for (const call of toolCalls) {
@@ -1104,5 +1116,6 @@ export async function runChatCompletionCore(
     ...(provider === 'pi' && resolvedPiSdkMessage
       ? { piSdkMessage: resolvedPiSdkMessage }
       : {}),
+    ...(provider === 'pi' && piReplayMessages ? { piReplayMessages } : {}),
   };
 }

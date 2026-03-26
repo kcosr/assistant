@@ -71,6 +71,7 @@ describe('chat event validation', () => {
         text: 'Done.',
         phase: 'final_answer',
         textSignature: '{"v":1,"id":"msg-1","phase":"final_answer"}',
+        interrupted: true,
       },
     };
 
@@ -79,6 +80,7 @@ describe('chat event validation', () => {
     if (result.success && result.data.type === 'assistant_done') {
       expect(result.data.payload.text).toBe('Done.');
       expect(result.data.payload.phase).toBe('final_answer');
+      expect(result.data.payload.interrupted).toBe(true);
     }
   });
 

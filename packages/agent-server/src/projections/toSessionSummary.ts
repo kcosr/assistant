@@ -16,7 +16,7 @@ function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }):
 }
 
 function isSummaryAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
-  return event.payload.phase !== 'commentary';
+  return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
 }
 
 function truncate(text: string, maxLength: number): string {
