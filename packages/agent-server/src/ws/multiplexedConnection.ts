@@ -177,30 +177,6 @@ export class MultiplexedConnection implements SessionConnection {
       value;
   }
 
-  get chatCompletionTools(): unknown[] | undefined {
-    return (this.runtime as unknown as { chatCompletionTools?: unknown[] }).chatCompletionTools;
-  }
-
-  get sessionToolHost(): ToolHost | undefined {
-    return (this.runtime as unknown as { sessionToolHost?: ToolHost }).sessionToolHost;
-  }
-
-  configureSessionToolHost(): void {
-    (
-      this.runtime as unknown as {
-        configureSessionToolHost(): void;
-      }
-    ).configureSessionToolHost();
-  }
-
-  configureChatCompletionsSession(): Promise<void> {
-    return (
-      this.runtime as unknown as {
-        configureChatCompletionsSession(): Promise<void>;
-      }
-    ).configureChatCompletionsSession();
-  }
-
   async handleChatToolCalls(
     sessionId: string,
     state: LogicalSessionState,
@@ -208,9 +184,7 @@ export class MultiplexedConnection implements SessionConnection {
     sessionToolHost?: ToolHost,
   ): Promise<void> {
     const resolvedToolHost =
-      sessionToolHost ??
-      this.sessionToolHost ??
-      (this.runtime as unknown as { baseToolHost?: ToolHost }).baseToolHost;
+      sessionToolHost ?? (this.runtime as unknown as { baseToolHost?: ToolHost }).baseToolHost;
     if (!resolvedToolHost) {
       throw new Error('Session tool host is not initialised');
     }

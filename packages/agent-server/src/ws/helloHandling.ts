@@ -19,7 +19,6 @@ export interface HandleHelloOptions {
   sessionHub: SessionHub;
   setSessionState: (state: LogicalSessionState) => void;
   setSessionId: (sessionId: string) => void;
-  configureChatCompletionsSession: () => void;
   onSessionSubscribed?: (state: LogicalSessionState) => void;
   sendMessage: (message: ServerMessage) => void;
   sendError: (
@@ -42,7 +41,6 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
     sessionHub,
     setSessionState,
     setSessionId,
-    configureChatCompletionsSession,
     onSessionSubscribed,
     sendMessage,
     sendError,
@@ -150,5 +148,4 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
     }
   }
 
-  configureChatCompletionsSession();
 }

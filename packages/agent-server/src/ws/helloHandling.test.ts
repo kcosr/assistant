@@ -50,7 +50,6 @@ describe('handleHello', () => {
 
     const setSessionState = vi.fn();
     const setSessionId = vi.fn();
-    const configureChatCompletionsSession = vi.fn();
     const sendMessage = vi.fn();
     const sendError = vi.fn();
     const close = vi.fn();
@@ -70,7 +69,6 @@ describe('handleHello', () => {
       sessionHub,
       setSessionState,
       setSessionId,
-      configureChatCompletionsSession,
       sendMessage,
       sendError,
       close,
@@ -79,8 +77,6 @@ describe('handleHello', () => {
     expect(sendError).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
     expect(setSessionId).toHaveBeenCalledWith(summary.sessionId);
-    expect(configureChatCompletionsSession).toHaveBeenCalledTimes(1);
-
     const subs = Array.from(sessionHub.getConnectionSubscriptions(connection));
     expect(subs).toContain(summary.sessionId);
   });
@@ -106,7 +102,6 @@ describe('handleHello', () => {
 
     const setSessionState = vi.fn();
     const setSessionId = vi.fn();
-    const configureChatCompletionsSession = vi.fn();
     const sentMessages: ServerMessage[] = [];
     const sendMessage = (msg: ServerMessage): void => {
       sentMessages.push(msg);
@@ -129,7 +124,6 @@ describe('handleHello', () => {
       sessionHub,
       setSessionState,
       setSessionId,
-      configureChatCompletionsSession,
       sendMessage,
       sendError,
       close,
@@ -155,7 +149,6 @@ describe('handleHello', () => {
     };
     expect(activeState?.summary?.sessionId).toBe(sessionA.sessionId);
     expect(setSessionId).toHaveBeenCalledWith(sessionA.sessionId);
-    expect(configureChatCompletionsSession).toHaveBeenCalledTimes(1);
   });
 
   it('rejects unsupported protocol versions', async () => {
@@ -193,7 +186,6 @@ describe('handleHello', () => {
       sessionHub,
       setSessionState: () => {},
       setSessionId: () => {},
-      configureChatCompletionsSession: () => {},
       sendMessage: () => {},
       sendError,
       close,

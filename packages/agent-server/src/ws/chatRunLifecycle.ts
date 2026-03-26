@@ -100,6 +100,7 @@ export async function handleTextInputWithChatCompletions(options: {
   ) => void;
   log: (...args: unknown[]) => void;
   eventStore: EventStore;
+  debugChatCompletionsContext?: unknown;
 }): Promise<void> {
   const {
     ready,
@@ -119,6 +120,7 @@ export async function handleTextInputWithChatCompletions(options: {
     sendError,
     log,
     eventStore,
+    debugChatCompletionsContext,
   } = options;
 
   if (!ready) {
@@ -314,6 +316,9 @@ export async function handleTextInputWithChatCompletions(options: {
       shouldEmitChatEvents,
       includeAgentExchangeIdInMessages: false,
       trackTextStartedAt: true,
+      ...(debugChatCompletionsContext !== undefined
+        ? { debugChatCompletionsContext }
+        : {}),
       log,
       ...(agent ? { agent } : {}),
       ...(eventStore ? { eventStore } : {}),

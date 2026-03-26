@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type {
   AssistantTextPhase,
   ChatEvent,
@@ -27,7 +30,6 @@ import {
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
-import os from 'node:os';
 import { resolvePiAgentAuthApiKey } from './llm/piAgentAuth';
 
 import {
@@ -87,6 +89,7 @@ export interface ChatRunCoreOptions {
   includeAgentExchangeIdInMessages: boolean;
   trackTextStartedAt: boolean;
   onToolCallMetric?: (toolName: string, durationMs: number) => void;
+  debugChatCompletionsContext?: unknown;
   log: (...args: unknown[]) => void;
 }
 
@@ -135,6 +138,8 @@ const SENSITIVE_DEBUG_KEYS = new Set([
   'anthropic-api-key',
   'anthropic-oauth-token',
 ]);
+
+const debugChatCompletionLogWrites = new Map<string, Promise<void>>();
 
 function redactDebugPayload(value: unknown): unknown {
   const seen = new WeakSet<object>();
@@ -190,6 +195,35 @@ function redactDebugPayload(value: unknown): unknown {
   };
 
   return redactValue(value);
+}
+
+export function formatDebugPayloadForLog(value: unknown): string {
+  return JSON.stringify(redactDebugPayload(value), null, 2);
+}
+
+export function getDebugChatCompletionsLogPath(dataDir: string): string {
+  return path.join(dataDir, 'logs', 'chat-completions.jsonl');
+}
+
+export async function appendDebugChatCompletionsLogRecord(options: {
+  dataDir: string;
+  record: unknown;
+}): Promise<string> {
+  const filePath = getDebugChatCompletionsLogPath(options.dataDir);
+  const line = `${JSON.stringify(redactDebugPayload(options.record))}\n`;
+  const previous = debugChatCompletionLogWrites.get(filePath) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(async () => {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.appendFile(filePath, line, 'utf8');
+    });
+  debugChatCompletionLogWrites.set(filePath, next);
+  await next;
+  if (debugChatCompletionLogWrites.get(filePath) === next) {
+    debugChatCompletionLogWrites.delete(filePath);
+  }
+  return filePath;
 }
 
 export function resolveChatProvider(agent?: AgentDefinition): {
@@ -472,6 +506,7 @@ export async function runChatCompletionCore(
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
     onToolCallMetric,
+    debugChatCompletionsContext,
     log,
   } = options;
 
@@ -925,28 +960,58 @@ export async function runChatCompletionCore(
           ...(debugChatCompletions
             ? {
                 onPayload: (payload) => {
-                  log('pi chat request', {
+                  const record = {
+                    timestamp: new Date().toISOString(),
+                    direction: 'request',
                     sessionId,
                     responseId,
                     iteration: iterationIndex,
                     provider: resolvedModel.providerId,
                     model: resolvedModel.model.id,
-                    payload: redactDebugPayload(payload),
+                    ...(debugChatCompletionsContext !== undefined
+                      ? { debugContext: debugChatCompletionsContext }
+                      : {}),
+                    payload,
+                  };
+                  log(
+                    'pi chat request',
+                    formatDebugPayloadForLog(record),
+                  );
+                  void appendDebugChatCompletionsLogRecord({
+                    dataDir: envConfig.dataDir,
+                    record,
+                  }).catch((error) => {
+                    log('failed to write pi chat request debug log', String(error));
                   });
                 },
                 onResponse: (response) => {
-                  log('pi chat response', {
+                  const record = {
+                    timestamp: new Date().toISOString(),
+                    direction: 'response',
                     sessionId,
                     responseId,
                     iteration: iterationIndex,
                     provider: resolvedModel.providerId,
                     model: resolvedModel.model.id,
+                    ...(debugChatCompletionsContext !== undefined
+                      ? { debugContext: debugChatCompletionsContext }
+                      : {}),
                     response: {
                       text: response.text,
                       toolCalls: response.toolCalls,
                       aborted: response.aborted,
-                      message: redactDebugPayload(response.message),
+                      message: response.message,
                     },
+                  };
+                  log(
+                    'pi chat response',
+                    formatDebugPayloadForLog(record),
+                  );
+                  void appendDebugChatCompletionsLogRecord({
+                    dataDir: envConfig.dataDir,
+                    record,
+                  }).catch((error) => {
+                    log('failed to write pi chat response debug log', String(error));
                   });
                 },
               }
