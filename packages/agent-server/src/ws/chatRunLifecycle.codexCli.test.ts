@@ -108,7 +108,6 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'run cmd', sessionId: 's1' },
       state,
       sessionId: 's1',

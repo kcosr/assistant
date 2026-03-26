@@ -241,7 +241,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
       state,
       sessionId: 's1',

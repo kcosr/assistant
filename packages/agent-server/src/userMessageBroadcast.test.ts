@@ -125,13 +125,9 @@ describe('user message broadcast', () => {
       eventStore,
     });
 
-    const state1 = await sessionHub.attachConnection(session1, summary.sessionId);
-    (session1 as unknown as { sessionId?: string }).sessionId = state1.summary.sessionId;
-    (session1 as unknown as { sessionState?: unknown }).sessionState = state1;
+    await sessionHub.attachConnection(session1, summary.sessionId);
 
-    const state2 = await sessionHub.attachConnection(session2, summary.sessionId);
-    (session2 as unknown as { sessionId?: string }).sessionId = state2.summary.sessionId;
-    (session2 as unknown as { sessionState?: unknown }).sessionState = state2;
+    await sessionHub.attachConnection(session2, summary.sessionId);
 
     const before1 = ws1.sent.length;
     const before2 = ws2.sent.length;

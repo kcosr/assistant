@@ -74,7 +74,6 @@ function buildAssistantDoneEvents(options: {
 }
 
 export async function handleTextInputWithChatCompletions(options: {
-  ready?: boolean;
   message: ClientTextInputMessage;
   state: LogicalSessionState | undefined;
   sessionId: string | undefined;
