@@ -579,6 +579,70 @@ describe('PiSessionHistoryProvider', () => {
     expect(firstThinkingIndex).toBeLessThan(toolCallIndex);
     expect(toolCallIndex).toBeLessThan(secondThinkingIndex);
   });
+
+  it('drops commentary-phase assistant text and keeps final answers', async () => {
+    const baseDir = await createTempDir('pi-session-history-phase');
+    const sessionId = 'session-phase';
+    const piSessionId = 'pi-session-phase';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-23T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-commentary',
+          content: [
+            {
+              type: 'text',
+              text: '{"tool":"noop"}',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-1', phase: 'commentary' }),
+            },
+            {
+              type: 'text',
+              text: 'Actual answer',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-final-1', phase: 'final_answer' }),
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-commentary-only',
+          content: [
+            {
+              type: 'text',
+              text: 'internal commentary only',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-2', phase: 'commentary' }),
+            },
+          ],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const assistantEvents = events.filter(
+      (event) => event.type === 'assistant_done',
+    ) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+    expect(assistantEvents.map((event) => event.payload.text)).toEqual(['Actual answer']);
+  });
 });
 
 describe('ClaudeSessionHistoryProvider', () => {

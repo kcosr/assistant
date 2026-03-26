@@ -10,13 +10,16 @@
 ### Changed
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#123](<pr-url>))
 - Changed lists item listing and search defaults to return up to 100 items when no explicit limit is provided. ([#123](<pr-url>))
+- Updated `@mariozechner/pi-ai` in `@assistant/agent-server` to the latest 0.62.x release. ([#123](<pr-url>))
 
 ### Fixed
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#123](<pr-url>))
 - Fixed modal lists panels to close on Escape from list mode instead of switching to browser mode. ([#123](<pr-url>))
 - Fixed confirm dialog button flows leaving `hasOpenDialog` stuck true, which could disable keyboard shortcuts until refresh. ([#123](<pr-url>))
-- Fixed lists touch multi-select to use a longer hold-without-movement selection mode while preserving short-hold drag, and made selected rows more prominent across platforms. ([#123](<pr-url>))
+- Fixed lists bulk selection to use a longer hold-without-movement selection mode while preserving short-hold drag, made selected rows more prominent across platforms, and kept bulk Actions menus in sync with the current selection. ([#123](<pr-url>))
 - Fixed markdown preparation to stop auto-closing unmatched underscore emphasis markers. ([#123](<pr-url>))
+- Fixed Pi-backed session reloads to skip OpenAI Responses `commentary` text blocks instead of replaying them as normal assistant history. ([#123](<pr-url>))
+- Fixed Android share-target cold starts to retain the first incoming share until the web app listener is ready. ([#123](<pr-url>))
 
 ### Removed
 

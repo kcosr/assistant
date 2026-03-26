@@ -1600,7 +1600,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           }
 
           if (normalized === 'text') {
-            const text = extractTextValue(block['text'] ?? block['content']);
+            const text = extractAssistantTextBlock(block);
             if (text) {
               textBuffer += text;
             }
@@ -1618,7 +1618,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             continue;
           }
 
-          const text = extractTextValue(block['text'] ?? block['content']);
+          const text = extractAssistantTextBlock(block);
           if (text) {
             textBuffer += text;
           }
@@ -2131,6 +2131,28 @@ function extractTextValue(value: unknown): string {
     }
   }
   return '';
+}
+
+function extractAssistantTextBlock(block: Record<string, unknown>): string {
+  if (getTextSignaturePhase(block['textSignature']) === 'commentary') {
+    return '';
+  }
+  return extractTextValue(block['text'] ?? block['content']);
+}
+
+function getTextSignaturePhase(signature: unknown): 'commentary' | 'final_answer' | null {
+  if (typeof signature !== 'string' || !signature.startsWith('{')) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(signature) as { phase?: unknown };
+    if (parsed.phase === 'commentary' || parsed.phase === 'final_answer') {
+      return parsed.phase;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function extractLabel(entry: Record<string, unknown>): string | null {
