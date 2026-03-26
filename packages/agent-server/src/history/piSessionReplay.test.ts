@@ -158,4 +158,58 @@ describe('buildCanonicalPiReplayMessages', () => {
       },
     });
   });
+
+  it('preserves all final_answer text blocks in order', () => {
+    const content = [
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: 'pi-session',
+        timestamp: '2026-03-26T00:00:00.000Z',
+        cwd: '/tmp/example',
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'm1',
+        parentId: null,
+        timestamp: '2026-03-26T00:00:01.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'First final block',
+              textSignature: '{"v":1,"id":"msg-final-1","phase":"final_answer"}',
+            },
+            {
+              type: 'text',
+              text: 'Second final block',
+              textSignature: '{"v":1,"id":"msg-final-2","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: 5,
+        },
+      }),
+    ].join('\n');
+
+    const messages = buildCanonicalPiReplayMessages(content);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: 'assistant',
+      content: 'First final block\n\nSecond final block',
+    });
+  });
 });

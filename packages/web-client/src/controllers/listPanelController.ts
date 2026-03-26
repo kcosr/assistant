@@ -1383,7 +1383,6 @@ export class ListPanelController {
       confirmText: 'Delete',
       confirmClassName: 'danger',
       keydownStopsPropagation: true,
-      removeKeydownOnButtonClick: true,
       onConfirm: () => {
         void (async () => {
           const ok = await this.deleteListItem(listId, itemId);
@@ -1410,7 +1409,6 @@ export class ListPanelController {
       confirmText: 'Delete',
       confirmClassName: 'danger',
       keydownStopsPropagation: true,
-      removeKeydownOnButtonClick: true,
       onConfirm: () => {
         this.clearListSelection();
         void (async () => {

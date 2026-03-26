@@ -11,7 +11,6 @@ export interface ConfirmDialogOptions {
   keydownStopsPropagation?: boolean;
   confirmCloseBehavior?: DialogButtonCloseBehavior;
   cancelCloseBehavior?: DialogButtonCloseBehavior;
-  removeKeydownOnButtonClick?: boolean;
   focusConfirmButton?: boolean;
 }
 

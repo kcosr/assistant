@@ -205,8 +205,12 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
     if (role === 'assistant') {
       const piSdkMessage = message as unknown as PiSdkMessage;
       const blocks = extractAssistantTextBlocksFromPiMessage(piSdkMessage);
+      const finalAnswerTexts = blocks
+        .filter((block) => block.phase === 'final_answer')
+        .map((block) => block.text)
+        .filter((text) => text.trim().length > 0);
       const finalText =
-        blocks.find((block) => block.phase === 'final_answer')?.text ??
+        (finalAnswerTexts.length > 0 ? finalAnswerTexts.join('\n\n') : undefined) ??
         blocks[blocks.length - 1]?.text ??
         extractMessageText(message);
       messages.push({

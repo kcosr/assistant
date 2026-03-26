@@ -956,7 +956,6 @@ function buildArtifactUrl(options: {
             confirmText: 'Delete',
             confirmClassName: 'danger',
             keydownStopsPropagation: true,
-            removeKeydownOnButtonClick: true,
             confirmCloseBehavior: 'remove-only',
             cancelCloseBehavior: 'remove-only',
             onConfirm: handleDelete,
