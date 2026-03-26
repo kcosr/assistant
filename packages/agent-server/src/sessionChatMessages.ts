@@ -14,6 +14,10 @@ type OpenAssistantTextSegment = {
   phase?: AssistantMessage['assistantTextPhase'];
   message: AssistantMessage;
 };
+type OpenAssistantToolCallSegment = {
+  responseId?: string;
+  message: AssistantMessage;
+};
 
 export function buildChatMessagesFromEvents(
   events: ChatEvent[],
@@ -45,11 +49,15 @@ export function buildChatMessagesFromEvents(
   ];
 
   const openAssistantTextSegments = new Map<string, OpenAssistantTextSegment>();
+  let openAssistantToolCallSegment: OpenAssistantToolCallSegment | undefined;
   const closeAssistantTextSegment = (responseId?: string): void => {
     if (!responseId) {
       return;
     }
     openAssistantTextSegments.delete(responseId);
+  };
+  const closeAssistantToolCallSegment = (): void => {
+    openAssistantToolCallSegment = undefined;
   };
   const createAssistantMessage = (
     initialText: string,
@@ -81,6 +89,7 @@ export function buildChatMessagesFromEvents(
   for (const event of events) {
     switch (event.type) {
       case 'user_message': {
+        closeAssistantToolCallSegment();
         const text = event.payload.text.trim();
         if (!text) {
           break;
@@ -89,6 +98,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'user_audio': {
+        closeAssistantToolCallSegment();
         const text = event.payload.transcription.trim();
         if (!text) {
           break;
@@ -97,6 +107,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'agent_message': {
+        closeAssistantToolCallSegment();
         const text = event.payload.message.trim();
         if (!text) {
           break;
@@ -105,6 +116,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'agent_callback': {
+        closeAssistantToolCallSegment();
         const text = event.payload.result.trim();
         if (!text) {
           break;
@@ -113,6 +125,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'assistant_chunk': {
+        closeAssistantToolCallSegment();
         const responseId = event.responseId?.trim();
         if (!responseId) {
           break;
@@ -135,6 +148,7 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'assistant_done': {
+        closeAssistantToolCallSegment();
         const responseId = event.responseId?.trim();
         if (!responseId) {
           break;
@@ -194,14 +208,31 @@ export function buildChatMessagesFromEvents(
             arguments: argsJson,
           },
         };
-        messages.push({
-          role: 'assistant',
-          content: '',
-          tool_calls: [toolCall],
-        });
+        const responseId = event.responseId?.trim();
+        const openToolCallMessage =
+          openAssistantToolCallSegment &&
+          openAssistantToolCallSegment.message.tool_calls &&
+          openAssistantToolCallSegment.responseId === responseId
+            ? openAssistantToolCallSegment.message
+            : undefined;
+        if (openToolCallMessage?.tool_calls) {
+          openToolCallMessage.tool_calls.push(toolCall);
+        } else {
+          const message: AssistantMessage = {
+            role: 'assistant',
+            content: '',
+            tool_calls: [toolCall],
+          };
+          messages.push(message);
+          openAssistantToolCallSegment = {
+            message,
+            ...(responseId ? { responseId } : {}),
+          };
+        }
         break;
       }
       case 'tool_result': {
+        closeAssistantToolCallSegment();
         closeAssistantTextSegment(event.responseId?.trim());
         const content = JSON.stringify({
           ok: !event.payload.error,

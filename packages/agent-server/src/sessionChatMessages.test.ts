@@ -221,6 +221,109 @@ describe('buildChatMessagesFromEvents', () => {
     });
   });
 
+  it('groups contiguous tool calls from the same response into one assistant message', () => {
+    const registry = new AgentRegistry([]);
+    const sessionId = 'session-parallel-tools';
+    const timestamp = Date.now();
+    const events: ChatEvent[] = [
+      {
+        id: 'evt-user',
+        timestamp,
+        sessionId,
+        type: 'user_message',
+        payload: { text: 'Run both tools' },
+      },
+      {
+        id: 'evt-tool-1',
+        timestamp: timestamp + 1,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-1',
+          toolName: 'lists_list',
+          args: { limit: 10 },
+        },
+      },
+      {
+        id: 'evt-tool-2',
+        timestamp: timestamp + 2,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-2',
+          toolName: 'lists_items_search',
+          args: { query: 'today' },
+        },
+      },
+      {
+        id: 'evt-result-1',
+        timestamp: timestamp + 3,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_result',
+        payload: {
+          toolCallId: 'call-1',
+          result: { ok: true },
+        },
+      },
+      {
+        id: 'evt-result-2',
+        timestamp: timestamp + 4,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_result',
+        payload: {
+          toolCallId: 'call-2',
+          result: { ok: true },
+        },
+      },
+      {
+        id: 'evt-done',
+        timestamp: timestamp + 5,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'assistant_done',
+        payload: { text: 'Finished.' },
+      },
+    ];
+
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
+
+    expect(messages.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'tool',
+      'tool',
+      'assistant',
+    ]);
+    expect(messages[2]).toMatchObject({
+      role: 'assistant',
+      tool_calls: [
+        {
+          id: 'call-1',
+          function: {
+            name: 'lists_list',
+            arguments: JSON.stringify({ limit: 10 }),
+          },
+        },
+        {
+          id: 'call-2',
+          function: {
+            name: 'lists_items_search',
+            arguments: JSON.stringify({ query: 'today' }),
+          },
+        },
+      ],
+    });
+    expect(messages[5]).toMatchObject({
+      role: 'assistant',
+      content: 'Finished.',
+    });
+  });
+
   it('preserves assistant text phase segments when rebuilding prompt messages', () => {
     const registry = new AgentRegistry([]);
     const sessionId = 'session-phase';
