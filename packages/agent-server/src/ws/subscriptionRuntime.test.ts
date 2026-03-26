@@ -83,7 +83,6 @@ const noopToolHost: ToolHost = {
 
 function createRuntime(options: {
   sessionHub: SessionHub;
-  sessionId?: string;
   subscriptions?: string[];
   toolHost?: ToolHost;
 }): {
@@ -143,10 +142,6 @@ function createRuntime(options: {
 
   const runtime = new SessionRuntime(runtimeOptions);
 
-  if (options.sessionId) {
-    (runtime as unknown as { sessionId?: string }).sessionId = options.sessionId;
-  }
-
   if (options.subscriptions && options.subscriptions.length > 0) {
     for (const id of options.subscriptions) {
       options.sessionHub.subscribeConnection(connection, id);
@@ -194,7 +189,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime, transportSent, unsubscribeSpy } = createRuntime({
       sessionHub,
-      sessionId: sessionA.sessionId,
       subscriptions: [sessionA.sessionId, sessionB.sessionId],
     });
 
@@ -241,7 +235,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
 
@@ -289,7 +282,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'coding' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
     const state = await sessionHub.ensureSessionState(summary.sessionId);
@@ -358,7 +350,7 @@ describe('SessionRuntime subscription message handlers', () => {
     expect(badResult.debug.error).toContain('boom');
   });
 
-  it('resolves chat completion tools for a primary session turn without relying on runtime cache', async () => {
+  it('resolves chat completion tools for a subscribed session turn without runtime cache', async () => {
     const sessionsFile = createTempFile('subscription-runtime-primary-turn-tools');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -387,14 +379,10 @@ describe('SessionRuntime subscription message handlers', () => {
 
     const { runtime, connection } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
       toolHost,
     });
-    (runtime as unknown as { ready: boolean }).ready = true;
-
-    const state = await sessionHub.ensureSessionState(summary.sessionId);
-    (runtime as unknown as { sessionState?: LogicalSessionState }).sessionState = state;
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
 
     const captured: { toolsLength: number; debugContext: unknown }[] = [];
     (
@@ -454,7 +442,6 @@ describe('SessionRuntime subscription message handlers', () => {
     });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
 
@@ -501,7 +488,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
 
@@ -535,16 +521,9 @@ describe('SessionRuntime subscription message handlers', () => {
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
 
-    const { runtime, connection, transportSent } = createRuntime({
-      sessionHub,
-      sessionId: sessionA.sessionId,
-    });
-
-    const stateA = await sessionHub.ensureSessionState(sessionA.sessionId);
+    const { runtime, connection, transportSent } = createRuntime({ sessionHub });
 
     sessionHub.subscribeConnection(connection, sessionA.sessionId);
-
-    (runtime as unknown as { sessionState?: unknown }).sessionState = stateA;
 
     const spy = vi
       .spyOn(
@@ -706,10 +685,9 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
-    (runtime as unknown as { ready: boolean }).ready = true;
+    (runtime as unknown as { clientHelloReceived: boolean }).clientHelloReceived = true;
 
     let resolveChat: () => void = () => {};
     const textSpy = vi

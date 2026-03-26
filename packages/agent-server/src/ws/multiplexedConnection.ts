@@ -160,23 +160,6 @@ export class MultiplexedConnection implements SessionConnection {
     this.runtime.close();
   }
 
-  get sessionId(): string | undefined {
-    return (this.runtime as unknown as { sessionId?: string }).sessionId;
-  }
-
-  set sessionId(value: string | undefined) {
-    (this.runtime as unknown as { sessionId?: string | undefined }).sessionId = value;
-  }
-
-  get sessionState(): LogicalSessionState | undefined {
-    return (this.runtime as unknown as { sessionState?: LogicalSessionState }).sessionState;
-  }
-
-  set sessionState(value: LogicalSessionState | undefined) {
-    (this.runtime as unknown as { sessionState?: LogicalSessionState | undefined }).sessionState =
-      value;
-  }
-
   async handleChatToolCalls(
     sessionId: string,
     state: LogicalSessionState,

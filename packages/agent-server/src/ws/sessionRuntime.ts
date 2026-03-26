@@ -85,7 +85,6 @@ type ToolResolutionResult = {
 };
 
 export class SessionRuntime {
-  private sessionId: string | undefined;
   private readonly transport: WsTransport;
   private readonly connection: SessionConnection;
   private readonly connectionId: string;
@@ -96,14 +95,12 @@ export class SessionRuntime {
   private readonly eventStore: EventStore;
   private readonly scheduledSessionService: ScheduledSessionService | undefined;
   private readonly searchService: SearchService | undefined;
-  private sessionState: LogicalSessionState | undefined;
   private readonly activeRunStates = new Map<
     string,
     { sessionId: string; state: LogicalSessionState }
   >();
   private closed = false;
   private clientHelloReceived = false;
-  private ready = false;
   private messageQueue: Array<() => Promise<void>> = [];
   private processing = false;
 
@@ -264,12 +261,6 @@ export class SessionRuntime {
       },
       connection: this.connection,
       sessionHub: this.sessionHub,
-      setSessionState: (state) => {
-        this.sessionState = state;
-      },
-      setSessionId: (sessionId) => {
-        this.sessionId = sessionId;
-      },
       onSessionSubscribed: (state) => {
         this.sendSessionReadyMessage(state);
       },
@@ -283,7 +274,7 @@ export class SessionRuntime {
   }
 
   private handleTextInput(message: ClientTextInputMessage): void {
-    if (!this.ready) {
+    if (!this.clientHelloReceived) {
       this.enqueue(() => this.handleTextInputWithChatCompletions(message));
       return;
     }
@@ -298,6 +289,26 @@ export class SessionRuntime {
         { retryable: true },
       );
     });
+  }
+
+  private async resolveSubscribedSessionState(
+    sessionId: string,
+    operation: string,
+  ): Promise<LogicalSessionState | undefined> {
+    try {
+      return (
+        this.sessionHub.getSessionState(sessionId) ?? (await this.sessionHub.ensureSessionState(sessionId))
+      );
+    } catch (err) {
+      this.log(`failed to resolve session state for ${operation}`, err);
+      this.sendError(
+        'internal_error',
+        `Failed to resolve session for ${operation}`,
+        { sessionId, error: String(err) },
+        { retryable: true },
+      );
+      return undefined;
+    }
   }
 
   private handleSetModes(message: ClientSetModesMessage): void {
@@ -550,26 +561,7 @@ export class SessionRuntime {
       }
     }
 
-    let state = this.sessionState;
-    if (!state || state.summary.sessionId !== sessionId) {
-      try {
-        state =
-          this.sessionHub.getSessionState(sessionId) ??
-          (await this.sessionHub.ensureSessionState(sessionId));
-        if (this.sessionId === sessionId) {
-          this.sessionState = state;
-        }
-      } catch (err) {
-        this.log('failed to resolve session state for set_session_model', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for model update',
-          { sessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const state = await this.resolveSubscribedSessionState(sessionId, 'model update');
 
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
@@ -656,26 +648,7 @@ export class SessionRuntime {
       }
     }
 
-    let state = this.sessionState;
-    if (!state || state.summary.sessionId !== sessionId) {
-      try {
-        state =
-          this.sessionHub.getSessionState(sessionId) ??
-          (await this.sessionHub.ensureSessionState(sessionId));
-        if (this.sessionId === sessionId) {
-          this.sessionState = state;
-        }
-      } catch (err) {
-        this.log('failed to resolve session state for set_session_thinking', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for thinking update',
-          { sessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const state = await this.resolveSubscribedSessionState(sessionId, 'thinking update');
 
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
@@ -864,8 +837,8 @@ export class SessionRuntime {
     } = options;
 
     return {
-      runtimeSessionId: this.sessionId ?? null,
-      runtimeStateSessionId: this.sessionState?.summary.sessionId ?? null,
+      connectionId: this.connectionId,
+      subscribedSessionCount: this.sessionHub.getConnectionSubscriptions(this.connection).size,
       targetSessionId,
       agentId: state?.summary.agentId ?? null,
       systemPromptHasTools,
@@ -928,7 +901,6 @@ export class SessionRuntime {
 
     this.sendToClient(readyMessage);
     this.readySessionIds.add(sessionId);
-    this.ready = true;
   }
 
   private async handleTextInputWithChatCompletions(message: ClientTextInputMessage): Promise<void> {
@@ -951,27 +923,8 @@ export class SessionRuntime {
       }
     }
 
-    let stateForRun: LogicalSessionState | undefined = this.sessionState;
-    let sessionIdForRun: string | undefined = this.sessionId;
-
-    sessionIdForRun = targetSessionId;
-
-    if (!stateForRun || stateForRun.summary.sessionId !== targetSessionId) {
-      try {
-        stateForRun =
-          this.sessionHub.getSessionState(targetSessionId) ??
-          (await this.sessionHub.ensureSessionState(targetSessionId));
-      } catch (err) {
-        this.log('failed to resolve session state for text_input', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for text input',
-          { sessionId: targetSessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const stateForRun = await this.resolveSubscribedSessionState(targetSessionId, 'text input');
+    const sessionIdForRun = targetSessionId;
 
     const shouldResolveTools = !!stateForRun && !!sessionIdForRun;
     const sessionToolHostForRun = stateForRun
@@ -1004,7 +957,6 @@ export class SessionRuntime {
     }
 
     return this.runChatInputWithCompletions({
-      ready: this.ready,
       message,
       state: stateForRun,
       sessionId: sessionIdForRun,
@@ -1160,6 +1112,6 @@ export class SessionRuntime {
   }
 
   private log(...args: unknown[]): void {
-    console.log(`[session ${this.sessionId ?? 'unbound'}]`, ...args);
+    console.log(`[connection ${this.connectionId}]`, ...args);
   }
 }

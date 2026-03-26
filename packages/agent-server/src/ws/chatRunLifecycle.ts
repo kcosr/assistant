@@ -74,7 +74,7 @@ function buildAssistantDoneEvents(options: {
 }
 
 export async function handleTextInputWithChatCompletions(options: {
-  ready: boolean;
+  ready?: boolean;
   message: ClientTextInputMessage;
   state: LogicalSessionState | undefined;
   sessionId: string | undefined;
@@ -103,7 +103,6 @@ export async function handleTextInputWithChatCompletions(options: {
   debugChatCompletionsContext?: unknown;
 }): Promise<void> {
   const {
-    ready,
     message,
     state,
     sessionId,
@@ -122,11 +121,6 @@ export async function handleTextInputWithChatCompletions(options: {
     eventStore,
     debugChatCompletionsContext,
   } = options;
-
-  if (!ready) {
-    sendError('session_not_ready', 'Session is not ready yet');
-    return;
-  }
 
   if (!state || !sessionId) {
     sendError('session_not_ready', 'Session is not ready yet');

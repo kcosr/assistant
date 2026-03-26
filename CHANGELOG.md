@@ -25,6 +25,7 @@
 - Fixed interrupted chat runs to stop persisting partial streamed assistant text into session history and sidebar snippets when a response is cancelled mid-stream, including automatic cancels from session model/thinking changes. ([#123](<pr-url>))
 - Fixed session model and thinking changes to apply on the next turn without cancelling the currently running response. ([#123](<pr-url>))
 - Fixed multiplexed websocket chat runs to resolve tool exposure from the target session on each turn instead of reusing a per-connection primary-session tool cache that could go stale or stay empty after reconnects. ([#123](<pr-url>))
+- Fixed multiplexed websocket runtimes to stop carrying a mutable primary-session binding for chat turn routing, model updates, and tool debug context now that sessions are handled explicitly by target session id. ([#123](<pr-url>))
 - Fixed Android share-target cold starts to retain the first incoming share until the web app listener is ready. ([#123](<pr-url>))
 - Fixed Pi/OpenAI debug logging to write redacted request/response payloads to a dedicated JSONL file under the server data directory for easier replay debugging. ([#123](<pr-url>))
 - Added a developer script to verify that replayed Pi/OpenAI request inputs preserve prior request items exactly as prefixes when debugging session history. ([#123](<pr-url>))

@@ -48,8 +48,6 @@ describe('handleHello', () => {
       sendErrorFromHub: () => {},
     };
 
-    const setSessionState = vi.fn();
-    const setSessionId = vi.fn();
     const sendMessage = vi.fn();
     const sendError = vi.fn();
     const close = vi.fn();
@@ -67,8 +65,6 @@ describe('handleHello', () => {
       setClientAudioCapabilities: () => {},
       connection,
       sessionHub,
-      setSessionState,
-      setSessionId,
       sendMessage,
       sendError,
       close,
@@ -76,12 +72,11 @@ describe('handleHello', () => {
 
     expect(sendError).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
-    expect(setSessionId).toHaveBeenCalledWith(summary.sessionId);
     const subs = Array.from(sessionHub.getConnectionSubscriptions(connection));
     expect(subs).toContain(summary.sessionId);
   });
 
-  it('subscribes to all sessions and sets a primary session for v2 hello', async () => {
+  it('subscribes to all sessions for v2 hello', async () => {
     const sessionsFile = createTempFile('hello-handling-v2-sessions');
 
     const sessionIndex = new SessionIndex(sessionsFile);
@@ -100,8 +95,6 @@ describe('handleHello', () => {
       sendErrorFromHub: () => {},
     };
 
-    const setSessionState = vi.fn();
-    const setSessionId = vi.fn();
     const sentMessages: ServerMessage[] = [];
     const sendMessage = (msg: ServerMessage): void => {
       sentMessages.push(msg);
@@ -122,8 +115,6 @@ describe('handleHello', () => {
       setClientAudioCapabilities: () => {},
       connection,
       sessionHub,
-      setSessionState,
-      setSessionId,
       sendMessage,
       sendError,
       close,
@@ -143,12 +134,6 @@ describe('handleHello', () => {
     expect(subscribedSessionIds).toEqual(
       expect.arrayContaining([sessionA.sessionId, sessionB.sessionId]),
     );
-
-    const activeState = setSessionState.mock.calls[0]?.[0] as {
-      summary?: { sessionId?: string };
-    };
-    expect(activeState?.summary?.sessionId).toBe(sessionA.sessionId);
-    expect(setSessionId).toHaveBeenCalledWith(sessionA.sessionId);
   });
 
   it('rejects unsupported protocol versions', async () => {
@@ -184,8 +169,6 @@ describe('handleHello', () => {
       setClientAudioCapabilities: () => {},
       connection,
       sessionHub,
-      setSessionState: () => {},
-      setSessionId: () => {},
       sendMessage: () => {},
       sendError,
       close,
