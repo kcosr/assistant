@@ -19,6 +19,7 @@
 - Fixed lists bulk selection to use a longer hold-without-movement selection mode while preserving short-hold drag, made selected rows more prominent across platforms, and kept bulk Actions menus in sync with the current selection. ([#123](<pr-url>))
 - Fixed markdown preparation to stop auto-closing unmatched underscore emphasis markers. ([#123](<pr-url>))
 - Fixed Pi-backed session reloads to skip OpenAI Responses `commentary` text blocks instead of replaying them as normal assistant history. ([#123](<pr-url>))
+- Fixed Pi-backed session reloads to preserve tool-call message boundaries so later syncs do not drop user turns or reorder tool history after a restart/reload. ([#64](https://github.com/kcosr/assistant/pull/64))
 - Fixed Android share-target cold starts to retain the first incoming share until the web app listener is ready. ([#123](<pr-url>))
 
 ### Removed

@@ -40,8 +40,6 @@ export function buildChatMessagesFromEvents(
   ];
 
   const assistantTextMessages = new Map<string, AssistantMessage>();
-  const toolCallMessages = new Map<string, AssistantMessage>();
-
   const ensureAssistantMessage = (responseId: string, initialText: string): AssistantMessage => {
     const existing = assistantTextMessages.get(responseId);
     if (existing) {
@@ -53,21 +51,6 @@ export function buildChatMessagesFromEvents(
     };
     messages.push(message);
     assistantTextMessages.set(responseId, message);
-    return message;
-  };
-
-  const ensureToolCallMessage = (responseKey: string): AssistantMessage => {
-    const existing = toolCallMessages.get(responseKey);
-    if (existing) {
-      return existing;
-    }
-    const message: AssistantMessage = {
-      role: 'assistant',
-      content: '',
-      tool_calls: [],
-    };
-    messages.push(message);
-    toolCallMessages.set(responseKey, message);
     return message;
   };
 
@@ -152,8 +135,6 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'tool_call': {
-        const responseKey = event.responseId?.trim() || `event:${event.id}`;
-        const toolMessage = ensureToolCallMessage(responseKey);
         let argsJson = '{}';
         try {
           argsJson = JSON.stringify(event.payload.args ?? {});
@@ -168,10 +149,11 @@ export function buildChatMessagesFromEvents(
             arguments: argsJson,
           },
         };
-        if (!toolMessage.tool_calls) {
-          toolMessage.tool_calls = [];
-        }
-        toolMessage.tool_calls.push(toolCall);
+        messages.push({
+          role: 'assistant',
+          content: '',
+          tool_calls: [toolCall],
+        });
         break;
       }
       case 'tool_result': {
