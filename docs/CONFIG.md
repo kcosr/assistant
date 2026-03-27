@@ -323,7 +323,8 @@ Plugins can opt into automatic git snapshots of their data directories using `gi
 ##### Execution Mode (Coding Plugins)
 
 Plugins that execute code (like the coding/terminal plugin) can run in `local` or `sidecar` mode.
-All operations are rooted at a single workspace root (no per-session directories).
+In `local` mode, `local.workspaceRoot` may use the session-scoped macro `${session.workingDir}` so
+relative file paths and `bash` commands anchor to the session picker’s working directory.
 
 ```json
 {
@@ -350,7 +351,7 @@ All operations are rooted at a single workspace root (no per-session directories
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `mode` | string | Execution mode: `local` or `sidecar`. |
-| `local.workspaceRoot` | string | Root directory for local workspaces. |
+| `local.workspaceRoot` | string | Root directory for local workspaces. In `local` mode, `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
 | `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe). |
 | `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
 | `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |

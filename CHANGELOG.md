@@ -35,6 +35,7 @@
 - Added a developer script to verify that replayed Pi/OpenAI request inputs preserve prior request items exactly as prefixes when debugging session history. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Added per-request tool-resolution debug metadata to Pi/OpenAI request logs so disappearing tool schemas can be traced to cached-tool reuse, per-turn refreshes, zero visible tools, or tool-host failures. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed CLI-backed chat runs to resolve `${session.workingDir}` in interactive `workdir` and wrapper env config so session-picked working directories reach spawned CLI processes and container wrappers. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed local coding-plugin tools to honor `${session.workingDir}` in `plugins.coding.local.workspaceRoot`, so relative file operations and `bash` commands run from the session-picked working directory in non-sidecar mode. ([#65](https://github.com/kcosr/assistant/pull/65))
 
 ### Removed
 

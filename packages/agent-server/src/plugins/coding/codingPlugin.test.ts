@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -150,5 +151,77 @@ describe('coding plugin tools', () => {
       code: 'tool_aborted',
       message: 'Tool execution aborted',
     });
+  });
+
+  it('uses session working dir for local-mode relative file tools and bash when configured with the macro', async () => {
+    const dataDir = createTempDir('coding-plugin-session-cwd');
+    const sessionWorkingDir = path.join(dataDir, 'picked-worktree');
+    const outsidePath = path.join(dataDir, 'outside.txt');
+
+    const pluginConfig: PluginConfig = {
+      enabled: true,
+      mode: 'local',
+      local: {
+        workspaceRoot: '${session.workingDir}',
+        allowOutsideWorkspaceRoot: true,
+      },
+    };
+
+    const plugin = createCodingPlugin();
+    await plugin.initialize(dataDir, pluginConfig);
+
+    const writeTool = plugin.tools.find((tool) => tool.name === 'write');
+    const readTool = plugin.tools.find((tool) => tool.name === 'read');
+    const bashTool = plugin.tools.find((tool) => tool.name === 'bash');
+
+    if (!writeTool || !readTool || !bashTool) {
+      throw new Error('Expected write, read, and bash tools to be registered');
+    }
+
+    const sessionSummary = {
+      sessionId: 'coding-session',
+      title: 'Coding Session',
+      createdAt: '',
+      updatedAt: '',
+      deleted: false,
+      attributes: {
+        core: { workingDir: sessionWorkingDir },
+      },
+    };
+
+    const ctx: ToolContext = {
+      sessionId: 'coding-session',
+      signal: new AbortController().signal,
+      sessionHub: {
+        getSessionState: () => ({ summary: sessionSummary, chatMessages: [], messageQueue: [] }),
+        ensureSessionState: async () => ({
+          summary: sessionSummary,
+          chatMessages: [],
+          messageQueue: [],
+        }),
+      } as never,
+    };
+
+    await writeTool.handler({ path: 'relative.txt', content: 'relative file' }, ctx);
+    const readRelative = (await readTool.handler({ path: 'relative.txt' }, ctx)) as {
+      type?: string;
+      content?: string;
+    };
+    const bashPwd = (await bashTool.handler({ command: 'pwd' }, ctx)) as {
+      exitCode?: number;
+      output?: string;
+    };
+
+    await writeTool.handler({ path: outsidePath, content: 'outside file' }, ctx);
+    const outsideContent = await fs.readFile(outsidePath, 'utf8');
+
+    expect(readRelative.type).toBe('text');
+    expect(readRelative.content).toContain('relative file');
+    expect(await fs.readFile(path.join(sessionWorkingDir, 'relative.txt'), 'utf8')).toBe(
+      'relative file',
+    );
+    expect(bashPwd.exitCode).toBe(0);
+    expect(bashPwd.output?.trim().split('\n')[0]).toBe(sessionWorkingDir);
+    expect(outsideContent).toBe('outside file');
   });
 });
