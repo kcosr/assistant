@@ -15,12 +15,15 @@ import { buildCliEnv } from '../ws/cliEnv';
 import { describeCron, parseNextRun } from './cronUtils';
 import type {
   LastRunInfo,
+  ScheduleCreateInput,
+  ScheduleDeletedEvent,
   PreCheckResult,
   ScheduleConfig,
   ScheduleInfo,
   ScheduleState,
   ScheduleStatusEvent,
   TriggerResult,
+  ScheduleUpdateInput,
 } from './types';
 
 type CliProvider = 'claude-cli' | 'codex-cli' | 'pi-cli';
@@ -54,7 +57,7 @@ export interface ScheduledSessionServiceOptions {
   eventStore?: EventStore;
   searchService?: SearchService;
   defaultSessionTimeoutSeconds?: number;
-  broadcast?: (event: ScheduleStatusEvent) => void;
+  broadcast?: (event: ScheduleStatusEvent | ScheduleDeletedEvent) => void;
   spawnFn?: typeof spawn;
   startSessionMessageFn?: typeof startSessionMessage;
 }
@@ -63,6 +66,13 @@ export class ScheduleNotFoundError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ScheduleNotFoundError';
+  }
+}
+
+export class ScheduleValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ScheduleValidationError';
   }
 }
 
@@ -99,6 +109,7 @@ export class ScheduledSessionService {
           schedule,
           timer: null,
           runtimeEnabled: null,
+          deleted: false,
           runningCount: 0,
           runningStartedAt: null,
           nextRunAt: null,
@@ -132,13 +143,87 @@ export class ScheduledSessionService {
     return Array.from(this.schedules.values()).map((state) => this.buildScheduleInfo(state));
   }
 
+  createSchedule(agentId: string, input: ScheduleCreateInput): ScheduleInfo {
+    this.requireAgent(agentId);
+    const scheduleId = this.generateScheduleId(agentId);
+    const schedule = this.normalizeScheduleConfigForCreate(agentId, scheduleId, input);
+    const state: ScheduleState = {
+      agentId,
+      schedule,
+      timer: null,
+      runtimeEnabled: null,
+      deleted: false,
+      runningCount: 0,
+      runningStartedAt: null,
+      nextRunAt: null,
+      lastRun: null,
+    };
+
+    this.schedules.set(this.buildKey(agentId, scheduleId), state);
+    if (this.initialized) {
+      if (this.isEnabled(state)) {
+        this.scheduleNext(this.buildKey(agentId, scheduleId), state);
+      } else {
+        this.broadcastStatus(state);
+      }
+    }
+    return this.buildScheduleInfo(state);
+  }
+
+  updateSchedule(agentId: string, scheduleId: string, patch: ScheduleUpdateInput): ScheduleInfo {
+    const key = this.buildKey(agentId, scheduleId);
+    const state = this.requireState(agentId, scheduleId);
+    state.schedule = this.normalizeScheduleConfigForUpdate(
+      agentId,
+      scheduleId,
+      state.schedule,
+      patch,
+    );
+    if (patch.enabled !== undefined) {
+      state.runtimeEnabled = null;
+    }
+    if (this.initialized) {
+      if (this.isEnabled(state)) {
+        this.scheduleNext(key, state);
+      } else {
+        if (state.timer) {
+          clearTimeout(state.timer);
+          state.timer = null;
+        }
+        state.nextRunAt = null;
+        this.broadcastStatus(state);
+      }
+    }
+    return this.buildScheduleInfo(state);
+  }
+
+  deleteSchedule(
+    agentId: string,
+    scheduleId: string,
+  ): { agentId: string; scheduleId: string; deleted: true } {
+    const key = this.buildKey(agentId, scheduleId);
+    const state = this.requireState(agentId, scheduleId);
+    state.deleted = true;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    state.nextRunAt = null;
+    this.schedules.delete(key);
+    this.options.broadcast?.({
+      type: 'scheduled_session:deleted',
+      payload: { agentId, scheduleId },
+    });
+    return { agentId, scheduleId, deleted: true };
+  }
+
   triggerRun(
     agentId: string,
     scheduleId: string,
     options?: { force?: boolean },
   ): Promise<TriggerResult> {
     const state = this.requireState(agentId, scheduleId);
-    const limit = state.schedule.maxConcurrent ?? 1;
+    const limit = this.getEffectiveMaxConcurrent(state.schedule);
     const force = options?.force === true;
 
     if (!force && state.runningCount >= limit) {
@@ -198,6 +283,11 @@ export class ScheduledSessionService {
       state.timer = null;
     }
 
+    if (state.deleted) {
+      state.nextRunAt = null;
+      return;
+    }
+
     if (!this.isEnabled(state)) {
       state.nextRunAt = null;
       this.broadcastStatus(state);
@@ -255,9 +345,11 @@ export class ScheduledSessionService {
     }
 
     if (!options?.force) {
-      const limit = schedule.maxConcurrent ?? 1;
-      if (state.runningCount >= limit) {
-        logger.warn(`[scheduled-sessions] ${key} skipped: max concurrent (${limit}) reached`);
+      const effectiveLimit = this.getEffectiveMaxConcurrent(schedule);
+      if (state.runningCount >= effectiveLimit) {
+        logger.warn(
+          `[scheduled-sessions] ${key} skipped: max concurrent (${effectiveLimit}) reached`,
+        );
         this.recordLastRun(state, { result: 'skipped', skipReason: 'max_concurrent' });
         this.broadcastStatus(state);
         return;
@@ -350,6 +442,7 @@ export class ScheduledSessionService {
         cwd: workdir,
         env: spawnEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
+        detached: process.platform !== 'win32',
       };
 
       const spawnCommand = wrapper?.path?.trim();
@@ -369,8 +462,8 @@ export class ScheduledSessionService {
       });
 
       const timeout = setTimeout(() => {
-        child.kill('SIGTERM');
-        setTimeout(() => child.kill('SIGKILL'), 2_000).unref();
+        this.killPreCheckProcessTree(child, 'SIGTERM');
+        setTimeout(() => this.killPreCheckProcessTree(child, 'SIGKILL'), 2_000).unref();
         logger.warn(`[scheduled-sessions] preCheck timeout after 30s: ${command}`);
         if (!settled) {
           settled = true;
@@ -404,6 +497,21 @@ export class ScheduledSessionService {
         });
       });
     });
+  }
+
+  private killPreCheckProcessTree(
+    child: Pick<ReturnType<typeof spawn>, 'pid' | 'kill'>,
+    signal: NodeJS.Signals,
+  ): void {
+    if (process.platform !== 'win32' && typeof child.pid === 'number' && child.pid > 0) {
+      try {
+        process.kill(-child.pid, signal);
+        return;
+      } catch {
+        // Fall through to direct child kill when the process group no longer exists.
+      }
+    }
+    child.kill(signal);
   }
 
   private async spawnSession(agentId: string, prompt: string): Promise<void> {
@@ -475,7 +583,7 @@ export class ScheduledSessionService {
       return { result: 'failed', error: 'Scheduled session dependencies are missing' };
     }
 
-    const { summary } = await this.resolveScheduledSession(agentId, scheduleId);
+    const { summary } = await this.resolveScheduledSession(agentId, scheduleId, schedule.reuseSession);
     await this.updateScheduledSessionAutoTitle(summary, agentId, schedule);
     const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
 
@@ -512,7 +620,11 @@ export class ScheduledSessionService {
     return { result: 'failed', error: 'Unexpected session response status' };
   }
 
-  private async resolveScheduledSession(agentId: string, scheduleId: string): Promise<{
+  private async resolveScheduledSession(
+    agentId: string,
+    scheduleId: string,
+    reuseSession: boolean,
+  ): Promise<{
     summary: SessionSummary;
     created: boolean;
   }> {
@@ -520,6 +632,10 @@ export class ScheduledSessionService {
     const sessionHub = this.options.sessionHub;
     if (!sessionIndex || !sessionHub) {
       throw new Error('Scheduled session dependencies are missing');
+    }
+
+    if (!reuseSession) {
+      return this.createScheduledSession(agentId, scheduleId);
     }
 
     const summaries = await sessionIndex.listSessions();
@@ -540,6 +656,19 @@ export class ScheduledSessionService {
     const existing = matches[0];
     if (existing) {
       return { summary: existing, created: false };
+    }
+
+    return this.createScheduledSession(agentId, scheduleId);
+  }
+
+  private async createScheduledSession(agentId: string, scheduleId: string): Promise<{
+    summary: SessionSummary;
+    created: boolean;
+  }> {
+    const sessionIndex = this.options.sessionIndex;
+    const sessionHub = this.options.sessionHub;
+    if (!sessionIndex || !sessionHub) {
+      throw new Error('Scheduled session dependencies are missing');
     }
 
     const agent = this.options.agentRegistry.getAgent(agentId);
@@ -563,6 +692,154 @@ export class ScheduledSessionService {
       (await sessionHub.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
 
     return { summary: updated, created: true };
+  }
+
+  private requireAgent(agentId: string): void {
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    if (!agent) {
+      throw new ScheduleNotFoundError(`Agent not found: ${agentId}`);
+    }
+  }
+
+  private generateScheduleId(agentId: string): string {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const id = `schedule-${randomUUID().slice(0, 8)}`;
+      if (!this.schedules.has(this.buildKey(agentId, id))) {
+        return id;
+      }
+    }
+    return `schedule-${randomUUID()}`;
+  }
+
+  private normalizeScheduleConfigForCreate(
+    agentId: string,
+    scheduleId: string,
+    input: ScheduleCreateInput,
+  ): ScheduleConfig {
+    const cron = this.normalizeRequiredString(input.cron, 'cron');
+    const prompt = this.normalizeOptionalString(input.prompt);
+    const preCheck = this.normalizeOptionalString(input.preCheck);
+    const sessionTitle = this.normalizeOptionalString(input.sessionTitle);
+    const enabled = input.enabled ?? true;
+    const reuseSession = input.reuseSession ?? true;
+    const maxConcurrent = input.maxConcurrent ?? 1;
+
+    const schedule: ScheduleConfig = {
+      id: scheduleId,
+      cron,
+      enabled,
+      reuseSession,
+      maxConcurrent,
+      ...(prompt ? { prompt } : {}),
+      ...(preCheck ? { preCheck } : {}),
+      ...(sessionTitle ? { sessionTitle } : {}),
+    };
+
+    this.validateScheduleConfig(agentId, schedule);
+    return schedule;
+  }
+
+  private normalizeScheduleConfigForUpdate(
+    agentId: string,
+    scheduleId: string,
+    existing: ScheduleConfig,
+    patch: ScheduleUpdateInput,
+  ): ScheduleConfig {
+    const next: ScheduleConfig = {
+      ...existing,
+      ...(patch.cron !== undefined
+        ? { cron: this.normalizeRequiredString(patch.cron, 'cron') }
+        : {}),
+      ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+      ...(patch.reuseSession !== undefined ? { reuseSession: patch.reuseSession } : {}),
+      ...(patch.maxConcurrent !== undefined ? { maxConcurrent: patch.maxConcurrent } : {}),
+    };
+
+    const prompt = this.normalizePatchString(patch.prompt, existing.prompt);
+    const preCheck = this.normalizePatchString(patch.preCheck, existing.preCheck);
+    const sessionTitle = this.normalizePatchString(patch.sessionTitle, existing.sessionTitle);
+
+    if (prompt !== undefined) {
+      next.prompt = prompt;
+    } else {
+      delete next.prompt;
+    }
+    if (preCheck !== undefined) {
+      next.preCheck = preCheck;
+    } else {
+      delete next.preCheck;
+    }
+    if (sessionTitle !== undefined) {
+      next.sessionTitle = sessionTitle;
+    } else {
+      delete next.sessionTitle;
+    }
+
+    next.id = scheduleId;
+    this.validateScheduleConfig(agentId, next);
+    return next;
+  }
+
+  private normalizeRequiredString(value: unknown, field: string): string {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new ScheduleValidationError(`${field} must be a non-empty string`);
+    }
+    return value.trim();
+  }
+
+  private normalizeOptionalString(value: unknown): string | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new ScheduleValidationError('optional string fields must be non-empty strings');
+    }
+    return value.trim();
+  }
+
+  private normalizePatchString(
+    value: string | null | undefined,
+    current: string | undefined,
+  ): string | undefined {
+    if (value === undefined) {
+      return current;
+    }
+    if (value === null) {
+      return undefined;
+    }
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new ScheduleValidationError('optional string fields must be non-empty strings');
+    }
+    return value.trim();
+  }
+
+  private validateScheduleConfig(agentId: string, schedule: ScheduleConfig): void {
+    this.requireAgent(agentId);
+    if (!schedule.id.trim()) {
+      throw new ScheduleValidationError('schedule id must be a non-empty string');
+    }
+    if (
+      !isFinite(schedule.maxConcurrent) ||
+      !Number.isInteger(schedule.maxConcurrent) ||
+      schedule.maxConcurrent < 1
+    ) {
+      throw new ScheduleValidationError('maxConcurrent must be an integer >= 1');
+    }
+    if (!schedule.cron.trim()) {
+      throw new ScheduleValidationError('cron must be a non-empty string');
+    }
+    try {
+      parseNextRun(schedule.cron);
+    } catch {
+      throw new ScheduleValidationError(`Invalid 5-field cron expression: "${schedule.cron}"`);
+    }
+    if (!schedule.prompt && !schedule.preCheck) {
+      throw new ScheduleValidationError('schedule must define "prompt", "preCheck", or both');
+    }
+  }
+
+  private getEffectiveMaxConcurrent(schedule: ScheduleConfig): number {
+    return schedule.reuseSession ? 1 : schedule.maxConcurrent ?? 1;
   }
 
   private getScheduledSessionMetadata(summary: SessionSummary): {
@@ -791,6 +1068,7 @@ export class ScheduledSessionService {
       ...(state.schedule.sessionTitle ? { sessionTitle: state.schedule.sessionTitle } : {}),
       enabled,
       runtimeEnabled,
+      reuseSession: state.schedule.reuseSession,
       status,
       runningCount: state.runningCount,
       runningStartedAt: state.runningStartedAt ? state.runningStartedAt.toISOString() : null,
@@ -801,6 +1079,9 @@ export class ScheduledSessionService {
   }
 
   private broadcastStatus(state: ScheduleState): void {
+    if (state.deleted) {
+      return;
+    }
     this.options.broadcast?.({
       type: 'scheduled_session:status',
       payload: this.buildScheduleInfo(state),
@@ -808,6 +1089,9 @@ export class ScheduledSessionService {
   }
 
   private recordLastRun(state: ScheduleState, info: Omit<LastRunInfo, 'timestamp'>): void {
+    if (state.deleted) {
+      return;
+    }
     state.lastRun = {
       timestamp: new Date(),
       ...info,

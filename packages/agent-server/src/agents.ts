@@ -569,6 +569,7 @@ function validateAgentDefinitionConfig(
         preCheck?: unknown;
         sessionTitle?: unknown;
         enabled?: unknown;
+        reuseSession?: unknown;
         maxConcurrent?: unknown;
       };
       const id = typeof schedule.id === 'string' ? schedule.id.trim() : '';
@@ -629,6 +630,18 @@ function validateAgentDefinitionConfig(
       }
       const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : true;
 
+      const reuseSessionRaw = schedule.reuseSession;
+      if (
+        reuseSessionRaw !== undefined &&
+        reuseSessionRaw !== null &&
+        typeof reuseSessionRaw !== 'boolean'
+      ) {
+        throw new Error(
+          `agents[${index}].schedules[${i}].reuseSession must be a boolean when provided`,
+        );
+      }
+      const reuseSession = typeof reuseSessionRaw === 'boolean' ? reuseSessionRaw : true;
+
       const maxConcurrentRaw = schedule.maxConcurrent;
       if (
         maxConcurrentRaw !== undefined &&
@@ -652,6 +665,7 @@ function validateAgentDefinitionConfig(
         ...(preCheck ? { preCheck } : {}),
         ...(sessionTitle ? { sessionTitle } : {}),
         enabled,
+        reuseSession,
         maxConcurrent,
       });
     }

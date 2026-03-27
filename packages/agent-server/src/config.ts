@@ -55,6 +55,7 @@ const ScheduleConfigSchema = z.object({
   preCheck: NonEmptyTrimmedStringSchema.optional(),
   sessionTitle: NonEmptyTrimmedStringSchema.optional(),
   enabled: z.boolean().optional().default(true),
+  reuseSession: z.boolean().optional().default(true),
   maxConcurrent: z.number().int().min(1).optional().default(1),
 });
 
@@ -358,6 +359,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     id: schedule.id,
     cron: schedule.cron,
     enabled: schedule.enabled,
+    reuseSession: schedule.reuseSession,
     maxConcurrent: schedule.maxConcurrent,
     ...(schedule.prompt !== undefined ? { prompt: schedule.prompt } : {}),
     ...(schedule.preCheck !== undefined ? { preCheck: schedule.preCheck } : {}),

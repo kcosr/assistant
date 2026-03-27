@@ -95,6 +95,7 @@
           "sessionTitle": "Daily Repo Review",
           "prompt": "Review open PRs and issues. Summarize status.",
           "enabled": true,
+          "reuseSession": true,
           "maxConcurrent": 1
         }
       ]

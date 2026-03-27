@@ -2,7 +2,7 @@
   "id": "scheduled-sessions",
   "version": "0.1.0",
   "description": "Run agent sessions on cron schedules.",
-  "surfaces": { "tool": true, "http": true, "cli": false },
+  "surfaces": { "tool": true, "http": true, "cli": true },
   "panels": [
     {
       "type": "scheduled-sessions",
@@ -19,6 +19,106 @@
     "provides": ["scheduled-sessions"],
     "capabilities": ["scheduled-sessions.read", "scheduled-sessions.write"]
   },
+  "operations": [
+    {
+      "id": "list",
+      "summary": "List scheduled sessions with status information.",
+      "inputSchema": { "type": "object", "properties": {} },
+      "capabilities": ["scheduled-sessions.read"]
+    },
+    {
+      "id": "create",
+      "summary": "Create a runtime-managed scheduled session. Requires prompt, preCheck, or both.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "cron": { "type": "string", "description": "5-field cron expression." },
+          "prompt": { "type": "string", "description": "Prompt to send when the schedule runs." },
+          "preCheck": { "type": "string", "description": "Optional shell command to gate the run." },
+          "sessionTitle": { "type": "string", "description": "Optional human-readable session title." },
+          "enabled": { "type": "boolean", "description": "Whether the schedule is enabled." },
+          "reuseSession": { "type": "boolean", "description": "Reuse the same backing session across runs. Defaults to true." },
+          "maxConcurrent": { "type": "integer", "description": "Maximum concurrent runs when reuseSession is false." }
+        },
+        "required": ["agentId", "cron"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "update",
+      "summary": "Update a runtime-managed scheduled session. After the patch is applied, prompt, preCheck, or both must still be present.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "scheduleId": { "type": "string", "description": "Schedule id within the agent." },
+          "cron": { "type": "string", "description": "Updated 5-field cron expression." },
+          "prompt": { "type": ["string", "null"], "description": "Updated prompt, or null to clear it." },
+          "preCheck": { "type": ["string", "null"], "description": "Updated pre-check, or null to clear it." },
+          "sessionTitle": { "type": ["string", "null"], "description": "Updated session title, or null to clear it." },
+          "enabled": { "type": "boolean", "description": "Updated enabled state." },
+          "reuseSession": { "type": "boolean", "description": "Updated reuseSession behavior." },
+          "maxConcurrent": { "type": "integer", "description": "Updated concurrency limit when reuseSession is false." }
+        },
+        "required": ["agentId", "scheduleId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "delete",
+      "summary": "Delete a runtime-managed scheduled session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "scheduleId": { "type": "string", "description": "Schedule id within the agent." }
+        },
+        "required": ["agentId", "scheduleId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "run",
+      "summary": "Trigger an immediate run of a scheduled session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "scheduleId": { "type": "string", "description": "Schedule id within the agent." },
+          "force": { "type": "boolean", "description": "Bypass max concurrency limits." }
+        },
+        "required": ["agentId", "scheduleId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "enable",
+      "summary": "Enable a scheduled session at runtime.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "scheduleId": { "type": "string", "description": "Schedule id within the agent." }
+        },
+        "required": ["agentId", "scheduleId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    },
+    {
+      "id": "disable",
+      "summary": "Disable a scheduled session at runtime.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "agentId": { "type": "string", "description": "Agent id for the schedule." },
+          "scheduleId": { "type": "string", "description": "Schedule id within the agent." }
+        },
+        "required": ["agentId", "scheduleId"]
+      },
+      "capabilities": ["scheduled-sessions.write"]
+    }
+  ],
   "web": {
     "bundlePath": "/plugins/scheduled-sessions/bundle.js",
     "stylesPath": "/plugins/scheduled-sessions/styles.css"

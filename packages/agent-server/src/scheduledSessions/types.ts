@@ -5,7 +5,28 @@ export interface ScheduleConfig {
   preCheck?: string;
   sessionTitle?: string;
   enabled: boolean;
+  reuseSession: boolean;
   maxConcurrent: number;
+}
+
+export interface ScheduleCreateInput {
+  cron: string;
+  prompt?: string;
+  preCheck?: string;
+  sessionTitle?: string;
+  enabled?: boolean;
+  reuseSession?: boolean;
+  maxConcurrent?: number;
+}
+
+export interface ScheduleUpdateInput {
+  cron?: string;
+  prompt?: string | null;
+  preCheck?: string | null;
+  sessionTitle?: string | null;
+  enabled?: boolean;
+  reuseSession?: boolean;
+  maxConcurrent?: number;
 }
 
 export interface LastRunInfo {
@@ -20,6 +41,7 @@ export interface ScheduleState {
   schedule: ScheduleConfig;
   timer: NodeJS.Timeout | null;
   runtimeEnabled: boolean | null;
+  deleted: boolean;
   runningCount: number;
   runningStartedAt: Date | null;
   nextRunAt: Date | null;
@@ -42,6 +64,7 @@ export interface ScheduleInfo {
   sessionTitle?: string;
   enabled: boolean;
   runtimeEnabled: boolean;
+  reuseSession: boolean;
   status: 'idle' | 'running' | 'disabled';
   runningCount: number;
   runningStartedAt: string | null;
@@ -63,4 +86,12 @@ export interface TriggerResult {
 export interface ScheduleStatusEvent {
   type: 'scheduled_session:status';
   payload: ScheduleInfo;
+}
+
+export interface ScheduleDeletedEvent {
+  type: 'scheduled_session:deleted';
+  payload: {
+    agentId: string;
+    scheduleId: string;
+  };
 }

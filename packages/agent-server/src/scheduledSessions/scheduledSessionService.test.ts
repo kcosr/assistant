@@ -22,25 +22,34 @@ type SpawnResult = {
 type SpawnCall = {
   command: string;
   args: string[];
+  options?: unknown;
+  child: EventEmitter & {
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: ReturnType<typeof vi.fn>;
+    pid?: number;
+  };
 };
 
 function createSpawnStub(results: SpawnResult[]) {
   const calls: SpawnCall[] = [];
   const pending: Array<{ child: EventEmitter; result: SpawnResult }> = [];
 
-  const spawnFn = ((command: string, args: string[]) => {
+  const spawnFn = ((command: string, args: string[], options?: unknown) => {
     const result = results.shift() ?? { exitCode: 0 };
     const child = new EventEmitter() as EventEmitter & {
       stdout: PassThrough;
       stderr: PassThrough;
-      kill: () => void;
+      kill: ReturnType<typeof vi.fn>;
+      pid?: number;
     };
 
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     child.kill = vi.fn();
+    child.pid = 4321 + calls.length;
 
-    calls.push({ command, args });
+    calls.push({ command, args, options, child });
 
     if (result.defer) {
       pending.push({ child, result });
@@ -79,6 +88,7 @@ function createService(
     preCheck?: string | null;
     sessionTitle?: string | null;
     enabled?: boolean;
+    reuseSession?: boolean;
     maxConcurrent?: number;
   }> = {},
   spawnFn?: typeof import('node:child_process').spawn,
@@ -94,6 +104,7 @@ function createService(
     id: scheduleOverrides.id ?? 'daily-review',
     cron: scheduleOverrides.cron ?? '0 9 * * *',
     enabled: scheduleOverrides.enabled ?? false,
+    reuseSession: scheduleOverrides.reuseSession ?? true,
     maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
@@ -186,6 +197,7 @@ function createServiceWithSessions(
     preCheck?: string | null;
     sessionTitle?: string | null;
     enabled?: boolean;
+    reuseSession?: boolean;
     maxConcurrent?: number;
   }> = {},
 ) {
@@ -200,6 +212,7 @@ function createServiceWithSessions(
     id: scheduleOverrides.id ?? 'daily-review',
     cron: scheduleOverrides.cron ?? '0 9 * * *',
     enabled: scheduleOverrides.enabled ?? false,
+    reuseSession: scheduleOverrides.reuseSession ?? true,
     maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
@@ -289,6 +302,69 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
+  it('creates, updates, and deletes runtime schedules', async () => {
+    const { service } = createService();
+
+    await service.initialize();
+
+    const created = service.createSchedule('agent', {
+      cron: '*/15 * * * *',
+      prompt: 'Runtime review',
+      sessionTitle: 'Runtime Review',
+      enabled: true,
+    });
+
+    expect(created.scheduleId).toMatch(/^schedule-/);
+    expect(created.sessionTitle).toBe('Runtime Review');
+    expect(created.reuseSession).toBe(true);
+
+    const updated = service.updateSchedule('agent', created.scheduleId, {
+      cron: '0 * * * *',
+      preCheck: 'check.sh',
+      sessionTitle: null,
+      reuseSession: false,
+      maxConcurrent: 3,
+    });
+
+    expect(updated.cron).toBe('0 * * * *');
+    expect(updated.preCheck).toBe('check.sh');
+    expect(updated.sessionTitle).toBeUndefined();
+    expect(updated.reuseSession).toBe(false);
+    expect(updated.maxConcurrent).toBe(3);
+
+    expect(service.listSchedules().some((item) => item.scheduleId === created.scheduleId)).toBe(
+      true,
+    );
+
+    const deleted = service.deleteSchedule('agent', created.scheduleId);
+    expect(deleted).toEqual({
+      agentId: 'agent',
+      scheduleId: created.scheduleId,
+      deleted: true,
+    });
+    expect(service.listSchedules().some((item) => item.scheduleId === created.scheduleId)).toBe(
+      false,
+    );
+
+    service.shutdown();
+  });
+
+  it('preserves runtime enabled overrides when updates do not touch enabled', async () => {
+    const { service } = createService({ enabled: true });
+
+    await service.initialize();
+    service.setEnabled('agent', 'daily-review', false);
+
+    const updated = service.updateSchedule('agent', 'daily-review', {
+      sessionTitle: 'Nightly Review',
+    });
+
+    expect(updated.enabled).toBe(true);
+    expect(updated.runtimeEnabled).toBe(false);
+
+    service.shutdown();
+  });
+
   it('composes prompt with pre-check output', async () => {
     const spawn = createSpawnStub([
       { exitCode: 0, stdout: 'deps: updated' },
@@ -330,6 +406,74 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
+  it('allows maxConcurrent greater than one only to matter when reuseSession is false', async () => {
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }, { exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { enabled: false, reuseSession: false, maxConcurrent: 2 },
+      spawn.spawnFn,
+    );
+
+    await service.initialize();
+
+    const first = await service.triggerRun('agent', 'daily-review');
+    const second = await service.triggerRun('agent', 'daily-review');
+
+    expect(first.status).toBe('started');
+    expect(second.status).toBe('started');
+
+    spawn.resolvePending();
+    service.shutdown();
+  });
+
+  it('clamps effective concurrency to one when reuseSession is true', async () => {
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { enabled: false, reuseSession: true, maxConcurrent: 4 },
+      spawn.spawnFn,
+    );
+
+    await service.initialize();
+
+    const first = await service.triggerRun('agent', 'daily-review');
+    await tick();
+    const second = await service.triggerRun('agent', 'daily-review');
+
+    expect(first.status).toBe('started');
+    expect(second).toEqual({ status: 'skipped', reason: 'max_concurrent' });
+
+    spawn.resolvePending();
+    service.shutdown();
+  });
+
+  it('kills the full preCheck process group on timeout', async () => {
+    vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { prompt: 'Review deps', preCheck: 'sleep 60', enabled: false },
+      spawn.spawnFn,
+    );
+
+    await service.initialize();
+
+    const runPromise = service.triggerRun('agent', 'daily-review');
+    await vi.advanceTimersByTimeAsync(30_000);
+    await runPromise;
+
+    expect(spawn.calls).toHaveLength(1);
+    expect(spawn.calls[0]?.options).toMatchObject({ detached: process.platform !== 'win32' });
+
+    if (process.platform === 'win32') {
+      expect(spawn.calls[0]?.child.kill).toHaveBeenCalledWith('SIGTERM');
+    } else {
+      expect(killSpy).toHaveBeenCalledWith(-(spawn.calls[0]?.child.pid ?? 0), 'SIGTERM');
+    }
+
+    killSpy.mockRestore();
+    vi.useRealTimers();
+    service.shutdown();
+  });
+
   it('skips runs without prompt or pre-check', async () => {
     const spawn = createSpawnStub([]);
     const { service } = createService({ prompt: null, preCheck: null }, spawn.spawnFn);
@@ -358,6 +502,23 @@ describe('ScheduledSessionService', () => {
       | undefined;
     expect(attributes?.core?.autoTitle).toBe('Daily Review');
     expect(sessionIndex.renameSession).not.toHaveBeenCalled();
+
+    service.shutdown();
+  });
+
+  it('creates a fresh backing session for each run when reuseSession is false', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      reuseSession: false,
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(2);
 
     service.shutdown();
   });

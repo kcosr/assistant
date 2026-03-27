@@ -1,6 +1,6 @@
 # Scheduled Sessions Plugin
 
-Monitor and control cron-driven agent sessions. The core scheduler runs in the agent server; this plugin adds UI, tools, and HTTP endpoints.
+Monitor and control cron-driven agent sessions. The core scheduler runs in the agent server; this plugin adds UI plus generated tools, HTTP operations, and CLI commands.
 
 ## Table of Contents
 
@@ -9,6 +9,7 @@ Monitor and control cron-driven agent sessions. The core scheduler runs in the a
 - [Panel](#panel)
 - [Tools](#tools)
 - [HTTP](#http)
+- [CLI](#cli)
 
 ## Configuration
 
@@ -21,6 +22,8 @@ Monitor and control cron-driven agent sessions. The core scheduler runs in the a
 ```
 
 Schedules are defined on agents. See `docs/CONFIG.md` for the `schedules` schema.
+
+Runtime-managed schedules created through the generated API/tools/CLI are currently in-memory only. They take effect immediately, but they are lost when the server restarts.
 
 ## Source files
 
@@ -40,6 +43,9 @@ Schedules are defined on agents. See `docs/CONFIG.md` for the `schedules` schema
 Tools are exposed when plugin tools are enabled:
 
 - `scheduled_sessions_list`: list schedules and status.
+- `scheduled_sessions_create`: create a runtime-managed schedule.
+- `scheduled_sessions_update`: update an existing schedule.
+- `scheduled_sessions_delete`: delete a schedule.
 - `scheduled_sessions_run`: trigger a run by agentId + scheduleId.
 - `scheduled_sessions_enable`: enable a schedule at runtime.
 - `scheduled_sessions_disable`: disable a schedule at runtime.
@@ -48,7 +54,29 @@ Tools are exposed when plugin tools are enabled:
 
 Endpoints:
 
-- `GET /api/scheduled-sessions`: list schedules.
-- `POST /api/scheduled-sessions/:agentId/:scheduleId/run`: trigger run (body: `{ "force": false }`).
-- `POST /api/scheduled-sessions/:agentId/:scheduleId/enable`: enable schedule.
-- `POST /api/scheduled-sessions/:agentId/:scheduleId/disable`: disable schedule.
+- `POST /api/plugins/scheduled-sessions/operations/list`
+- `POST /api/plugins/scheduled-sessions/operations/create`
+- `POST /api/plugins/scheduled-sessions/operations/update`
+- `POST /api/plugins/scheduled-sessions/operations/delete`
+- `POST /api/plugins/scheduled-sessions/operations/run`
+- `POST /api/plugins/scheduled-sessions/operations/enable`
+- `POST /api/plugins/scheduled-sessions/operations/disable`
+
+Responses use the standard generated plugin operations envelope:
+
+```json
+{
+  "ok": true,
+  "result": {}
+}
+```
+
+## CLI
+
+This plugin now participates in generated CLI output when plugin builds are run:
+
+```bash
+npm run build:plugins
+./dist/skills/assistant-scheduled-sessions/assistant-scheduled-sessions-cli list
+./dist/skills/assistant-scheduled-sessions/assistant-scheduled-sessions-cli create --agentId coding --cron "0 9 * * *" --prompt "Daily review"
+```
