@@ -3212,6 +3212,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           !!activeListId && (activeListId !== listId || activeListInstanceId !== instanceId);
         const preservedSelectedItemIds =
           !isSwitchingLists && mode === 'list' ? bodyManager.getSelectedItemIds() : [];
+        const pendingSelectionScrollItemId =
+          !isSwitchingLists && mode === 'list'
+            ? listPanelController.consumePendingSelectionScrollItemId()
+            : null;
         try {
           const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
           const list = parseListSummary(rawList, instanceId);
@@ -3267,7 +3271,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           const controls = listPanelController.render(list.id, data);
           sharedSearchController.setRightControls(controls.rightControls);
           if (preservedSelectedItemIds.length > 0) {
-            listPanelController.restoreSelection(preservedSelectedItemIds);
+            listPanelController.restoreSelection(preservedSelectedItemIds, {
+              scrollItemId: pendingSelectionScrollItemId,
+            });
+          } else if (pendingSelectionScrollItemId) {
+            listPanelController.selectItemById(pendingSelectionScrollItemId, { scroll: true });
           }
           updatePanelContext();
           setMode('list');

@@ -2929,6 +2929,19 @@ export class ListPanelTableController {
     return true;
   }
 
+  getSelectedItemIds(): string[] {
+    const state = this.renderState;
+    if (!state) {
+      return [];
+    }
+    return Array.from(
+      state.tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row.list-item-selected'),
+    )
+      .map((row) => row.dataset['itemId'])
+      .filter((itemId): itemId is string => typeof itemId === 'string' && itemId.trim().length > 0)
+      .map((itemId) => itemId.trim());
+  }
+
   selectVisible(bodyEl: HTMLElement): void {
     const rows = Array.from(bodyEl.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
 

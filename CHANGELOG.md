@@ -41,6 +41,7 @@
 - Fixed lists `w`/`s` move shortcuts to use neighboring stored item positions instead of visible row indexes, so moves keep working in lists where completed items or historical reorder drift make those values diverge. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed raw list-search ArrowUp/ArrowDown to blur the shared search input and hand control back to list navigation when tag suggestions are not active. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed list delete shortcuts so `Delete` and `Backspace` trigger the same selected-item delete flow as `d`. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed lists keyboard move shortcuts to keep the moved item scrolled into view after rerenders and same-list refresh reloads. ([#65](https://github.com/kcosr/assistant/pull/65))
 
 ### Removed
 

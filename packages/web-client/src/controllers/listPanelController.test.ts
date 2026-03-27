@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   ListPanelController,
   type ListPanelControllerOptions,
+  type ListPanelItem,
   __TEST_ONLY,
 } from './listPanelController';
 import { ContextMenuManager } from './contextMenu';
@@ -509,6 +510,100 @@ describe('ListPanelController keyboard shortcuts', () => {
     expect(updated).toBe(true);
     const selectedRow = bodyEl.querySelector<HTMLTableRowElement>('.list-item-row.list-item-selected');
     expect(selectedRow?.dataset['itemId']).toBe('item-2');
+  });
+
+  it('scrolls the restored item into view after a rerender when a move queued scroll follow', () => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+
+    const originalScrollIntoView = HTMLTableRowElement.prototype.scrollIntoView;
+    HTMLTableRowElement.prototype.scrollIntoView = vi.fn();
+
+    try {
+      const controller = new ListPanelController({
+        bodyEl,
+        getSearchQuery: () => '',
+        getSearchTagController: () => null,
+        getActiveInstanceId: () => 'default',
+        callOperation: vi.fn(
+          async () => ({} as unknown),
+        ) as NonNullable<ListPanelControllerOptions['callOperation']>,
+        icons: {
+          copy: '',
+          duplicate: '',
+          move: '',
+          plus: '',
+          edit: '',
+          trash: '',
+          moreVertical: '',
+          x: '',
+          clock: '',
+          clockOff: '',
+          moveTop: '',
+          moveBottom: '',
+          pin: '',
+        },
+        renderTags: () => null,
+        setStatus: () => undefined,
+        dialogManager: new DialogManager(),
+        contextMenuManager: new ContextMenuManager({
+          isSessionPinned: () => false,
+          pinSession: () => undefined,
+          clearHistory: () => undefined,
+          deleteSession: () => undefined,
+          renameSession: () => undefined,
+        }),
+        recentUserItemUpdates: new Set<string>(),
+        userUpdateTimeoutMs: 1000,
+        getSelectedItemIds: () => [],
+        getSelectedItemCount: () => 0,
+        onSelectionChange: () => undefined,
+        getMoveTargetLists: () => [],
+        openListMetadataDialog: () => undefined,
+        getListColumnPreferences: () => null,
+        updateListColumnPreferences: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+        setRightControls: () => undefined,
+      });
+
+      controller.render('list-1', {
+        id: 'list-1',
+        name: 'List 1',
+        items: [
+          { id: 'item-1', title: 'Item 1', position: 0 },
+          { id: 'item-2', title: 'Item 2', position: 1 },
+          { id: 'item-3', title: 'Item 3', position: 2 },
+        ],
+      });
+
+      expect(controller.selectItemById('item-2', { scroll: false })).toBe(true);
+
+      const selectItemByIdSpy = vi.spyOn(controller, 'selectItemById');
+      const internal = controller as unknown as {
+        queuePendingSelectionScroll: (itemId: string) => void;
+        applyItemUpdate: (item: ListPanelItem) => boolean;
+      };
+      internal.queuePendingSelectionScroll('item-2');
+
+      expect(
+        internal.applyItemUpdate({
+          id: 'item-2',
+          title: 'Item 2',
+          position: 10,
+        }),
+      ).toBe(true);
+
+      expect(selectItemByIdSpy).toHaveBeenCalledWith('item-2', { scroll: true });
+    } finally {
+      HTMLTableRowElement.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it('blocks move across completion boundaries', () => {

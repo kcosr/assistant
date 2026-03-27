@@ -216,6 +216,8 @@ export class ListPanelController {
   private currentData: ListPanelData | null = null;
   private currentSortedItems: ListPanelItem[] = [];
   private currentColumnState: ListColumnState | null = null;
+  private pendingSelectionScrollItemId: string | null = null;
+  private pendingSelectionScrollTimeout: ReturnType<typeof setTimeout> | null = null;
   private currentTable: {
     tbody: HTMLTableSectionElement;
     colCount: number;
@@ -1212,11 +1214,14 @@ export class ListPanelController {
       return;
     }
     const selectedIdsBeforeRender = this.tableController.getSelectedItemIds();
+    const scrollItemId = this.consumePendingSelectionScrollItemId();
     const controls = this.render(this.currentListId, this.currentData);
     this.options.setRightControls(controls.rightControls);
     const bodyEl = this.options.bodyEl;
     if (bodyEl && selectedIdsBeforeRender.length > 0) {
-      this.tableController.restoreSelection(bodyEl, selectedIdsBeforeRender);
+      this.restoreSelection(selectedIdsBeforeRender, { scrollItemId });
+    } else if (scrollItemId) {
+      this.selectItemById(scrollItemId, { scroll: true });
     }
   }
 
@@ -1449,12 +1454,39 @@ export class ListPanelController {
     return this.tableController.selectItemById(bodyEl, itemId, options);
   }
 
-  restoreSelection(itemIds: string[]): void {
+  restoreSelection(itemIds: string[], options?: { scrollItemId?: string | null }): void {
     const bodyEl = this.options.bodyEl;
     if (!bodyEl) {
       return;
     }
     this.tableController.restoreSelection(bodyEl, itemIds);
+    const scrollItemId = options?.scrollItemId?.trim();
+    if (scrollItemId) {
+      this.selectItemById(scrollItemId, { scroll: true });
+    }
+  }
+
+  consumePendingSelectionScrollItemId(): string | null {
+    const itemId = this.pendingSelectionScrollItemId;
+    this.pendingSelectionScrollItemId = null;
+    if (this.pendingSelectionScrollTimeout) {
+      clearTimeout(this.pendingSelectionScrollTimeout);
+      this.pendingSelectionScrollTimeout = null;
+    }
+    return itemId;
+  }
+
+  private queuePendingSelectionScroll(itemId: string): void {
+    this.pendingSelectionScrollItemId = itemId;
+    if (this.pendingSelectionScrollTimeout) {
+      clearTimeout(this.pendingSelectionScrollTimeout);
+    }
+    this.pendingSelectionScrollTimeout = setTimeout(() => {
+      if (this.pendingSelectionScrollItemId === itemId) {
+        this.pendingSelectionScrollItemId = null;
+      }
+      this.pendingSelectionScrollTimeout = null;
+    }, this.options.userUpdateTimeoutMs);
   }
 
   private selectVisibleItems(): void {
@@ -2000,6 +2032,7 @@ export class ListPanelController {
     if (currentCompleted !== nextCompleted) {
       return false;
     }
+    this.queuePendingSelectionScroll(itemId);
     this.options.recentUserItemUpdates.add(itemId);
     window.setTimeout(() => {
       this.options.recentUserItemUpdates.delete(itemId);
@@ -2010,6 +2043,7 @@ export class ListPanelController {
         : nextIndex;
     const ok = await this.updateListItem(listId, itemId, { position: targetPosition });
     if (!ok) {
+      this.consumePendingSelectionScrollItemId();
       this.options.setStatus('Failed to move item');
     }
     return ok;
@@ -2030,6 +2064,7 @@ export class ListPanelController {
     if (!itemId) {
       return false;
     }
+    this.queuePendingSelectionScroll(itemId);
     this.options.recentUserItemUpdates.add(itemId);
     window.setTimeout(() => {
       this.options.recentUserItemUpdates.delete(itemId);
@@ -2037,6 +2072,7 @@ export class ListPanelController {
     const position = boundary === 'top' ? 0 : Number.MAX_SAFE_INTEGER;
     const ok = await this.updateListItem(listId, itemId, { position });
     if (!ok) {
+      this.consumePendingSelectionScrollItemId();
       this.options.setStatus('Failed to move item');
     }
     return ok;
