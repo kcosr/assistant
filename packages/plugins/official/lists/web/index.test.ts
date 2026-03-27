@@ -176,6 +176,174 @@ describe('lists panel keyboard shortcuts', () => {
     handle.unmount();
   }, 15000);
 
+  it('exits raw list search on ArrowDown and continues list navigation', async () => {
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['lists'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const jsonResponse = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const body =
+          typeof init?.body === 'string' && init.body.length > 0
+            ? (JSON.parse(init.body) as Record<string, unknown>)
+            : {};
+        const operation = url.split('/').pop();
+        switch (operation) {
+          case 'instance_list':
+            return jsonResponse([{ id: 'default', label: 'Default' }]);
+          case 'list':
+            return jsonResponse([{ id: 'list-a', name: 'List A', customFields: [] }]);
+          case 'get':
+            return jsonResponse({ id: String(body['id']), name: 'List A', customFields: [] });
+          case 'items-list':
+            return jsonResponse([
+              { id: 'item-1', title: 'First', position: 0 },
+              { id: 'item-2', title: 'Second', position: 1 },
+            ]);
+          case 'aql-query-list':
+            return jsonResponse([]);
+          default:
+            return jsonResponse([]);
+        }
+      }),
+    );
+
+    const host = {
+      panelId: () => 'lists-search-arrowdown',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedListId: 'list-a',
+        selectedListInstanceId: 'default',
+        mode: 'list',
+        instanceIds: ['default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+        getListPreferences: () => null,
+        updateColumn: () => undefined,
+        getSortState: () => null,
+        updateSortState: () => undefined,
+        getTimelineField: () => null,
+        updateTimelineField: () => undefined,
+        getFocusMarkerItemId: () => null,
+        getFocusMarkerExpanded: () => false,
+        updateFocusMarker: () => undefined,
+        updateFocusMarkerExpanded: () => undefined,
+      },
+      keyboardShortcuts,
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    host.setContext('panel.active', { panelId: host.panelId(), panelType: 'lists' });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const flush = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    const waitFor = async (predicate: () => boolean) => {
+      for (let i = 0; i < 20; i += 1) {
+        if (predicate()) {
+          return;
+        }
+        await flush();
+      }
+      throw new Error('Timed out waiting for condition');
+    };
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      '.collection-list-search-input',
+    );
+    expect(searchInput).not.toBeNull();
+
+    await waitFor(
+      () => container.querySelectorAll('.list-item-row[data-item-id]').length === 2,
+    );
+
+    searchInput?.focus();
+    expect(document.activeElement).toBe(searchInput);
+
+    searchInput?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+
+    await waitFor(() =>
+      container
+        .querySelector('.list-item-row[data-item-id="item-1"]')
+        ?.classList.contains('list-item-selected'),
+    );
+    expect(document.activeElement).not.toBe(searchInput);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+
+    await waitFor(() =>
+      container
+        .querySelector('.list-item-row[data-item-id="item-2"]')
+        ?.classList.contains('list-item-selected'),
+    );
+
+    handle.unmount();
+  }, 15000);
+
   it('uses the active list instance in context attributes', async () => {
     vi.resetModules();
     await import('./index');
@@ -318,6 +486,16 @@ describe('lists panel keyboard shortcuts', () => {
 
     const handle = panelModule.mount(container, host);
     handle.onVisibilityChange?.(true);
+
+    handle.onEvent?.({
+      type: 'panel_event',
+      panelId: host.panelId(),
+      payload: {
+        type: 'lists_show',
+        listId: 'devtools',
+        instance_id: 'default',
+      },
+    });
 
     const waitFor = async (predicate: () => boolean) => {
       const start = Date.now();
@@ -1135,4 +1313,5 @@ describe('lists panel keyboard shortcuts', () => {
 
     handle.unmount();
   });
+
 });

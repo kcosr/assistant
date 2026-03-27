@@ -1992,6 +1992,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         registerPlain('space', ' ');
         registerPlain('spacebar', 'spacebar');
         registerPlain('delete', 'd');
+        registerPlain('delete-key', 'delete');
+        registerPlain('backspace-key', 'backspace');
         registerPlain('pin', 'p');
         registerPlain('new', 'n');
         registerPlain('move-top', 't');
@@ -2761,7 +2763,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         } else {
           sharedSearchController.setTagFilteringEnabled(true);
           sharedSearchController.setPlaceholder('Search items...');
-          sharedSearchController.setKeydownHandler(null);
+          sharedSearchController.setKeydownHandler(handleRawListSearchKeydown);
           aqlAppliedQuery = null;
           aqlError = null;
           aqlDirty = false;
@@ -2787,6 +2789,34 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return true;
         }
         return false;
+      };
+
+      const handleRawListSearchKeydown = (event: KeyboardEvent): boolean => {
+        if (mode !== 'list' || searchMode !== 'raw') {
+          return false;
+        }
+        if (
+          (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.altKey
+        ) {
+          return false;
+        }
+
+        const tagController = sharedSearchController.getTagController();
+        const hasVisibleTagSuggestions =
+          (tagController?.getVisibleTagSuggestions().length ?? 0) > 0;
+        if (tagController?.isSuggestionsMode || hasVisibleTagSuggestions) {
+          return false;
+        }
+
+        const searchInput = sharedSearchController.getSearchInputEl();
+        searchInput?.blur();
+        listPanelController.focusListBody();
+        event.preventDefault();
+        event.stopPropagation();
+        return listPanelController.handleKeyboardEvent(event);
       };
 
       const validateAqlInput = (queryText: string): AqlQuery | null => {
@@ -3049,7 +3079,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           } else {
             sharedSearchController.setTagFilteringEnabled(true);
             sharedSearchController.setPlaceholder('Search items...');
-            sharedSearchController.setKeydownHandler(null);
+            sharedSearchController.setKeydownHandler(handleRawListSearchKeydown);
           }
           sharedSearchController.setTagsProvider(() => listPanelController.getAvailableTags());
         }
@@ -3180,6 +3210,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const currentToken = ++loadToken;
         const isSwitchingLists =
           !!activeListId && (activeListId !== listId || activeListInstanceId !== instanceId);
+        const preservedSelectedItemIds =
+          !isSwitchingLists && mode === 'list' ? bodyManager.getSelectedItemIds() : [];
         try {
           const rawList = await callInstanceOperation<unknown>(instanceId, 'get', { id: listId });
           const list = parseListSummary(rawList, instanceId);
@@ -3234,6 +3266,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           updateDropdownSelection({ type: 'list', id: list.id, instanceId });
           const controls = listPanelController.render(list.id, data);
           sharedSearchController.setRightControls(controls.rightControls);
+          if (preservedSelectedItemIds.length > 0) {
+            listPanelController.restoreSelection(preservedSelectedItemIds);
+          }
           updatePanelContext();
           setMode('list');
         } catch (err) {

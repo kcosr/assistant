@@ -253,6 +253,89 @@ describe('ListPanelController keyboard shortcuts', () => {
     });
   });
 
+  it('moves using neighboring stored positions when visible order differs from raw positions', () => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+
+    const callOperation = vi.fn(
+      async () => ({} as unknown),
+    ) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const selectedIds = ['item-3'];
+
+    const controller = new ListPanelController({
+      bodyEl,
+      getSearchQuery: () => '',
+      getSearchTagController: () => null,
+      getActiveInstanceId: () => 'default',
+      callOperation,
+      icons: {
+        copy: '',
+        duplicate: '',
+        move: '',
+        plus: '',
+        edit: '',
+        trash: '',
+        moreVertical: '',
+        x: '',
+        clock: '',
+        clockOff: '',
+        moveTop: '',
+        moveBottom: '',
+        pin: '',
+      },
+      renderTags: () => null,
+      setStatus: () => undefined,
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+      onSelectionChange: () => undefined,
+      getMoveTargetLists: () => [],
+      openListMetadataDialog: () => undefined,
+      getListColumnPreferences: () => null,
+      updateListColumnPreferences: () => undefined,
+      getSortState: () => null,
+      updateSortState: () => undefined,
+      getTimelineField: () => null,
+      updateTimelineField: () => undefined,
+      getFocusMarkerItemId: () => null,
+      getFocusMarkerExpanded: () => false,
+      updateFocusMarker: () => undefined,
+      updateFocusMarkerExpanded: () => undefined,
+      setRightControls: () => undefined,
+    });
+
+    controller.render('list-1', {
+      id: 'list-1',
+      name: 'List 1',
+      items: [
+        { id: 'item-1', title: 'Item 1', position: 0 },
+        { id: 'item-2', title: 'Item 2', position: 1, completed: true },
+        { id: 'item-3', title: 'Item 3', position: 3 },
+        { id: 'item-4', title: 'Item 4', position: 4 },
+      ],
+    });
+
+    const downHandled = controller.handleKeyboardEvent(
+      new KeyboardEvent('keydown', { key: 's' }),
+    );
+
+    expect(downHandled).toBe(true);
+    expect(callOperation).toHaveBeenLastCalledWith('item-update', {
+      listId: 'list-1',
+      id: 'item-3',
+      position: 4,
+    });
+  });
+
   it('preserves selection across rerender when an item move changes order', () => {
     const bodyEl = document.createElement('div');
     document.body.appendChild(bodyEl);
@@ -348,6 +431,86 @@ describe('ListPanelController keyboard shortcuts', () => {
     expect(selectedRow?.dataset['itemId']).toBe('item-2');
   });
 
+  it('preserves selection across rerender when external selection context is stale', () => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+
+    const controller = new ListPanelController({
+      bodyEl,
+      getSearchQuery: () => '',
+      getSearchTagController: () => null,
+      getActiveInstanceId: () => 'default',
+      callOperation: vi.fn(
+        async () => ({} as unknown),
+      ) as NonNullable<ListPanelControllerOptions['callOperation']>,
+      icons: {
+        copy: '',
+        duplicate: '',
+        move: '',
+        plus: '',
+        edit: '',
+        trash: '',
+        moreVertical: '',
+        x: '',
+        clock: '',
+        clockOff: '',
+        moveTop: '',
+        moveBottom: '',
+        pin: '',
+      },
+      renderTags: () => null,
+      setStatus: () => undefined,
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemIds: () => [],
+      getSelectedItemCount: () => 0,
+      onSelectionChange: () => undefined,
+      getMoveTargetLists: () => [],
+      openListMetadataDialog: () => undefined,
+      getListColumnPreferences: () => null,
+      updateListColumnPreferences: () => undefined,
+      getSortState: () => null,
+      updateSortState: () => undefined,
+      getTimelineField: () => null,
+      updateTimelineField: () => undefined,
+      getFocusMarkerItemId: () => null,
+      getFocusMarkerExpanded: () => false,
+      updateFocusMarker: () => undefined,
+      updateFocusMarkerExpanded: () => undefined,
+      setRightControls: () => undefined,
+    });
+
+    controller.render('list-1', {
+      id: 'list-1',
+      name: 'List 1',
+      items: [
+        { id: 'item-1', title: 'Item 1', position: 0 },
+        { id: 'item-2', title: 'Item 2', position: 1 },
+        { id: 'item-3', title: 'Item 3', position: 2 },
+      ],
+    });
+
+    expect(controller.selectItemById('item-2', { scroll: false })).toBe(true);
+
+    const updated = controller.applyItemUpdate({
+      id: 'item-2',
+      title: 'Item 2',
+      position: 0,
+    });
+
+    expect(updated).toBe(true);
+    const selectedRow = bodyEl.querySelector<HTMLTableRowElement>('.list-item-row.list-item-selected');
+    expect(selectedRow?.dataset['itemId']).toBe('item-2');
+  });
+
   it('blocks move across completion boundaries', () => {
     const bodyEl = document.createElement('div');
     document.body.appendChild(bodyEl);
@@ -422,6 +585,83 @@ describe('ListPanelController keyboard shortcuts', () => {
     );
     expect(handled).toBe(true);
     expect(callOperation).not.toHaveBeenCalled();
+  });
+
+  it('opens delete confirmation on Delete and Backspace like d', () => {
+    const bodyEl = document.createElement('div');
+    document.body.appendChild(bodyEl);
+
+    const selectedIds = ['item-1'];
+
+    const controller = new ListPanelController({
+      bodyEl,
+      getSearchQuery: () => '',
+      getSearchTagController: () => null,
+      getActiveInstanceId: () => 'default',
+      icons: {
+        copy: '',
+        duplicate: '',
+        move: '',
+        plus: '',
+        edit: '',
+        trash: '',
+        moreVertical: '',
+        x: '',
+        clock: '',
+        clockOff: '',
+        moveTop: '',
+        moveBottom: '',
+        pin: '',
+      },
+      renderTags: () => null,
+      setStatus: () => undefined,
+      dialogManager: new DialogManager(),
+      contextMenuManager: new ContextMenuManager({
+        isSessionPinned: () => false,
+        pinSession: () => undefined,
+        clearHistory: () => undefined,
+        deleteSession: () => undefined,
+        renameSession: () => undefined,
+      }),
+      recentUserItemUpdates: new Set<string>(),
+      userUpdateTimeoutMs: 1000,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+      onSelectionChange: () => undefined,
+      getMoveTargetLists: () => [],
+      openListMetadataDialog: () => undefined,
+      getListColumnPreferences: () => null,
+      updateListColumnPreferences: () => undefined,
+      getSortState: () => null,
+      updateSortState: () => undefined,
+      getTimelineField: () => null,
+      updateTimelineField: () => undefined,
+      getFocusMarkerItemId: () => null,
+      getFocusMarkerExpanded: () => false,
+      updateFocusMarker: () => undefined,
+      updateFocusMarkerExpanded: () => undefined,
+      setRightControls: () => undefined,
+    });
+
+    controller.render('list-1', {
+      id: 'list-1',
+      name: 'List 1',
+      items: [{ id: 'item-1', title: 'Item 1' }],
+    });
+
+    const deleteHandled = controller.handleKeyboardEvent(
+      new KeyboardEvent('keydown', { key: 'Delete' }),
+    );
+    expect(deleteHandled).toBe(true);
+    expect(document.querySelector('.confirm-dialog-overlay')).not.toBeNull();
+    document.querySelector('.confirm-dialog-overlay')?.remove();
+
+    const backspaceHandled = controller.handleKeyboardEvent(
+      new KeyboardEvent('keydown', { key: 'Backspace' }),
+    );
+    expect(backspaceHandled).toBe(true);
+    expect(document.querySelector('.confirm-dialog-overlay')).not.toBeNull();
+    document.querySelector('.confirm-dialog-overlay')?.remove();
   });
 });
 

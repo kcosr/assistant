@@ -506,7 +506,7 @@ export class ListPanelController {
       return true;
     }
 
-    if (lowerKey === 'd') {
+    if (lowerKey === 'd' || lowerKey === 'delete' || lowerKey === 'backspace') {
       return this.requestDeleteSelectedItems();
     }
     if (lowerKey === 't') {
@@ -550,7 +550,7 @@ export class ListPanelController {
     return false;
   }
 
-  private focusListBody(): void {
+  focusListBody(): void {
     const bodyEl = this.options.bodyEl;
     if (bodyEl && typeof bodyEl.focus === 'function') {
       bodyEl.focus();
@@ -1211,7 +1211,7 @@ export class ListPanelController {
     if (!this.currentListId || !this.currentData) {
       return;
     }
-    const selectedIdsBeforeRender = this.options.getSelectedItemIds();
+    const selectedIdsBeforeRender = this.tableController.getSelectedItemIds();
     const controls = this.render(this.currentListId, this.currentData);
     this.options.setRightControls(controls.rightControls);
     const bodyEl = this.options.bodyEl;
@@ -1447,6 +1447,14 @@ export class ListPanelController {
       return false;
     }
     return this.tableController.selectItemById(bodyEl, itemId, options);
+  }
+
+  restoreSelection(itemIds: string[]): void {
+    const bodyEl = this.options.bodyEl;
+    if (!bodyEl) {
+      return;
+    }
+    this.tableController.restoreSelection(bodyEl, itemIds);
   }
 
   private selectVisibleItems(): void {
@@ -1996,7 +2004,11 @@ export class ListPanelController {
     window.setTimeout(() => {
       this.options.recentUserItemUpdates.delete(itemId);
     }, this.options.userUpdateTimeoutMs);
-    const ok = await this.updateListItem(listId, itemId, { position: nextIndex });
+    const targetPosition =
+      typeof nextItem.position === 'number' && Number.isFinite(nextItem.position)
+        ? nextItem.position
+        : nextIndex;
+    const ok = await this.updateListItem(listId, itemId, { position: targetPosition });
     if (!ok) {
       this.options.setStatus('Failed to move item');
     }

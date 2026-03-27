@@ -37,7 +37,10 @@
 - Fixed CLI-backed chat runs to resolve `${session.workingDir}` in interactive `workdir` and wrapper env config so session-picked working directories reach spawned CLI processes and container wrappers. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed local coding-plugin tools to honor `${session.workingDir}` in `plugins.coding.local.workspaceRoot`, so relative file operations and `bash` commands run from the session-picked working directory in non-sidecar mode. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed Pi session syncing to avoid appending the same completed assistant turn twice when first-turn replay state aliases the live session message array, which could later trigger duplicate replay item id errors. ([#65](https://github.com/kcosr/assistant/pull/65))
-- Fixed lists keyboard move shortcuts (`t`, `b`, `w`, `s`) to preserve the current row selection across rerenders when the move changes item order. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed lists keyboard move shortcuts (`t`, `b`, `w`, `s`) to preserve the current row selection across both rerenders and same-list refresh reloads when the move changes item order. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed lists `w`/`s` move shortcuts to use neighboring stored item positions instead of visible row indexes, so moves keep working in lists where completed items or historical reorder drift make those values diverge. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed raw list-search ArrowUp/ArrowDown to blur the shared search input and hand control back to list navigation when tag suggestions are not active. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed list delete shortcuts so `Delete` and `Backspace` trigger the same selected-item delete flow as `d`. ([#65](https://github.com/kcosr/assistant/pull/65))
 
 ### Removed
 

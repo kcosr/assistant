@@ -58,6 +58,12 @@
   min-height: 0;
 }
 
+.lists-panel .collection-panel-content:focus,
+.lists-panel .collection-panel-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .collection-panel-content.note-edit-mode {
   display: flex;
   flex-direction: column;
