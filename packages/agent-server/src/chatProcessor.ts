@@ -23,6 +23,8 @@ import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chat
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
+  logDebugChatEventRecord,
+  previewDebugText,
   resolveChatProvider,
   runChatCompletionCore,
 } from './chatRunCore';
@@ -479,14 +481,35 @@ export async function processUserMessage(
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
       if (shouldEmitChatEvents && eventStore && turnId) {
+        const assistantDoneEvents = buildAssistantDoneEvents({
+          sessionId,
+          turnId,
+          responseId,
+          fullText,
+          piSdkMessage: runResult.piSdkMessage,
+        }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+        for (const event of assistantDoneEvents) {
+          logDebugChatEventRecord({
+            enabled: envConfig.debugChatCompletions,
+            dataDir: envConfig.dataDir,
+            log,
+            record: {
+              timestamp: new Date().toISOString(),
+              direction: 'event',
+              eventType: 'assistant_done',
+              provider: runResult.provider,
+              sessionId,
+              responseId,
+              ...(turnId ? { turnId } : {}),
+              phase: event.payload.phase ?? null,
+              textLength: event.payload.text.length,
+              textPreview: previewDebugText(event.payload.text),
+              interrupted: event.payload.interrupted ?? false,
+            },
+          });
+        }
         const events: ChatEvent[] = [
-          ...buildAssistantDoneEvents({
-            sessionId,
-            turnId,
-            responseId,
-            fullText,
-            piSdkMessage: runResult.piSdkMessage,
-          }),
+          ...assistantDoneEvents,
           {
             ...createChatEventBase({
               sessionId,

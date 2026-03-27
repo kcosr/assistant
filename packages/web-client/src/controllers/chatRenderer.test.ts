@@ -541,6 +541,41 @@ describe('ChatRenderer', () => {
     expect(assistantText?.textContent).toContain('Hello world!');
   });
 
+  it('finalizes the current streamed segment when assistant_done matches the same stream', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Drink water', phase: 'final_answer' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: { text: ' now', phase: 'final_answer' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('assistant_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'Drink water now' },
+      }),
+    );
+
+    const assistantTexts = container.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.dataset['eventId']).toBe('e3');
+    expect(assistantTexts[0]?.dataset['phase']).toBe('final_answer');
+    expect(assistantTexts[0]?.textContent).toContain('Drink water now');
+  });
+
   it('renders interrupt indicators on the active turn', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

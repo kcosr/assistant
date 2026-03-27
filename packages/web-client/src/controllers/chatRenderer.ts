@@ -138,6 +138,14 @@ export class ChatRenderer {
     console.log(`[ChatRenderer] ${message}`, data);
   }
 
+  private previewText(text: string | undefined): string {
+    if (typeof text !== 'string') {
+      return '';
+    }
+    const singleLine = text.replace(/\s+/g, ' ').trim();
+    return singleLine.length > 120 ? `${singleLine.slice(0, 117)}...` : singleLine;
+  }
+
   hasActiveOutput(): boolean {
     if (this._isStreaming) {
       return true;
@@ -211,6 +219,14 @@ export class ChatRenderer {
         turnId: event.turnId ?? null,
         responseId: event.responseId ?? null,
         toolCallId,
+        phase:
+          event.type === 'assistant_chunk' || event.type === 'assistant_done'
+            ? (event.payload.phase ?? null)
+            : null,
+        textPreview:
+          event.type === 'assistant_chunk' || event.type === 'assistant_done'
+            ? this.previewText(event.payload.text)
+            : null,
       });
     }
 
@@ -425,6 +441,8 @@ export class ChatRenderer {
       return;
     }
 
+    const previousSegmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
+    const previousToken = this.assistantTextSegmentTokens.get(responseId) ?? null;
     this.ensureAssistantTextSegment(responseId, event.payload.phase);
 
     const responseEl = this.getOrCreateAssistantResponseContainer(
@@ -445,11 +463,58 @@ export class ChatRenderer {
     applyMarkdownToElement(textEl, combined);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
+
+    this.debugLog('assistant_chunk_applied', {
+      eventId: event.id,
+      responseId,
+      phase: event.payload.phase ?? null,
+      previousSegmentIdx,
+      nextSegmentIdx: segmentIdx,
+      previousToken,
+      nextToken: this.assistantTextSegmentTokens.get(responseId) ?? null,
+      textLength: event.payload.text.length,
+      textPreview: this.previewText(event.payload.text),
+      combinedLength: combined.length,
+      combinedPreview: this.previewText(combined),
+    });
   }
 
   private handleAssistantDone(event: AssistantDoneEvent): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
+      return;
+    }
+
+    const previousSegmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
+    const previousToken = this.assistantTextSegmentTokens.get(responseId) ?? null;
+    const currentBufferKey = `${responseId}:${previousSegmentIdx}`;
+    const currentBuffer = this.assistantTextBuffers.get(currentBufferKey);
+    const currentTextEl = this.assistantTextElements.get(currentBufferKey);
+    const canFinalizeExistingSegment =
+      !this.needsNewTextSegment.has(responseId) &&
+      !!currentTextEl &&
+      typeof currentBuffer === 'string' &&
+      currentBuffer.length > 0 &&
+      (event.payload.text === currentBuffer || event.payload.text.startsWith(currentBuffer));
+
+    if (canFinalizeExistingSegment && currentTextEl) {
+      this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
+      applyMarkdownToElement(currentTextEl, event.payload.text);
+      if (event.payload.phase) {
+        currentTextEl.dataset['phase'] = event.payload.phase;
+      }
+      currentTextEl.dataset['eventId'] = event.id;
+      currentTextEl.dataset['renderer'] = 'unified';
+
+      this.debugLog('assistant_done_finalize_existing_segment', {
+        eventId: event.id,
+        responseId,
+        phase: event.payload.phase ?? null,
+        segmentIdx: previousSegmentIdx,
+        previousToken,
+        textLength: event.payload.text.length,
+        textPreview: this.previewText(event.payload.text),
+      });
       return;
     }
 
@@ -471,6 +536,19 @@ export class ChatRenderer {
     applyMarkdownToElement(textEl, text);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
+
+    this.debugLog('assistant_done_applied', {
+      eventId: event.id,
+      responseId,
+      phase: event.payload.phase ?? null,
+      interrupted: event.payload.interrupted ?? false,
+      previousSegmentIdx,
+      nextSegmentIdx: segmentIdx,
+      previousToken,
+      nextToken: this.assistantTextSegmentTokens.get(responseId) ?? null,
+      textLength: text.length,
+      textPreview: this.previewText(text),
+    });
   }
 
   private handleThinkingChunk(event: ThinkingChunkEvent): void {
@@ -1677,6 +1755,11 @@ export class ChatRenderer {
   private advanceTextSegment(responseId: string): void {
     const current = this.textSegmentIndex.get(responseId) ?? 0;
     this.textSegmentIndex.set(responseId, current + 1);
+    this.debugLog('advance_text_segment', {
+      responseId,
+      from: current,
+      to: current + 1,
+    });
   }
 
   private ensureAssistantTextSegment(
@@ -1693,6 +1776,12 @@ export class ChatRenderer {
       this.advanceTextSegment(responseId);
     }
     this.assistantTextSegmentTokens.set(responseId, nextToken);
+    this.debugLog('assistant_segment_token', {
+      responseId,
+      previousToken: currentToken ?? null,
+      nextToken,
+      segmentIdx: this.textSegmentIndex.get(responseId) ?? 0,
+    });
   }
 
   private ensureTextSegment(responseId: string): void {
@@ -1702,10 +1791,18 @@ export class ChatRenderer {
     this.advanceTextSegment(responseId);
     this.needsNewTextSegment.delete(responseId);
     this.assistantTextSegmentTokens.delete(responseId);
+    this.debugLog('consume_text_segment_break', {
+      responseId,
+      segmentIdx: this.textSegmentIndex.get(responseId) ?? 0,
+    });
   }
 
   private markTextSegmentBreak(responseId: string): void {
     this.needsNewTextSegment.add(responseId);
+    this.debugLog('mark_text_segment_break', {
+      responseId,
+      segmentIdx: this.textSegmentIndex.get(responseId) ?? 0,
+    });
   }
 
   private getThinkingSegmentKey(responseId: string): { segmentIdx: number; segmentKey: string } {

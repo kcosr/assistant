@@ -23,6 +23,8 @@ import { buildExternalCallbackUrl, postExternalUserInput } from '../externalAgen
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
+  logDebugChatEventRecord,
+  previewDebugText,
   isChatRunError,
   resolveChatProvider,
   runChatCompletionCore,
@@ -382,15 +384,36 @@ export async function handleTextInputWithChatCompletions(options: {
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
       if (shouldEmitChatEvents && eventStore && turnId) {
-        const events: ChatEvent[] = [
-          ...buildAssistantDoneEvents({
-            sessionId,
-            turnId,
-            responseId,
-            fullText,
-            piSdkMessage: runResult.piSdkMessage,
-          }),
-        ];
+        const events = buildAssistantDoneEvents({
+          sessionId,
+          turnId,
+          responseId,
+          fullText,
+          piSdkMessage: runResult.piSdkMessage,
+        }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+        for (const event of events) {
+          logDebugChatEventRecord({
+            enabled: envConfig.debugChatCompletions,
+            dataDir: envConfig.dataDir,
+            log,
+            record: {
+              timestamp: new Date().toISOString(),
+              direction: 'event',
+              eventType: 'assistant_done',
+              provider: runResult.provider,
+              sessionId,
+              responseId,
+              ...(turnId ? { turnId } : {}),
+              ...(debugChatCompletionsContext !== undefined
+                ? { debugContext: debugChatCompletionsContext }
+                : {}),
+              phase: event.payload.phase ?? null,
+              textLength: event.payload.text.length,
+              textPreview: previewDebugText(event.payload.text),
+              interrupted: event.payload.interrupted ?? false,
+            },
+          });
+        }
         void appendAndBroadcastChatEvents(
           {
             eventStore,

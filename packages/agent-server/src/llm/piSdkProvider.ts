@@ -530,7 +530,8 @@ export async function runPiSdkChatCompletionIteration(options: {
         case 'text_delta': {
           if (event.delta) {
             iterationText += event.delta;
-            await onDeltaText(event.delta, iterationText, 'final_answer');
+            const phase = resolvedModel.api === 'openai-responses' ? 'final_answer' : undefined;
+            await onDeltaText(event.delta, iterationText, phase);
           }
           break;
         }

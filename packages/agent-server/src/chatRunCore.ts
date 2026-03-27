@@ -228,6 +228,27 @@ export async function appendDebugChatCompletionsLogRecord(options: {
   return filePath;
 }
 
+export function previewDebugText(text: string): string {
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+  return singleLine.length > 160 ? `${singleLine.slice(0, 157)}...` : singleLine;
+}
+
+export function logDebugChatEventRecord(options: {
+  enabled: boolean;
+  dataDir?: string;
+  log: (...args: unknown[]) => void;
+  record: unknown;
+}): void {
+  const { enabled, dataDir, log, record } = options;
+  if (!enabled || !dataDir) {
+    return;
+  }
+  log('chat event debug', formatDebugPayloadForLog(record));
+  void appendDebugChatCompletionsLogRecord({ dataDir, record }).catch((error) => {
+    log('failed to write chat event debug log', String(error));
+  });
+}
+
 export function resolveChatProvider(agent?: AgentDefinition): {
   agentType: 'chat' | 'external';
   provider: ChatProvider;
@@ -286,6 +307,7 @@ function createChatRunStreamHandlers(options: {
   sessionId: string;
   state: LogicalSessionState;
   responseId: string;
+  provider: ChatProvider;
   output: ChatRunOutputAdapter;
   eventStore?: EventStore;
   sessionHub: SessionHub;
@@ -293,6 +315,9 @@ function createChatRunStreamHandlers(options: {
   turnId?: string;
   includeAgentExchangeIdInMessages: boolean;
   trackTextStartedAt: boolean;
+  debugChatCompletions?: boolean;
+  debugChatCompletionsContext?: unknown;
+  debugDataDir?: string;
   log: (...args: unknown[]) => void;
   getAgentExchangeId?: () => string | undefined;
 }) {
@@ -300,6 +325,7 @@ function createChatRunStreamHandlers(options: {
     sessionId,
     state,
     responseId,
+    provider,
     output,
     eventStore,
     sessionHub,
@@ -307,6 +333,9 @@ function createChatRunStreamHandlers(options: {
     turnId,
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
+    debugChatCompletions,
+    debugChatCompletionsContext,
+    debugDataDir,
     log,
     getAgentExchangeId: getAgentExchangeIdFn,
   } = options;
@@ -321,6 +350,35 @@ function createChatRunStreamHandlers(options: {
       return { agentExchangeId };
     }
     return {};
+  };
+
+  const recordAssistantChunk = (
+    deltaText: string,
+    accumulatedText: string,
+    phase?: AssistantTextPhase,
+  ): void => {
+    logDebugChatEventRecord({
+      enabled: Boolean(debugChatCompletions),
+      log,
+      ...(debugDataDir ? { dataDir: debugDataDir } : {}),
+      record: {
+        timestamp: new Date().toISOString(),
+        direction: 'event',
+        eventType: 'assistant_chunk',
+        provider,
+        sessionId,
+        responseId,
+        ...(turnId ? { turnId } : {}),
+        ...(debugChatCompletionsContext !== undefined
+          ? { debugContext: debugChatCompletionsContext }
+          : {}),
+        phase: phase ?? null,
+        textLength: deltaText.length,
+        textPreview: previewDebugText(deltaText),
+        accumulatedTextLength: accumulatedText.length,
+        accumulatedTextPreview: previewDebugText(accumulatedText),
+      },
+    });
   };
 
   const emitThinkingStart = async (): Promise<void> => {
@@ -440,6 +498,7 @@ function createChatRunStreamHandlers(options: {
       ...buildAgentExchangePayload(),
     };
     output.send(message);
+    recordAssistantChunk(deltaText, textSoFar, phase);
 
     if (shouldEmitChatEvents && eventStore && turnId) {
       const events: ChatEvent[] = [
@@ -517,11 +576,15 @@ export async function runChatCompletionCore(
     sessionId,
     state,
     responseId,
+    provider,
     output,
     sessionHub,
     shouldEmitChatEvents,
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
+    debugChatCompletions: envConfig.debugChatCompletions,
+    debugChatCompletionsContext,
+    debugDataDir: envConfig.dataDir,
     log,
     getAgentExchangeId: getAgentExchangeIdFn,
     ...(eventStore ? { eventStore } : {}),

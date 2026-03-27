@@ -370,6 +370,42 @@ describe('runPiSdkChatCompletionIteration', () => {
     ]);
   });
 
+  it('only tags streamed text deltas with final_answer for openai-responses models', async () => {
+    const events = [{ type: 'text_delta', delta: 'Hello' }];
+
+    vi.mocked(streamSimple).mockReturnValue(
+      createStream(events, { stopReason: 'stop' }) as never,
+    );
+
+    const openAiPhases: Array<string | undefined> = [];
+    await runPiSdkChatCompletionIteration({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
+      messages: [],
+      tools: [],
+      abortSignal: new AbortController().signal,
+      onDeltaText: (_delta, _text, phase) => {
+        openAiPhases.push(phase);
+      },
+    });
+    expect(openAiPhases).toEqual(['final_answer']);
+
+    vi.mocked(streamSimple).mockReturnValue(
+      createStream(events, { stopReason: 'stop' }) as never,
+    );
+
+    const anthropicPhases: Array<string | undefined> = [];
+    await runPiSdkChatCompletionIteration({
+      model: { id: 'claude-opus-4-6', provider: 'anthropic', api: 'anthropic-messages' } as never,
+      messages: [],
+      tools: [],
+      abortSignal: new AbortController().signal,
+      onDeltaText: (_delta, _text, phase) => {
+        anthropicPhases.push(phase);
+      },
+    });
+    expect(anthropicPhases).toEqual([undefined]);
+  });
+
   it('marks aborted when the stream stops with aborted', async () => {
     vi.mocked(streamSimple).mockReturnValue(
       createStream(
