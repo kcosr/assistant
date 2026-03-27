@@ -1211,8 +1211,13 @@ export class ListPanelController {
     if (!this.currentListId || !this.currentData) {
       return;
     }
+    const selectedIdsBeforeRender = this.options.getSelectedItemIds();
     const controls = this.render(this.currentListId, this.currentData);
     this.options.setRightControls(controls.rightControls);
+    const bodyEl = this.options.bodyEl;
+    if (bodyEl && selectedIdsBeforeRender.length > 0) {
+      this.tableController.restoreSelection(bodyEl, selectedIdsBeforeRender);
+    }
   }
 
   private async createListItem(listId: string, item: Record<string, unknown>): Promise<boolean> {

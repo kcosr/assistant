@@ -2959,6 +2959,40 @@ export class ListPanelTableController {
     this.updateSelectionButtons();
   }
 
+  restoreSelection(bodyEl: HTMLElement, itemIds: string[]): void {
+    const normalizedIds = Array.from(
+      new Set(
+        itemIds
+          .filter((itemId): itemId is string => typeof itemId === 'string' && itemId.trim().length > 0)
+          .map((itemId) => itemId.trim()),
+      ),
+    );
+    const rows = Array.from(bodyEl.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    if (rows.length === 0 || normalizedIds.length === 0) {
+      for (const row of rows) {
+        row.classList.remove('list-item-selected');
+      }
+      this.lastSelectedRowIndex = null;
+      this.keyboardSelectionAnchorIndex = null;
+      this.updateSelectionButtons();
+      return;
+    }
+
+    let lastSelectedIndex: number | null = null;
+    for (const row of rows) {
+      const itemId = row.dataset['itemId'] ?? '';
+      const shouldSelect = normalizedIds.includes(itemId);
+      row.classList.toggle('list-item-selected', shouldSelect);
+      if (shouldSelect) {
+        lastSelectedIndex = rows.indexOf(row);
+      }
+    }
+
+    this.lastSelectedRowIndex = lastSelectedIndex;
+    this.keyboardSelectionAnchorIndex = null;
+    this.updateSelectionButtons();
+  }
+
   private getAllItemRows(): HTMLTableRowElement[] {
     const state = this.renderState;
     if (!state) {
