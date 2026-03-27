@@ -29,7 +29,7 @@ import {
 import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
 import { resolveVisibleAssistantText } from './piAssistantText';
-import { attachPiSdkMessageToLastAssistant } from './history/piSessionSync';
+import { attachPiSdkMessageToLastAssistant, buildMessagesForPiSync } from './history/piSessionSync';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -527,16 +527,16 @@ export async function processUserMessage(
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
-          const messagesForPiSync = runResult.piReplayMessages
-            ? [
-                ...runResult.piReplayMessages,
-                {
-                  role: 'assistant' as const,
-                  content: visibleAssistant.text,
-                  ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
-                },
-              ]
-            : state.chatMessages;
+          const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
+            role: 'assistant',
+            content: visibleAssistant.text,
+            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+          };
+          const messagesForPiSync = buildMessagesForPiSync({
+            stateMessages: state.chatMessages,
+            ...(runResult.piReplayMessages ? { replayMessages: runResult.piReplayMessages } : {}),
+            finalAssistantMessage,
+          });
           const updatedSummary = await piSessionWriter.sync({
             summary: state.summary,
             messages: messagesForPiSync,

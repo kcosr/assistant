@@ -303,4 +303,161 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       content: 'Stored final answer',
     });
   });
+
+  it('does not duplicate the final assistant in Pi sync when replay messages alias state', async () => {
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const syncedMessages: Array<{
+      role: string;
+      content?: string;
+      piSdkMessage?: unknown;
+    }> = [];
+
+    const piSessionWriter = {
+      sync: vi.fn(async (options: { messages: Array<{ role: string; content?: string; piSdkMessage?: unknown }> }) => {
+        syncedMessages.push(...options.messages);
+        return undefined;
+      }),
+    };
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => piSessionWriter as never,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+
+    let capturedFirstIterationMessages: Array<{ role: string; content?: string | undefined }> | undefined;
+
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration)
+      .mockImplementationOnce(async (options) => {
+        capturedFirstIterationMessages = options.messages.map((message) => ({
+          role: message.role,
+          content: typeof message.content === 'string' ? message.content : undefined,
+        }));
+        return {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'bash',
+              argumentsJson: '{"command":"pwd"}',
+            },
+          ],
+          aborted: false,
+          assistantMessage: {
+            role: 'assistant',
+            content: [
+              { type: 'toolCall', id: 'call-1', name: 'bash', arguments: { command: 'pwd' } },
+            ],
+            api: 'openai-responses',
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'toolUse',
+            timestamp: Date.now(),
+          } as never,
+        };
+      })
+      .mockImplementationOnce(async () => ({
+        text: 'done',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'done',
+              textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        } as never,
+      }));
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async (_sessionId, stateArg) => {
+        stateArg.chatMessages.push({
+          role: 'tool',
+          tool_call_id: 'call-1',
+          content: '{"ok":true}',
+        });
+      },
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(capturedFirstIterationMessages).toEqual([{ role: 'user', content: 'Current request' }]);
+    expect(piSessionWriter.sync).toHaveBeenCalledTimes(1);
+    const assistantMessages = syncedMessages.filter((message) => message.role === 'assistant');
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0]).toMatchObject({ content: '' });
+    expect(assistantMessages[1]).toMatchObject({ content: 'done' });
+  });
 });
