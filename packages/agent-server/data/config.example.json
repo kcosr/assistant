@@ -72,7 +72,7 @@
           "xhigh"
         ],
         "config": {
-          "workdir": "/path/to/workspace",
+          "workdir": "${session.workingDir}",
           "extraArgs": [
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox"
@@ -82,6 +82,7 @@
             "env": {
               "PERSISTENT": "1",
               "PROXY": "1",
+              "CONTAINER_CWD": "${session.workingDir}",
               "CONTAINER_NAME": "assistant"
             }
           }

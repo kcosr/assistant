@@ -40,6 +40,7 @@ import {
 import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
+import { resolveCliRuntimeConfig } from './ws/cliRuntimeConfig';
 import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
@@ -534,7 +535,15 @@ export async function runChatCompletionCore(
   let piReplayMessages: ChatCompletionMessage[] | undefined;
 
   if (provider === 'claude-cli') {
-    const claudeConfig = agent?.chat?.config as ClaudeCliChatConfig | undefined;
+    const claudeConfig = resolveCliRuntimeConfig(
+      agent?.chat?.config as ClaudeCliChatConfig | undefined,
+      {
+        sessionId,
+        ...(state.summary.attributes?.core?.workingDir
+          ? { workingDir: state.summary.attributes.core.workingDir }
+          : {}),
+      },
+    );
     const attributes = state.summary.attributes;
     let storedClaudeSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'claude-cli', ['claude']);
@@ -621,7 +630,15 @@ export async function runChatCompletionCore(
     aborted = cliAborted;
     fullText = claudeText;
   } else if (provider === 'codex-cli') {
-    const codexConfig = agent?.chat?.config as CodexCliChatConfig | undefined;
+    const codexConfig = resolveCliRuntimeConfig(
+      agent?.chat?.config as CodexCliChatConfig | undefined,
+      {
+        sessionId,
+        ...(state.summary.attributes?.core?.workingDir
+          ? { workingDir: state.summary.attributes.core.workingDir }
+          : {}),
+      },
+    );
     const attributes = state.summary.attributes;
     let storedCodexSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'codex-cli', ['codex']);
@@ -729,7 +746,12 @@ export async function runChatCompletionCore(
     aborted = cliAborted;
     fullText = codexText;
   } else if (provider === 'pi-cli') {
-    const piConfig = agent?.chat?.config as PiCliChatConfig | undefined;
+    const piConfig = resolveCliRuntimeConfig(agent?.chat?.config as PiCliChatConfig | undefined, {
+      sessionId,
+      ...(state.summary.attributes?.core?.workingDir
+        ? { workingDir: state.summary.attributes.core.workingDir }
+        : {}),
+    });
     const attributes = state.summary.attributes;
     let storedPiSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'pi-cli', ['pi']);
