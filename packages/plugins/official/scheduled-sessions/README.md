@@ -22,7 +22,8 @@ Monitor and control cron-driven agent sessions. The core scheduler runs in the a
 ```
 
 Schedules are no longer defined on agents.
-Schedules are stored in the plugin data directory at `data/plugins/scheduled-sessions/schedules.json`.
+Schedules are stored in the plugin default instance data directory at
+`data/plugins/scheduled-sessions/default/schedules.json`.
 They are persisted immediately on create, update, delete, enable, and disable.
 
 ## Source files

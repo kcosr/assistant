@@ -562,7 +562,7 @@ Supported providers:
 
 Scheduled sessions are no longer configured on agents. Use the `scheduled-sessions` plugin to
 create and manage them dynamically. They are stored in the plugin data directory under
-`data/plugins/scheduled-sessions/schedules.json`.
+`data/plugins/scheduled-sessions/default/schedules.json`.
 
 Each persisted schedule record includes:
 - `agentId`

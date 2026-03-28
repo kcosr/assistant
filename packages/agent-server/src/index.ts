@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
 import { FileEventStore, SessionScopedEventStore } from './events';
+import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstanceDataDir } from './plugins/instances';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
@@ -158,7 +159,12 @@ export async function startServer(
     ? new ScheduledSessionService({
         agentRegistry: registry,
         logger: console,
-        store: new ScheduledSessionStore(scheduledSessionsPlugin.dataDir),
+        store: new ScheduledSessionStore(
+          resolvePluginInstanceDataDir(
+            scheduledSessionsPlugin.dataDir,
+            DEFAULT_PLUGIN_INSTANCE_ID,
+          ),
+        ),
         sessionHub,
         sessionIndex,
         envConfig: config,
