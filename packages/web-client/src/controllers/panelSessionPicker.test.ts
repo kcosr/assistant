@@ -18,8 +18,8 @@ describe('SessionPickerController', () => {
     document.body.innerHTML = '';
   });
 
-  it('invokes rename from the session row action button', () => {
-    const onRenameSession = vi.fn();
+  it('invokes edit from the session row action button', () => {
+    const onEditSession = vi.fn();
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
       getAgentSummaries: () => [],
@@ -33,7 +33,7 @@ describe('SessionPickerController', () => {
       anchor,
       title: 'Sessions',
       onSelectSession: () => undefined,
-      onRenameSession: (sessionId) => onRenameSession(sessionId),
+      onEditSession: (sessionId) => onEditSession(sessionId),
     });
 
     const renameBtn = document.querySelector<HTMLButtonElement>(
@@ -42,7 +42,7 @@ describe('SessionPickerController', () => {
     expect(renameBtn).toBeTruthy();
     renameBtn?.click();
 
-    expect(onRenameSession).toHaveBeenCalledWith('s1');
+    expect(onEditSession).toHaveBeenCalledWith('s1');
     expect(document.querySelector('.session-picker-popover')).toBeNull();
 
     controller.close();

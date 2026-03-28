@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type SpawnOptions } from 'node:child_process';
 
-import type { AgentRegistry, CliWrapperConfig } from '../agents';
+import type { AgentDefinition, AgentRegistry, CliWrapperConfig } from '../agents';
 import type { SessionAttributes, SessionConfig } from '@assistant/shared';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
@@ -35,9 +35,9 @@ import type {
   ScheduleUpdateInput,
 } from './types';
 
-type CliProvider = 'claude-cli' | 'codex-cli' | 'pi' | 'pi-cli';
+type ScheduledRunProvider = NonNullable<NonNullable<AgentDefinition['chat']>['provider']>;
 
-type CliChatConfig = {
+type ScheduledRunChatConfig = {
   workdir?: string;
   extraArgs?: string[];
   wrapper?: CliWrapperConfig;
@@ -405,8 +405,8 @@ export class ScheduledSessionService {
       if (schedule.preCheck) {
         const result = await this.runPreCheck(
           schedule.preCheck,
-          this.getWorkdir(agentId),
-          this.getWrapper(agentId),
+          this.getRunWorkdir(agentId),
+          this.getRunWrapper(agentId),
         );
 
         logger.info(`[scheduled-sessions] ${key} preCheck exited with code ${result.exitCode}`);
@@ -551,7 +551,7 @@ export class ScheduledSessionService {
   }
 
   private async spawnSession(agentId: string, prompt: string): Promise<void> {
-    const { command, args, env, cwd } = this.buildCliCommand(agentId, prompt);
+    const { command, args, env, cwd } = this.buildRunCommand(agentId, prompt);
 
     return new Promise((resolve, reject) => {
       const child = this.spawnFn(command, args, {
@@ -1203,13 +1203,13 @@ export class ScheduledSessionService {
     return current;
   }
 
-  private buildCliCommand(agentId: string, prompt: string): {
+  private buildRunCommand(agentId: string, prompt: string): {
     command: string;
     args: string[];
     env: NodeJS.ProcessEnv;
     cwd?: string;
   } {
-    const { provider, config } = this.requireCliConfig(agentId);
+    const { provider, config } = this.requireScheduledRunConfig(agentId);
     const wrapperPath = config?.wrapper?.path?.trim();
     const wrapperEnv = config?.wrapper?.env;
     const wrapperEnabled = Boolean(wrapperPath);
@@ -1289,27 +1289,29 @@ export class ScheduledSessionService {
     return state.schedule.enabled;
   }
 
-  private getWorkdir(agentId: string): string | undefined {
-    const config = this.requireCliConfig(agentId).config;
+  private getRunWorkdir(agentId: string): string | undefined {
+    const config = this.requireScheduledRunConfig(agentId).config;
     const workdir = config?.workdir?.trim();
     return workdir && workdir.length > 0 ? workdir : undefined;
   }
 
-  private getWrapper(agentId: string): CliWrapperConfig | null {
-    const config = this.requireCliConfig(agentId).config;
+  private getRunWrapper(agentId: string): CliWrapperConfig | null {
+    const config = this.requireScheduledRunConfig(agentId).config;
     return config?.wrapper ?? null;
   }
 
-  private requireCliConfig(agentId: string): { provider: CliProvider; config?: CliChatConfig } {
+  private requireScheduledRunConfig(
+    agentId: string,
+  ): { provider: ScheduledRunProvider; config?: ScheduledRunChatConfig } {
     const agent = this.options.agentRegistry.getAgent(agentId);
     if (!agent) {
       throw new Error(`Agent ${agentId} not found`);
     }
-    const provider = agent.chat?.provider ?? 'pi';
+    const provider: ScheduledRunProvider = agent.chat?.provider ?? 'pi';
     if (provider !== 'claude-cli' && provider !== 'codex-cli' && provider !== 'pi' && provider !== 'pi-cli') {
       throw new Error(`Agent ${agentId} uses unsupported provider: ${provider}`);
     }
-    const config = agent.chat?.config as CliChatConfig | undefined;
+    const config = agent.chat?.config as ScheduledRunChatConfig | undefined;
     return {
       provider,
       ...(config ? { config } : {}),

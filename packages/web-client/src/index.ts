@@ -1888,7 +1888,7 @@ async function main(): Promise<void> {
       onClearSession:
         options.onClearSession ?? ((sessionId) => showClearHistoryConfirmation(sessionId)),
       onDeleteSession: options.onDeleteSession ?? ((sessionId) => void deleteSession(sessionId)),
-      onRenameSession: options.onRenameSession ?? ((sessionId) => editSessionConfig(sessionId)),
+      onEditSession: options.onEditSession ?? ((sessionId) => editSessionConfig(sessionId)),
     });
   };
 

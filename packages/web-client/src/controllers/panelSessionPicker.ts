@@ -32,7 +32,7 @@ export interface SessionPickerOpenOptions {
   onSelectUnbound?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onClearSession?: (sessionId: string) => void;
-  onRenameSession?: (sessionId: string) => void;
+  onEditSession?: (sessionId: string) => void;
 }
 
 export interface SessionPickerControllerOptions {
@@ -184,7 +184,7 @@ export class SessionPickerController {
 
         let confirmState: HTMLDivElement | null = null;
 
-        if (itemOptions?.sessionId && options.onRenameSession) {
+        if (itemOptions?.sessionId && options.onEditSession) {
           const renameBtn = document.createElement('button');
           renameBtn.type = 'button';
           renameBtn.className = 'session-picker-rename-btn';
@@ -194,7 +194,7 @@ export class SessionPickerController {
             event.preventDefault();
             event.stopPropagation();
             this.close();
-            options.onRenameSession?.(itemOptions.sessionId!);
+            options.onEditSession?.(itemOptions.sessionId!);
           });
           normalState.appendChild(renameBtn);
         }
@@ -267,7 +267,7 @@ export class SessionPickerController {
 
         if (itemOptions?.sessionId && this.isTouchDevice()) {
           const hasActions = Boolean(
-            options.onRenameSession || options.onClearSession || options.onDeleteSession,
+            options.onEditSession || options.onClearSession || options.onDeleteSession,
           );
           if (hasActions) {
             const moreBtn = document.createElement('button');
@@ -282,7 +282,7 @@ export class SessionPickerController {
                 anchor: moreBtn,
                 item,
                 sessionId: itemOptions.sessionId!,
-                ...(options.onRenameSession ? { onRename: options.onRenameSession } : {}),
+                ...(options.onEditSession ? { onEdit: options.onEditSession } : {}),
                 ...(options.onClearSession ? { onClear: options.onClearSession } : {}),
                 canDelete: Boolean(options.onDeleteSession),
               });
@@ -624,7 +624,7 @@ export class SessionPickerController {
     anchor: HTMLElement;
     item: HTMLElement;
     sessionId: string;
-    onRename?: (sessionId: string) => void;
+    onEdit?: (sessionId: string) => void;
     onClear?: (sessionId: string) => void;
     canDelete: boolean;
   }): void {
@@ -660,14 +660,14 @@ export class SessionPickerController {
       submenu.appendChild(button);
     };
 
-    if (options.onRename) {
+    if (options.onEdit) {
       addItem({
         label: 'Edit',
         icon: ICONS.edit,
         onSelect: () => {
           this.closeSubmenu();
           this.close();
-          options.onRename?.(options.sessionId);
+          options.onEdit?.(options.sessionId);
         },
       });
     }

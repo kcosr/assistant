@@ -106,13 +106,14 @@ export class SessionComposerController {
     let customizeExpanded = Boolean(
       initialConfig?.model ||
         initialConfig?.thinking ||
-        initialConfig?.skills?.length ||
+        Array.isArray(initialConfig?.skills) ||
         initialConfig?.workingDir,
     );
     let selectedModel = typeof initialConfig?.model === 'string' ? initialConfig.model : '';
     let selectedThinking = typeof initialConfig?.thinking === 'string' ? initialConfig.thinking : '';
-    let useAgentDefaultSkills = !Array.isArray(initialConfig?.skills);
-    let selectedSkills = new Set(Array.isArray(initialConfig?.skills) ? initialConfig.skills : []);
+    let selectedSkills: string[] | undefined = Array.isArray(initialConfig?.skills)
+      ? [...initialConfig.skills]
+      : undefined;
     let selectedWorkingDir =
       typeof initialConfig?.workingDir === 'string' ? initialConfig.workingDir : '';
 
@@ -192,7 +193,7 @@ export class SessionComposerController {
       if (!agent) {
         selectedModel = '';
         selectedThinking = '';
-        selectedSkills = new Set<string>();
+        selectedSkills = undefined;
         selectedWorkingDir = '';
         return;
       }
@@ -207,15 +208,11 @@ export class SessionComposerController {
         selectedThinking = '';
       }
 
-      const availableSkills = new Set(
-        (agent.sessionConfigCapabilities?.availableSkills ?? []).map((skill) => skill.id),
-      );
-      if (useAgentDefaultSkills) {
-        selectedSkills = new Set(availableSkills);
-      } else {
-        selectedSkills = new Set(
-          [...selectedSkills].filter((skillId) => availableSkills.has(skillId)),
+      if (selectedSkills !== undefined) {
+        const availableSkills = new Set(
+          (agent.sessionConfigCapabilities?.availableSkills ?? []).map((skill) => skill.id),
         );
+        selectedSkills = selectedSkills.filter((skillId) => availableSkills.has(skillId));
       }
 
       const workingDirConfig = agent.sessionWorkingDir;
@@ -424,19 +421,27 @@ export class SessionComposerController {
 
       const list = document.createElement('div');
       list.className = 'session-composer-skill-list';
+      const selectedSkillSet = new Set(
+        selectedSkills ?? availableSkills.map((skill) => skill.id),
+      );
       for (const skill of availableSkills) {
         const label = document.createElement('label');
         label.className = 'session-composer-skill-option';
         const input = document.createElement('input');
         input.type = 'checkbox';
-        input.checked = selectedSkills.has(skill.id);
+        input.checked = selectedSkillSet.has(skill.id);
         input.addEventListener('change', () => {
-          useAgentDefaultSkills = false;
+          const nextSelected = new Set(
+            selectedSkills ?? availableSkills.map((availableSkill) => availableSkill.id),
+          );
           if (input.checked) {
-            selectedSkills.add(skill.id);
+            nextSelected.add(skill.id);
           } else {
-            selectedSkills.delete(skill.id);
+            nextSelected.delete(skill.id);
           }
+          selectedSkills = availableSkills
+            .map((availableSkill) => availableSkill.id)
+            .filter((skillId) => nextSelected.has(skillId));
         });
         const text = document.createElement('span');
         text.innerHTML = `<strong>${escapeHtml(skill.name)}</strong>${skill.description ? `<small>${escapeHtml(skill.description)}</small>` : ''}`;
@@ -622,13 +627,14 @@ export class SessionComposerController {
     const buildSessionConfig = (): SessionConfig | undefined => {
       const workingDir = deriveEffectiveWorkingDir();
       const title = titleInput.value.trim();
-      const skills = [...selectedSkills].sort((a, b) => a.localeCompare(b));
       const availableSkills = getSelectedAgent()?.sessionConfigCapabilities?.availableSkills ?? [];
       const config: SessionConfig = {
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedThinking ? { thinking: selectedThinking } : {}),
         ...(workingDir ? { workingDir } : {}),
-        ...(!useAgentDefaultSkills && availableSkills.length > 0 ? { skills } : {}),
+        ...(selectedSkills !== undefined && availableSkills.length > 0
+          ? { skills: [...selectedSkills].sort((a, b) => a.localeCompare(b)) }
+          : {}),
       };
       if (mode === 'session' && title) {
         config.sessionTitle = title;
