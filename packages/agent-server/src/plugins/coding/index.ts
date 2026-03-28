@@ -203,7 +203,7 @@ export function createCodingPlugin(): ToolPlugin {
     }
   }
 
-    const bashTool: PluginToolDefinition = {
+  const bashTool: PluginToolDefinition = {
     name: 'bash',
     description:
       'Execute a bash command in the configured workspace root. Returns combined stdout and stderr.',

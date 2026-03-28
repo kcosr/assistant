@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Breaking Changes
-- Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/schedules.json`. ([#123](<pr-url>))
+- Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/default/schedules.json`. ([#123](<pr-url>))
 - Removed legacy `agents[].sessionWorkingDirMode` / `sessionWorkingDirRoots` in favor of a single `agents[].sessionWorkingDir` object with `none`, `fixed`, and `prompt` modes. ([#123](<pr-url>))
 
 ### Added

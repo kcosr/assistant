@@ -445,7 +445,7 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `capabilityDenylist` | array | Glob patterns for capability denylist. |
 | `agentAllowlist` | array | Glob patterns for agents this agent can delegate to. |
 | `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
-| `sessionWorkingDir` | object | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }`. |
+| `sessionWorkingDir` | object | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }` to leave `core.workingDir` unset by default. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
 
@@ -457,6 +457,10 @@ immediate subdirectories of each configured root (all of which must be absolute 
 
 When `sessionWorkingDir` is set to `{ "mode": "fixed", "path": "/abs/path" }`, new sessions
 for that agent automatically use the fixed directory without prompting.
+
+When `sessionWorkingDir` is set to `{ "mode": "none" }`, new sessions do not get a default
+working directory from the agent. This is equivalent to omitting the field and makes the
+intent explicit in config.
 
 The selected or fixed directory is stored in `attributes.core.workingDir` and can be consumed
 by other systems such as `${session.workingDir}` CLI macros and the coding plugin's local
@@ -577,7 +581,7 @@ Each persisted schedule record includes:
 - optional `preCheck`
 - optional `sessionTitle`
 - `enabled`
-- `reuseSession`
+- `reuseSession` (defaults to `true`)
 - `maxConcurrent`
 
 Notes:
