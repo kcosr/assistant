@@ -374,6 +374,28 @@ describe('ChatRenderer', () => {
     expect(renderer.hasActiveOutput()).toBe(false);
   });
 
+  it('clears active output state when replaying history', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.showTypingIndicator();
+    expect(renderer.hasActiveOutput()).toBe(true);
+
+    renderer.replayEvents([
+      createBaseEvent('assistant_done', {
+        id: 'e-final',
+        payload: {
+          text: 'Completed earlier.',
+        },
+      }),
+    ]);
+
+    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(container.querySelector('.chat-typing-indicator.visible')).toBeNull();
+  });
+
   it('suppresses typing indicator while interaction is pending', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

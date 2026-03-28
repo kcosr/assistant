@@ -26,6 +26,7 @@
 - Changed the agent sidebar, session picker, and scheduled sessions panel to launch the shared session composer instead of using separate create flows. ([#123](<pr-url>))
 
 ### Fixed
+- Fixed chat panels to clear stale typing/stop-output state after mobile backgrounding and reconnects, so completed sessions no longer stay stuck busy until the app is fully reopened. ([#123](<pr-url>))
 - Fixed shared session composer skill selection so explicit empty selections persist correctly, agent-default selections stay implicit, and session picker edit actions consistently open the full session editor flow. ([#123](<pr-url>))
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed modal lists panels to close on Escape from list mode instead of switching to browser mode. ([#65](https://github.com/kcosr/assistant/pull/65))

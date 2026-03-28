@@ -2063,7 +2063,16 @@ async function main(): Promise<void> {
       socket = nextSocket;
     },
     onConnectionLostCleanup: () => {
-      getPrimaryChatInputRuntime()?.speechAudioController?.onConnectionLostCleanup();
+      sessionsWithActiveTyping.clear();
+      serverMessageHandler?.resetRealtimeState();
+      for (const entry of chatPanelsById.values()) {
+        entry.runtime.chatRenderer.hideTypingIndicator();
+        entry.inputRuntime.speechAudioController?.onConnectionLostCleanup();
+        if (entry.bindingSessionId) {
+          setChatPanelStatusForSession(entry.bindingSessionId, 'idle');
+        }
+      }
+      renderAgentSidebar();
     },
     reconnectDelayMs: RECONNECT_DELAY_MS,
     maxReconnectDelayMs: MAX_RECONNECT_DELAY_MS,
@@ -3483,6 +3492,7 @@ async function main(): Promise<void> {
     } else {
       setChatPanelStatusForSession(trimmed, 'idle');
     }
+    getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
   }
 
   function sendPanelEvent(event: PanelEventEnvelope): void {
