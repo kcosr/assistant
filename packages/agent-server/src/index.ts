@@ -15,7 +15,7 @@ import { createHttpServer } from './http/server';
 import { MultiplexedConnection } from './ws/multiplexedConnection';
 import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
-import { ScheduledSessionService } from './scheduledSessions';
+import { ScheduledSessionService, ScheduledSessionStore } from './scheduledSessions';
 import { SearchService } from './search/searchService';
 import { preloadInstructionSkillsForAgents } from './instructionSkills';
 import {
@@ -150,27 +150,35 @@ export async function startServer(
   const searchService = new SearchService(pluginRegistry);
   searchService.syncFromRegistry();
 
-  const scheduledSessionService = new ScheduledSessionService({
-    agentRegistry: registry,
-    logger: console,
-    dataDir: config.dataDir,
-    sessionHub,
-    sessionIndex,
-    envConfig: config,
-    toolHost,
-    eventStore: chatEventStore,
-    searchService,
-    broadcast: (event) => {
-      sessionHub.broadcastToAll({
-        type: 'panel_event',
-        panelId: '*',
-        panelType: 'scheduled-sessions',
-        sessionId: '*',
-        payload: event,
-      });
-    },
-  });
-  await scheduledSessionService.initialize();
+  const scheduledSessionsPlugin = pluginRegistry
+    ?.getRegisteredPlugins?.()
+    .find((entry) => entry.pluginId === 'scheduled-sessions');
+
+  const scheduledSessionService = scheduledSessionsPlugin
+    ? new ScheduledSessionService({
+        agentRegistry: registry,
+        logger: console,
+        store: new ScheduledSessionStore(scheduledSessionsPlugin.dataDir),
+        sessionHub,
+        sessionIndex,
+        envConfig: config,
+        toolHost,
+        eventStore: chatEventStore,
+        searchService,
+        broadcast: (event) => {
+          sessionHub.broadcastToAll({
+            type: 'panel_event',
+            panelId: '*',
+            panelType: 'scheduled-sessions',
+            sessionId: '*',
+            payload: event,
+          });
+        },
+      })
+    : undefined;
+  if (scheduledSessionService) {
+    await scheduledSessionService.initialize();
+  }
 
   const httpServer = createHttpServer({
     config,
@@ -180,7 +188,7 @@ export async function startServer(
     toolHost,
     searchService,
     eventStore: chatEventStore,
-    scheduledSessionService,
+    ...(scheduledSessionService ? { scheduledSessionService } : {}),
     historyProvider,
     ...(pluginRegistry ? { pluginRegistry } : {}),
   });
@@ -208,7 +216,7 @@ export async function startServer(
       toolHost,
       sessionHub,
       eventStore: chatEventStore,
-      scheduledSessionService,
+      ...(scheduledSessionService ? { scheduledSessionService } : {}),
       searchService,
       connectionId,
     });
@@ -233,7 +241,7 @@ export async function startServer(
       if (gitVersioningService) {
         gitVersioningService.shutdown();
       }
-      scheduledSessionService.shutdown();
+      scheduledSessionService?.shutdown();
       if (pluginRegistry) {
         await pluginRegistry.shutdown();
       }
@@ -247,7 +255,7 @@ export async function startServer(
     if (gitVersioningService) {
       gitVersioningService.shutdown();
     }
-    scheduledSessionService.shutdown();
+    scheduledSessionService?.shutdown();
   };
 
   process.once('SIGINT', shutdownHandler);

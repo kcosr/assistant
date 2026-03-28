@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/schedules.json`. ([#123](<pr-url>))
 
 ### Added
 - Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -14,6 +15,7 @@
 - Updated `@mariozechner/pi-ai` in `@assistant/agent-server` to the latest 0.62.x release. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed Pi-backed OpenAI Responses transcript handling to preserve assistant text `phase` metadata (`commentary`, `final_answer`) across session replay and Pi session writes. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed scheduled sessions to support `reuseSession`, use generated plugin operations for API/CLI access, and show `sessionTitle` as the primary human-readable name in the panel. ([#123](<pr-url>))
+- Changed scheduled sessions to persist runtime create/update/delete/enable/disable state in the scheduled-sessions plugin data directory, and only start the scheduler when the plugin is enabled. ([#123](<pr-url>))
 
 ### Fixed
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#65](https://github.com/kcosr/assistant/pull/65))

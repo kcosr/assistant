@@ -40,12 +40,23 @@ export interface ScheduleState {
   agentId: string;
   schedule: ScheduleConfig;
   timer: NodeJS.Timeout | null;
-  runtimeEnabled: boolean | null;
   deleted: boolean;
   runningCount: number;
   runningStartedAt: Date | null;
   nextRunAt: Date | null;
   lastRun: LastRunInfo | null;
+}
+
+export interface PersistedScheduleRecord {
+  agentId: string;
+  scheduleId: string;
+  cron: string;
+  prompt?: string;
+  preCheck?: string;
+  sessionTitle?: string;
+  enabled: boolean;
+  reuseSession: boolean;
+  maxConcurrent: number;
 }
 
 export interface PreCheckResult {
@@ -63,7 +74,6 @@ export interface ScheduleInfo {
   preCheck?: string;
   sessionTitle?: string;
   enabled: boolean;
-  runtimeEnabled: boolean;
   reuseSession: boolean;
   status: 'idle' | 'running' | 'disabled';
   runningCount: number;

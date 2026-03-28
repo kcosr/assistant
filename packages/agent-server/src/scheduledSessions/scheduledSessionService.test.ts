@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
+import fs from 'node:fs/promises';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +14,7 @@ import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { SessionMessageStartResult } from '../sessionMessages';
 import type { ToolHost } from '../tools';
 import { ScheduledSessionService } from './scheduledSessionService';
+import { ScheduledSessionStore } from './scheduledSessionStore';
 
 type SpawnResult = {
   exitCode: number;
@@ -110,6 +114,17 @@ function createService(
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
   };
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
+  mkdirSync(storeDir, { recursive: true });
+  const { id: scheduleId, ...persistedSchedule } = schedule;
+  writeFileSync(
+    path.join(storeDir, 'schedules.json'),
+    `${JSON.stringify({
+      version: 1,
+      schedules: [{ agentId: 'agent', scheduleId, ...persistedSchedule }],
+    })}\n`,
+    'utf8',
+  );
 
   const registry = new AgentRegistry([
     {
@@ -120,7 +135,6 @@ function createService(
         provider: 'codex-cli',
         config: { workdir: '/tmp' },
       },
-      schedules: [schedule],
     },
   ]);
 
@@ -134,11 +148,11 @@ function createService(
   const service = new ScheduledSessionService({
     agentRegistry: registry,
     logger,
-    dataDir: os.tmpdir(),
+    store: new ScheduledSessionStore(storeDir),
     ...(spawnFn ? { spawnFn } : {}),
   });
 
-  return { service, schedule };
+  return { service, schedule, storeDir };
 }
 
 function createSessionIndexStub() {
@@ -218,6 +232,17 @@ function createServiceWithSessions(
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
   };
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
+  mkdirSync(storeDir, { recursive: true });
+  const { id: scheduleId, ...persistedSchedule } = schedule;
+  writeFileSync(
+    path.join(storeDir, 'schedules.json'),
+    `${JSON.stringify({
+      version: 1,
+      schedules: [{ agentId: 'agent', scheduleId, ...persistedSchedule }],
+    })}\n`,
+    'utf8',
+  );
 
   const registry = new AgentRegistry([
     {
@@ -228,7 +253,6 @@ function createServiceWithSessions(
         provider: 'codex-cli',
         config: { workdir: '/tmp' },
       },
-      schedules: [schedule],
     },
   ]);
 
@@ -268,7 +292,7 @@ function createServiceWithSessions(
   const service = new ScheduledSessionService({
     agentRegistry: registry,
     logger,
-    dataDir: os.tmpdir(),
+    store: new ScheduledSessionStore(storeDir),
     sessionIndex: sessionIndex as unknown as SessionIndex,
     sessionHub: sessionHub as unknown as SessionHub,
     envConfig: {} as EnvConfig,
@@ -276,7 +300,7 @@ function createServiceWithSessions(
     startSessionMessageFn,
   });
 
-  return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn };
+  return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn, storeDir };
 }
 
 async function tick(): Promise<void> {
@@ -303,11 +327,11 @@ describe('ScheduledSessionService', () => {
   });
 
   it('creates, updates, and deletes runtime schedules', async () => {
-    const { service } = createService();
+    const { service, storeDir } = createService();
 
     await service.initialize();
 
-    const created = service.createSchedule('agent', {
+    const created = await service.createSchedule('agent', {
       cron: '*/15 * * * *',
       prompt: 'Runtime review',
       sessionTitle: 'Runtime Review',
@@ -318,7 +342,7 @@ describe('ScheduledSessionService', () => {
     expect(created.sessionTitle).toBe('Runtime Review');
     expect(created.reuseSession).toBe(true);
 
-    const updated = service.updateSchedule('agent', created.scheduleId, {
+    const updated = await service.updateSchedule('agent', created.scheduleId, {
       cron: '0 * * * *',
       preCheck: 'check.sh',
       sessionTitle: null,
@@ -336,7 +360,7 @@ describe('ScheduledSessionService', () => {
       true,
     );
 
-    const deleted = service.deleteSchedule('agent', created.scheduleId);
+    const deleted = await service.deleteSchedule('agent', created.scheduleId);
     expect(deleted).toEqual({
       agentId: 'agent',
       scheduleId: created.scheduleId,
@@ -346,6 +370,11 @@ describe('ScheduledSessionService', () => {
       false,
     );
 
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(storeDir, 'schedules.json'), 'utf8'),
+    ) as { schedules: Array<{ scheduleId: string }> };
+    expect(persisted.schedules.some((item) => item.scheduleId === created.scheduleId)).toBe(false);
+
     service.shutdown();
   });
 
@@ -353,14 +382,13 @@ describe('ScheduledSessionService', () => {
     const { service } = createService({ enabled: true });
 
     await service.initialize();
-    service.setEnabled('agent', 'daily-review', false);
+    await service.setEnabled('agent', 'daily-review', false);
 
-    const updated = service.updateSchedule('agent', 'daily-review', {
+    const updated = await service.updateSchedule('agent', 'daily-review', {
       sessionTitle: 'Nightly Review',
     });
 
-    expect(updated.enabled).toBe(true);
-    expect(updated.runtimeEnabled).toBe(false);
+    expect(updated.enabled).toBe(false);
 
     service.shutdown();
   });
@@ -474,14 +502,13 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
-  it('skips runs without prompt or pre-check', async () => {
+  it('rejects persisted schedules without prompt or pre-check', async () => {
     const spawn = createSpawnStub([]);
     const { service } = createService({ prompt: null, preCheck: null }, spawn.spawnFn);
 
-    await service.initialize();
-
-    const result = await service.triggerRun('agent', 'daily-review');
-    expect(result).toEqual({ status: 'skipped', reason: 'no_prompt' });
+    await expect(service.initialize()).rejects.toThrow(
+      /schedule must define "prompt", "preCheck", or both/i,
+    );
     expect(spawn.calls).toHaveLength(0);
 
     service.shutdown();

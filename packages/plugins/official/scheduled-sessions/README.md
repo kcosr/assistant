@@ -21,9 +21,9 @@ Monitor and control cron-driven agent sessions. The core scheduler runs in the a
 }
 ```
 
-Schedules are defined on agents. See `docs/CONFIG.md` for the `schedules` schema.
-
-Runtime-managed schedules created through the generated API/tools/CLI are currently in-memory only. They take effect immediately, but they are lost when the server restarts.
+Schedules are no longer defined on agents.
+Schedules are stored in the plugin data directory at `data/plugins/scheduled-sessions/schedules.json`.
+They are persisted immediately on create, update, delete, enable, and disable.
 
 ## Source files
 

@@ -69,7 +69,6 @@ type ScheduleInfo = {
   preCheck?: string;
   sessionTitle?: string;
   enabled: boolean;
-  runtimeEnabled: boolean;
   reuseSession: boolean;
   status: ScheduleStatus;
   runningCount: number;
@@ -401,7 +400,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                 : '';
             const lastRun = formatLastRun(schedule.lastRun);
             const runDisabled = schedule.runningCount >= schedule.maxConcurrent;
-            const enableLabel = schedule.runtimeEnabled ? 'Disable' : 'Enable';
+            const enableLabel = schedule.enabled ? 'Disable' : 'Enable';
 
             html += `
               <div class="scheduled-sessions-item">
@@ -534,7 +533,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const key = `${agentId}:${scheduleId}`;
           const schedule = schedules.get(key);
-          const nextEnabled = schedule ? !schedule.runtimeEnabled : true;
+          const nextEnabled = schedule ? !schedule.enabled : true;
           try {
             await setScheduleEnabled(agentId, scheduleId, nextEnabled);
             setMessage(nextEnabled ? 'Schedule enabled' : 'Schedule disabled');

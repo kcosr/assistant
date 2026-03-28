@@ -87,18 +87,7 @@
             }
           }
         }
-      },
-      "schedules": [
-        {
-          "id": "daily-review",
-          "cron": "0 9 * * *",
-          "sessionTitle": "Daily Repo Review",
-          "prompt": "Review open PRs and issues. Summarize status.",
-          "enabled": true,
-          "reuseSession": true,
-          "maxConcurrent": 1
-        }
-      ]
+      }
     },
     {
       "agentId": "pi-sdk",

@@ -13,8 +13,10 @@ import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '.
 import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
+import { ScheduledSessionStore } from './scheduledSessionStore';
 import type {
   LastRunInfo,
+  PersistedScheduleRecord,
   ScheduleCreateInput,
   ScheduleDeletedEvent,
   PreCheckResult,
@@ -49,7 +51,7 @@ type PromptRunResult =
 export interface ScheduledSessionServiceOptions {
   agentRegistry: AgentRegistry;
   logger: Logger;
-  dataDir: string;
+  store: ScheduledSessionStore;
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
   envConfig?: EnvConfig;
@@ -92,40 +94,39 @@ export class ScheduledSessionService {
     if (this.initialized) {
       return;
     }
-    this.initialized = true;
 
-    const { agentRegistry, logger } = this.options;
+    const { logger, store } = this.options;
+    const persisted = await store.load();
+    this.schedules.clear();
 
-    for (const agent of agentRegistry.listAgents()) {
-      if (!agent.schedules?.length) {
-        continue;
+    for (const record of persisted) {
+      this.requireAgent(record.agentId);
+      const schedule = this.normalizePersistedSchedule(record);
+      const key = this.buildKey(record.agentId, schedule.id);
+      if (this.schedules.has(key)) {
+        throw new ScheduleValidationError(`Duplicate schedule id "${schedule.id}" for agent "${record.agentId}"`);
       }
 
-      for (const schedule of agent.schedules) {
-        const key = this.buildKey(agent.agentId, schedule.id);
+      const state: ScheduleState = {
+        agentId: record.agentId,
+        schedule,
+        timer: null,
+        deleted: false,
+        runningCount: 0,
+        runningStartedAt: null,
+        nextRunAt: null,
+        lastRun: null,
+      };
 
-        const state: ScheduleState = {
-          agentId: agent.agentId,
-          schedule,
-          timer: null,
-          runtimeEnabled: null,
-          deleted: false,
-          runningCount: 0,
-          runningStartedAt: null,
-          nextRunAt: null,
-          lastRun: null,
-        };
-
-        this.schedules.set(key, state);
-
-        if (this.isEnabled(state)) {
-          this.scheduleNext(key, state);
-        }
-
-        logger.info(`[scheduled-sessions] Registered ${key}, cron: ${schedule.cron}`);
-        this.broadcastStatus(state);
+      this.schedules.set(key, state);
+      if (this.isEnabled(state)) {
+        this.scheduleNext(key, state);
       }
+      logger.info(`[scheduled-sessions] Registered ${key}, cron: ${schedule.cron}`);
+      this.broadcastStatus(state);
     }
+
+    this.initialized = true;
   }
 
   shutdown(): void {
@@ -143,7 +144,7 @@ export class ScheduledSessionService {
     return Array.from(this.schedules.values()).map((state) => this.buildScheduleInfo(state));
   }
 
-  createSchedule(agentId: string, input: ScheduleCreateInput): ScheduleInfo {
+  async createSchedule(agentId: string, input: ScheduleCreateInput): Promise<ScheduleInfo> {
     this.requireAgent(agentId);
     const scheduleId = this.generateScheduleId(agentId);
     const schedule = this.normalizeScheduleConfigForCreate(agentId, scheduleId, input);
@@ -151,7 +152,6 @@ export class ScheduledSessionService {
       agentId,
       schedule,
       timer: null,
-      runtimeEnabled: null,
       deleted: false,
       runningCount: 0,
       runningStartedAt: null,
@@ -159,10 +159,17 @@ export class ScheduledSessionService {
       lastRun: null,
     };
 
-    this.schedules.set(this.buildKey(agentId, scheduleId), state);
+    const key = this.buildKey(agentId, scheduleId);
+    this.schedules.set(key, state);
+    try {
+      await this.persistSchedules();
+    } catch (error) {
+      this.schedules.delete(key);
+      throw error;
+    }
     if (this.initialized) {
       if (this.isEnabled(state)) {
-        this.scheduleNext(this.buildKey(agentId, scheduleId), state);
+        this.scheduleNext(key, state);
       } else {
         this.broadcastStatus(state);
       }
@@ -170,17 +177,25 @@ export class ScheduledSessionService {
     return this.buildScheduleInfo(state);
   }
 
-  updateSchedule(agentId: string, scheduleId: string, patch: ScheduleUpdateInput): ScheduleInfo {
+  async updateSchedule(
+    agentId: string,
+    scheduleId: string,
+    patch: ScheduleUpdateInput,
+  ): Promise<ScheduleInfo> {
     const key = this.buildKey(agentId, scheduleId);
     const state = this.requireState(agentId, scheduleId);
+    const previousSchedule = state.schedule;
     state.schedule = this.normalizeScheduleConfigForUpdate(
       agentId,
       scheduleId,
       state.schedule,
       patch,
     );
-    if (patch.enabled !== undefined) {
-      state.runtimeEnabled = null;
+    try {
+      await this.persistSchedules();
+    } catch (error) {
+      state.schedule = previousSchedule;
+      throw error;
     }
     if (this.initialized) {
       if (this.isEnabled(state)) {
@@ -197,12 +212,13 @@ export class ScheduledSessionService {
     return this.buildScheduleInfo(state);
   }
 
-  deleteSchedule(
+  async deleteSchedule(
     agentId: string,
     scheduleId: string,
-  ): { agentId: string; scheduleId: string; deleted: true } {
+  ): Promise<{ agentId: string; scheduleId: string; deleted: true }> {
     const key = this.buildKey(agentId, scheduleId);
     const state = this.requireState(agentId, scheduleId);
+    const previousDeleted = state.deleted;
     state.deleted = true;
     if (state.timer) {
       clearTimeout(state.timer);
@@ -210,6 +226,18 @@ export class ScheduledSessionService {
     }
     state.nextRunAt = null;
     this.schedules.delete(key);
+    try {
+      await this.persistSchedules();
+    } catch (error) {
+      state.deleted = previousDeleted;
+      state.timer = null;
+      state.nextRunAt = null;
+      this.schedules.set(key, state);
+      if (this.initialized && this.isEnabled(state)) {
+        this.scheduleNext(key, state);
+      }
+      throw error;
+    }
     this.options.broadcast?.({
       type: 'scheduled_session:deleted',
       payload: { agentId, scheduleId },
@@ -245,25 +273,17 @@ export class ScheduledSessionService {
     return Promise.resolve({ status: 'started' });
   }
 
-  setEnabled(agentId: string, scheduleId: string, enabled: boolean): void {
+  async setEnabled(agentId: string, scheduleId: string, enabled: boolean): Promise<void> {
     const state = this.requireState(agentId, scheduleId);
-    state.runtimeEnabled = enabled;
+    const previousSchedule = state.schedule;
+    state.schedule = { ...state.schedule, enabled };
+    try {
+      await this.persistSchedules();
+    } catch (error) {
+      state.schedule = previousSchedule;
+      throw error;
+    }
     if (enabled) {
-      this.scheduleNext(this.buildKey(agentId, scheduleId), state);
-      return;
-    }
-    if (state.timer) {
-      clearTimeout(state.timer);
-      state.timer = null;
-    }
-    state.nextRunAt = null;
-    this.broadcastStatus(state);
-  }
-
-  clearEnabledOverride(agentId: string, scheduleId: string): void {
-    const state = this.requireState(agentId, scheduleId);
-    state.runtimeEnabled = null;
-    if (this.isEnabled(state)) {
       this.scheduleNext(this.buildKey(agentId, scheduleId), state);
       return;
     }
@@ -739,6 +759,21 @@ export class ScheduledSessionService {
     return schedule;
   }
 
+  private normalizePersistedSchedule(record: PersistedScheduleRecord): ScheduleConfig {
+    const schedule: ScheduleConfig = {
+      id: record.scheduleId,
+      cron: record.cron,
+      enabled: record.enabled,
+      reuseSession: record.reuseSession,
+      maxConcurrent: record.maxConcurrent,
+      ...(record.prompt !== undefined ? { prompt: record.prompt } : {}),
+      ...(record.preCheck !== undefined ? { preCheck: record.preCheck } : {}),
+      ...(record.sessionTitle !== undefined ? { sessionTitle: record.sessionTitle } : {}),
+    };
+    this.validateScheduleConfig(record.agentId, schedule);
+    return schedule;
+  }
+
   private normalizeScheduleConfigForUpdate(
     agentId: string,
     scheduleId: string,
@@ -840,6 +875,28 @@ export class ScheduledSessionService {
 
   private getEffectiveMaxConcurrent(schedule: ScheduleConfig): number {
     return schedule.reuseSession ? 1 : schedule.maxConcurrent ?? 1;
+  }
+
+  private buildPersistedRecords(): PersistedScheduleRecord[] {
+    return Array.from(this.schedules.values())
+      .filter((state) => !state.deleted)
+      .map((state) => ({
+        agentId: state.agentId,
+        scheduleId: state.schedule.id,
+        cron: state.schedule.cron,
+        enabled: state.schedule.enabled,
+        reuseSession: state.schedule.reuseSession,
+        maxConcurrent: state.schedule.maxConcurrent,
+        ...(state.schedule.prompt !== undefined ? { prompt: state.schedule.prompt } : {}),
+        ...(state.schedule.preCheck !== undefined ? { preCheck: state.schedule.preCheck } : {}),
+        ...(state.schedule.sessionTitle !== undefined
+          ? { sessionTitle: state.schedule.sessionTitle }
+          : {}),
+      }));
+  }
+
+  private async persistSchedules(): Promise<void> {
+    await this.options.store.save(this.buildPersistedRecords());
   }
 
   private getScheduledSessionMetadata(summary: SessionSummary): {
@@ -1015,7 +1072,7 @@ export class ScheduledSessionService {
   }
 
   private isEnabled(state: ScheduleState): boolean {
-    return state.runtimeEnabled ?? state.schedule.enabled;
+    return state.schedule.enabled;
   }
 
   private getWorkdir(agentId: string): string | undefined {
@@ -1047,8 +1104,7 @@ export class ScheduledSessionService {
 
   private buildScheduleInfo(state: ScheduleState): ScheduleInfo {
     const enabled = state.schedule.enabled;
-    const runtimeEnabled = this.isEnabled(state);
-    const status = state.runningCount > 0 ? 'running' : runtimeEnabled ? 'idle' : 'disabled';
+    const status = state.runningCount > 0 ? 'running' : enabled ? 'idle' : 'disabled';
     const lastRun = state.lastRun
       ? {
           timestamp: state.lastRun.timestamp.toISOString(),
@@ -1067,7 +1123,6 @@ export class ScheduledSessionService {
       ...(state.schedule.preCheck ? { preCheck: state.schedule.preCheck } : {}),
       ...(state.schedule.sessionTitle ? { sessionTitle: state.schedule.sessionTitle } : {}),
       enabled,
-      runtimeEnabled,
       reuseSession: state.schedule.reuseSession,
       status,
       runningCount: state.runningCount,

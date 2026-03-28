@@ -447,7 +447,6 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `sessionWorkingDirRoots` | array | Absolute base directories whose immediate subfolders are offered in the picker. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
-| `schedules` | array | Optional scheduled session definitions. |
 
 #### Working directory picker
 
@@ -561,62 +560,28 @@ Supported providers:
 
 #### Scheduled sessions
 
-Scheduled sessions run cron-driven agent sessions.
+Scheduled sessions are no longer configured on agents. Use the `scheduled-sessions` plugin to
+create and manage them dynamically. They are stored in the plugin data directory under
+`data/plugins/scheduled-sessions/schedules.json`.
 
-```json
-{
-  "agents": [
-    {
-      "agentId": "repo-maintainer",
-      "displayName": "Repo Maintainer",
-      "chat": {
-        "provider": "codex-cli",
-        "config": { "workdir": "/path/to/repo" }
-      },
-      "schedules": [
-        {
-          "id": "daily-review",
-          "cron": "0 9 * * *",
-          "sessionTitle": "Daily Repo Review",
-          "prompt": "Review open PRs and issues. Summarize status.",
-          "enabled": true,
-          "reuseSession": true,
-          "maxConcurrent": 1
-        },
-        {
-          "id": "deps-check",
-          "cron": "0 * * * *",
-          "preCheck": "/path/to/check-outdated-deps.sh",
-          "prompt": "The following dependencies are outdated:",
-          "enabled": true,
-          "reuseSession": false,
-          "maxConcurrent": 1
-        }
-      ]
-    }
-  ]
-}
-```
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | string | - | Unique identifier within the agent. |
-| `cron` | string | - | 5-field cron expression. Invalid cron values prevent startup. |
-| `prompt` | string | - | Optional static prompt text (must be non-empty if provided). |
-| `preCheck` | string | - | Optional shell command to run before the session. |
-| `sessionTitle` | string | - | Optional static auto title; when omitted a default scheduled name with timestamp is used. |
-| `enabled` | boolean | `true` | Whether the schedule is active by default. |
-| `reuseSession` | boolean | `true` | Reuse the same backing session across runs. |
-| `maxConcurrent` | number | `1` | Max concurrent runs allowed for the schedule when `reuseSession` is `false`. |
+Each persisted schedule record includes:
+- `agentId`
+- `scheduleId`
+- `cron`
+- optional `prompt`
+- optional `preCheck`
+- optional `sessionTitle`
+- `enabled`
+- `reuseSession`
+- `maxConcurrent`
 
 Notes:
-- Each schedule must define `prompt`, `preCheck`, or both. If the combined prompt is empty after trimming, the run is skipped.
-- `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured. Non-zero exit codes skip the run; stdout is appended to `prompt` with a blank line.
-- When `reuseSession` is `true`, scheduled runs reuse a session tagged `scheduledSession` (`agentId` + `scheduleId`) and update `attributes.core.autoTitle` on every run (using `sessionTitle` or the default timestamped name).
-- When `reuseSession` is `false`, each run creates a fresh backing session instead of reusing an existing one.
-- Manual renames in the UI are preserved; clearing the name falls back to the latest auto title.
-- `enabled: false` disables automatic runs; manual runs via the scheduled-sessions plugin/API ignore `enabled` but still respect the effective concurrency limit unless `force` is set.
-- Enable the `scheduled-sessions` plugin to view status, toggle schedules, and trigger runs.
+- Each schedule must define `prompt`, `preCheck`, or both.
+- `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured.
+- When `reuseSession` is `true`, scheduled runs reuse one backing session per `agentId + scheduleId`.
+- When `reuseSession` is `false`, each run creates a fresh backing session.
+- `maxConcurrent` only matters when `reuseSession` is `false`.
+- Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules.
 
 #### `pi` Provider
 

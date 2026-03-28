@@ -115,7 +115,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
 
         try {
-          return requireService(ctx).createSchedule(agentId, {
+          return await requireService(ctx).createSchedule(agentId, {
             cron,
             ...(prompt !== undefined ? { prompt: prompt ?? undefined } : {}),
             ...(preCheck !== undefined ? { preCheck: preCheck ?? undefined } : {}),
@@ -141,7 +141,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
 
         try {
-          return requireService(ctx).updateSchedule(agentId, scheduleId, {
+          return await requireService(ctx).updateSchedule(agentId, scheduleId, {
             ...(cron !== undefined ? { cron } : {}),
             ...(prompt !== undefined ? { prompt } : {}),
             ...(preCheck !== undefined ? { preCheck } : {}),
@@ -159,7 +159,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
         const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
         try {
-          return requireService(ctx).deleteSchedule(agentId, scheduleId);
+          return await requireService(ctx).deleteSchedule(agentId, scheduleId);
         } catch (err) {
           wrapServiceError(err);
         }
@@ -180,7 +180,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
         const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
         try {
-          requireService(ctx).setEnabled(agentId, scheduleId, true);
+          await requireService(ctx).setEnabled(agentId, scheduleId, true);
           return { agentId, scheduleId, enabled: true };
         } catch (err) {
           wrapServiceError(err);
@@ -191,7 +191,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
         const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
         try {
-          requireService(ctx).setEnabled(agentId, scheduleId, false);
+          await requireService(ctx).setEnabled(agentId, scheduleId, false);
           return { agentId, scheduleId, enabled: false };
         } catch (err) {
           wrapServiceError(err);
