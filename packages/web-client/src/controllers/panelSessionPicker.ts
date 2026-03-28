@@ -189,7 +189,7 @@ export class SessionPickerController {
           renameBtn.type = 'button';
           renameBtn.className = 'session-picker-rename-btn';
           renameBtn.innerHTML = ICONS.edit;
-          renameBtn.title = 'Rename session';
+          renameBtn.title = 'Edit session';
           renameBtn.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -662,7 +662,7 @@ export class SessionPickerController {
 
     if (options.onRename) {
       addItem({
-        label: 'Rename',
+        label: 'Edit',
         icon: ICONS.edit,
         onSelect: () => {
           this.closeSubmenu();

@@ -35,7 +35,7 @@ import type {
   ScheduleUpdateInput,
 } from './types';
 
-type CliProvider = 'claude-cli' | 'codex-cli' | 'pi-cli';
+type CliProvider = 'claude-cli' | 'codex-cli' | 'pi' | 'pi-cli';
 
 type CliChatConfig = {
   workdir?: string;
@@ -1306,7 +1306,7 @@ export class ScheduledSessionService {
       throw new Error(`Agent ${agentId} not found`);
     }
     const provider = agent.chat?.provider ?? 'pi';
-    if (provider !== 'claude-cli' && provider !== 'codex-cli' && provider !== 'pi-cli') {
+    if (provider !== 'claude-cli' && provider !== 'codex-cli' && provider !== 'pi' && provider !== 'pi-cli') {
       throw new Error(`Agent ${agentId} uses unsupported provider: ${provider}`);
     }
     const config = agent.chat?.config as CliChatConfig | undefined;

@@ -111,6 +111,7 @@ export class SessionComposerController {
     );
     let selectedModel = typeof initialConfig?.model === 'string' ? initialConfig.model : '';
     let selectedThinking = typeof initialConfig?.thinking === 'string' ? initialConfig.thinking : '';
+    let useAgentDefaultSkills = !Array.isArray(initialConfig?.skills);
     let selectedSkills = new Set(Array.isArray(initialConfig?.skills) ? initialConfig.skills : []);
     let selectedWorkingDir =
       typeof initialConfig?.workingDir === 'string' ? initialConfig.workingDir : '';
@@ -209,9 +210,13 @@ export class SessionComposerController {
       const availableSkills = new Set(
         (agent.sessionConfigCapabilities?.availableSkills ?? []).map((skill) => skill.id),
       );
-      selectedSkills = new Set(
-        [...selectedSkills].filter((skillId) => availableSkills.has(skillId)),
-      );
+      if (useAgentDefaultSkills) {
+        selectedSkills = new Set(availableSkills);
+      } else {
+        selectedSkills = new Set(
+          [...selectedSkills].filter((skillId) => availableSkills.has(skillId)),
+        );
+      }
 
       const workingDirConfig = agent.sessionWorkingDir;
       if (!workingDirConfig || workingDirConfig.mode === 'none') {
@@ -426,6 +431,7 @@ export class SessionComposerController {
         input.type = 'checkbox';
         input.checked = selectedSkills.has(skill.id);
         input.addEventListener('change', () => {
+          useAgentDefaultSkills = false;
           if (input.checked) {
             selectedSkills.add(skill.id);
           } else {
@@ -617,11 +623,12 @@ export class SessionComposerController {
       const workingDir = deriveEffectiveWorkingDir();
       const title = titleInput.value.trim();
       const skills = [...selectedSkills].sort((a, b) => a.localeCompare(b));
+      const availableSkills = getSelectedAgent()?.sessionConfigCapabilities?.availableSkills ?? [];
       const config: SessionConfig = {
         ...(selectedModel ? { model: selectedModel } : {}),
         ...(selectedThinking ? { thinking: selectedThinking } : {}),
         ...(workingDir ? { workingDir } : {}),
-        ...(skills.length > 0 ? { skills } : {}),
+        ...(!useAgentDefaultSkills && availableSkills.length > 0 ? { skills } : {}),
       };
       if (mode === 'session' && title) {
         config.sessionTitle = title;

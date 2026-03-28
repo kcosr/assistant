@@ -378,6 +378,37 @@ description: Voice adapter
     expect(prompt).not.toContain('<available_skills>');
   });
 
+  it('omits instruction skills when the selected session skill list is explicitly empty', () => {
+    const root = createTempDir('instruction-skills-empty-selected');
+    writeSkill({
+      root,
+      dirName: 'lists',
+      frontmatter: `---
+name: lists
+description: Lists skill
+---`,
+      body: '# Lists Skill\n\nDo list things.',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['*'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt({
+      agentRegistry: registry,
+      agentId: 'agent',
+      selectedInstructionSkillNames: [],
+    });
+
+    expect(prompt).not.toContain('<available_skills>');
+    expect(prompt).not.toContain('<skill name=');
+  });
+
   it('defaults a skills source with only root to available: [\"*\"]', () => {
     const root = createTempDir('instruction-skills-defaults');
     writeSkill({

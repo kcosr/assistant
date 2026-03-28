@@ -122,6 +122,27 @@ describe('sessionConfig', () => {
     expect(resolved.skills).toEqual(['agent-runner-review', 'worktrees']);
   });
 
+  it('preserves explicit empty skill selection', async () => {
+    const root = createSkillRoot('session-config-empty-skills');
+    writeSkill({ root, dirName: 'worktrees', description: 'Worktree helper' });
+
+    const agent: AgentDefinition = {
+      agentId: 'coding',
+      displayName: 'Coding',
+      description: 'Coding agent',
+      skills: [{ root, available: ['worktrees'] }],
+    };
+
+    const resolved = await resolveSessionConfigForAgent({
+      agent,
+      sessionConfig: {
+        skills: [],
+      },
+    });
+
+    expect(resolved.skills).toEqual([]);
+  });
+
   it('builds attribute patches and filters selected skills', () => {
     expect(
       buildSessionAttributesPatchFromConfig({
@@ -133,6 +154,14 @@ describe('sessionConfig', () => {
     ).toEqual({
       core: { workingDir: '/tmp/project' },
       agent: { skills: ['worktrees'] },
+    });
+
+    expect(
+      buildSessionAttributesPatchFromConfig({
+        skills: [],
+      }),
+    ).toEqual({
+      agent: { skills: [] },
     });
 
     expect(
@@ -155,5 +184,13 @@ describe('sessionConfig', () => {
         },
       }),
     ).toEqual(['agent-runner-review', 'worktrees']);
+
+    expect(
+      getSelectedSessionSkillIds({
+        agent: {
+          skills: [],
+        },
+      }),
+    ).toEqual([]);
   });
 });

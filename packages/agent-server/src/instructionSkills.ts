@@ -507,8 +507,7 @@ export function buildInstructionSkillsPrompt(
   selectedNames?: string[],
 ): string {
   const { availableSelected, inlineSelected } = resolveInstructionSkillSelections(agent, log);
-  const selectedNameSet =
-    Array.isArray(selectedNames) && selectedNames.length > 0 ? new Set(selectedNames) : null;
+  const selectedNameSet = Array.isArray(selectedNames) ? new Set(selectedNames) : null;
 
   const filteredAvailable = selectedNameSet
     ? availableSelected.filter((skill) => selectedNameSet.has(skill.name))

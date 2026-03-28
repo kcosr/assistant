@@ -81,6 +81,13 @@ describe('SessionComposerController', () => {
     controller.open({ initialAgentId: 'assistant', onSessionCreated });
 
     queryRole<HTMLButtonElement>('customize').click();
+    const initialSkillInputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        '.session-composer-skill-option input[type="checkbox"]',
+      ),
+    );
+    expect(initialSkillInputs.every((input) => input.checked)).toBe(true);
+
     const title = queryRole<HTMLInputElement>('title');
     title.value = 'Daily Assistant';
     title.dispatchEvent(new Event('input', { bubbles: true }));
@@ -93,11 +100,6 @@ describe('SessionComposerController', () => {
     thinking.value = 'medium';
     thinking.dispatchEvent(new Event('change', { bubbles: true }));
 
-    const skillInputs = Array.from(
-      document.querySelectorAll<HTMLInputElement>('.session-composer-skill-option input[type="checkbox"]'),
-    );
-    skillInputs[0]?.click();
-
     queryRole<HTMLButtonElement>('confirm').click();
     await Promise.resolve();
 
@@ -106,7 +108,6 @@ describe('SessionComposerController', () => {
         model: 'gpt-5.4',
         thinking: 'medium',
         workingDir: '/home/kevin/assistant',
-        skills: ['worktrees'],
         sessionTitle: 'Daily Assistant',
       },
     });
@@ -212,6 +213,32 @@ describe('SessionComposerController', () => {
     expect(createSessionForAgent).toHaveBeenCalledWith('coding', {
       sessionConfig: {
         workingDir: '/home/kevin/worktrees/project-a',
+      },
+    });
+  });
+
+  it('preserves an explicit empty skill selection', async () => {
+    const { controller, createSessionForAgent } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const skillInputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        '.session-composer-skill-option input[type="checkbox"]',
+      ),
+    );
+    for (const input of skillInputs) {
+      input.click();
+    }
+
+    queryRole<HTMLButtonElement>('confirm').click();
+    await Promise.resolve();
+
+    expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
+      sessionConfig: {
+        workingDir: '/home/kevin/assistant',
+        skills: [],
       },
     });
   });

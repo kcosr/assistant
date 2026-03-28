@@ -1888,7 +1888,7 @@ async function main(): Promise<void> {
       onClearSession:
         options.onClearSession ?? ((sessionId) => showClearHistoryConfirmation(sessionId)),
       onDeleteSession: options.onDeleteSession ?? ((sessionId) => void deleteSession(sessionId)),
-      onRenameSession: options.onRenameSession ?? ((sessionId) => void renameSession(sessionId)),
+      onRenameSession: options.onRenameSession ?? ((sessionId) => editSessionConfig(sessionId)),
     });
   };
 
@@ -1907,14 +1907,15 @@ async function main(): Promise<void> {
       rawAgent && typeof rawAgent === 'object' && !Array.isArray(rawAgent)
         ? (rawAgent as Record<string, unknown>)
         : null;
-    const skills = Array.isArray(agent?.['skills'])
-      ? agent['skills'].filter((value): value is string => typeof value === 'string')
+    const hasExplicitSkills = Array.isArray(agent?.['skills']);
+    const skills = hasExplicitSkills
+      ? (agent['skills'] as unknown[]).filter((value): value is string => typeof value === 'string')
       : [];
     return {
       ...(typeof summary.model === 'string' ? { model: summary.model } : {}),
       ...(typeof summary.thinking === 'string' ? { thinking: summary.thinking } : {}),
       ...(typeof core?.['workingDir'] === 'string' ? { workingDir: core['workingDir'] } : {}),
-      ...(skills.length > 0 ? { skills } : {}),
+      ...(hasExplicitSkills ? { skills } : {}),
     };
   }
 

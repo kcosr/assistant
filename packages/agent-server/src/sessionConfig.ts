@@ -139,8 +139,9 @@ export async function resolveSessionConfigForAgent(options: {
     resolved.workingDir = workingDir;
   }
 
-  const skills = normalizeSkills(sessionConfig?.skills);
-  if (skills) {
+  const rawSkills = sessionConfig?.skills;
+  if (Array.isArray(rawSkills)) {
+    const skills = normalizeSkills(rawSkills, { preserveEmpty: true }) ?? [];
     const availableSkillIds = new Set(capabilities.skills.map((skill) => skill.id));
     for (const skillId of skills) {
       if (!availableSkillIds.has(skillId)) {
@@ -169,7 +170,7 @@ export function buildSessionAttributesPatchFromConfig(
   if (config.workingDir || clearMissing) {
     patch['core'] = { workingDir: config.workingDir ?? null };
   }
-  if ((config.skills && config.skills.length > 0) || clearMissing) {
+  if (config.skills !== undefined || clearMissing) {
     patch['agent'] = { skills: config.skills ?? null };
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
@@ -189,7 +190,7 @@ export function getSelectedSessionSkillIds(attributes: SessionAttributes | undef
     return undefined;
   }
   const rawSkills = (rawAgent as { skills?: unknown }).skills;
-  return normalizeSkills(rawSkills);
+  return normalizeSkills(rawSkills, { preserveEmpty: true });
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -200,7 +201,10 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function normalizeSkills(value: unknown): string[] | undefined {
+function normalizeSkills(
+  value: unknown,
+  options?: { preserveEmpty?: boolean },
+): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -208,7 +212,7 @@ function normalizeSkills(value: unknown): string[] | undefined {
     .filter((entry): entry is string => typeof entry === 'string')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
-  if (normalized.length === 0) {
+  if (normalized.length === 0 && options?.preserveEmpty !== true) {
     return undefined;
   }
   return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b));
