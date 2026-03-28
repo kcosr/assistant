@@ -145,8 +145,10 @@ describe('agents plugin operations', () => {
         agentId: 'general',
         displayName: 'General',
         description: 'General agent',
-        sessionWorkingDirMode: 'prompt',
-        sessionWorkingDirRoots: [root],
+        sessionWorkingDir: {
+          mode: 'prompt',
+          roots: [root],
+        },
       },
     ]);
 

@@ -99,6 +99,65 @@ describe('loadAgentDefinitionsFromFile', () => {
     expect(general?.capabilityDenylist).toBeUndefined();
   });
 
+  it('loads sessionWorkingDir config for fixed and prompt agents', async () => {
+    const filePath = createTempFile('agents-config-session-working-dir');
+    const config = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: '/home/kevin/assistant',
+          },
+        },
+        {
+          agentId: 'coding',
+          displayName: 'Coding',
+          description: 'Prompts for a workspace.',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/home/kevin/worktrees'],
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    const definitions = loadAgentDefinitionsFromFile(filePath);
+    expect(definitions[0]?.sessionWorkingDir).toEqual({
+      mode: 'fixed',
+      path: '/home/kevin/assistant',
+    });
+    expect(definitions[1]?.sessionWorkingDir).toEqual({
+      mode: 'prompt',
+      roots: ['/home/kevin/worktrees'],
+    });
+  });
+
+  it('rejects legacy session working directory fields', async () => {
+    const filePath = createTempFile('agents-config-session-working-dir-legacy');
+    const config = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDirMode: 'prompt',
+          sessionWorkingDirRoots: ['/home/kevin/worktrees'],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    expect(() => loadAgentDefinitionsFromFile(filePath)).toThrow(
+      /sessionWorkingDirMode is no longer supported; use .*sessionWorkingDir instead/,
+    );
+  });
+
   it('loads chat provider configuration for claude-cli', async () => {
     const filePath = createTempFile('agents-config-claude-cli');
     const config = {

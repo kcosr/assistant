@@ -278,6 +278,86 @@ describe('loadConfig', () => {
     });
   });
 
+  it('parses fixed and prompt session working directory config', async () => {
+    const filePath = createTempFile('config-session-working-dir');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: '/home/kevin/assistant',
+          },
+        },
+        {
+          agentId: 'coding',
+          displayName: 'Coding',
+          description: 'Prompts for a workspace.',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/home/kevin/worktrees'],
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents[0]?.sessionWorkingDir).toEqual({
+      mode: 'fixed',
+      path: '/home/kevin/assistant',
+    });
+    expect(config.agents[1]?.sessionWorkingDir).toEqual({
+      mode: 'prompt',
+      roots: ['/home/kevin/worktrees'],
+    });
+  });
+
+  it('rejects legacy session working directory fields', async () => {
+    const filePath = createTempFile('config-session-working-dir-legacy');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDirMode: 'prompt',
+          sessionWorkingDirRoots: ['/home/kevin/worktrees'],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(
+      /sessionWorkingDirMode is no longer supported; use sessionWorkingDir instead/,
+    );
+  });
+
+  it('rejects invalid session working directory shapes', async () => {
+    const filePath = createTempFile('config-session-working-dir-invalid');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: 'relative/path',
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/sessionWorkingDir/);
+  });
+
   it('supports codex-cli chat provider config', async () => {
     const filePath = createTempFile('config-codex-cli');
     const configJson = {

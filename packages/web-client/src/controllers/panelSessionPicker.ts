@@ -16,8 +16,10 @@ export interface AgentSummary {
   agentId: string;
   displayName: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
 }
 
 export interface SessionPickerOpenOptions {
@@ -382,7 +384,9 @@ export class SessionPickerController {
         } else {
           const createSessionForAgent = async (agent: AgentSummary) => {
             let workingDir: string | undefined;
-            if (agent.sessionWorkingDirMode === 'prompt') {
+            if (agent.sessionWorkingDir?.mode === 'fixed') {
+              workingDir = agent.sessionWorkingDir.path;
+            } else if (agent.sessionWorkingDir?.mode === 'prompt') {
               const entries = await this.fetchWorkingDirEntries(agent.agentId);
               if (entries.length > 0) {
                 workingDir = await this.promptForWorkingDir({

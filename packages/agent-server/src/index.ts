@@ -1,7 +1,6 @@
 import path from 'node:path';
 
 import dotenv from 'dotenv';
-import { getSessionWorkspaceRoot } from '@assistant/coding-executor';
 import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
@@ -42,49 +41,21 @@ dotenv.config();
 
 export let agentRegistry: AgentRegistry | undefined;
 
-function resolveCodingWorkspaceRoot(
-  appConfig: AppConfig | undefined,
-  dataDir: string,
-): { workspaceRoot: string } | null {
-  const codingConfig = appConfig?.plugins?.['coding'];
-  if (!codingConfig?.enabled) {
-    return null;
-  }
-
-  const mode = codingConfig.mode === 'sidecar' ? 'sidecar' : 'local';
-  let workspaceRoot: string | null = null;
-
-  if (mode === 'local') {
-    if (codingConfig.local?.workspaceRoot && codingConfig.local.workspaceRoot.trim().length > 0) {
-      workspaceRoot = codingConfig.local.workspaceRoot.trim();
-    } else {
-      workspaceRoot = path.join(dataDir, 'plugins', 'coding', 'coding-workspaces');
-    }
-  } else {
-    return null;
-  }
-
-  if (!workspaceRoot || !path.isAbsolute(workspaceRoot)) {
-    return null;
-  }
-
-  return { workspaceRoot };
-}
-
 function createSessionWorkingDirResolver(
-  appConfig: AppConfig | undefined,
-  dataDir: string,
-  pluginRegistry?: PluginRegistry,
-): ((sessionId: string) => string | null) | undefined {
-  if (!pluginRegistry) {
-    return undefined;
-  }
-  const resolved = resolveCodingWorkspaceRoot(appConfig, dataDir);
-  if (!resolved) {
-    return undefined;
-  }
-  const { workspaceRoot } = resolved;
-  return () => getSessionWorkspaceRoot({ workspaceRoot });
+  registry: AgentRegistry,
+): ((summary: { agentId?: string }) => string | null) | undefined {
+  return (summary) => {
+    const agentId = typeof summary.agentId === 'string' ? summary.agentId.trim() : '';
+    if (!agentId) {
+      return null;
+    }
+    const agent = registry.getAgent(agentId);
+    const workingDir = agent?.sessionWorkingDir;
+    if (!workingDir || workingDir.mode !== 'fixed') {
+      return null;
+    }
+    return workingDir.path;
+  };
 }
 
 export async function startServer(
@@ -110,11 +81,7 @@ export async function startServer(
       ? appConfig.sessions.maxCached
       : 100;
 
-  const resolveSessionWorkingDir = createSessionWorkingDirResolver(
-    appConfig,
-    config.dataDir,
-    pluginRegistry,
-  );
+  const resolveSessionWorkingDir = createSessionWorkingDirResolver(registry);
 
   const sessionHub = new SessionHub({
     sessionIndex,

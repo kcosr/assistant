@@ -160,8 +160,10 @@ describe('SessionPickerController', () => {
         {
           agentId: 'general',
           displayName: 'General',
-          sessionWorkingDirMode: 'prompt',
-          sessionWorkingDirRoots: ['/workspaces'],
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/workspaces'],
+          },
         },
       ],
       createSessionForAgent,
@@ -198,6 +200,53 @@ describe('SessionPickerController', () => {
     expect(createSessionForAgent).toHaveBeenCalledWith(
       'general',
       expect.objectContaining({ workingDir: '/workspaces/app' }),
+    );
+    expect(onSelectSession).toHaveBeenCalledWith('new-session');
+
+    controller.close();
+  });
+
+  it('uses a fixed working directory without prompting before creating a new session', async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const createSessionForAgent = vi.fn().mockResolvedValue('new-session');
+    const onSelectSession = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [],
+      getAgentSummaries: () => [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: '/home/kevin/assistant',
+          },
+        },
+      ],
+      createSessionForAgent,
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession,
+    });
+
+    const agentItem = document.querySelector<HTMLDivElement>('.session-picker-item');
+    expect(agentItem).toBeTruthy();
+    agentItem?.click();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(document.querySelector('.working-dir-picker-overlay')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(createSessionForAgent).toHaveBeenCalledWith(
+      'assistant',
+      expect.objectContaining({ workingDir: '/home/kevin/assistant' }),
     );
     expect(onSelectSession).toHaveBeenCalledWith('new-session');
 

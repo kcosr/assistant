@@ -3,7 +3,10 @@ import path from 'node:path';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
 
-import type { AgentDefinition } from '../../../../agent-server/src/agents';
+import type {
+  AgentDefinition,
+  AgentSessionWorkingDirConfig,
+} from '../../../../agent-server/src/agents';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import { matchesGlobPattern } from '../../../../agent-server/src/tools/scoping';
@@ -17,8 +20,7 @@ type AgentSummary = {
   description?: string;
   type?: 'chat' | 'external';
   supportedArtifactTypes?: string[];
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?: AgentSessionWorkingDirConfig;
 };
 
 type ListAgentsResult = {
@@ -186,8 +188,7 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
     description: agent.description,
     type: agent.type ?? 'chat',
     supportedArtifactTypes: computeSupportedArtifactTypes(agent),
-    ...(agent.sessionWorkingDirMode ? { sessionWorkingDirMode: agent.sessionWorkingDirMode } : {}),
-    ...(agent.sessionWorkingDirRoots ? { sessionWorkingDirRoots: agent.sessionWorkingDirRoots } : {}),
+    ...(agent.sessionWorkingDir ? { sessionWorkingDir: agent.sessionWorkingDir } : {}),
   }));
 
   return { agents: summaries };
@@ -205,7 +206,7 @@ async function listWorkingDirs(args: unknown, ctx: ToolContext): Promise<ListWor
     throw new ToolError('invalid_arguments', `Unknown agent: ${parsed.agentId}`);
   }
 
-  const roots = agent.sessionWorkingDirRoots ?? [];
+  const roots = agent.sessionWorkingDir?.mode === 'prompt' ? agent.sessionWorkingDir.roots : [];
   if (roots.length === 0) {
     return { roots: [] };
   }

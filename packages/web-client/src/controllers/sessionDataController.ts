@@ -40,8 +40,10 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
 }
 
 interface OperationResponse<T> {
@@ -117,8 +119,7 @@ export class SessionDataController {
           displayName?: unknown;
           description?: unknown;
           type?: unknown;
-          sessionWorkingDirMode?: unknown;
-          sessionWorkingDirRoots?: unknown;
+          sessionWorkingDir?: unknown;
         };
 
         const agentId = typeof anyAgent.agentId === 'string' ? anyAgent.agentId.trim() : '';
@@ -138,32 +139,48 @@ export class SessionDataController {
         const typeRaw = typeof anyAgent.type === 'string' ? anyAgent.type.trim() : '';
         const type = typeRaw === 'external' || typeRaw === 'chat' ? typeRaw : undefined;
 
-        const sessionWorkingDirModeRaw =
-          typeof anyAgent.sessionWorkingDirMode === 'string'
-            ? anyAgent.sessionWorkingDirMode.trim()
-            : '';
-        const sessionWorkingDirMode =
-          sessionWorkingDirModeRaw === 'auto' || sessionWorkingDirModeRaw === 'prompt'
-            ? sessionWorkingDirModeRaw
-            : undefined;
-
-        const rawRoots = anyAgent.sessionWorkingDirRoots;
-        const sessionWorkingDirRoots = Array.isArray(rawRoots)
-          ? rawRoots
-              .filter((root) => typeof root === 'string')
-              .map((root) => root.trim())
-              .filter((root) => root.length > 0)
-          : undefined;
+        let sessionWorkingDir:
+          | { mode: 'none' }
+          | { mode: 'fixed'; path: string }
+          | { mode: 'prompt'; roots: string[] }
+          | undefined;
+        if (
+          anyAgent.sessionWorkingDir &&
+          typeof anyAgent.sessionWorkingDir === 'object' &&
+          !Array.isArray(anyAgent.sessionWorkingDir)
+        ) {
+          const raw = anyAgent.sessionWorkingDir as {
+            mode?: unknown;
+            path?: unknown;
+            roots?: unknown;
+          };
+          const mode = typeof raw.mode === 'string' ? raw.mode.trim() : '';
+          if (mode === 'none') {
+            sessionWorkingDir = { mode: 'none' };
+          } else if (mode === 'fixed') {
+            const pathValue = typeof raw.path === 'string' ? raw.path.trim() : '';
+            if (pathValue) {
+              sessionWorkingDir = { mode: 'fixed', path: pathValue };
+            }
+          } else if (mode === 'prompt') {
+            const roots = Array.isArray(raw.roots)
+              ? raw.roots
+                  .filter((root) => typeof root === 'string')
+                  .map((root) => root.trim())
+                  .filter((root) => root.length > 0)
+              : [];
+            if (roots.length > 0) {
+              sessionWorkingDir = { mode: 'prompt', roots };
+            }
+          }
+        }
 
         parsedAgents.push({
           agentId,
           displayName,
           ...(description ? { description } : {}),
           ...(type ? { type } : {}),
-          ...(sessionWorkingDirMode ? { sessionWorkingDirMode } : {}),
-          ...(sessionWorkingDirRoots && sessionWorkingDirRoots.length > 0
-            ? { sessionWorkingDirRoots }
-            : {}),
+          ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
         });
       }
 

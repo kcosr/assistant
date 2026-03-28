@@ -4,10 +4,12 @@
 
 ### Breaking Changes
 - Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/schedules.json`. ([#123](<pr-url>))
+- Removed legacy `agents[].sessionWorkingDirMode` / `sessionWorkingDirRoots` in favor of a single `agents[].sessionWorkingDir` object with `none`, `fixed`, and `prompt` modes. ([#123](<pr-url>))
 
 ### Added
 - Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Added runtime-managed scheduled session CRUD through the scheduled-sessions service plus generated plugin tools, HTTP operations, and CLI commands. ([#123](<pr-url>))
+- Added fixed agent working-directory support through `sessionWorkingDir`, so agents can either prompt for a directory or automatically use a configured path. ([#123](<pr-url>))
 
 ### Changed
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#65](https://github.com/kcosr/assistant/pull/65))

@@ -243,8 +243,10 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
 }
 
 import { apiFetch, getWebSocketUrl } from './utils/api';

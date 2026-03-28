@@ -261,6 +261,24 @@ const InstructionSkillsConfigSchema = z
     }));
   });
 
+const SessionWorkingDirConfigSchema = z
+  .discriminatedUnion('mode', [
+    z.object({
+      mode: z.literal('none'),
+    }),
+    z.object({
+      mode: z.literal('fixed'),
+      path: AbsolutePathSchema,
+    }),
+    z.object({
+      mode: z.literal('prompt'),
+      roots: z.array(AbsolutePathSchema).min(1),
+    }),
+  ])
+  .optional()
+  .nullable()
+  .transform((value) => value ?? undefined);
+
 const RawAgentConfigSchema = z.object({
   agentId: NonEmptyTrimmedStringSchema,
   displayName: NonEmptyTrimmedStringSchema,
@@ -280,8 +298,31 @@ const RawAgentConfigSchema = z.object({
   agentDenylist: GlobPatternListSchema,
   uiVisible: z.boolean().optional().nullable(),
   apiExposed: z.boolean().optional().nullable(),
-  sessionWorkingDirMode: z.enum(['auto', 'prompt']).optional().nullable(),
-  sessionWorkingDirRoots: AbsolutePathListSchema,
+  sessionWorkingDir: SessionWorkingDirConfigSchema.optional(),
+  sessionWorkingDirMode: z
+    .unknown()
+    .optional()
+    .superRefine((value, ctx) => {
+      if (value !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'sessionWorkingDirMode is no longer supported; use sessionWorkingDir instead',
+        });
+      }
+    }),
+  sessionWorkingDirRoots: z
+    .unknown()
+    .optional()
+    .superRefine((value, ctx) => {
+      if (value !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'sessionWorkingDirRoots is no longer supported; use sessionWorkingDir instead',
+        });
+      }
+    }),
   schedules: z
     .unknown()
     .optional()
@@ -317,8 +358,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     agentDenylist,
     uiVisible,
     apiExposed,
-    sessionWorkingDirMode,
-    sessionWorkingDirRoots,
+    sessionWorkingDir,
     skills,
   } = value;
 
@@ -327,8 +367,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     displayName,
     description,
     ...(skills !== undefined ? { skills } : {}),
-    ...(sessionWorkingDirMode ? { sessionWorkingDirMode } : {}),
-    ...(sessionWorkingDirRoots ? { sessionWorkingDirRoots } : {}),
+    ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
   };
 
   const type = rawType === 'external' ? 'external' : 'chat';
