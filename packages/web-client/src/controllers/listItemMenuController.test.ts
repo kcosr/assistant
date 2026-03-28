@@ -28,6 +28,7 @@ describe('ListItemMenuController', () => {
       clearHistory: vi.fn(),
       deleteSession: vi.fn(),
       renameSession: vi.fn(),
+      editSession: vi.fn(),
     });
 
     const controller = new ListItemMenuController({
@@ -87,6 +88,7 @@ describe('ListItemMenuController', () => {
       clearHistory: vi.fn(),
       deleteSession: vi.fn(),
       renameSession: vi.fn(),
+      editSession: vi.fn(),
     });
 
     const controller = new ListItemMenuController({

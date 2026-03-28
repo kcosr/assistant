@@ -140,6 +140,64 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it('replaces editable session config fields on update', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-update-config'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+        chat: {
+          models: ['gpt-5.4', 'gpt-5.4-mini'],
+          thinking: ['low', 'medium'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = (await plugin.operations?.create(
+      {
+        agentId: 'general',
+        sessionConfig: {
+          model: 'gpt-5.4-mini',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          sessionTitle: 'Project Session',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    const updated = (await plugin.operations?.update(
+      {
+        sessionId: created.sessionId,
+        sessionConfig: {
+          thinking: 'low',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    expect(updated).toEqual(
+      expect.objectContaining({
+        sessionId: created.sessionId,
+        thinking: 'low',
+      }),
+    );
+    expect(updated.name).toBeUndefined();
+    expect(updated.model).toBeUndefined();
+    expect(updated.attributes?.core?.workingDir).toBeUndefined();
+  });
+
   it('mirrors session rename into Pi session JSONL via session_info entries (pi provider)', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-rename'));
     const agentRegistry = new AgentRegistry([

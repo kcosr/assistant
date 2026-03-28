@@ -1,8 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
 
 import type { AgentDefinition } from './agents';
-import type { ToolHost } from './tools';
-import type { SessionHub } from './sessionHub';
 import {
   buildSessionAttributesPatchFromConfig,
   filterSessionSkills,
@@ -10,39 +12,35 @@ import {
   resolveSessionConfigCapabilities,
   resolveSessionConfigForAgent,
 } from './sessionConfig';
-import { resolveAgentToolExposureForHost } from './toolExposure';
 
-vi.mock('./toolExposure', () => ({
-  resolveAgentToolExposureForHost: vi.fn(),
-}));
+function createSkillRoot(name: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+}
 
-const mockedResolveAgentToolExposureForHost = vi.mocked(resolveAgentToolExposureForHost);
+function writeSkill(options: {
+  root: string;
+  dirName: string;
+  description: string;
+}): void {
+  const dir = path.join(options.root, options.dirName);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'SKILL.md'),
+    `---\nname: ${options.dirName}\ndescription: ${options.description}\n---\n\n# ${options.dirName}\n`,
+    'utf8',
+  );
+}
 
 describe('sessionConfig', () => {
-  beforeEach(() => {
-    mockedResolveAgentToolExposureForHost.mockReset();
-  });
-
   it('resolves agent capabilities including available skills', async () => {
-    mockedResolveAgentToolExposureForHost.mockResolvedValue({
-      availableTools: [],
-      chatTools: [],
-      availableSkills: [
-        {
-          id: 'agent-runner-review',
-          name: 'Agent Runner Review',
-          description: 'Review with PI',
-          skillsPath: '',
-          cliPath: '',
-          toolNames: [],
-        },
-      ],
-    });
+    const root = createSkillRoot('session-config-skills');
+    writeSkill({ root, dirName: 'agent-runner-review', description: 'Review with PI' });
 
     const agent: AgentDefinition = {
       agentId: 'coding',
       displayName: 'Coding',
       description: 'Coding agent',
+      skills: [{ root, available: ['agent-runner-review'] }],
       chat: {
         models: ['gpt-5.4', 'gpt-5.4-mini'],
         thinking: ['low', 'medium'],
@@ -51,8 +49,6 @@ describe('sessionConfig', () => {
 
     const capabilities = await resolveSessionConfigCapabilities({
       agent,
-      sessionHub: { getPluginRegistry: vi.fn() } as unknown as SessionHub,
-      baseToolHost: { listTools: vi.fn() } as unknown as ToolHost,
     });
 
     expect(capabilities).toEqual({
@@ -61,11 +57,8 @@ describe('sessionConfig', () => {
       skills: [
         {
           id: 'agent-runner-review',
-          name: 'Agent Runner Review',
+          name: 'agent-runner-review',
           description: 'Review with PI',
-          skillsPath: '',
-          cliPath: '',
-          toolNames: [],
         },
       ],
     });
@@ -105,33 +98,15 @@ describe('sessionConfig', () => {
   });
 
   it('normalizes selected skills against agent capabilities', async () => {
-    mockedResolveAgentToolExposureForHost.mockResolvedValue({
-      availableTools: [],
-      chatTools: [],
-      availableSkills: [
-        {
-          id: 'worktrees',
-          name: 'Worktrees',
-          description: 'Worktree helper',
-          skillsPath: '',
-          cliPath: '',
-          toolNames: [],
-        },
-        {
-          id: 'agent-runner-review',
-          name: 'Agent Runner Review',
-          description: 'Review helper',
-          skillsPath: '',
-          cliPath: '',
-          toolNames: [],
-        },
-      ],
-    });
+    const root = createSkillRoot('session-config-selected-skills');
+    writeSkill({ root, dirName: 'worktrees', description: 'Worktree helper' });
+    writeSkill({ root, dirName: 'agent-runner-review', description: 'Review helper' });
 
     const agent: AgentDefinition = {
       agentId: 'coding',
       displayName: 'Coding',
       description: 'Coding agent',
+      skills: [{ root, available: ['worktrees', 'agent-runner-review'] }],
       chat: {
         models: ['gpt-5.4'],
       },
@@ -139,8 +114,6 @@ describe('sessionConfig', () => {
 
     const resolved = await resolveSessionConfigForAgent({
       agent,
-      sessionHub: { getPluginRegistry: vi.fn() } as unknown as SessionHub,
-      baseToolHost: { listTools: vi.fn() } as unknown as ToolHost,
       sessionConfig: {
         skills: ['worktrees', 'agent-runner-review', 'worktrees'],
       },
@@ -165,13 +138,14 @@ describe('sessionConfig', () => {
     expect(
       filterSessionSkills({
         availableSkills: [
-          { id: 'a', name: 'A', description: 'A', skillsPath: '', cliPath: '', toolNames: [] },
-          { id: 'b', name: 'B', description: 'B', skillsPath: '', cliPath: '', toolNames: [] },
+          { id: 'a', name: 'A', description: 'A' },
+          { id: 'b', name: 'B', description: 'B' },
         ],
         selectedSkillIds: ['b'],
       }),
     ).toEqual([
-      { id: 'b', name: 'B', description: 'B', skillsPath: '', cliPath: '', toolNames: [] },
+      { id: 'a', name: 'A', description: 'A' },
+      { id: 'b', name: 'B', description: 'B' },
     ]);
 
     expect(

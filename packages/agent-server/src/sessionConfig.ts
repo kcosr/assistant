@@ -4,15 +4,18 @@ import type { SessionAttributes, SessionAttributesPatch, SessionConfig } from '@
 
 import type { AgentDefinition } from './agents';
 import { getAgentAvailableModels, getAgentAvailableThinkingLevels } from './sessionModel';
-import { createScopedToolHost, type ToolHost } from './tools';
+import { type ToolHost } from './tools';
 import type { SessionHub } from './sessionHub';
-import { resolveAgentToolExposureForHost } from './toolExposure';
-import type { SkillSummary } from './skills';
+import { listInstructionSkills } from './instructionSkills';
 
 export interface SessionConfigCapabilities {
   models: string[];
   thinking: string[];
-  skills: SkillSummary[];
+  skills: Array<{
+    id: string;
+    name: string;
+    description: string;
+  }>;
 }
 
 export interface ResolvedSessionConfig {
@@ -84,37 +87,19 @@ export async function resolveSessionConfigCapabilities(options: {
   sessionHub?: SessionHub;
   baseToolHost?: ToolHost;
 }): Promise<SessionConfigCapabilities> {
-  const { agent, sessionHub, baseToolHost } = options;
+  const { agent } = options;
   const models = getAgentAvailableModels(agent);
   const thinking = getAgentAvailableThinkingLevels(agent);
-
-  if (
-    !agent ||
-    !sessionHub ||
-    !baseToolHost ||
-    typeof baseToolHost.listTools !== 'function' ||
-    typeof sessionHub.getPluginRegistry !== 'function'
-  ) {
-    return { models, thinking, skills: [] };
-  }
-
-  const scopedToolHost = createScopedToolHost(
-    baseToolHost,
-    agent.toolAllowlist,
-    agent.toolDenylist,
-    agent.capabilityAllowlist,
-    agent.capabilityDenylist,
-  );
-  const exposure = await resolveAgentToolExposureForHost({
-    scopedToolHost,
-    agent,
-    sessionHub,
-  });
+  const skills = agent ? listInstructionSkills(agent) : [];
 
   return {
     models,
     thinking,
-    skills: exposure.availableSkills,
+    skills: skills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+    })),
   };
 }
 
@@ -177,30 +162,25 @@ export async function resolveSessionConfigForAgent(options: {
 
 export function buildSessionAttributesPatchFromConfig(
   config: ResolvedSessionConfig,
+  options?: { clearMissing?: boolean },
 ): SessionAttributesPatch | undefined {
   const patch: SessionAttributesPatch = {};
-  if (config.workingDir) {
-    patch['core'] = { workingDir: config.workingDir };
+  const clearMissing = options?.clearMissing === true;
+  if (config.workingDir || clearMissing) {
+    patch['core'] = { workingDir: config.workingDir ?? null };
   }
-  if (config.skills && config.skills.length > 0) {
-    patch['agent'] = { skills: config.skills };
+  if ((config.skills && config.skills.length > 0) || clearMissing) {
+    patch['agent'] = { skills: config.skills ?? null };
   }
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-export function filterSessionSkills(options: {
-  availableSkills: SkillSummary[] | undefined;
+export function filterSessionSkills<T>(options: {
+  availableSkills: T[] | undefined;
   selectedSkillIds: string[] | undefined;
-}): SkillSummary[] | undefined {
-  const { availableSkills, selectedSkillIds } = options;
-  if (!availableSkills || availableSkills.length === 0) {
-    return undefined;
-  }
-  if (!selectedSkillIds || selectedSkillIds.length === 0) {
-    return availableSkills;
-  }
-  const selected = new Set(selectedSkillIds);
-  return availableSkills.filter((skill) => selected.has(skill.id));
+}): T[] | undefined {
+  const { availableSkills } = options;
+  return availableSkills;
 }
 
 export function getSelectedSessionSkillIds(attributes: SessionAttributes | undefined): string[] | undefined {

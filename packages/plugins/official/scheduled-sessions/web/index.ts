@@ -1,6 +1,10 @@
 import type { PanelEventEnvelope } from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
+import {
+  CORE_PANEL_SERVICES_CONTEXT_KEY,
+  type PanelCoreServices,
+} from '../../../../web-client/src/utils/panelServices';
 import { apiFetch } from '../../../../web-client/src/utils/api';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 
@@ -12,6 +16,7 @@ const SCHEDULED_SESSIONS_TEMPLATE = `
       </div>
       <div class="panel-chrome-plugin-controls scheduled-sessions-plugin-controls" data-role="chrome-plugin-controls">
         <span class="scheduled-sessions-summary" data-role="summary"></span>
+        <button type="button" class="scheduled-sessions-button" data-role="create">Create</button>
         <button type="button" class="scheduled-sessions-button" data-role="refresh">Refresh</button>
       </div>
       <div class="panel-chrome-frame-controls" data-role="chrome-controls">
@@ -190,6 +195,11 @@ function groupByAgent(schedules: ScheduleInfo[]): Map<string, ScheduleInfo[]> {
   return new Map([...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
+function resolveServices(host: PanelHost): PanelCoreServices | null {
+  const raw = host.getContext(CORE_PANEL_SERVICES_CONTEXT_KEY);
+  return raw && typeof raw === 'object' ? (raw as PanelCoreServices) : null;
+}
+
 async function fetchSchedules(): Promise<ScheduleInfo[]> {
   const response = await apiFetch('/api/plugins/scheduled-sessions/operations/list', {
     method: 'POST',
@@ -259,9 +269,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const summaryEl = root.querySelector<HTMLElement>('[data-role="summary"]');
       const statusEl = root.querySelector<HTMLElement>('[data-role="status"]');
       const bodyEl = root.querySelector<HTMLElement>('[data-role="body"]');
+      const createButton = root.querySelector<HTMLButtonElement>('[data-role="create"]');
       const refreshButton = root.querySelector<HTMLButtonElement>('[data-role="refresh"]');
 
-      if (!summaryEl || !statusEl || !bodyEl || !refreshButton) {
+      if (!summaryEl || !statusEl || !bodyEl || !refreshButton || !createButton) {
         throw new Error('Scheduled sessions panel failed to locate required elements');
       }
 
@@ -307,6 +318,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         };
         host.persistPanelState(state);
       };
+
+      const services = resolveServices(host);
 
       const setMessage = (next: string): void => {
         message = next;
@@ -551,6 +564,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       refreshButton.addEventListener('click', () => {
         void refresh();
       });
+
+      createButton.addEventListener('click', () => {
+        services?.openSessionComposer?.({
+          initialMode: 'schedule',
+        });
+      });
+      createButton.disabled = !services?.openSessionComposer;
 
       bodyEl.addEventListener('click', (event) => {
         void handleClick(event as MouseEvent);

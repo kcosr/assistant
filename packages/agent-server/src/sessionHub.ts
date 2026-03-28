@@ -24,6 +24,7 @@ import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
 import type { PiSessionWriter } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
+import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
 import {
@@ -605,6 +606,7 @@ export class SessionHub {
       undefined,
       summary.sessionId,
       summary.attributes?.core?.workingDir,
+      getSelectedSessionSkillIds(summary.attributes),
     );
   }
 

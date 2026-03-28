@@ -337,6 +337,47 @@ description: Critical skill
     expect(warnSpy).toHaveBeenCalled();
   });
 
+  it('filters instruction skills to the selected session skill names when provided', () => {
+    const root = createTempDir('instruction-skills-selected');
+    const listsPath = writeSkill({
+      root,
+      dirName: 'lists',
+      frontmatter: `---
+name: lists
+description: Lists skill
+---`,
+      body: '# Lists Skill\n\nDo list things.',
+    });
+    const criticalPath = writeSkill({
+      root,
+      dirName: 'agent-voice-adapter-cli',
+      frontmatter: `---
+name: agent-voice-adapter-cli
+description: Voice adapter
+---`,
+      body: '# Voice Adapter\n\nListen and speak.',
+    });
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['*'], inline: ['agent-voice-adapter-cli'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt({
+      agentRegistry: registry,
+      agentId: 'agent',
+      selectedInstructionSkillNames: ['agent-voice-adapter-cli'],
+    });
+
+    expect(prompt).not.toContain(`<location>${listsPath}</location>`);
+    expect(prompt).toContain(`<skill name="agent-voice-adapter-cli" location="${criticalPath}">`);
+    expect(prompt).not.toContain('<available_skills>');
+  });
+
   it('defaults a skills source with only root to available: [\"*\"]', () => {
     const root = createTempDir('instruction-skills-defaults');
     writeSkill({
