@@ -398,7 +398,14 @@ export class SessionPickerController {
             const createOptions = options.createSessionOptions;
             const sessionId = await this.options.createSessionForAgent(agent.agentId, {
               ...(createOptions ? createOptions : {}),
-              ...(workingDir ? { workingDir } : {}),
+              ...(workingDir
+                ? {
+                    sessionConfig: {
+                      ...(createOptions?.sessionConfig ?? {}),
+                      workingDir,
+                    },
+                  }
+                : {}),
             });
             if (sessionId) {
               options.onSelectSession(sessionId);

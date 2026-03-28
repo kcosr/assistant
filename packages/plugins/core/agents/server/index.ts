@@ -7,6 +7,11 @@ import type {
   AgentDefinition,
   AgentSessionWorkingDirConfig,
 } from '../../../../agent-server/src/agents';
+import {
+  getAgentAvailableModels,
+  getAgentAvailableThinkingLevels,
+} from '../../../../agent-server/src/sessionModel';
+import { resolveSessionConfigCapabilities } from '../../../../agent-server/src/sessionConfig';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import { matchesGlobPattern } from '../../../../agent-server/src/tools/scoping';
@@ -21,6 +26,15 @@ type AgentSummary = {
   type?: 'chat' | 'external';
   supportedArtifactTypes?: string[];
   sessionWorkingDir?: AgentSessionWorkingDirConfig;
+  sessionConfigCapabilities?: {
+    availableModels?: string[];
+    availableThinking?: string[];
+    availableSkills?: Array<{
+      id: string;
+      name: string;
+      description: string;
+    }>;
+  };
 };
 
 type ListAgentsResult = {
@@ -182,14 +196,41 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
     visibleAgents = visibleAgents.filter((agent) => agent.agentId !== currentAgentId);
   }
 
-  const summaries: AgentSummary[] = visibleAgents.map((agent) => ({
-    agentId: agent.agentId,
-    displayName: agent.displayName,
-    description: agent.description,
-    type: agent.type ?? 'chat',
-    supportedArtifactTypes: computeSupportedArtifactTypes(agent),
-    ...(agent.sessionWorkingDir ? { sessionWorkingDir: agent.sessionWorkingDir } : {}),
-  }));
+  const summaries: AgentSummary[] = [];
+  for (const agent of visibleAgents) {
+    const models = getAgentAvailableModels(agent);
+    const thinking = getAgentAvailableThinkingLevels(agent);
+    const capabilities = await resolveSessionConfigCapabilities({
+      agent,
+      sessionHub: ctx.sessionHub,
+      baseToolHost: ctx.baseToolHost,
+    });
+    summaries.push({
+      agentId: agent.agentId,
+      displayName: agent.displayName,
+      description: agent.description,
+      type: agent.type ?? 'chat',
+      supportedArtifactTypes: computeSupportedArtifactTypes(agent),
+      ...(agent.sessionWorkingDir ? { sessionWorkingDir: agent.sessionWorkingDir } : {}),
+      ...(models.length > 0 || thinking.length > 0 || capabilities.skills.length > 0
+        ? {
+            sessionConfigCapabilities: {
+              ...(models.length > 0 ? { availableModels: models } : {}),
+              ...(thinking.length > 0 ? { availableThinking: thinking } : {}),
+              ...(capabilities.skills.length > 0
+                ? {
+                    availableSkills: capabilities.skills.map((skill) => ({
+                      id: skill.id,
+                      name: skill.name,
+                      description: skill.description,
+                    })),
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    });
+  }
 
   return { agents: summaries };
 }

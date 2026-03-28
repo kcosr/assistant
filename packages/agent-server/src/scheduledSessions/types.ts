@@ -1,9 +1,12 @@
+import type { SessionConfig } from '@assistant/shared';
+
 export interface ScheduleConfig {
   id: string;
   cron: string;
   prompt?: string;
   preCheck?: string;
   sessionTitle?: string;
+  sessionConfig?: SessionConfig;
   enabled: boolean;
   reuseSession: boolean;
   maxConcurrent: number;
@@ -14,6 +17,7 @@ export interface ScheduleCreateInput {
   prompt?: string;
   preCheck?: string;
   sessionTitle?: string;
+  sessionConfig?: SessionConfig;
   enabled?: boolean;
   reuseSession?: boolean;
   maxConcurrent?: number;
@@ -24,6 +28,7 @@ export interface ScheduleUpdateInput {
   prompt?: string | null;
   preCheck?: string | null;
   sessionTitle?: string | null;
+  sessionConfig?: SessionConfig | null;
   enabled?: boolean;
   reuseSession?: boolean;
   maxConcurrent?: number;
@@ -54,6 +59,7 @@ export interface PersistedScheduleRecord {
   prompt?: string;
   preCheck?: string;
   sessionTitle?: string;
+  sessionConfig?: SessionConfig;
   enabled: boolean;
   reuseSession: boolean;
   maxConcurrent: number;
@@ -73,6 +79,7 @@ export interface ScheduleInfo {
   prompt?: string;
   preCheck?: string;
   sessionTitle?: string;
+  sessionConfig?: SessionConfig;
   enabled: boolean;
   reuseSession: boolean;
   status: 'idle' | 'running' | 'disabled';

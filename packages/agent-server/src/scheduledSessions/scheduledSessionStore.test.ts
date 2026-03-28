@@ -32,6 +32,12 @@ describe('ScheduledSessionStore', () => {
         enabled: true,
         reuseSession: true,
         maxConcurrent: 1,
+        sessionConfig: {
+          model: 'gpt-5.4',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          skills: ['agent-runner-review'],
+        },
       },
     ]);
 
@@ -44,6 +50,12 @@ describe('ScheduledSessionStore', () => {
         enabled: true,
         reuseSession: true,
         maxConcurrent: 1,
+        sessionConfig: {
+          model: 'gpt-5.4',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          skills: ['agent-runner-review'],
+        },
       },
     ]);
 
@@ -60,5 +72,35 @@ describe('ScheduledSessionStore', () => {
     const store = new ScheduledSessionStore(storeDir);
 
     await expect(store.load()).rejects.toThrow(/Failed to parse scheduled sessions store/i);
+  });
+
+  it('rejects persisted sessionConfig.sessionTitle and requires top-level sessionTitle instead', async () => {
+    const storeDir = createStoreDir();
+    writeFileSync(
+      path.join(storeDir, 'schedules.json'),
+      `${JSON.stringify({
+        version: 1,
+        schedules: [
+          {
+            agentId: 'assistant',
+            scheduleId: 'schedule-a',
+            cron: '*/5 * * * *',
+            prompt: 'Run date',
+            enabled: true,
+            reuseSession: true,
+            maxConcurrent: 1,
+            sessionConfig: {
+              sessionTitle: 'Wrong place',
+            },
+          },
+        ],
+      })}\n`,
+      'utf8',
+    );
+
+    const store = new ScheduledSessionStore(storeDir);
+    await expect(store.load()).rejects.toThrow(
+      /sessionConfig\.sessionTitle is not supported here; use sessionTitle instead/i,
+    );
   });
 });

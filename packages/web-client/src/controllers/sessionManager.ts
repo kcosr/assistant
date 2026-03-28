@@ -1,3 +1,5 @@
+import type { SessionConfig } from '@assistant/shared';
+
 import { apiFetch } from '../utils/api';
 import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
 
@@ -31,7 +33,7 @@ export interface CreateSessionOptions {
   agentDisplayName?: string;
   openChatPanel?: boolean;
   selectSession?: boolean;
-  workingDir?: string;
+  sessionConfig?: SessionConfig;
 }
 
 export class SessionManager {
@@ -194,16 +196,25 @@ export class SessionManager {
       }
 
       const buildRequest = (sessionId?: string): RequestInit => {
-        const workingDir =
-          typeof options?.workingDir === 'string' ? options.workingDir.trim() : '';
-        const attributes =
-          workingDir.length > 0 ? { core: { workingDir } } : undefined;
+        const config = options?.sessionConfig;
+        const sessionConfig =
+          config && typeof config === 'object'
+            ? {
+                ...(typeof config.model === 'string' ? { model: config.model } : {}),
+                ...(typeof config.thinking === 'string' ? { thinking: config.thinking } : {}),
+                ...(typeof config.workingDir === 'string' ? { workingDir: config.workingDir } : {}),
+                ...(Array.isArray(config.skills) ? { skills: config.skills } : {}),
+                ...(typeof config.sessionTitle === 'string'
+                  ? { sessionTitle: config.sessionTitle }
+                  : {}),
+              }
+            : undefined;
         const request: RequestInit = { method: 'POST' };
         request.headers = { 'Content-Type': 'application/json' };
         request.body = JSON.stringify({
           agentId: normalizedAgentId,
           ...(sessionId ? { sessionId } : {}),
-          ...(attributes ? { attributes } : {}),
+          ...(sessionConfig ? { sessionConfig } : {}),
         });
         return request;
       };

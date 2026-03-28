@@ -30,6 +30,24 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id (required for external agents)."
+          },
+          "sessionConfig": {
+            "type": "object",
+            "description": "Optional session configuration constrained by the agent.",
+            "properties": {
+              "model": { "type": "string", "description": "Optional session model override." },
+              "thinking": { "type": "string", "description": "Optional session thinking override." },
+              "workingDir": { "type": "string", "description": "Optional absolute working directory." },
+              "skills": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional selected skill ids."
+              },
+              "sessionTitle": {
+                "type": "string",
+                "description": "Optional explicit session title."
+              }
+            }
           }
         },
         "required": ["agentId"]

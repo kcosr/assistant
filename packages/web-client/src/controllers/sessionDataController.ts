@@ -44,6 +44,15 @@ interface AgentSummary {
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
     | { mode: 'prompt'; roots: string[] };
+  sessionConfigCapabilities?: {
+    availableModels?: string[];
+    availableThinking?: string[];
+    availableSkills?: Array<{
+      id: string;
+      name: string;
+      description: string;
+    }>;
+  };
 }
 
 interface OperationResponse<T> {
@@ -120,6 +129,7 @@ export class SessionDataController {
           description?: unknown;
           type?: unknown;
           sessionWorkingDir?: unknown;
+          sessionConfigCapabilities?: unknown;
         };
 
         const agentId = typeof anyAgent.agentId === 'string' ? anyAgent.agentId.trim() : '';
@@ -175,12 +185,68 @@ export class SessionDataController {
           }
         }
 
+        let sessionConfigCapabilities:
+          | {
+              availableModels?: string[];
+              availableThinking?: string[];
+              availableSkills?: Array<{ id: string; name: string; description: string }>;
+            }
+          | undefined;
+        if (
+          anyAgent.sessionConfigCapabilities &&
+          typeof anyAgent.sessionConfigCapabilities === 'object' &&
+          !Array.isArray(anyAgent.sessionConfigCapabilities)
+        ) {
+          const raw = anyAgent.sessionConfigCapabilities as {
+            availableModels?: unknown;
+            availableThinking?: unknown;
+            availableSkills?: unknown;
+          };
+          const availableModels = Array.isArray(raw.availableModels)
+            ? raw.availableModels
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+            : [];
+          const availableThinking = Array.isArray(raw.availableThinking)
+            ? raw.availableThinking
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+            : [];
+          const availableSkills = Array.isArray(raw.availableSkills)
+            ? raw.availableSkills
+                .filter(
+                  (value): value is { id: string; name: string; description: string } =>
+                    !!value &&
+                    typeof value === 'object' &&
+                    typeof (value as { id?: unknown }).id === 'string' &&
+                    typeof (value as { name?: unknown }).name === 'string' &&
+                    typeof (value as { description?: unknown }).description === 'string',
+                )
+                .map((value) => ({
+                  id: value.id.trim(),
+                  name: value.name.trim(),
+                  description: value.description.trim(),
+                }))
+                .filter((value) => value.id && value.name)
+            : [];
+          if (availableModels.length > 0 || availableThinking.length > 0 || availableSkills.length > 0) {
+            sessionConfigCapabilities = {
+              ...(availableModels.length > 0 ? { availableModels } : {}),
+              ...(availableThinking.length > 0 ? { availableThinking } : {}),
+              ...(availableSkills.length > 0 ? { availableSkills } : {}),
+            };
+          }
+        }
+
         parsedAgents.push({
           agentId,
           displayName,
           ...(description ? { description } : {}),
           ...(type ? { type } : {}),
           ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
+          ...(sessionConfigCapabilities ? { sessionConfigCapabilities } : {}),
         });
       }
 

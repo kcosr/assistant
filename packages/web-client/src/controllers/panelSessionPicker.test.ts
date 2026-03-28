@@ -199,7 +199,7 @@ describe('SessionPickerController', () => {
 
     expect(createSessionForAgent).toHaveBeenCalledWith(
       'general',
-      expect.objectContaining({ workingDir: '/workspaces/app' }),
+      expect.objectContaining({ sessionConfig: { workingDir: '/workspaces/app' } }),
     );
     expect(onSelectSession).toHaveBeenCalledWith('new-session');
 
@@ -246,9 +246,78 @@ describe('SessionPickerController', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(createSessionForAgent).toHaveBeenCalledWith(
       'assistant',
-      expect.objectContaining({ workingDir: '/home/kevin/assistant' }),
+      expect.objectContaining({ sessionConfig: { workingDir: '/home/kevin/assistant' } }),
     );
     expect(onSelectSession).toHaveBeenCalledWith('new-session');
+
+    controller.close();
+  });
+
+  it('preserves existing sessionConfig values when adding a selected working directory', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        roots: [
+          {
+            root: '/workspaces',
+            directories: ['/workspaces/app'],
+          },
+        ],
+      }),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const createSessionForAgent = vi.fn().mockResolvedValue('new-session');
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [],
+      getAgentSummaries: () => [
+        {
+          agentId: 'general',
+          displayName: 'General',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/workspaces'],
+          },
+        },
+      ],
+      createSessionForAgent,
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession: () => undefined,
+      createSessionOptions: {
+        sessionConfig: {
+          model: 'gpt-5.4',
+        },
+      },
+    });
+
+    document.querySelector<HTMLDivElement>('.session-picker-item')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const dirItem = Array.from(
+      document.querySelectorAll<HTMLDivElement>(
+        '.working-dir-picker-overlay .session-picker-item',
+      ),
+    ).find((item) => item.textContent?.includes('app'));
+    dirItem?.click();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(createSessionForAgent).toHaveBeenCalledWith(
+      'general',
+      expect.objectContaining({
+        sessionConfig: {
+          model: 'gpt-5.4',
+          workingDir: '/workspaces/app',
+        },
+      }),
+    );
 
     controller.close();
   });

@@ -26,6 +26,18 @@ Schedules are stored in the plugin default instance data directory at
 `data/plugins/scheduled-sessions/default/schedules.json`.
 They are persisted immediately on create, update, delete, enable, and disable.
 
+Each schedule can also carry an optional `sessionConfig` block with:
+- `model`
+- `thinking`
+- `workingDir`
+- `skills`
+
+The schedule title remains the top-level `sessionTitle` field; it is not part of `sessionConfig`.
+
+These values are validated against the selected agent when the schedule is created or updated,
+then revalidated again when the schedule runs. When `reuseSession` is enabled, the backing
+session is created up front and reconciled from the schedule on later runs after edits.
+
 ## Source files
 
 - `packages/plugins/official/scheduled-sessions/manifest.json`

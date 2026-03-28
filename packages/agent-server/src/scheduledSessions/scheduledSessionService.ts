@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type SpawnOptions } from 'node:child_process';
 
 import type { AgentRegistry, CliWrapperConfig } from '../agents';
+import type { SessionAttributes, SessionConfig } from '@assistant/shared';
 import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { SessionHub } from '../sessionHub';
@@ -10,6 +11,12 @@ import type { ToolHost } from '../tools';
 import type { SearchService } from '../search/searchService';
 import { startSessionMessage } from '../sessionMessages';
 import { getDefaultModelForNewSession, getDefaultThinkingForNewSession } from '../sessionModel';
+import {
+  buildSessionAttributesPatchFromConfig,
+  getSelectedSessionSkillIds,
+  resolveSessionConfigForAgent,
+  type ResolvedSessionConfig,
+} from '../sessionConfig';
 import { buildCliEnv } from '../ws/cliEnv';
 
 import { describeCron, parseNextRun } from './cronUtils';
@@ -101,7 +108,7 @@ export class ScheduledSessionService {
 
     for (const record of persisted) {
       this.requireAgent(record.agentId);
-      const schedule = this.normalizePersistedSchedule(record);
+      const schedule = await this.normalizePersistedSchedule(record);
       const key = this.buildKey(record.agentId, schedule.id);
       if (this.schedules.has(key)) {
         throw new ScheduleValidationError(`Duplicate schedule id "${schedule.id}" for agent "${record.agentId}"`);
@@ -147,7 +154,7 @@ export class ScheduledSessionService {
   async createSchedule(agentId: string, input: ScheduleCreateInput): Promise<ScheduleInfo> {
     this.requireAgent(agentId);
     const scheduleId = this.generateScheduleId(agentId);
-    const schedule = this.normalizeScheduleConfigForCreate(agentId, scheduleId, input);
+    const schedule = await this.normalizeScheduleConfigForCreate(agentId, scheduleId, input);
     const state: ScheduleState = {
       agentId,
       schedule,
@@ -165,6 +172,15 @@ export class ScheduledSessionService {
       await this.persistSchedules();
     } catch (error) {
       this.schedules.delete(key);
+      throw error;
+    }
+    try {
+      if (schedule.reuseSession && this.hasSessionDependencies()) {
+        await this.resolveScheduledSession(agentId, scheduleId, schedule);
+      }
+    } catch (error) {
+      this.schedules.delete(key);
+      await this.persistSchedules();
       throw error;
     }
     if (this.initialized) {
@@ -185,7 +201,7 @@ export class ScheduledSessionService {
     const key = this.buildKey(agentId, scheduleId);
     const state = this.requireState(agentId, scheduleId);
     const previousSchedule = state.schedule;
-    state.schedule = this.normalizeScheduleConfigForUpdate(
+    state.schedule = await this.normalizeScheduleConfigForUpdate(
       agentId,
       scheduleId,
       state.schedule,
@@ -603,13 +619,15 @@ export class ScheduledSessionService {
       return { result: 'failed', error: 'Scheduled session dependencies are missing' };
     }
 
-    const { summary } = await this.resolveScheduledSession(agentId, scheduleId, schedule.reuseSession);
-    await this.updateScheduledSessionAutoTitle(summary, agentId, schedule);
+    const { summary } = await this.resolveScheduledSession(agentId, scheduleId, schedule);
+    const reconciledSummary = schedule.reuseSession
+      ? await this.reconcileScheduledSession(summary, agentId, schedule)
+      : summary;
     const timeoutSeconds = this.options.defaultSessionTimeoutSeconds ?? 300;
 
     const { response } = await this.startSessionMessageFn({
       input: {
-        sessionId: summary.sessionId,
+        sessionId: reconciledSummary.sessionId,
         content: prompt,
         mode: 'sync',
         timeoutSeconds,
@@ -643,7 +661,7 @@ export class ScheduledSessionService {
   private async resolveScheduledSession(
     agentId: string,
     scheduleId: string,
-    reuseSession: boolean,
+    schedule: ScheduleConfig,
   ): Promise<{
     summary: SessionSummary;
     created: boolean;
@@ -654,8 +672,8 @@ export class ScheduledSessionService {
       throw new Error('Scheduled session dependencies are missing');
     }
 
-    if (!reuseSession) {
-      return this.createScheduledSession(agentId, scheduleId);
+    if (!schedule.reuseSession) {
+      return this.createScheduledSession(agentId, scheduleId, schedule);
     }
 
     const summaries = await sessionIndex.listSessions();
@@ -678,10 +696,14 @@ export class ScheduledSessionService {
       return { summary: existing, created: false };
     }
 
-    return this.createScheduledSession(agentId, scheduleId);
+    return this.createScheduledSession(agentId, scheduleId, schedule);
   }
 
-  private async createScheduledSession(agentId: string, scheduleId: string): Promise<{
+  private async createScheduledSession(
+    agentId: string,
+    scheduleId: string,
+    schedule: ScheduleConfig,
+  ): Promise<{
     summary: SessionSummary;
     created: boolean;
   }> {
@@ -692,25 +714,26 @@ export class ScheduledSessionService {
     }
 
     const agent = this.options.agentRegistry.getAgent(agentId);
-    const model = getDefaultModelForNewSession(agent);
-    const thinking = getDefaultThinkingForNewSession(agent);
-    const summary = await sessionIndex.createSession(
-      model || thinking
-        ? { agentId, ...(model ? { model } : {}), ...(thinking ? { thinking } : {}) }
-        : { agentId },
-    );
-    sessionHub.broadcastSessionCreated(summary);
-
-    const metadataPatch = {
+    const resolvedConfig = await this.resolveRuntimeSessionConfig(agentId, schedule);
+    const model = resolvedConfig.model ?? getDefaultModelForNewSession(agent);
+    const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent);
+    const configAttributes = buildSessionAttributesPatchFromConfig(resolvedConfig);
+    const attributes = {
+      ...(configAttributes ?? {}),
       scheduledSession: {
         agentId,
         scheduleId,
       },
-    };
-
-    const updated =
-      (await sessionHub.updateSessionAttributes(summary.sessionId, metadataPatch)) ?? summary;
-
+    } satisfies SessionAttributes;
+    const summary = await sessionIndex.createSession({
+      agentId,
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
+      ...(schedule.sessionTitle ? { name: schedule.sessionTitle } : {}),
+      attributes,
+    });
+    sessionHub.broadcastSessionCreated(summary);
+    const updated = await this.syncScheduledSessionTitle(summary, agentId, schedule);
     return { summary: updated, created: true };
   }
 
@@ -731,15 +754,16 @@ export class ScheduledSessionService {
     return `schedule-${randomUUID()}`;
   }
 
-  private normalizeScheduleConfigForCreate(
+  private async normalizeScheduleConfigForCreate(
     agentId: string,
     scheduleId: string,
     input: ScheduleCreateInput,
-  ): ScheduleConfig {
+  ): Promise<ScheduleConfig> {
     const cron = this.normalizeRequiredString(input.cron, 'cron');
     const prompt = this.normalizeOptionalString(input.prompt);
     const preCheck = this.normalizeOptionalString(input.preCheck);
     const sessionTitle = this.normalizeOptionalString(input.sessionTitle);
+    const sessionConfig = await this.normalizeSessionConfig(agentId, input.sessionConfig);
     const enabled = input.enabled ?? true;
     const reuseSession = input.reuseSession ?? true;
     const maxConcurrent = input.maxConcurrent ?? 1;
@@ -753,13 +777,14 @@ export class ScheduledSessionService {
       ...(prompt ? { prompt } : {}),
       ...(preCheck ? { preCheck } : {}),
       ...(sessionTitle ? { sessionTitle } : {}),
+      ...(sessionConfig ? { sessionConfig } : {}),
     };
 
     this.validateScheduleConfig(agentId, schedule);
     return schedule;
   }
 
-  private normalizePersistedSchedule(record: PersistedScheduleRecord): ScheduleConfig {
+  private async normalizePersistedSchedule(record: PersistedScheduleRecord): Promise<ScheduleConfig> {
     const schedule: ScheduleConfig = {
       id: record.scheduleId,
       cron: record.cron,
@@ -769,17 +794,18 @@ export class ScheduledSessionService {
       ...(record.prompt !== undefined ? { prompt: record.prompt } : {}),
       ...(record.preCheck !== undefined ? { preCheck: record.preCheck } : {}),
       ...(record.sessionTitle !== undefined ? { sessionTitle: record.sessionTitle } : {}),
+      ...(record.sessionConfig !== undefined ? { sessionConfig: record.sessionConfig } : {}),
     };
     this.validateScheduleConfig(record.agentId, schedule);
     return schedule;
   }
 
-  private normalizeScheduleConfigForUpdate(
+  private async normalizeScheduleConfigForUpdate(
     agentId: string,
     scheduleId: string,
     existing: ScheduleConfig,
     patch: ScheduleUpdateInput,
-  ): ScheduleConfig {
+  ): Promise<ScheduleConfig> {
     const next: ScheduleConfig = {
       ...existing,
       ...(patch.cron !== undefined
@@ -793,6 +819,11 @@ export class ScheduledSessionService {
     const prompt = this.normalizePatchString(patch.prompt, existing.prompt);
     const preCheck = this.normalizePatchString(patch.preCheck, existing.preCheck);
     const sessionTitle = this.normalizePatchString(patch.sessionTitle, existing.sessionTitle);
+    const sessionConfig = await this.normalizeSessionConfigPatch(
+      agentId,
+      patch.sessionConfig,
+      existing.sessionConfig,
+    );
 
     if (prompt !== undefined) {
       next.prompt = prompt;
@@ -808,6 +839,11 @@ export class ScheduledSessionService {
       next.sessionTitle = sessionTitle;
     } else {
       delete next.sessionTitle;
+    }
+    if (sessionConfig !== undefined) {
+      next.sessionConfig = sessionConfig;
+    } else {
+      delete next.sessionConfig;
     }
 
     next.id = scheduleId;
@@ -846,6 +882,64 @@ export class ScheduledSessionService {
       throw new ScheduleValidationError('optional string fields must be non-empty strings');
     }
     return value.trim();
+  }
+
+  private async normalizeSessionConfig(
+    agentId: string,
+    sessionConfig: SessionConfig | undefined,
+  ): Promise<SessionConfig | undefined> {
+    if (!sessionConfig) {
+      return undefined;
+    }
+    if (typeof sessionConfig.sessionTitle === 'string' && sessionConfig.sessionTitle.trim().length > 0) {
+      throw new ScheduleValidationError(
+        'sessionConfig.sessionTitle is not supported here; use sessionTitle instead',
+      );
+    }
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    const resolved = await resolveSessionConfigForAgent({
+      agent,
+      sessionConfig,
+      ...(this.options.sessionHub ? { sessionHub: this.options.sessionHub } : {}),
+      ...(this.options.toolHost ? { baseToolHost: this.options.toolHost } : {}),
+    });
+    const model = resolved.model;
+    const thinking = resolved.thinking;
+    const workingDir = resolved.workingDir;
+    const skills = resolved.skills;
+    return {
+      ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
+      ...(workingDir ? { workingDir } : {}),
+      ...(skills ? { skills } : {}),
+    };
+  }
+
+  private async normalizeSessionConfigPatch(
+    agentId: string,
+    patch: SessionConfig | null | undefined,
+    current: SessionConfig | undefined,
+  ): Promise<SessionConfig | undefined> {
+    if (patch === undefined) {
+      return current;
+    }
+    if (patch === null) {
+      return undefined;
+    }
+    return this.normalizeSessionConfig(agentId, patch);
+  }
+
+  private async resolveRuntimeSessionConfig(
+    agentId: string,
+    schedule: ScheduleConfig,
+  ): Promise<ResolvedSessionConfig> {
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    return resolveSessionConfigForAgent({
+      agent,
+      ...(schedule.sessionConfig ? { sessionConfig: schedule.sessionConfig } : {}),
+      ...(this.options.sessionHub ? { sessionHub: this.options.sessionHub } : {}),
+      ...(this.options.toolHost ? { baseToolHost: this.options.toolHost } : {}),
+    });
   }
 
   private validateScheduleConfig(agentId: string, schedule: ScheduleConfig): void {
@@ -892,6 +986,9 @@ export class ScheduledSessionService {
         ...(state.schedule.sessionTitle !== undefined
           ? { sessionTitle: state.schedule.sessionTitle }
           : {}),
+        ...(state.schedule.sessionConfig !== undefined
+          ? { sessionConfig: state.schedule.sessionConfig }
+          : {}),
       }));
   }
 
@@ -925,10 +1022,6 @@ export class ScheduledSessionService {
     agentId: string,
     schedule: ScheduleConfig,
   ): string {
-    const configuredTitle = schedule.sessionTitle?.trim();
-    if (configuredTitle) {
-      return configuredTitle;
-    }
     return this.buildScheduledSessionAutoTitle(agentId, schedule.id);
   }
 
@@ -960,33 +1053,154 @@ export class ScheduledSessionService {
     return autoTitle.trim();
   }
 
-  private async updateScheduledSessionAutoTitle(
+  private async reconcileScheduledSession(
     summary: SessionSummary,
     agentId: string,
     schedule: ScheduleConfig,
-  ): Promise<void> {
+  ): Promise<SessionSummary> {
     const sessionHub = this.options.sessionHub;
     const sessionIndex = this.options.sessionIndex;
     if (!sessionIndex) {
-      return;
+      return summary;
     }
-    const autoTitle = this.resolveScheduledSessionAutoTitle(agentId, schedule);
-    const existing = this.resolveAutoTitleFromSummary(summary);
-    if (existing === autoTitle) {
-      return;
+    const agent = this.options.agentRegistry.getAgent(agentId);
+    const resolvedConfig = await this.resolveRuntimeSessionConfig(agentId, schedule);
+    const targetModel = resolvedConfig.model ?? getDefaultModelForNewSession(agent) ?? null;
+    const targetThinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent) ?? null;
+    let current = summary;
+
+    if ((current.model ?? null) !== targetModel) {
+      const updated = await sessionIndex.setSessionModel(current.sessionId, targetModel);
+      if (updated) {
+        current = updated;
+      }
     }
+    if ((current.thinking ?? null) !== targetThinking) {
+      const updated = await sessionIndex.setSessionThinking(current.sessionId, targetThinking);
+      if (updated) {
+        current = updated;
+      }
+    }
+
+    const nextAttributes = this.buildScheduledSessionAttributes(
+      current.attributes,
+      agentId,
+      schedule,
+      resolvedConfig,
+    );
+    if (JSON.stringify(current.attributes ?? {}) !== JSON.stringify(nextAttributes)) {
+      current =
+        (await sessionHub?.updateSessionAttributes(current.sessionId, nextAttributes)) ??
+        (await sessionIndex.updateSessionAttributes(current.sessionId, nextAttributes)) ??
+        current;
+    }
+
+    current = await this.syncScheduledSessionTitle(current, agentId, schedule);
+    if (!sessionHub) {
+      return current;
+    }
+    const state = await sessionHub.ensureSessionState(current.sessionId, current, true);
+    return state.summary;
+  }
+
+  private buildScheduledSessionAttributes(
+    currentAttributes: SessionAttributes | undefined,
+    agentId: string,
+    schedule: ScheduleConfig,
+    resolvedConfig: ResolvedSessionConfig,
+  ): SessionAttributes {
+    const nextAttributes: SessionAttributes = {
+      ...(currentAttributes ?? {}),
+      scheduledSession: {
+        agentId,
+        scheduleId: schedule.id,
+      },
+    };
+    const workingDir = resolvedConfig.workingDir;
+    const skills = resolvedConfig.skills;
+    const existingCore =
+      currentAttributes?.core && typeof currentAttributes.core === 'object'
+        ? ({ ...(currentAttributes.core as Record<string, unknown>) } as Record<string, unknown>)
+        : {};
+    if (workingDir) {
+      existingCore['workingDir'] = workingDir;
+    } else {
+      delete existingCore['workingDir'];
+    }
+    if (Object.keys(existingCore).length > 0) {
+      nextAttributes.core = existingCore as NonNullable<SessionAttributes['core']>;
+    } else {
+      delete nextAttributes.core;
+    }
+
+    const existingAgent =
+      currentAttributes?.agent && typeof currentAttributes.agent === 'object'
+        ? ({ ...(currentAttributes.agent as Record<string, unknown>) } as Record<string, unknown>)
+        : {};
+    if (skills && skills.length > 0) {
+      existingAgent['skills'] = skills;
+    } else {
+      delete existingAgent['skills'];
+    }
+    if (Object.keys(existingAgent).length > 0) {
+      nextAttributes.agent = existingAgent as NonNullable<SessionAttributes['agent']>;
+    } else {
+      delete nextAttributes.agent;
+    }
+
+    return nextAttributes;
+  }
+
+  private async syncScheduledSessionTitle(
+    summary: SessionSummary,
+    agentId: string,
+    schedule: ScheduleConfig,
+  ): Promise<SessionSummary> {
+    const sessionHub = this.options.sessionHub;
+    const sessionIndex = this.options.sessionIndex;
+    if (!sessionIndex) {
+      return summary;
+    }
+    let current = summary;
     try {
-      const patch = { core: { autoTitle } };
-      if (sessionHub?.updateSessionAttributes) {
-        await sessionHub.updateSessionAttributes(summary.sessionId, patch);
+      const explicitTitle = schedule.sessionTitle?.trim() || '';
+      if (explicitTitle) {
+        if (current.name !== explicitTitle) {
+          current = await sessionIndex.renameSession(current.sessionId, explicitTitle);
+        }
+        if (this.resolveAutoTitleFromSummary(current)) {
+          current =
+            (await sessionHub?.updateSessionAttributes(current.sessionId, {
+              core: { autoTitle: null },
+            })) ??
+            (await sessionIndex.updateSessionAttributes(current.sessionId, {
+              core: { autoTitle: null },
+            })) ??
+            current;
+        }
       } else {
-        await sessionIndex.updateSessionAttributes(summary.sessionId, patch);
+        if (current.name) {
+          current = await sessionIndex.renameSession(current.sessionId, null);
+        }
+        const autoTitle = this.resolveScheduledSessionAutoTitle(agentId, schedule);
+        const existing = this.resolveAutoTitleFromSummary(current);
+        if (existing !== autoTitle) {
+          current =
+            (await sessionHub?.updateSessionAttributes(current.sessionId, {
+              core: { autoTitle },
+            })) ??
+            (await sessionIndex.updateSessionAttributes(current.sessionId, {
+              core: { autoTitle },
+            })) ??
+            current;
+        }
       }
     } catch (err) {
       this.options.logger.warn(
-        `[scheduled-sessions] Failed to set session autoTitle "${autoTitle}": ${String(err)}`,
+        `[scheduled-sessions] Failed to sync session title "${summary.sessionId}": ${String(err)}`,
       );
     }
+    return current;
   }
 
   private buildCliCommand(agentId: string, prompt: string): {
@@ -1122,6 +1336,7 @@ export class ScheduledSessionService {
       ...(state.schedule.prompt ? { prompt: state.schedule.prompt } : {}),
       ...(state.schedule.preCheck ? { preCheck: state.schedule.preCheck } : {}),
       ...(state.schedule.sessionTitle ? { sessionTitle: state.schedule.sessionTitle } : {}),
+      ...(state.schedule.sessionConfig ? { sessionConfig: state.schedule.sessionConfig } : {}),
       enabled,
       reuseSession: state.schedule.reuseSession,
       status,

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { parseSessionConfigInput } from '../sessionConfig';
 import type { PersistedScheduleRecord } from './types';
 
 type PersistedSchedulesFile = {
@@ -132,6 +133,7 @@ export class ScheduledSessionStore {
     const prompt = optionalString('prompt');
     const preCheck = optionalString('preCheck');
     const sessionTitle = optionalString('sessionTitle');
+    const sessionConfig = this.validateSessionConfig(record['sessionConfig'], index);
 
     return {
       agentId: requireString('agentId'),
@@ -140,10 +142,28 @@ export class ScheduledSessionStore {
       ...(prompt !== undefined ? { prompt } : {}),
       ...(preCheck !== undefined ? { preCheck } : {}),
       ...(sessionTitle !== undefined ? { sessionTitle } : {}),
+      ...(sessionConfig ? { sessionConfig } : {}),
       enabled: requireBoolean('enabled'),
       reuseSession: requireBoolean('reuseSession'),
       maxConcurrent: requireInteger('maxConcurrent'),
     };
+  }
+
+  private validateSessionConfig(
+    value: unknown,
+    index: number,
+  ): PersistedScheduleRecord['sessionConfig'] | undefined {
+    try {
+      return (
+        parseSessionConfigInput({
+          value,
+          allowSessionTitle: false,
+        }) ?? undefined
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid sessionConfig';
+      throw new Error(this.describeError(index, message));
+    }
   }
 
   private describeError(index: number, message: string): string {

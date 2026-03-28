@@ -37,6 +37,20 @@
           "prompt": { "type": "string", "description": "Prompt to send when the schedule runs." },
           "preCheck": { "type": "string", "description": "Optional shell command to gate the run." },
           "sessionTitle": { "type": "string", "description": "Optional human-readable session title." },
+          "sessionConfig": {
+            "type": "object",
+            "description": "Optional session configuration overrides constrained by the agent.",
+            "properties": {
+              "model": { "type": "string", "description": "Optional session model override." },
+              "thinking": { "type": "string", "description": "Optional session thinking override." },
+              "workingDir": { "type": "string", "description": "Optional absolute working directory." },
+              "skills": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional selected skill ids."
+              }
+            }
+          },
           "enabled": { "type": "boolean", "description": "Whether the schedule is enabled." },
           "reuseSession": { "type": "boolean", "description": "Reuse the same backing session across runs. Defaults to true." },
           "maxConcurrent": { "type": "integer", "description": "Maximum concurrent runs when reuseSession is false." }
@@ -57,6 +71,20 @@
           "prompt": { "type": ["string", "null"], "description": "Updated prompt, or null to clear it." },
           "preCheck": { "type": ["string", "null"], "description": "Updated pre-check, or null to clear it." },
           "sessionTitle": { "type": ["string", "null"], "description": "Updated session title, or null to clear it." },
+          "sessionConfig": {
+            "type": ["object", "null"],
+            "description": "Updated session configuration, or null to clear it.",
+            "properties": {
+              "model": { "type": "string", "description": "Updated session model override." },
+              "thinking": { "type": "string", "description": "Updated session thinking override." },
+              "workingDir": { "type": "string", "description": "Updated absolute working directory." },
+              "skills": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Updated selected skill ids."
+              }
+            }
+          },
           "enabled": { "type": "boolean", "description": "Updated enabled state." },
           "reuseSession": { "type": "boolean", "description": "Updated reuseSession behavior." },
           "maxConcurrent": { "type": "integer", "description": "Updated concurrency limit when reuseSession is false." }

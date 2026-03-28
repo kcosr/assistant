@@ -10,19 +10,6 @@ import {
 } from './sessionAttributes';
 import { loadSessionIndexFromFileContent, type SessionIndexRecord } from './sessionIndexRecords';
 
-export interface SessionConfig {
-  /**
-   * Reserved for future use: identifier of the system prompt
-   * configuration associated with this session.
-   */
-  systemPromptId?: string;
-  /**
-   * Reserved for future use: identifier of the logical tool set
-   * configuration associated with this session.
-   */
-  toolSetId?: string;
-}
-
 export interface SessionSummary {
   sessionId: string;
   /**
@@ -62,10 +49,6 @@ export interface SessionSummary {
    * may be removed in a future version.
    */
   pinned?: boolean;
-  /**
-   * Reserved for future session configuration.
-   */
-  config?: SessionConfig;
   /**
    * Optional session-scoped attributes for plugins and panels.
    */
@@ -173,6 +156,8 @@ export class SessionIndex {
     agentId: string;
     model?: string;
     thinking?: string;
+    name?: string;
+    attributes?: SessionAttributes;
   }): Promise<SessionSummary> {
     await this.ensureLoaded();
     const sessionId = options?.sessionId;
@@ -182,6 +167,8 @@ export class SessionIndex {
     }
     const model = options?.model;
     const thinking = options?.thinking;
+    const name = typeof options?.name === 'string' ? options.name.trim() : '';
+    const attributes = options?.attributes;
     const existing = sessionId ? this.sessions.get(sessionId) : undefined;
     if (existing && !existing.deleted) {
       if (existing.agentId && existing.agentId !== agentId) {
@@ -209,6 +196,8 @@ export class SessionIndex {
       agentId,
       ...(model ? { model } : {}),
       ...(thinking ? { thinking } : {}),
+      ...(name ? { name } : {}),
+      ...(attributes ? { attributes } : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -221,6 +210,8 @@ export class SessionIndex {
       agentId,
       ...(model ? { model } : {}),
       ...(thinking ? { thinking } : {}),
+      ...(name ? { name } : {}),
+      ...(attributes ? { attributes } : {}),
     };
     await this.append(record);
 

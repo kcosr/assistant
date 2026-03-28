@@ -10,6 +10,8 @@
 - Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Added runtime-managed scheduled session CRUD through the scheduled-sessions service plus generated plugin tools, HTTP operations, and CLI commands. ([#123](<pr-url>))
 - Added fixed agent working-directory support through `sessionWorkingDir`, so agents can either prompt for a directory or automatically use a configured path. ([#123](<pr-url>))
+- Added shared `sessionConfig` support for manual session creation and scheduled sessions, covering model, thinking, working directory, and selected skills within agent-defined capability bounds, plus explicit session titles for manual session creation. ([#123](<pr-url>))
+- Added agent `sessionConfigCapabilities` metadata to the agents API so the UI can discover per-agent model, thinking, skill, and working-directory options without conflating capabilities with chosen session config. ([#123](<pr-url>))
 
 ### Changed
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -18,6 +20,7 @@
 - Changed Pi-backed OpenAI Responses transcript handling to preserve assistant text `phase` metadata (`commentary`, `final_answer`) across session replay and Pi session writes. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed scheduled sessions to support `reuseSession`, use generated plugin operations for API/CLI access, and show `sessionTitle` as the primary human-readable name in the panel. ([#123](<pr-url>))
 - Changed scheduled sessions to persist runtime create/update/delete/enable/disable state in the scheduled-sessions plugin data directory, and only start the scheduler when the plugin is enabled. ([#123](<pr-url>))
+- Changed schedule-backed reused sessions to be created up front, keep explicit `sessionTitle` as the session name, and reconcile stored `sessionConfig` back into the backing session on later runs after edits. ([#123](<pr-url>))
 
 ### Fixed
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#65](https://github.com/kcosr/assistant/pull/65))

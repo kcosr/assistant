@@ -1,5 +1,6 @@
-import type { CombinedPluginManifest } from '@assistant/shared';
+import type { CombinedPluginManifest, SessionConfig } from '@assistant/shared';
 
+import { parseSessionConfigInput } from '../../../../agent-server/src/sessionConfig';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
@@ -70,6 +71,21 @@ function parseOptionalNullableString(
   return value;
 }
 
+function parseOptionalSessionConfig(value: unknown): SessionConfig | null | undefined {
+  try {
+    return parseSessionConfigInput({
+      value,
+      allowNull: true,
+      allowSessionTitle: false,
+    });
+  } catch (err) {
+    throw new ToolError(
+      'invalid_arguments',
+      err instanceof Error ? err.message : 'Invalid sessionConfig',
+    );
+  }
+}
+
 function requireService(ctx: ToolContext): ScheduledSessionService {
   const service = ctx.scheduledSessionService;
   if (!service) {
@@ -113,6 +129,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const enabled = parseOptionalBoolean(parsed['enabled'], 'enabled');
         const reuseSession = parseOptionalBoolean(parsed['reuseSession'], 'reuseSession');
         const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
+        const sessionConfig = parseOptionalSessionConfig(parsed['sessionConfig']);
 
         try {
           return await requireService(ctx).createSchedule(agentId, {
@@ -123,6 +140,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(enabled !== undefined ? { enabled } : {}),
             ...(reuseSession !== undefined ? { reuseSession } : {}),
             ...(maxConcurrent !== undefined ? { maxConcurrent } : {}),
+            ...(sessionConfig !== undefined && sessionConfig !== null ? { sessionConfig } : {}),
           });
         } catch (err) {
           wrapServiceError(err);
@@ -139,6 +157,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const enabled = parseOptionalBoolean(parsed['enabled'], 'enabled');
         const reuseSession = parseOptionalBoolean(parsed['reuseSession'], 'reuseSession');
         const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
+        const sessionConfig = parseOptionalSessionConfig(parsed['sessionConfig']);
 
         try {
           return await requireService(ctx).updateSchedule(agentId, scheduleId, {
@@ -149,6 +168,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(enabled !== undefined ? { enabled } : {}),
             ...(reuseSession !== undefined ? { reuseSession } : {}),
             ...(maxConcurrent !== undefined ? { maxConcurrent } : {}),
+            ...(sessionConfig !== undefined ? { sessionConfig } : {}),
           });
         } catch (err) {
           wrapServiceError(err);

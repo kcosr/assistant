@@ -42,6 +42,12 @@ Create a new session for an agent.
 
 - `agentId` (string, required): Agent id for the new session.
 - `sessionId` (string, optional): Optional session id (required for external agents).
+- `sessionConfig` (object, optional): Session configuration constrained by the selected agent.
+  - `model` (string, optional): Allowed session model override.
+  - `thinking` (string, optional): Allowed thinking override.
+  - `workingDir` (string, optional): Absolute working directory for the new session.
+  - `skills` (string[], optional): Selected skill ids allowed by the agent.
+  - `sessionTitle` (string, optional): Explicit session title for the new session.
 
 **HTTP:** `POST /api/plugins/sessions/operations/create` (returns 201 on success)
 

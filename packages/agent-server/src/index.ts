@@ -32,7 +32,7 @@ export {
   filterVisibleAgents,
   type BuildSystemPromptOptions,
 } from './systemPrompt';
-export { SessionIndex, type SessionConfig, type SessionSummary } from './sessionIndex';
+export { SessionIndex, type SessionSummary } from './sessionIndex';
 export { SessionHub } from './sessionHub';
 export { createHttpServer } from './http/server';
 export { Session } from './ws/session';

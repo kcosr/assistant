@@ -72,6 +72,10 @@ describe('scheduled-sessions plugin operations', () => {
         cron: '0 9 * * *',
         prompt: 'Review',
         sessionTitle: 'Daily Review',
+        sessionConfig: {
+          model: 'gpt-5.4',
+          workingDir: '/tmp/project',
+        },
         reuseSession: false,
         maxConcurrent: 2,
       },
@@ -86,6 +90,10 @@ describe('scheduled-sessions plugin operations', () => {
       cron: '0 9 * * *',
       prompt: 'Review',
       sessionTitle: 'Daily Review',
+      sessionConfig: {
+        model: 'gpt-5.4',
+        workingDir: '/tmp/project',
+      },
       reuseSession: false,
       maxConcurrent: 2,
     });
@@ -115,6 +123,36 @@ describe('scheduled-sessions plugin operations', () => {
     ).rejects.toMatchObject({
       code: 'invalid_arguments',
       message: 'bad schedule',
+    } satisfies Partial<ToolError>);
+  });
+
+  it('rejects sessionConfig.sessionTitle and requires top-level sessionTitle', async () => {
+    const plugin = createPlugin({
+      manifest: manifestJson as CombinedPluginManifest,
+    });
+    const create = plugin.operations?.create;
+    if (!create) {
+      throw new Error('Expected create operation');
+    }
+
+    await expect(
+      create(
+        {
+          agentId: 'agent',
+          cron: '0 9 * * *',
+          sessionConfig: {
+            sessionTitle: 'Wrong place',
+          },
+        },
+        createCtx({
+          scheduledSessionService: {
+            createSchedule: vi.fn(),
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'sessionConfig.sessionTitle is not supported here; use sessionTitle instead',
     } satisfies Partial<ToolError>);
   });
 

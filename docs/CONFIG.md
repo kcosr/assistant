@@ -580,14 +580,24 @@ Each persisted schedule record includes:
 - optional `prompt`
 - optional `preCheck`
 - optional `sessionTitle`
+- optional `sessionConfig`
+  - optional `model`
+  - optional `thinking`
+  - optional `workingDir`
+  - optional `skills`
 - `enabled`
 - `reuseSession` (defaults to `true`)
 - `maxConcurrent`
 
 Notes:
 - Each schedule must define `prompt`, `preCheck`, or both.
+- `sessionConfig` values are validated against the selected agent on create/update and
+  revalidated when a scheduled run starts.
+- `sessionTitle` stays a top-level schedule field; it is not part of scheduled `sessionConfig`.
 - `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured.
 - When `reuseSession` is `true`, scheduled runs reuse one backing session per `agentId + scheduleId`.
+- Reused scheduled sessions are created up front and reconciled from the schedule on later runs
+  after edits.
 - When `reuseSession` is `false`, each run creates a fresh backing session.
 - `maxConcurrent` only matters when `reuseSession` is `false`.
 - Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules.

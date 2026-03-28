@@ -81,7 +81,7 @@ describe('sessions plugin operations', () => {
     const workingDir = path.join(os.tmpdir(), 'sessions-plugin-workdir');
 
     const result = await plugin.operations?.create(
-      { agentId: 'general', attributes: { core: { workingDir } } },
+      { agentId: 'general', sessionConfig: { workingDir } },
       ctx,
     );
 
@@ -89,6 +89,53 @@ describe('sessions plugin operations', () => {
       expect.objectContaining({
         sessionId: expect.any(String),
         attributes: { core: { workingDir } },
+      }),
+    );
+  });
+
+  it('persists model, thinking, title, and working dir from sessionConfig', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-config'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+        chat: {
+          models: ['gpt-5.4', 'gpt-5.4-mini'],
+          thinking: ['low', 'medium'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const result = (await plugin.operations?.create(
+      {
+        agentId: 'general',
+        sessionConfig: {
+          model: 'gpt-5.4-mini',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          sessionTitle: 'Project Session',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        name: 'Project Session',
+        model: 'gpt-5.4-mini',
+        thinking: 'medium',
+        attributes: { core: { workingDir: '/tmp/project' } },
       }),
     );
   });
@@ -120,7 +167,7 @@ describe('sessions plugin operations', () => {
 
     const workingDir = '/tmp/project';
     const created = (await plugin.operations?.create(
-      { agentId: 'pi-agent', attributes: { core: { workingDir } } },
+      { agentId: 'pi-agent', sessionConfig: { workingDir } },
       ctx,
     )) as SessionSummary;
 
@@ -180,7 +227,7 @@ describe('sessions plugin operations', () => {
 
     const workingDir = '/tmp/project';
     const created = (await plugin.operations?.create(
-      { agentId: 'pi-cli-agent', attributes: { core: { workingDir } } },
+      { agentId: 'pi-cli-agent', sessionConfig: { workingDir } },
       ctx,
     )) as SessionSummary;
 

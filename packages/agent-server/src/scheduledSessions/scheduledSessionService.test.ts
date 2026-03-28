@@ -91,6 +91,12 @@ function createService(
     prompt?: string | null;
     preCheck?: string | null;
     sessionTitle?: string | null;
+    sessionConfig?: {
+      model?: string;
+      thinking?: string;
+      workingDir?: string;
+      skills?: string[];
+    };
     enabled?: boolean;
     reuseSession?: boolean;
     maxConcurrent?: number;
@@ -113,6 +119,7 @@ function createService(
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
+    ...(scheduleOverrides.sessionConfig ? { sessionConfig: scheduleOverrides.sessionConfig } : {}),
   };
   const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
   mkdirSync(storeDir, { recursive: true });
@@ -133,6 +140,8 @@ function createService(
       description: 'Test agent',
       chat: {
         provider: 'codex-cli',
+        models: ['gpt-5.4', 'gpt-5.4-mini'],
+        thinking: ['low', 'medium'],
         config: { workdir: '/tmp' },
       },
     },
@@ -164,26 +173,70 @@ function createSessionIndexStub() {
   return {
     sessions,
     listSessions: vi.fn(async () => sessions.filter((session) => !session.deleted)),
-    createSession: vi.fn(async ({ agentId }: { agentId: string }) => {
-      const timestamp = now();
-      const summary: SessionSummary = {
-        sessionId: `session-${counter++}`,
+    createSession: vi.fn(
+      async ({
         agentId,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      sessions.push(summary);
-      return { ...summary };
-    }),
+        model,
+        thinking,
+        name,
+        attributes,
+      }: {
+        agentId: string;
+        model?: string;
+        thinking?: string;
+        name?: string;
+        attributes?: Record<string, unknown>;
+      }) => {
+        const timestamp = now();
+        const summary: SessionSummary = {
+          sessionId: `session-${counter++}`,
+          agentId,
+          ...(model ? { model } : {}),
+          ...(thinking ? { thinking } : {}),
+          ...(name ? { name } : {}),
+          ...(attributes ? { attributes } : {}),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        sessions.push(summary);
+        return { ...summary };
+      },
+    ),
     updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
       const session = sessions.find((item) => item.sessionId === sessionId);
       if (!session) {
         return null;
       }
-      session.attributes = {
-        ...(session.attributes ?? {}),
-        ...(patch as Record<string, unknown>),
-      };
+      session.attributes = mergeAttributeObjects(
+        session.attributes as Record<string, unknown> | undefined,
+        patch as Record<string, unknown>,
+      );
+      session.updatedAt = now();
+      return { ...session };
+    }),
+    setSessionModel: vi.fn(async (sessionId: string, model: string | null) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        return null;
+      }
+      if (model === null) {
+        delete session.model;
+      } else {
+        session.model = model;
+      }
+      session.updatedAt = now();
+      return { ...session };
+    }),
+    setSessionThinking: vi.fn(async (sessionId: string, thinking: string | null) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        return null;
+      }
+      if (thinking === null) {
+        delete session.thinking;
+      } else {
+        session.thinking = thinking;
+      }
       session.updatedAt = now();
       return { ...session };
     }),
@@ -203,6 +256,32 @@ function createSessionIndexStub() {
   };
 }
 
+function mergeAttributeObjects(
+  base: Record<string, unknown> | undefined,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...(base ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    const existing = result[key];
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      existing &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing)
+    ) {
+      result[key] = mergeAttributeObjects(
+        existing as Record<string, unknown>,
+        value as Record<string, unknown>,
+      );
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function createServiceWithSessions(
   scheduleOverrides: Partial<{
     id: string;
@@ -210,6 +289,12 @@ function createServiceWithSessions(
     prompt?: string | null;
     preCheck?: string | null;
     sessionTitle?: string | null;
+    sessionConfig?: {
+      model?: string;
+      thinking?: string;
+      workingDir?: string;
+      skills?: string[];
+    };
     enabled?: boolean;
     reuseSession?: boolean;
     maxConcurrent?: number;
@@ -231,6 +316,7 @@ function createServiceWithSessions(
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
+    ...(scheduleOverrides.sessionConfig ? { sessionConfig: scheduleOverrides.sessionConfig } : {}),
   };
   const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
   mkdirSync(storeDir, { recursive: true });
@@ -251,6 +337,8 @@ function createServiceWithSessions(
       description: 'Test agent',
       chat: {
         provider: 'codex-cli',
+        models: ['gpt-5.4', 'gpt-5.4-mini'],
+        thinking: ['low', 'medium'],
         config: { workdir: '/tmp' },
       },
     },
@@ -287,6 +375,17 @@ function createServiceWithSessions(
     updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
       return sessionIndex.updateSessionAttributes(sessionId, patch);
     }),
+    ensureSessionState: vi.fn(async (sessionId: string, summary?: SessionSummary) => ({
+      summary:
+        summary ??
+        sessionIndex.sessions.find((session) => session.sessionId === sessionId) ??
+        (() => {
+          throw new Error(`Session not found: ${sessionId}`);
+        })(),
+      chatMessages: [],
+      activeChatRun: null,
+      messageQueue: [],
+    })),
   };
 
   const service = new ScheduledSessionService({
@@ -514,7 +613,7 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
-  it('stores configured sessionTitle as core.autoTitle', async () => {
+  it('stores configured sessionTitle as an explicit session name', async () => {
     const { service, sessionIndex } = createServiceWithSessions({
       sessionTitle: 'Daily Review',
     });
@@ -524,11 +623,11 @@ describe('ScheduledSessionService', () => {
     await service.triggerRun('agent', 'daily-review');
     await tick();
 
-    const attributes = sessionIndex.sessions[0]?.attributes as
-      | { core?: { autoTitle?: string } }
-      | undefined;
-    expect(attributes?.core?.autoTitle).toBe('Daily Review');
-    expect(sessionIndex.renameSession).not.toHaveBeenCalled();
+    expect(sessionIndex.sessions[0]?.name).toBe('Daily Review');
+    expect(
+      (sessionIndex.sessions[0]?.attributes as { core?: { autoTitle?: string } } | undefined)?.core
+        ?.autoTitle,
+    ).toBeUndefined();
 
     service.shutdown();
   });
@@ -546,6 +645,12 @@ describe('ScheduledSessionService', () => {
     await tick();
 
     expect(sessionIndex.sessions).toHaveLength(2);
+    expect(sessionIndex.sessions[0]?.attributes).toMatchObject({
+      scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+    });
+    expect(sessionIndex.sessions[1]?.attributes).toMatchObject({
+      scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+    });
 
     service.shutdown();
   });
@@ -563,6 +668,82 @@ describe('ScheduledSessionService', () => {
       | undefined;
     expect(attributes?.core?.autoTitle).toMatch(/^scheduled: agent\/daily-review @ /);
     expect(sessionIndex.renameSession).not.toHaveBeenCalled();
+
+    service.shutdown();
+  });
+
+  it('reconciles reused backing sessions from schedule sessionConfig on the next run', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      sessionConfig: {
+        model: 'gpt-5.4',
+        thinking: 'medium',
+        workingDir: '/tmp/first',
+      },
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    const updatedSchedule = await service.updateSchedule('agent', 'daily-review', {
+      sessionConfig: {
+        model: 'gpt-5.4-mini',
+        thinking: 'low',
+        workingDir: '/tmp/second',
+      },
+    });
+
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      model: 'gpt-5.4',
+      thinking: 'medium',
+      attributes: {
+        core: { workingDir: '/tmp/first' },
+      },
+    });
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      model: 'gpt-5.4-mini',
+      thinking: 'low',
+      attributes: {
+        core: { workingDir: '/tmp/second' },
+      },
+    });
+
+    expect(updatedSchedule.sessionConfig).toEqual({
+      model: 'gpt-5.4-mini',
+      thinking: 'low',
+      workingDir: '/tmp/second',
+    });
+
+    service.shutdown();
+  });
+
+  it('deleting a reused schedule leaves the backing session intact', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      sessionTitle: 'Daily Review',
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+
+    await service.deleteSchedule('agent', 'daily-review');
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      name: 'Daily Review',
+      attributes: {
+        scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+      },
+    });
 
     service.shutdown();
   });
