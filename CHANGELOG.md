@@ -9,6 +9,8 @@
 ### Changed
 
 ### Fixed
+- Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#123](<pr-url>))
+- Added desktop Tauri webview zoom hotkeys so `Cmd/Ctrl +/-` style zoom shortcuts work in desktop builds. ([#123](<pr-url>))
 
 ### Removed
 

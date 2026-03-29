@@ -1451,6 +1451,48 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming-input')).toBe(false);
   });
 
+  it('renders write tool input formatted view as plain content with JSON toggle', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-write',
+          toolName: 'write',
+          args: {
+            path: '/tmp/test-shape.txt',
+            content: 'Line 1: Hello\nLine 2: World\nLine 3: Test',
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-write"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const inputSection = toolBlock.querySelector<HTMLElement>('.tool-output-input');
+    const inputLabel = inputSection?.querySelector<HTMLElement>('.tool-output-section-label');
+    expect(inputLabel?.textContent).toContain('Content');
+
+    const inputBody = inputSection?.querySelector<HTMLElement>('.tool-output-input-body');
+    expect(inputBody?.textContent).toContain('Line 1: Hello');
+    expect(inputBody?.textContent).toContain('Line 2: World');
+    expect(inputBody?.textContent).toContain('Line 3: Test');
+    expect(inputBody?.textContent).not.toContain('/tmp/test-shape.txt');
+
+    const jsonToggle = inputSection?.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    expect(jsonToggle).not.toBeNull();
+    jsonToggle?.click();
+
+    expect(inputBody?.textContent).toContain('/tmp/test-shape.txt');
+    expect(inputBody?.textContent).toContain('"content"');
+  });
+
   it('groups tool_input_chunk blocks when a second call streams in', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
