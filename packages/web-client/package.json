@@ -1,6 +1,6 @@
 {
   "name": "@assistant/web-client",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json && npm run bundle",

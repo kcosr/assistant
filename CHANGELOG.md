@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.2] - 2026-03-29
 
 ### Breaking Changes
 
@@ -20,6 +20,7 @@
 
 ### Removed
 - Removed the unused chat turn-windowing runtime and DOM wrapper from the web client pending a future revisit. ([#68](https://github.com/kcosr/assistant/pull/68))
+
 
 ## [0.15.1] - 2026-03-29
 
