@@ -1587,6 +1587,56 @@ async function main(): Promise<void> {
     socket.send(JSON.stringify(message));
   }
 
+  function sendQuestionnaireSubmit(options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    answers: Record<string, unknown>;
+  }): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const sessionId = options.sessionId.trim();
+    if (!sessionId) {
+      return;
+    }
+    const questionnaireRequestId = options.questionnaireRequestId.trim();
+    if (!questionnaireRequestId) {
+      return;
+    }
+    const message = {
+      type: 'questionnaire_submit' as const,
+      sessionId,
+      questionnaireRequestId,
+      answers: options.answers,
+    };
+    socket.send(JSON.stringify(message));
+  }
+
+  function sendQuestionnaireCancel(options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    reason?: string;
+  }): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const sessionId = options.sessionId.trim();
+    if (!sessionId) {
+      return;
+    }
+    const questionnaireRequestId = options.questionnaireRequestId.trim();
+    if (!questionnaireRequestId) {
+      return;
+    }
+    const message = {
+      type: 'questionnaire_cancel' as const,
+      sessionId,
+      questionnaireRequestId,
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    socket.send(JSON.stringify(message));
+  }
+
   // Keyboard navigation state
   type FocusZone = 'sidebar' | 'input';
   let focusedSessionId: string | null = null;
@@ -2286,6 +2336,8 @@ async function main(): Promise<void> {
       getInteractionEnabled: () => interactionEnabled,
       isMobileViewport,
       sendInteractionResponse,
+      sendQuestionnaireSubmit,
+      sendQuestionnaireCancel,
     };
   }
 

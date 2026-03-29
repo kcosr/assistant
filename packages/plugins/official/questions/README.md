@@ -37,7 +37,9 @@ Enable the plugin in `config.json`:
 
 - `questions_ask`: Ask the user a questionnaire and return answers.
   - Args: `schema` (object, required), `prompt` (string, optional), `timeoutMs` (number, optional),
-    `completedView` (object, optional), `validate` (boolean, optional).
+    `completedView` (object, optional), `validate` (boolean, optional), `mode` (`sync` or `async`,
+    optional), `onTimeout` (`error`, `async`, or `cancel`, optional), `autoResume` (boolean,
+    optional).
 
 ## Notes
 
@@ -45,6 +47,11 @@ Enable the plugin in `config.json`:
   `docs/design/questionnaire-tool.md`.
 - When `validate` is `true` (default), the plugin validates the response against the schema and
   reprompts with `fieldErrors` and `initialValues` when needed.
+- `mode: "async"` creates a durable questionnaire event, returns immediately from the tool call,
+  and keeps the form open in the chat UI until the user submits or cancels it.
+- `onTimeout: "async"` converts a timed-out sync questionnaire into the same durable async flow.
+- Async submissions can trigger a hidden follow-up turn back into the session. Set
+  `autoResume: false` if the questionnaire should stay passive after submission.
 - `schema.initialValues` is the supported way to prefill fields; per-field `initialValue` is ignored.
 - In the chat UI, pending questionnaires auto-focus on desktop when they render. Enter submits
   the form (Shift+Enter inserts a newline in textareas), and focus returns to the main input on

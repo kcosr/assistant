@@ -750,7 +750,7 @@ export class SessionHub {
     );
   }
 
-  private async loadSessionEvents(
+  async loadSessionEvents(
     summary: SessionSummary,
     forceReload?: boolean,
   ): Promise<ChatEvent[]> {

@@ -17,6 +17,11 @@ export const ChatEventTypeSchema = z.enum([
   'tool_result',
   'interaction_request',
   'interaction_response',
+  'interaction_pending',
+  'questionnaire_request',
+  'questionnaire_submission',
+  'questionnaire_reprompt',
+  'questionnaire_update',
   'agent_message',
   'agent_callback',
   'agent_switch',
@@ -253,6 +258,55 @@ export const InteractionPendingPayloadSchema = z.object({
 });
 export type InteractionPendingPayload = z.infer<typeof InteractionPendingPayloadSchema>;
 
+export const QuestionnaireModeSchema = z.enum(['sync', 'async']);
+export type QuestionnaireMode = z.infer<typeof QuestionnaireModeSchema>;
+
+export const QuestionnaireRequestPayloadSchema = z.object({
+  questionnaireRequestId: z.string(),
+  toolCallId: z.string(),
+  toolName: z.string(),
+  mode: QuestionnaireModeSchema,
+  prompt: z.string().optional(),
+  schema: QuestionnaireSchema,
+  validate: z.boolean().optional(),
+  autoResume: z.boolean().optional(),
+  status: z.literal('pending'),
+  createdAt: z.string(),
+  sourceInteractionId: z.string().optional(),
+  completedView: InteractionCompletedViewSchema.optional(),
+});
+export type QuestionnaireRequestPayload = z.infer<typeof QuestionnaireRequestPayloadSchema>;
+
+export const QuestionnaireSubmissionPayloadSchema = z.object({
+  questionnaireRequestId: z.string(),
+  toolCallId: z.string(),
+  status: z.literal('submitted'),
+  submittedAt: z.string(),
+  interactionId: z.string().optional(),
+  answers: z.record(z.string(), z.unknown()),
+});
+export type QuestionnaireSubmissionPayload = z.infer<typeof QuestionnaireSubmissionPayloadSchema>;
+
+export const QuestionnaireRepromptPayloadSchema = z.object({
+  questionnaireRequestId: z.string(),
+  toolCallId: z.string(),
+  status: z.literal('pending'),
+  updatedAt: z.string(),
+  errorSummary: z.string(),
+  fieldErrors: z.record(z.string(), z.string()),
+  initialValues: z.record(z.string(), z.unknown()),
+});
+export type QuestionnaireRepromptPayload = z.infer<typeof QuestionnaireRepromptPayloadSchema>;
+
+export const QuestionnaireUpdatePayloadSchema = z.object({
+  questionnaireRequestId: z.string(),
+  toolCallId: z.string(),
+  status: z.literal('cancelled'),
+  updatedAt: z.string(),
+  reason: z.string().optional(),
+});
+export type QuestionnaireUpdatePayload = z.infer<typeof QuestionnaireUpdatePayloadSchema>;
+
 export const ToolOutputChunkStreamSchema = z.enum(['stdout', 'stderr', 'output']);
 export type ToolOutputChunkStream = z.infer<typeof ToolOutputChunkStreamSchema>;
 
@@ -336,6 +390,11 @@ export type ChatEventPayload =
   | ToolResultPayload
   | InteractionRequestPayload
   | InteractionResponsePayload
+  | InteractionPendingPayload
+  | QuestionnaireRequestPayload
+  | QuestionnaireSubmissionPayload
+  | QuestionnaireRepromptPayload
+  | QuestionnaireUpdatePayload
   | AgentMessagePayload
   | AgentCallbackPayload
   | AgentSwitchPayload
@@ -437,6 +496,26 @@ export const InteractionPendingEventSchema = ChatEventBaseSchema.extend({
   payload: InteractionPendingPayloadSchema,
 });
 
+export const QuestionnaireRequestEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('questionnaire_request'),
+  payload: QuestionnaireRequestPayloadSchema,
+});
+
+export const QuestionnaireSubmissionEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('questionnaire_submission'),
+  payload: QuestionnaireSubmissionPayloadSchema,
+});
+
+export const QuestionnaireRepromptEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('questionnaire_reprompt'),
+  payload: QuestionnaireRepromptPayloadSchema,
+});
+
+export const QuestionnaireUpdateEventSchema = ChatEventBaseSchema.extend({
+  type: z.literal('questionnaire_update'),
+  payload: QuestionnaireUpdatePayloadSchema,
+});
+
 export const AgentMessageEventSchema = ChatEventBaseSchema.extend({
   type: z.literal('agent_message'),
   payload: AgentMessagePayloadSchema,
@@ -490,6 +569,10 @@ export const ChatEventSchema = z.discriminatedUnion('type', [
   InteractionRequestEventSchema,
   InteractionResponseEventSchema,
   InteractionPendingEventSchema,
+  QuestionnaireRequestEventSchema,
+  QuestionnaireSubmissionEventSchema,
+  QuestionnaireRepromptEventSchema,
+  QuestionnaireUpdateEventSchema,
   AgentMessageEventSchema,
   AgentCallbackEventSchema,
   AgentSwitchEventSchema,
@@ -518,6 +601,10 @@ export type ToolResultEvent = z.infer<typeof ToolResultEventSchema>;
 export type InteractionRequestEvent = z.infer<typeof InteractionRequestEventSchema>;
 export type InteractionResponseEvent = z.infer<typeof InteractionResponseEventSchema>;
 export type InteractionPendingEvent = z.infer<typeof InteractionPendingEventSchema>;
+export type QuestionnaireRequestEvent = z.infer<typeof QuestionnaireRequestEventSchema>;
+export type QuestionnaireSubmissionEvent = z.infer<typeof QuestionnaireSubmissionEventSchema>;
+export type QuestionnaireRepromptEvent = z.infer<typeof QuestionnaireRepromptEventSchema>;
+export type QuestionnaireUpdateEvent = z.infer<typeof QuestionnaireUpdateEventSchema>;
 export type AgentMessageEvent = z.infer<typeof AgentMessageEventSchema>;
 export type AgentCallbackEvent = z.infer<typeof AgentCallbackEventSchema>;
 export type AgentSwitchEvent = z.infer<typeof AgentSwitchEventSchema>;

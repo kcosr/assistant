@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { RawData } from 'ws';
 
 import type OpenAI from 'openai';
@@ -9,6 +10,8 @@ import type {
   ClientHelloMessage,
   ClientPanelEventMessage,
   ClientPingMessage,
+  ClientQuestionnaireCancelMessage,
+  ClientQuestionnaireSubmitMessage,
   ClientSetInteractionModeMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
@@ -17,6 +20,7 @@ import type {
   ClientTextInputMessage,
   ClientToolInteractionResponseMessage,
   ClientUnsubscribeMessage,
+  ChatEvent,
   InputMode,
   OutputMode,
   ServerErrorMessage,
@@ -25,7 +29,11 @@ import type {
   ServerSubscribedMessage,
   ServerUnsubscribedMessage,
 } from '@assistant/shared';
-import { CURRENT_PROTOCOL_VERSION, PanelInventoryPayloadSchema } from '@assistant/shared';
+import {
+  CURRENT_PROTOCOL_VERSION,
+  PanelInventoryPayloadSchema,
+  validateQuestionnaireInput,
+} from '@assistant/shared';
 
 import { createScopedToolHost, mapToolsToChatCompletionSpecs, type ToolHost } from '../tools';
 import { RateLimiter } from '../rateLimit';
@@ -56,6 +64,9 @@ import { handleChatToolCalls as handleChatToolCallsInternal } from './toolCallHa
 import { updateSystemPromptWithTools } from '../systemPromptUpdater';
 import { filterSessionSkills, getSelectedSessionSkillIds } from '../sessionConfig';
 import type { WsTransport } from './wsTransport';
+import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
+import { processUserMessage } from '../chatProcessor';
+import { buildQuestionnaireCallbackText, getQuestionnaireState } from '../questionnaires';
 
 export interface SessionRuntimeOptions {
   transport: WsTransport;
@@ -202,6 +213,10 @@ export class SessionRuntime {
           this.enqueue(() => this.handleSetInteractionMode(message)),
         onToolInteractionResponse: (message) =>
           this.enqueue(() => this.handleToolInteractionResponse(message)),
+        onQuestionnaireSubmit: (message) =>
+          this.enqueue(() => this.handleQuestionnaireSubmit(message)),
+        onQuestionnaireCancel: (message) =>
+          this.enqueue(() => this.handleQuestionnaireCancel(message)),
         onCancelQueuedMessage: (message) =>
           this.enqueue(() => this.handleCancelQueuedMessage(message)),
       });
@@ -399,6 +414,316 @@ export class SessionRuntime {
       });
       this.sendError('interaction_not_found', 'Interaction response did not match a pending request');
     }
+  }
+
+  private async loadQuestionnaireState(
+    sessionId: string,
+    questionnaireRequestId: string,
+    operation: string,
+  ): Promise<
+    | {
+        state: LogicalSessionState;
+        questionnaireState: ReturnType<typeof getQuestionnaireState>;
+      }
+    | undefined
+  > {
+    const state = await this.resolveSubscribedSessionState(sessionId, operation);
+    if (!state) {
+      this.sendError('session_not_ready', 'Session binding is not initialised yet');
+      return undefined;
+    }
+
+    const historyEvents = await this.sessionHub.loadSessionEvents(state.summary, true);
+    let questionnaireState = getQuestionnaireState(historyEvents, questionnaireRequestId);
+    if (!questionnaireState) {
+      const overlayEvents = await this.eventStore.getEvents(sessionId);
+      questionnaireState = getQuestionnaireState(
+        historyEvents.length > 0 ? [...historyEvents, ...overlayEvents] : overlayEvents,
+        questionnaireRequestId,
+      );
+    }
+    return {
+      state,
+      questionnaireState,
+    };
+  }
+
+  private async appendQuestionnaireEvent(sessionId: string, event: ChatEvent): Promise<void> {
+    await appendAndBroadcastChatEvents(
+      {
+        eventStore: this.eventStore,
+        sessionHub: this.sessionHub,
+        sessionId,
+      },
+      [event],
+    );
+  }
+
+  private async triggerQuestionnaireFollowUp(options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    toolCallId: string;
+    toolName: string;
+    schemaTitle?: string;
+    answers: Record<string, unknown>;
+    interactionId?: string;
+    submittedAt: string;
+  }): Promise<void> {
+    const {
+      sessionId,
+      questionnaireRequestId,
+      toolCallId,
+      toolName,
+      schemaTitle,
+      answers,
+      interactionId,
+      submittedAt,
+    } = options;
+    const callbackText = buildQuestionnaireCallbackText({
+      questionnaireRequestId,
+      toolCallId,
+      toolName,
+      ...(schemaTitle ? { schemaTitle } : {}),
+      answers,
+      ...(interactionId ? { interactionId } : {}),
+      submittedAt,
+    });
+    const callbackResponseId = randomUUID();
+    const callbackMessageId = questionnaireRequestId;
+
+    const executeCallback = async () => {
+      try {
+        const callbackState = await this.resolveSubscribedSessionState(
+          sessionId,
+          'questionnaire follow-up',
+        );
+        if (!callbackState) {
+          return;
+        }
+        const callbackSessionToolHost = this.resolveSessionToolHost(callbackState);
+        const callbackToolResolution = await this.resolveChatCompletionTools(
+          callbackState,
+          callbackSessionToolHost,
+        );
+
+        await processUserMessage({
+          sessionId,
+          state: callbackState,
+          text: callbackText,
+          responseId: callbackResponseId,
+          sessionHub: this.sessionHub,
+          envConfig: this.config,
+          chatCompletionTools: callbackToolResolution.specs,
+          handleChatToolCalls: (targetSessionId, targetState, toolCalls) =>
+            this.handleChatToolCalls(
+              targetSessionId,
+              targetState,
+              toolCalls,
+              callbackSessionToolHost,
+            ),
+          outputMode: 'text',
+          ttsBackendFactory: null,
+          agentMessageContext: {
+            fromSessionId: sessionId,
+            responseId: callbackResponseId,
+            callbackEvent: {
+              messageId: callbackMessageId,
+              fromSessionId: sessionId,
+              result: callbackText,
+            },
+            logType: 'callback',
+          },
+          eventStore: this.eventStore,
+          log: (...args) => this.log(...args),
+        });
+      } catch (err) {
+        this.log('failed to process questionnaire follow-up', err);
+      }
+    };
+
+    await this.sessionHub.queueMessage({
+      sessionId,
+      text: 'Questionnaire response received',
+      source: 'user',
+      execute: executeCallback,
+    });
+    void this.sessionHub.processNextQueuedMessage(sessionId);
+  }
+
+  private async handleQuestionnaireSubmit(
+    message: ClientQuestionnaireSubmitMessage,
+  ): Promise<void> {
+    const sessionId = message.sessionId.trim();
+    if (!sessionId) {
+      this.sendError('invalid_session_id', 'Session id must not be empty');
+      return;
+    }
+    const questionnaireRequestId = message.questionnaireRequestId.trim();
+    if (!questionnaireRequestId) {
+      this.sendError(
+        'invalid_questionnaire_request_id',
+        'Questionnaire request id must not be empty',
+      );
+      return;
+    }
+    if (typeof this.connection.isSubscribedTo === 'function') {
+      const isSubscribed = this.connection.isSubscribedTo(sessionId);
+      if (!isSubscribed) {
+        this.sendError(
+          'invalid_session_id',
+          'Cannot submit a questionnaire for a session that this connection is not subscribed to',
+          { sessionId },
+        );
+        return;
+      }
+    }
+
+    const loaded = await this.loadQuestionnaireState(
+      sessionId,
+      questionnaireRequestId,
+      'questionnaire submit',
+    );
+    if (!loaded) {
+      return;
+    }
+
+    const { questionnaireState } = loaded;
+    if (!questionnaireState) {
+      this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
+        sessionId,
+        questionnaireRequestId,
+      });
+      return;
+    }
+    if (questionnaireState.status !== 'pending') {
+      this.sendError('questionnaire_not_pending', 'Questionnaire is no longer pending', {
+        sessionId,
+        questionnaireRequestId,
+        status: questionnaireState.status,
+      });
+      return;
+    }
+
+    const answers = message.answers ?? {};
+    if (questionnaireState.request.validate !== false) {
+      const fieldErrors = validateQuestionnaireInput(questionnaireState.request.schema, answers);
+      if (Object.keys(fieldErrors).length > 0) {
+        const repromptEvent: ChatEvent = {
+          ...createChatEventBase({ sessionId }),
+          type: 'questionnaire_reprompt',
+          payload: {
+            questionnaireRequestId,
+            toolCallId: questionnaireState.request.toolCallId,
+            status: 'pending',
+            updatedAt: new Date().toISOString(),
+            errorSummary: 'Please correct the highlighted fields.',
+            fieldErrors,
+            initialValues: answers,
+          },
+        };
+        await this.appendQuestionnaireEvent(sessionId, repromptEvent);
+        return;
+      }
+    }
+
+    const interactionId = randomUUID();
+    const submittedAt = new Date().toISOString();
+    const submissionEvent: ChatEvent = {
+      ...createChatEventBase({ sessionId }),
+      type: 'questionnaire_submission',
+      payload: {
+        questionnaireRequestId,
+        toolCallId: questionnaireState.request.toolCallId,
+        status: 'submitted',
+        submittedAt,
+        interactionId,
+        answers,
+      },
+    };
+    await this.appendQuestionnaireEvent(sessionId, submissionEvent);
+
+    if (questionnaireState.request.autoResume !== false) {
+      await this.triggerQuestionnaireFollowUp({
+        sessionId,
+        questionnaireRequestId,
+        toolCallId: questionnaireState.request.toolCallId,
+        toolName: questionnaireState.request.toolName,
+        answers,
+        interactionId,
+        submittedAt,
+        ...(questionnaireState.request.schema.title
+          ? { schemaTitle: questionnaireState.request.schema.title }
+          : {}),
+      });
+    }
+  }
+
+  private async handleQuestionnaireCancel(
+    message: ClientQuestionnaireCancelMessage,
+  ): Promise<void> {
+    const sessionId = message.sessionId.trim();
+    if (!sessionId) {
+      this.sendError('invalid_session_id', 'Session id must not be empty');
+      return;
+    }
+    const questionnaireRequestId = message.questionnaireRequestId.trim();
+    if (!questionnaireRequestId) {
+      this.sendError(
+        'invalid_questionnaire_request_id',
+        'Questionnaire request id must not be empty',
+      );
+      return;
+    }
+    if (typeof this.connection.isSubscribedTo === 'function') {
+      const isSubscribed = this.connection.isSubscribedTo(sessionId);
+      if (!isSubscribed) {
+        this.sendError(
+          'invalid_session_id',
+          'Cannot cancel a questionnaire for a session that this connection is not subscribed to',
+          { sessionId },
+        );
+        return;
+      }
+    }
+
+    const loaded = await this.loadQuestionnaireState(
+      sessionId,
+      questionnaireRequestId,
+      'questionnaire cancel',
+    );
+    if (!loaded) {
+      return;
+    }
+
+    const { questionnaireState } = loaded;
+    if (!questionnaireState) {
+      this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
+        sessionId,
+        questionnaireRequestId,
+      });
+      return;
+    }
+    if (questionnaireState.status !== 'pending') {
+      this.sendError('questionnaire_not_pending', 'Questionnaire is no longer pending', {
+        sessionId,
+        questionnaireRequestId,
+        status: questionnaireState.status,
+      });
+      return;
+    }
+
+    const updateEvent: ChatEvent = {
+      ...createChatEventBase({ sessionId }),
+      type: 'questionnaire_update',
+      payload: {
+        questionnaireRequestId,
+        toolCallId: questionnaireState.request.toolCallId,
+        status: 'cancelled',
+        updatedAt: new Date().toISOString(),
+        ...(message.reason ? { reason: message.reason } : {}),
+      },
+    };
+    await this.appendQuestionnaireEvent(sessionId, updateEvent);
   }
 
   private async handlePanelEvent(message: ClientPanelEventMessage): Promise<void> {

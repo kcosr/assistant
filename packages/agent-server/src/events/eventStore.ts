@@ -268,7 +268,11 @@ export class SessionScopedEventStore implements EventStore {
     return (
       event.type === 'interaction_request' ||
       event.type === 'interaction_response' ||
-      event.type === 'interaction_pending'
+      event.type === 'interaction_pending' ||
+      event.type === 'questionnaire_request' ||
+      event.type === 'questionnaire_submission' ||
+      event.type === 'questionnaire_reprompt' ||
+      event.type === 'questionnaire_update'
     );
   }
 

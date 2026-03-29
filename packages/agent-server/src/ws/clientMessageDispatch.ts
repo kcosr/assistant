@@ -4,6 +4,8 @@ import type {
   ClientHelloMessage,
   ClientPanelEventMessage,
   ClientPingMessage,
+  ClientQuestionnaireCancelMessage,
+  ClientQuestionnaireSubmitMessage,
   ClientSetInteractionModeMessage,
   ClientSetModesMessage,
   ClientSetSessionModelMessage,
@@ -40,6 +42,8 @@ export function handleClientTextMessage(options: {
   onSetSessionThinking: (message: ClientSetSessionThinkingMessage) => void | Promise<void>;
   onSetInteractionMode: (message: ClientSetInteractionModeMessage) => void | Promise<void>;
   onToolInteractionResponse: (message: ClientToolInteractionResponseMessage) => void | Promise<void>;
+  onQuestionnaireSubmit: (message: ClientQuestionnaireSubmitMessage) => void | Promise<void>;
+  onQuestionnaireCancel: (message: ClientQuestionnaireCancelMessage) => void | Promise<void>;
   onCancelQueuedMessage: (message: ClientCancelQueuedMessage) => void | Promise<void>;
 }): void {
   const {
@@ -60,6 +64,8 @@ export function handleClientTextMessage(options: {
     onSetSessionThinking,
     onSetInteractionMode,
     onToolInteractionResponse,
+    onQuestionnaireSubmit,
+    onQuestionnaireCancel,
     onCancelQueuedMessage,
   } = options;
 
@@ -140,6 +146,12 @@ export function handleClientTextMessage(options: {
       break;
     case 'tool_interaction_response':
       void onToolInteractionResponse(message);
+      break;
+    case 'questionnaire_submit':
+      void onQuestionnaireSubmit(message);
+      break;
+    case 'questionnaire_cancel':
+      void onQuestionnaireCancel(message);
       break;
   }
 }

@@ -1,14 +1,24 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
+  ChatEvent,
   CombinedPluginManifest,
-  QuestionnaireField,
   QuestionnaireSchema,
-  QuestionnaireSection,
 } from '@assistant/shared';
-import { QuestionnaireSchema as QuestionnaireSchemaZod } from '@assistant/shared';
+import {
+  QuestionnaireSchema as QuestionnaireSchemaZod,
+  findQuestionnaireSchemaIssue,
+  mergeQuestionnaireInitialValues,
+  validateQuestionnaireInput,
+} from '@assistant/shared';
 
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
+import {
+  appendAndBroadcastChatEvents,
+  createChatEventBase,
+} from '../../../../agent-server/src/events/chatEventUtils';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
@@ -21,14 +31,10 @@ type QuestionsAskArgs = {
     summaryTemplate?: string;
   };
   validate?: boolean;
+  mode?: 'sync' | 'async';
+  onTimeout?: 'error' | 'async' | 'cancel';
+  autoResume?: boolean;
 };
-
-type FieldContext = {
-  field: QuestionnaireField;
-  section?: QuestionnaireSection;
-};
-
-const QUESTIONNAIRE_OPTION_TYPES = new Set(['select', 'radio', 'multiselect']);
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -54,6 +60,26 @@ function parseOptionalBoolean(value: unknown, field: string): boolean | undefine
   }
   if (typeof value !== 'boolean') {
     throw new ToolError('invalid_arguments', `${field} must be a boolean`);
+  }
+  return value;
+}
+
+function parseOptionalMode(value: unknown): QuestionsAskArgs['mode'] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== 'sync' && value !== 'async') {
+    throw new ToolError('invalid_arguments', 'mode must be "sync" or "async"');
+  }
+  return value;
+}
+
+function parseOptionalOnTimeout(value: unknown): QuestionsAskArgs['onTimeout'] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value !== 'error' && value !== 'async' && value !== 'cancel') {
+    throw new ToolError('invalid_arguments', 'onTimeout must be "error", "async", or "cancel"');
   }
   return value;
 }
@@ -90,65 +116,10 @@ function parseCompletedView(value: unknown): QuestionsAskArgs['completedView'] |
   };
 }
 
-function listFieldContexts(schema: QuestionnaireSchema): FieldContext[] {
-  if (schema.fields && schema.fields.length > 0) {
-    return schema.fields.map((field) => ({ field }));
-  }
-  if (schema.sections) {
-    return schema.sections.flatMap((section) =>
-      section.fields.map((field) => ({ field, section })),
-    );
-  }
-  return [];
-}
-
-function collectFields(schema: QuestionnaireSchema): QuestionnaireField[] {
-  return listFieldContexts(schema).map((entry) => entry.field);
-}
-
-function mergeInitialValues(schema: QuestionnaireSchema): QuestionnaireSchema {
-  const initialValues = schema.initialValues ?? {};
-  const merged: Record<string, unknown> = { ...initialValues };
-  let hasDefaults = false;
-
-  for (const field of collectFields(schema)) {
-    if (field.defaultValue !== undefined && !(field.id in merged)) {
-      merged[field.id] = field.defaultValue;
-      hasDefaults = true;
-    }
-  }
-
-  if (!hasDefaults) {
-    return schema;
-  }
-
-  return {
-    ...schema,
-    initialValues: merged,
-  };
-}
-
 function ensureSchemaValid(schema: QuestionnaireSchema): void {
-  const ids = new Set<string>();
-  for (const field of collectFields(schema)) {
-    if (ids.has(field.id)) {
-      throw new ToolError('invalid_arguments', `Duplicate field id: ${field.id}`);
-    }
-    ids.add(field.id);
-
-    if (QUESTIONNAIRE_OPTION_TYPES.has(field.type)) {
-      if (!field.options || field.options.length === 0) {
-        throw new ToolError('invalid_arguments', `Field "${field.id}" requires options`);
-      }
-    }
-
-    if (field.pattern) {
-      try {
-        new RegExp(field.pattern);
-      } catch {
-        throw new ToolError('invalid_arguments', `Invalid pattern for field "${field.id}"`);
-      }
-    }
+  const issue = findQuestionnaireSchemaIssue(schema);
+  if (issue) {
+    throw new ToolError('invalid_arguments', issue);
   }
 }
 
@@ -172,6 +143,9 @@ function parseQuestionnaireArgs(raw: unknown): QuestionsAskArgs {
   const timeoutMs = parseOptionalTimeout(obj['timeoutMs']);
   const completedView = parseCompletedView(obj['completedView']);
   const validate = parseOptionalBoolean(obj['validate'], 'validate');
+  const mode = parseOptionalMode(obj['mode']);
+  const onTimeout = parseOptionalOnTimeout(obj['onTimeout']);
+  const autoResume = parseOptionalBoolean(obj['autoResume'], 'autoResume');
 
   return {
     schema: parsedSchema.data,
@@ -179,6 +153,9 @@ function parseQuestionnaireArgs(raw: unknown): QuestionsAskArgs {
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(completedView ? { completedView } : {}),
     ...(validate !== undefined ? { validate } : {}),
+    ...(mode !== undefined ? { mode } : {}),
+    ...(onTimeout !== undefined ? { onTimeout } : {}),
+    ...(autoResume !== undefined ? { autoResume } : {}),
   };
 }
 
@@ -193,146 +170,76 @@ function requireInteraction(ctx: ToolContext) {
   return requestInteraction;
 }
 
-function isEmptyValue(field: QuestionnaireField, value: unknown): boolean {
-  if (value === null || value === undefined) {
-    return true;
+function requireDurableQuestionnaireContext(ctx: ToolContext): {
+  eventStore: NonNullable<ToolContext['eventStore']>;
+  sessionHub: NonNullable<ToolContext['sessionHub']>;
+} {
+  if (!ctx.eventStore || !ctx.sessionHub) {
+    throw new ToolError(
+      'interaction_unavailable',
+      'Async questionnaires require session event persistence and an active session.',
+    );
   }
-  if (typeof value === 'string') {
-    return value.trim().length === 0;
-  }
-  if (field.type === 'multiselect') {
-    return !Array.isArray(value) || value.length === 0;
-  }
-  if (field.type === 'checkbox' || field.type === 'boolean') {
-    return value !== true;
-  }
-  if (field.type === 'number') {
-    return typeof value !== 'number' || Number.isNaN(value);
-  }
-  return false;
+  return {
+    eventStore: ctx.eventStore,
+    sessionHub: ctx.sessionHub,
+  };
 }
 
-function getSectionSkipMap(
-  schema: QuestionnaireSchema,
-  input: Record<string, unknown>,
-): Map<string, boolean> {
-  const skipMap = new Map<string, boolean>();
-  if (!schema.sections) {
-    return skipMap;
-  }
-  for (const section of schema.sections) {
-    if (!section.optional) {
-      continue;
-    }
-    const allEmpty = section.fields.every((field) => isEmptyValue(field, input[field.id]));
-    skipMap.set(section.id, allEmpty);
-  }
-  return skipMap;
+function resolveToolCallId(ctx: ToolContext): string {
+  return typeof ctx.toolCallId === 'string' && ctx.toolCallId.trim().length > 0
+    ? ctx.toolCallId.trim()
+    : randomUUID();
 }
 
-function validateInput(
-  schema: QuestionnaireSchema,
-  input: Record<string, unknown>,
-): Record<string, string> {
-  const errors: Record<string, string> = {};
-  const sectionSkipMap = getSectionSkipMap(schema, input);
-
-  for (const { field, section } of listFieldContexts(schema)) {
-    if (section && section.optional && sectionSkipMap.get(section.id)) {
-      continue;
-    }
-
-    const value = input[field.id];
-    const empty = isEmptyValue(field, value);
-
-    if (field.required && empty) {
-      errors[field.id] = 'This field is required.';
-      continue;
-    }
-
-    if (empty) {
-      continue;
-    }
-
-    switch (field.type) {
-      case 'text':
-      case 'textarea': {
-        if (typeof value !== 'string') {
-          errors[field.id] = 'Enter a valid text value.';
-          break;
-        }
-        if (typeof field.minLength === 'number' && value.length < field.minLength) {
-          errors[field.id] = `Must be at least ${field.minLength} characters.`;
-        }
-        if (typeof field.maxLength === 'number' && value.length > field.maxLength) {
-          errors[field.id] = `Must be at most ${field.maxLength} characters.`;
-        }
-        if (field.pattern) {
-          const regex = new RegExp(field.pattern);
-          if (!regex.test(value)) {
-            errors[field.id] = 'Invalid format.';
-          }
-        }
-        break;
-      }
-      case 'number': {
-        if (typeof value !== 'number' || Number.isNaN(value)) {
-          errors[field.id] = 'Enter a valid number.';
-          break;
-        }
-        if (typeof field.min === 'number' && value < field.min) {
-          errors[field.id] = `Must be at least ${field.min}.`;
-        }
-        if (typeof field.max === 'number' && value > field.max) {
-          errors[field.id] = `Must be at most ${field.max}.`;
-        }
-        break;
-      }
-      case 'select':
-      case 'radio': {
-        if (typeof value !== 'string') {
-          errors[field.id] = 'Select a valid option.';
-          break;
-        }
-        const options = field.options ?? [];
-        if (!options.some((option) => option.value === value)) {
-          errors[field.id] = 'Select a valid option.';
-        }
-        break;
-      }
-      case 'multiselect': {
-        if (!Array.isArray(value)) {
-          errors[field.id] = 'Select one or more options.';
-          break;
-        }
-        const options = new Set((field.options ?? []).map((option) => option.value));
-        const unknown = value.some((entry) => !options.has(String(entry)));
-        if (unknown) {
-          errors[field.id] = 'Select valid options.';
-        }
-        break;
-      }
-      case 'checkbox':
-      case 'boolean': {
-        if (typeof value !== 'boolean') {
-          errors[field.id] = 'Select a valid option.';
-        }
-        break;
-      }
-      case 'date':
-      case 'time':
-      case 'datetime': {
-        if (typeof value !== 'string' || value.trim().length === 0) {
-          errors[field.id] = 'Enter a valid date/time value.';
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  }
-
-  return errors;
+async function emitQuestionnaireRequest(options: {
+  ctx: ToolContext;
+  toolCallId: string;
+  questionnaireRequestId: string;
+  prompt?: string;
+  schema: QuestionnaireSchema;
+  mode: 'sync' | 'async';
+  validate?: boolean;
+  autoResume?: boolean;
+  completedView?: QuestionsAskArgs['completedView'];
+  sourceInteractionId?: string;
+}): Promise<void> {
+  const {
+    ctx,
+    toolCallId,
+    questionnaireRequestId,
+    prompt,
+    schema,
+    mode,
+    validate,
+    autoResume,
+    completedView,
+    sourceInteractionId,
+  } = options;
+  const { eventStore, sessionHub } = requireDurableQuestionnaireContext(ctx);
+  const event: ChatEvent = {
+    ...createChatEventBase({
+      sessionId: ctx.sessionId,
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+      ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
+    }),
+    type: 'questionnaire_request',
+    payload: {
+      questionnaireRequestId,
+      toolCallId,
+      toolName: 'questions_ask',
+      mode,
+      ...(prompt ? { prompt } : {}),
+      schema,
+      ...(validate !== undefined ? { validate } : {}),
+      ...(autoResume !== undefined ? { autoResume } : {}),
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      ...(sourceInteractionId ? { sourceInteractionId } : {}),
+      ...(completedView ? { completedView } : {}),
+    },
+  };
+  await appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId: ctx.sessionId }, [event]);
 }
 
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
@@ -340,9 +247,35 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     operations: {
       ask: async (args, ctx) => {
         const parsed = parseQuestionnaireArgs(args);
-        const requestInteraction = requireInteraction(ctx);
-        const schemaWithDefaults = mergeInitialValues(parsed.schema);
+        const mode = parsed.mode ?? 'sync';
+        const schemaWithDefaults = mergeQuestionnaireInitialValues(parsed.schema);
 
+        if (mode === 'async') {
+          const questionnaireRequestId = randomUUID();
+          const toolCallId = resolveToolCallId(ctx);
+          await emitQuestionnaireRequest({
+            ctx,
+            questionnaireRequestId,
+            toolCallId,
+            ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
+            schema: schemaWithDefaults,
+            mode,
+            ...(parsed.validate !== undefined ? { validate: parsed.validate } : {}),
+            ...(parsed.autoResume !== undefined ? { autoResume: parsed.autoResume } : {}),
+            ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
+          });
+          return {
+            ok: true,
+            pending: true,
+            mode: 'async',
+            questionnaireRequestId,
+            toolCallId,
+            message: 'Questionnaire remains open for a later response.',
+            ...(parsed.autoResume === false ? { autoResume: false } : {}),
+          };
+        }
+
+        const requestInteraction = requireInteraction(ctx);
         return requestInteraction({
           type: 'input',
           presentation: 'questionnaire',
@@ -350,6 +283,44 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           ...(parsed.timeoutMs !== undefined ? { timeoutMs: parsed.timeoutMs } : {}),
           ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
           inputSchema: schemaWithDefaults,
+          onTimeout: async () => {
+            if (parsed.onTimeout === 'cancel') {
+              return {
+                complete: {
+                  ok: false,
+                  cancelled: true,
+                },
+              };
+            }
+            if (parsed.onTimeout === 'async') {
+              const questionnaireRequestId = randomUUID();
+              const toolCallId = resolveToolCallId(ctx);
+              await emitQuestionnaireRequest({
+                ctx,
+                questionnaireRequestId,
+                toolCallId,
+                ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
+                schema: schemaWithDefaults,
+                mode: 'async',
+                ...(parsed.validate !== undefined ? { validate: parsed.validate } : {}),
+                ...(parsed.autoResume !== undefined ? { autoResume: parsed.autoResume } : {}),
+                ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
+              });
+              return {
+                complete: {
+                  ok: true,
+                  pending: true,
+                  mode: 'async',
+                  questionnaireRequestId,
+                  toolCallId,
+                  message: 'Questionnaire timed out and remains open for a later response.',
+                  convertedFromSync: true,
+                  ...(parsed.autoResume === false ? { autoResume: false } : {}),
+                },
+              };
+            }
+            return { complete: { ok: false, error: 'Interaction timed out' } };
+          },
           onResponse: (response) => {
             if (response.action === 'cancel') {
               return { complete: { ok: false, cancelled: true } };
@@ -360,7 +331,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
             const input = response.input ?? {};
             if (parsed.validate !== false) {
-              const fieldErrors = validateInput(parsed.schema, input);
+              const fieldErrors = validateQuestionnaireInput(parsed.schema, input);
               if (Object.keys(fieldErrors).length > 0) {
                 return {
                   reprompt: {

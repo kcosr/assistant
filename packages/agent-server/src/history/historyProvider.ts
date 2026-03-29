@@ -601,7 +601,11 @@ function isOverlayEvent(event: ChatEvent): boolean {
   return (
     event.type === 'interaction_request' ||
     event.type === 'interaction_response' ||
-    event.type === 'interaction_pending'
+    event.type === 'interaction_pending' ||
+    event.type === 'questionnaire_request' ||
+    event.type === 'questionnaire_submission' ||
+    event.type === 'questionnaire_reprompt' ||
+    event.type === 'questionnaire_update'
   );
 }
 
@@ -1378,7 +1382,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (
         (chatEventType === 'interaction_request' ||
           chatEventType === 'interaction_response' ||
-          chatEventType === 'interaction_pending') &&
+          chatEventType === 'interaction_pending' ||
+          chatEventType === 'questionnaire_request' ||
+          chatEventType === 'questionnaire_submission' ||
+          chatEventType === 'questionnaire_reprompt' ||
+          chatEventType === 'questionnaire_update') &&
         payload
       ) {
         const turnId = turnIdFromEntry || currentTurnId || '';

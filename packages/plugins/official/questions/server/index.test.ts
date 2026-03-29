@@ -7,6 +7,8 @@ import type {
 import manifestJson from '../manifest.json';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { createPlugin } from './index';
+import type { EventStore } from '../../../../agent-server/src/events';
+import type { SessionHub } from '../../../../agent-server/src/sessionHub';
 
 function createTestContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
@@ -115,5 +117,68 @@ describe('questions plugin', () => {
       email: 'This field is required.',
       roles: 'Select valid options.',
     });
+  });
+
+  it('returns a durable pending result in async mode', async () => {
+    const appendedEvents: unknown[] = [];
+    const broadcastEvents: unknown[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        appendedEvents.push(event);
+      },
+      appendBatch: async (_sessionId, events) => {
+        appendedEvents.push(...events);
+      },
+      getEvents: async () => [],
+      getEventsSince: async () => [],
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+    const sessionHub = {
+      broadcastToSession: (_sessionId: string, message: unknown) => {
+        broadcastEvents.push(message);
+      },
+    } as SessionHub;
+    const ctx = createTestContext({
+      eventStore,
+      sessionHub,
+    });
+
+    const plugin = createTestPlugin();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    const result = (await ops.ask(
+      {
+        mode: 'async',
+        autoResume: false,
+        prompt: 'Tell me about yourself',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+      },
+      ctx,
+    )) as {
+      ok?: boolean;
+      pending?: boolean;
+      mode?: string;
+      questionnaireRequestId?: string;
+      toolCallId?: string;
+      autoResume?: boolean;
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.pending).toBe(true);
+    expect(result.mode).toBe('async');
+    expect(result.questionnaireRequestId).toMatch(/\S/);
+    expect(result.toolCallId).toMatch(/\S/);
+    expect(result.autoResume).toBe(false);
+    expect(appendedEvents).toHaveLength(1);
+    expect((appendedEvents[0] as { type?: string }).type).toBe('questionnaire_request');
+    expect(broadcastEvents).toHaveLength(1);
   });
 });

@@ -9,6 +9,16 @@ export type InteractionResponseDraft = Omit<
   'toolCallId' | 'interactionId'
 >;
 
+export type QuestionnaireRequestView = {
+  prompt?: string;
+  errorSummary?: string;
+  fieldErrors?: Record<string, string>;
+  interactionId?: string;
+  inputSchema?: InteractionRequestPayload['inputSchema'];
+};
+
+type QuestionnaireRenderableRequest = InteractionRequestPayload | QuestionnaireRequestView;
+
 export function createInteractionElement(options: {
   request: InteractionRequestPayload;
   enabled: boolean;
@@ -18,6 +28,14 @@ export function createInteractionElement(options: {
   if (request.interactionType === 'approval') {
     return createApprovalInteraction(options);
   }
+  return createQuestionnaireInteraction(options);
+}
+
+export function createQuestionnaireElement(options: {
+  request: QuestionnaireRequestView;
+  enabled: boolean;
+  onSubmit: (response: InteractionResponseDraft) => void;
+}): HTMLDivElement {
   return createQuestionnaireInteraction(options);
 }
 
@@ -123,7 +141,7 @@ function createApprovalInteraction(options: {
 }
 
 function createQuestionnaireInteraction(options: {
-  request: InteractionRequestPayload;
+  request: QuestionnaireRenderableRequest;
   enabled: boolean;
   onSubmit: (response: InteractionResponseDraft) => void;
 }): HTMLDivElement {
@@ -132,7 +150,9 @@ function createQuestionnaireInteraction(options: {
 
   const wrapper = document.createElement('div');
   wrapper.className = 'interaction-block interaction-questionnaire';
-  wrapper.dataset['interactionId'] = request.interactionId;
+  if (request.interactionId) {
+    wrapper.dataset['interactionId'] = request.interactionId;
+  }
 
   if (request.prompt) {
     const prompt = document.createElement('div');
@@ -291,7 +311,7 @@ function requestFormSubmit(form: HTMLFormElement): void {
 function appendFields(
   container: HTMLElement,
   fields: QuestionnaireField[],
-  request: InteractionRequestPayload,
+  request: QuestionnaireRenderableRequest,
 ): void {
   for (const field of fields) {
     const isCheckbox = field.type === 'checkbox' || field.type === 'boolean';

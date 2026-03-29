@@ -55,6 +55,20 @@
           "validate": {
             "type": "boolean",
             "description": "When true (default), validate responses against the schema and reprompt on errors."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["sync", "async"],
+            "description": "When async, return immediately after opening a durable questionnaire. Defaults to sync."
+          },
+          "onTimeout": {
+            "type": "string",
+            "enum": ["error", "async", "cancel"],
+            "description": "Sync-mode timeout behavior. Use async to keep the questionnaire open after timeout."
+          },
+          "autoResume": {
+            "type": "boolean",
+            "description": "When true (default), async submissions trigger a hidden follow-up turn back into the session."
           }
         },
         "required": ["schema"],
