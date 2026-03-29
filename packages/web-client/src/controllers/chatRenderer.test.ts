@@ -1652,6 +1652,52 @@ describe('ChatRenderer', () => {
     expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
   });
 
+  it('renders bash tool input with a command view and JSON toggle on expand', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-bash-input',
+          toolName: 'bash',
+          args: {
+            command: 'printf "hello\\nworld\\n"',
+            cwd: '/tmp/demo',
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-bash-input"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const inputSection = toolBlock.querySelector<HTMLElement>('.tool-output-input');
+    const inputLabel = inputSection?.querySelector<HTMLElement>('.tool-output-section-label');
+    expect(inputLabel?.textContent).toContain('Command');
+
+    const inputBody = inputSection?.querySelector<HTMLElement>('.tool-output-input-body');
+    expect(inputBody?.textContent).toContain('printf "hello\\nworld\\n"');
+    expect(inputBody?.textContent).not.toContain('"cwd"');
+
+    const jsonToggle = inputSection?.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    expect(jsonToggle).not.toBeNull();
+    jsonToggle?.click();
+
+    expect(inputBody?.textContent).toContain('"command"');
+    expect(inputBody?.textContent).toContain('"cwd"');
+  });
+
   it('hydrates collapsed tool output content on expand', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

@@ -405,6 +405,7 @@ function renderToolOutputInput(state: ToolOutputBlockState): void {
   let label = 'Input';
   let isAgentMessage = false;
   let isPlainTextInput = false;
+  let inputLanguage: string | undefined;
   let rawJson = '';
   let prettyJson = '';
 
@@ -427,6 +428,8 @@ function renderToolOutputInput(state: ToolOutputBlockState): void {
       isPlainTextInput = true;
     } else if (toolName === 'bash' && typeof argsRecord['command'] === 'string') {
       formattedText = argsRecord['command'] as string;
+      label = 'Command';
+      inputLanguage = 'bash';
     } else {
       formattedText = prettyJson;
     }
@@ -461,7 +464,8 @@ function renderToolOutputInput(state: ToolOutputBlockState): void {
       return;
     }
     const language =
-      toolName === 'bash' || toolName === 'shell' || toolName === 'sh' ? 'bash' : undefined;
+      inputLanguage ??
+      (toolName === 'bash' || toolName === 'shell' || toolName === 'sh' ? 'bash' : undefined);
     const markdownText = language
       ? `\`\`\`${language}\n${formattedText}\n\`\`\``
       : `\`\`\`json\n${formattedText}\n\`\`\``;

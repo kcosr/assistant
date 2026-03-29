@@ -120,7 +120,7 @@
 
   --font-size-xs: 11px;
   --font-size-sm: 13px;
-  --font-size-base: 14px;
+  --font-size-base: 13px;
   --font-size-lg: 16px;
   --font-size-xl: 18px;
 
@@ -4408,7 +4408,7 @@ body.panel-reordering {
 
 .tool-call-group-header {
   width: 100%;
-  padding: 4px 10px;
+  padding: 2px 8px 1px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -4418,6 +4418,9 @@ body.panel-reordering {
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
 }
 
 .tool-call-group-header:hover {
@@ -4866,7 +4869,7 @@ textarea.interaction-input {
 
 .tool-output-header {
   width: 100%;
-  padding: 4px 10px;
+  padding: 2px 8px 1px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -4876,11 +4879,19 @@ textarea.interaction-input {
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
 }
 
 .tool-output-header:hover {
   background-color: var(--color-bg-hover);
   color: var(--color-text-primary);
+}
+
+.capacitor-android .tool-call-group-header,
+.capacitor-android .tool-output-header {
+  padding: 3px 8px 2px;
 }
 
 .tool-output-header-main {

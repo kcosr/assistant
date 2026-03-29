@@ -7,9 +7,11 @@
 ### Added
 
 ### Changed
+- Changed chat web/mobile typography to use a 13px shared base size with tighter tool header padding, including an Android-specific tool-header spacing adjustment for WebView. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ### Fixed
 - Fixed chat transcript scrolling regressions by removing the experimental turn-windowing path while keeping tool-output hydration/dehydration and streaming rendering optimizations. ([#68](https://github.com/kcosr/assistant/pull/68))
+- Fixed bash tool formatted input rendering to show the shell command as the primary expanded view while keeping the JSON toggle available for the full argument payload. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ### Removed
 - Removed the unused chat turn-windowing runtime and DOM wrapper from the web client pending a future revisit. ([#68](https://github.com/kcosr/assistant/pull/68))
