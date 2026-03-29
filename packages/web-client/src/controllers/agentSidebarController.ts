@@ -1,4 +1,6 @@
+import type { SessionContextUsage } from '@assistant/shared';
 import { stripContextLine } from '../utils/chatMessageRenderer';
+import { formatContextUsagePercent, getContextUsageTone } from '../utils/contextUsage';
 import { resolveAutoTitle } from '../utils/sessionLabel';
 import type { SessionComposerOpenOptions } from './sessionComposerController';
 
@@ -22,6 +24,7 @@ interface SessionSummary {
    */
   attributes?: Record<string, unknown>;
   lastSnippet?: string;
+  contextUsage?: SessionContextUsage;
 }
 
 interface AgentSummary {
@@ -390,6 +393,18 @@ export class AgentSidebarController {
       });
       meta.appendChild(timeEl);
 
+      const contextUsageLabel = formatContextUsagePercent(session.contextUsage);
+      if (contextUsageLabel) {
+        const contextUsageEl = document.createElement('span');
+        contextUsageEl.className = 'agent-sidebar-session-context-usage';
+        contextUsageEl.textContent = contextUsageLabel;
+        const contextUsageTone = getContextUsageTone(session.contextUsage);
+        if (contextUsageTone) {
+          contextUsageEl.classList.add(`context-usage-${contextUsageTone}`);
+        }
+        meta.appendChild(contextUsageEl);
+      }
+
       const typingIndicator = document.createElement('span');
       typingIndicator.className = 'session-typing-indicator';
       typingIndicator.dataset['sessionId'] = session.sessionId;
@@ -611,6 +626,18 @@ export class AgentSidebarController {
         const timeEl = document.createElement('span');
         timeEl.textContent = timeText;
         meta.appendChild(timeEl);
+
+        const contextUsageLabel = formatContextUsagePercent(session.contextUsage);
+        if (contextUsageLabel) {
+          const contextUsageEl = document.createElement('span');
+          contextUsageEl.className = 'agent-sidebar-session-context-usage';
+          contextUsageEl.textContent = contextUsageLabel;
+          const contextUsageTone = getContextUsageTone(session.contextUsage);
+          if (contextUsageTone) {
+            contextUsageEl.classList.add(`context-usage-${contextUsageTone}`);
+          }
+          meta.appendChild(contextUsageEl);
+        }
 
         const typingIndicator = document.createElement('span');
         typingIndicator.className = 'session-typing-indicator';

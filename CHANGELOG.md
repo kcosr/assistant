@@ -5,8 +5,11 @@
 ### Breaking Changes
 
 ### Added
+- Added Pi-backed session context usage summaries with persisted available-context percentages for session bootstrap, plus compact percentage badges in the chat header and session rows when usage is known. ([#123](<pr-url>))
 
 ### Changed
+
+- Updated the `Dark` theme to use a true neutral dark palette inspired by TermStation, and renamed the previous warm tan-accent variant to `Warm Dark`. ([#123](<pr-url>))
 
 ### Fixed
 - Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#123](<pr-url>))

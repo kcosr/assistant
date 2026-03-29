@@ -122,6 +122,60 @@ describe('SessionIndex sticky session infrastructure', () => {
     expect(content).toContain('"type":"session_cleared"');
   });
 
+  it('persists context usage and clears it on session clear', async () => {
+    const filePath = createTempFile('session-index-context-usage');
+    const index = new SessionIndex(filePath);
+
+    const created = await index.createSession({ agentId: 'assistant' });
+    const updated = await index.setSessionContextUsage(created.sessionId, {
+      availablePercent: 73,
+      contextWindow: 200000,
+      usage: {
+        input: 12000,
+        output: 1800,
+        cacheRead: 35000,
+        cacheWrite: 5200,
+        totalTokens: 54000,
+      },
+    });
+
+    expect(updated?.contextUsage?.availablePercent).toBe(73);
+
+    const reloaded = new SessionIndex(filePath);
+    const loaded = await reloaded.getSession(created.sessionId);
+    expect(loaded?.contextUsage).toEqual(updated?.contextUsage);
+
+    await index.clearSession(created.sessionId);
+
+    const cleared = await index.getSession(created.sessionId);
+    expect(cleared?.contextUsage).toBeUndefined();
+  });
+
+  it('clears persisted context usage when the session model changes', async () => {
+    const filePath = createTempFile('session-index-context-usage-model');
+    const index = new SessionIndex(filePath);
+
+    const created = await index.createSession({ agentId: 'assistant', model: 'openai/gpt-5.4' });
+    await index.setSessionContextUsage(created.sessionId, {
+      availablePercent: 50,
+      contextWindow: 200000,
+      usage: {
+        input: 50000,
+        output: 10000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 60000,
+      },
+    });
+
+    const updated = await index.setSessionModel(created.sessionId, 'openai/gpt-5.4-mini');
+    expect(updated?.contextUsage).toBeUndefined();
+
+    const reloaded = new SessionIndex(filePath);
+    const loaded = await reloaded.getSession(created.sessionId);
+    expect(loaded?.contextUsage).toBeUndefined();
+  });
+
   it('throws when clearing a non-existent or deleted session', async () => {
     const filePath = createTempFile('session-index-clear-errors');
     const index = new SessionIndex(filePath);

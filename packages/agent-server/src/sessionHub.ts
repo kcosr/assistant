@@ -12,6 +12,7 @@ import type {
   ServerSessionDeletedMessage,
   ServerSessionUpdatedMessage,
   SessionAttributesPatch,
+  SessionContextUsage,
 } from '@assistant/shared';
 
 import { AgentRegistry } from './agents';
@@ -306,6 +307,7 @@ export class SessionHub {
         updatedAt: summary.updatedAt,
         ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
         ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+        contextUsage: summary.contextUsage ?? null,
       };
       this.connections.broadcastToAll(updatedMessage);
     }
@@ -335,6 +337,63 @@ export class SessionHub {
       ...(typeof summary.pinnedAt === 'string'
         ? { pinnedAt: summary.pinnedAt }
         : { pinnedAt: null }),
+      contextUsage: summary.contextUsage ?? null,
+    };
+    this.connections.broadcastToAll(updatedMessage);
+
+    return summary;
+  }
+
+  async setSessionModel(
+    sessionId: string,
+    model: string | null,
+  ): Promise<SessionSummary | undefined> {
+    const summary = await this.sessionIndex.setSessionModel(sessionId, model);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    const updatedMessage: ServerSessionUpdatedMessage = {
+      type: 'session_updated',
+      sessionId,
+      updatedAt: summary.updatedAt,
+      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
+      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+      contextUsage: summary.contextUsage ?? null,
+    };
+    this.connections.broadcastToAll(updatedMessage);
+
+    return summary;
+  }
+
+  async setSessionThinking(
+    sessionId: string,
+    thinking: string | null,
+  ): Promise<SessionSummary | undefined> {
+    const summary = await this.sessionIndex.setSessionThinking(sessionId, thinking);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    const updatedMessage: ServerSessionUpdatedMessage = {
+      type: 'session_updated',
+      sessionId,
+      updatedAt: summary.updatedAt,
+      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
+      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+      contextUsage: summary.contextUsage ?? null,
     };
     this.connections.broadcastToAll(updatedMessage);
 
@@ -362,6 +421,35 @@ export class SessionHub {
       ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
       ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
       attributes: summary.attributes ?? null,
+      contextUsage: summary.contextUsage ?? null,
+    };
+    this.connections.broadcastToAll(updatedMessage);
+
+    return summary;
+  }
+
+  async updateSessionContextUsage(
+    sessionId: string,
+    contextUsage: SessionContextUsage | null,
+  ): Promise<SessionSummary | undefined> {
+    const summary = await this.sessionIndex.setSessionContextUsage(sessionId, contextUsage);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    const updatedMessage: ServerSessionUpdatedMessage = {
+      type: 'session_updated',
+      sessionId,
+      updatedAt: summary.updatedAt,
+      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
+      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+      contextUsage: summary.contextUsage ?? null,
     };
     this.connections.broadcastToAll(updatedMessage);
 
@@ -460,6 +548,17 @@ export class SessionHub {
       state.chatMessages = chatMessages;
     }
 
+    const updatedMessage: ServerSessionUpdatedMessage = {
+      type: 'session_updated',
+      sessionId,
+      updatedAt: summary.updatedAt,
+      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
+      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+      ...(summary.attributes ? { attributes: summary.attributes } : {}),
+      contextUsage: null,
+    };
+    this.connections.broadcastToAll(updatedMessage);
+
     // Broadcast session_cleared to all clients connected to this session
     const clearedMessage: ServerSessionClearedMessage = {
       type: 'session_cleared',
@@ -488,6 +587,7 @@ export class SessionHub {
       updatedAt: summary.updatedAt,
       ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
       ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+      contextUsage: summary.contextUsage ?? null,
     };
     this.connections.broadcastToAll(updatedMessage);
 

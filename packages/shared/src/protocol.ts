@@ -2,6 +2,20 @@ import { z } from 'zod';
 import { AssistantTextPhaseSchema, ChatEventSchema } from './chatEvents';
 import { PanelEventEnvelopeSchema } from './panelProtocol';
 
+const TokenUsageBreakdownSchema = z.object({
+  input: z.number(),
+  output: z.number(),
+  cacheRead: z.number(),
+  cacheWrite: z.number(),
+  totalTokens: z.number(),
+});
+
+const SessionContextUsageSchema = z.object({
+  availablePercent: z.number().int().min(0).max(100),
+  contextWindow: z.number().int().positive(),
+  usage: TokenUsageBreakdownSchema,
+});
+
 export const CURRENT_PROTOCOL_VERSION = 2 as const;
 export type ProtocolVersion = typeof CURRENT_PROTOCOL_VERSION;
 
@@ -629,6 +643,9 @@ export const ServerSessionUpdatedMessageSchema = z.object({
   // Optional session attributes snapshot. When present and null,
   // the client should clear stored attributes.
   attributes: z.record(z.unknown()).nullable().optional(),
+  // Optional runtime context usage snapshot for the session.
+  // When present and null, the client should clear stored context usage.
+  contextUsage: SessionContextUsageSchema.nullable().optional(),
 });
 
 export const ServerMessageSchema = z.discriminatedUnion('type', [
