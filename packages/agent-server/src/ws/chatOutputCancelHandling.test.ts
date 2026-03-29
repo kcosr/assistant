@@ -312,7 +312,6 @@ describe('handleChatOutputCancel', () => {
       sessionHub,
       broadcastOutputCancelled: vi.fn(),
       log: vi.fn(),
-      eventStore: undefined,
     });
 
     await Promise.resolve();

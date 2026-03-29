@@ -500,6 +500,7 @@ async function loadExistingPiSessionState(
       messageCount: 0,
       hasAssistant: false,
       toolCallIds: new Set<string>(),
+      openTurnId: null,
     };
   }
 

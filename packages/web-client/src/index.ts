@@ -252,6 +252,7 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  provider?: string;
   sessionWorkingDir?:
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
@@ -1379,7 +1380,7 @@ async function main(): Promise<void> {
       unsubBinding();
       unsubSessionContext();
       unsubActive();
-      closeTurnHistoryMenu();
+      contextMenuManager.close();
       runtime.chatRenderer.setFocusInputHandler(null);
       runtime.chatRenderer.setTurnDividerActionHandler(null);
       chatPanelsById.delete(panelId);
@@ -1514,7 +1515,7 @@ async function main(): Promise<void> {
       return false;
     }
     const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
-    const provider = agent?.chat?.provider ?? null;
+    const provider = agent?.provider ?? null;
     return provider === 'pi' || provider === 'pi-cli';
   }
 
@@ -2551,15 +2552,6 @@ async function main(): Promise<void> {
     }
   }
 
-  let activeTurnHistoryMenu: HTMLElement | null = null;
-  let releaseTurnHistoryMenu: (() => void) | null = null;
-
-  function closeTurnHistoryMenu(): void {
-    releaseTurnHistoryMenu?.();
-    releaseTurnHistoryMenu = null;
-    activeTurnHistoryMenu = null;
-  }
-
   function showTurnHistoryEditConfirmation(
     sessionId: string,
     turnId: string,
@@ -2569,15 +2561,15 @@ async function main(): Promise<void> {
     const options =
       action === 'trim_before'
         ? {
-            title: 'Trim Before',
+            title: 'Delete Before',
             message: 'Remove all turns before this one? This turn will be kept.',
-            confirmText: 'Trim',
+            confirmText: 'Delete',
           }
         : action === 'trim_after'
           ? {
-              title: 'Trim After',
+              title: 'Delete After',
               message: 'Remove all turns after this one? This turn will be kept.',
-              confirmText: 'Trim',
+              confirmText: 'Delete',
             }
           : {
               title: 'Delete Turn',
@@ -2587,7 +2579,7 @@ async function main(): Promise<void> {
 
     dialogManager.showConfirmDialog({
       ...options,
-      confirmClassName: action === 'delete_turn' ? 'danger' : 'primary',
+      confirmClassName: 'danger',
       onConfirm: () => {
         void requireSessionManager().editSessionHistory(sessionId, action, turnId);
       },
@@ -2599,9 +2591,9 @@ async function main(): Promise<void> {
   function showResetHistoryConfirmation(sessionId: string): void {
     panelWorkspace?.closeHeaderPopover();
     dialogManager.showConfirmDialog({
-      title: 'Reset History',
-      message: 'Clear all transcript turns from this session? The session itself will be kept.',
-      confirmText: 'Reset',
+      title: 'Reset Session',
+      message: 'Delete all transcript turns from this session? The session itself will be kept.',
+      confirmText: 'Delete',
       confirmClassName: 'danger',
       onConfirm: () => {
         void clearSession(sessionId);
@@ -2619,116 +2611,45 @@ async function main(): Promise<void> {
     hasAfter: boolean;
   }): void {
     const { sessionId, turnId, anchorEl, hasBefore, hasAfter } = options;
-    if (
-      activeTurnHistoryMenu &&
-      activeTurnHistoryMenu.dataset['sessionId'] === sessionId &&
-      activeTurnHistoryMenu.dataset['turnId'] === turnId
-    ) {
-      closeTurnHistoryMenu();
-      return;
-    }
-
-    closeTurnHistoryMenu();
-
-    const menu = document.createElement('div');
-    menu.className = 'context-menu turn-history-menu';
-    menu.dataset['sessionId'] = sessionId;
-    menu.dataset['turnId'] = turnId;
-
-    const addMenuItem = (
-      label: string,
-      onClick: () => void,
-      extraClass?: string,
-    ): HTMLButtonElement => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = extraClass ? `context-menu-item ${extraClass}` : 'context-menu-item';
-      button.textContent = label;
-      button.addEventListener('click', () => {
-        closeTurnHistoryMenu();
-        onClick();
-      });
-      menu.appendChild(button);
-      return button;
-    };
-
-    if (hasBefore) {
-      addMenuItem('Trim Before', () => {
-        showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_before');
-      });
-    }
-
-    addMenuItem(
-      'Delete Turn',
-      () => {
-        showTurnHistoryEditConfirmation(sessionId, turnId, 'delete_turn');
-      },
-      'danger',
-    );
-
-    if (hasAfter) {
-      addMenuItem('Trim After', () => {
-        showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_after');
-      });
-    }
-
-    addMenuItem(
-      'Reset History',
-      () => {
-        showResetHistoryConfirmation(sessionId);
-      },
-      'danger',
-    );
-
-    document.body.appendChild(menu);
-    activeTurnHistoryMenu = menu;
-
-    const anchorRect = anchorEl.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    let left = anchorRect.left + anchorRect.width / 2 - menuRect.width / 2;
-    let top = anchorRect.bottom + 6;
-    if (left + menuRect.width > window.innerWidth - 8) {
-      left = window.innerWidth - menuRect.width - 8;
-    }
-    if (left < 8) {
-      left = 8;
-    }
-    if (top + menuRect.height > window.innerHeight - 8) {
-      top = anchorRect.top - menuRect.height - 6;
-    }
-    if (top < 8) {
-      top = 8;
-    }
-    menu.style.left = `${left}px`;
-    menu.style.top = `${top}px`;
-
-    const handleOutside = (event: MouseEvent | FocusEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent && event.key !== 'Escape') {
-        return;
-      }
-      if (event.target instanceof Node && menu.contains(event.target)) {
-        return;
-      }
-      closeTurnHistoryMenu();
-    };
-
-    const scrollTarget = anchorEl.closest('.chat-log');
-    const handleScroll = () => {
-      closeTurnHistoryMenu();
-    };
-
-    document.addEventListener('click', handleOutside);
-    document.addEventListener('contextmenu', handleOutside);
-    document.addEventListener('keydown', handleOutside);
-    scrollTarget?.addEventListener('scroll', handleScroll, { passive: true });
-
-    releaseTurnHistoryMenu = () => {
-      menu.remove();
-      document.removeEventListener('click', handleOutside);
-      document.removeEventListener('contextmenu', handleOutside);
-      document.removeEventListener('keydown', handleOutside);
-      scrollTarget?.removeEventListener('scroll', handleScroll);
-    };
+    contextMenuManager.showAnchoredMenu({
+      anchorEl,
+      menuClassName: 'context-menu turn-history-menu',
+      closeOnScrollTarget: anchorEl.closest<HTMLElement>('.chat-log'),
+      items: [
+        ...(hasBefore
+          ? [
+              {
+                label: 'Delete Before',
+                onClick: () => {
+                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_before');
+                },
+              },
+            ]
+          : []),
+        {
+          label: 'Delete Turn',
+          onClick: () => {
+            showTurnHistoryEditConfirmation(sessionId, turnId, 'delete_turn');
+          },
+        },
+        ...(hasAfter
+          ? [
+              {
+                label: 'Delete After',
+                onClick: () => {
+                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_after');
+                },
+              },
+            ]
+          : []),
+        {
+          label: 'Reset Session',
+          onClick: () => {
+            showResetHistoryConfirmation(sessionId);
+          },
+        },
+      ],
+    });
   }
 
   function showClearHistoryConfirmation(sessionId: string): void {

@@ -32,6 +32,7 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  provider?: string;
   sessionWorkingDir?:
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }

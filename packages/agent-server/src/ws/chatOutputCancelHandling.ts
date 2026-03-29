@@ -189,12 +189,14 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
               updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
             });
           }
-          await piSessionWriter.appendTurnEnd({
-            summary: state.summary,
-            turnId: run.turnId,
-            status: 'interrupted',
-            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-          });
+          if (run.turnId) {
+            await piSessionWriter.appendTurnEnd({
+              summary: state.summary,
+              turnId: run.turnId,
+              status: 'interrupted',
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+          }
         } catch (err) {
           log('failed to persist interrupt into Pi session history', err);
         }

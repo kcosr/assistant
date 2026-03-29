@@ -147,7 +147,6 @@ export class SessionManager {
       }
 
       await readSessionOperationResult<{ changed?: boolean }>(response);
-      await this.options.refreshSessions(this.options.getSelectedSessionId());
     } catch (err) {
       console.error('Failed to edit session history', err);
       this.options.setStatus('Failed to edit session history');

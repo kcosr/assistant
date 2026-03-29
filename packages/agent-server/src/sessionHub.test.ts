@@ -304,4 +304,35 @@ describe('SessionHub clearSession', () => {
     expect(content).not.toContain('first turn');
     expect(content).toContain('second turn');
   });
+
+  it('rejects turn history edits for non-Pi sessions', async () => {
+    const sessionsFile = createTempFile('session-hub-edit-history-non-pi');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+      },
+    ]);
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-edit-history-non-pi',
+      agentId: 'general',
+    });
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
+
+    await expect(
+      sessionHub.editSessionHistory({
+        sessionId: session.sessionId,
+        action: 'delete_turn',
+        turnId: 'turn-1',
+      }),
+    ).rejects.toThrow('Turn history edits are only supported for Pi-backed sessions');
+  });
 });

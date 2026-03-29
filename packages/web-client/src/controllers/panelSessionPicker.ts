@@ -16,6 +16,7 @@ export interface AgentSummary {
   agentId: string;
   displayName: string;
   type?: 'chat' | 'external';
+  provider?: string;
   sessionWorkingDir?:
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
