@@ -153,6 +153,7 @@ type ListPanelRowRenderOptions = {
 };
 
 export class ListPanelTableController {
+  private static readonly TOUCH_CLICK_SUPPRESSION_MS = 250;
   private draggedItemId: string | null = null;
   private draggedItemIds: string[] | null = null;
   private draggedListId: string | null = null;
@@ -163,6 +164,9 @@ export class ListPanelTableController {
   private notesPopupHideTimeout: ReturnType<typeof setTimeout> | null = null;
   private notesPopupShowTimeout: ReturnType<typeof setTimeout> | null = null;
   private renderState: ListPanelTableRenderState | null = null;
+  private selectionModeActive = false;
+  private suppressedTouchClickUntil = 0;
+  private suppressedTouchClickItemId: string | null = null;
 
   constructor(private readonly options: ListPanelTableControllerOptions) {
     if (typeof document !== 'undefined') {
@@ -368,6 +372,9 @@ export class ListPanelTableController {
 
   renderTable(renderOptions: ListPanelTableRenderOptions): ListPanelTableRenderResult {
     this.keyboardSelectionAnchorIndex = null;
+    this.selectionModeActive = false;
+    this.suppressedTouchClickUntil = 0;
+    this.suppressedTouchClickItemId = null;
     const {
       listId,
       sortedItems,
@@ -1541,6 +1548,22 @@ export class ListPanelTableController {
     let onDragStartFromHandle: ((e: DragEvent | null) => void) | null = null;
     let onDragEnd: (() => void) | null = null;
     let touchDragActive = false;
+    let touchDragReady = false;
+    let touchSelectionBlocked = false;
+    let touchSelectionTriggered = false;
+    let touchSelectionTimer: ReturnType<typeof setTimeout> | null = null;
+    let touchGestureStartX = 0;
+    let touchGestureStartY = 0;
+    const TOUCH_DRAG_ARM_DELAY_MS = 350;
+    const TOUCH_SELECTION_MODE_DELAY_MS = 750;
+    const TOUCH_MOVE_THRESHOLD = 10;
+
+    const clearTouchSelectionTimer = (): void => {
+      if (touchSelectionTimer !== null) {
+        clearTimeout(touchSelectionTimer);
+        touchSelectionTimer = null;
+      }
+    };
 
     const reorderDraggedItem = async (
       targetRow: HTMLTableRowElement | null,
@@ -1702,6 +1725,9 @@ export class ListPanelTableController {
         if (this.shouldIgnoreRowSelection(e.target)) {
           return;
         }
+        if (this.shouldSuppressTouchClickForRow(itemId ?? null)) {
+          return;
+        }
         this.keyboardSelectionAnchorIndex = null;
         const singleClickBehavior = this.getSingleClickBehavior();
         const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
@@ -1714,7 +1740,13 @@ export class ListPanelTableController {
           this.updateSelectionButtons();
         };
 
-        if (e.shiftKey && this.lastSelectedRowIndex !== null) {
+        if (this.selectionModeActive && !hasModifier && !e.shiftKey) {
+          e.preventDefault();
+          const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+          row.classList.toggle('list-item-selected');
+          this.lastSelectedRowIndex = rows.indexOf(row);
+          this.updateSelectionButtons();
+        } else if (e.shiftKey && this.lastSelectedRowIndex !== null) {
           e.preventDefault();
           const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
           const currentIndex = rows.indexOf(row);
@@ -1809,13 +1841,6 @@ export class ListPanelTableController {
       });
     }
 
-      let touchStartTime = 0;
-      let touchStartX = 0;
-      let touchStartY = 0;
-      let touchSelectionBlocked = false;
-      const LONG_PRESS_THRESHOLD_MS = 500;
-      const TOUCH_MOVE_THRESHOLD = 10;
-
       row.addEventListener(
         'touchstart',
         (e) => {
@@ -1824,40 +1849,68 @@ export class ListPanelTableController {
             return;
           }
 
-          touchStartTime = Date.now();
           const touch = e.touches[0];
           if (touch) {
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
+            touchGestureStartX = touch.clientX;
+            touchGestureStartY = touch.clientY;
+          }
+
+          touchSelectionTriggered = false;
+          clearTouchSelectionTimer();
+          if (!this.selectionModeActive) {
+            touchSelectionTimer = setTimeout(() => {
+              if (touchDragActive) {
+                return;
+              }
+              touchSelectionTriggered = true;
+              this.selectionModeActive = true;
+              this.selectRowForSelectionMode(row, tbody);
+              this.suppressedTouchClickUntil =
+                Date.now() + ListPanelTableController.TOUCH_CLICK_SUPPRESSION_MS;
+              this.suppressedTouchClickItemId = itemId ?? null;
+            }, TOUCH_SELECTION_MODE_DELAY_MS);
+          }
+        },
+        { passive: true },
+      );
+
+      row.addEventListener(
+        'touchmove',
+        (e) => {
+          if (touchSelectionBlocked || touchSelectionTriggered) {
+            return;
+          }
+          const touch = e.touches[0];
+          if (!touch) {
+            return;
+          }
+          const dx = Math.abs(touch.clientX - touchGestureStartX);
+          const dy = Math.abs(touch.clientY - touchGestureStartY);
+          if (dx > TOUCH_MOVE_THRESHOLD || dy > TOUCH_MOVE_THRESHOLD) {
+            clearTouchSelectionTimer();
           }
         },
         { passive: true },
       );
 
       row.addEventListener('touchend', (e) => {
+        clearTouchSelectionTimer();
         if (touchSelectionBlocked || touchDragActive) {
           touchSelectionBlocked = false;
           return;
         }
-
-        const touchDuration = Date.now() - touchStartTime;
-        const touch = e.changedTouches[0];
-
-        if (touch && touchDuration >= LONG_PRESS_THRESHOLD_MS) {
-          const dx = Math.abs(touch.clientX - touchStartX);
-          const dy = Math.abs(touch.clientY - touchStartY);
-
-          if (dx < TOUCH_MOVE_THRESHOLD && dy < TOUCH_MOVE_THRESHOLD) {
-            e.preventDefault();
-            this.keyboardSelectionAnchorIndex = null;
-            row.classList.toggle('list-item-selected');
-            const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
-            this.lastSelectedRowIndex = rows.indexOf(row);
-            this.updateSelectionButtons();
-          }
+        if (touchSelectionTriggered) {
+          e.preventDefault();
+          touchSelectionTriggered = false;
         }
 
         touchSelectionBlocked = false;
+      });
+
+      row.addEventListener('touchcancel', () => {
+        clearTouchSelectionTimer();
+        touchSelectionBlocked = false;
+        touchSelectionTriggered = false;
       });
 
       row.addEventListener('dragend', () => onDragEnd?.());
@@ -2146,10 +2199,14 @@ export class ListPanelTableController {
             if (this.shouldIgnoreDragStart(e.target)) {
               return;
             }
+            if (this.selectionModeActive) {
+              return;
+            }
 
             touchDragStartX = touch.clientX;
             touchDragStartY = touch.clientY;
             touchDragActive = false;
+            touchDragReady = false;
             touchDraggedItemId = itemId;
 
             if (touchLongPressTimer !== null && typeof window !== 'undefined') {
@@ -2157,9 +2214,8 @@ export class ListPanelTableController {
             }
 
             touchLongPressTimer = setTimeout(() => {
-              touchDragActive = true;
-              onDragStartFromHandle?.(null);
-            }, 350);
+              touchDragReady = true;
+            }, TOUCH_DRAG_ARM_DELAY_MS);
           },
           { passive: true },
         );
@@ -2172,10 +2228,14 @@ export class ListPanelTableController {
 
             const dx = Math.abs(touch.clientX - touchDragStartX);
             const dy = Math.abs(touch.clientY - touchDragStartY);
-            if (!touchDragActive && (dx > 8 || dy > 8)) {
+            if (!touchDragActive && (dx > TOUCH_MOVE_THRESHOLD || dy > TOUCH_MOVE_THRESHOLD)) {
               if (touchLongPressTimer !== null && typeof window !== 'undefined') {
                 clearTimeout(touchLongPressTimer);
                 touchLongPressTimer = null;
+              }
+              if (touchDragReady && !this.selectionModeActive) {
+                touchDragActive = true;
+                onDragStartFromHandle?.(null);
               }
             }
 
@@ -2227,8 +2287,10 @@ export class ListPanelTableController {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
             }
+            touchDragReady = false;
 
             if (!touchDragActive) {
+              touchDraggedItemId = null;
               return;
             }
 
@@ -2258,8 +2320,10 @@ export class ListPanelTableController {
               clearTimeout(touchLongPressTimer);
               touchLongPressTimer = null;
             }
+            touchDragReady = false;
 
             if (!touchDragActive) {
+              touchDraggedItemId = null;
               return;
             }
 
@@ -2835,6 +2899,7 @@ export class ListPanelTableController {
     });
     this.lastSelectedRowIndex = null;
     this.keyboardSelectionAnchorIndex = null;
+    this.selectionModeActive = false;
     this.updateSelectionButtons();
   }
 
@@ -2864,6 +2929,19 @@ export class ListPanelTableController {
     return true;
   }
 
+  getSelectedItemIds(): string[] {
+    const state = this.renderState;
+    if (!state) {
+      return [];
+    }
+    return Array.from(
+      state.tbody.querySelectorAll<HTMLTableRowElement>('.list-item-row.list-item-selected'),
+    )
+      .map((row) => row.dataset['itemId'])
+      .filter((itemId): itemId is string => typeof itemId === 'string' && itemId.trim().length > 0)
+      .map((itemId) => itemId.trim());
+  }
+
   selectVisible(bodyEl: HTMLElement): void {
     const rows = Array.from(bodyEl.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
 
@@ -2890,6 +2968,40 @@ export class ListPanelTableController {
       row.classList.add('list-item-selected');
     }
     this.lastSelectedRowIndex = rows.length > 0 ? rows.length - 1 : null;
+    this.keyboardSelectionAnchorIndex = null;
+    this.updateSelectionButtons();
+  }
+
+  restoreSelection(bodyEl: HTMLElement, itemIds: string[]): void {
+    const normalizedIds = Array.from(
+      new Set(
+        itemIds
+          .filter((itemId): itemId is string => typeof itemId === 'string' && itemId.trim().length > 0)
+          .map((itemId) => itemId.trim()),
+      ),
+    );
+    const rows = Array.from(bodyEl.querySelectorAll<HTMLTableRowElement>('.list-item-row'));
+    if (rows.length === 0 || normalizedIds.length === 0) {
+      for (const row of rows) {
+        row.classList.remove('list-item-selected');
+      }
+      this.lastSelectedRowIndex = null;
+      this.keyboardSelectionAnchorIndex = null;
+      this.updateSelectionButtons();
+      return;
+    }
+
+    let lastSelectedIndex: number | null = null;
+    for (const row of rows) {
+      const itemId = row.dataset['itemId'] ?? '';
+      const shouldSelect = normalizedIds.includes(itemId);
+      row.classList.toggle('list-item-selected', shouldSelect);
+      if (shouldSelect) {
+        lastSelectedIndex = rows.indexOf(row);
+      }
+    }
+
+    this.lastSelectedRowIndex = lastSelectedIndex;
     this.keyboardSelectionAnchorIndex = null;
     this.updateSelectionButtons();
   }
@@ -3019,7 +3131,7 @@ export class ListPanelTableController {
     }
 
     const ignoredSelector =
-      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea, a, .collection-tag';
     return Boolean(target.closest(ignoredSelector));
   }
 
@@ -3029,7 +3141,7 @@ export class ListPanelTableController {
     }
 
     const ignoredSelector =
-      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea';
+      '.list-item-menu-trigger, .list-item-actions, input, button, select, textarea, a, .collection-tag';
     return Boolean(target.closest(ignoredSelector));
   }
 
@@ -3057,12 +3169,36 @@ export class ListPanelTableController {
   }
 
   private updateSelectionButtons(): void {
-    const clearButton = document.getElementById('clear-selection-button');
-    const deleteButton = document.getElementById('delete-selection-button');
-    const moveButton = document.getElementById('move-selected-button');
-    const copyButton = document.getElementById('copy-selected-button');
     const count = this.options.getSelectedItemCount();
     const hasSelection = count > 0;
+    if (!hasSelection) {
+      this.selectionModeActive = false;
+    }
+    const scopeRoot = this.getSelectionScopeRoot();
+    const clearButton = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="clear-selection-button"]',
+    );
+    const deleteButton = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="delete-selection-button"]',
+    );
+    const moveButton = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="move-selected-button"]',
+    );
+    const copyButton = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="copy-selected-button"]',
+    );
+    const selectionStatus = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="selection-status"]',
+    );
+    const actionsButton = scopeRoot?.querySelector<HTMLElement>(
+      '[data-role="list-actions-button"]',
+    );
+    const selectVisibleButton = scopeRoot?.querySelector<HTMLButtonElement>(
+      '[data-role="select-visible-button"]',
+    );
+    const selectAllButton = scopeRoot?.querySelector<HTMLButtonElement>(
+      '[data-role="select-all-button"]',
+    );
     if (clearButton) {
       clearButton.classList.toggle('visible', hasSelection);
     }
@@ -3075,7 +3211,53 @@ export class ListPanelTableController {
     if (copyButton) {
       copyButton.classList.toggle('visible', hasSelection);
     }
+    if (selectionStatus) {
+      selectionStatus.classList.toggle('visible', hasSelection);
+      selectionStatus.textContent = hasSelection
+        ? `${count} selected`
+        : 'No items selected';
+    }
+    if (selectVisibleButton) {
+      selectVisibleButton.hidden = hasSelection;
+    }
+    if (selectAllButton) {
+      selectAllButton.hidden = hasSelection;
+    }
     this.options.onSelectionChange?.();
+  }
+
+  private selectRowForSelectionMode(
+    row: HTMLTableRowElement,
+    tbody: HTMLTableSectionElement,
+  ): void {
+    const rows = Array.from(tbody.querySelectorAll('.list-item-row'));
+    if (this.options.getSelectedItemCount() === 0) {
+      rows.forEach((candidate) => candidate.classList.remove('list-item-selected'));
+    }
+    row.classList.add('list-item-selected');
+    this.keyboardSelectionAnchorIndex = null;
+    this.lastSelectedRowIndex = rows.indexOf(row);
+    this.updateSelectionButtons();
+  }
+
+  private getSelectionScopeRoot(): HTMLElement | null {
+    const tableEl = this.renderState?.tbody.closest('table');
+    const scopeRoot = tableEl?.closest('.collection-panel') ?? tableEl?.parentElement;
+    return scopeRoot instanceof HTMLElement ? scopeRoot : null;
+  }
+
+  private shouldSuppressTouchClickForRow(itemId: string | null): boolean {
+    if (!itemId || this.suppressedTouchClickItemId !== itemId) {
+      return false;
+    }
+    if (Date.now() > this.suppressedTouchClickUntil) {
+      this.suppressedTouchClickUntil = 0;
+      this.suppressedTouchClickItemId = null;
+      return false;
+    }
+    this.suppressedTouchClickUntil = 0;
+    this.suppressedTouchClickItemId = null;
+    return true;
   }
 
   private initializeColumnResizeHandles(

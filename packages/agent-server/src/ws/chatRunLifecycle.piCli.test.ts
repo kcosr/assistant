@@ -109,7 +109,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hi', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -194,7 +193,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hi', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -270,7 +268,6 @@ describe('handleTextInputWithChatCompletions (pi-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'run tool', sessionId: 's1' },
       state,
       sessionId: 's1',

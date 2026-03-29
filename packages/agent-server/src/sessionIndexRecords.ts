@@ -1,4 +1,4 @@
-import type { SessionAttributesPatch } from '@assistant/shared';
+import type { SessionAttributes, SessionAttributesPatch } from '@assistant/shared';
 import type { SessionSummary } from './sessionIndex';
 import { isPlainObject, mergeSessionAttributes } from './sessionAttributes';
 
@@ -10,6 +10,8 @@ export type SessionIndexRecord =
       agentId: string;
       model?: string;
       thinking?: string;
+      name?: string;
+      attributes?: SessionAttributes;
     }
   | {
       type: 'session_updated';
@@ -101,7 +103,13 @@ export function loadSessionIndexFromFileContent(
       }
 
       if (parsed.type === 'session_created') {
-        const created = parsed as { agentId?: unknown; model?: unknown; thinking?: unknown } &
+        const created = parsed as {
+          agentId?: unknown;
+          model?: unknown;
+          thinking?: unknown;
+          name?: unknown;
+          attributes?: unknown;
+        } &
           typeof parsed;
         summary.createdAt = timestamp;
         summary.updatedAt = timestamp;
@@ -113,6 +121,18 @@ export function loadSessionIndexFromFileContent(
         }
         if (typeof created.thinking === 'string' && created.thinking.length > 0) {
           summary.thinking = created.thinking;
+        }
+        if (typeof created.name === 'string' && created.name.length > 0) {
+          summary.name = created.name;
+        }
+        if (isPlainObject(created.attributes)) {
+          const nextAttributes = mergeSessionAttributes(
+            summary.attributes,
+            created.attributes as SessionAttributesPatch,
+          );
+          if (Object.keys(nextAttributes).length > 0) {
+            summary.attributes = nextAttributes;
+          }
         }
       } else if (parsed.type === 'session_updated') {
         const updated = parsed as { lastSnippet?: unknown } & typeof parsed;

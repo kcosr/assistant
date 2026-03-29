@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
+import fs from 'node:fs/promises';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +14,7 @@ import type { SessionIndex, SessionSummary } from '../sessionIndex';
 import type { SessionMessageStartResult } from '../sessionMessages';
 import type { ToolHost } from '../tools';
 import { ScheduledSessionService } from './scheduledSessionService';
+import { ScheduledSessionStore } from './scheduledSessionStore';
 
 type SpawnResult = {
   exitCode: number;
@@ -22,25 +26,34 @@ type SpawnResult = {
 type SpawnCall = {
   command: string;
   args: string[];
+  options?: unknown;
+  child: EventEmitter & {
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: ReturnType<typeof vi.fn>;
+    pid?: number;
+  };
 };
 
 function createSpawnStub(results: SpawnResult[]) {
   const calls: SpawnCall[] = [];
   const pending: Array<{ child: EventEmitter; result: SpawnResult }> = [];
 
-  const spawnFn = ((command: string, args: string[]) => {
+  const spawnFn = ((command: string, args: string[], options?: unknown) => {
     const result = results.shift() ?? { exitCode: 0 };
     const child = new EventEmitter() as EventEmitter & {
       stdout: PassThrough;
       stderr: PassThrough;
-      kill: () => void;
+      kill: ReturnType<typeof vi.fn>;
+      pid?: number;
     };
 
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     child.kill = vi.fn();
+    child.pid = 4321 + calls.length;
 
-    calls.push({ command, args });
+    calls.push({ command, args, options, child });
 
     if (result.defer) {
       pending.push({ child, result });
@@ -78,7 +91,14 @@ function createService(
     prompt?: string | null;
     preCheck?: string | null;
     sessionTitle?: string | null;
+    sessionConfig?: {
+      model?: string;
+      thinking?: string;
+      workingDir?: string;
+      skills?: string[];
+    };
     enabled?: boolean;
+    reuseSession?: boolean;
     maxConcurrent?: number;
   }> = {},
   spawnFn?: typeof import('node:child_process').spawn,
@@ -94,11 +114,24 @@ function createService(
     id: scheduleOverrides.id ?? 'daily-review',
     cron: scheduleOverrides.cron ?? '0 9 * * *',
     enabled: scheduleOverrides.enabled ?? false,
+    reuseSession: scheduleOverrides.reuseSession ?? true,
     maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
+    ...(scheduleOverrides.sessionConfig ? { sessionConfig: scheduleOverrides.sessionConfig } : {}),
   };
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
+  mkdirSync(storeDir, { recursive: true });
+  const { id: scheduleId, ...persistedSchedule } = schedule;
+  writeFileSync(
+    path.join(storeDir, 'schedules.json'),
+    `${JSON.stringify({
+      version: 1,
+      schedules: [{ agentId: 'agent', scheduleId, ...persistedSchedule }],
+    })}\n`,
+    'utf8',
+  );
 
   const registry = new AgentRegistry([
     {
@@ -107,9 +140,10 @@ function createService(
       description: 'Test agent',
       chat: {
         provider: 'codex-cli',
+        models: ['gpt-5.4', 'gpt-5.4-mini'],
+        thinking: ['low', 'medium'],
         config: { workdir: '/tmp' },
       },
-      schedules: [schedule],
     },
   ]);
 
@@ -123,11 +157,11 @@ function createService(
   const service = new ScheduledSessionService({
     agentRegistry: registry,
     logger,
-    dataDir: os.tmpdir(),
+    store: new ScheduledSessionStore(storeDir),
     ...(spawnFn ? { spawnFn } : {}),
   });
 
-  return { service, schedule };
+  return { service, schedule, storeDir };
 }
 
 function createSessionIndexStub() {
@@ -139,26 +173,70 @@ function createSessionIndexStub() {
   return {
     sessions,
     listSessions: vi.fn(async () => sessions.filter((session) => !session.deleted)),
-    createSession: vi.fn(async ({ agentId }: { agentId: string }) => {
-      const timestamp = now();
-      const summary: SessionSummary = {
-        sessionId: `session-${counter++}`,
+    createSession: vi.fn(
+      async ({
         agentId,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      sessions.push(summary);
-      return { ...summary };
-    }),
+        model,
+        thinking,
+        name,
+        attributes,
+      }: {
+        agentId: string;
+        model?: string;
+        thinking?: string;
+        name?: string;
+        attributes?: Record<string, unknown>;
+      }) => {
+        const timestamp = now();
+        const summary: SessionSummary = {
+          sessionId: `session-${counter++}`,
+          agentId,
+          ...(model ? { model } : {}),
+          ...(thinking ? { thinking } : {}),
+          ...(name ? { name } : {}),
+          ...(attributes ? { attributes } : {}),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        sessions.push(summary);
+        return { ...summary };
+      },
+    ),
     updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
       const session = sessions.find((item) => item.sessionId === sessionId);
       if (!session) {
         return null;
       }
-      session.attributes = {
-        ...(session.attributes ?? {}),
-        ...(patch as Record<string, unknown>),
-      };
+      session.attributes = mergeAttributeObjects(
+        session.attributes as Record<string, unknown> | undefined,
+        patch as Record<string, unknown>,
+      );
+      session.updatedAt = now();
+      return { ...session };
+    }),
+    setSessionModel: vi.fn(async (sessionId: string, model: string | null) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        return null;
+      }
+      if (model === null) {
+        delete session.model;
+      } else {
+        session.model = model;
+      }
+      session.updatedAt = now();
+      return { ...session };
+    }),
+    setSessionThinking: vi.fn(async (sessionId: string, thinking: string | null) => {
+      const session = sessions.find((item) => item.sessionId === sessionId);
+      if (!session) {
+        return null;
+      }
+      if (thinking === null) {
+        delete session.thinking;
+      } else {
+        session.thinking = thinking;
+      }
       session.updatedAt = now();
       return { ...session };
     }),
@@ -178,6 +256,32 @@ function createSessionIndexStub() {
   };
 }
 
+function mergeAttributeObjects(
+  base: Record<string, unknown> | undefined,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...(base ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    const existing = result[key];
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      existing &&
+      typeof existing === 'object' &&
+      !Array.isArray(existing)
+    ) {
+      result[key] = mergeAttributeObjects(
+        existing as Record<string, unknown>,
+        value as Record<string, unknown>,
+      );
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function createServiceWithSessions(
   scheduleOverrides: Partial<{
     id: string;
@@ -185,7 +289,14 @@ function createServiceWithSessions(
     prompt?: string | null;
     preCheck?: string | null;
     sessionTitle?: string | null;
+    sessionConfig?: {
+      model?: string;
+      thinking?: string;
+      workingDir?: string;
+      skills?: string[];
+    };
     enabled?: boolean;
+    reuseSession?: boolean;
     maxConcurrent?: number;
   }> = {},
 ) {
@@ -200,11 +311,24 @@ function createServiceWithSessions(
     id: scheduleOverrides.id ?? 'daily-review',
     cron: scheduleOverrides.cron ?? '0 9 * * *',
     enabled: scheduleOverrides.enabled ?? false,
+    reuseSession: scheduleOverrides.reuseSession ?? true,
     maxConcurrent: scheduleOverrides.maxConcurrent ?? 1,
     ...(resolvedPrompt ? { prompt: resolvedPrompt } : {}),
     ...(resolvedPreCheck ? { preCheck: resolvedPreCheck } : {}),
     ...(scheduleOverrides.sessionTitle ? { sessionTitle: scheduleOverrides.sessionTitle } : {}),
+    ...(scheduleOverrides.sessionConfig ? { sessionConfig: scheduleOverrides.sessionConfig } : {}),
   };
+  const storeDir = mkdtempSync(path.join(os.tmpdir(), 'scheduled-sessions-'));
+  mkdirSync(storeDir, { recursive: true });
+  const { id: scheduleId, ...persistedSchedule } = schedule;
+  writeFileSync(
+    path.join(storeDir, 'schedules.json'),
+    `${JSON.stringify({
+      version: 1,
+      schedules: [{ agentId: 'agent', scheduleId, ...persistedSchedule }],
+    })}\n`,
+    'utf8',
+  );
 
   const registry = new AgentRegistry([
     {
@@ -213,9 +337,10 @@ function createServiceWithSessions(
       description: 'Test agent',
       chat: {
         provider: 'codex-cli',
+        models: ['gpt-5.4', 'gpt-5.4-mini'],
+        thinking: ['low', 'medium'],
         config: { workdir: '/tmp' },
       },
-      schedules: [schedule],
     },
   ]);
 
@@ -250,12 +375,23 @@ function createServiceWithSessions(
     updateSessionAttributes: vi.fn(async (sessionId: string, patch: unknown) => {
       return sessionIndex.updateSessionAttributes(sessionId, patch);
     }),
+    ensureSessionState: vi.fn(async (sessionId: string, summary?: SessionSummary) => ({
+      summary:
+        summary ??
+        sessionIndex.sessions.find((session) => session.sessionId === sessionId) ??
+        (() => {
+          throw new Error(`Session not found: ${sessionId}`);
+        })(),
+      chatMessages: [],
+      activeChatRun: null,
+      messageQueue: [],
+    })),
   };
 
   const service = new ScheduledSessionService({
     agentRegistry: registry,
     logger,
-    dataDir: os.tmpdir(),
+    store: new ScheduledSessionStore(storeDir),
     sessionIndex: sessionIndex as unknown as SessionIndex,
     sessionHub: sessionHub as unknown as SessionHub,
     envConfig: {} as EnvConfig,
@@ -263,7 +399,7 @@ function createServiceWithSessions(
     startSessionMessageFn,
   });
 
-  return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn };
+  return { service, schedule, sessionIndex, sessionHub, startSessionMessageFn, storeDir };
 }
 
 async function tick(): Promise<void> {
@@ -286,6 +422,73 @@ describe('ScheduledSessionService', () => {
     expect(second).toEqual({ status: 'skipped', reason: 'max_concurrent' });
 
     spawn.resolvePending();
+    service.shutdown();
+  });
+
+  it('creates, updates, and deletes runtime schedules', async () => {
+    const { service, storeDir } = createService();
+
+    await service.initialize();
+
+    const created = await service.createSchedule('agent', {
+      cron: '*/15 * * * *',
+      prompt: 'Runtime review',
+      sessionTitle: 'Runtime Review',
+      enabled: true,
+    });
+
+    expect(created.scheduleId).toMatch(/^schedule-/);
+    expect(created.sessionTitle).toBe('Runtime Review');
+    expect(created.reuseSession).toBe(true);
+
+    const updated = await service.updateSchedule('agent', created.scheduleId, {
+      cron: '0 * * * *',
+      preCheck: 'check.sh',
+      sessionTitle: null,
+      reuseSession: false,
+      maxConcurrent: 3,
+    });
+
+    expect(updated.cron).toBe('0 * * * *');
+    expect(updated.preCheck).toBe('check.sh');
+    expect(updated.sessionTitle).toBeUndefined();
+    expect(updated.reuseSession).toBe(false);
+    expect(updated.maxConcurrent).toBe(3);
+
+    expect(service.listSchedules().some((item) => item.scheduleId === created.scheduleId)).toBe(
+      true,
+    );
+
+    const deleted = await service.deleteSchedule('agent', created.scheduleId);
+    expect(deleted).toEqual({
+      agentId: 'agent',
+      scheduleId: created.scheduleId,
+      deleted: true,
+    });
+    expect(service.listSchedules().some((item) => item.scheduleId === created.scheduleId)).toBe(
+      false,
+    );
+
+    const persisted = JSON.parse(
+      await fs.readFile(path.join(storeDir, 'schedules.json'), 'utf8'),
+    ) as { schedules: Array<{ scheduleId: string }> };
+    expect(persisted.schedules.some((item) => item.scheduleId === created.scheduleId)).toBe(false);
+
+    service.shutdown();
+  });
+
+  it('preserves runtime enabled overrides when updates do not touch enabled', async () => {
+    const { service } = createService({ enabled: true });
+
+    await service.initialize();
+    await service.setEnabled('agent', 'daily-review', false);
+
+    const updated = await service.updateSchedule('agent', 'daily-review', {
+      sessionTitle: 'Nightly Review',
+    });
+
+    expect(updated.enabled).toBe(false);
+
     service.shutdown();
   });
 
@@ -330,20 +533,87 @@ describe('ScheduledSessionService', () => {
     service.shutdown();
   });
 
-  it('skips runs without prompt or pre-check', async () => {
-    const spawn = createSpawnStub([]);
-    const { service } = createService({ prompt: null, preCheck: null }, spawn.spawnFn);
+  it('allows maxConcurrent greater than one only to matter when reuseSession is false', async () => {
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }, { exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { enabled: false, reuseSession: false, maxConcurrent: 2 },
+      spawn.spawnFn,
+    );
 
     await service.initialize();
 
-    const result = await service.triggerRun('agent', 'daily-review');
-    expect(result).toEqual({ status: 'skipped', reason: 'no_prompt' });
+    const first = await service.triggerRun('agent', 'daily-review');
+    const second = await service.triggerRun('agent', 'daily-review');
+
+    expect(first.status).toBe('started');
+    expect(second.status).toBe('started');
+
+    spawn.resolvePending();
+    service.shutdown();
+  });
+
+  it('clamps effective concurrency to one when reuseSession is true', async () => {
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { enabled: false, reuseSession: true, maxConcurrent: 4 },
+      spawn.spawnFn,
+    );
+
+    await service.initialize();
+
+    const first = await service.triggerRun('agent', 'daily-review');
+    await tick();
+    const second = await service.triggerRun('agent', 'daily-review');
+
+    expect(first.status).toBe('started');
+    expect(second).toEqual({ status: 'skipped', reason: 'max_concurrent' });
+
+    spawn.resolvePending();
+    service.shutdown();
+  });
+
+  it('kills the full preCheck process group on timeout', async () => {
+    vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const spawn = createSpawnStub([{ exitCode: 0, defer: true }]);
+    const { service } = createService(
+      { prompt: 'Review deps', preCheck: 'sleep 60', enabled: false },
+      spawn.spawnFn,
+    );
+
+    await service.initialize();
+
+    const runPromise = service.triggerRun('agent', 'daily-review');
+    await vi.advanceTimersByTimeAsync(30_000);
+    await runPromise;
+
+    expect(spawn.calls).toHaveLength(1);
+    expect(spawn.calls[0]?.options).toMatchObject({ detached: process.platform !== 'win32' });
+
+    if (process.platform === 'win32') {
+      expect(spawn.calls[0]?.child.kill).toHaveBeenCalledWith('SIGTERM');
+    } else {
+      expect(killSpy).toHaveBeenCalledWith(-(spawn.calls[0]?.child.pid ?? 0), 'SIGTERM');
+    }
+
+    killSpy.mockRestore();
+    vi.useRealTimers();
+    service.shutdown();
+  });
+
+  it('rejects persisted schedules without prompt or pre-check', async () => {
+    const spawn = createSpawnStub([]);
+    const { service } = createService({ prompt: null, preCheck: null }, spawn.spawnFn);
+
+    await expect(service.initialize()).rejects.toThrow(
+      /schedule must define "prompt", "preCheck", or both/i,
+    );
     expect(spawn.calls).toHaveLength(0);
 
     service.shutdown();
   });
 
-  it('stores configured sessionTitle as core.autoTitle', async () => {
+  it('stores configured sessionTitle as an explicit session name', async () => {
     const { service, sessionIndex } = createServiceWithSessions({
       sessionTitle: 'Daily Review',
     });
@@ -353,11 +623,34 @@ describe('ScheduledSessionService', () => {
     await service.triggerRun('agent', 'daily-review');
     await tick();
 
-    const attributes = sessionIndex.sessions[0]?.attributes as
-      | { core?: { autoTitle?: string } }
-      | undefined;
-    expect(attributes?.core?.autoTitle).toBe('Daily Review');
-    expect(sessionIndex.renameSession).not.toHaveBeenCalled();
+    expect(sessionIndex.sessions[0]?.name).toBe('Daily Review');
+    expect(
+      (sessionIndex.sessions[0]?.attributes as { core?: { autoTitle?: string } } | undefined)?.core
+        ?.autoTitle,
+    ).toBeUndefined();
+
+    service.shutdown();
+  });
+
+  it('creates a fresh backing session for each run when reuseSession is false', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      reuseSession: false,
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(2);
+    expect(sessionIndex.sessions[0]?.attributes).toMatchObject({
+      scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+    });
+    expect(sessionIndex.sessions[1]?.attributes).toMatchObject({
+      scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+    });
 
     service.shutdown();
   });
@@ -375,6 +668,82 @@ describe('ScheduledSessionService', () => {
       | undefined;
     expect(attributes?.core?.autoTitle).toMatch(/^scheduled: agent\/daily-review @ /);
     expect(sessionIndex.renameSession).not.toHaveBeenCalled();
+
+    service.shutdown();
+  });
+
+  it('reconciles reused backing sessions from schedule sessionConfig on the next run', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      sessionConfig: {
+        model: 'gpt-5.4',
+        thinking: 'medium',
+        workingDir: '/tmp/first',
+      },
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    const updatedSchedule = await service.updateSchedule('agent', 'daily-review', {
+      sessionConfig: {
+        model: 'gpt-5.4-mini',
+        thinking: 'low',
+        workingDir: '/tmp/second',
+      },
+    });
+
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      model: 'gpt-5.4',
+      thinking: 'medium',
+      attributes: {
+        core: { workingDir: '/tmp/first' },
+      },
+    });
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      model: 'gpt-5.4-mini',
+      thinking: 'low',
+      attributes: {
+        core: { workingDir: '/tmp/second' },
+      },
+    });
+
+    expect(updatedSchedule.sessionConfig).toEqual({
+      model: 'gpt-5.4-mini',
+      thinking: 'low',
+      workingDir: '/tmp/second',
+    });
+
+    service.shutdown();
+  });
+
+  it('deleting a reused schedule leaves the backing session intact', async () => {
+    const { service, sessionIndex } = createServiceWithSessions({
+      sessionTitle: 'Daily Review',
+    });
+
+    await service.initialize();
+
+    await service.triggerRun('agent', 'daily-review');
+    await tick();
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+
+    await service.deleteSchedule('agent', 'daily-review');
+
+    expect(sessionIndex.sessions).toHaveLength(1);
+    expect(sessionIndex.sessions[0]).toMatchObject({
+      name: 'Daily Review',
+      attributes: {
+        scheduledSession: { agentId: 'agent', scheduleId: 'daily-review' },
+      },
+    });
 
     service.shutdown();
   });

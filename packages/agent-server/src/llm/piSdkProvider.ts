@@ -13,6 +13,7 @@ import type {
   ToolResultMessage,
   Usage,
 } from '@mariozechner/pi-ai';
+import type { AssistantTextPhase } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
 
@@ -32,6 +33,12 @@ export interface PiSdkModelResolution {
   model: Model<Api>;
   providerId: string;
   modelId: string;
+}
+
+export interface PiAssistantTextBlock {
+  text: string;
+  phase?: AssistantTextPhase;
+  textSignature?: string;
 }
 
 type PiAiModule = typeof import('@mariozechner/pi-ai');
@@ -191,6 +198,62 @@ function parseToolResultIsError(content: string): boolean {
   return false;
 }
 
+export function parseAssistantTextSignature(
+  signature: string | undefined,
+): { id: string; phase?: AssistantTextPhase } | null {
+  if (typeof signature !== 'string' || !signature.startsWith('{')) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(signature) as { id?: unknown; phase?: unknown };
+    if (typeof parsed.id !== 'string' || parsed.id.trim().length === 0) {
+      return null;
+    }
+    const phase =
+      parsed.phase === 'commentary' || parsed.phase === 'final_answer'
+        ? parsed.phase
+        : undefined;
+    return { id: parsed.id, ...(phase ? { phase } : {}) };
+  } catch {
+    return null;
+  }
+}
+
+export function encodeAssistantTextSignature(options: {
+  id?: string;
+  phase?: AssistantTextPhase;
+}): string | undefined {
+  const id = options.id?.trim() || randomUUID();
+  const payload: { v: 1; id: string; phase?: AssistantTextPhase } = { v: 1, id };
+  if (options.phase) {
+    payload.phase = options.phase;
+  }
+  return JSON.stringify(payload);
+}
+
+export function extractAssistantTextBlocksFromPiMessage(
+  message: Message | undefined,
+): PiAssistantTextBlock[] {
+  if (!message || message.role !== 'assistant') {
+    return [];
+  }
+  const blocks: PiAssistantTextBlock[] = [];
+  for (const block of message.content) {
+    if (block.type !== 'text' || typeof block.text !== 'string' || block.text.length === 0) {
+      continue;
+    }
+    const parsedSignature = parseAssistantTextSignature(block.textSignature);
+    blocks.push({
+      text: block.text,
+      ...(parsedSignature?.phase ? { phase: parsedSignature.phase } : {}),
+      ...(typeof block.textSignature === 'string' && block.textSignature.length > 0
+        ? { textSignature: block.textSignature }
+        : {}),
+    });
+  }
+  return blocks;
+}
+
 export function buildPiContext(options: {
   messages: ChatCompletionMessage[];
   tools: PiTool[];
@@ -265,7 +328,16 @@ export function buildPiContext(options: {
       const blocks: Array<TextContent | ToolCall> = [];
       const content = message.content.trim();
       if (content) {
-        blocks.push({ type: 'text', text: content });
+        const textSignature =
+          message.assistantTextSignature ??
+          (message.assistantTextPhase
+            ? encodeAssistantTextSignature({ phase: message.assistantTextPhase })
+            : undefined);
+        blocks.push({
+          type: 'text',
+          text: content,
+          ...(textSignature ? { textSignature } : {}),
+        });
       }
 
       if (Array.isArray(message.tool_calls)) {
@@ -365,7 +437,11 @@ export async function runPiSdkChatCompletionIteration(options: {
   messages: ChatCompletionMessage[];
   tools: unknown[];
   abortSignal: AbortSignal;
-  onDeltaText: (deltaText: string, iterationText: string) => Promise<void> | void;
+  onDeltaText: (
+    deltaText: string,
+    iterationText: string,
+    phase?: AssistantTextPhase,
+  ) => Promise<void> | void;
   onThinkingStart?: () => Promise<void> | void;
   onThinkingDelta?: (delta: string) => Promise<void> | void;
   onThinkingDone?: (text: string) => Promise<void> | void;
@@ -454,7 +530,8 @@ export async function runPiSdkChatCompletionIteration(options: {
         case 'text_delta': {
           if (event.delta) {
             iterationText += event.delta;
-            await onDeltaText(event.delta, iterationText);
+            const phase = resolvedModel.api === 'openai-responses' ? 'final_answer' : undefined;
+            await onDeltaText(event.delta, iterationText, phase);
           }
           break;
         }

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 import type { ServerTextDoneMessage, ServerUserMessageMessage } from '@assistant/shared';
 import type { ChatEvent, TurnStartTrigger } from '@assistant/shared';
 
@@ -22,11 +23,56 @@ import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chat
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
+  logDebugChatEventRecord,
+  previewDebugText,
   resolveChatProvider,
   runChatCompletionCore,
 } from './chatRunCore';
+import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
-import { attachPiSdkMessageToLastAssistant } from './history/piSessionSync';
+import { resolveVisibleAssistantText } from './piAssistantText';
+import { attachPiSdkMessageToLastAssistant, buildMessagesForPiSync } from './history/piSessionSync';
+
+function buildAssistantDoneEvents(options: {
+  sessionId: string;
+  turnId?: string;
+  responseId: string;
+  fullText: string;
+  piSdkMessage: PiSdkMessage | undefined;
+}): ChatEvent[] {
+  const { sessionId, turnId, responseId, fullText, piSdkMessage } = options;
+  const base = createChatEventBase({
+    sessionId,
+    ...(turnId ? { turnId } : {}),
+    responseId,
+  });
+  const piBlocks = extractAssistantTextBlocksFromPiMessage(piSdkMessage);
+  if (piBlocks.length > 0) {
+    return piBlocks
+      .filter((block) => block.text.trim().length > 0)
+      .map((block) => ({
+        ...base,
+        id: randomUUID(),
+        type: 'assistant_done' as const,
+        payload: {
+          text: block.text,
+          ...(block.phase ? { phase: block.phase } : {}),
+          ...(block.textSignature ? { textSignature: block.textSignature } : {}),
+        },
+      }));
+  }
+  if (!fullText.trim()) {
+    return [];
+  }
+  return [
+    {
+      ...base,
+      id: randomUUID(),
+      type: 'assistant_done',
+      payload: { text: fullText },
+    },
+  ];
+}
 
 export interface ChatProcessorOptions {
   sessionId: string;
@@ -379,8 +425,9 @@ export async function processUserMessage(
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const messagesForPiSync = runResult.piReplayMessages ?? state.chatMessages;
           const messages = attachPiSdkMessageToLastAssistant({
-            messages: state.chatMessages,
+            messages: messagesForPiSync,
             ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
           });
           const updatedSummary = await piSessionWriter.sync({
@@ -413,11 +460,17 @@ export async function processUserMessage(
     if (shouldLogAssistant) {
       const active = state.activeChatRun;
       const ttsSessionForRun = active?.ttsSession;
+      const visibleAssistant = resolveVisibleAssistantText({
+        fullText,
+        ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+      });
 
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
         responseId,
-        text: fullText,
+        text: visibleAssistant.text,
+        ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
+        ...(visibleAssistant.textSignature ? { textSignature: visibleAssistant.textSignature } : {}),
         ...(agentExchangeId ? { agentExchangeId } : {}),
       };
       console.log('[chatProcessor] broadcasting text_done', {
@@ -428,16 +481,35 @@ export async function processUserMessage(
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
       if (shouldEmitChatEvents && eventStore && turnId) {
-        const events: ChatEvent[] = [
-          {
-            ...createChatEventBase({
+        const assistantDoneEvents = buildAssistantDoneEvents({
+          sessionId,
+          turnId,
+          responseId,
+          fullText,
+          piSdkMessage: runResult.piSdkMessage,
+        }) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+        for (const event of assistantDoneEvents) {
+          logDebugChatEventRecord({
+            enabled: envConfig.debugChatCompletions,
+            dataDir: envConfig.dataDir,
+            log,
+            record: {
+              timestamp: new Date().toISOString(),
+              direction: 'event',
+              eventType: 'assistant_done',
+              provider: runResult.provider,
               sessionId,
-              ...(turnId ? { turnId } : {}),
               responseId,
-            }),
-            type: 'assistant_done',
-            payload: { text: fullText },
-          },
+              ...(turnId ? { turnId } : {}),
+              phase: event.payload.phase ?? null,
+              textLength: event.payload.text.length,
+              textPreview: previewDebugText(event.payload.text),
+              interrupted: event.payload.interrupted ?? false,
+            },
+          });
+        }
+        const events: ChatEvent[] = [
+          ...assistantDoneEvents,
           {
             ...createChatEventBase({
               sessionId,
@@ -462,11 +534,13 @@ export async function processUserMessage(
       }
       void sessionHub.recordSessionActivity(
         sessionId,
-        fullText.length > 120 ? `${fullText.slice(0, 117)}…` : fullText,
+        visibleAssistant.text.length > 120
+          ? `${visibleAssistant.text.slice(0, 117)}…`
+          : visibleAssistant.text,
       );
       state.chatMessages.push({
         role: 'assistant',
-        content: fullText,
+        content: visibleAssistant.text,
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 
@@ -476,9 +550,19 @@ export async function processUserMessage(
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+          const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
+            role: 'assistant',
+            content: visibleAssistant.text,
+            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
+          };
+          const messagesForPiSync = buildMessagesForPiSync({
+            stateMessages: state.chatMessages,
+            ...(runResult.piReplayMessages ? { replayMessages: runResult.piReplayMessages } : {}),
+            finalAssistantMessage,
+          });
           const updatedSummary = await piSessionWriter.sync({
             summary: state.summary,
-            messages: state.chatMessages,
+            messages: messagesForPiSync,
             ...(modelSpec ? { modelSpec } : {}),
             ...(defaultProvider ? { defaultProvider } : {}),
             ...(thinkingLevel ? { thinkingLevel } : {}),

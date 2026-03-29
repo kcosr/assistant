@@ -61,11 +61,8 @@ export function getAgentAvailableThinkingLevels(agent: AgentDefinition | undefin
     return [];
   }
 
-  if (
-    agent.chat.provider !== 'pi' &&
-    agent.chat.provider !== 'pi-cli' &&
-    agent.chat.provider !== 'codex-cli'
-  ) {
+  const provider = agent.chat.provider ?? 'pi';
+  if (provider !== 'pi' && provider !== 'pi-cli' && provider !== 'codex-cli') {
     return [];
   }
 

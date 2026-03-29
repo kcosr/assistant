@@ -84,7 +84,6 @@ describe('ws external forwarding', () => {
     const sendError = vi.fn();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hello', sessionId: summary.sessionId },
       state,
       sessionId: summary.sessionId,
@@ -183,7 +182,6 @@ describe('ws external forwarding', () => {
     const sendError = vi.fn();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hello', sessionId: summary.sessionId },
       state,
       sessionId: summary.sessionId,

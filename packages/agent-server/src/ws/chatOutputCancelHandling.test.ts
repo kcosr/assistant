@@ -7,7 +7,7 @@ import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
 
 describe('handleChatOutputCancel', () => {
-  it('emits interrupted assistant message and tool results for active tool calls', async () => {
+  it('persists interrupted partial assistant text alongside interrupted tool results', async () => {
     const sessionId = 'session-1';
     const responseId = 'resp-1';
 
@@ -89,8 +89,13 @@ describe('handleChatOutputCancel', () => {
 
     expect(abortController.signal.aborted).toBe(true);
 
-    const assistantEvent = events.find((event) => event.type === 'assistant_done');
-    expect(assistantEvent?.payload?.text).toBe('Partial answer');
+    const assistantEvent = events.find((event) => event.type === 'assistant_done') as
+      | Extract<ChatEvent, { type: 'assistant_done' }>
+      | undefined;
+    expect(assistantEvent?.payload).toMatchObject({
+      text: 'Partial answer',
+      interrupted: true,
+    });
     const toolEvents = events.filter((event) => event.type === 'tool_result');
     const toolEventIds = toolEvents.map((event) => event.payload?.toolCallId).sort();
     expect(toolEventIds).toEqual(['call-1', 'call-2']);
@@ -112,12 +117,13 @@ describe('handleChatOutputCancel', () => {
     expect(state.activeChatRun?.activeToolCalls?.size).toBe(0);
     expect(state.chatMessages).toHaveLength(2);
     expect(state.chatMessages.every((msg) => msg.role === 'tool')).toBe(true);
+    expect(recordSessionActivity).not.toHaveBeenCalled();
 
     const interruptEvent = events.find((event) => event.type === 'interrupt');
     expect(interruptEvent).toBeDefined();
   });
 
-  it('persists the partial assistant message when no tools are running', async () => {
+  it('persists interrupted partial assistant text even when no tools are running', async () => {
     const sessionId = 'session-2';
     const responseId = 'resp-2';
 
@@ -179,8 +185,17 @@ describe('handleChatOutputCancel', () => {
     });
 
     expect(state.chatMessages).toHaveLength(0);
-    expect(recordSessionActivity).toHaveBeenCalledWith(sessionId, 'Partial answer');
+    const assistantEvent = events.find((event) => event.type === 'assistant_done') as
+      | Extract<ChatEvent, { type: 'assistant_done' }>
+      | undefined;
+    expect(assistantEvent?.payload).toMatchObject({
+      text: 'Partial answer',
+      interrupted: true,
+    });
+    expect(recordSessionActivity).not.toHaveBeenCalled();
     expect(broadcastMessages.find((m) => m.type === 'tool_result')).toBeUndefined();
+    const interruptEvent = events.find((event) => event.type === 'interrupt');
+    expect(interruptEvent).toBeDefined();
   });
 
   it('skips interrupt logging when no output has started', async () => {

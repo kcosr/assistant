@@ -47,13 +47,21 @@ export const UserAudioPayloadSchema = z.object({
 });
 export type UserAudioPayload = z.infer<typeof UserAudioPayloadSchema>;
 
+export const AssistantTextPhaseSchema = z.enum(['commentary', 'final_answer']);
+export type AssistantTextPhase = z.infer<typeof AssistantTextPhaseSchema>;
+
 export const AssistantChunkPayloadSchema = z.object({
   text: z.string(),
+  phase: AssistantTextPhaseSchema.optional(),
+  textSignature: z.string().optional(),
 });
 export type AssistantChunkPayload = z.infer<typeof AssistantChunkPayloadSchema>;
 
 export const AssistantDonePayloadSchema = z.object({
   text: z.string(),
+  phase: AssistantTextPhaseSchema.optional(),
+  textSignature: z.string().optional(),
+  interrupted: z.boolean().optional(),
 });
 export type AssistantDonePayload = z.infer<typeof AssistantDonePayloadSchema>;
 

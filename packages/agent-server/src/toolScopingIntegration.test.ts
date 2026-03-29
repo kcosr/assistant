@@ -97,6 +97,18 @@ class StaticToolHost implements ToolHost {
   }
 }
 
+type RuntimeToolAccess = {
+  resolveSessionToolHost(state: unknown): ToolHost;
+  resolveChatCompletionTools(
+    state: unknown,
+    sessionToolHost: ToolHost,
+  ): Promise<{ specs: Array<{ function: { name: string } }> }>;
+};
+
+function getRuntimeToolAccess(session: Session): RuntimeToolAccess {
+  return (session as unknown as { runtime: RuntimeToolAccess }).runtime;
+}
+
 describe('Session tool scoping integration', () => {
   it('agent with toolAllowlist only sees matching tools plus system tools', async () => {
     const sessionsFile = createTempFile('tool-scoping-allowlist-sessions');
@@ -152,26 +164,11 @@ describe('Session tool scoping integration', () => {
     });
 
     const state = await sessionHub.attachConnection(session, summary.sessionId);
-    (session as unknown as { sessionId?: string }).sessionId = state.summary.sessionId;
-    (session as unknown as { sessionState?: unknown }).sessionState = state;
+    const runtime = getRuntimeToolAccess(session);
+    const scopedHost = runtime.resolveSessionToolHost(state);
+    const { specs } = await runtime.resolveChatCompletionTools(state, scopedHost);
 
-    await (
-      session as unknown as {
-        configureChatCompletionsSession(): Promise<void>;
-      }
-    ).configureChatCompletionsSession();
-
-    const tools = (
-      session as unknown as {
-        chatCompletionTools?: Array<{ function: { name: string } }>;
-      }
-    ).chatCompletionTools;
-
-    if (!tools) {
-      throw new Error('Expected chatCompletionTools to be initialised');
-    }
-
-    const toolNames = tools.map((tool) => tool.function.name).sort();
+    const toolNames = specs.map((tool) => tool.function.name).sort();
     expect(toolNames).toEqual(['system_sessions_list', 'todo_add']);
   });
 
@@ -236,26 +233,11 @@ describe('Session tool scoping integration', () => {
     });
 
     const state = await sessionHub.attachConnection(session, summary.sessionId);
-    (session as unknown as { sessionId?: string }).sessionId = state.summary.sessionId;
-    (session as unknown as { sessionState?: unknown }).sessionState = state;
+    const runtime = getRuntimeToolAccess(session);
+    const scopedHost = runtime.resolveSessionToolHost(state);
+    const { specs } = await runtime.resolveChatCompletionTools(state, scopedHost);
 
-    await (
-      session as unknown as {
-        configureChatCompletionsSession(): Promise<void>;
-      }
-    ).configureChatCompletionsSession();
-
-    const tools = (
-      session as unknown as {
-        chatCompletionTools?: Array<{ function: { name: string } }>;
-      }
-    ).chatCompletionTools;
-
-    if (!tools) {
-      throw new Error('Expected chatCompletionTools to be initialised');
-    }
-
-    const toolNames = tools.map((tool) => tool.function.name).sort();
+    const toolNames = specs.map((tool) => tool.function.name).sort();
     expect(toolNames).toEqual(['lists_list', 'lists_write', 'system_sessions_list']);
   });
 
@@ -312,26 +294,11 @@ describe('Session tool scoping integration', () => {
     });
 
     const state = await sessionHub.attachConnection(session, summary.sessionId);
-    (session as unknown as { sessionId?: string }).sessionId = state.summary.sessionId;
-    (session as unknown as { sessionState?: unknown }).sessionState = state;
+    const runtime = getRuntimeToolAccess(session);
+    const scopedHost = runtime.resolveSessionToolHost(state);
+    const { specs } = await runtime.resolveChatCompletionTools(state, scopedHost);
 
-    await (
-      session as unknown as {
-        configureChatCompletionsSession(): Promise<void>;
-      }
-    ).configureChatCompletionsSession();
-
-    const tools = (
-      session as unknown as {
-        chatCompletionTools?: Array<{ function: { name: string } }>;
-      }
-    ).chatCompletionTools;
-
-    if (!tools) {
-      throw new Error('Expected chatCompletionTools to be initialised');
-    }
-
-    const toolNames = tools.map((tool) => tool.function.name).sort();
+    const toolNames = specs.map((tool) => tool.function.name).sort();
     expect(toolNames).toEqual(['system_sessions_list', 'todo_add']);
   });
 
@@ -388,19 +355,8 @@ describe('Session tool scoping integration', () => {
     });
 
     const state = await sessionHub.attachConnection(session, summary.sessionId);
-    (session as unknown as { sessionId?: string }).sessionId = state.summary.sessionId;
-    (session as unknown as { sessionState?: unknown }).sessionState = state;
-
-    await (
-      session as unknown as {
-        configureSessionToolHost(): void;
-      }
-    ).configureSessionToolHost();
-
-    const scopedHost = (session as unknown as { sessionToolHost?: ToolHost }).sessionToolHost;
-    if (!scopedHost) {
-      throw new Error('Expected sessionToolHost to be initialised');
-    }
+    const runtime = getRuntimeToolAccess(session);
+    const scopedHost = runtime.resolveSessionToolHost(state);
 
     const ctx: ToolContext = {
       sessionId: state.summary.sessionId,

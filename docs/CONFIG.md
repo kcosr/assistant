@@ -323,7 +323,8 @@ Plugins can opt into automatic git snapshots of their data directories using `gi
 ##### Execution Mode (Coding Plugins)
 
 Plugins that execute code (like the coding/terminal plugin) can run in `local` or `sidecar` mode.
-All operations are rooted at a single workspace root (no per-session directories).
+In `local` mode, `local.workspaceRoot` may use the session-scoped macro `${session.workingDir}` so
+relative file paths and `bash` commands anchor to the session picker’s working directory.
 
 ```json
 {
@@ -350,7 +351,7 @@ All operations are rooted at a single workspace root (no per-session directories
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `mode` | string | Execution mode: `local` or `sidecar`. |
-| `local.workspaceRoot` | string | Root directory for local workspaces. |
+| `local.workspaceRoot` | string | Root directory for local workspaces. In `local` mode, `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
 | `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe). |
 | `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
 | `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |
@@ -412,8 +413,10 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
   "toolDenylist": [],
   "toolExposure": "skills",
   "skillAllowlist": ["notes"],
-  "sessionWorkingDirMode": "prompt",
-  "sessionWorkingDirRoots": ["/home/kevin/worktrees"],
+  "sessionWorkingDir": {
+    "mode": "prompt",
+    "roots": ["/home/kevin/worktrees"]
+  },
   "skills": [
     { "root": "~/skills", "available": ["*"], "inline": ["my-critical-*"] },
     { "root": "worktrees/assistant/skills" }
@@ -442,20 +445,26 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 | `capabilityDenylist` | array | Glob patterns for capability denylist. |
 | `agentAllowlist` | array | Glob patterns for agents this agent can delegate to. |
 | `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
-| `sessionWorkingDirMode` | string | Controls working directory picker on new session (`auto` or `prompt`). |
-| `sessionWorkingDirRoots` | array | Absolute base directories whose immediate subfolders are offered in the picker. |
+| `sessionWorkingDir` | object | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }` to leave `core.workingDir` unset by default. |
 | `uiVisible` | boolean | Hide from built-in UI if `false`. |
 | `apiExposed` | boolean | Reserved for external API tools (currently unused). |
-| `schedules` | array | Optional scheduled session definitions (CLI providers only). |
 
-#### Working directory picker
+#### Working directory behavior
 
-When `sessionWorkingDirMode` is set to `prompt`, the UI shows a working directory picker for
-new sessions created with that agent. The options are the immediate subdirectories of each
-path in `sessionWorkingDirRoots` (all of which must be absolute paths).
+When `sessionWorkingDir` is set to `{ "mode": "prompt", "roots": [...] }`, the UI shows a
+working directory picker for new sessions created with that agent. The options are the
+immediate subdirectories of each configured root (all of which must be absolute paths).
 
-The picker displays only the folder name in the list (full path is used internally). When a
-directory is selected, the system prompt includes a line `Project directory: <full-path>`.
+When `sessionWorkingDir` is set to `{ "mode": "fixed", "path": "/abs/path" }`, new sessions
+for that agent automatically use the fixed directory without prompting.
+
+When `sessionWorkingDir` is set to `{ "mode": "none" }`, new sessions do not get a default
+working directory from the agent. This is equivalent to omitting the field and makes the
+intent explicit in config.
+
+The selected or fixed directory is stored in `attributes.core.workingDir` and can be consumed
+by other systems such as `${session.workingDir}` CLI macros and the coding plugin's local
+workspace configuration.
 
 #### Instruction skills (`skills`)
 
@@ -560,59 +569,38 @@ Supported providers:
 
 #### Scheduled sessions
 
-Scheduled sessions run cron-driven CLI sessions. They only work with CLI providers
-(`claude-cli`, `codex-cli`, `pi-cli`).
+Scheduled sessions are no longer configured on agents. Use the `scheduled-sessions` plugin to
+create and manage them dynamically. They are stored in the plugin data directory under
+`data/plugins/scheduled-sessions/default/schedules.json`.
 
-```json
-{
-  "agents": [
-    {
-      "agentId": "repo-maintainer",
-      "displayName": "Repo Maintainer",
-      "chat": {
-        "provider": "codex-cli",
-        "config": { "workdir": "/path/to/repo" }
-      },
-      "schedules": [
-        {
-          "id": "daily-review",
-          "cron": "0 9 * * *",
-          "sessionTitle": "Daily Repo Review",
-          "prompt": "Review open PRs and issues. Summarize status.",
-          "enabled": true,
-          "maxConcurrent": 1
-        },
-        {
-          "id": "deps-check",
-          "cron": "0 * * * *",
-          "preCheck": "/path/to/check-outdated-deps.sh",
-          "prompt": "The following dependencies are outdated:",
-          "enabled": true,
-          "maxConcurrent": 1
-        }
-      ]
-    }
-  ]
-}
-```
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `id` | string | - | Unique identifier within the agent. |
-| `cron` | string | - | 5-field cron expression. Invalid cron values prevent startup. |
-| `prompt` | string | - | Optional static prompt text (must be non-empty if provided). |
-| `preCheck` | string | - | Optional shell command to run before the session. |
-| `sessionTitle` | string | - | Optional static auto title; when omitted a default scheduled name with timestamp is used. |
-| `enabled` | boolean | `true` | Whether the schedule is active by default. |
-| `maxConcurrent` | number | `1` | Max concurrent runs allowed for the schedule. |
+Each persisted schedule record includes:
+- `agentId`
+- `scheduleId`
+- `cron`
+- optional `prompt`
+- optional `preCheck`
+- optional `sessionTitle`
+- optional `sessionConfig`
+  - optional `model`
+  - optional `thinking`
+  - optional `workingDir`
+  - optional `skills`
+- `enabled`
+- `reuseSession` (defaults to `true`)
+- `maxConcurrent`
 
 Notes:
-- Each schedule must define `prompt`, `preCheck`, or both. If the combined prompt is empty after trimming, the run is skipped.
-- `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured. Non-zero exit codes skip the run; stdout is appended to `prompt` with a blank line.
-- Scheduled runs create or reuse a session tagged `scheduledSession` (`agentId` + `scheduleId`) and update `attributes.core.autoTitle` on every run (using `sessionTitle` or the default timestamped name).
-- Manual renames in the UI are preserved; clearing the name falls back to the latest auto title.
-- `enabled: false` disables automatic runs; manual runs via the scheduled-sessions plugin/API ignore `enabled` but still respect `maxConcurrent` unless `force` is set.
-- Enable the `scheduled-sessions` plugin to view status, toggle schedules, and trigger runs.
+- Each schedule must define `prompt`, `preCheck`, or both.
+- `sessionConfig` values are validated against the selected agent on create/update and
+  revalidated when a scheduled run starts.
+- `sessionTitle` stays a top-level schedule field; it is not part of scheduled `sessionConfig`.
+- `preCheck` runs in the agent `chat.config.workdir` and uses the wrapper environment when configured.
+- When `reuseSession` is `true`, scheduled runs reuse one backing session per `agentId + scheduleId`.
+- Reused scheduled sessions are created up front and reconciled from the schedule on later runs
+  after edits.
+- When `reuseSession` is `false`, each run creates a fresh backing session.
+- `maxConcurrent` only matters when `reuseSession` is `false`.
+- Enable the `scheduled-sessions` plugin to create, edit, delete, run, and toggle schedules.
 
 #### `pi` Provider
 

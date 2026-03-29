@@ -58,6 +58,12 @@
   min-height: 0;
 }
 
+.lists-panel .collection-panel-content:focus,
+.lists-panel .collection-panel-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .collection-panel-content.note-edit-mode {
   display: flex;
   flex-direction: column;
@@ -1339,6 +1345,9 @@
 
 .collection-list-actions-wrapper {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
 .collection-list-actions-button {
@@ -1362,6 +1371,23 @@
   background-color: var(--color-bg-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-strong);
+}
+
+.collection-list-selection-status {
+  display: none;
+  align-items: center;
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-accent-primary);
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.collection-list-selection-status.visible {
+  display: inline-flex;
 }
 
 .collection-list-actions-menu {
@@ -2196,6 +2222,7 @@ table.collection-list-table td {
 .list-item-row {
   transition:
     background-color var(--transition-fast),
+    box-shadow var(--transition-fast),
     opacity var(--transition-fast);
   /* Prevent tap highlight on mobile */
   -webkit-tap-highlight-color: transparent;
@@ -2276,6 +2303,23 @@ body.list-row-dragging .list-item-row * {
 
 .list-item-selected > td {
   background-color: var(--color-bg-active);
+  box-shadow:
+    inset 0 1px 0 var(--color-accent-primary),
+    inset 0 -1px 0 var(--color-accent-primary);
+}
+
+.list-item-selected > td:first-child {
+  box-shadow:
+    inset 1px 0 0 var(--color-accent-primary),
+    inset 0 1px 0 var(--color-accent-primary),
+    inset 0 -1px 0 var(--color-accent-primary);
+}
+
+.list-item-selected > td:last-child {
+  box-shadow:
+    inset -1px 0 0 var(--color-accent-primary),
+    inset 0 1px 0 var(--color-accent-primary),
+    inset 0 -1px 0 var(--color-accent-primary);
 }
 
 .list-item-highlight {

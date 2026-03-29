@@ -157,30 +157,12 @@ export function prepareForMarkdown(text: string): string {
     result = result + '**';
   }
 
-  // Count unescaped __ markers
-  const boldUnderscorePattern = /(?<![_\\])__(?!_)/g;
-  const boldUnderscoreMatches = countMatchesOutsideCode(result, boldUnderscorePattern, codeRanges);
-  if (boldUnderscoreMatches % 2 === 1) {
-    result = result + '__';
-  }
-
   // Handle single * for italic (must be careful not to interfere with bold)
   // Only match single * not adjacent to another *
   const italicPattern = /(?<![\\*])\*(?!\*)/g;
   const italicMatches = countMatchesOutsideCode(result, italicPattern, codeRanges);
   if (italicMatches % 2 === 1) {
     result = result + '*';
-  }
-
-  // Handle single _ for italic
-  const italicUnderscorePattern = /(?<![_\\])_(?!_)/g;
-  const italicUnderscoreMatches = countMatchesOutsideCode(
-    result,
-    italicUnderscorePattern,
-    codeRanges,
-  );
-  if (italicUnderscoreMatches % 2 === 1) {
-    result = result + '_';
   }
 
   // Handle unclosed strikethrough ~~

@@ -11,7 +11,6 @@ export interface ConfirmDialogOptions {
   keydownStopsPropagation?: boolean;
   confirmCloseBehavior?: DialogButtonCloseBehavior;
   cancelCloseBehavior?: DialogButtonCloseBehavior;
-  removeKeydownOnButtonClick?: boolean;
   focusConfirmButton?: boolean;
 }
 
@@ -59,7 +58,6 @@ export class DialogManager {
       keydownStopsPropagation = false,
       confirmCloseBehavior = 'remove-only',
       cancelCloseBehavior = 'remove-only',
-      removeKeydownOnButtonClick = false,
       focusConfirmButton = true,
     } = options;
 
@@ -152,8 +150,12 @@ export class DialogManager {
       }
 
       overlay.remove();
-      if (removeKeydownOnButtonClick) {
-        document.removeEventListener('keydown', handleKeyDown);
+      // Remove listeners and release dialog state even for remove-only behavior.
+      document.removeEventListener('keydown', handleKeyDown);
+      if (this.activeDialogOverlay === overlay) {
+        this.activeDialogOverlay = null;
+        this.activeDialogCleanup = null;
+        this.hasOpenDialog = false;
       }
       callback?.();
     };

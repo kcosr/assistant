@@ -864,10 +864,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const parsed = asObject(args);
         const { store: listsStore } = await resolveStore(parsed);
         const listId = requireNonEmptyString(parsed['listId'], 'listId');
-        const limit = parsed['limit'];
-        if (limit !== undefined && typeof limit !== 'number') {
+        const limitValue = parsed['limit'];
+        if (limitValue !== undefined && typeof limitValue !== 'number') {
           throw new ToolError('invalid_arguments', 'limit must be a number');
         }
+        const limit = (limitValue as number | undefined) ?? 100;
         const sort = parsed['sort'];
         if (sort !== undefined && sort !== 'position' && sort !== 'newest' && sort !== 'oldest') {
           throw new ToolError('invalid_arguments', 'sort must be position, newest, or oldest');
@@ -876,7 +877,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const tagMatch = parseTagMatch(parsed['tagMatch']);
         return listsStore.listItems({
           listId,
-          ...(limit !== undefined ? { limit: limit as number } : {}),
+          limit,
           ...(sort !== undefined ? { sort: sort as 'position' | 'newest' | 'oldest' } : {}),
           ...(tags !== undefined ? { tags } : {}),
           tagMatch,

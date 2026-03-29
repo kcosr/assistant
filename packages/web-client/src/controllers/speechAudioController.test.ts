@@ -229,6 +229,41 @@ describe('SpeechAudioController.micButtonState', () => {
     expect(micButton.classList.contains('stopping')).toBe(false);
     expect(micButton.getAttribute('aria-label')).toBe('Voice input');
   });
+
+  it('clears stale stop and interrupting classes on connection cleanup', () => {
+    const micButton = document.createElement('button');
+    micButton.classList.add('stopping', 'interrupting', 'recording');
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => false,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+    });
+
+    controller.onConnectionLostCleanup();
+
+    expect(micButton.classList.contains('recording')).toBe(false);
+    expect(micButton.classList.contains('interrupting')).toBe(false);
+    expect(micButton.classList.contains('stopping')).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+  });
 });
 
 describe('SpeechAudioController.longPress', () => {

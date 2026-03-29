@@ -76,4 +76,47 @@ describe('ServerMessageHandler agent_callback_result typing indicator', () => {
 
     expect(typingIndicators.size).toBe(0);
   });
+
+  it('resets pending interaction state on reconnect cleanup', async () => {
+    const { handler, typingIndicators } = makeHandler();
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'e-pending',
+        type: 'interaction_pending',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 't-1',
+        responseId: 'r-1',
+        payload: {
+          toolCallId: 'tool-1',
+          pending: true,
+          toolName: 'agents_message',
+          presentation: 'tool',
+        },
+      },
+    });
+
+    handler.resetRealtimeState();
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'e-chunk',
+        type: 'assistant_chunk',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 't-1',
+        responseId: 'r-1',
+        payload: {
+          text: 'Done.',
+        },
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(true);
+  });
 });

@@ -3,7 +3,15 @@ import path from 'node:path';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
 
-import type { AgentDefinition } from '../../../../agent-server/src/agents';
+import type {
+  AgentDefinition,
+  AgentSessionWorkingDirConfig,
+} from '../../../../agent-server/src/agents';
+import {
+  getAgentAvailableModels,
+  getAgentAvailableThinkingLevels,
+} from '../../../../agent-server/src/sessionModel';
+import { resolveSessionConfigCapabilities } from '../../../../agent-server/src/sessionConfig';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import { matchesGlobPattern } from '../../../../agent-server/src/tools/scoping';
@@ -17,8 +25,16 @@ type AgentSummary = {
   description?: string;
   type?: 'chat' | 'external';
   supportedArtifactTypes?: string[];
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?: AgentSessionWorkingDirConfig;
+  sessionConfigCapabilities?: {
+    availableModels?: string[];
+    availableThinking?: string[];
+    availableSkills?: Array<{
+      id: string;
+      name: string;
+      description: string;
+    }>;
+  };
 };
 
 type ListAgentsResult = {
@@ -180,15 +196,41 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
     visibleAgents = visibleAgents.filter((agent) => agent.agentId !== currentAgentId);
   }
 
-  const summaries: AgentSummary[] = visibleAgents.map((agent) => ({
-    agentId: agent.agentId,
-    displayName: agent.displayName,
-    description: agent.description,
-    type: agent.type ?? 'chat',
-    supportedArtifactTypes: computeSupportedArtifactTypes(agent),
-    ...(agent.sessionWorkingDirMode ? { sessionWorkingDirMode: agent.sessionWorkingDirMode } : {}),
-    ...(agent.sessionWorkingDirRoots ? { sessionWorkingDirRoots: agent.sessionWorkingDirRoots } : {}),
-  }));
+  const summaries: AgentSummary[] = [];
+  for (const agent of visibleAgents) {
+    const models = getAgentAvailableModels(agent);
+    const thinking = getAgentAvailableThinkingLevels(agent);
+    const capabilities = await resolveSessionConfigCapabilities({
+      agent,
+      sessionHub: ctx.sessionHub,
+      baseToolHost: ctx.baseToolHost,
+    });
+    summaries.push({
+      agentId: agent.agentId,
+      displayName: agent.displayName,
+      description: agent.description,
+      type: agent.type ?? 'chat',
+      supportedArtifactTypes: computeSupportedArtifactTypes(agent),
+      ...(agent.sessionWorkingDir ? { sessionWorkingDir: agent.sessionWorkingDir } : {}),
+      ...(models.length > 0 || thinking.length > 0 || capabilities.skills.length > 0
+        ? {
+            sessionConfigCapabilities: {
+              ...(models.length > 0 ? { availableModels: models } : {}),
+              ...(thinking.length > 0 ? { availableThinking: thinking } : {}),
+              ...(capabilities.skills.length > 0
+                ? {
+                    availableSkills: capabilities.skills.map((skill) => ({
+                      id: skill.id,
+                      name: skill.name,
+                      description: skill.description,
+                    })),
+                  }
+                : {}),
+            },
+          }
+        : {}),
+    });
+  }
 
   return { agents: summaries };
 }
@@ -205,7 +247,7 @@ async function listWorkingDirs(args: unknown, ctx: ToolContext): Promise<ListWor
     throw new ToolError('invalid_arguments', `Unknown agent: ${parsed.agentId}`);
   }
 
-  const roots = agent.sessionWorkingDirRoots ?? [];
+  const roots = agent.sessionWorkingDir?.mode === 'prompt' ? agent.sessionWorkingDir.roots : [];
   if (roots.length === 0) {
     return { roots: [] };
   }

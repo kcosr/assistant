@@ -54,6 +54,7 @@ import { handleHello as handleHelloMessage } from './helloHandling';
 import type { SessionConnection } from './sessionConnection';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './toolCallHandling';
 import { updateSystemPromptWithTools } from '../systemPromptUpdater';
+import { filterSessionSkills, getSelectedSessionSkillIds } from '../sessionConfig';
 import type { WsTransport } from './wsTransport';
 
 export interface SessionRuntimeOptions {
@@ -69,31 +70,41 @@ export interface SessionRuntimeOptions {
   searchService?: SearchService;
 }
 
+type ToolResolutionDebugDetails = {
+  availableToolsCount: number;
+  visibleToolsCount: number;
+  skillCount: number;
+  toolNamesSample: string[];
+  visibleToolNamesSample: string[];
+  skillsSample: string[];
+  error?: string;
+};
+
+type ToolResolutionResult = {
+  specs: ReturnType<typeof mapToolsToChatCompletionSpecs>;
+  debug: ToolResolutionDebugDetails;
+};
+
 export class SessionRuntime {
-  private sessionId: string | undefined;
   private readonly transport: WsTransport;
   private readonly connection: SessionConnection;
   private readonly connectionId: string;
   private readonly config: EnvConfig;
   private readonly baseToolHost: ToolHost;
-  private sessionToolHost: ToolHost;
   private readonly openaiClient: OpenAI | undefined;
   private readonly sessionHub: SessionHub;
   private readonly eventStore: EventStore;
   private readonly scheduledSessionService: ScheduledSessionService | undefined;
   private readonly searchService: SearchService | undefined;
-  private sessionState: LogicalSessionState | undefined;
   private readonly activeRunStates = new Map<
     string,
     { sessionId: string; state: LogicalSessionState }
   >();
   private closed = false;
   private clientHelloReceived = false;
-  private ready = false;
   private messageQueue: Array<() => Promise<void>> = [];
   private processing = false;
 
-  private chatCompletionTools: ReturnType<typeof mapToolsToChatCompletionSpecs> = [];
   private inputMode: InputMode = 'text';
   private outputMode: OutputMode = 'text';
   private clientAudioCapabilities: ClientAudioCapabilities | undefined;
@@ -115,7 +126,6 @@ export class SessionRuntime {
     this.connectionId = options.connectionId ?? options.connection.id ?? 'unknown';
     this.config = options.config;
     this.baseToolHost = options.toolHost;
-    this.sessionToolHost = options.toolHost;
     this.sessionHub = options.sessionHub;
     this.openaiClient = options.openaiClient;
     this.eventStore = options.eventStore;
@@ -252,15 +262,6 @@ export class SessionRuntime {
       },
       connection: this.connection,
       sessionHub: this.sessionHub,
-      setSessionState: (state) => {
-        this.sessionState = state;
-      },
-      setSessionId: (sessionId) => {
-        this.sessionId = sessionId;
-      },
-      configureChatCompletionsSession: () => {
-        void this.configureChatCompletionsSession();
-      },
       onSessionSubscribed: (state) => {
         this.sendSessionReadyMessage(state);
       },
@@ -274,7 +275,7 @@ export class SessionRuntime {
   }
 
   private handleTextInput(message: ClientTextInputMessage): void {
-    if (!this.ready) {
+    if (!this.clientHelloReceived) {
       this.enqueue(() => this.handleTextInputWithChatCompletions(message));
       return;
     }
@@ -289,6 +290,26 @@ export class SessionRuntime {
         { retryable: true },
       );
     });
+  }
+
+  private async resolveSubscribedSessionState(
+    sessionId: string,
+    operation: string,
+  ): Promise<LogicalSessionState | undefined> {
+    try {
+      return (
+        this.sessionHub.getSessionState(sessionId) ?? (await this.sessionHub.ensureSessionState(sessionId))
+      );
+    } catch (err) {
+      this.log(`failed to resolve session state for ${operation}`, err);
+      this.sendError(
+        'internal_error',
+        `Failed to resolve session for ${operation}`,
+        { sessionId, error: String(err) },
+        { retryable: true },
+      );
+      return undefined;
+    }
   }
 
   private handleSetModes(message: ClientSetModesMessage): void {
@@ -541,26 +562,7 @@ export class SessionRuntime {
       }
     }
 
-    let state = this.sessionState;
-    if (!state || state.summary.sessionId !== sessionId) {
-      try {
-        state =
-          this.sessionHub.getSessionState(sessionId) ??
-          (await this.sessionHub.ensureSessionState(sessionId));
-        if (this.sessionId === sessionId) {
-          this.sessionState = state;
-        }
-      } catch (err) {
-        this.log('failed to resolve session state for set_session_model', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for model update',
-          { sessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const state = await this.resolveSubscribedSessionState(sessionId, 'model update');
 
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
@@ -599,10 +601,6 @@ export class SessionRuntime {
         availableModels: availableModelsList,
       });
       return;
-    }
-
-    if (state.activeChatRun) {
-      this.cancelActiveRun(sessionId, state);
     }
 
     try {
@@ -651,26 +649,7 @@ export class SessionRuntime {
       }
     }
 
-    let state = this.sessionState;
-    if (!state || state.summary.sessionId !== sessionId) {
-      try {
-        state =
-          this.sessionHub.getSessionState(sessionId) ??
-          (await this.sessionHub.ensureSessionState(sessionId));
-        if (this.sessionId === sessionId) {
-          this.sessionState = state;
-        }
-      } catch (err) {
-        this.log('failed to resolve session state for set_session_thinking', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for thinking update',
-          { sessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const state = await this.resolveSubscribedSessionState(sessionId, 'thinking update');
 
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
@@ -711,10 +690,6 @@ export class SessionRuntime {
       return;
     }
 
-    if (state.activeChatRun) {
-      this.cancelActiveRun(sessionId, state);
-    }
-
     try {
       const updatedSummary = await this.sessionHub
         .getSessionIndex()
@@ -731,28 +706,6 @@ export class SessionRuntime {
         { retryable: true },
       );
     }
-  }
-
-  private cancelActiveRun(sessionId: string, state: LogicalSessionState): void {
-    if (!state.activeChatRun) {
-      return;
-    }
-    handleChatOutputCancelInternal({
-      message: {
-        type: 'control',
-        action: 'cancel',
-        target: 'output',
-        sessionId,
-      },
-      activeRunState: { sessionId, state },
-      sessionHub: this.sessionHub,
-      broadcastOutputCancelled: (targetSessionId, responseId) =>
-        this.sendOutputCancelled(targetSessionId, responseId),
-      log: (logMessage, details) => {
-        this.log(logMessage, details);
-      },
-      eventStore: this.eventStore,
-    });
   }
 
   private async handleCancelQueuedMessage(message: ClientCancelQueuedMessage): Promise<void> {
@@ -819,14 +772,10 @@ export class SessionRuntime {
     );
   }
 
-  private configureSessionToolHost(): void {
-    this.sessionToolHost = this.resolveSessionToolHost(this.sessionState);
-  }
-
   private async resolveChatCompletionTools(
     state: LogicalSessionState | undefined,
     sessionToolHost: ToolHost,
-  ): Promise<ReturnType<typeof mapToolsToChatCompletionSpecs>> {
+  ): Promise<ToolResolutionResult> {
     try {
       const availableTools = await sessionToolHost.listTools();
       const agentId = state?.summary.agentId;
@@ -837,47 +786,77 @@ export class SessionRuntime {
         ...(agent ? { agent } : {}),
         manifests,
       });
+      const selectedSkills = filterSessionSkills({
+        availableSkills: skills,
+        selectedSkillIds: getSelectedSessionSkillIds(state?.summary.attributes),
+      });
       const specs = visibleTools.length > 0 ? mapToolsToChatCompletionSpecs(visibleTools) : [];
-      if (visibleTools.length > 0 || skills.length > 0) {
+      if (visibleTools.length > 0 || (selectedSkills && selectedSkills.length > 0)) {
         await updateSystemPromptWithTools({
           state,
           sessionHub: this.sessionHub,
           tools: visibleTools,
-          ...(skills.length > 0 ? { skills } : {}),
+          ...(selectedSkills && selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
           log: (...args) => this.log(...args),
         });
       }
-      return specs;
+      return {
+        specs,
+        debug: {
+          availableToolsCount: availableTools.length,
+          visibleToolsCount: visibleTools.length,
+          skillCount: selectedSkills?.length ?? 0,
+          toolNamesSample: availableTools.slice(0, 10).map((tool) => tool.name),
+          visibleToolNamesSample: visibleTools.slice(0, 10).map((tool) => tool.name),
+          skillsSample: (selectedSkills ?? []).slice(0, 10).map((skill) => skill.id),
+        },
+      };
     } catch (err) {
       this.log('failed to list tools from ToolHost for chat completions', err);
-      return [];
+      return {
+        specs: [],
+        debug: {
+          availableToolsCount: 0,
+          visibleToolsCount: 0,
+          skillCount: 0,
+          toolNamesSample: [],
+          visibleToolNamesSample: [],
+          skillsSample: [],
+          error: String(err),
+        },
+      };
     }
   }
 
-  private async refreshChatCompletionsTools(): Promise<void> {
-    this.chatCompletionTools = await this.resolveChatCompletionTools(
-      this.sessionState,
-      this.sessionToolHost,
-    );
-  }
+  private buildToolResolutionDebugContext(options: {
+    targetSessionId: string;
+    state: LogicalSessionState | undefined;
+    systemPromptHasTools: boolean;
+    resolution: ToolResolutionResult | null;
+  }): Record<string, unknown> {
+    const {
+      targetSessionId,
+      state,
+      systemPromptHasTools,
+      resolution,
+    } = options;
 
-  private async configureChatCompletionsSession(): Promise<void> {
-    if (this.ready) {
-      return;
-    }
-
-    const sessionId = this.sessionId;
-    const state = this.sessionState;
-    if (!sessionId || !state) {
-      return;
-    }
-
-    this.configureSessionToolHost();
-
-    await this.refreshChatCompletionsTools();
-
-    this.ready = true;
-    this.sendSessionReadyMessage(state);
+    return {
+      connectionId: this.connectionId,
+      subscribedSessionCount: this.sessionHub.getConnectionSubscriptions(this.connection).size,
+      targetSessionId,
+      agentId: state?.summary.agentId ?? null,
+      systemPromptHasTools,
+      resolutionPath: 'resolved',
+      finalToolSpecCount: resolution?.specs.length ?? 0,
+      availableToolsCount: resolution?.debug.availableToolsCount ?? null,
+      visibleToolsCount: resolution?.debug.visibleToolsCount ?? null,
+      skillCount: resolution?.debug.skillCount ?? null,
+      toolNamesSample: resolution?.debug.toolNamesSample ?? null,
+      visibleToolNamesSample: resolution?.debug.visibleToolNamesSample ?? null,
+      skillsSample: resolution?.debug.skillsSample ?? null,
+      ...(resolution?.debug.error ? { error: resolution.debug.error } : {}),
+    };
   }
 
   private sendSessionReadyMessage(state: LogicalSessionState): void {
@@ -927,7 +906,6 @@ export class SessionRuntime {
 
     this.sendToClient(readyMessage);
     this.readySessionIds.add(sessionId);
-    this.ready = true;
   }
 
   private async handleTextInputWithChatCompletions(message: ClientTextInputMessage): Promise<void> {
@@ -950,56 +928,40 @@ export class SessionRuntime {
       }
     }
 
-    let stateForRun: LogicalSessionState | undefined = this.sessionState;
-    let sessionIdForRun: string | undefined = this.sessionId;
-
-    sessionIdForRun = targetSessionId;
-
-    if (!stateForRun || stateForRun.summary.sessionId !== targetSessionId) {
-      try {
-        stateForRun =
-          this.sessionHub.getSessionState(targetSessionId) ??
-          (await this.sessionHub.ensureSessionState(targetSessionId));
-      } catch (err) {
-        this.log('failed to resolve session state for text_input', err);
-        this.sendError(
-          'internal_error',
-          'Failed to resolve session for text input',
-          { sessionId: targetSessionId, error: String(err) },
-          { retryable: true },
-        );
-        return;
-      }
-    }
+    const stateForRun = await this.resolveSubscribedSessionState(targetSessionId, 'text input');
+    const sessionIdForRun = targetSessionId;
 
     const shouldResolveTools = !!stateForRun && !!sessionIdForRun;
-    const useActiveSessionTools =
-      shouldResolveTools &&
-      !!this.sessionState &&
-      this.sessionState.summary.sessionId === sessionIdForRun;
-    const sessionToolHostForRun = useActiveSessionTools
-      ? this.sessionToolHost
-      : this.resolveSessionToolHost(stateForRun);
+    const sessionToolHostForRun = stateForRun
+      ? this.resolveSessionToolHost(stateForRun)
+      : this.baseToolHost;
     const firstMessageContent =
       stateForRun?.chatMessages?.[0] && typeof stateForRun.chatMessages[0].content === 'string'
         ? stateForRun.chatMessages[0].content
         : '';
     const systemPromptHasTools = firstMessageContent.includes('Available tools:');
-    const needsPromptRefresh = shouldResolveTools && !systemPromptHasTools;
-
-    let chatCompletionToolsForRun = this.chatCompletionTools;
-    if (!useActiveSessionTools || needsPromptRefresh) {
-      chatCompletionToolsForRun = await this.resolveChatCompletionTools(
+    let chatCompletionToolsForRun: ReturnType<typeof mapToolsToChatCompletionSpecs> = [];
+    let toolResolution: ToolResolutionResult | null = null;
+    if (shouldResolveTools) {
+      toolResolution = await this.resolveChatCompletionTools(
         stateForRun,
         sessionToolHostForRun,
       );
-      if (useActiveSessionTools) {
-        this.chatCompletionTools = chatCompletionToolsForRun;
-      }
+      chatCompletionToolsForRun = toolResolution.specs;
+    }
+
+    const debugChatCompletionsContext = this.buildToolResolutionDebugContext({
+      targetSessionId,
+      state: stateForRun,
+      systemPromptHasTools,
+      resolution: toolResolution,
+    });
+
+    if (chatCompletionToolsForRun.length === 0 && stateForRun?.summary.agentId) {
+      this.log('chat completion tools resolved empty', debugChatCompletionsContext);
     }
 
     return this.runChatInputWithCompletions({
-      ready: this.ready,
       message,
       state: stateForRun,
       sessionId: sessionIdForRun,
@@ -1007,6 +969,7 @@ export class SessionRuntime {
       sessionHub: this.sessionHub,
       config: this.config,
       chatCompletionTools: chatCompletionToolsForRun,
+      debugChatCompletionsContext,
       outputMode: this.outputMode,
       clientAudioCapabilities: this.clientAudioCapabilities,
       ttsBackendFactory: this.ttsBackendFactory,
@@ -1154,6 +1117,6 @@ export class SessionRuntime {
   }
 
   private log(...args: unknown[]): void {
-    console.log(`[session ${this.sessionId ?? 'unbound'}]`, ...args);
+    console.log(`[connection ${this.connectionId}]`, ...args);
   }
 }

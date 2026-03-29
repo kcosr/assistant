@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DialogManager } from './dialogManager';
 
 describe('DialogManager', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
   it('resolves text input dialog value on confirm', async () => {
     const dialogManager = new DialogManager();
 
@@ -44,5 +48,30 @@ describe('DialogManager', () => {
     expect(error).toBeTruthy();
     expect(error!.textContent).toBe('');
     expect(error!.style.display).toBe('none');
+  });
+
+  it('clears dialog state when confirm dialog closes via default button behavior', () => {
+    const dialogManager = new DialogManager();
+    const onCancel = vi.fn();
+
+    dialogManager.showConfirmDialog({
+      title: 'Delete',
+      message: 'Confirm delete?',
+      confirmText: 'Delete',
+      onConfirm: vi.fn(),
+      onCancel,
+    });
+
+    expect(dialogManager.hasOpenDialog).toBe(true);
+
+    const overlays = document.querySelectorAll<HTMLElement>('.confirm-dialog-overlay');
+    const overlay = overlays[overlays.length - 1] ?? null;
+    const cancel = overlay?.querySelector<HTMLButtonElement>('.confirm-dialog-button.cancel') ?? null;
+    expect(cancel).toBeTruthy();
+    cancel!.click();
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.confirm-dialog-overlay')).toBeNull();
+    expect(dialogManager.hasOpenDialog).toBe(false);
   });
 });

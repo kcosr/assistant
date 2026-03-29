@@ -344,7 +344,7 @@ export class SpeechAudioController {
     }
     this.isSpeechInputActive = false;
     this.continuousListeningMode = false;
-    this.options.micButtonEl.classList.remove('recording');
+    this.options.micButtonEl.classList.remove('recording', 'interrupting', 'stopping');
     if (this.ttsPlayer) {
       this.ttsPlayer.stop();
     }

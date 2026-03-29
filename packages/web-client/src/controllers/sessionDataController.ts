@@ -40,8 +40,19 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
+  sessionConfigCapabilities?: {
+    availableModels?: string[];
+    availableThinking?: string[];
+    availableSkills?: Array<{
+      id: string;
+      name: string;
+      description: string;
+    }>;
+  };
 }
 
 interface OperationResponse<T> {
@@ -117,8 +128,8 @@ export class SessionDataController {
           displayName?: unknown;
           description?: unknown;
           type?: unknown;
-          sessionWorkingDirMode?: unknown;
-          sessionWorkingDirRoots?: unknown;
+          sessionWorkingDir?: unknown;
+          sessionConfigCapabilities?: unknown;
         };
 
         const agentId = typeof anyAgent.agentId === 'string' ? anyAgent.agentId.trim() : '';
@@ -138,32 +149,104 @@ export class SessionDataController {
         const typeRaw = typeof anyAgent.type === 'string' ? anyAgent.type.trim() : '';
         const type = typeRaw === 'external' || typeRaw === 'chat' ? typeRaw : undefined;
 
-        const sessionWorkingDirModeRaw =
-          typeof anyAgent.sessionWorkingDirMode === 'string'
-            ? anyAgent.sessionWorkingDirMode.trim()
-            : '';
-        const sessionWorkingDirMode =
-          sessionWorkingDirModeRaw === 'auto' || sessionWorkingDirModeRaw === 'prompt'
-            ? sessionWorkingDirModeRaw
-            : undefined;
+        let sessionWorkingDir:
+          | { mode: 'none' }
+          | { mode: 'fixed'; path: string }
+          | { mode: 'prompt'; roots: string[] }
+          | undefined;
+        if (
+          anyAgent.sessionWorkingDir &&
+          typeof anyAgent.sessionWorkingDir === 'object' &&
+          !Array.isArray(anyAgent.sessionWorkingDir)
+        ) {
+          const raw = anyAgent.sessionWorkingDir as {
+            mode?: unknown;
+            path?: unknown;
+            roots?: unknown;
+          };
+          const mode = typeof raw.mode === 'string' ? raw.mode.trim() : '';
+          if (mode === 'none') {
+            sessionWorkingDir = { mode: 'none' };
+          } else if (mode === 'fixed') {
+            const pathValue = typeof raw.path === 'string' ? raw.path.trim() : '';
+            if (pathValue) {
+              sessionWorkingDir = { mode: 'fixed', path: pathValue };
+            }
+          } else if (mode === 'prompt') {
+            const roots = Array.isArray(raw.roots)
+              ? raw.roots
+                  .filter((root) => typeof root === 'string')
+                  .map((root) => root.trim())
+                  .filter((root) => root.length > 0)
+              : [];
+            if (roots.length > 0) {
+              sessionWorkingDir = { mode: 'prompt', roots };
+            }
+          }
+        }
 
-        const rawRoots = anyAgent.sessionWorkingDirRoots;
-        const sessionWorkingDirRoots = Array.isArray(rawRoots)
-          ? rawRoots
-              .filter((root) => typeof root === 'string')
-              .map((root) => root.trim())
-              .filter((root) => root.length > 0)
-          : undefined;
+        let sessionConfigCapabilities:
+          | {
+              availableModels?: string[];
+              availableThinking?: string[];
+              availableSkills?: Array<{ id: string; name: string; description: string }>;
+            }
+          | undefined;
+        if (
+          anyAgent.sessionConfigCapabilities &&
+          typeof anyAgent.sessionConfigCapabilities === 'object' &&
+          !Array.isArray(anyAgent.sessionConfigCapabilities)
+        ) {
+          const raw = anyAgent.sessionConfigCapabilities as {
+            availableModels?: unknown;
+            availableThinking?: unknown;
+            availableSkills?: unknown;
+          };
+          const availableModels = Array.isArray(raw.availableModels)
+            ? raw.availableModels
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+            : [];
+          const availableThinking = Array.isArray(raw.availableThinking)
+            ? raw.availableThinking
+                .filter((value): value is string => typeof value === 'string')
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
+            : [];
+          const availableSkills = Array.isArray(raw.availableSkills)
+            ? raw.availableSkills
+                .filter(
+                  (value): value is { id: string; name: string; description: string } =>
+                    !!value &&
+                    typeof value === 'object' &&
+                    typeof (value as { id?: unknown }).id === 'string' &&
+                    typeof (value as { name?: unknown }).name === 'string' &&
+                    typeof (value as { description?: unknown }).description === 'string',
+                )
+                .map((value) => ({
+                  id: value.id.trim(),
+                  name: value.name.trim(),
+                  description: value.description.trim(),
+                }))
+                .filter((value) => value.id && value.name)
+            : [];
+          if (availableModels.length > 0 || availableThinking.length > 0 || availableSkills.length > 0) {
+            sessionConfigCapabilities = {
+              ...(availableModels.length > 0 ? { availableModels } : {}),
+              ...(availableThinking.length > 0 ? { availableThinking } : {}),
+              ...(availableSkills.length > 0 ? { availableSkills } : {}),
+            };
+          }
+        }
 
         parsedAgents.push({
           agentId,
           displayName,
           ...(description ? { description } : {}),
           ...(type ? { type } : {}),
-          ...(sessionWorkingDirMode ? { sessionWorkingDirMode } : {}),
-          ...(sessionWorkingDirRoots && sessionWorkingDirRoots.length > 0
-            ? { sessionWorkingDirRoots }
-            : {}),
+          ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
+          ...(sessionConfigCapabilities ? { sessionConfigCapabilities } : {}),
         });
       }
 

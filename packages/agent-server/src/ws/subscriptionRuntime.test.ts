@@ -17,6 +17,7 @@ import type { WsTransport } from './wsTransport';
 import type { SessionConnection } from './sessionConnection';
 import { SessionIndex } from '../sessionIndex';
 import { AgentRegistry } from '../agents';
+import type { LogicalSessionState } from '../sessionHub';
 import { SessionHub } from '../sessionHub';
 import type { ToolHost, ToolContext, Tool } from '../tools';
 import type { EnvConfig } from '../envConfig';
@@ -82,8 +83,8 @@ const noopToolHost: ToolHost = {
 
 function createRuntime(options: {
   sessionHub: SessionHub;
-  sessionId?: string;
   subscriptions?: string[];
+  toolHost?: ToolHost;
 }): {
   runtime: SessionRuntime;
   transportSent: ServerMessage[];
@@ -132,7 +133,7 @@ function createRuntime(options: {
     transport,
     connection,
     config,
-    toolHost: noopToolHost,
+    toolHost: options.toolHost ?? noopToolHost,
     sessionHub: options.sessionHub,
     eventStore: createTestEventStore(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,10 +141,6 @@ function createRuntime(options: {
   };
 
   const runtime = new SessionRuntime(runtimeOptions);
-
-  if (options.sessionId) {
-    (runtime as unknown as { sessionId?: string }).sessionId = options.sessionId;
-  }
 
   if (options.subscriptions && options.subscriptions.length > 0) {
     for (const id of options.subscriptions) {
@@ -192,7 +189,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime, transportSent, unsubscribeSpy } = createRuntime({
       sessionHub,
-      sessionId: sessionA.sessionId,
       subscriptions: [sessionA.sessionId, sessionB.sessionId],
     });
 
@@ -221,7 +217,7 @@ describe('SessionRuntime subscription message handlers', () => {
     expect(remainingSessionIds.length).toBeGreaterThanOrEqual(0);
   });
 
-  it('cancels active chat run when setting session model', async () => {
+  it('updates session model without cancelling the active chat run', async () => {
     const sessionsFile = createTempFile('subscription-runtime-model-cancel-sessions');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -239,7 +235,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
 
@@ -260,8 +255,219 @@ describe('SessionRuntime subscription message handlers', () => {
     // @ts-expect-error accessing private method for test
     await runtime.handleSetSessionModel(message);
 
-    expect(abortController.signal.aborted).toBe(true);
-    expect(state.activeChatRun?.outputCancelled).toBe(true);
+    expect(abortController.signal.aborted).toBe(false);
+    expect(state.activeChatRun?.outputCancelled).not.toBe(true);
+    expect(state.summary.model).toBe('openai/gpt-4o-mini');
+
+    const persisted = await sessionIndex.getSession(summary.sessionId);
+    expect(persisted?.model).toBe('openai/gpt-4o-mini');
+  });
+
+  it('resolveChatCompletionTools reports debug counts and host errors', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-tool-debug-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'coding',
+        displayName: 'Coding',
+        description: 'Coding agent',
+        toolAllowlist: ['bash', 'ls'],
+        chat: {
+          provider: 'pi',
+          models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'coding' });
+    const { runtime } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+    });
+    const state = await sessionHub.ensureSessionState(summary.sessionId);
+
+    const okHost: ToolHost = {
+      async listTools() {
+        return [
+          { name: 'bash', description: 'Run bash', parameters: {} },
+          { name: 'ls', description: 'List files', parameters: {} },
+        ];
+      },
+      async callTool() {
+        throw new Error('not used');
+      },
+    };
+
+    const okResult = await (
+      runtime as unknown as {
+        resolveChatCompletionTools: (
+          state: LogicalSessionState | undefined,
+          sessionToolHost: ToolHost,
+        ) => Promise<{
+          specs: Array<{ function: { name: string } }>;
+          debug: {
+            availableToolsCount: number;
+            visibleToolsCount: number;
+            error?: string;
+          };
+        }>;
+      }
+    ).resolveChatCompletionTools(state, okHost);
+
+    expect(okResult.specs.map((tool) => tool.function.name)).toEqual(['bash', 'ls']);
+    expect(okResult.debug.availableToolsCount).toBe(2);
+    expect(okResult.debug.visibleToolsCount).toBe(2);
+    expect(okResult.debug.error).toBeUndefined();
+
+    const failingHost: ToolHost = {
+      async listTools() {
+        throw new Error('boom');
+      },
+      async callTool() {
+        throw new Error('not used');
+      },
+    };
+
+    const badResult = await (
+      runtime as unknown as {
+        resolveChatCompletionTools: (
+          state: LogicalSessionState | undefined,
+          sessionToolHost: ToolHost,
+        ) => Promise<{
+          specs: unknown[];
+          debug: {
+            availableToolsCount: number;
+            visibleToolsCount: number;
+            error?: string;
+          };
+        }>;
+      }
+    ).resolveChatCompletionTools(state, failingHost);
+
+    expect(badResult.specs).toEqual([]);
+    expect(badResult.debug.availableToolsCount).toBe(0);
+    expect(badResult.debug.visibleToolsCount).toBe(0);
+    expect(badResult.debug.error).toContain('boom');
+  });
+
+  it('resolves chat completion tools for a subscribed session turn without runtime cache', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-primary-turn-tools');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'coding',
+        displayName: 'Coding',
+        description: 'Coding agent',
+        toolAllowlist: ['bash'],
+        chat: {
+          provider: 'pi',
+          models: ['openai-codex/gpt-5.4-mini'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'coding' });
+
+    const toolHost: ToolHost = {
+      async listTools() {
+        return [{ name: 'bash', description: 'Run bash', parameters: {} }];
+      },
+      async callTool() {
+        throw new Error('not used');
+      },
+    };
+
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      toolHost,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    const captured: { toolsLength: number; debugContext: unknown }[] = [];
+    (
+      runtime as unknown as {
+        runChatInputWithCompletions: (options: {
+          chatCompletionTools: unknown[];
+          debugChatCompletionsContext?: unknown;
+        }) => Promise<void>;
+      }
+    ).runChatInputWithCompletions = async (options) => {
+      captured.push({
+        toolsLength: options.chatCompletionTools.length,
+        debugContext: options.debugChatCompletionsContext,
+      });
+    };
+
+    const message: ClientTextInputMessage = {
+      type: 'text_input',
+      sessionId: summary.sessionId,
+      text: 'Run date',
+    };
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleTextInputWithChatCompletions(message);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.toolsLength).toBe(1);
+    expect(captured[0]?.debugContext).toMatchObject({
+      targetSessionId: summary.sessionId,
+      resolutionPath: 'resolved',
+      finalToolSpecCount: 1,
+      availableToolsCount: 1,
+      visibleToolsCount: 1,
+    });
+    expect(connection.isSubscribedTo?.(summary.sessionId)).toBe(true);
+  });
+
+  it('updates session thinking without cancelling the active chat run', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-thinking-pending-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'test-agent',
+        displayName: 'Test Agent',
+        description: 'Test agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai/gpt-5.2', 'openai/gpt-4o-mini'],
+          thinking: ['medium', 'xhigh'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({
+      agentId: 'test-agent',
+      thinking: 'medium',
+    });
+    const { runtime } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+    });
+
+    const state = await sessionHub.ensureSessionState(summary.sessionId);
+    const abortController = new AbortController();
+    state.activeChatRun = {
+      responseId: 'resp-2',
+      abortController,
+      accumulatedText: '',
+    };
+
+    const message = {
+      type: 'set_session_thinking',
+      sessionId: summary.sessionId,
+      thinking: 'xhigh',
+    } as const;
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleSetSessionThinking(message);
+
+    expect(abortController.signal.aborted).toBe(false);
+    expect(state.activeChatRun?.outputCancelled).not.toBe(true);
+    expect(state.summary.thinking).toBe('xhigh');
+
+    const persisted = await sessionIndex.getSession(summary.sessionId);
+    expect(persisted?.thinking).toBe('xhigh');
   });
 
   it('handles output cancel when active run is not tracked on the connection', async () => {
@@ -282,7 +488,6 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'test-agent' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
 
@@ -316,16 +521,9 @@ describe('SessionRuntime subscription message handlers', () => {
     const sessionA = await sessionIndex.createSession({ agentId: 'general' });
     const sessionB = await sessionIndex.createSession({ agentId: 'general' });
 
-    const { runtime, connection, transportSent } = createRuntime({
-      sessionHub,
-      sessionId: sessionA.sessionId,
-    });
-
-    const stateA = await sessionHub.ensureSessionState(sessionA.sessionId);
+    const { runtime, connection, transportSent } = createRuntime({ sessionHub });
 
     sessionHub.subscribeConnection(connection, sessionA.sessionId);
-
-    (runtime as unknown as { sessionState?: unknown }).sessionState = stateA;
 
     const spy = vi
       .spyOn(
@@ -487,10 +685,9 @@ describe('SessionRuntime subscription message handlers', () => {
     const summary = await sessionIndex.createSession({ agentId: 'general' });
     const { runtime } = createRuntime({
       sessionHub,
-      sessionId: summary.sessionId,
       subscriptions: [summary.sessionId],
     });
-    (runtime as unknown as { ready: boolean }).ready = true;
+    (runtime as unknown as { clientHelloReceived: boolean }).clientHelloReceived = true;
 
     let resolveChat: () => void = () => {};
     const textSpy = vi

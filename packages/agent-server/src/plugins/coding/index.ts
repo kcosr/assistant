@@ -45,9 +45,69 @@ interface CodingPluginConfig extends PluginConfig {
 }
 
 export function createCodingPlugin(): ToolPlugin {
+  const SESSION_WORKING_DIR_MACRO = '${session.workingDir}';
+  let currentPluginConfig: CodingPluginConfig | undefined;
+  let currentDataDir: string | undefined;
   let executor: ToolExecutor | undefined;
 
-  function requireExecutor(): ToolExecutor {
+  function requireInitialized(): { dataDir: string; pluginConfig?: CodingPluginConfig } {
+    if (!currentDataDir) {
+      throw new ToolError('plugin_not_initialized', 'Coding plugin has not been initialized');
+    }
+    return {
+      dataDir: currentDataDir,
+      ...(currentPluginConfig ? { pluginConfig: currentPluginConfig } : {}),
+    };
+  }
+
+  async function resolveSessionWorkingDir(ctx: ToolContext): Promise<string | undefined> {
+    const state = ctx.sessionHub?.getSessionState(ctx.sessionId);
+    const stateWorkingDir = state?.summary.attributes?.core?.workingDir;
+    if (typeof stateWorkingDir === 'string' && stateWorkingDir.trim().length > 0) {
+      return stateWorkingDir.trim();
+    }
+
+    if (ctx.sessionHub) {
+      const ensured = await ctx.sessionHub.ensureSessionState(ctx.sessionId);
+      const ensuredWorkingDir = ensured.summary.attributes?.core?.workingDir;
+      if (typeof ensuredWorkingDir === 'string' && ensuredWorkingDir.trim().length > 0) {
+        return ensuredWorkingDir.trim();
+      }
+    }
+
+    const summary = await ctx.sessionIndex?.getSession(ctx.sessionId);
+    const indexedWorkingDir = summary?.attributes?.core?.workingDir;
+    if (typeof indexedWorkingDir === 'string' && indexedWorkingDir.trim().length > 0) {
+      return indexedWorkingDir.trim();
+    }
+
+    return undefined;
+  }
+
+  async function requireExecutor(ctx: ToolContext): Promise<ToolExecutor> {
+    const { dataDir, pluginConfig } = requireInitialized();
+    const mode = pluginConfig?.mode ?? 'local';
+
+    if (mode === 'local') {
+      const configuredWorkspaceRoot =
+        pluginConfig?.local?.workspaceRoot && pluginConfig.local.workspaceRoot.trim().length > 0
+          ? pluginConfig.local.workspaceRoot.trim()
+          : path.join(dataDir, 'coding-workspaces');
+      const sessionWorkingDir = await resolveSessionWorkingDir(ctx);
+      const resolvedWorkspaceRoot = configuredWorkspaceRoot.includes(SESSION_WORKING_DIR_MACRO)
+        ? configuredWorkspaceRoot.replaceAll(SESSION_WORKING_DIR_MACRO, sessionWorkingDir ?? '').trim()
+        : configuredWorkspaceRoot;
+      const workspaceRoot =
+        resolvedWorkspaceRoot.length > 0
+          ? resolvedWorkspaceRoot
+          : path.join(dataDir, 'coding-workspaces');
+
+      return new LocalExecutor({
+        workspaceRoot,
+        allowOutsideWorkspaceRoot: pluginConfig?.local?.allowOutsideWorkspaceRoot === true,
+      });
+    }
+
     if (!executor) {
       throw new ToolError('plugin_not_initialized', 'Coding plugin has not been initialized');
     }
@@ -55,17 +115,11 @@ export function createCodingPlugin(): ToolPlugin {
   }
 
   function initializeExecutor(dataDir: string, pluginConfig?: CodingPluginConfig): void {
+    currentDataDir = dataDir;
+    currentPluginConfig = pluginConfig;
     const mode = pluginConfig?.mode ?? 'local';
     if (mode === 'local') {
-      const workspaceRoot =
-        pluginConfig?.local?.workspaceRoot && pluginConfig.local.workspaceRoot.trim().length > 0
-          ? pluginConfig.local.workspaceRoot
-          : path.join(dataDir, 'coding-workspaces');
-
-      executor = new LocalExecutor({
-        workspaceRoot,
-        allowOutsideWorkspaceRoot: pluginConfig?.local?.allowOutsideWorkspaceRoot === true,
-      });
+      executor = undefined;
       return;
     }
 
@@ -179,7 +233,7 @@ export function createCodingPlugin(): ToolPlugin {
         timeoutSeconds = timeoutRaw;
       }
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
 
       const options: BashRunOptions = {};
       if (timeoutSeconds !== undefined) {
@@ -255,7 +309,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
       const options: { offset?: number; limit?: number } = {};
       if (offset !== undefined) {
         options.offset = offset;
@@ -301,7 +355,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
       return exec.writeFile(rawPath, content);
     },
   };
@@ -346,7 +400,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
       return exec.editFile(rawPath, oldText, newText);
     },
   };
@@ -385,7 +439,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
 
       return Object.keys(options).length > 0
         ? exec.ls(pathArg, options)
@@ -435,7 +489,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
 
       const options: FindOptions = {
         pattern: rawPattern,
@@ -531,7 +585,7 @@ export function createCodingPlugin(): ToolPlugin {
 
       ensureNotAborted(ctx);
 
-      const exec = requireExecutor();
+      const exec = await requireExecutor(ctx);
       const result = await exec.grep(options, ctx.signal);
       if (ctx.signal.aborted) {
         throw new ToolError('tool_aborted', 'Tool execution aborted');

@@ -6,8 +6,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { AssistantMessage } from '@mariozechner/pi-ai';
 
+import { AgentRegistry } from '../agents';
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
+import { buildChatMessagesFromEvents } from '../sessionChatMessages';
+import { PiSessionHistoryProvider } from './historyProvider';
 import { PiSessionWriter } from './piSessionWriter';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -231,6 +234,82 @@ describe('PiSessionWriter', () => {
       .filter(Boolean)
       .filter((message) => message?.['role'] === 'user');
     expect(userMessageEntries.length).toBe(0);
+  });
+
+  it('writes replayable assistant text signatures for reconstructed assistant text messages', async () => {
+    const baseDir = await createTempDir('pi-session-writer-signatures');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-signatures',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const messages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'Hello' },
+      {
+        role: 'assistant',
+        content: 'Internal note',
+        assistantTextPhase: 'commentary',
+        assistantTextSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+      },
+      {
+        role: 'assistant',
+        content: 'Visible answer',
+        assistantTextPhase: 'final_answer',
+        assistantTextSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+      },
+    ];
+
+    await writer.sync({
+      summary,
+      messages,
+      modelSpec: 'openai/gpt-4.1',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const assistantMessages = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as AssistantMessage | Record<string, unknown> | undefined)
+      .filter(
+        (message): message is AssistantMessage =>
+          Boolean(message) &&
+          typeof message === 'object' &&
+          'role' in message &&
+          message.role === 'assistant',
+      );
+
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0]?.content[0]).toMatchObject({
+      type: 'text',
+      text: 'Internal note',
+      textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+    });
+    expect(assistantMessages[1]?.content[0]).toMatchObject({
+      type: 'text',
+      text: 'Visible answer',
+      textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+    });
   });
 
   it('counts assistant.input entries when resuming to avoid duplicate writes', async () => {
@@ -490,5 +569,163 @@ describe('PiSessionWriter', () => {
     await writer2.sync({ summary, messages });
     const second = await fs.readFile(filePath, 'utf8');
     expect(second).toBe(first);
+  });
+
+  it('preserves later user turns after rebuilding prompt messages from an existing Pi session', async () => {
+    const baseDir = await createTempDir('pi-session-writer-replay');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-replay',
+      agentId: 'assistant',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    const firstToolCall: AssistantMessage = {
+      role: 'assistant',
+      content: [
+        {
+          type: 'toolCall',
+          id: 'call-1',
+          name: 'lists_list',
+          arguments: { limit: 10 },
+        },
+      ],
+      api: 'openai-responses',
+      provider: 'openai',
+      model: 'gpt-5.3-codex',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: 'toolUse',
+      timestamp: 1769904000000,
+    };
+
+    const secondToolCall: AssistantMessage = {
+      ...firstToolCall,
+      content: [
+        {
+          type: 'toolCall',
+          id: 'call-2',
+          name: 'lists_items_search',
+          arguments: { query: 'now' },
+        },
+      ],
+      timestamp: 1769904000001,
+    };
+
+    const finalAssistant: AssistantMessage = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'First turn complete.' }],
+      api: 'openai-responses',
+      provider: 'openai',
+      model: 'gpt-5.3-codex',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: 'stop',
+      timestamp: 1769904000002,
+    };
+
+    const initialMessages: ChatCompletionMessage[] = [
+      { role: 'system', content: 'system' },
+      { role: 'user', content: 'first turn' },
+      { role: 'assistant', content: '', piSdkMessage: firstToolCall },
+      { role: 'tool', tool_call_id: 'call-1', content: JSON.stringify({ ok: true, result: [] }) },
+      { role: 'assistant', content: '', piSdkMessage: secondToolCall },
+      { role: 'tool', tool_call_id: 'call-2', content: JSON.stringify({ ok: true, result: [] }) },
+      { role: 'assistant', content: 'First turn complete.', piSdkMessage: finalAssistant },
+    ];
+
+    await writer.sync({
+      summary,
+      messages: initialMessages,
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const historyProvider = new PiSessionHistoryProvider({ baseDir });
+    const attributes = summary.attributes;
+    expect(attributes).toBeDefined();
+    const events = await historyProvider.getHistory({
+      sessionId: summary.sessionId,
+      providerId: 'pi',
+      attributes: attributes!,
+      force: true,
+    });
+    const rebuiltMessages = buildChatMessagesFromEvents(
+      events,
+      new AgentRegistry([]),
+      summary.agentId,
+      [],
+    );
+
+    const resumedWriter = new PiSessionWriter({ baseDir, now });
+    await resumedWriter.sync({
+      summary,
+      messages: [
+        ...rebuiltMessages,
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second turn complete.' },
+      ],
+      updateAttributes: async () => summary,
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content)
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+      .filter(Boolean);
+
+    const userTexts = entries
+      .filter((entry) => entry?.['role'] === 'user')
+      .flatMap((entry) => {
+        const contentBlocks = Array.isArray(entry?.['content']) ? entry['content'] : [];
+        return contentBlocks
+          .filter((block): block is Record<string, unknown> => !!block && typeof block === 'object')
+          .map((block) => block['text'])
+          .filter((text): text is string => typeof text === 'string');
+      });
+
+    expect(userTexts).toContain('first turn');
+    expect(userTexts).toContain('second turn');
   });
 });

@@ -278,6 +278,86 @@ describe('loadConfig', () => {
     });
   });
 
+  it('parses fixed and prompt session working directory config', async () => {
+    const filePath = createTempFile('config-session-working-dir');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: '/home/kevin/assistant',
+          },
+        },
+        {
+          agentId: 'coding',
+          displayName: 'Coding',
+          description: 'Prompts for a workspace.',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/home/kevin/worktrees'],
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents[0]?.sessionWorkingDir).toEqual({
+      mode: 'fixed',
+      path: '/home/kevin/assistant',
+    });
+    expect(config.agents[1]?.sessionWorkingDir).toEqual({
+      mode: 'prompt',
+      roots: ['/home/kevin/worktrees'],
+    });
+  });
+
+  it('rejects legacy session working directory fields', async () => {
+    const filePath = createTempFile('config-session-working-dir-legacy');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDirMode: 'prompt',
+          sessionWorkingDirRoots: ['/home/kevin/worktrees'],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(
+      /sessionWorkingDirMode is no longer supported; use sessionWorkingDir instead/,
+    );
+  });
+
+  it('rejects invalid session working directory shapes', async () => {
+    const filePath = createTempFile('config-session-working-dir-invalid');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          description: 'Uses a fixed workspace.',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: 'relative/path',
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/sessionWorkingDir/);
+  });
+
   it('supports codex-cli chat provider config', async () => {
     const filePath = createTempFile('config-codex-cli');
     const configJson = {
@@ -584,8 +664,8 @@ describe('loadConfig', () => {
     expect(() => loadConfig(filePath)).toThrow(/reserved pi-cli flags: --thinking/);
   });
 
-  it('rejects invalid cron expressions in schedules', async () => {
-    const filePath = createTempFile('config-schedules-bad-cron');
+  it('rejects legacy schedules in agent config', async () => {
+    const filePath = createTempFile('config-schedules-legacy');
     const configJson = {
       agents: [
         {
@@ -595,59 +675,9 @@ describe('loadConfig', () => {
           chat: { provider: 'claude-cli' },
           schedules: [
             {
-              id: 'bad-cron',
-              cron: 'not-a-cron',
-              prompt: 'Do the thing',
-            },
-          ],
-        },
-      ],
-    };
-
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
-
-    expect(() => loadConfig(filePath)).toThrow(/Invalid 5-field cron expression/i);
-  });
-
-  it('requires prompt or preCheck for schedules', async () => {
-    const filePath = createTempFile('config-schedules-missing-prompt');
-    const configJson = {
-      agents: [
-        {
-          agentId: 'scheduler',
-          displayName: 'Scheduler',
-          description: 'Scheduled runs',
-          chat: { provider: 'claude-cli' },
-          schedules: [
-            {
-              id: 'missing-prompt',
-              cron: '0 9 * * *',
-            },
-          ],
-        },
-      ],
-    };
-
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
-
-    expect(() => loadConfig(filePath)).toThrow(/must define/i);
-  });
-
-  it('accepts sessionTitle for schedules', async () => {
-    const filePath = createTempFile('config-schedules-session-title');
-    const configJson = {
-      agents: [
-        {
-          agentId: 'scheduler',
-          displayName: 'Scheduler',
-          description: 'Scheduled runs',
-          chat: { provider: 'claude-cli' },
-          schedules: [
-            {
-              id: 'daily-review',
+              id: 'legacy',
               cron: '0 9 * * *',
               prompt: 'Do the thing',
-              sessionTitle: 'Daily Review',
             },
           ],
         },
@@ -656,8 +686,7 @@ describe('loadConfig', () => {
 
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
-    const config = loadConfig(filePath);
-    expect(config.agents[0]?.schedules?.[0]?.sessionTitle).toBe('Daily Review');
+    expect(() => loadConfig(filePath)).toThrow(/scheduled sessions are no longer configured on agents/i);
   });
 
   it('supports pi chat provider config with env substitution', async () => {

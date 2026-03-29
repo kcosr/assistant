@@ -114,8 +114,7 @@ export class ListItemMenuController {
 
       const targets = this.options
         .getMoveTargetLists()
-        .filter((target) => target.id !== listId)
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter((target) => target.id !== listId);
 
       if (targets.length === 0) {
         const empty = document.createElement('div');

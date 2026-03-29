@@ -366,7 +366,11 @@
             "description": "Instance id (defaults to \"default\")."
           },
           "listId": { "type": "string", "description": "List id." },
-          "limit": { "type": "number", "description": "Max items to return." },
+          "limit": {
+            "type": "number",
+            "default": 100,
+            "description": "Max items to return."
+          },
           "sort": {
             "type": "string",
             "enum": ["position", "newest", "oldest"],

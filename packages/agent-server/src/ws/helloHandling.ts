@@ -17,9 +17,6 @@ export interface HandleHelloOptions {
   setInteractionState?: (state: { supported: boolean; enabled: boolean }) => void;
   connection: SessionConnection;
   sessionHub: SessionHub;
-  setSessionState: (state: LogicalSessionState) => void;
-  setSessionId: (sessionId: string) => void;
-  configureChatCompletionsSession: () => void;
   onSessionSubscribed?: (state: LogicalSessionState) => void;
   sendMessage: (message: ServerMessage) => void;
   sendError: (
@@ -40,9 +37,6 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
     setInteractionState,
     connection,
     sessionHub,
-    setSessionState,
-    setSessionId,
-    configureChatCompletionsSession,
     onSessionSubscribed,
     sendMessage,
     sendError,
@@ -84,8 +78,6 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
   if (!isV2Hello) {
     try {
       const state = await sessionHub.attachConnection(connection, message.sessionId);
-      setSessionState(state);
-      setSessionId(state.summary.sessionId);
       onSessionSubscribed?.(state);
     } catch (err) {
       sendError(
@@ -118,8 +110,6 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
       initialSubscriptions.unshift(fallbackSessionId);
     }
 
-    let primaryState: LogicalSessionState | undefined;
-
     try {
       for (const requestedId of initialSubscriptions) {
         const state = await sessionHub.subscribeConnection(connection, requestedId);
@@ -128,9 +118,6 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
           sessionId: state.summary.sessionId,
         };
         sendMessage(subscribedMessage);
-        if (!primaryState) {
-          primaryState = state;
-        }
         onSessionSubscribed?.(state);
       }
     } catch (err) {
@@ -143,12 +130,5 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
       close();
       return;
     }
-
-    if (primaryState) {
-      setSessionState(primaryState);
-      setSessionId(primaryState.summary.sessionId);
-    }
   }
-
-  configureChatCompletionsSession();
 }

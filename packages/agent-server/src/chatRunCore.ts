@@ -1,4 +1,8 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type {
+  AssistantTextPhase,
   ChatEvent,
   ServerMessage,
   ServerTextDeltaMessage,
@@ -26,7 +30,6 @@ import {
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
-import os from 'node:os';
 import { resolvePiAgentAuthApiKey } from './llm/piAgentAuth';
 
 import {
@@ -37,8 +40,10 @@ import {
 import { createCliToolCallbacks } from './ws/cliCallbackFactory';
 import { runClaudeCliChat, type ClaudeCliChatConfig } from './ws/claudeCliChat';
 import { runCodexCliChat, type CodexCliChatConfig } from './ws/codexCliChat';
+import { resolveCliRuntimeConfig } from './ws/cliRuntimeConfig';
 import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
+import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import {
   resolvePiSdkModel,
   runPiSdkChatCompletionIteration,
@@ -85,6 +90,7 @@ export interface ChatRunCoreOptions {
   includeAgentExchangeIdInMessages: boolean;
   trackTextStartedAt: boolean;
   onToolCallMetric?: (toolName: string, durationMs: number) => void;
+  debugChatCompletionsContext?: unknown;
   log: (...args: unknown[]) => void;
 }
 
@@ -94,6 +100,7 @@ export interface ChatRunCoreResult {
   provider: ChatProvider;
   aborted: boolean;
   piSdkMessage?: PiSdkMessage;
+  piReplayMessages?: ChatCompletionMessage[];
 }
 
 export class ChatRunError extends Error {
@@ -133,6 +140,8 @@ const SENSITIVE_DEBUG_KEYS = new Set([
   'anthropic-api-key',
   'anthropic-oauth-token',
 ]);
+
+const debugChatCompletionLogWrites = new Map<string, Promise<void>>();
 
 function redactDebugPayload(value: unknown): unknown {
   const seen = new WeakSet<object>();
@@ -188,6 +197,56 @@ function redactDebugPayload(value: unknown): unknown {
   };
 
   return redactValue(value);
+}
+
+export function formatDebugPayloadForLog(value: unknown): string {
+  return JSON.stringify(redactDebugPayload(value), null, 2);
+}
+
+export function getDebugChatCompletionsLogPath(dataDir: string): string {
+  return path.join(dataDir, 'logs', 'chat-completions.jsonl');
+}
+
+export async function appendDebugChatCompletionsLogRecord(options: {
+  dataDir: string;
+  record: unknown;
+}): Promise<string> {
+  const filePath = getDebugChatCompletionsLogPath(options.dataDir);
+  const line = `${JSON.stringify(redactDebugPayload(options.record))}\n`;
+  const previous = debugChatCompletionLogWrites.get(filePath) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(async () => {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.appendFile(filePath, line, 'utf8');
+    });
+  debugChatCompletionLogWrites.set(filePath, next);
+  await next;
+  if (debugChatCompletionLogWrites.get(filePath) === next) {
+    debugChatCompletionLogWrites.delete(filePath);
+  }
+  return filePath;
+}
+
+export function previewDebugText(text: string): string {
+  const singleLine = text.replace(/\s+/g, ' ').trim();
+  return singleLine.length > 160 ? `${singleLine.slice(0, 157)}...` : singleLine;
+}
+
+export function logDebugChatEventRecord(options: {
+  enabled: boolean;
+  dataDir?: string;
+  log: (...args: unknown[]) => void;
+  record: unknown;
+}): void {
+  const { enabled, dataDir, log, record } = options;
+  if (!enabled || !dataDir) {
+    return;
+  }
+  log('chat event debug', formatDebugPayloadForLog(record));
+  void appendDebugChatCompletionsLogRecord({ dataDir, record }).catch((error) => {
+    log('failed to write chat event debug log', String(error));
+  });
 }
 
 export function resolveChatProvider(agent?: AgentDefinition): {
@@ -248,6 +307,7 @@ function createChatRunStreamHandlers(options: {
   sessionId: string;
   state: LogicalSessionState;
   responseId: string;
+  provider: ChatProvider;
   output: ChatRunOutputAdapter;
   eventStore?: EventStore;
   sessionHub: SessionHub;
@@ -255,6 +315,9 @@ function createChatRunStreamHandlers(options: {
   turnId?: string;
   includeAgentExchangeIdInMessages: boolean;
   trackTextStartedAt: boolean;
+  debugChatCompletions?: boolean;
+  debugChatCompletionsContext?: unknown;
+  debugDataDir?: string;
   log: (...args: unknown[]) => void;
   getAgentExchangeId?: () => string | undefined;
 }) {
@@ -262,6 +325,7 @@ function createChatRunStreamHandlers(options: {
     sessionId,
     state,
     responseId,
+    provider,
     output,
     eventStore,
     sessionHub,
@@ -269,6 +333,9 @@ function createChatRunStreamHandlers(options: {
     turnId,
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
+    debugChatCompletions,
+    debugChatCompletionsContext,
+    debugDataDir,
     log,
     getAgentExchangeId: getAgentExchangeIdFn,
   } = options;
@@ -283,6 +350,35 @@ function createChatRunStreamHandlers(options: {
       return { agentExchangeId };
     }
     return {};
+  };
+
+  const recordAssistantChunk = (
+    deltaText: string,
+    accumulatedText: string,
+    phase?: AssistantTextPhase,
+  ): void => {
+    logDebugChatEventRecord({
+      enabled: Boolean(debugChatCompletions),
+      log,
+      ...(debugDataDir ? { dataDir: debugDataDir } : {}),
+      record: {
+        timestamp: new Date().toISOString(),
+        direction: 'event',
+        eventType: 'assistant_chunk',
+        provider,
+        sessionId,
+        responseId,
+        ...(turnId ? { turnId } : {}),
+        ...(debugChatCompletionsContext !== undefined
+          ? { debugContext: debugChatCompletionsContext }
+          : {}),
+        phase: phase ?? null,
+        textLength: deltaText.length,
+        textPreview: previewDebugText(deltaText),
+        accumulatedTextLength: accumulatedText.length,
+        accumulatedTextPreview: previewDebugText(accumulatedText),
+      },
+    });
   };
 
   const emitThinkingStart = async (): Promise<void> => {
@@ -381,7 +477,11 @@ function createChatRunStreamHandlers(options: {
     }
   };
 
-  const emitTextDelta = async (deltaText: string, textSoFar: string): Promise<void> => {
+  const emitTextDelta = async (
+    deltaText: string,
+    textSoFar: string,
+    phase?: AssistantTextPhase,
+  ): Promise<void> => {
     if (state.activeChatRun) {
       state.activeChatRun.accumulatedText = textSoFar;
       state.activeChatRun.outputStarted = true;
@@ -394,9 +494,11 @@ function createChatRunStreamHandlers(options: {
       type: 'text_delta',
       responseId,
       delta: deltaText,
+      ...(phase ? { phase } : {}),
       ...buildAgentExchangePayload(),
     };
     output.send(message);
+    recordAssistantChunk(deltaText, textSoFar, phase);
 
     if (shouldEmitChatEvents && eventStore && turnId) {
       const events: ChatEvent[] = [
@@ -407,7 +509,10 @@ function createChatRunStreamHandlers(options: {
             responseId,
           }),
           type: 'assistant_chunk',
-          payload: { text: deltaText },
+          payload: {
+            text: deltaText,
+            ...(phase ? { phase } : {}),
+          },
         },
       ];
       void appendAndBroadcastChatEvents(
@@ -462,6 +567,7 @@ export async function runChatCompletionCore(
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
     onToolCallMetric,
+    debugChatCompletionsContext,
     log,
   } = options;
 
@@ -470,11 +576,15 @@ export async function runChatCompletionCore(
     sessionId,
     state,
     responseId,
+    provider,
     output,
     sessionHub,
     shouldEmitChatEvents,
     includeAgentExchangeIdInMessages,
     trackTextStartedAt,
+    debugChatCompletions: envConfig.debugChatCompletions,
+    debugChatCompletionsContext,
+    debugDataDir: envConfig.dataDir,
     log,
     getAgentExchangeId: getAgentExchangeIdFn,
     ...(eventStore ? { eventStore } : {}),
@@ -485,9 +595,18 @@ export async function runChatCompletionCore(
   let aborted = false;
   let finalPiSdkMessage: PiSdkMessage | undefined;
   let lastPiSdkMessage: PiSdkMessage | undefined;
+  let piReplayMessages: ChatCompletionMessage[] | undefined;
 
   if (provider === 'claude-cli') {
-    const claudeConfig = agent?.chat?.config as ClaudeCliChatConfig | undefined;
+    const claudeConfig = resolveCliRuntimeConfig(
+      agent?.chat?.config as ClaudeCliChatConfig | undefined,
+      {
+        sessionId,
+        ...(state.summary.attributes?.core?.workingDir
+          ? { workingDir: state.summary.attributes.core.workingDir }
+          : {}),
+      },
+    );
     const attributes = state.summary.attributes;
     let storedClaudeSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'claude-cli', ['claude']);
@@ -574,7 +693,15 @@ export async function runChatCompletionCore(
     aborted = cliAborted;
     fullText = claudeText;
   } else if (provider === 'codex-cli') {
-    const codexConfig = agent?.chat?.config as CodexCliChatConfig | undefined;
+    const codexConfig = resolveCliRuntimeConfig(
+      agent?.chat?.config as CodexCliChatConfig | undefined,
+      {
+        sessionId,
+        ...(state.summary.attributes?.core?.workingDir
+          ? { workingDir: state.summary.attributes.core.workingDir }
+          : {}),
+      },
+    );
     const attributes = state.summary.attributes;
     let storedCodexSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'codex-cli', ['codex']);
@@ -682,7 +809,12 @@ export async function runChatCompletionCore(
     aborted = cliAborted;
     fullText = codexText;
   } else if (provider === 'pi-cli') {
-    const piConfig = agent?.chat?.config as PiCliChatConfig | undefined;
+    const piConfig = resolveCliRuntimeConfig(agent?.chat?.config as PiCliChatConfig | undefined, {
+      sessionId,
+      ...(state.summary.attributes?.core?.workingDir
+        ? { workingDir: state.summary.attributes.core.workingDir }
+        : {}),
+    });
     const attributes = state.summary.attributes;
     let storedPiSession: { sessionId?: string; cwd?: string } | null = null;
     const providerInfo = getProviderAttributes(attributes, 'pi-cli', ['pi']);
@@ -786,6 +918,33 @@ export async function runChatCompletionCore(
     fullText = piText;
   } else if (provider === 'pi') {
     let iterations = 0;
+    piReplayMessages = state.chatMessages;
+
+    const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
+      summary: state.summary,
+    });
+    if (canonicalReplayMessages) {
+      const systemMessage =
+        state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
+      const currentUserMessage =
+        state.chatMessages[state.chatMessages.length - 1]?.role === 'user'
+          ? state.chatMessages[state.chatMessages.length - 1]
+          : undefined;
+      const lastCanonical = canonicalReplayMessages[canonicalReplayMessages.length - 1];
+      const shouldAppendCurrentUser =
+        currentUserMessage?.role === 'user' &&
+        !(
+          lastCanonical?.role === 'user' &&
+          lastCanonical.content === currentUserMessage.content
+        );
+      piReplayMessages = [
+        ...(systemMessage ? [systemMessage] : []),
+        ...canonicalReplayMessages,
+        ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
+      ];
+    }
+    const piStateForRun =
+      piReplayMessages === state.chatMessages ? state : { ...state, chatMessages: piReplayMessages };
 
     const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
     const maxToolIterations = piConfig?.maxToolIterations ?? 100;
@@ -845,7 +1004,7 @@ export async function runChatCompletionCore(
       const { text: iterationText, toolCalls, aborted: piAborted, assistantMessage } =
         await runPiSdkChatCompletionIteration({
           model: resolvedModel.model,
-          messages: state.chatMessages,
+          messages: piStateForRun.chatMessages,
           tools: chatCompletionTools,
           abortSignal: abortController.signal,
           onToolCallStart: (info) => {
@@ -891,28 +1050,58 @@ export async function runChatCompletionCore(
           ...(debugChatCompletions
             ? {
                 onPayload: (payload) => {
-                  log('pi chat request', {
+                  const record = {
+                    timestamp: new Date().toISOString(),
+                    direction: 'request',
                     sessionId,
                     responseId,
                     iteration: iterationIndex,
                     provider: resolvedModel.providerId,
                     model: resolvedModel.model.id,
-                    payload: redactDebugPayload(payload),
+                    ...(debugChatCompletionsContext !== undefined
+                      ? { debugContext: debugChatCompletionsContext }
+                      : {}),
+                    payload,
+                  };
+                  log(
+                    'pi chat request',
+                    formatDebugPayloadForLog(record),
+                  );
+                  void appendDebugChatCompletionsLogRecord({
+                    dataDir: envConfig.dataDir,
+                    record,
+                  }).catch((error) => {
+                    log('failed to write pi chat request debug log', String(error));
                   });
                 },
                 onResponse: (response) => {
-                  log('pi chat response', {
+                  const record = {
+                    timestamp: new Date().toISOString(),
+                    direction: 'response',
                     sessionId,
                     responseId,
                     iteration: iterationIndex,
                     provider: resolvedModel.providerId,
                     model: resolvedModel.model.id,
+                    ...(debugChatCompletionsContext !== undefined
+                      ? { debugContext: debugChatCompletionsContext }
+                      : {}),
                     response: {
                       text: response.text,
                       toolCalls: response.toolCalls,
                       aborted: response.aborted,
-                      message: redactDebugPayload(response.message),
+                      message: response.message,
                     },
+                  };
+                  log(
+                    'pi chat response',
+                    formatDebugPayloadForLog(record),
+                  );
+                  void appendDebugChatCompletionsLogRecord({
+                    dataDir: envConfig.dataDir,
+                    record,
+                  }).catch((error) => {
+                    log('failed to write pi chat response debug log', String(error));
                   });
                 },
               }
@@ -953,11 +1142,18 @@ export async function runChatCompletionCore(
         piSdkMessage: assistantMessage,
       };
 
-      state.chatMessages.push(assistantToolCallMessage);
+      piStateForRun.chatMessages.push(assistantToolCallMessage);
+      if (piStateForRun !== state) {
+        state.chatMessages.push(assistantToolCallMessage);
+      }
 
+      const toolMessagesStart = piStateForRun.chatMessages.length;
       const toolRunStart = Date.now();
-      await handleChatToolCalls(sessionId, state, toolCalls);
+      await handleChatToolCalls(sessionId, piStateForRun, toolCalls);
       const toolRunDurationMs = Date.now() - toolRunStart;
+      if (piStateForRun !== state && piStateForRun.chatMessages.length > toolMessagesStart) {
+        state.chatMessages.push(...piStateForRun.chatMessages.slice(toolMessagesStart));
+      }
 
       if (onToolCallMetric) {
         for (const call of toolCalls) {
@@ -1005,5 +1201,6 @@ export async function runChatCompletionCore(
     ...(provider === 'pi' && resolvedPiSdkMessage
       ? { piSdkMessage: resolvedPiSdkMessage }
       : {}),
+    ...(provider === 'pi' && piReplayMessages ? { piReplayMessages } : {}),
   };
 }

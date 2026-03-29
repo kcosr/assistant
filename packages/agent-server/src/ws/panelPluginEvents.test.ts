@@ -159,9 +159,7 @@ describe('panel plugin websocket handlers', () => {
       eventStore,
     });
 
-    const state = await sessionHub.attachConnection(session, sessionSummary.sessionId);
-    (session as unknown as { sessionId?: string }).sessionId = state.summary.sessionId;
-    (session as unknown as { sessionState?: unknown }).sessionState = state;
+    await sessionHub.attachConnection(session, sessionSummary.sessionId);
 
     const hello = {
       type: 'hello',

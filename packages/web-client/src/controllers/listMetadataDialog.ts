@@ -838,7 +838,6 @@ export class ListMetadataDialog {
           confirmText: 'Delete',
           confirmClassName: 'danger',
           keydownStopsPropagation: true,
-          removeKeydownOnButtonClick: true,
           onConfirm: () => {
             void (async () => {
               setError(null);

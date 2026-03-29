@@ -110,7 +110,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hi', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -184,7 +183,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     vi.mocked(runClaudeCliChat).mockResolvedValueOnce({ text: 'ok', aborted: false });
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hi', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -276,7 +274,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'one', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -296,7 +293,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     });
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'two', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -391,7 +387,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'run tool', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -481,7 +476,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     const sendError = vi.fn();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hi', sessionId: 's1', clientMessageId: 'client-1' },
       state,
       sessionId: 's1',
@@ -568,7 +562,6 @@ describe('handleTextInputWithChatCompletions (claude-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'hello', sessionId: 's1' },
       state,
       sessionId: 's1',

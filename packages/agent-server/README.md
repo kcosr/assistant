@@ -715,6 +715,11 @@ The coding plugin provides tools for working with the configured workspace root 
 | `edit`  | Edit a file by replacing an exact text match; the old text must be unique within the file.                      |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a “/” suffix for directories.         |
 
+In `local` mode, `plugins.coding.local.workspaceRoot` may be set to `${session.workingDir}`. When
+present, relative coding-tool paths and `bash` commands resolve from the session’s
+`attributes.core.workingDir`; absolute paths stay literal when
+`plugins.coding.local.allowOutsideWorkspaceRoot` is `true`.
+
 `ls` parameters:
 
 - `path` (optional): Directory to list. Defaults to the workspace root.
@@ -985,6 +990,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
     - for `provider: "pi-cli"`:
       - `workdir` (optional): working directory for the Pi CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`; when `chat.models` is set, `--model` and `--provider` are also managed by the server; when `chat.thinking` is set, `--thinking` is also managed by the server)
+    - For interactive CLI-backed chat runs, `chat.config.workdir` and `chat.config.wrapper.env` values support the session-scoped macro `${session.workingDir}`. This resolves from `attributes.core.workingDir`, so agents using `sessionWorkingDir` can pass either a fixed directory or a picked directory through to direct CLI `cwd` handling or wrapper env vars such as `CONTAINER_CWD`.
   - For CLI providers (`"claude-cli"`, `"codex-cli"`, `"pi-cli"`), the agent server starts each CLI in its own POSIX process group and, on user cancel, sends a `SIGTERM` followed by a `SIGKILL` to that group. This ensures any subprocesses launched by the CLI (for example `bash` commands) are cleaned up when a chat run is aborted.
   - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
 - `external` (only for `type: "external"`)

@@ -211,6 +211,44 @@ describe('ChatRenderer', () => {
     expect(blocks).toHaveLength(2);
   });
 
+  it('renders commentary and final assistant text as separate segments', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('assistant_done', {
+        id: 'e-commentary',
+        payload: {
+          text: 'Let me check.',
+          phase: 'commentary',
+          textSignature: '{"v":1,"id":"msg-commentary","phase":"commentary"}',
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e-final',
+        payload: {
+          text: 'All set.',
+          phase: 'final_answer',
+          textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+        },
+      }),
+    ]);
+
+    const segments = Array.from(
+      container.querySelectorAll<HTMLDivElement>('.assistant-response .assistant-text'),
+    ).map((element) => ({
+      phase: element.dataset['phase'],
+      text: element.textContent?.trim(),
+    }));
+
+    expect(segments).toEqual([
+      { phase: 'commentary', text: 'Let me check.' },
+      { phase: 'final_answer', text: 'All set.' },
+    ]);
+  });
+
   it('formats tool_result content arrays as tool output', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
@@ -334,6 +372,28 @@ describe('ChatRenderer', () => {
       }),
     );
     expect(renderer.hasActiveOutput()).toBe(false);
+  });
+
+  it('clears active output state when replaying history', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.showTypingIndicator();
+    expect(renderer.hasActiveOutput()).toBe(true);
+
+    renderer.replayEvents([
+      createBaseEvent('assistant_done', {
+        id: 'e-final',
+        payload: {
+          text: 'Completed earlier.',
+        },
+      }),
+    ]);
+
+    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(container.querySelector('.chat-typing-indicator.visible')).toBeNull();
   });
 
   it('suppresses typing indicator while interaction is pending', () => {
@@ -501,6 +561,41 @@ describe('ChatRenderer', () => {
     expect(assistantText).not.toBeNull();
     expect(assistantText?.dataset['eventId']).toBe('e3');
     expect(assistantText?.textContent).toContain('Hello world!');
+  });
+
+  it('finalizes the current streamed segment when assistant_done matches the same stream', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Drink water', phase: 'final_answer' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: { text: ' now', phase: 'final_answer' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('assistant_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'Drink water now' },
+      }),
+    );
+
+    const assistantTexts = container.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.dataset['eventId']).toBe('e3');
+    expect(assistantTexts[0]?.dataset['phase']).toBe('final_answer');
+    expect(assistantTexts[0]?.textContent).toContain('Drink water now');
   });
 
   it('renders interrupt indicators on the active turn', () => {

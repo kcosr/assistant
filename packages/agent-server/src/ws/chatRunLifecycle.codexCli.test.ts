@@ -108,7 +108,6 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
     const eventStore = createTestEventStore();
 
     await handleTextInputWithChatCompletions({
-      ready: true,
       message: { type: 'text_input', text: 'run cmd', sessionId: 's1' },
       state,
       sessionId: 's1',
@@ -157,5 +156,94 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
     expect(result.result).toMatchObject({ output: 'hi\n', exitCode: 1 });
     expect(result.error).toBeDefined();
     expect(result.error?.message).toContain('code 1');
+  });
+
+  it('resolves session working dir macros for codex-cli config at run time', async () => {
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'codex',
+        displayName: 'Codex',
+        description: 'Codex CLI',
+        chat: {
+          provider: 'codex-cli',
+          config: {
+            workdir: '${session.workingDir}',
+            wrapper: {
+              path: '/tmp/run.sh',
+              env: {
+                CONTAINER_CWD: '${session.workingDir}',
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
+      recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => state.summary,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 't',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        attributes: {
+          core: { workingDir: '/home/kevin/worktrees/project-a' },
+        },
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    (state.summary as unknown as { agentId?: string }).agentId = 'codex';
+
+    const sendError = vi.fn();
+
+    vi.mocked(runCodexCliChat).mockImplementationOnce(async (options) => {
+      expect(options.config).toEqual({
+        workdir: '/home/kevin/worktrees/project-a',
+        wrapper: {
+          path: '/tmp/run.sh',
+          env: {
+            CONTAINER_CWD: '/home/kevin/worktrees/project-a',
+          },
+        },
+      });
+      return { text: 'done', aborted: false, codexSessionId: 'thread-2' };
+    });
+
+    const eventStore = createTestEventStore();
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'run cmd', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError,
+      log: () => undefined,
+      eventStore,
+    });
+
+    expect(sendError).not.toHaveBeenCalled();
   });
 });

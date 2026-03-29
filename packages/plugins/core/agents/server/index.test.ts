@@ -131,6 +131,52 @@ function createTestPlugin() {
 }
 
 describe('agents plugin operations', () => {
+  it('includes session configuration capabilities in listed agents', async () => {
+    const { ctx, host, sessionHub } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'coding',
+        displayName: 'Coding',
+        description: 'Coding agent',
+        chat: {
+          models: ['gpt-5.4', 'gpt-5.4-mini'],
+          thinking: ['low', 'medium'],
+        },
+        sessionWorkingDir: {
+          mode: 'prompt',
+          roots: ['/home/kevin/worktrees'],
+        },
+      },
+    ]);
+
+    const result = await plugin.operations?.list(
+      { includeAll: true },
+      {
+        ...ctx,
+        agentRegistry,
+        sessionHub,
+        baseToolHost: host,
+      },
+    );
+
+    expect(result).toEqual({
+      agents: [
+        expect.objectContaining({
+          agentId: 'coding',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/home/kevin/worktrees'],
+          },
+          sessionConfigCapabilities: {
+            availableModels: ['gpt-5.4', 'gpt-5.4-mini'],
+            availableThinking: ['low', 'medium'],
+          },
+        }),
+      ],
+    });
+  });
+
   it('lists working directory subfolders for an agent', async () => {
     const { ctx } = await createTestEnvironment();
     const plugin = createTestPlugin();
@@ -145,8 +191,10 @@ describe('agents plugin operations', () => {
         agentId: 'general',
         displayName: 'General',
         description: 'General agent',
-        sessionWorkingDirMode: 'prompt',
-        sessionWorkingDirRoots: [root],
+        sessionWorkingDir: {
+          mode: 'prompt',
+          roots: [root],
+        },
       },
     ]);
 

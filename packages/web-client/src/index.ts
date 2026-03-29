@@ -9,6 +9,7 @@ import {
   type PanelTypeManifest,
   type ServerMessage,
   type SessionAttributesPatch,
+  type SessionConfig,
   CURRENT_PROTOCOL_VERSION,
   GLOBAL_QUERY_CONTEXT_KEY,
 } from '@assistant/shared';
@@ -49,6 +50,11 @@ import {
   SessionPickerController,
   type SessionPickerOpenOptions,
 } from './controllers/panelSessionPicker';
+import {
+  SessionComposerController,
+  type CreateScheduledSessionInput,
+  type SessionComposerOpenOptions,
+} from './controllers/sessionComposerController';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
 import { createInputRuntime, type InputRuntime } from './panels/input/runtime';
@@ -150,6 +156,17 @@ const isDebugFlagEnabled = (key: string): boolean => {
 
 const isWsDebugEnabled = (): boolean => isDebugFlagEnabled(WS_DEBUG_STORAGE_KEY);
 
+const previewWsText = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const singleLine = value.replace(/\s+/g, ' ').trim();
+  if (!singleLine) {
+    return '';
+  }
+  return singleLine.length > 120 ? `${singleLine.slice(0, 117)}...` : singleLine;
+};
+
 const logWsMessage = (message: ServerMessage): void => {
   if (!isWsDebugEnabled()) {
     return;
@@ -169,11 +186,28 @@ const logWsMessage = (message: ServerMessage): void => {
     return;
   }
   if (type === 'chat_event') {
-    const event = anyMessage['event'] as { type?: unknown } | null;
+    const event = anyMessage['event'] as
+      | { type?: unknown; id?: unknown; turnId?: unknown; responseId?: unknown; payload?: unknown }
+      | null;
     const eventType = typeof event?.type === 'string' ? event.type : null;
+    const payload = event?.payload as Record<string, unknown> | null | undefined;
     console.log('[ws] chat_event', {
       sessionId: anyMessage['sessionId'] ?? null,
       eventType,
+      eventId: typeof event?.id === 'string' ? event.id : null,
+      turnId: typeof event?.turnId === 'string' ? event.turnId : null,
+      responseId: typeof event?.responseId === 'string' ? event.responseId : null,
+      phase: typeof payload?.['phase'] === 'string' ? payload['phase'] : null,
+      textPreview: previewWsText(payload?.['text']),
+    });
+    return;
+  }
+  if (type === 'text_delta' || type === 'text_done' || type === 'thinking_delta' || type === 'thinking_done') {
+    console.log(`[ws] ${type}`, {
+      sessionId: anyMessage['sessionId'] ?? null,
+      responseId: typeof anyMessage['responseId'] === 'string' ? anyMessage['responseId'] : null,
+      phase: typeof anyMessage['phase'] === 'string' ? anyMessage['phase'] : null,
+      textPreview: previewWsText(anyMessage['text'] ?? anyMessage['delta']),
     });
     return;
   }
@@ -215,8 +249,10 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
 }
 
 import { apiFetch, getWebSocketUrl } from './utils/api';
@@ -1519,6 +1555,7 @@ async function main(): Promise<void> {
   let panelLauncherController: PanelLauncherController | null = null;
   let commandPaletteController: CommandPaletteController | null = null;
   let sessionPickerController: SessionPickerController | null = null;
+  let sessionComposerController: SessionComposerController | null = null;
   let connectionManager: ConnectionManager | null = null;
   let globalAqlHeaderController: GlobalAqlHeaderController | null = null;
   const getSidebarElementsForKeyboardNav = (): {
@@ -1672,6 +1709,9 @@ async function main(): Promise<void> {
     },
     renameSession: (sessionId) => {
       void renameSession(sessionId);
+    },
+    editSession: (sessionId) => {
+      editSessionConfig(sessionId);
     },
   });
 
@@ -1848,8 +1888,101 @@ async function main(): Promise<void> {
       onClearSession:
         options.onClearSession ?? ((sessionId) => showClearHistoryConfirmation(sessionId)),
       onDeleteSession: options.onDeleteSession ?? ((sessionId) => void deleteSession(sessionId)),
-      onRenameSession: options.onRenameSession ?? ((sessionId) => void renameSession(sessionId)),
+      onEditSession: options.onEditSession ?? ((sessionId) => editSessionConfig(sessionId)),
     });
+  };
+
+  const openSessionComposer = (options?: SessionComposerOpenOptions): void => {
+    requireSessionComposer().open(options);
+  };
+
+  function extractSessionConfigFromSummary(summary: SessionSummary): SessionConfig {
+    const rawCore = summary.attributes?.['core'];
+    const core =
+      rawCore && typeof rawCore === 'object' && !Array.isArray(rawCore)
+        ? (rawCore as Record<string, unknown>)
+        : null;
+    const rawAgent = summary.attributes?.['agent'];
+    const agent =
+      rawAgent && typeof rawAgent === 'object' && !Array.isArray(rawAgent)
+        ? (rawAgent as Record<string, unknown>)
+        : null;
+    const hasExplicitSkills = Array.isArray(agent?.['skills']);
+    const skills = hasExplicitSkills
+      ? (agent['skills'] as unknown[]).filter((value): value is string => typeof value === 'string')
+      : [];
+    return {
+      ...(typeof summary.model === 'string' ? { model: summary.model } : {}),
+      ...(typeof summary.thinking === 'string' ? { thinking: summary.thinking } : {}),
+      ...(typeof core?.['workingDir'] === 'string' ? { workingDir: core['workingDir'] } : {}),
+      ...(hasExplicitSkills ? { skills } : {}),
+    };
+  }
+
+  function editSessionConfig(sessionId: string): void {
+    const summary = sessionSummaries.find((entry) => entry.sessionId === sessionId) ?? null;
+    if (!summary) {
+      setStatus(statusEl, 'Session not found');
+      return;
+    }
+    if (typeof summary.agentId !== 'string' || summary.agentId.trim().length === 0) {
+      setStatus(statusEl, 'Session agent is unavailable');
+      return;
+    }
+    openSessionComposer({
+      initialAgentId: summary.agentId,
+      editSession: {
+        sessionId,
+        title: typeof summary.name === 'string' ? summary.name : null,
+        sessionConfig: extractSessionConfigFromSummary(summary),
+      },
+      onSessionUpdated: () => {
+        void refreshSessions(sessionId);
+      },
+    });
+  }
+
+  const readApiError = async (response: Response): Promise<string | null> => {
+    try {
+      const json = (await response.json()) as unknown;
+      if (json && typeof json === 'object' && 'error' in json) {
+        const error = (json as { error?: unknown }).error;
+        if (typeof error === 'string' && error.trim()) {
+          return error.trim();
+        }
+      }
+      if (
+        json &&
+        typeof json === 'object' &&
+        'result' in json &&
+        typeof (json as { result?: unknown }).result === 'object'
+      ) {
+        const message = ((json as { result?: { error?: unknown } }).result?.error ?? null) as unknown;
+        if (typeof message === 'string' && message.trim()) {
+          return message.trim();
+        }
+      }
+    } catch {
+      // ignore and fall back to text
+    }
+    try {
+      const text = (await response.text()).trim();
+      return text || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const createScheduledSession = async (input: CreateScheduledSessionInput): Promise<void> => {
+    const response = await apiFetch('/api/plugins/scheduled-sessions/operations/create', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    if (!response.ok) {
+      throw new Error((await readApiError(response)) ?? 'Failed to create scheduled session');
+    }
+    setStatus(statusEl, 'Scheduled session created');
   };
 
   panelHostControllerInstance.setContext(CORE_PANEL_SERVICES_CONTEXT_KEY, {
@@ -1877,6 +2010,7 @@ async function main(): Promise<void> {
       document.dispatchEvent(new CustomEvent('assistant:clear-context-selection'));
     },
     openSessionPicker,
+    openSessionComposer,
   } satisfies PanelCoreServices);
 
   panelHostControllerInstance.setContext(CHAT_PANEL_SERVICES_CONTEXT_KEY, {
@@ -1929,7 +2063,16 @@ async function main(): Promise<void> {
       socket = nextSocket;
     },
     onConnectionLostCleanup: () => {
-      getPrimaryChatInputRuntime()?.speechAudioController?.onConnectionLostCleanup();
+      sessionsWithActiveTyping.clear();
+      serverMessageHandler?.resetRealtimeState();
+      for (const entry of chatPanelsById.values()) {
+        entry.runtime.chatRenderer.hideTypingIndicator();
+        entry.inputRuntime.speechAudioController?.onConnectionLostCleanup();
+        if (entry.bindingSessionId) {
+          setChatPanelStatusForSession(entry.bindingSessionId, 'idle');
+        }
+      }
+      renderAgentSidebar();
     },
     reconnectDelayMs: RECONNECT_DELAY_MS,
     maxReconnectDelayMs: MAX_RECONNECT_DELAY_MS,
@@ -2121,7 +2264,7 @@ async function main(): Promise<void> {
       setFocusedSessionItem,
       isSidebarFocused,
       selectSession,
-      createSessionForAgent,
+      openSessionComposer,
       showSessionMenu: (x, y, sessionId) => {
         contextMenuManager.showSessionMenu(x, y, sessionId);
       },
@@ -2245,10 +2388,26 @@ async function main(): Promise<void> {
       sessionPickerController = new SessionPickerController({
         getSessionSummaries: () => sessionSummaries,
         getAgentSummaries: () => agentSummaries,
-        createSessionForAgent,
+        openSessionComposer,
       });
     }
     return sessionPickerController;
+  }
+
+  function requireSessionComposer(): SessionComposerController {
+    if (!sessionComposerController) {
+      sessionComposerController = new SessionComposerController({
+        getAgentSummaries: () => agentSummaries,
+        createSessionForAgent,
+        updateSession: (sessionId, options) =>
+          requireSessionManager().updateSession(sessionId, options),
+        createScheduledSession,
+        setStatus: (text) => {
+          setStatus(statusEl, text);
+        },
+      });
+    }
+    return sessionComposerController;
   }
 
   // Close context menu and clear text selection when clicking elsewhere
@@ -3333,6 +3492,7 @@ async function main(): Promise<void> {
     } else {
       setChatPanelStatusForSession(trimmed, 'idle');
     }
+    getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
   }
 
   function sendPanelEvent(event: PanelEventEnvelope): void {

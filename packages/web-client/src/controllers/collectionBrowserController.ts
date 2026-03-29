@@ -1454,7 +1454,8 @@ export class CollectionBrowserController {
       selectItem: (itemEl) => this.selectItem(itemEl),
       filter: (query) => this.filter(query),
       onClose: () => {
-        // Browser mode stays open on escape/tab.
+        // Browser mode stays open on escape/tab, but search should unfocus.
+        searchInput.blur();
       },
     });
     return true;

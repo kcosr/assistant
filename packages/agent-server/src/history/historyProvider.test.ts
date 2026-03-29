@@ -223,6 +223,21 @@ describe('PiSessionHistoryProvider', () => {
       }),
       JSON.stringify({
         type: 'custom',
+        id: 'event-partial-1',
+        parentId: null,
+        timestamp: '2026-01-20T00:00:02.750Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'assistant_done',
+          payload: {
+            text: 'Interrupted partial',
+            interrupted: true,
+          },
+          responseId: 'resp-2',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
         id: 'event-2',
         parentId: null,
         timestamp: '2026-01-20T00:00:03.000Z',
@@ -281,6 +296,14 @@ describe('PiSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'interrupt' }>
       | undefined;
     expect(interruptEvent?.payload.reason).toBe('user_cancel');
+
+    const interruptedAssistant = events.find(
+      (event) => event.type === 'assistant_done' && event.payload.text === 'Interrupted partial',
+    ) as Extract<ChatEvent, { type: 'assistant_done' }> | undefined;
+    expect(interruptedAssistant?.payload).toMatchObject({
+      text: 'Interrupted partial',
+      interrupted: true,
+    });
 
     const interactionEvent = events.find((event) => event.type === 'interaction_request') as
       | Extract<ChatEvent, { type: 'interaction_request' }>
@@ -578,6 +601,92 @@ describe('PiSessionHistoryProvider', () => {
     expect(secondThinkingIndex).toBeGreaterThan(-1);
     expect(firstThinkingIndex).toBeLessThan(toolCallIndex);
     expect(toolCallIndex).toBeLessThan(secondThinkingIndex);
+  });
+
+  it('preserves commentary-phase assistant text with phase metadata', async () => {
+    const baseDir = await createTempDir('pi-session-history-phase');
+    const sessionId = 'session-phase';
+    const piSessionId = 'pi-session-phase';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-23T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-commentary',
+          content: [
+            {
+              type: 'text',
+              text: '{"tool":"noop"}',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-1', phase: 'commentary' }),
+            },
+            {
+              type: 'text',
+              text: 'Actual answer',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-final-1', phase: 'final_answer' }),
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-commentary-only',
+          content: [
+            {
+              type: 'text',
+              text: 'internal commentary only',
+              textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-2', phase: 'commentary' }),
+            },
+          ],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const assistantEvents = events.filter(
+      (event) => event.type === 'assistant_done',
+    ) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+    expect(
+      assistantEvents.map((event) => ({
+        text: event.payload.text,
+        phase: event.payload.phase,
+        textSignature: event.payload.textSignature,
+      })),
+    ).toEqual([
+      {
+        text: '{"tool":"noop"}',
+        phase: 'commentary',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-1', phase: 'commentary' }),
+      },
+      {
+        text: 'Actual answer',
+        phase: 'final_answer',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-final-1', phase: 'final_answer' }),
+      },
+      {
+        text: 'internal commentary only',
+        phase: 'commentary',
+        textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-2', phase: 'commentary' }),
+      },
+    ]);
   });
 });
 
