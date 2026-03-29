@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.0] - 2026-03-29
 
 ### Breaking Changes
 - Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/default/schedules.json`. ([#66](https://github.com/kcosr/assistant/pull/66))
@@ -60,6 +60,7 @@
 - Fixed lists keyboard move shortcuts to keep the moved item scrolled into view after rerenders and same-list refresh reloads. ([#65](https://github.com/kcosr/assistant/pull/65))
 
 ### Removed
+
 
 ## [0.14.6] - 2026-03-09
 
