@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 import { ChatRenderer } from './chatRenderer';
+import { setToolOutputBlockNearViewport } from '../utils/toolOutputRenderer';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -1653,6 +1654,94 @@ describe('ChatRenderer', () => {
     expect(interaction?.querySelector<HTMLInputElement>('[data-field-id="answer"]')?.value).toBe(
       'hello',
     );
+  });
+
+  it('dehydrates expanded completed tool bodies when they leave the viewport', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-offscreen',
+          toolName: 'bash',
+          args: { command: 'echo hello world' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-offscreen',
+          result: 'hello world\n',
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-offscreen"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    expect(toolBlock.querySelector('.tool-output-input-body')).not.toBeNull();
+    expect(toolBlock.querySelector('.tool-output-output-body')).not.toBeNull();
+
+    setToolOutputBlockNearViewport(toolBlock, false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+    expect(toolBlock.querySelector('.tool-output-output-body')).toBeNull();
+
+    setToolOutputBlockNearViewport(toolBlock, true);
+    expect(toolBlock.querySelector('.tool-output-input-body')?.textContent).toContain(
+      'echo hello world',
+    );
+    expect(toolBlock.querySelector('.tool-output-output-body')?.textContent).toContain(
+      'hello world',
+    );
+  });
+
+  it('keeps expanded streaming tool bodies hydrated offscreen', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-streaming',
+          toolName: 'bash',
+          args: { command: 'echo hello' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_output_chunk', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-streaming',
+          toolName: 'bash',
+          chunk: 'hello',
+          offset: 5,
+        },
+      }) as ChatEvent,
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-streaming"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    setToolOutputBlockNearViewport(toolBlock, false);
+    expect(toolBlock.querySelector('.tool-output-output-body')?.textContent).toContain('hello');
   });
 
   it('groups tool_input_chunk blocks when a second call streams in', () => {

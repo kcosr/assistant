@@ -76,6 +76,7 @@ interface ToolOutputBlockState {
   input: ToolOutputInputState;
   outputText: string;
   outputStatus?: ToolOutputStatus;
+  nearViewport: boolean;
   // Blocks with dedicated custom DOM manage their own body lifecycle and should not be dehydrated.
   staticContent: boolean;
 }
@@ -182,6 +183,7 @@ export function createToolOutputBlock(options: ToolOutputBlockOptions): HTMLDivE
     toolName,
     input: { kind: 'none' },
     outputText: '',
+    nearViewport: true,
     staticContent: false,
   });
 
@@ -634,7 +636,16 @@ function syncToolOutputBlockContent(block: HTMLDivElement): void {
     block.classList.contains('has-pending-interaction') ||
     block.classList.contains('has-pending-approval') ||
     block.querySelector('.tool-interaction') !== null;
-  if (!block.classList.contains('expanded') && !shouldKeepMountedBody) {
+  const isRunning =
+    block.classList.contains('streaming') ||
+    block.classList.contains('streaming-input') ||
+    block.dataset['status'] === 'queued' ||
+    block.dataset['status'] === 'waiting' ||
+    block.dataset['status'] === 'running';
+  const shouldHydrateExpandedBody =
+    block.classList.contains('expanded') && (state.nearViewport || isRunning);
+
+  if (!shouldHydrateExpandedBody && !shouldKeepMountedBody) {
     if (!state.inputSection.hasChildNodes() && !state.outputSection.hasChildNodes()) {
       return;
     }
@@ -645,6 +656,18 @@ function syncToolOutputBlockContent(block: HTMLDivElement): void {
 
   renderToolOutputInput(state);
   renderToolOutputResult(state);
+}
+
+export function setToolOutputBlockNearViewport(
+  block: HTMLDivElement,
+  nearViewport: boolean,
+): void {
+  const state = getToolOutputBlockState(block);
+  if (!state || state.nearViewport === nearViewport) {
+    return;
+  }
+  state.nearViewport = nearViewport;
+  syncToolOutputBlockContent(block);
 }
 
 export function setToolOutputBlockExpanded(block: HTMLDivElement, expanded: boolean): void {
