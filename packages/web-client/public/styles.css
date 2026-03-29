@@ -120,7 +120,7 @@
 
   --font-size-xs: 11px;
   --font-size-sm: 13px;
-  --font-size-base: 14px;
+  --font-size-base: 13px;
   --font-size-lg: 16px;
   --font-size-xl: 18px;
 
@@ -4083,6 +4083,11 @@ body.panel-reordering {
   user-select: text;
 }
 
+.chat-log > .turn {
+  content-visibility: auto;
+  contain-intrinsic-size: 480px;
+}
+
 .chat-scroll-to-bottom {
   position: absolute;
   bottom: var(--spacing-md);
@@ -4124,6 +4129,31 @@ body.panel-reordering {
   margin-bottom: var(--spacing-xl);
 }
 
+.turn-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+}
+
+.chat-log > .turn:first-child > .turn-divider {
+  display: none;
+}
+
+.turn-divider-line {
+  flex: 1;
+  height: 1px;
+  background-color: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+}
+
+.turn-divider-label {
+  white-space: nowrap;
+  padding: 0 var(--spacing-xs);
+}
+
 .turn:last-child {
   margin-bottom: 0;
 }
@@ -4134,6 +4164,11 @@ body.panel-reordering {
 
 .assistant-text {
   line-height: var(--line-height-relaxed);
+}
+
+.assistant-text.streaming-markdown-text,
+.assistant-message-main.streaming-markdown-text {
+  white-space: pre-wrap;
 }
 
 /* ===== Messages ===== */
@@ -4373,7 +4408,7 @@ body.panel-reordering {
 
 .tool-call-group-header {
   width: 100%;
-  padding: 4px 10px;
+  padding: 2px 8px 1px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -4383,6 +4418,9 @@ body.panel-reordering {
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
 }
 
 .tool-call-group-header:hover {
@@ -4831,7 +4869,7 @@ textarea.interaction-input {
 
 .tool-output-header {
   width: 100%;
-  padding: 4px 10px;
+  padding: 2px 8px 1px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -4841,11 +4879,19 @@ textarea.interaction-input {
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.2;
 }
 
 .tool-output-header:hover {
   background-color: var(--color-bg-hover);
   color: var(--color-text-primary);
+}
+
+.capacitor-android .tool-call-group-header,
+.capacitor-android .tool-output-header {
+  padding: 3px 8px 2px;
 }
 
 .tool-output-header-main {

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 import { ChatRenderer } from './chatRenderer';
+import { setToolOutputBlockNearViewport } from '../utils/toolOutputRenderer';
 
 afterEach(() => {
   document.body.innerHTML = '';
@@ -30,7 +31,9 @@ describe('ChatRenderer', () => {
     container.className = 'chat-log';
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     const events: ChatEvent[] = [
       createBaseEvent('turn_start', {
@@ -167,11 +170,53 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('renders a turn divider with the turn timestamp', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const timestamp = new Date('2026-03-29T15:26:00.000Z').getTime();
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-turn',
+        timestamp,
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('user_message', {
+        id: 'e-user',
+        turnId: 't-turn',
+        timestamp: timestamp + 1,
+        responseId: undefined,
+        payload: { text: 'Hello' },
+      }),
+    );
+
+    const turn = container.querySelector<HTMLDivElement>('.turn');
+    expect(turn).not.toBeNull();
+    const divider = turn?.querySelector<HTMLDivElement>(':scope > .turn-divider');
+    expect(divider).not.toBeNull();
+    expect(divider?.querySelectorAll('.turn-divider-line')).toHaveLength(2);
+    expect(divider?.querySelector<HTMLElement>('.turn-divider-label')?.textContent).toBe(
+      new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(timestamp)),
+    );
+  });
+
   it('groups contiguous tool calls within the same segment', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.renderEvent(
       createBaseEvent('tool_call', {
@@ -215,7 +260,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.replayEvents([
       createBaseEvent('assistant_done', {
@@ -254,7 +301,9 @@ describe('ChatRenderer', () => {
     container.className = 'chat-log';
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.renderEvent(
       createBaseEvent('tool_call', {
@@ -296,7 +345,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.renderEvent(
       createBaseEvent('tool_call', {
@@ -337,7 +388,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     expect(renderer.hasActiveOutput()).toBe(false);
 
@@ -548,6 +601,7 @@ describe('ChatRenderer', () => {
 
     let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(true);
     expect(assistantText?.textContent).toContain('Hello world');
 
     renderer.renderEvent(
@@ -559,8 +613,84 @@ describe('ChatRenderer', () => {
 
     assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
     expect(assistantText?.dataset['eventId']).toBe('e3');
     expect(assistantText?.textContent).toContain('Hello world!');
+  });
+
+  it('finalizes streamed assistant markdown before inserting a tool block', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Before **tool**' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc-split',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    const assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+    expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
+    expect(assistantText?.querySelector('strong')?.textContent).toBe('tool');
+  });
+
+  it('does not duplicate a finalized segment when a tool split has no follow-up assistant chunk', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Before tool' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc-split',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'Before tool' },
+      }),
+    );
+
+    const assistantTexts = container.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.textContent).toContain('Before tool');
   });
 
   it('finalizes the current streamed segment when assistant_done matches the same stream', () => {
@@ -668,7 +798,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     // First, render the tool_call
     renderer.renderEvent(
@@ -740,7 +872,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.renderEvent(
       createBaseEvent('tool_output_chunk', {
@@ -981,7 +1115,18 @@ describe('ChatRenderer', () => {
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
-    const responseEl = (renderer as any).getOrCreateAssistantResponseContainer('t1', 'e1', 'r1');
+    const rendererWithInternals = renderer as unknown as {
+      getOrCreateAssistantResponseContainer: (
+        turnId: string,
+        eventId: string,
+        responseId: string,
+      ) => HTMLDivElement;
+      getOrCreateToolCallsContainer: (
+        responseEl: HTMLDivElement,
+        responseId: string,
+      ) => HTMLDivElement;
+    };
+    const responseEl = rendererWithInternals.getOrCreateAssistantResponseContainer('t1', 'e1', 'r1');
 
     const text0 = document.createElement('div');
     text0.className = 'assistant-text';
@@ -993,7 +1138,7 @@ describe('ChatRenderer', () => {
     text1.dataset['segment'] = '1';
     responseEl.appendChild(text1);
 
-    const toolCalls = (renderer as any).getOrCreateToolCallsContainer(responseEl, 'r1');
+    const toolCalls = rendererWithInternals.getOrCreateToolCallsContainer(responseEl, 'r1');
 
     const children = Array.from(responseEl.children);
     const toolIndex = children.indexOf(toolCalls);
@@ -1295,7 +1440,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     renderer.renderEvent(
       createBaseEvent('tool_call', {
@@ -1381,7 +1528,9 @@ describe('ChatRenderer', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
 
     // First, create the response container via a turn_start
     renderer.renderEvent(
@@ -1451,7 +1600,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming-input')).toBe(false);
   });
 
-  it('renders write tool input formatted view as plain content with JSON toggle', () => {
+  it('hydrates collapsed tool input content on expand', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -1475,6 +1624,12 @@ describe('ChatRenderer', () => {
     expect(toolBlock).not.toBeNull();
     if (!toolBlock) return;
 
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
     const inputSection = toolBlock.querySelector<HTMLElement>('.tool-output-input');
     const inputLabel = inputSection?.querySelector<HTMLElement>('.tool-output-section-label');
     expect(inputLabel?.textContent).toContain('Content');
@@ -1491,6 +1646,265 @@ describe('ChatRenderer', () => {
 
     expect(inputBody?.textContent).toContain('/tmp/test-shape.txt');
     expect(inputBody?.textContent).toContain('"content"');
+
+    header?.click();
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+  });
+
+  it('renders bash tool input with a command view and JSON toggle on expand', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-bash-input',
+          toolName: 'bash',
+          args: {
+            command: 'printf "hello\\nworld\\n"',
+            cwd: '/tmp/demo',
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-bash-input"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const inputSection = toolBlock.querySelector<HTMLElement>('.tool-output-input');
+    const inputLabel = inputSection?.querySelector<HTMLElement>('.tool-output-section-label');
+    expect(inputLabel?.textContent).toContain('Command');
+
+    const inputBody = inputSection?.querySelector<HTMLElement>('.tool-output-input-body');
+    expect(inputBody?.textContent).toContain('printf "hello\\nworld\\n"');
+    expect(inputBody?.textContent).not.toContain('"cwd"');
+
+    const jsonToggle = inputSection?.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    expect(jsonToggle).not.toBeNull();
+    jsonToggle?.click();
+
+    expect(inputBody?.textContent).toContain('"command"');
+    expect(inputBody?.textContent).toContain('"cwd"');
+  });
+
+  it('hydrates collapsed tool output content on expand', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-bash',
+          toolName: 'bash',
+          args: { command: 'echo hello world' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-bash',
+          result: 'hello world\n',
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-bash"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-output-body')).toBeNull();
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('hello world');
+
+    header?.click();
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+    expect(toolBlock.querySelector('.tool-output-output-body')).toBeNull();
+  });
+
+  it('keeps inline tool interactions across collapse and expand', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-inline',
+          toolName: 'ask_user',
+          args: { prompt: 'Need your input' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_request', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-inline',
+          toolName: 'ask_user',
+          interactionId: 'i-inline',
+          interactionType: 'input',
+          presentation: 'tool',
+          inputSchema: {
+            title: 'Need your input',
+            fields: [{ id: 'answer', type: 'text', label: 'Answer', required: true }],
+          },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('interaction_response', {
+        id: 'e3',
+        payload: {
+          toolCallId: 'tc-inline',
+          interactionId: 'i-inline',
+          action: 'submit',
+          input: { answer: 'hello' },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-inline"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    let interaction = toolBlock.querySelector<HTMLDivElement>(
+      '.tool-output-result > .tool-interaction.interaction-questionnaire',
+    );
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.querySelector<HTMLInputElement>('[data-field-id="answer"]')?.value).toBe(
+      'hello',
+    );
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+    expect(toolBlock.classList.contains('expanded')).toBe(false);
+
+    header?.click();
+    interaction = toolBlock.querySelector<HTMLDivElement>(
+      '.tool-output-result > .tool-interaction.interaction-questionnaire',
+    );
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.querySelector<HTMLInputElement>('[data-field-id="answer"]')?.value).toBe(
+      'hello',
+    );
+  });
+
+  it('dehydrates expanded completed tool bodies when they leave the viewport', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-offscreen',
+          toolName: 'bash',
+          args: { command: 'echo hello world' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-offscreen',
+          result: 'hello world\n',
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-offscreen"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    expect(toolBlock.querySelector('.tool-output-input-body')).not.toBeNull();
+    expect(toolBlock.querySelector('.tool-output-output-body')).not.toBeNull();
+
+    setToolOutputBlockNearViewport(toolBlock, false);
+    expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+    expect(toolBlock.querySelector('.tool-output-output-body')).toBeNull();
+
+    setToolOutputBlockNearViewport(toolBlock, true);
+    expect(toolBlock.querySelector('.tool-output-input-body')?.textContent).toContain(
+      'echo hello world',
+    );
+    expect(toolBlock.querySelector('.tool-output-output-body')?.textContent).toContain(
+      'hello world',
+    );
+  });
+
+  it('keeps expanded streaming tool bodies hydrated offscreen', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-streaming',
+          toolName: 'bash',
+          args: { command: 'echo hello' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_output_chunk', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-streaming',
+          toolName: 'bash',
+          chunk: 'hello',
+          offset: 5,
+        },
+      }) as ChatEvent,
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-streaming"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    setToolOutputBlockNearViewport(toolBlock, false);
+    expect(toolBlock.querySelector('.tool-output-output-body')?.textContent).toContain('hello');
   });
 
   it('groups tool_input_chunk blocks when a second call streams in', () => {

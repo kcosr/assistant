@@ -22,7 +22,12 @@ import type {
   UserAudioEvent,
   UserMessageEvent,
 } from '@assistant/shared';
-import { applyMarkdownToElement } from '../utils/markdown';
+import {
+  applyMarkdownToElement,
+  appendStreamingMarkdownText,
+  finalizeStreamingMarkdownText,
+  finalizeStreamingMarkdownTextIfNeeded,
+} from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
@@ -37,6 +42,7 @@ import {
   getToolCallSummary,
   setToolOutputBlockInput,
   setToolOutputBlockPending,
+  updateToolOutputBlockStreamingInput,
   updateToolCallGroup,
   updateToolOutputBlockLabel,
   updateToolOutputBlockContent,
@@ -103,6 +109,10 @@ export class ChatRenderer {
   private debugEnabled: boolean | null = null;
   private suppressTypingIndicator = false;
   private focusInputHandler: (() => void) | null = null;
+  private readonly turnTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -388,7 +398,7 @@ export class ChatRenderer {
 
   private handleTurnStart(event: TurnStartEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    this.getOrCreateTurnContainer(turnId);
+    this.getOrCreateTurnContainer(turnId, event.timestamp);
   }
 
   private handleTurnEnd(event: TurnEndEvent): void {
@@ -401,7 +411,7 @@ export class ChatRenderer {
 
   private handleUserMessage(event: UserMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const text = stripContextLine(event.payload.text);
     const bubble = appendMessage(turnEl, 'user', text);
@@ -427,7 +437,7 @@ export class ChatRenderer {
 
   private handleUserAudio(event: UserAudioEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const transcription = event.payload.transcription;
     const bubble = appendMessage(turnEl, 'user', transcription);
@@ -450,6 +460,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
@@ -461,7 +472,7 @@ export class ChatRenderer {
     const combined = previous + event.payload.text;
     this.assistantTextBuffers.set(bufferKey, combined);
 
-    applyMarkdownToElement(textEl, combined);
+    appendStreamingMarkdownText(textEl, event.payload.text);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -491,16 +502,27 @@ export class ChatRenderer {
     const currentBufferKey = `${responseId}:${previousSegmentIdx}`;
     const currentBuffer = this.assistantTextBuffers.get(currentBufferKey);
     const currentTextEl = this.assistantTextElements.get(currentBufferKey);
+    const hasPendingSegmentBreak = this.needsNewTextSegment.has(responseId);
     const canFinalizeExistingSegment =
-      !this.needsNewTextSegment.has(responseId) &&
+      !hasPendingSegmentBreak &&
       !!currentTextEl &&
       typeof currentBuffer === 'string' &&
       currentBuffer.length > 0 &&
       (event.payload.text === currentBuffer || event.payload.text.startsWith(currentBuffer));
+    const canFinalizeClosedSegment =
+      hasPendingSegmentBreak &&
+      !!currentTextEl &&
+      typeof currentBuffer === 'string' &&
+      currentBuffer.length > 0 &&
+      event.payload.text === currentBuffer;
 
-    if (canFinalizeExistingSegment && currentTextEl) {
+    if ((canFinalizeExistingSegment || canFinalizeClosedSegment) && currentTextEl) {
       this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
-      applyMarkdownToElement(currentTextEl, event.payload.text);
+      finalizeStreamingMarkdownText(currentTextEl, event.payload.text);
+      this.assistantTextBuffers.delete(currentBufferKey);
+      this.assistantTextElements.delete(currentBufferKey);
+      this.needsNewTextSegment.delete(responseId);
+      this.assistantTextSegmentTokens.delete(responseId);
       if (event.payload.phase) {
         currentTextEl.dataset['phase'] = event.payload.phase;
       }
@@ -525,6 +547,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
@@ -534,7 +557,9 @@ export class ChatRenderer {
 
     const text = event.payload.text;
     this.assistantTextBuffers.set(bufferKey, text);
-    applyMarkdownToElement(textEl, text);
+    finalizeStreamingMarkdownText(textEl, text);
+    this.assistantTextBuffers.delete(bufferKey);
+    this.assistantTextElements.delete(bufferKey);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -564,6 +589,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
     const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
@@ -589,6 +615,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
     const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
@@ -631,7 +658,7 @@ export class ChatRenderer {
 
   private handleCustomMessage(event: CustomMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
     const label = event.payload.label?.trim();
     const messageEl = this.renderInfoMessage(turnEl, text, {
@@ -645,7 +672,7 @@ export class ChatRenderer {
 
   private handleSummaryMessage(event: SummaryMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
     const summaryType = event.payload.summaryType;
     const label =
@@ -697,10 +724,6 @@ export class ChatRenderer {
     if (block) {
       // Block exists from streaming - update it with final args
       block.classList.remove('streaming-input');
-      const inputSection = block.querySelector('.tool-output-input-body');
-      if (inputSection) {
-        inputSection.classList.remove('streaming');
-      }
       if (isAgentMessageTool) {
         const titleEl = block.querySelector<HTMLElement>('.tool-output-title');
         if (titleEl && agentDisplayName) {
@@ -725,7 +748,13 @@ export class ChatRenderer {
       }
     } else {
       // Create new block
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       // Use styled agent block for agents_message
       if (isAgentMessageTool) {
@@ -840,7 +869,13 @@ export class ChatRenderer {
     if (!block) {
       // Create the block early so we can show streaming input
       const responseId = this.getResponseId(event.responseId);
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       const headerLabel = extractToolCallLabel(toolName, '');
       block = createToolOutputBlock({
@@ -868,11 +903,7 @@ export class ChatRenderer {
     }
 
     // Update the input section with streaming args
-    const inputSection = block.querySelector('.tool-output-input-body');
-    if (inputSection) {
-      inputSection.textContent = newBuffer;
-      inputSection.classList.add('streaming');
-    }
+    updateToolOutputBlockStreamingInput(block, newBuffer);
 
     this.updateToolCallGroupForBlock(block);
   }
@@ -929,7 +960,13 @@ export class ChatRenderer {
       if (this.questionnaireToolCalls.has(callId)) {
         return;
       }
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       block = createToolOutputBlock({
         callId,
@@ -1235,6 +1272,7 @@ export class ChatRenderer {
       event.turnId,
       payload.toolCallId,
       responseId,
+      event.timestamp,
     );
     const block = createToolOutputBlock({
       callId: payload.toolCallId,
@@ -1304,13 +1342,19 @@ export class ChatRenderer {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
       const container =
         responseId
-          ? this.getOrCreateAssistantResponseContainer(event.turnId, event.id, responseId)
+          ? this.getOrCreateAssistantResponseContainer(
+              event.turnId,
+              event.id,
+              responseId,
+              event.timestamp,
+            )
           : fallbackContainer ??
             this.getOrCreateToolCallContainer(
               event.id,
               event.turnId,
               payload.toolCallId,
               responseId,
+              event.timestamp,
             );
       container.appendChild(element);
     }
@@ -1590,7 +1634,7 @@ export class ChatRenderer {
     // Only add turn-level indicator if no tool blocks were interrupted
     if (!hasInterruptedToolBlock) {
       const turnId = this.getTurnId(event.turnId, event.id);
-      const turnEl = this.getOrCreateTurnContainer(turnId);
+      const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
       const indicator = document.createElement('div');
       indicator.className = 'message-interrupted';
@@ -1603,7 +1647,7 @@ export class ChatRenderer {
 
   private handleError(event: ErrorEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const errorEl = document.createElement('div');
     errorEl.className = 'error-message';
@@ -1645,19 +1689,46 @@ export class ChatRenderer {
     return hasInterruptedToolBlock;
   }
 
-  private getOrCreateTurnContainer(turnId: string): HTMLDivElement {
+  private getOrCreateTurnContainer(turnId: string, timestamp?: number): HTMLDivElement {
     const existing = this.turnElements.get(turnId);
     if (existing) {
+      this.ensureTurnTimestamp(existing, timestamp);
       return existing;
     }
 
     const turnEl = document.createElement('div');
     turnEl.className = 'turn';
     turnEl.dataset['turnId'] = turnId;
+    this.ensureTurnTimestamp(turnEl, timestamp);
     this.container.appendChild(turnEl);
 
     this.turnElements.set(turnId, turnEl);
     return turnEl;
+  }
+
+  private ensureTurnTimestamp(turnEl: HTMLDivElement, timestamp?: number): void {
+    if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+      return;
+    }
+    if (turnEl.dataset['turnTimestamp']) {
+      return;
+    }
+    turnEl.dataset['turnTimestamp'] = String(timestamp);
+
+    const divider = document.createElement('div');
+    divider.className = 'turn-divider';
+    divider.setAttribute('aria-hidden', 'true');
+
+    const leftLine = document.createElement('span');
+    leftLine.className = 'turn-divider-line';
+    const label = document.createElement('span');
+    label.className = 'turn-divider-label';
+    label.textContent = this.turnTimestampFormatter.format(new Date(timestamp));
+    const rightLine = document.createElement('span');
+    rightLine.className = 'turn-divider-line';
+
+    divider.append(leftLine, label, rightLine);
+    turnEl.prepend(divider);
   }
 
   private getDisplayToolNameForOutput(block: HTMLDivElement, eventToolName?: string): string {
@@ -1677,9 +1748,10 @@ export class ChatRenderer {
     turnIdRaw: string | undefined,
     toolCallId: string,
     responseId: string | null,
+    timestamp?: number,
   ): HTMLDivElement {
     if (responseId) {
-      return this.getOrCreateAssistantResponseContainer(turnIdRaw, eventId, responseId);
+      return this.getOrCreateAssistantResponseContainer(turnIdRaw, eventId, responseId, timestamp);
     }
 
     const existing = this.toolCallContainers.get(toolCallId);
@@ -1688,7 +1760,7 @@ export class ChatRenderer {
     }
 
     const turnId = this.getTurnId(turnIdRaw, eventId);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, timestamp);
 
     const responseEl = document.createElement('div');
     responseEl.className = 'assistant-response tool-call-only';
@@ -1705,6 +1777,7 @@ export class ChatRenderer {
     turnIdRaw: string | undefined,
     fallbackTurnKey: string,
     responseId: string,
+    timestamp?: number,
   ): HTMLDivElement {
     const existing = this.responseElements.get(responseId);
     if (existing) {
@@ -1712,7 +1785,7 @@ export class ChatRenderer {
     }
 
     const turnId = this.getTurnId(turnIdRaw, fallbackTurnKey);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, timestamp);
 
     const responseEl = document.createElement('div');
     responseEl.className = 'assistant-response';
@@ -1754,6 +1827,7 @@ export class ChatRenderer {
    * Called when a tool block is inserted to start a new text segment after it.
    */
   private advanceTextSegment(responseId: string): void {
+    this.finalizeCurrentAssistantTextSegment(responseId, true);
     const current = this.textSegmentIndex.get(responseId) ?? 0;
     this.textSegmentIndex.set(responseId, current + 1);
     this.debugLog('advance_text_segment', {
@@ -1799,11 +1873,26 @@ export class ChatRenderer {
   }
 
   private markTextSegmentBreak(responseId: string): void {
+    this.finalizeCurrentAssistantTextSegment(responseId);
     this.needsNewTextSegment.add(responseId);
     this.debugLog('mark_text_segment_break', {
       responseId,
       segmentIdx: this.textSegmentIndex.get(responseId) ?? 0,
     });
+  }
+
+  private finalizeCurrentAssistantTextSegment(responseId: string, release = false): void {
+    const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
+    const segmentKey = `${responseId}:${segmentIdx}`;
+    const textEl = this.assistantTextElements.get(segmentKey);
+    const text = this.assistantTextBuffers.get(segmentKey);
+    if (textEl && typeof text === 'string') {
+      finalizeStreamingMarkdownTextIfNeeded(textEl, text);
+    }
+    if (release) {
+      this.assistantTextBuffers.delete(segmentKey);
+      this.assistantTextElements.delete(segmentKey);
+    }
   }
 
   private getThinkingSegmentKey(responseId: string): { segmentIdx: number; segmentKey: string } {

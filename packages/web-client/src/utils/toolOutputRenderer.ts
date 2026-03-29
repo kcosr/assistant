@@ -60,6 +60,29 @@ export interface ToolCallGroupOptions {
   expanded?: boolean;
 }
 
+type ToolOutputInputState =
+  | { kind: 'none' }
+  | { kind: 'streaming'; text: string; label: string }
+  | { kind: 'formatted'; argsJson: string }
+  | { kind: 'custom'; text: string; label: string };
+
+interface ToolOutputBlockState {
+  readonly headerButton: HTMLButtonElement;
+  readonly toggleIcon: HTMLSpanElement;
+  readonly content: HTMLDivElement;
+  readonly inputSection: HTMLDivElement;
+  readonly outputSection: HTMLDivElement;
+  toolName: string;
+  input: ToolOutputInputState;
+  outputText: string;
+  outputStatus?: ToolOutputStatus;
+  nearViewport: boolean;
+  // Blocks with dedicated custom DOM manage their own body lifecycle and should not be dehydrated.
+  staticContent: boolean;
+}
+
+const toolOutputBlockStates = new WeakMap<HTMLDivElement, ToolOutputBlockState>();
+
 export function getToolOutputToggleSymbol(expanded: boolean): string {
   return expanded ? '▼' : '▶';
 }
@@ -148,9 +171,20 @@ export function createToolOutputBlock(options: ToolOutputBlockOptions): HTMLDivE
   content.appendChild(outputSection);
 
   headerButton.addEventListener('click', () => {
-    const isExpanded = block.classList.toggle('expanded');
-    headerButton.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-    toggleIcon.textContent = getToolOutputToggleSymbol(isExpanded);
+    setToolOutputBlockExpanded(block, !block.classList.contains('expanded'));
+  });
+
+  toolOutputBlockStates.set(block, {
+    headerButton,
+    toggleIcon,
+    content,
+    inputSection,
+    outputSection,
+    toolName,
+    input: { kind: 'none' },
+    outputText: '',
+    nearViewport: true,
+    staticContent: false,
   });
 
   block.appendChild(headerButton);
@@ -296,6 +330,408 @@ function applyToolOutputStatus(
   block.dataset['status'] = state;
 }
 
+function getToolOutputBlockState(block: HTMLDivElement): ToolOutputBlockState | null {
+  return toolOutputBlockStates.get(block) ?? null;
+}
+
+function createToolOutputJsonToggleButton(): HTMLButtonElement {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'tool-output-json-toggle';
+  toggleBtn.textContent = 'JSON';
+  toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
+  toggleBtn.dataset['showingJson'] = 'false';
+  return toggleBtn;
+}
+
+function attachToolOutputJsonToggle(
+  toggleBtn: HTMLButtonElement,
+  renderFormatted: () => void,
+  renderJson: () => void,
+): void {
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const showingJson = toggleBtn.dataset['showingJson'] === 'true';
+    if (showingJson) {
+      renderFormatted();
+      toggleBtn.textContent = 'JSON';
+      toggleBtn.dataset['showingJson'] = 'false';
+      return;
+    }
+
+    renderJson();
+    toggleBtn.textContent = 'Formatted';
+    toggleBtn.dataset['showingJson'] = 'true';
+  });
+}
+
+function renderToolOutputInput(state: ToolOutputBlockState): void {
+  const inputSection = state.inputSection;
+  inputSection.replaceChildren();
+
+  if (state.input.kind === 'none') {
+    return;
+  }
+
+  if (state.input.kind === 'streaming') {
+    const labelRow = document.createElement('div');
+    labelRow.className = 'tool-output-section-label';
+    labelRow.textContent = state.input.label;
+    inputSection.appendChild(labelRow);
+
+    const inputBody = document.createElement('div');
+    inputBody.className = 'tool-output-input-body streaming';
+    inputBody.textContent = state.input.text;
+    inputSection.appendChild(inputBody);
+    return;
+  }
+
+  if (state.input.kind === 'custom') {
+    const inputLabel = document.createElement('div');
+    inputLabel.className = 'tool-output-section-label';
+    inputLabel.textContent = state.input.label;
+    inputSection.appendChild(inputLabel);
+
+    const inputBody = document.createElement('div');
+    inputBody.className = 'tool-output-input-body markdown-content';
+    applyMarkdownToElement(inputBody, state.input.text);
+    inputSection.appendChild(inputBody);
+    return;
+  }
+
+  const argsJson = state.input.argsJson;
+  const toolName = state.toolName;
+  let formattedText = '';
+  let label = 'Input';
+  let isAgentMessage = false;
+  let isPlainTextInput = false;
+  let inputLanguage: string | undefined;
+  let rawJson = '';
+  let prettyJson = '';
+
+  if (argsJson.trim().length === 0) {
+    return;
+  }
+
+  try {
+    const argsRecord = JSON.parse(argsJson) as Record<string, unknown>;
+    rawJson = JSON.stringify(argsRecord);
+    prettyJson = JSON.stringify(argsRecord, null, 2);
+
+    if (toolName === 'agents_message' && typeof argsRecord['content'] === 'string') {
+      formattedText = argsRecord['content'];
+      label = 'Sent';
+      isAgentMessage = true;
+    } else if (toolName === 'write' && typeof argsRecord['content'] === 'string') {
+      formattedText = argsRecord['content'];
+      label = 'Content';
+      isPlainTextInput = true;
+    } else if (toolName === 'bash' && typeof argsRecord['command'] === 'string') {
+      formattedText = argsRecord['command'] as string;
+      label = 'Command';
+      inputLanguage = 'bash';
+    } else {
+      formattedText = prettyJson;
+    }
+  } catch {
+    formattedText = argsJson;
+    rawJson = argsJson;
+    prettyJson = argsJson;
+  }
+
+  const labelRow = document.createElement('div');
+  labelRow.className = 'tool-output-section-label';
+  labelRow.textContent = label;
+
+  const hasJsonToggle = rawJson.trim().length > 0;
+  if (hasJsonToggle) {
+    labelRow.appendChild(createToolOutputJsonToggleButton());
+  }
+
+  inputSection.appendChild(labelRow);
+
+  const inputBody = document.createElement('div');
+  inputBody.className = 'tool-output-input-body markdown-content';
+
+  const renderFormatted = () => {
+    inputBody.innerHTML = '';
+    if (isAgentMessage) {
+      applyMarkdownToElement(inputBody, formattedText);
+      return;
+    }
+    if (isPlainTextInput) {
+      applyMarkdownToElement(inputBody, `\`\`\`\n${formattedText}\n\`\`\``);
+      return;
+    }
+    const language =
+      inputLanguage ??
+      (toolName === 'bash' || toolName === 'shell' || toolName === 'sh' ? 'bash' : undefined);
+    const markdownText = language
+      ? `\`\`\`${language}\n${formattedText}\n\`\`\``
+      : `\`\`\`json\n${formattedText}\n\`\`\``;
+    applyMarkdownToElement(inputBody, markdownText);
+  };
+
+  const renderJson = () => {
+    inputBody.innerHTML = '';
+    const jsonText = rawJson || prettyJson || argsJson;
+    applyMarkdownToElement(inputBody, '```json\n' + jsonText + '\n```');
+  };
+
+  renderFormatted();
+
+  const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+  if (toggleBtn) {
+    attachToolOutputJsonToggle(toggleBtn, renderFormatted, renderJson);
+  }
+
+  inputSection.appendChild(inputBody);
+}
+
+function renderToolOutputResult(state: ToolOutputBlockState): void {
+  const outputSection = state.outputSection;
+  const preservedInteractions = Array.from(outputSection.children).filter((child) =>
+    child.classList.contains('tool-interaction'),
+  );
+  outputSection.replaceChildren();
+
+  const status = state.outputStatus;
+  const text = state.outputText;
+  const trimmed = text.replace(/\s+$/, '');
+  const toolName = state.toolName;
+
+  const streaming = status?.streaming === true;
+  const interrupted = status?.interrupted === true;
+  const ok = status?.ok;
+  const agentCallback = status?.agentCallback === true;
+  const derivedState: ToolOutputState | undefined =
+    status?.state ??
+    (streaming
+      ? 'running'
+      : interrupted
+        ? 'interrupted'
+        : ok === false
+          ? 'error'
+          : ok === true
+            ? 'complete'
+            : undefined);
+  const isPendingState =
+    derivedState === 'queued' || derivedState === 'waiting' || derivedState === 'running';
+
+  if (!trimmed && !(isPendingState && status?.pendingText) && preservedInteractions.length === 0) {
+    outputSection.classList.remove('markdown-content');
+    return;
+  }
+
+  for (const interaction of preservedInteractions) {
+    outputSection.appendChild(interaction);
+  }
+
+  if (!trimmed && !(isPendingState && status?.pendingText)) {
+    outputSection.classList.remove('markdown-content');
+    return;
+  }
+
+  const outputLabel = status?.outputLabel ?? 'Output';
+  const labelRow = document.createElement('div');
+  labelRow.className = 'tool-output-section-label';
+  labelRow.textContent = outputLabel;
+
+  if (status?.rawJson && !(isPendingState && status?.pendingText)) {
+    labelRow.appendChild(createToolOutputJsonToggleButton());
+  }
+
+  outputSection.appendChild(labelRow);
+
+  if (isPendingState && status?.pendingText) {
+    const pendingIndicator = document.createElement('div');
+    pendingIndicator.className = 'tool-output-pending';
+    const spinner = document.createElement('span');
+    spinner.className = 'tool-output-spinner';
+    pendingIndicator.appendChild(spinner);
+    pendingIndicator.append(` ${status.pendingText}`);
+    outputSection.appendChild(pendingIndicator);
+    return;
+  }
+
+  if (!trimmed) {
+    return;
+  }
+
+  const outputBody = document.createElement('div');
+  outputBody.className = 'tool-output-output-body';
+  outputSection.appendChild(outputBody);
+
+  const isMarkdownResult = toolName === 'notes_read' || toolName === 'notes_show';
+  const isAgentMessage = toolName === 'agents_message';
+  const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
+  const useStreamingPlainText = canUseStreamingPlainTextOutput(status, toolName);
+
+  if (useStreamingPlainText) {
+    const pre = document.createElement('pre');
+    pre.className = 'tool-output-streaming-pre';
+    pre.textContent = text;
+    outputBody.appendChild(pre);
+    return;
+  }
+
+  let formattedMarkdown: string;
+  if (isMarkdownResult || agentCallback || isAgentMessage) {
+    outputBody.classList.add('markdown-content');
+    formattedMarkdown = trimmed;
+    applyMarkdownToElement(outputBody, formattedMarkdown);
+  } else {
+    const language = isBashTool ? 'bash' : undefined;
+    formattedMarkdown = language
+      ? `\`\`\`${language}\n${trimmed}\n\`\`\``
+      : `\`\`\`\n${trimmed}\n\`\`\``;
+    applyMarkdownToElement(outputBody, formattedMarkdown);
+  }
+
+  if (status?.rawJson) {
+    const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
+    if (toggleBtn) {
+      const rawJson = status.rawJson;
+      attachToolOutputJsonToggle(
+        toggleBtn,
+        () => {
+          outputBody.innerHTML = '';
+          if (isMarkdownResult || agentCallback || isAgentMessage) {
+            outputBody.classList.add('markdown-content');
+          }
+          applyMarkdownToElement(outputBody, formattedMarkdown);
+        },
+        () => {
+          outputBody.innerHTML = '';
+          outputBody.classList.remove('markdown-content');
+          applyMarkdownToElement(outputBody, '```json\n' + rawJson + '\n```');
+        },
+      );
+    }
+  }
+
+  if (status?.truncated) {
+    const footer = document.createElement('div');
+    footer.className = 'tool-output-truncation-footer';
+
+    const prefix = '⚠️ Output truncated';
+    const truncatedBy = status.truncatedBy;
+
+    let details = '';
+    if (
+      truncatedBy === 'lines' &&
+      typeof status.outputLines === 'number' &&
+      typeof status.totalLines === 'number'
+    ) {
+      details = ` (showing ${status.outputLines} lines of ${status.totalLines})`;
+    } else if (
+      truncatedBy === 'bytes' &&
+      typeof status.outputBytes === 'number' &&
+      typeof status.totalBytes === 'number'
+    ) {
+      const shown = formatByteSize(status.outputBytes);
+      const total = formatByteSize(status.totalBytes);
+      details = ` (showing ${shown} of ${total})`;
+    }
+
+    footer.textContent = `${prefix}${details}`;
+    outputSection.appendChild(footer);
+  }
+}
+
+function syncToolOutputBlockContent(block: HTMLDivElement): void {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
+    return;
+  }
+  const shouldKeepMountedBody =
+    state.staticContent ||
+    block.classList.contains('has-pending-interaction') ||
+    block.classList.contains('has-pending-approval') ||
+    block.querySelector('.tool-interaction') !== null;
+  const isRunning =
+    state.input.kind === 'streaming' ||
+    state.outputStatus?.streaming === true ||
+    state.outputStatus?.state === 'queued' ||
+    state.outputStatus?.state === 'waiting' ||
+    state.outputStatus?.state === 'running';
+  const shouldHydrateExpandedBody =
+    block.classList.contains('expanded') && (state.nearViewport || isRunning);
+
+  if (!shouldHydrateExpandedBody && !shouldKeepMountedBody) {
+    if (!state.inputSection.hasChildNodes() && !state.outputSection.hasChildNodes()) {
+      return;
+    }
+    state.inputSection.replaceChildren();
+    state.outputSection.replaceChildren();
+    return;
+  }
+
+  renderToolOutputInput(state);
+  renderToolOutputResult(state);
+}
+
+function canUseStreamingPlainTextOutput(status: ToolOutputStatus | undefined, toolName: string): boolean {
+  if (!status || status.streaming !== true) {
+    return false;
+  }
+  if (status.rawJson || status.pendingText || status.truncated || status.agentCallback) {
+    return false;
+  }
+  return toolName !== 'notes_read' && toolName !== 'notes_show' && toolName !== 'agents_message';
+}
+
+export function setToolOutputBlockNearViewport(
+  block: HTMLDivElement,
+  nearViewport: boolean,
+): void {
+  const state = getToolOutputBlockState(block);
+  if (!state || state.nearViewport === nearViewport) {
+    return;
+  }
+  state.nearViewport = nearViewport;
+  syncToolOutputBlockContent(block);
+}
+
+export function setToolOutputBlockExpanded(block: HTMLDivElement, expanded: boolean): void {
+  const state = getToolOutputBlockState(block);
+  block.classList.toggle('expanded', expanded);
+  if (state) {
+    state.headerButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    state.toggleIcon.textContent = getToolOutputToggleSymbol(expanded);
+  } else {
+    const headerButton = block.querySelector<HTMLButtonElement>('.tool-output-header');
+    if (headerButton) {
+      headerButton.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+    const toggleIcon = block.querySelector<HTMLElement>('.tool-output-toggle');
+    if (toggleIcon) {
+      toggleIcon.textContent = getToolOutputToggleSymbol(expanded);
+    }
+  }
+  syncToolOutputBlockContent(block);
+}
+
+export function updateToolOutputBlockStreamingInput(
+  block: HTMLDivElement,
+  text: string,
+  label = 'Input',
+): void {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
+    return;
+  }
+  state.input = { kind: 'streaming', text, label };
+  const mountedBody = state.inputSection.querySelector<HTMLDivElement>('.tool-output-input-body.streaming');
+  const mountedLabel = state.inputSection.querySelector<HTMLDivElement>('.tool-output-section-label');
+  if (mountedBody && mountedLabel) {
+    mountedBody.textContent = text;
+    mountedLabel.textContent = label;
+    return;
+  }
+  syncToolOutputBlockContent(block);
+}
+
 export function getToolCallSummary(block: HTMLDivElement): string {
   const title =
     block.querySelector<HTMLElement>('.tool-output-title')?.textContent?.trim() ??
@@ -361,8 +797,8 @@ export function updateToolOutputBlockContent(
   text: string,
   status?: ToolOutputStatus,
 ): void {
-  const outputSection = block.querySelector<HTMLElement>('.tool-output-result');
-  if (!outputSection) {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
     return;
   }
 
@@ -434,145 +870,31 @@ export function updateToolOutputBlockContent(
     applyToolOutputStatus(block, derivedState, statusLabel);
   }
 
-  const trimmed = text.replace(/\s+$/, '');
-
-  // Tools that return markdown content - render as-is without wrapping in code block
-  // TODO: Replace with server-driven display config (see issue for tool display metadata)
-  const isMarkdownResult = toolName === 'notes_read' || toolName === 'notes_show';
-
-  // Handle custom input section for agent messages (render as markdown)
   if (status?.inputText !== undefined) {
-    const inputSection = block.querySelector<HTMLElement>('.tool-output-input');
-    if (inputSection) {
-      inputSection.innerHTML = '';
-      const inputLabel = document.createElement('div');
-      inputLabel.className = 'tool-output-section-label';
-      inputLabel.textContent = status.inputLabel ?? 'Sent';
-      inputSection.appendChild(inputLabel);
-
-      const inputBody = document.createElement('div');
-      inputBody.className = 'tool-output-input-body markdown-content';
-      applyMarkdownToElement(inputBody, status.inputText);
-      inputSection.appendChild(inputBody);
-    }
+    state.input = {
+      kind: 'custom',
+      text: status.inputText,
+      label: status.inputLabel ?? 'Sent',
+    };
   }
 
-  if (!trimmed) {
-    outputSection.innerHTML = '';
-    outputSection.classList.remove('markdown-content');
-    return;
-  }
-
-  // Add a label for the output section (with optional toggle for agent callbacks)
-  const outputLabel = status?.outputLabel ?? 'Output';
-  const labelRow = document.createElement('div');
-  labelRow.className = 'tool-output-section-label';
-  labelRow.textContent = outputLabel;
-
-  // Add JSON toggle button when rawJson is provided (both sync and async agent messages)
-  if (status?.rawJson && !(isPendingState && status?.pendingText)) {
-    const toggleBtn = document.createElement('button');
-    toggleBtn.type = 'button';
-    toggleBtn.className = 'tool-output-json-toggle';
-    toggleBtn.textContent = 'JSON';
-    toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
-    toggleBtn.dataset['showingJson'] = 'false';
-    labelRow.appendChild(toggleBtn);
-
-    // Store raw JSON on the block for toggle
-    block.dataset['rawJson'] = status.rawJson;
-  }
-
-  outputSection.innerHTML = '';
-  outputSection.appendChild(labelRow);
-
-  if (isPendingState && status?.pendingText) {
-    const pendingIndicator = document.createElement('div');
-    pendingIndicator.className = 'tool-output-pending';
-    pendingIndicator.innerHTML = `<span class="tool-output-spinner"></span> ${status.pendingText}`;
-    outputSection.appendChild(pendingIndicator);
-    return;
-  }
-
-  const outputBody = document.createElement('div');
-  outputBody.className = 'tool-output-output-body';
-  outputSection.appendChild(outputBody);
-
-  // Agent messages (sync and async) and markdown results render as plain markdown
-  const isAgentMessage = toolName === 'agents_message';
-  const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
-
-  // Determine the formatted markdown to use for display and toggle
-  let formattedMarkdown: string;
-  if (isMarkdownResult || agentCallback || isAgentMessage) {
-    outputBody.classList.add('markdown-content');
-    formattedMarkdown = trimmed;
-    applyMarkdownToElement(outputBody, formattedMarkdown);
+  state.outputText = text;
+  state.toolName = toolName;
+  if (status) {
+    state.outputStatus = status;
   } else {
-    const language = isBashTool ? 'bash' : undefined;
-    formattedMarkdown = language
-      ? `\`\`\`${language}\n${trimmed}\n\`\`\``
-      : `\`\`\`\n${trimmed}\n\`\`\``;
-    applyMarkdownToElement(outputBody, formattedMarkdown);
+    delete state.outputStatus;
   }
-
-  // Set up toggle handler after content is rendered
-  if (status?.rawJson) {
-    const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
-    if (toggleBtn) {
-      const rawJson = status.rawJson;
-
-      toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const showingJson = toggleBtn.dataset['showingJson'] === 'true';
-        if (showingJson) {
-          // Switch back to formatted
-          outputBody.innerHTML = '';
-          if (isMarkdownResult || agentCallback || isAgentMessage) {
-            outputBody.classList.add('markdown-content');
-          }
-          applyMarkdownToElement(outputBody, formattedMarkdown);
-          toggleBtn.textContent = 'JSON';
-          toggleBtn.dataset['showingJson'] = 'false';
-        } else {
-          // Switch to raw JSON
-          outputBody.innerHTML = '';
-          outputBody.classList.remove('markdown-content');
-          applyMarkdownToElement(outputBody, '```json\n' + rawJson + '\n```');
-          toggleBtn.textContent = 'Formatted';
-          toggleBtn.dataset['showingJson'] = 'true';
-        }
-      });
+  if (canUseStreamingPlainTextOutput(status, toolName)) {
+    const streamingPre = state.outputSection.querySelector<HTMLPreElement>(
+      '.tool-output-streaming-pre',
+    );
+    if (streamingPre) {
+      streamingPre.textContent = text;
+      return;
     }
   }
-
-  if (status?.truncated) {
-    const footer = document.createElement('div');
-    footer.className = 'tool-output-truncation-footer';
-
-    const prefix = '⚠️ Output truncated';
-    const truncatedBy = status.truncatedBy;
-
-    let details = '';
-    if (
-      truncatedBy === 'lines' &&
-      typeof status.outputLines === 'number' &&
-      typeof status.totalLines === 'number'
-    ) {
-      details = ` (showing ${status.outputLines} lines of ${status.totalLines})`;
-    } else if (
-      truncatedBy === 'bytes' &&
-      typeof status.outputBytes === 'number' &&
-      typeof status.totalBytes === 'number'
-    ) {
-      const shown = formatByteSize(status.outputBytes);
-      const total = formatByteSize(status.totalBytes);
-      details = ` (showing ${shown} of ${total})`;
-    }
-
-    footer.textContent = `${prefix}${details}`;
-    outputSection.appendChild(footer);
-  }
+  syncToolOutputBlockContent(block);
 }
 
 function formatByteSize(bytes: number): string {
@@ -625,115 +947,16 @@ export function extractToolCallLabel(toolName: string, argsJson: string): string
  * Set the tool call input on the block (shown when expanded).
  */
 export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string): void {
-  const inputSection = block.querySelector<HTMLElement>('.tool-output-input');
-  if (!inputSection) {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
     return;
   }
 
   // Store the args for reference
   block.dataset['argsJson'] = argsJson;
-
-  const toolName = block.dataset['toolName'] ?? '';
-  let formattedText = '';
-  let label = 'Input';
-  let isAgentMessage = false;
-  let isPlainTextInput = false;
-  let argsRecord: Record<string, unknown> | null = null;
-  let rawJson = '';
-  let prettyJson = '';
-
-  try {
-    argsRecord = JSON.parse(argsJson) as Record<string, unknown>;
-    rawJson = JSON.stringify(argsRecord);
-    prettyJson = JSON.stringify(argsRecord, null, 2);
-
-    if (toolName === 'agents_message' && typeof argsRecord['content'] === 'string') {
-      // Agent message: show the content with "Sent" label
-      formattedText = argsRecord['content'];
-      label = 'Sent';
-      isAgentMessage = true;
-    } else if (toolName === 'write' && typeof argsRecord['content'] === 'string') {
-      formattedText = argsRecord['content'];
-      label = 'Content';
-      isPlainTextInput = true;
-    } else if (toolName === 'bash' && typeof argsRecord['command'] === 'string') {
-      formattedText = argsRecord['command'] as string;
-    } else {
-      // Pretty print the args
-      formattedText = prettyJson;
-    }
-  } catch {
-    formattedText = argsJson;
-    rawJson = argsJson;
-    prettyJson = argsJson;
-  }
-
-  // Create label row with optional toggle
-  const labelRow = document.createElement('div');
-  labelRow.className = 'tool-output-section-label';
-  labelRow.textContent = label;
-
-  const hasJsonToggle = rawJson.trim().length > 0;
-  if (hasJsonToggle) {
-    const toggleBtn = document.createElement('button');
-    toggleBtn.type = 'button';
-    toggleBtn.className = 'tool-output-json-toggle';
-    toggleBtn.textContent = 'JSON';
-    toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
-    toggleBtn.dataset['showingJson'] = 'false';
-    labelRow.appendChild(toggleBtn);
-  }
-
-  inputSection.innerHTML = '';
-  inputSection.appendChild(labelRow);
-
-  const inputBody = document.createElement('div');
-  inputBody.className = 'tool-output-input-body markdown-content';
-
-  const renderFormatted = () => {
-    inputBody.innerHTML = '';
-    if (isAgentMessage) {
-      applyMarkdownToElement(inputBody, formattedText);
-      return;
-    }
-    if (isPlainTextInput) {
-      applyMarkdownToElement(inputBody, `\`\`\`\n${formattedText}\n\`\`\``);
-      return;
-    }
-    const language =
-      toolName === 'bash' || toolName === 'shell' || toolName === 'sh' ? 'bash' : undefined;
-    const markdownText = language
-      ? `\`\`\`${language}\n${formattedText}\n\`\`\``
-      : `\`\`\`json\n${formattedText}\n\`\`\``;
-    applyMarkdownToElement(inputBody, markdownText);
-  };
-
-  const renderJson = () => {
-    inputBody.innerHTML = '';
-    const jsonText = rawJson || prettyJson || argsJson;
-    applyMarkdownToElement(inputBody, '```json\n' + jsonText + '\n```');
-  };
-
-  renderFormatted();
-
-  const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const showingJson = toggleBtn.dataset['showingJson'] === 'true';
-      if (showingJson) {
-        renderFormatted();
-        toggleBtn.textContent = 'JSON';
-        toggleBtn.dataset['showingJson'] = 'false';
-      } else {
-        renderJson();
-        toggleBtn.textContent = 'Formatted';
-        toggleBtn.dataset['showingJson'] = 'true';
-      }
-    });
-  }
-
-  inputSection.appendChild(inputBody);
+  state.input =
+    argsJson.trim().length > 0 ? { kind: 'formatted', argsJson } : { kind: 'none' };
+  syncToolOutputBlockContent(block);
 }
 
 /**
@@ -759,24 +982,23 @@ export function setToolOutputBlockPending(
   const state = options?.state ?? 'running';
   const statusLabel = options?.statusLabel;
   applyToolOutputStatus(block, state, statusLabel);
-
-  // Add a pending indicator to the result section
-  const outputSection = block.querySelector<HTMLElement>('.tool-output-result');
-  if (outputSection) {
-    outputSection.innerHTML = '';
-
-    const label = document.createElement('div');
-    label.className = 'tool-output-section-label';
-    label.textContent = options?.outputLabel ?? (isAgentMessage ? 'Received' : 'Output');
-    outputSection.appendChild(label);
-
-    const pendingIndicator = document.createElement('div');
-    pendingIndicator.className = 'tool-output-pending';
-    const pendingText =
-      options?.pendingText ?? (isAgentMessage ? 'Waiting for response…' : 'Running…');
-    pendingIndicator.innerHTML = `<span class="tool-output-spinner"></span> ${pendingText}`;
-    outputSection.appendChild(pendingIndicator);
+  const blockState = getToolOutputBlockState(block);
+  if (!blockState) {
+    return;
   }
+  blockState.outputText = '';
+  blockState.toolName = toolName;
+  const outputStatus: ToolOutputStatus = {
+    state,
+    outputLabel: options?.outputLabel ?? (isAgentMessage ? 'Received' : 'Output'),
+    pendingText:
+      options?.pendingText ?? (isAgentMessage ? 'Waiting for response…' : 'Running…'),
+  };
+  if (statusLabel !== undefined) {
+    outputStatus.statusLabel = statusLabel;
+  }
+  blockState.outputStatus = outputStatus;
+  syncToolOutputBlockContent(block);
 }
 
 /**
@@ -852,6 +1074,10 @@ export function createAgentMessageExchangeBlock(
   const content = block.querySelector<HTMLDivElement>('.tool-output-content');
   const inputSection = block.querySelector<HTMLDivElement>('.tool-output-input');
   const resultSection = block.querySelector<HTMLDivElement>('.tool-output-result');
+  const blockState = getToolOutputBlockState(block);
+  if (blockState) {
+    blockState.staticContent = true;
+  }
 
   if (content && inputSection && resultSection) {
     // Input section (message received from other agent)

@@ -343,6 +343,53 @@ export function applyMarkdownToElement(element: HTMLElement, text: string): void
   enhanceCodeBlocksWithCopyButtons(element);
 }
 
+const STREAMING_MARKDOWN_TEXT_CLASS = 'streaming-markdown-text';
+const streamingMarkdownElements = new WeakSet<HTMLElement>();
+
+function ensureStreamingMarkdownTextNode(element: HTMLElement): Text {
+  if (!streamingMarkdownElements.has(element)) {
+    element.classList.remove('markdown-content');
+    element.classList.add(STREAMING_MARKDOWN_TEXT_CLASS);
+    element.replaceChildren(document.createTextNode(''));
+    streamingMarkdownElements.add(element);
+  }
+
+  const firstChild = element.firstChild;
+  if (firstChild instanceof Text && element.childNodes.length === 1) {
+    return firstChild;
+  }
+
+  const textNode = document.createTextNode('');
+  element.replaceChildren(textNode);
+  return textNode;
+}
+
+export function appendStreamingMarkdownText(element: HTMLElement, chunk: string): void {
+  const textNode = ensureStreamingMarkdownTextNode(element);
+  textNode.appendData(chunk);
+}
+
+export function isStreamingMarkdownText(element: HTMLElement): boolean {
+  return streamingMarkdownElements.has(element);
+}
+
+export function finalizeStreamingMarkdownText(element: HTMLElement, text: string): void {
+  element.classList.remove(STREAMING_MARKDOWN_TEXT_CLASS);
+  streamingMarkdownElements.delete(element);
+  applyMarkdownToElement(element, text);
+}
+
+export function finalizeStreamingMarkdownTextIfNeeded(
+  element: HTMLElement | null | undefined,
+  text: string,
+): boolean {
+  if (!element || !isStreamingMarkdownText(element)) {
+    return false;
+  }
+  finalizeStreamingMarkdownText(element, text);
+  return true;
+}
+
 export function enhanceCodeBlocksWithCopyButtons(container: HTMLElement): void {
   const preElements = container.querySelectorAll<HTMLPreElement>('pre');
   for (const pre of Array.from(preElements)) {

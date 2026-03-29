@@ -135,6 +135,7 @@ export function createChatPanel(options: ChatPanelOptions): PanelFactory {
           if (cleanup) {
             cleanup();
           }
+          runtime.dispose();
           chromeController.destroy();
           container.innerHTML = '';
         },
