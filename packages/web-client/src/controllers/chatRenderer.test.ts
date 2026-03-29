@@ -1114,6 +1114,48 @@ describe('ChatRenderer', () => {
     });
   });
 
+  it('renders async questionnaire cancellations as completed interactions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_request', {
+        id: 'q1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name' }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+      createBaseEvent('questionnaire_update', {
+        id: 'q2',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'cancelled',
+          updatedAt: '2026-03-29T12:01:00.000Z',
+          reason: 'User dismissed it',
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>(
+      '[data-questionnaire-request-id="qr1"]',
+    );
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('User dismissed it');
+  });
+
   it('renders tool calls and questionnaires without responseId', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
