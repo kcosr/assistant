@@ -5,16 +5,16 @@
 ### Breaking Changes
 
 ### Added
-- Added Pi-backed session context usage summaries with persisted available-context percentages, compact badges in chat headers and session rows, and warning/error badge colors based on remaining context. ([#123](<pr-url>))
-- Added desktop Tauri webview zoom hotkeys so `Cmd/Ctrl +/-` style zoom shortcuts work in desktop builds. ([#123](<pr-url>))
+- Added Pi-backed session context usage summaries with persisted available-context percentages, compact badges in chat headers and session rows, and warning/error badge colors based on remaining context. ([#67](https://github.com/kcosr/assistant/pull/67))
+- Added desktop Tauri webview zoom hotkeys so `Cmd/Ctrl +/-` style zoom shortcuts work in desktop builds. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Changed
 
-- Updated the `Dark` theme to use a true neutral dark palette inspired by TermStation, and renamed the previous warm tan-accent variant to `Warm Dark`. ([#123](<pr-url>))
-- Refined the session composer UI on mobile with a slightly shorter modal, a scrollable skills list, and a simpler `Fixed` working-directory badge label. ([#123](<pr-url>))
+- Updated the `Dark` theme to use a true neutral dark palette inspired by TermStation, and renamed the previous warm tan-accent variant to `Warm Dark`. ([#67](https://github.com/kcosr/assistant/pull/67))
+- Refined the session composer UI on mobile with a slightly shorter modal, a scrollable skills list, and a simpler `Fixed` working-directory badge label. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Fixed
-- Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#123](<pr-url>))
+- Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Removed
 
