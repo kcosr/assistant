@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.1] - 2026-03-29
 
 ### Breaking Changes
 
@@ -17,6 +17,7 @@
 - Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Removed
+
 
 ## [0.15.0] - 2026-03-29
 
