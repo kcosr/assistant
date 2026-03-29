@@ -5,6 +5,20 @@ export interface SessionCoreAttributes {
   autoTitle?: string;
 }
 
+export interface TokenUsageBreakdown {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+}
+
+export interface SessionContextUsage {
+  availablePercent: number;
+  contextWindow: number;
+  usage: TokenUsageBreakdown;
+}
+
 export interface SessionAgentAttributes {
   skills?: string[];
 }

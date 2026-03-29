@@ -12,6 +12,7 @@ import type {
   ServerSessionDeletedMessage,
   ServerSessionUpdatedMessage,
   SessionAttributesPatch,
+  SessionContextUsage,
 } from '@assistant/shared';
 
 import { AgentRegistry } from './agents';
@@ -24,6 +25,7 @@ import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
 import type { PiSessionWriter } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
+import { isSessionContextUsageEqual } from './contextUsage';
 import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
@@ -117,6 +119,12 @@ interface QueuedMessageTask extends QueuedMessage {
   sessionId: string;
   execute: () => Promise<void>;
 }
+
+type SessionUpdatedMessageOptions = {
+  includeAttributes?: boolean;
+  includePinnedAtNull?: boolean;
+  contextUsage?: SessionContextUsage | null;
+};
 
 export class SessionHub {
   private readonly sessionIndex: SessionIndex;
@@ -288,6 +296,37 @@ export class SessionHub {
     return this.connections.getSubscriptions(connection);
   }
 
+  private buildSessionUpdatedMessage(
+    summary: SessionSummary,
+    options: SessionUpdatedMessageOptions = {},
+  ): ServerSessionUpdatedMessage {
+    const {
+      includeAttributes = false,
+      includePinnedAtNull = false,
+      contextUsage = summary.contextUsage ?? null,
+    } = options;
+    return {
+      type: 'session_updated',
+      sessionId: summary.sessionId,
+      updatedAt: summary.updatedAt,
+      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
+      ...(typeof summary.pinnedAt === 'string'
+        ? { pinnedAt: summary.pinnedAt }
+        : includePinnedAtNull
+          ? { pinnedAt: null }
+          : {}),
+      ...(includeAttributes ? { attributes: summary.attributes ?? null } : {}),
+      contextUsage,
+    };
+  }
+
+  private broadcastSessionUpdated(
+    summary: SessionSummary,
+    options: SessionUpdatedMessageOptions = {},
+  ): void {
+    this.connections.broadcastToAll(this.buildSessionUpdatedMessage(summary, options));
+  }
+
   async recordSessionActivity(
     sessionId: string,
     lastSnippet?: string,
@@ -300,14 +339,7 @@ export class SessionHub {
 
     // Broadcast session_updated to ALL clients so they can update sidebar sorting
     if (summary) {
-      const updatedMessage: ServerSessionUpdatedMessage = {
-        type: 'session_updated',
-        sessionId,
-        updatedAt: summary.updatedAt,
-        ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
-        ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
-      };
-      this.connections.broadcastToAll(updatedMessage);
+      this.broadcastSessionUpdated(summary);
     }
 
     return summary;
@@ -327,16 +359,45 @@ export class SessionHub {
       state.summary = summary;
     }
 
-    const updatedMessage: ServerSessionUpdatedMessage = {
-      type: 'session_updated',
-      sessionId,
-      updatedAt: summary.updatedAt,
-      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
-      ...(typeof summary.pinnedAt === 'string'
-        ? { pinnedAt: summary.pinnedAt }
-        : { pinnedAt: null }),
-    };
-    this.connections.broadcastToAll(updatedMessage);
+    this.broadcastSessionUpdated(summary, { includePinnedAtNull: true });
+
+    return summary;
+  }
+
+  async setSessionModel(
+    sessionId: string,
+    model: string | null,
+  ): Promise<SessionSummary | undefined> {
+    const summary = await this.sessionIndex.setSessionModel(sessionId, model);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    this.broadcastSessionUpdated(summary, { includeAttributes: true });
+
+    return summary;
+  }
+
+  async setSessionThinking(
+    sessionId: string,
+    thinking: string | null,
+  ): Promise<SessionSummary | undefined> {
+    const summary = await this.sessionIndex.setSessionThinking(sessionId, thinking);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    this.broadcastSessionUpdated(summary, { includeAttributes: true });
 
     return summary;
   }
@@ -355,15 +416,32 @@ export class SessionHub {
       state.summary = summary;
     }
 
-    const updatedMessage: ServerSessionUpdatedMessage = {
-      type: 'session_updated',
-      sessionId,
-      updatedAt: summary.updatedAt,
-      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
-      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
-      attributes: summary.attributes ?? null,
-    };
-    this.connections.broadcastToAll(updatedMessage);
+    this.broadcastSessionUpdated(summary, { includeAttributes: true });
+
+    return summary;
+  }
+
+  async updateSessionContextUsage(
+    sessionId: string,
+    contextUsage: SessionContextUsage | null,
+  ): Promise<SessionSummary | undefined> {
+    const currentSummary =
+      this.sessions.get(sessionId)?.summary ?? (await this.sessionIndex.getSession(sessionId));
+    if (currentSummary && isSessionContextUsageEqual(currentSummary.contextUsage, contextUsage)) {
+      return currentSummary;
+    }
+
+    const summary = await this.sessionIndex.setSessionContextUsage(sessionId, contextUsage);
+    if (!summary) {
+      return undefined;
+    }
+
+    const state = this.sessions.get(sessionId);
+    if (state) {
+      state.summary = summary;
+    }
+
+    this.broadcastSessionUpdated(summary, { includeAttributes: true });
 
     return summary;
   }
@@ -460,6 +538,8 @@ export class SessionHub {
       state.chatMessages = chatMessages;
     }
 
+    this.broadcastSessionUpdated(summary, { includeAttributes: true, contextUsage: null });
+
     // Broadcast session_cleared to all clients connected to this session
     const clearedMessage: ServerSessionClearedMessage = {
       type: 'session_cleared',
@@ -482,14 +562,7 @@ export class SessionHub {
     }
 
     // Broadcast session_updated to ALL clients so they can update sidebar sorting
-    const updatedMessage: ServerSessionUpdatedMessage = {
-      type: 'session_updated',
-      sessionId,
-      updatedAt: summary.updatedAt,
-      ...(typeof summary.name === 'string' ? { name: summary.name } : {}),
-      ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
-    };
-    this.connections.broadcastToAll(updatedMessage);
+    this.broadcastSessionUpdated(summary);
 
     return summary;
   }

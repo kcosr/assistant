@@ -604,9 +604,7 @@ export class SessionRuntime {
     }
 
     try {
-      const updatedSummary = await this.sessionHub
-        .getSessionIndex()
-        .setSessionModel(sessionId, trimmedModel);
+      const updatedSummary = await this.sessionHub.setSessionModel(sessionId, trimmedModel);
       if (updatedSummary) {
         state.summary = updatedSummary;
       }
@@ -691,9 +689,7 @@ export class SessionRuntime {
     }
 
     try {
-      const updatedSummary = await this.sessionHub
-        .getSessionIndex()
-        .setSessionThinking(sessionId, trimmedThinking);
+      const updatedSummary = await this.sessionHub.setSessionThinking(sessionId, trimmedThinking);
       if (updatedSummary) {
         state.summary = updatedSummary;
       }

@@ -1,4 +1,6 @@
+import type { SessionContextUsage } from '@assistant/shared';
 import { stripContextLine } from '../utils/chatMessageRenderer';
+import { createContextUsageBadge } from '../utils/contextUsage';
 import { resolveAutoTitle } from '../utils/sessionLabel';
 import type { SessionComposerOpenOptions } from './sessionComposerController';
 
@@ -22,6 +24,7 @@ interface SessionSummary {
    */
   attributes?: Record<string, unknown>;
   lastSnippet?: string;
+  contextUsage?: SessionContextUsage;
 }
 
 interface AgentSummary {
@@ -33,6 +36,16 @@ interface AgentSummary {
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
     | { mode: 'prompt'; roots: string[] };
+}
+
+function appendContextUsageBadge(
+  meta: HTMLElement,
+  contextUsage: SessionContextUsage | null | undefined,
+): void {
+  const badge = createContextUsageBadge('agent-sidebar-session-context-usage', contextUsage);
+  if (badge) {
+    meta.appendChild(badge);
+  }
 }
 
 export type SidebarViewMode = 'by-agent' | 'all-sessions';
@@ -390,6 +403,8 @@ export class AgentSidebarController {
       });
       meta.appendChild(timeEl);
 
+      appendContextUsageBadge(meta, session.contextUsage);
+
       const typingIndicator = document.createElement('span');
       typingIndicator.className = 'session-typing-indicator';
       typingIndicator.dataset['sessionId'] = session.sessionId;
@@ -611,6 +626,8 @@ export class AgentSidebarController {
         const timeEl = document.createElement('span');
         timeEl.textContent = timeText;
         meta.appendChild(timeEl);
+
+        appendContextUsageBadge(meta, session.contextUsage);
 
         const typingIndicator = document.createElement('span');
         typingIndicator.className = 'session-typing-indicator';

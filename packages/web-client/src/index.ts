@@ -10,6 +10,7 @@ import {
   type ServerMessage,
   type SessionAttributesPatch,
   type SessionConfig,
+  type SessionContextUsage,
   CURRENT_PROTOCOL_VERSION,
   GLOBAL_QUERY_CONTEXT_KEY,
 } from '@assistant/shared';
@@ -105,6 +106,7 @@ import { shouldAutoOpenSessionPicker } from './utils/sessionPickerAutoOpen';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
+import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import {
   getPanelHeaderActionsKey,
@@ -242,6 +244,7 @@ interface SessionSummary {
    * Optional selected thinking level for this session.
    */
   thinking?: string;
+  contextUsage?: SessionContextUsage;
 }
 
 interface AgentSummary {
@@ -925,6 +928,13 @@ async function main(): Promise<void> {
       sessionId ? `Session: ${label}` : 'Select session',
     );
     entry.dom.sessionLabelEl.classList.toggle('is-unbound', !sessionId);
+    if (entry.dom.sessionContextUsageEl) {
+      const summary =
+        sessionId === null
+          ? null
+          : sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null;
+      applyContextUsageBadge(entry.dom.sessionContextUsageEl, summary?.contextUsage);
+    }
     entry.dom.chromeController?.scheduleLayoutCheck();
   }
 
@@ -1374,6 +1384,9 @@ async function main(): Promise<void> {
     panelHostController.setContext('session.activeId', inputSessionId);
     panelHostController.setContext('session.summaries', sessionSummaries);
     panelHostController.setContext('agent.summaries', agentSummaries);
+    for (const entry of chatPanelsById.values()) {
+      updateChatPanelSessionLabel(entry);
+    }
     const activeSummary =
       inputSessionId === null
         ? null

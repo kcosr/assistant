@@ -1,5 +1,6 @@
 import { apiFetch } from '../utils/api';
 import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
+import type { SessionContextUsage } from '@assistant/shared';
 
 interface SessionSummary {
   agentId?: string;
@@ -29,6 +30,7 @@ interface SessionSummary {
    * Currently selected thinking level for this session (when applicable).
    */
   thinking?: string;
+  contextUsage?: SessionContextUsage;
 }
 
 interface ListSessionsResponse {

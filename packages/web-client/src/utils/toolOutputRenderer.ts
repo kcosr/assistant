@@ -637,6 +637,7 @@ export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string)
   let formattedText = '';
   let label = 'Input';
   let isAgentMessage = false;
+  let isPlainTextInput = false;
   let argsRecord: Record<string, unknown> | null = null;
   let rawJson = '';
   let prettyJson = '';
@@ -651,6 +652,10 @@ export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string)
       formattedText = argsRecord['content'];
       label = 'Sent';
       isAgentMessage = true;
+    } else if (toolName === 'write' && typeof argsRecord['content'] === 'string') {
+      formattedText = argsRecord['content'];
+      label = 'Content';
+      isPlainTextInput = true;
     } else if (toolName === 'bash' && typeof argsRecord['command'] === 'string') {
       formattedText = argsRecord['command'] as string;
     } else {
@@ -689,6 +694,10 @@ export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string)
     inputBody.innerHTML = '';
     if (isAgentMessage) {
       applyMarkdownToElement(inputBody, formattedText);
+      return;
+    }
+    if (isPlainTextInput) {
+      applyMarkdownToElement(inputBody, `\`\`\`\n${formattedText}\n\`\`\``);
       return;
     }
     const language =

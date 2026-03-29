@@ -29,6 +29,7 @@ export const CODE_FONT_STORAGE_KEY = 'aiAssistantCodeFont';
 export const THEME_OPTIONS: ThemeOption[] = [
   { id: 'auto', label: 'Auto (System)', scheme: 'auto' },
   { id: 'dark', label: 'Dark', scheme: 'dark' },
+  { id: 'warm-dark', label: 'Warm Dark', scheme: 'dark' },
   { id: 'light', label: 'Light', scheme: 'light' },
   { id: 'dracula', label: 'Dracula', scheme: 'dark' },
   { id: 'nord', label: 'Nord', scheme: 'dark' },

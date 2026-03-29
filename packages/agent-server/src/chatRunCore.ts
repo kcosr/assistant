@@ -48,6 +48,10 @@ import {
   resolvePiSdkModel,
   runPiSdkChatCompletionIteration,
 } from './llm/piSdkProvider';
+import {
+  extractSessionContextUsageFromAssistantMessage,
+  isSessionContextUsageEqual,
+} from './contextUsage';
 
 type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
@@ -1107,6 +1111,17 @@ export async function runChatCompletionCore(
               }
             : {}),
         });
+
+      const contextUsage = extractSessionContextUsageFromAssistantMessage({
+        contextWindow: resolvedModel.model.contextWindow,
+        message: assistantMessage,
+      });
+      if (contextUsage && !isSessionContextUsageEqual(state.summary.contextUsage, contextUsage)) {
+        const updatedSummary = await sessionHub.updateSessionContextUsage(sessionId, contextUsage);
+        if (updatedSummary) {
+          state.summary = updatedSummary;
+        }
+      }
 
       if (iterationText.length > 0) {
         fullText += iterationText;

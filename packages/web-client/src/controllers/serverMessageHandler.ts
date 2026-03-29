@@ -6,6 +6,7 @@ import type {
   ServerMessage,
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
+  SessionContextUsage,
 } from '@assistant/shared';
 import { clearExternalSentIndicators } from '../utils/chatMessageRenderer';
 import type { SpeechAudioController } from './speechAudioController';
@@ -29,6 +30,7 @@ interface SessionSummary {
    * Optional session-scoped attributes for plugins/panels.
    */
   attributes?: Record<string, unknown>;
+  contextUsage?: SessionContextUsage;
 }
 
 export interface ServerMessageHandlerOptions {
@@ -534,6 +536,7 @@ export class ServerMessageHandler {
             name?: string | null;
             pinnedAt?: string | null;
             attributes?: Record<string, unknown> | null;
+            contextUsage?: SessionContextUsage | null;
           };
           if (anyMessage.name !== undefined) {
             const rawName = anyMessage.name;
@@ -558,6 +561,13 @@ export class ServerMessageHandler {
               !Array.isArray(anyMessage.attributes)
             ) {
               session.attributes = anyMessage.attributes;
+            }
+          }
+          if (anyMessage.contextUsage !== undefined) {
+            if (anyMessage.contextUsage === null) {
+              delete session.contextUsage;
+            } else {
+              session.contextUsage = anyMessage.contextUsage;
             }
           }
           this.options.renderAgentSidebar();

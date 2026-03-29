@@ -187,6 +187,28 @@ describe('server message validation', () => {
     expect(parsed).toEqual(message);
   });
 
+  it('accepts a session_updated message with contextUsage', () => {
+    const message: ServerMessage = {
+      type: 'session_updated',
+      sessionId: 'session-1',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      contextUsage: {
+        availablePercent: 73,
+        contextWindow: 200000,
+        usage: {
+          input: 12000,
+          output: 1800,
+          cacheRead: 35000,
+          cacheWrite: 5200,
+          totalTokens: 54000,
+        },
+      },
+    };
+
+    const parsed = validateServerMessage(message);
+    expect(parsed).toEqual(message);
+  });
+
   it('accepts a panel_event message', () => {
     const message: ServerMessage = {
       type: 'panel_event',

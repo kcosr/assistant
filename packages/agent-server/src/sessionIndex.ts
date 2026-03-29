@@ -2,12 +2,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-import type { SessionAttributes, SessionAttributesPatch } from '@assistant/shared';
+import type {
+  SessionAttributes,
+  SessionAttributesPatch,
+  SessionContextUsage,
+} from '@assistant/shared';
 import {
   isPlainObject,
   mergeSessionAttributes,
   validateSessionAttributesPatch,
 } from './sessionAttributes';
+import { isSessionContextUsageEqual } from './contextUsage';
 import { loadSessionIndexFromFileContent, type SessionIndexRecord } from './sessionIndexRecords';
 
 export interface SessionSummary {
@@ -53,6 +58,10 @@ export interface SessionSummary {
    * Optional session-scoped attributes for plugins and panels.
    */
   attributes?: SessionAttributes;
+  /**
+   * Optional last-known runtime context usage for Pi-backed sessions.
+   */
+  contextUsage?: SessionContextUsage;
 }
 
 export class SessionIndex {
@@ -243,6 +252,39 @@ export class SessionIndex {
     return summary;
   }
 
+  async setSessionContextUsage(
+    sessionId: string,
+    contextUsage: SessionContextUsage | null,
+  ): Promise<SessionSummary | undefined> {
+    await this.ensureLoaded();
+    const existing = this.sessions.get(sessionId);
+    if (!existing || existing.deleted) {
+      return undefined;
+    }
+    if (isSessionContextUsageEqual(existing.contextUsage, contextUsage)) {
+      return { ...existing };
+    }
+
+    const timestamp = new Date().toISOString();
+    existing.updatedAt = timestamp;
+    if (contextUsage === null) {
+      delete existing.contextUsage;
+    } else {
+      existing.contextUsage = contextUsage;
+    }
+    this.sessions.set(sessionId, existing);
+
+    const record: SessionIndexRecord = {
+      type: 'session_context_usage_set',
+      sessionId,
+      timestamp,
+      contextUsage,
+    };
+    await this.append(record);
+
+    return { ...existing };
+  }
+
   async markSessionDeleted(sessionId: string): Promise<SessionSummary | undefined> {
     await this.ensureLoaded();
     const timestamp = new Date().toISOString();
@@ -400,6 +442,7 @@ export class SessionIndex {
     } else {
       existing.model = model;
     }
+    delete existing.contextUsage;
     this.sessions.set(sessionId, existing);
 
     const record: SessionIndexRecord = {
@@ -487,6 +530,7 @@ export class SessionIndex {
     const timestamp = new Date().toISOString();
     existing.updatedAt = timestamp;
     delete existing.lastSnippet;
+    delete existing.contextUsage;
     this.sessions.set(sessionId, existing);
 
     const record: SessionIndexRecord = {

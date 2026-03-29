@@ -504,7 +504,7 @@ export class SessionComposerController {
       if (config.mode === 'fixed') {
         const badge = document.createElement('span');
         badge.className = 'session-composer-working-dir-badge';
-        badge.textContent = 'Fixed by agent';
+        badge.textContent = 'Fixed';
         row.appendChild(badge);
       } else {
         const chooseButton = document.createElement('button');

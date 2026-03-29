@@ -16,7 +16,8 @@
         "minWidth": 800,
         "minHeight": 600,
         "center": true,
-        "devtools": true
+        "devtools": true,
+        "zoomHotkeysEnabled": true
       }
     ],
     "security": {
