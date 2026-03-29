@@ -1,9 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { ScheduleConfig } from './scheduledSessions/types';
-import { isValidCron5Field } from './scheduledSessions/cronUtils';
-
 export interface CliWrapperConfig {
   /**
    * Command wrapper path for running CLI tools in a container.
@@ -32,20 +29,16 @@ export type InstructionSkillSource = {
   inline?: string[];
 };
 
+export type AgentSessionWorkingDirConfig =
+  | { mode: 'none' }
+  | { mode: 'fixed'; path: string }
+  | { mode: 'prompt'; roots: string[] };
+
 export interface AgentDefinition {
   agentId: string;
   displayName: string;
   description: string;
-  /**
-   * Controls whether the UI prompts for a working directory when creating sessions.
-   * - "auto": use defaults (no picker)
-   * - "prompt": show a working dir picker for configured roots
-   */
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  /**
-   * Base directories offered in the working directory picker.
-   */
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?: AgentSessionWorkingDirConfig;
   /**
    * Runtime type for this agent.
    * - "chat": in-process chat completions (default)
@@ -162,10 +155,6 @@ export interface AgentDefinition {
    * can remove agents that would otherwise be visible.
    */
   agentDenylist?: string[];
-  /**
-   * Optional scheduled sessions for this agent.
-   */
-  schedules?: ScheduleConfig[];
   /**
    * Optional instruction skills configuration (Pi-style SKILL.md discovery + prompt inclusion).
    */
@@ -383,6 +372,7 @@ interface AgentDefinitionConfigShape {
   apiExposed?: unknown;
   schedules?: unknown;
   skills?: unknown;
+  sessionWorkingDir?: unknown;
   sessionWorkingDirMode?: unknown;
   sessionWorkingDirRoots?: unknown;
 }
@@ -405,8 +395,7 @@ function validateAgentDefinitionConfig(
   const rawUiVisible = config.uiVisible;
   const rawApiExposed = config.apiExposed;
   const rawToolExposure = config.toolExposure;
-  const rawSessionWorkingDirMode = config.sessionWorkingDirMode;
-  const rawSessionWorkingDirRoots = config.sessionWorkingDirRoots;
+  const rawSessionWorkingDir = config.sessionWorkingDir;
 
   if (typeof rawAgentId !== 'string' || !rawAgentId.trim()) {
     throw new Error(`agents[${index}].agentId must be a non-empty string`);
@@ -444,17 +433,6 @@ function validateAgentDefinitionConfig(
       `agents[${index}].toolExposure must be "tools", "skills", "mixed", null, or omitted`,
     );
   }
-  if (
-    rawSessionWorkingDirMode !== undefined &&
-    rawSessionWorkingDirMode !== null &&
-    rawSessionWorkingDirMode !== 'auto' &&
-    rawSessionWorkingDirMode !== 'prompt'
-  ) {
-    throw new Error(
-      `agents[${index}].sessionWorkingDirMode must be "auto", "prompt", null, or omitted`,
-    );
-  }
-
   const agentId = rawAgentId.trim();
   const displayName = rawDisplayName.trim();
   const description = rawDescription.trim();
@@ -467,11 +445,6 @@ function validateAgentDefinitionConfig(
     rawToolExposure === 'tools' || rawToolExposure === 'skills' || rawToolExposure === 'mixed'
       ? rawToolExposure
       : undefined;
-  const sessionWorkingDirMode =
-    rawSessionWorkingDirMode === 'auto' || rawSessionWorkingDirMode === 'prompt'
-      ? rawSessionWorkingDirMode
-      : undefined;
-
   const {
     toolAllowlist,
     toolDenylist,
@@ -543,122 +516,67 @@ function validateAgentDefinitionConfig(
     }
     return paths.length > 0 ? paths : undefined;
   };
-  const sessionWorkingDirRoots = parseAbsolutePathList(
-    rawSessionWorkingDirRoots,
-    'sessionWorkingDirRoots',
-  );
 
-  const parseSchedules = (raw: unknown): ScheduleConfig[] | undefined => {
+  if (config.sessionWorkingDirMode !== undefined) {
+    throw new Error(
+      `agents[${index}].sessionWorkingDirMode is no longer supported; use agents[${index}].sessionWorkingDir instead`,
+    );
+  }
+  if (config.sessionWorkingDirRoots !== undefined) {
+    throw new Error(
+      `agents[${index}].sessionWorkingDirRoots is no longer supported; use agents[${index}].sessionWorkingDir instead`,
+    );
+  }
+
+  const parseSessionWorkingDir = (raw: unknown): AgentSessionWorkingDirConfig | undefined => {
     if (raw === undefined || raw === null) {
       return undefined;
     }
-    if (!Array.isArray(raw)) {
-      throw new Error(`agents[${index}].schedules must be an array when provided`);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new Error(
+        `agents[${index}].sessionWorkingDir must be an object with mode "none", "fixed", or "prompt"`,
+      );
     }
-    const seenIds = new Set<string>();
-    const schedules: ScheduleConfig[] = [];
-    for (let i = 0; i < raw.length; i += 1) {
-      const entry = raw[i];
-      if (!entry || typeof entry !== 'object') {
-        throw new Error(`agents[${index}].schedules[${i}] must be an object`);
-      }
-      const schedule = entry as {
-        id?: unknown;
-        cron?: unknown;
-        prompt?: unknown;
-        preCheck?: unknown;
-        sessionTitle?: unknown;
-        enabled?: unknown;
-        maxConcurrent?: unknown;
-      };
-      const id = typeof schedule.id === 'string' ? schedule.id.trim() : '';
-      if (!id) {
-        throw new Error(`agents[${index}].schedules[${i}].id must be a non-empty string`);
-      }
-      if (seenIds.has(id)) {
-        throw new Error(`Duplicate schedule id "${id}" in agents[${index}].schedules`);
-      }
-      seenIds.add(id);
-
-      const cron = typeof schedule.cron === 'string' ? schedule.cron.trim() : '';
-      if (!cron) {
-        throw new Error(`agents[${index}].schedules[${i}].cron must be a non-empty string`);
-      }
-      if (!isValidCron5Field(cron)) {
-        throw new Error(
-          `agents[${index}].schedules[${i}].cron must be a valid 5-field cron expression`,
-        );
-      }
-
-      const promptRaw = schedule.prompt;
-      const prompt =
-        typeof promptRaw === 'string' && promptRaw.trim().length > 0 ? promptRaw.trim() : undefined;
-      if (promptRaw !== undefined && promptRaw !== null && !prompt) {
-        throw new Error(`agents[${index}].schedules[${i}].prompt must be a non-empty string`);
-      }
-
-      const preCheckRaw = schedule.preCheck;
-      const preCheck =
-        typeof preCheckRaw === 'string' && preCheckRaw.trim().length > 0
-          ? preCheckRaw.trim()
-          : undefined;
-      if (preCheckRaw !== undefined && preCheckRaw !== null && !preCheck) {
-        throw new Error(`agents[${index}].schedules[${i}].preCheck must be a non-empty string`);
-      }
-
-      const sessionTitleRaw = schedule.sessionTitle;
-      const sessionTitle =
-        typeof sessionTitleRaw === 'string' && sessionTitleRaw.trim().length > 0
-          ? sessionTitleRaw.trim()
-          : undefined;
-      if (sessionTitleRaw !== undefined && sessionTitleRaw !== null && !sessionTitle) {
-        throw new Error(
-          `agents[${index}].schedules[${i}].sessionTitle must be a non-empty string`,
-        );
-      }
-
-      if (!prompt && !preCheck) {
-        throw new Error(
-          `agents[${index}].schedules[${i}] must define "prompt", "preCheck", or both`,
-        );
-      }
-
-      const enabledRaw = schedule.enabled;
-      if (enabledRaw !== undefined && enabledRaw !== null && typeof enabledRaw !== 'boolean') {
-        throw new Error(`agents[${index}].schedules[${i}].enabled must be a boolean when provided`);
-      }
-      const enabled = typeof enabledRaw === 'boolean' ? enabledRaw : true;
-
-      const maxConcurrentRaw = schedule.maxConcurrent;
-      if (
-        maxConcurrentRaw !== undefined &&
-        maxConcurrentRaw !== null &&
-        (typeof maxConcurrentRaw !== 'number' ||
-          !Number.isFinite(maxConcurrentRaw) ||
-          !Number.isInteger(maxConcurrentRaw) ||
-          maxConcurrentRaw < 1)
-      ) {
-        throw new Error(
-          `agents[${index}].schedules[${i}].maxConcurrent must be an integer >= 1 when provided`,
-        );
-      }
-      const maxConcurrent =
-        typeof maxConcurrentRaw === 'number' ? maxConcurrentRaw : 1;
-
-      schedules.push({
-        id,
-        cron,
-        ...(prompt ? { prompt } : {}),
-        ...(preCheck ? { preCheck } : {}),
-        ...(sessionTitle ? { sessionTitle } : {}),
-        enabled,
-        maxConcurrent,
-      });
+    const value = raw as Record<string, unknown>;
+    const mode = typeof value['mode'] === 'string' ? value['mode'].trim() : '';
+    if (mode === 'none') {
+      return { mode: 'none' };
     }
-    return schedules.length > 0 ? schedules : undefined;
+    if (mode === 'fixed') {
+      const pathValue = typeof value['path'] === 'string' ? value['path'].trim() : '';
+      if (!pathValue) {
+        throw new Error(
+          `agents[${index}].sessionWorkingDir.path must be a non-empty absolute path when mode is "fixed"`,
+        );
+      }
+      if (!path.isAbsolute(pathValue)) {
+        throw new Error(
+          `agents[${index}].sessionWorkingDir.path must be an absolute path when mode is "fixed"`,
+        );
+      }
+      return { mode: 'fixed', path: pathValue };
+    }
+    if (mode === 'prompt') {
+      const roots = parseAbsolutePathList(value['roots'], 'sessionWorkingDir.roots');
+      if (!roots || roots.length === 0) {
+        throw new Error(
+          `agents[${index}].sessionWorkingDir.roots must be a non-empty array of absolute paths when mode is "prompt"`,
+        );
+      }
+      return { mode: 'prompt', roots };
+    }
+    throw new Error(
+      `agents[${index}].sessionWorkingDir.mode must be "none", "fixed", or "prompt"`,
+    );
   };
 
-  const schedules = parseSchedules(config.schedules);
+  const sessionWorkingDir = parseSessionWorkingDir(rawSessionWorkingDir);
+
+  if (config.schedules !== undefined) {
+    throw new Error(
+      `agents[${index}].schedules is no longer supported; use the scheduled-sessions plugin store instead`,
+    );
+  }
 
   const parseInstructionSkills = (raw: unknown): InstructionSkillSource[] | undefined => {
     if (raw === undefined || raw === null) {
@@ -1212,9 +1130,6 @@ function validateAgentDefinitionConfig(
   if (agentDeny) {
     extended.agentDenylist = agentDeny;
   }
-  if (schedules) {
-    extended.schedules = schedules;
-  }
   if (instructionSkills) {
     extended.skills = instructionSkills;
   }
@@ -1224,11 +1139,8 @@ function validateAgentDefinitionConfig(
   if (apiExposed !== undefined) {
     extended.apiExposed = apiExposed;
   }
-  if (sessionWorkingDirMode) {
-    extended.sessionWorkingDirMode = sessionWorkingDirMode;
-  }
-  if (sessionWorkingDirRoots) {
-    extended.sessionWorkingDirRoots = sessionWorkingDirRoots;
+  if (sessionWorkingDir) {
+    extended.sessionWorkingDir = sessionWorkingDir;
   }
 
   return extended;

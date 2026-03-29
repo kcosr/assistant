@@ -5,8 +5,21 @@ export interface SessionCoreAttributes {
   autoTitle?: string;
 }
 
+export interface SessionAgentAttributes {
+  skills?: string[];
+}
+
+export interface SessionConfig {
+  model?: string;
+  thinking?: string;
+  workingDir?: string;
+  skills?: string[];
+  sessionTitle?: string;
+}
+
 export interface SessionAttributes {
   core?: SessionCoreAttributes;
+  agent?: SessionAgentAttributes;
   [key: string]: unknown;
 }
 

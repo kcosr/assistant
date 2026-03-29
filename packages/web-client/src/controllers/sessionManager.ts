@@ -1,3 +1,5 @@
+import type { SessionConfig } from '@assistant/shared';
+
 import { apiFetch } from '../utils/api';
 import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
 
@@ -31,7 +33,11 @@ export interface CreateSessionOptions {
   agentDisplayName?: string;
   openChatPanel?: boolean;
   selectSession?: boolean;
-  workingDir?: string;
+  sessionConfig?: SessionConfig;
+}
+
+export interface UpdateSessionOptions {
+  sessionConfig?: SessionConfig;
 }
 
 export class SessionManager {
@@ -65,6 +71,18 @@ export class SessionManager {
       ...(suffix ? { title: `External Session ID${suffix}` } : {}),
       validate: (value) => this.validateExternalSessionId(value),
     });
+  }
+
+  private buildSessionConfigPayload(config: SessionConfig | undefined): SessionConfig | undefined {
+    return config && typeof config === 'object'
+      ? {
+          ...(typeof config.model === 'string' ? { model: config.model } : {}),
+          ...(typeof config.thinking === 'string' ? { thinking: config.thinking } : {}),
+          ...(typeof config.workingDir === 'string' ? { workingDir: config.workingDir } : {}),
+          ...(Array.isArray(config.skills) ? { skills: config.skills } : {}),
+          ...(typeof config.sessionTitle === 'string' ? { sessionTitle: config.sessionTitle } : {}),
+        }
+      : undefined;
   }
 
   async pinSession(sessionId: string, pinned: boolean): Promise<void> {
@@ -194,16 +212,13 @@ export class SessionManager {
       }
 
       const buildRequest = (sessionId?: string): RequestInit => {
-        const workingDir =
-          typeof options?.workingDir === 'string' ? options.workingDir.trim() : '';
-        const attributes =
-          workingDir.length > 0 ? { core: { workingDir } } : undefined;
+        const sessionConfig = this.buildSessionConfigPayload(options?.sessionConfig);
         const request: RequestInit = { method: 'POST' };
         request.headers = { 'Content-Type': 'application/json' };
         request.body = JSON.stringify({
           agentId: normalizedAgentId,
           ...(sessionId ? { sessionId } : {}),
-          ...(attributes ? { attributes } : {}),
+          ...(sessionConfig ? { sessionConfig } : {}),
         });
         return request;
       };
@@ -288,6 +303,40 @@ export class SessionManager {
       console.error('Failed to create new session', err);
       this.options.setStatus('Failed to create new session');
       return null;
+    }
+  }
+
+  async updateSession(sessionId: string, options: UpdateSessionOptions): Promise<boolean> {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      this.options.setStatus('Session is required');
+      return false;
+    }
+
+    try {
+      const sessionConfig = this.buildSessionConfigPayload(options.sessionConfig) ?? {};
+      const response = await apiFetch(sessionsOperationPath('update'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId: trimmed,
+          sessionConfig,
+        }),
+      });
+      if (!response.ok) {
+        const error = await response.text().catch(() => '');
+        this.options.setStatus(error.trim() || 'Failed to update session');
+        return false;
+      }
+
+      await this.options.refreshSessions(trimmed);
+      return true;
+    } catch (err) {
+      console.error('Failed to update session', err);
+      this.options.setStatus('Failed to update session');
+      return false;
     }
   }
 }

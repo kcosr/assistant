@@ -3,17 +3,31 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/default/schedules.json`. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Removed legacy `agents[].sessionWorkingDirMode` / `sessionWorkingDirRoots` in favor of a single `agents[].sessionWorkingDir` object with `none`, `fixed`, and `prompt` modes. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Added
 - Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Added runtime-managed scheduled session CRUD through the scheduled-sessions service plus generated plugin tools, HTTP operations, and CLI commands. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Added fixed agent working-directory support through `sessionWorkingDir`, so agents can either prompt for a directory or automatically use a configured path. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Added shared `sessionConfig` support for manual session creation and scheduled sessions, covering model, thinking, working directory, and selected skills within agent-defined capability bounds, plus explicit session titles for manual session creation. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Added agent `sessionConfigCapabilities` metadata to the agents API so the UI can discover per-agent model, thinking, skill, and working-directory options without conflating capabilities with chosen session config. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Added a shared session composer modal for creating one-off sessions or scheduled sessions with the same agent-driven `sessionConfig` options, including working-directory selection, model/thinking overrides, skills, and schedule fields. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Added active-session editing through the shared session composer, including title, working directory, model, thinking, and selected skills for existing sessions. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Changed
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed lists item listing and search defaults to return up to 100 items when no explicit limit is provided. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Updated `@mariozechner/pi-ai` in `@assistant/agent-server` to the latest 0.62.x release. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed Pi-backed OpenAI Responses transcript handling to preserve assistant text `phase` metadata (`commentary`, `final_answer`) across session replay and Pi session writes. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Changed scheduled sessions to support `reuseSession`, use generated plugin operations for API/CLI access, and show `sessionTitle` as the primary human-readable name in the panel. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Changed scheduled sessions to persist runtime create/update/delete/enable/disable state in the scheduled-sessions plugin data directory, and only start the scheduler when the plugin is enabled. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Changed schedule-backed reused sessions to be created up front, keep explicit `sessionTitle` as the session name, and reconcile stored `sessionConfig` back into the backing session on later runs after edits. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Changed the agent sidebar, session picker, and scheduled sessions panel to launch the shared session composer instead of using separate create flows. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Fixed
+- Fixed chat panels to clear stale typing/stop-output state after mobile backgrounding and reconnects, so completed sessions no longer stay stuck busy until the app is fully reopened. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Fixed shared session composer skill selection so explicit empty selections persist correctly, agent-default selections stay implicit, and session picker edit actions consistently open the full session editor flow. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed modal lists panels to close on Escape from list mode instead of switching to browser mode. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed confirm dialog button flows leaving `hasOpenDialog` stuck true, which could disable keyboard shortcuts until refresh. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -38,6 +52,7 @@
 - Fixed CLI-backed chat runs to resolve `${session.workingDir}` in interactive `workdir` and wrapper env config so session-picked working directories reach spawned CLI processes and container wrappers. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed local coding-plugin tools to honor `${session.workingDir}` in `plugins.coding.local.workspaceRoot`, so relative file operations and `bash` commands run from the session-picked working directory in non-sidecar mode. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed Pi session syncing to avoid appending the same completed assistant turn twice when first-turn replay state aliases the live session message array, which could later trigger duplicate replay item id errors. ([#65](https://github.com/kcosr/assistant/pull/65))
+- Fixed scheduled session persistence to store `schedules.json` under the scheduled-sessions plugin `default` instance directory so plugin git versioning snapshots include scheduler changes. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Fixed lists keyboard move shortcuts (`t`, `b`, `w`, `s`) to preserve the current row selection across both rerenders and same-list refresh reloads when the move changes item order. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed lists `w`/`s` move shortcuts to use neighboring stored item positions instead of visible row indexes, so moves keep working in lists where completed items or historical reorder drift make those values diverge. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Fixed raw list-search ArrowUp/ArrowDown to blur the shared search input and hand control back to list navigation when tag suggestions are not active. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -111,17 +126,17 @@
 ## [0.14.2] - 2026-02-22
 
 ### Breaking Changes
-- Changed exported plugin skill names and generated plugin CLI executable names to use the `assistant-` prefix (for example `assistant-notes` and `assistant-notes-cli`). ([#123](<pr-url>))
+- Changed exported plugin skill names and generated plugin CLI executable names to use the `assistant-` prefix (for example `assistant-notes` and `assistant-notes-cli`). ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Added
 
 ### Changed
-- Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.54.0`. ([#123](<pr-url>))
-- Raised the root Node.js engine requirement to `>=20.18.1` to match transitive `undici` runtime requirements. ([#123](<pr-url>))
+- Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.54.0`. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Raised the root Node.js engine requirement to `>=20.18.1` to match transitive `undici` runtime requirements. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Fixed
-- Fixed generated skill/plugin CLIs to preserve path-prefixed `ASSISTANT_URL` values when calling plugin operations. ([#123](<pr-url>))
-- Fixed time tracker timer starts to use the client-local `entry_date` so late-night entries remain visible under "Today" when server and client time zones differ. ([#123](<pr-url>))
+- Fixed generated skill/plugin CLIs to preserve path-prefixed `ASSISTANT_URL` values when calling plugin operations. ([#66](https://github.com/kcosr/assistant/pull/66))
+- Fixed time tracker timer starts to use the client-local `entry_date` so late-night entries remain visible under "Today" when server and client time zones differ. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Removed
 

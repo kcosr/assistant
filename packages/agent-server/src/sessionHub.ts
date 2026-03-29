@@ -24,6 +24,7 @@ import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
 import type { PiSessionWriter } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
+import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
 import {
@@ -132,7 +133,9 @@ export class SessionHub {
   private readonly historyProvider: HistoryProviderRegistry | undefined;
   private readonly eventStore: EventStore | undefined;
 
-  private readonly resolveSessionWorkingDir: ((sessionId: string) => string | null) | undefined;
+  private readonly resolveSessionWorkingDir:
+    | ((summary: SessionSummary) => string | null)
+    | undefined;
 
   constructor(options: {
     sessionIndex: SessionIndex;
@@ -140,7 +143,7 @@ export class SessionHub {
     pluginRegistry?: PluginRegistry;
     maxCachedSessions?: number;
     /** Optional resolver for core.workingDir when a session is created/loaded */
-    resolveSessionWorkingDir?: (sessionId: string) => string | null;
+    resolveSessionWorkingDir?: (summary: SessionSummary) => string | null;
     historyProvider?: HistoryProviderRegistry;
     eventStore?: EventStore;
     piSessionWriter?: PiSessionWriter;
@@ -603,6 +606,7 @@ export class SessionHub {
       undefined,
       summary.sessionId,
       summary.attributes?.core?.workingDir,
+      getSelectedSessionSkillIds(summary.attributes),
     );
   }
 
@@ -662,7 +666,7 @@ export class SessionHub {
       }
       return summary;
     }
-    const resolved = resolver(summary.sessionId);
+    const resolved = resolver(summary);
     if (!resolved || resolved.trim().length === 0) {
       return summary;
     }

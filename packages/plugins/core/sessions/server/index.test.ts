@@ -81,7 +81,7 @@ describe('sessions plugin operations', () => {
     const workingDir = path.join(os.tmpdir(), 'sessions-plugin-workdir');
 
     const result = await plugin.operations?.create(
-      { agentId: 'general', attributes: { core: { workingDir } } },
+      { agentId: 'general', sessionConfig: { workingDir } },
       ctx,
     );
 
@@ -91,6 +91,111 @@ describe('sessions plugin operations', () => {
         attributes: { core: { workingDir } },
       }),
     );
+  });
+
+  it('persists model, thinking, title, and working dir from sessionConfig', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-config'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+        chat: {
+          models: ['gpt-5.4', 'gpt-5.4-mini'],
+          thinking: ['low', 'medium'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const result = (await plugin.operations?.create(
+      {
+        agentId: 'general',
+        sessionConfig: {
+          model: 'gpt-5.4-mini',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          sessionTitle: 'Project Session',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        name: 'Project Session',
+        model: 'gpt-5.4-mini',
+        thinking: 'medium',
+        attributes: { core: { workingDir: '/tmp/project' } },
+      }),
+    );
+  });
+
+  it('replaces editable session config fields on update', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-update-config'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+        chat: {
+          models: ['gpt-5.4', 'gpt-5.4-mini'],
+          thinking: ['low', 'medium'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = (await plugin.operations?.create(
+      {
+        agentId: 'general',
+        sessionConfig: {
+          model: 'gpt-5.4-mini',
+          thinking: 'medium',
+          workingDir: '/tmp/project',
+          sessionTitle: 'Project Session',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    const updated = (await plugin.operations?.update(
+      {
+        sessionId: created.sessionId,
+        sessionConfig: {
+          thinking: 'low',
+        },
+      },
+      ctx,
+    )) as SessionSummary;
+
+    expect(updated).toEqual(
+      expect.objectContaining({
+        sessionId: created.sessionId,
+        thinking: 'low',
+      }),
+    );
+    expect(updated.name).toBeUndefined();
+    expect(updated.model).toBeUndefined();
+    expect(updated.attributes?.core?.workingDir).toBeUndefined();
   });
 
   it('mirrors session rename into Pi session JSONL via session_info entries (pi provider)', async () => {
@@ -120,7 +225,7 @@ describe('sessions plugin operations', () => {
 
     const workingDir = '/tmp/project';
     const created = (await plugin.operations?.create(
-      { agentId: 'pi-agent', attributes: { core: { workingDir } } },
+      { agentId: 'pi-agent', sessionConfig: { workingDir } },
       ctx,
     )) as SessionSummary;
 
@@ -180,7 +285,7 @@ describe('sessions plugin operations', () => {
 
     const workingDir = '/tmp/project';
     const created = (await plugin.operations?.create(
-      { agentId: 'pi-cli-agent', attributes: { core: { workingDir } } },
+      { agentId: 'pi-cli-agent', sessionConfig: { workingDir } },
       ctx,
     )) as SessionSummary;
 

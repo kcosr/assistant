@@ -1,11 +1,11 @@
 import path from 'node:path';
 
 import dotenv from 'dotenv';
-import { getSessionWorkspaceRoot } from '@assistant/coding-executor';
 import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
 import { FileEventStore, SessionScopedEventStore } from './events';
+import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstanceDataDir } from './plugins/instances';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
@@ -15,7 +15,7 @@ import { createHttpServer } from './http/server';
 import { MultiplexedConnection } from './ws/multiplexedConnection';
 import { killAllCliProcesses } from './ws/cliProcessRegistry';
 import { GitVersioningService } from './gitVersioning';
-import { ScheduledSessionService } from './scheduledSessions';
+import { ScheduledSessionService, ScheduledSessionStore } from './scheduledSessions';
 import { SearchService } from './search/searchService';
 import { preloadInstructionSkillsForAgents } from './instructionSkills';
 import {
@@ -32,7 +32,7 @@ export {
   filterVisibleAgents,
   type BuildSystemPromptOptions,
 } from './systemPrompt';
-export { SessionIndex, type SessionConfig, type SessionSummary } from './sessionIndex';
+export { SessionIndex, type SessionSummary } from './sessionIndex';
 export { SessionHub } from './sessionHub';
 export { createHttpServer } from './http/server';
 export { Session } from './ws/session';
@@ -41,49 +41,21 @@ dotenv.config();
 
 export let agentRegistry: AgentRegistry | undefined;
 
-function resolveCodingWorkspaceRoot(
-  appConfig: AppConfig | undefined,
-  dataDir: string,
-): { workspaceRoot: string } | null {
-  const codingConfig = appConfig?.plugins?.['coding'];
-  if (!codingConfig?.enabled) {
-    return null;
-  }
-
-  const mode = codingConfig.mode === 'sidecar' ? 'sidecar' : 'local';
-  let workspaceRoot: string | null = null;
-
-  if (mode === 'local') {
-    if (codingConfig.local?.workspaceRoot && codingConfig.local.workspaceRoot.trim().length > 0) {
-      workspaceRoot = codingConfig.local.workspaceRoot.trim();
-    } else {
-      workspaceRoot = path.join(dataDir, 'plugins', 'coding', 'coding-workspaces');
-    }
-  } else {
-    return null;
-  }
-
-  if (!workspaceRoot || !path.isAbsolute(workspaceRoot)) {
-    return null;
-  }
-
-  return { workspaceRoot };
-}
-
 function createSessionWorkingDirResolver(
-  appConfig: AppConfig | undefined,
-  dataDir: string,
-  pluginRegistry?: PluginRegistry,
-): ((sessionId: string) => string | null) | undefined {
-  if (!pluginRegistry) {
-    return undefined;
-  }
-  const resolved = resolveCodingWorkspaceRoot(appConfig, dataDir);
-  if (!resolved) {
-    return undefined;
-  }
-  const { workspaceRoot } = resolved;
-  return () => getSessionWorkspaceRoot({ workspaceRoot });
+  registry: AgentRegistry,
+): ((summary: { agentId?: string }) => string | null) | undefined {
+  return (summary) => {
+    const agentId = typeof summary.agentId === 'string' ? summary.agentId.trim() : '';
+    if (!agentId) {
+      return null;
+    }
+    const agent = registry.getAgent(agentId);
+    const workingDir = agent?.sessionWorkingDir;
+    if (!workingDir || workingDir.mode !== 'fixed') {
+      return null;
+    }
+    return workingDir.path;
+  };
 }
 
 export async function startServer(
@@ -109,11 +81,7 @@ export async function startServer(
       ? appConfig.sessions.maxCached
       : 100;
 
-  const resolveSessionWorkingDir = createSessionWorkingDirResolver(
-    appConfig,
-    config.dataDir,
-    pluginRegistry,
-  );
+  const resolveSessionWorkingDir = createSessionWorkingDirResolver(registry);
 
   const sessionHub = new SessionHub({
     sessionIndex,
@@ -150,27 +118,40 @@ export async function startServer(
   const searchService = new SearchService(pluginRegistry);
   searchService.syncFromRegistry();
 
-  const scheduledSessionService = new ScheduledSessionService({
-    agentRegistry: registry,
-    logger: console,
-    dataDir: config.dataDir,
-    sessionHub,
-    sessionIndex,
-    envConfig: config,
-    toolHost,
-    eventStore: chatEventStore,
-    searchService,
-    broadcast: (event) => {
-      sessionHub.broadcastToAll({
-        type: 'panel_event',
-        panelId: '*',
-        panelType: 'scheduled-sessions',
-        sessionId: '*',
-        payload: event,
-      });
-    },
-  });
-  await scheduledSessionService.initialize();
+  const scheduledSessionsPlugin = pluginRegistry
+    ?.getRegisteredPlugins?.()
+    .find((entry) => entry.pluginId === 'scheduled-sessions');
+
+  const scheduledSessionService = scheduledSessionsPlugin
+    ? new ScheduledSessionService({
+        agentRegistry: registry,
+        logger: console,
+        store: new ScheduledSessionStore(
+          resolvePluginInstanceDataDir(
+            scheduledSessionsPlugin.dataDir,
+            DEFAULT_PLUGIN_INSTANCE_ID,
+          ),
+        ),
+        sessionHub,
+        sessionIndex,
+        envConfig: config,
+        toolHost,
+        eventStore: chatEventStore,
+        searchService,
+        broadcast: (event) => {
+          sessionHub.broadcastToAll({
+            type: 'panel_event',
+            panelId: '*',
+            panelType: 'scheduled-sessions',
+            sessionId: '*',
+            payload: event,
+          });
+        },
+      })
+    : undefined;
+  if (scheduledSessionService) {
+    await scheduledSessionService.initialize();
+  }
 
   const httpServer = createHttpServer({
     config,
@@ -180,7 +161,7 @@ export async function startServer(
     toolHost,
     searchService,
     eventStore: chatEventStore,
-    scheduledSessionService,
+    ...(scheduledSessionService ? { scheduledSessionService } : {}),
     historyProvider,
     ...(pluginRegistry ? { pluginRegistry } : {}),
   });
@@ -208,7 +189,7 @@ export async function startServer(
       toolHost,
       sessionHub,
       eventStore: chatEventStore,
-      scheduledSessionService,
+      ...(scheduledSessionService ? { scheduledSessionService } : {}),
       searchService,
       connectionId,
     });
@@ -233,7 +214,7 @@ export async function startServer(
       if (gitVersioningService) {
         gitVersioningService.shutdown();
       }
-      scheduledSessionService.shutdown();
+      scheduledSessionService?.shutdown();
       if (pluginRegistry) {
         await pluginRegistry.shutdown();
       }
@@ -247,7 +228,7 @@ export async function startServer(
     if (gitVersioningService) {
       gitVersioningService.shutdown();
     }
-    scheduledSessionService.shutdown();
+    scheduledSessionService?.shutdown();
   };
 
   process.once('SIGINT', shutdownHandler);

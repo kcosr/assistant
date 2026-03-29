@@ -26,6 +26,7 @@ export function buildChatMessagesFromEvents(
   tools?: Tool[],
   sessionId?: string,
   workingDir?: string,
+  selectedInstructionSkillNames?: string[],
 ): ChatCompletionMessage[] {
   const interruptedResponseIds = new Set(
     events
@@ -40,6 +41,9 @@ export function buildChatMessagesFromEvents(
     ...(tools !== undefined ? { tools } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(workingDir !== undefined ? { workingDir } : {}),
+    ...(selectedInstructionSkillNames !== undefined
+      ? { selectedInstructionSkillNames }
+      : {}),
   };
   const messages: ChatCompletionMessage[] = [
     {

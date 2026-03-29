@@ -1,6 +1,10 @@
 import type { PanelEventEnvelope } from '@assistant/shared';
 
 import type { PanelHost } from '../../../../web-client/src/controllers/panelRegistry';
+import {
+  CORE_PANEL_SERVICES_CONTEXT_KEY,
+  type PanelCoreServices,
+} from '../../../../web-client/src/utils/panelServices';
 import { apiFetch } from '../../../../web-client/src/utils/api';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 
@@ -12,6 +16,7 @@ const SCHEDULED_SESSIONS_TEMPLATE = `
       </div>
       <div class="panel-chrome-plugin-controls scheduled-sessions-plugin-controls" data-role="chrome-plugin-controls">
         <span class="scheduled-sessions-summary" data-role="summary"></span>
+        <button type="button" class="scheduled-sessions-button" data-role="create">Create</button>
         <button type="button" class="scheduled-sessions-button" data-role="refresh">Refresh</button>
       </div>
       <div class="panel-chrome-frame-controls" data-role="chrome-controls">
@@ -69,7 +74,7 @@ type ScheduleInfo = {
   preCheck?: string;
   sessionTitle?: string;
   enabled: boolean;
-  runtimeEnabled: boolean;
+  reuseSession: boolean;
   status: ScheduleStatus;
   runningCount: number;
   runningStartedAt: string | null;
@@ -82,9 +87,22 @@ type SchedulesResponse = {
   schedules: ScheduleInfo[];
 };
 
+type OperationResponse<T> = {
+  ok: boolean;
+  result: T;
+};
+
 type RunResponse = {
   status: 'started' | 'skipped';
   reason?: string | null;
+};
+
+type ScheduleDeletedEvent = {
+  type: 'scheduled_session:deleted';
+  payload: {
+    agentId: string;
+    scheduleId: string;
+  };
 };
 
 type PanelState = {
@@ -177,46 +195,59 @@ function groupByAgent(schedules: ScheduleInfo[]): Map<string, ScheduleInfo[]> {
   return new Map([...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
+function resolveServices(host: PanelHost): PanelCoreServices | null {
+  const raw = host.getContext(CORE_PANEL_SERVICES_CONTEXT_KEY);
+  return raw && typeof raw === 'object' ? (raw as PanelCoreServices) : null;
+}
+
 async function fetchSchedules(): Promise<ScheduleInfo[]> {
-  const response = await apiFetch('/api/scheduled-sessions');
-  let payload: SchedulesResponse | null = null;
+  const response = await apiFetch('/api/plugins/scheduled-sessions/operations/list', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  let payload: OperationResponse<SchedulesResponse> | null = null;
   try {
-    payload = (await response.json()) as SchedulesResponse;
+    payload = (await response.json()) as OperationResponse<SchedulesResponse>;
   } catch {
     // ignore
   }
-  if (!response.ok || !payload || !Array.isArray(payload.schedules)) {
+  if (!response.ok || !payload?.ok || !payload.result || !Array.isArray(payload.result.schedules)) {
     throw new Error(`Request failed (${response.status})`);
   }
-  return payload.schedules;
+  return payload.result.schedules;
 }
 
 async function runSchedule(agentId: string, scheduleId: string): Promise<RunResponse> {
   const response = await apiFetch(
-    `/api/scheduled-sessions/${encodeURIComponent(agentId)}/${encodeURIComponent(scheduleId)}/run`,
+    '/api/plugins/scheduled-sessions/operations/run',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ agentId, scheduleId }),
     },
   );
-  let payload: RunResponse | null = null;
+  let payload: OperationResponse<RunResponse> | null = null;
   try {
-    payload = (await response.json()) as RunResponse;
+    payload = (await response.json()) as OperationResponse<RunResponse>;
   } catch {
     // ignore
   }
-  if (!response.ok || !payload) {
+  if (!response.ok || !payload?.ok || !payload.result) {
     throw new Error(`Request failed (${response.status})`);
   }
-  return payload;
+  return payload.result;
 }
 
 async function setScheduleEnabled(agentId: string, scheduleId: string, enabled: boolean): Promise<void> {
-  const action = enabled ? 'enable' : 'disable';
+  const operationId = enabled ? 'enable' : 'disable';
   const response = await apiFetch(
-    `/api/scheduled-sessions/${encodeURIComponent(agentId)}/${encodeURIComponent(scheduleId)}/${action}`,
-    { method: 'POST' },
+    `/api/plugins/scheduled-sessions/operations/${operationId}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentId, scheduleId }),
+    },
   );
   if (!response.ok) {
     throw new Error(`Request failed (${response.status})`);
@@ -238,9 +269,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       const summaryEl = root.querySelector<HTMLElement>('[data-role="summary"]');
       const statusEl = root.querySelector<HTMLElement>('[data-role="status"]');
       const bodyEl = root.querySelector<HTMLElement>('[data-role="body"]');
+      const createButton = root.querySelector<HTMLButtonElement>('[data-role="create"]');
       const refreshButton = root.querySelector<HTMLButtonElement>('[data-role="refresh"]');
 
-      if (!summaryEl || !statusEl || !bodyEl || !refreshButton) {
+      if (!summaryEl || !statusEl || !bodyEl || !refreshButton || !createButton) {
         throw new Error('Scheduled sessions panel failed to locate required elements');
       }
 
@@ -287,6 +319,8 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         host.persistPanelState(state);
       };
 
+      const services = resolveServices(host);
+
       const setMessage = (next: string): void => {
         message = next;
         render();
@@ -319,11 +353,23 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const handlePanelEvent = (event: PanelEventEnvelope): void => {
         const payload = event.payload as Record<string, unknown> | null;
-        if (!payload || payload['type'] !== 'scheduled_session:status') {
+        if (!payload || typeof payload['type'] !== 'string') {
+          return;
+        }
+        if (payload['type'] === 'scheduled_session:deleted') {
+          const deleted = (payload as ScheduleDeletedEvent).payload;
+          if (!deleted?.agentId || !deleted?.scheduleId) {
+            return;
+          }
+          schedules.delete(`${deleted.agentId}:${deleted.scheduleId}`);
+          render();
+          return;
+        }
+        if (payload['type'] !== 'scheduled_session:status') {
           return;
         }
         const schedule = payload['payload'] as ScheduleInfo | undefined;
-        if (!schedule || !schedule.agentId || !schedule.scheduleId) {
+        if (!schedule?.agentId || !schedule?.scheduleId) {
           return;
         }
         schedules.set(`${schedule.agentId}:${schedule.scheduleId}`, schedule);
@@ -360,21 +406,22 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             const scheduleKey = `${schedule.agentId}:${schedule.scheduleId}`;
             const scheduleCollapsed = collapsedSchedules.has(scheduleKey);
             const statusLabel = schedule.status === 'running' ? 'Running' : schedule.status === 'disabled' ? 'Disabled' : 'Idle';
+            const rowTitle = schedule.sessionTitle?.trim() || schedule.scheduleId;
             const runningDetail =
               schedule.status === 'running' && schedule.runningStartedAt
                 ? `Running for ${formatDuration(Date.now() - new Date(schedule.runningStartedAt).getTime())}`
                 : '';
             const lastRun = formatLastRun(schedule.lastRun);
             const runDisabled = schedule.runningCount >= schedule.maxConcurrent;
-            const enableLabel = schedule.runtimeEnabled ? 'Disable' : 'Enable';
+            const enableLabel = schedule.enabled ? 'Disable' : 'Enable';
 
             html += `
               <div class="scheduled-sessions-item">
                 <div class="scheduled-sessions-row" data-action="toggle-schedule" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">
                   <span class="status-dot status-dot--${escapeHtml(schedule.status)}"></span>
                   <div class="scheduled-sessions-row-main">
-                    <div class="scheduled-sessions-row-title">${escapeHtml(schedule.scheduleId)}</div>
-                    <div class="scheduled-sessions-row-sub">${escapeHtml(schedule.cron)} | ${escapeHtml(schedule.cronDescription)}</div>
+                    <div class="scheduled-sessions-row-title">${escapeHtml(rowTitle)}</div>
+                    <div class="scheduled-sessions-row-sub">${escapeHtml(schedule.scheduleId)} | ${escapeHtml(schedule.cron)} | ${escapeHtml(schedule.cronDescription)}</div>
                   </div>
                   <div class="scheduled-sessions-row-meta">
                     <div class="scheduled-sessions-row-next">${formatRelative(schedule.nextRun)}</div>
@@ -399,6 +446,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
                       <div class="scheduled-sessions-detail-label">Last run</div>
                       <div class="scheduled-sessions-detail-value">${escapeHtml(lastRun.label)}</div>
                       ${lastRun.detail ? `<div class="scheduled-sessions-detail-note">${escapeHtml(lastRun.detail)}</div>` : ''}
+                    </div>
+                    <div class="scheduled-sessions-detail">
+                      <div class="scheduled-sessions-detail-label">Session mode</div>
+                      <div class="scheduled-sessions-detail-value">${schedule.reuseSession ? 'Reuse session' : 'New session per run'}</div>
                     </div>
                     <div class="scheduled-sessions-detail">
                       <div class="scheduled-sessions-detail-label">Concurrency</div>
@@ -495,7 +546,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           }
           const key = `${agentId}:${scheduleId}`;
           const schedule = schedules.get(key);
-          const nextEnabled = schedule ? !schedule.runtimeEnabled : true;
+          const nextEnabled = schedule ? !schedule.enabled : true;
           try {
             await setScheduleEnabled(agentId, scheduleId, nextEnabled);
             setMessage(nextEnabled ? 'Schedule enabled' : 'Schedule disabled');
@@ -513,6 +564,13 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       refreshButton.addEventListener('click', () => {
         void refresh();
       });
+
+      createButton.addEventListener('click', () => {
+        services?.openSessionComposer?.({
+          initialMode: 'schedule',
+        });
+      });
+      createButton.disabled = !services?.openSessionComposer;
 
       bodyEl.addEventListener('click', (event) => {
         void handleClick(event as MouseEvent);

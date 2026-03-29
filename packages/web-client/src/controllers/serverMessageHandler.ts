@@ -94,6 +94,10 @@ export class ServerMessageHandler {
 
   constructor(private readonly options: ServerMessageHandlerOptions) {}
 
+  resetRealtimeState(): void {
+    this.pendingInteractionsBySession.clear();
+  }
+
   private markSessionHasPendingMessages(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {

@@ -15,6 +15,14 @@ type DiscoveredInstructionSkill = {
   body: string;
 };
 
+export type InstructionSkillSummary = {
+  id: string;
+  name: string;
+  description: string;
+  skillPath: string;
+  inline: boolean;
+};
+
 type RootDiscoveryResult = {
   rootSpec: string;
   rootPath: string;
@@ -375,13 +383,16 @@ export function preloadInstructionSkillsForAgents(
   }
 }
 
-export function buildInstructionSkillsPrompt(
+function resolveInstructionSkillSelections(
   agent: AgentDefinition,
   log: (level: 'warn', message: string) => void = (_level, message) => console.warn(message),
-): string {
+): {
+  availableSelected: DiscoveredInstructionSkill[];
+  inlineSelected: DiscoveredInstructionSkill[];
+} {
   const sources = Array.isArray(agent.skills) ? agent.skills : [];
   if (sources.length === 0) {
-    return '';
+    return { availableSelected: [], inlineSelected: [] };
   }
 
   const warn = (message: string) => log('warn', `[skills] ${message}`);
@@ -458,11 +469,58 @@ export function buildInstructionSkillsPrompt(
     }
   }
 
+  return { availableSelected, inlineSelected };
+}
+
+export function listInstructionSkills(
+  agent: AgentDefinition,
+  log: (level: 'warn', message: string) => void = (_level, message) => console.warn(message),
+): InstructionSkillSummary[] {
+  const { availableSelected, inlineSelected } = resolveInstructionSkillSelections(agent, log);
+  const skills: InstructionSkillSummary[] = [];
+
+  for (const skill of availableSelected) {
+    skills.push({
+      id: skill.name,
+      name: skill.name,
+      description: skill.description,
+      skillPath: skill.skillPath,
+      inline: false,
+    });
+  }
+  for (const skill of inlineSelected) {
+    skills.push({
+      id: skill.name,
+      name: skill.name,
+      description: skill.description,
+      skillPath: skill.skillPath,
+      inline: true,
+    });
+  }
+
+  return skills.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export function buildInstructionSkillsPrompt(
+  agent: AgentDefinition,
+  log: (level: 'warn', message: string) => void = (_level, message) => console.warn(message),
+  selectedNames?: string[],
+): string {
+  const { availableSelected, inlineSelected } = resolveInstructionSkillSelections(agent, log);
+  const selectedNameSet = Array.isArray(selectedNames) ? new Set(selectedNames) : null;
+
+  const filteredAvailable = selectedNameSet
+    ? availableSelected.filter((skill) => selectedNameSet.has(skill.name))
+    : availableSelected;
+  const filteredInline = selectedNameSet
+    ? inlineSelected.filter((skill) => selectedNameSet.has(skill.name))
+    : inlineSelected;
+
   const blocks: string[] = [];
 
-  if (availableSelected.length > 0) {
+  if (filteredAvailable.length > 0) {
     const lines: string[] = ['<available_skills>'];
-    for (const skill of availableSelected) {
+    for (const skill of filteredAvailable) {
       lines.push(
         '  <skill>',
         `    <name>${skill.name}</name>`,
@@ -475,7 +533,7 @@ export function buildInstructionSkillsPrompt(
     blocks.push(lines.join('\n'));
   }
 
-  for (const skill of inlineSelected) {
+  for (const skill of filteredInline) {
     const lines: string[] = [
       `<skill name="${skill.name}" location="${skill.skillPath}">`,
       `References are relative to ${skill.baseDir}.`,

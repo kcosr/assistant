@@ -1,5 +1,6 @@
 import type { ContextMenuManager } from '../controllers/contextMenu';
 import type { DialogManager } from '../controllers/dialogManager';
+import type { SessionComposerOpenOptions } from '../controllers/sessionComposerController';
 import type { SessionPickerOpenOptions } from '../controllers/panelSessionPicker';
 import type { ListColumnPreferencesClient } from './listColumnPreferences';
 import type { KeyboardShortcutService } from './keyboardShortcuts';
@@ -19,4 +20,5 @@ export interface PanelCoreServices {
   /** Request the active panel to clear any text/item selection */
   clearContextSelection?: () => void;
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;
+  openSessionComposer?: (options?: SessionComposerOpenOptions) => void;
 }

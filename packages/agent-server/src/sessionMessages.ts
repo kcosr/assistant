@@ -13,6 +13,7 @@ import { resolveAgentToolExposureForHost } from './toolExposure';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './ws/toolCallHandling';
 import { deliverWebhook } from './webhookDelivery';
 import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
+import { filterSessionSkills, getSelectedSessionSkillIds } from './sessionConfig';
 
 export type SessionMessageWebhook = {
   url: string;
@@ -128,7 +129,10 @@ async function buildSessionToolContext(options: {
       sessionHub,
     });
     availableTools = exposure.availableTools;
-    availableSkills = exposure.availableSkills;
+    availableSkills = filterSessionSkills({
+      availableSkills: exposure.availableSkills,
+      selectedSkillIds: getSelectedSessionSkillIds(summary.attributes),
+    });
     chatTools = exposure.chatTools;
   } catch {
     availableTools = undefined;

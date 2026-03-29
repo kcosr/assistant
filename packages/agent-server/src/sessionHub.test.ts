@@ -57,6 +57,26 @@ describe('SessionHub workingDir defaults', () => {
     expect(summary?.attributes?.core?.workingDir).toBe(workingDir);
   });
 
+  it('passes session summary to the resolver so agent-specific fixed directories can be applied', async () => {
+    const sessionsFile = createTempFile('session-hub-workingdir-agent-aware');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const assistantDir = path.join(os.tmpdir(), 'assistant-workspace');
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      resolveSessionWorkingDir: (summary) =>
+        summary.agentId === 'assistant' ? assistantDir : null,
+    });
+
+    await sessionIndex.createSession({ sessionId: 'session-fixed-1', agentId: 'assistant' });
+    const state = await sessionHub.ensureSessionState('session-fixed-1');
+
+    expect(state.summary.attributes?.core?.workingDir).toBe(assistantDir);
+  });
+
   it('creates the resolved working directory when missing', async () => {
     const sessionsFile = createTempFile('session-hub-workingdir-create');
     const sessionIndex = new SessionIndex(sessionsFile);

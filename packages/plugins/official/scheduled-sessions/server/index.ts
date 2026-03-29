@@ -1,16 +1,16 @@
-import type { CombinedPluginManifest } from '@assistant/shared';
+import type { CombinedPluginManifest, SessionConfig } from '@assistant/shared';
 
-import type { HttpRouteHandler } from '../../../../agent-server/src/http/types';
+import { parseSessionConfigInput } from '../../../../agent-server/src/sessionConfig';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
-import type { ScheduledSessionService } from '../../../../agent-server/src/scheduledSessions/scheduledSessionService';
+import {
+  ScheduleNotFoundError,
+  ScheduleValidationError,
+  type ScheduledSessionService,
+} from '../../../../agent-server/src/scheduledSessions/scheduledSessionService';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
-
-type RunRequestBody = {
-  force?: boolean;
-};
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -40,216 +40,183 @@ function parseOptionalBoolean(value: unknown, field: string): boolean | undefine
   return value;
 }
 
+function parseOptionalInteger(value: unknown, field: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value < 1
+  ) {
+    throw new ToolError('invalid_arguments', `${field} must be an integer >= 1`);
+  }
+  return value;
+}
+
+function parseOptionalNullableString(
+  value: unknown,
+  field: string,
+): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (typeof value !== 'string') {
+    throw new ToolError('invalid_arguments', `${field} must be a string or null`);
+  }
+  return value;
+}
+
+function parseOptionalSessionConfig(value: unknown): SessionConfig | null | undefined {
+  try {
+    return parseSessionConfigInput({
+      value,
+      allowNull: true,
+      allowSessionTitle: false,
+    });
+  } catch (err) {
+    throw new ToolError(
+      'invalid_arguments',
+      err instanceof Error ? err.message : 'Invalid sessionConfig',
+    );
+  }
+}
+
 function requireService(ctx: ToolContext): ScheduledSessionService {
   const service = ctx.scheduledSessionService;
   if (!service) {
-    throw new ToolError('scheduled_sessions_unavailable', 'Scheduled session service is not available');
+    throw new ToolError(
+      'scheduled_sessions_unavailable',
+      'Scheduled session service is not available',
+    );
   }
   return service;
 }
 
-function isScheduleNotFoundError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') {
-    return false;
+function wrapServiceError(err: unknown): never {
+  if (err instanceof ToolError) {
+    throw err;
   }
-  return (err as { name?: string }).name === 'ScheduleNotFoundError';
+  if (err instanceof ScheduleValidationError) {
+    throw new ToolError('invalid_arguments', err.message);
+  }
+  if (err instanceof ScheduleNotFoundError) {
+    const code = err.message.startsWith('Agent not found:')
+      ? 'agent_not_found'
+      : 'schedule_not_found';
+    throw new ToolError(code, err.message);
+  }
+  throw err;
 }
-
-function parseRunBody(value: unknown): RunRequestBody {
-  if (!value) {
-    return {};
-  }
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Request body must be an object');
-  }
-  const raw = value as Record<string, unknown>;
-  if (raw['force'] !== undefined && typeof raw['force'] !== 'boolean') {
-    throw new Error('force must be a boolean');
-  }
-  return {
-    ...(raw['force'] !== undefined ? { force: raw['force'] as boolean } : {}),
-  };
-}
-
-function normalizePathSegment(value: string | undefined): string {
-  if (!value) {
-    return '';
-  }
-  return decodeURIComponent(value).trim();
-}
-
-const httpRoutes: HttpRouteHandler[] = [async (context, req, _res, _url, segments, helpers) => {
-  if (segments.length < 2 || segments[0] !== 'api' || segments[1] !== 'scheduled-sessions') {
-    return false;
-  }
-
-  const { sendJson, readJsonBody } = helpers;
-  const service = context.scheduledSessionService;
-  if (!service) {
-    sendJson(503, { error: 'Scheduled session service is not available' });
-    return true;
-  }
-
-  const agentId = normalizePathSegment(segments[2]);
-  const scheduleId = normalizePathSegment(segments[3]);
-  const action = normalizePathSegment(segments[4]);
-
-  if (req.method === 'GET' && segments.length === 2) {
-    sendJson(200, { schedules: service.listSchedules() });
-    return true;
-  }
-
-  if (req.method === 'POST' && segments.length === 5 && action === 'run') {
-    let body: RunRequestBody = {};
-    if (req.headers['content-type']?.includes('application/json')) {
-      const parsed = await readJsonBody();
-      if (!parsed) {
-        return true;
-      }
-      try {
-        body = parseRunBody(parsed);
-      } catch (err) {
-        sendJson(400, { error: (err as Error).message || 'Invalid request body' });
-        return true;
-      }
-    }
-
-    if (!agentId || !scheduleId) {
-      sendJson(400, { error: 'agentId and scheduleId are required' });
-      return true;
-    }
-
-    try {
-      const result = await service.triggerRun(agentId, scheduleId, { force: body.force });
-      sendJson(200, result);
-      return true;
-    } catch (err) {
-      if (isScheduleNotFoundError(err)) {
-        const message = err instanceof Error ? err.message : 'Schedule not found';
-        sendJson(404, { error: message });
-        return true;
-      }
-      sendJson(500, { error: 'Failed to trigger scheduled session' });
-      return true;
-    }
-  }
-
-  if (req.method === 'POST' && segments.length === 5 && action === 'enable') {
-    if (!agentId || !scheduleId) {
-      sendJson(400, { error: 'agentId and scheduleId are required' });
-      return true;
-    }
-    try {
-      service.setEnabled(agentId, scheduleId, true);
-      sendJson(200, { agentId, scheduleId, enabled: true });
-      return true;
-    } catch (err) {
-      if (isScheduleNotFoundError(err)) {
-        const message = err instanceof Error ? err.message : 'Schedule not found';
-        sendJson(404, { error: message });
-        return true;
-      }
-      sendJson(500, { error: 'Failed to enable scheduled session' });
-      return true;
-    }
-  }
-
-  if (req.method === 'POST' && segments.length === 5 && action === 'disable') {
-    if (!agentId || !scheduleId) {
-      sendJson(400, { error: 'agentId and scheduleId are required' });
-      return true;
-    }
-    try {
-      service.setEnabled(agentId, scheduleId, false);
-      sendJson(200, { agentId, scheduleId, enabled: false });
-      return true;
-    } catch (err) {
-      if (isScheduleNotFoundError(err)) {
-        const message = err instanceof Error ? err.message : 'Schedule not found';
-        sendJson(404, { error: message });
-        return true;
-      }
-      sendJson(500, { error: 'Failed to disable scheduled session' });
-      return true;
-    }
-  }
-
-  sendJson(404, { error: 'Not found' });
-  return true;
-}];
 
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
   return {
-    tools: [
-      {
-        name: 'scheduled_sessions_list',
-        description: 'List all scheduled sessions with status information.',
-        inputSchema: { type: 'object', properties: {} },
-        capabilities: ['scheduled-sessions.read'],
-        handler: async (_args, ctx) => requireService(ctx).listSchedules(),
+    operations: {
+      list: async (_args, ctx) => {
+        return { schedules: requireService(ctx).listSchedules() };
       },
-      {
-        name: 'scheduled_sessions_run',
-        description: 'Trigger an immediate run of a scheduled session.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            agentId: { type: 'string', description: 'Agent id for the schedule.' },
-            scheduleId: { type: 'string', description: 'Schedule id within the agent.' },
-            force: { type: 'boolean', description: 'Bypass max concurrency limits.' },
-          },
-          required: ['agentId', 'scheduleId'],
-        },
-        capabilities: ['scheduled-sessions.write'],
-        handler: async (args, ctx) => {
-          const parsed = asObject(args);
-          const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
-          const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
-          const force = parseOptionalBoolean(parsed['force'], 'force');
+      create: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const cron = requireNonEmptyString(parsed['cron'], 'cron');
+        const prompt = parseOptionalNullableString(parsed['prompt'], 'prompt');
+        const preCheck = parseOptionalNullableString(parsed['preCheck'], 'preCheck');
+        const sessionTitle = parseOptionalNullableString(parsed['sessionTitle'], 'sessionTitle');
+        const enabled = parseOptionalBoolean(parsed['enabled'], 'enabled');
+        const reuseSession = parseOptionalBoolean(parsed['reuseSession'], 'reuseSession');
+        const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
+        const sessionConfig = parseOptionalSessionConfig(parsed['sessionConfig']);
+
+        try {
+          return await requireService(ctx).createSchedule(agentId, {
+            cron,
+            ...(prompt !== undefined ? { prompt: prompt ?? undefined } : {}),
+            ...(preCheck !== undefined ? { preCheck: preCheck ?? undefined } : {}),
+            ...(sessionTitle !== undefined ? { sessionTitle: sessionTitle ?? undefined } : {}),
+            ...(enabled !== undefined ? { enabled } : {}),
+            ...(reuseSession !== undefined ? { reuseSession } : {}),
+            ...(maxConcurrent !== undefined ? { maxConcurrent } : {}),
+            ...(sessionConfig !== undefined && sessionConfig !== null ? { sessionConfig } : {}),
+          });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      update: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
+        const cron = parsed['cron'] !== undefined ? requireNonEmptyString(parsed['cron'], 'cron') : undefined;
+        const prompt = parseOptionalNullableString(parsed['prompt'], 'prompt');
+        const preCheck = parseOptionalNullableString(parsed['preCheck'], 'preCheck');
+        const sessionTitle = parseOptionalNullableString(parsed['sessionTitle'], 'sessionTitle');
+        const enabled = parseOptionalBoolean(parsed['enabled'], 'enabled');
+        const reuseSession = parseOptionalBoolean(parsed['reuseSession'], 'reuseSession');
+        const maxConcurrent = parseOptionalInteger(parsed['maxConcurrent'], 'maxConcurrent');
+        const sessionConfig = parseOptionalSessionConfig(parsed['sessionConfig']);
+
+        try {
+          return await requireService(ctx).updateSchedule(agentId, scheduleId, {
+            ...(cron !== undefined ? { cron } : {}),
+            ...(prompt !== undefined ? { prompt } : {}),
+            ...(preCheck !== undefined ? { preCheck } : {}),
+            ...(sessionTitle !== undefined ? { sessionTitle } : {}),
+            ...(enabled !== undefined ? { enabled } : {}),
+            ...(reuseSession !== undefined ? { reuseSession } : {}),
+            ...(maxConcurrent !== undefined ? { maxConcurrent } : {}),
+            ...(sessionConfig !== undefined ? { sessionConfig } : {}),
+          });
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      delete: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
+        try {
+          return await requireService(ctx).deleteSchedule(agentId, scheduleId);
+        } catch (err) {
+          wrapServiceError(err);
+        }
+      },
+      run: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
+        const force = parseOptionalBoolean(parsed['force'], 'force');
+        try {
           return requireService(ctx).triggerRun(agentId, scheduleId, { force });
-        },
+        } catch (err) {
+          wrapServiceError(err);
+        }
       },
-      {
-        name: 'scheduled_sessions_enable',
-        description: 'Enable a scheduled session at runtime.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            agentId: { type: 'string', description: 'Agent id for the schedule.' },
-            scheduleId: { type: 'string', description: 'Schedule id within the agent.' },
-          },
-          required: ['agentId', 'scheduleId'],
-        },
-        capabilities: ['scheduled-sessions.write'],
-        handler: async (args, ctx) => {
-          const parsed = asObject(args);
-          const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
-          const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
-          requireService(ctx).setEnabled(agentId, scheduleId, true);
+      enable: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
+        try {
+          await requireService(ctx).setEnabled(agentId, scheduleId, true);
           return { agentId, scheduleId, enabled: true };
-        },
+        } catch (err) {
+          wrapServiceError(err);
+        }
       },
-      {
-        name: 'scheduled_sessions_disable',
-        description: 'Disable a scheduled session at runtime.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            agentId: { type: 'string', description: 'Agent id for the schedule.' },
-            scheduleId: { type: 'string', description: 'Schedule id within the agent.' },
-          },
-          required: ['agentId', 'scheduleId'],
-        },
-        capabilities: ['scheduled-sessions.write'],
-        handler: async (args, ctx) => {
-          const parsed = asObject(args);
-          const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
-          const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
-          requireService(ctx).setEnabled(agentId, scheduleId, false);
+      disable: async (args, ctx) => {
+        const parsed = asObject(args);
+        const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
+        const scheduleId = requireNonEmptyString(parsed['scheduleId'], 'scheduleId');
+        try {
+          await requireService(ctx).setEnabled(agentId, scheduleId, false);
           return { agentId, scheduleId, enabled: false };
-        },
+        } catch (err) {
+          wrapServiceError(err);
+        }
       },
-    ],
-    httpRoutes,
+    },
   };
 }

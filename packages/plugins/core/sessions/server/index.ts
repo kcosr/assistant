@@ -1,10 +1,21 @@
-import type { CombinedPluginManifest, SessionAttributesPatch } from '@assistant/shared';
+import type {
+  CombinedPluginManifest,
+  SessionAttributesPatch,
+  SessionConfig,
+} from '@assistant/shared';
 
 import type { AgentRegistry } from '../../../../agent-server/src/agents';
+import type { SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { getDefaultModelForNewSession } from '../../../../agent-server/src/sessionModel';
+import { getDefaultThinkingForNewSession } from '../../../../agent-server/src/sessionModel';
 import type { SessionHub } from '../../../../agent-server/src/sessionHub';
 import type { SessionIndex } from '../../../../agent-server/src/sessionIndex';
 import { isPlainObject } from '../../../../agent-server/src/sessionAttributes';
+import {
+  buildSessionAttributesPatchFromConfig,
+  parseSessionConfigInput,
+  resolveSessionConfigForAgent,
+} from '../../../../agent-server/src/sessionConfig';
 import { startSessionMessage } from '../../../../agent-server/src/sessionMessages';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
@@ -103,6 +114,76 @@ function parseOptionalAttributesPatch(
   return parseAttributesPatch(args);
 }
 
+function parseOptionalSessionConfig(args: Record<string, unknown>): SessionConfig | undefined {
+  try {
+    return parseSessionConfigInput({ value: args['sessionConfig'] }) ?? undefined;
+  } catch (err) {
+    throw new ToolError(
+      'invalid_arguments',
+      err instanceof Error ? err.message : 'Invalid sessionConfig',
+    );
+  }
+}
+
+async function mirrorSessionNameToPiLog(options: {
+  summary: SessionSummary;
+  sessionId: string;
+  sessionHub: SessionHub;
+  ctx: ToolContext;
+}): Promise<SessionSummary> {
+  let { summary } = options;
+  const { sessionId, sessionHub, ctx } = options;
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  if (!piSessionWriter) {
+    console.log('[sessions] Pi session writer unavailable; skipping session_info mirror', {
+      sessionId,
+      agentId: summary.agentId ?? null,
+      name: typeof summary.name === 'string' ? summary.name : null,
+    });
+    return summary;
+  }
+
+  const registry = requireAgentRegistry(ctx, sessionHub);
+  const agentId = summary.agentId;
+  const agent = agentId ? registry.getAgent(agentId) : undefined;
+  const provider = agent?.type === 'external' ? null : (agent?.chat?.provider ?? 'pi');
+
+  if (provider !== 'pi' && provider !== 'pi-cli') {
+    console.log('[sessions] Session provider is not Pi-backed; skipping session_info mirror', {
+      sessionId,
+      agentId: summary.agentId ?? null,
+      provider,
+    });
+    return summary;
+  }
+
+  console.log('[sessions] Mirroring session rename into Pi session log', {
+    sessionId,
+    agentId: summary.agentId ?? null,
+    provider,
+    name: typeof summary.name === 'string' ? summary.name : null,
+  });
+  try {
+    const updatedSummary = await piSessionWriter.appendSessionInfo({
+      summary,
+      name: typeof summary.name === 'string' ? summary.name : '',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+    });
+    if (updatedSummary) {
+      summary = updatedSummary;
+    }
+    console.log('[sessions] Mirrored session_info into Pi session log', {
+      sessionId,
+      agentId: summary.agentId ?? null,
+      provider,
+    });
+  } catch (err) {
+    console.error('[sessions] Failed to mirror session name to Pi session log', err);
+  }
+
+  return summary;
+}
+
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
   return {
     operations: {
@@ -118,7 +199,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const parsed = asObject(args);
         const agentId = requireNonEmptyString(parsed['agentId'], 'agentId');
         const sessionId = parseSessionIdOverride(parsed['sessionId']);
-        const attributesPatch = parseOptionalAttributesPatch(parsed);
+        const sessionConfig = parseOptionalSessionConfig(parsed);
 
         const agent = registry.getAgent(agentId);
         if (!agent) {
@@ -130,21 +211,23 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
 
         try {
-          const model = getDefaultModelForNewSession(agent);
+          const resolvedConfig = await resolveSessionConfigForAgent({
+            agent,
+            ...(sessionConfig ? { sessionConfig } : {}),
+            sessionHub,
+            ...(ctx.baseToolHost ? { baseToolHost: ctx.baseToolHost } : {}),
+          });
+          const model = resolvedConfig.model ?? getDefaultModelForNewSession(agent);
+          const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent);
+          const attributesPatch = buildSessionAttributesPatchFromConfig(resolvedConfig);
           let summary = await sessionIndex.createSession({
             agentId,
             ...(sessionId ? { sessionId } : {}),
             ...(model ? { model } : {}),
+            ...(thinking ? { thinking } : {}),
+            ...(resolvedConfig.sessionTitle ? { name: resolvedConfig.sessionTitle } : {}),
+            ...(attributesPatch ? { attributes: attributesPatch } : {}),
           });
-          if (attributesPatch) {
-            const patched = await sessionIndex.updateSessionAttributes(
-              summary.sessionId,
-              attributesPatch,
-            );
-            if (patched) {
-              summary = patched;
-            }
-          }
           await sessionHub.ensureSessionState(summary.sessionId, summary, true);
           sessionHub.broadcastSessionCreated(summary);
           return summary;
@@ -160,9 +243,17 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const sessionId = requireSessionId(parsed['sessionId']);
         const name = parseOptionalNullableString(parsed['name'], 'name');
         const pinnedAt = parseOptionalNullableString(parsed['pinnedAt'], 'pinnedAt');
+        const sessionConfig = parseOptionalSessionConfig(parsed);
 
-        if (name === undefined && pinnedAt === undefined) {
-          throw new ToolError('invalid_arguments', 'Missing name or pinnedAt');
+        if (name !== undefined && sessionConfig !== undefined) {
+          throw new ToolError(
+            'invalid_arguments',
+            'name cannot be combined with sessionConfig.sessionTitle; use sessionConfig only',
+          );
+        }
+
+        if (name === undefined && pinnedAt === undefined && sessionConfig === undefined) {
+          throw new ToolError('invalid_arguments', 'Missing name, pinnedAt, or sessionConfig');
         }
 
         const existing = await sessionIndex.getSession(sessionId);
@@ -188,50 +279,79 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             name,
             ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
           });
+          summary = await mirrorSessionNameToPiLog({ summary, sessionId, sessionHub, ctx });
+        }
 
-          const piSessionWriter = sessionHub.getPiSessionWriter?.();
-          if (!piSessionWriter) {
-            console.log('[sessions] Pi session writer unavailable; skipping session_info mirror', {
-              sessionId,
-              agentId: summary.agentId ?? null,
-              name: typeof summary.name === 'string' ? summary.name : null,
+        if (sessionConfig !== undefined) {
+          const registry = requireAgentRegistry(ctx, sessionHub);
+          const agentId = summary.agentId;
+          const agent = agentId ? registry.getAgent(agentId) : undefined;
+          if (!agent) {
+            throw new ToolError(
+              'invalid_arguments',
+              `Unknown agent for existing session: ${agentId ?? 'unknown'}`,
+            );
+          }
+
+          let resolvedConfig;
+          try {
+            resolvedConfig = await resolveSessionConfigForAgent({
+              agent,
+              sessionConfig,
+              sessionHub,
+              ...(ctx.baseToolHost ? { baseToolHost: ctx.baseToolHost } : {}),
             });
-          } else {
-            const registry = requireAgentRegistry(ctx, sessionHub);
-            const agentId = summary.agentId;
-            const agent = agentId ? registry.getAgent(agentId) : undefined;
-            const provider = agent?.type === 'external' ? null : (agent?.chat?.provider ?? 'pi');
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to update session';
+            throw new ToolError('invalid_arguments', message);
+          }
 
-            if (provider !== 'pi' && provider !== 'pi-cli') {
-              console.log(
-                '[sessions] Session provider is not Pi-backed; skipping session_info mirror',
-                { sessionId, agentId: summary.agentId ?? null, provider },
-              );
-            } else {
-              console.log('[sessions] Mirroring session rename into Pi session log', {
-                sessionId,
-                agentId: summary.agentId ?? null,
-                provider,
-                name: typeof summary.name === 'string' ? summary.name : null,
-              });
-              try {
-                const updatedSummary = await piSessionWriter.appendSessionInfo({
-                  summary,
-                  name: typeof summary.name === 'string' ? summary.name : '',
-                  updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-                });
-                if (updatedSummary) {
-                  summary = updatedSummary;
-                }
-                console.log('[sessions] Mirrored session_info into Pi session log', {
-                  sessionId,
-                  agentId: summary.agentId ?? null,
-                  provider,
-                });
-              } catch (err) {
-                console.error('[sessions] Failed to mirror session name to Pi session log', err);
-              }
+          const nextName = resolvedConfig.sessionTitle ?? null;
+          const currentName = typeof summary.name === 'string' ? summary.name : null;
+          if (nextName !== currentName) {
+            summary = await sessionIndex.renameSession(sessionId, nextName);
+            await sessionHub.ensureSessionState(summary.sessionId, summary, true);
+            sessionHub.broadcastToAll({
+              type: 'session_updated',
+              sessionId: summary.sessionId,
+              updatedAt: summary.updatedAt,
+              name: nextName,
+              ...(typeof summary.pinnedAt === 'string' ? { pinnedAt: summary.pinnedAt } : {}),
+            });
+            summary = await mirrorSessionNameToPiLog({ summary, sessionId, sessionHub, ctx });
+          }
+
+          const nextModel = resolvedConfig.model ?? null;
+          const currentModel = typeof summary.model === 'string' ? summary.model : null;
+          if (nextModel !== currentModel) {
+            const updated = await sessionIndex.setSessionModel(sessionId, nextModel);
+            if (!updated) {
+              throw new ToolError('session_not_found', 'Session not found');
             }
+            summary = updated;
+            await sessionHub.ensureSessionState(summary.sessionId, summary, true);
+          }
+
+          const nextThinking = resolvedConfig.thinking ?? null;
+          const currentThinking = typeof summary.thinking === 'string' ? summary.thinking : null;
+          if (nextThinking !== currentThinking) {
+            const updated = await sessionIndex.setSessionThinking(sessionId, nextThinking);
+            if (!updated) {
+              throw new ToolError('session_not_found', 'Session not found');
+            }
+            summary = updated;
+            await sessionHub.ensureSessionState(summary.sessionId, summary, true);
+          }
+
+          const attributesPatch = buildSessionAttributesPatchFromConfig(resolvedConfig, {
+            clearMissing: true,
+          });
+          if (attributesPatch) {
+            const updated = await sessionHub.updateSessionAttributes(sessionId, attributesPatch);
+            if (!updated) {
+              throw new ToolError('session_not_found', 'Session not found');
+            }
+            summary = updated;
           }
         }
 

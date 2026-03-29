@@ -4,6 +4,7 @@ export interface ContextMenuActions {
   clearHistory: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   renameSession: (sessionId: string) => Promise<void> | void;
+  editSession?: (sessionId: string) => Promise<void> | void;
 }
 
 export class ContextMenuManager {
@@ -58,6 +59,12 @@ export class ContextMenuManager {
     addMenuItem('Rename session', () => {
       void this.actions.renameSession(sessionId);
     });
+
+    if (typeof this.actions.editSession === 'function') {
+      addMenuItem('Edit session', () => {
+        void this.actions.editSession?.(sessionId);
+      });
+    }
 
     addMenuItem('Clear history', () => {
       this.actions.clearHistory(sessionId);

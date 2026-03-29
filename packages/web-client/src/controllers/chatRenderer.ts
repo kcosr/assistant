@@ -315,6 +315,7 @@ export class ChatRenderer {
 
   clear(): void {
     this.container.innerHTML = '';
+    this._isStreaming = false;
     this.turnElements.clear();
     this.responseElements.clear();
     this.assistantTextElements.clear();

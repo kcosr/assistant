@@ -25,8 +25,10 @@
       "displayName": "General Assistant",
       "description": "A helpful general-purpose assistant for everyday tasks.",
       "systemPrompt": "You are a helpful assistant.",
-      "sessionWorkingDirMode": "prompt",
-      "sessionWorkingDirRoots": ["/path/to/workspaces"],
+      "sessionWorkingDir": {
+        "mode": "prompt",
+        "roots": ["/path/to/workspaces"]
+      },
       "toolAllowlist": ["*"],
       "skills": [
         {
@@ -87,17 +89,7 @@
             }
           }
         }
-      },
-      "schedules": [
-        {
-          "id": "daily-review",
-          "cron": "0 9 * * *",
-          "sessionTitle": "Daily Repo Review",
-          "prompt": "Review open PRs and issues. Summarize status.",
-          "enabled": true,
-          "maxConcurrent": 1
-        }
-      ]
+      }
     },
     {
       "agentId": "pi-sdk",

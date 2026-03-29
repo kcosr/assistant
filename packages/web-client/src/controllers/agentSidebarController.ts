@@ -1,6 +1,6 @@
 import { stripContextLine } from '../utils/chatMessageRenderer';
 import { resolveAutoTitle } from '../utils/sessionLabel';
-import type { CreateSessionOptions } from './sessionManager';
+import type { SessionComposerOpenOptions } from './sessionComposerController';
 
 interface SessionSummary {
   agentId?: string;
@@ -29,8 +29,10 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
-  sessionWorkingDirMode?: 'auto' | 'prompt';
-  sessionWorkingDirRoots?: string[];
+  sessionWorkingDir?:
+    | { mode: 'none' }
+    | { mode: 'fixed'; path: string }
+    | { mode: 'prompt'; roots: string[] };
 }
 
 export type SidebarViewMode = 'by-agent' | 'all-sessions';
@@ -52,10 +54,7 @@ export interface AgentSidebarControllerOptions {
   setFocusedSessionItem: (item: HTMLElement | null) => void;
   isSidebarFocused: () => boolean;
   selectSession: (sessionId: string) => void;
-  createSessionForAgent: (
-    agentId: string,
-    options?: CreateSessionOptions,
-  ) => Promise<string | null>;
+  openSessionComposer: (options: SessionComposerOpenOptions) => void;
   showSessionMenu: (x: number, y: number, sessionId: string) => void;
   focusInput: () => void;
   getAutoFocusChatOnSessionReady: () => boolean;
@@ -279,7 +278,10 @@ export class AgentSidebarController {
       itemButton.addEventListener('click', (event) => {
         event.stopPropagation();
         this.toggleHeaderAgentDropdown(false);
-        void this.options.createSessionForAgent(agent.agentId);
+        this.options.openSessionComposer({
+          initialAgentId: agent.agentId,
+          initialMode: 'session',
+        });
       });
       this.headerAgentDropdownList.appendChild(itemButton);
     }
@@ -500,7 +502,10 @@ export class AgentSidebarController {
       newSessionButton.innerHTML = this.options.icons.plus;
       newSessionButton.addEventListener('click', (e) => {
         e.stopPropagation();
-        void this.options.createSessionForAgent(agentId);
+        this.options.openSessionComposer({
+          initialAgentId: agentId,
+          initialMode: 'session',
+        });
       });
       actions.appendChild(newSessionButton);
 

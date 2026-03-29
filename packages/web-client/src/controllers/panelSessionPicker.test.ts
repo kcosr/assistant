@@ -6,7 +6,6 @@ import { SessionPickerController } from './panelSessionPicker';
 describe('SessionPickerController', () => {
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
   const originalMatchMedia = window.matchMedia;
-  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -16,16 +15,15 @@ describe('SessionPickerController', () => {
   afterEach(() => {
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
     window.matchMedia = originalMatchMedia;
-    globalThis.fetch = originalFetch;
     document.body.innerHTML = '';
   });
 
-  it('invokes rename from the session row action button', () => {
-    const onRenameSession = vi.fn();
+  it('invokes edit from the session row action button', () => {
+    const onEditSession = vi.fn();
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
       getAgentSummaries: () => [],
-      createSessionForAgent: async () => null,
+      openSessionComposer: vi.fn(),
     });
 
     const anchor = document.createElement('button');
@@ -35,7 +33,7 @@ describe('SessionPickerController', () => {
       anchor,
       title: 'Sessions',
       onSelectSession: () => undefined,
-      onRenameSession: (sessionId) => onRenameSession(sessionId),
+      onEditSession: (sessionId) => onEditSession(sessionId),
     });
 
     const renameBtn = document.querySelector<HTMLButtonElement>(
@@ -44,7 +42,7 @@ describe('SessionPickerController', () => {
     expect(renameBtn).toBeTruthy();
     renameBtn?.click();
 
-    expect(onRenameSession).toHaveBeenCalledWith('s1');
+    expect(onEditSession).toHaveBeenCalledWith('s1');
     expect(document.querySelector('.session-picker-popover')).toBeNull();
 
     controller.close();
@@ -55,7 +53,7 @@ describe('SessionPickerController', () => {
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
       getAgentSummaries: () => [],
-      createSessionForAgent: async () => null,
+      openSessionComposer: vi.fn(),
     });
 
     const anchor = document.createElement('button');
@@ -96,7 +94,7 @@ describe('SessionPickerController', () => {
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
       getAgentSummaries: () => [],
-      createSessionForAgent: async () => null,
+      openSessionComposer: vi.fn(),
     });
 
     const anchor = document.createElement('button');
@@ -138,21 +136,8 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
-  it('prompts for working directory before creating a new session', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        roots: [
-          {
-            root: '/workspaces',
-            directories: ['/workspaces/app'],
-          },
-        ],
-      }),
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const createSessionForAgent = vi.fn().mockResolvedValue('new-session');
+  it('opens the composer for prompt-working-dir agents', async () => {
+    const openSessionComposer = vi.fn();
     const onSelectSession = vi.fn();
     const controller = new SessionPickerController({
       getSessionSummaries: () => [],
@@ -160,11 +145,13 @@ describe('SessionPickerController', () => {
         {
           agentId: 'general',
           displayName: 'General',
-          sessionWorkingDirMode: 'prompt',
-          sessionWorkingDirRoots: ['/workspaces'],
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/workspaces'],
+          },
         },
       ],
-      createSessionForAgent,
+      openSessionComposer,
     });
 
     const anchor = document.createElement('button');
@@ -182,24 +169,116 @@ describe('SessionPickerController', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const overlay = document.querySelector('.working-dir-picker-overlay');
-    expect(overlay).toBeTruthy();
+    expect(openSessionComposer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialAgentId: 'general',
+        initialMode: 'session',
+        onSessionCreated: expect.any(Function),
+      }),
+    );
 
-    const rootItem = Array.from(
-      document.querySelectorAll<HTMLDivElement>(
-        '.working-dir-picker-overlay .session-picker-item',
-      ),
-    ).find((item) => item.textContent?.includes('app'));
-    expect(rootItem).toBeTruthy();
-    rootItem?.click();
+    const callback = openSessionComposer.mock.calls[0]?.[0]?.onSessionCreated as
+      | ((sessionId: string) => void)
+      | undefined;
+    callback?.('new-session');
+    expect(onSelectSession).toHaveBeenCalledWith('new-session');
+
+    controller.close();
+  });
+
+  it('opens the composer for fixed-working-dir agents', async () => {
+    const openSessionComposer = vi.fn();
+    const onSelectSession = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [],
+      getAgentSummaries: () => [
+        {
+          agentId: 'assistant',
+          displayName: 'Assistant',
+          sessionWorkingDir: {
+            mode: 'fixed',
+            path: '/home/kevin/assistant',
+          },
+        },
+      ],
+      openSessionComposer,
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession,
+    });
+
+    const agentItem = document.querySelector<HTMLDivElement>('.session-picker-item');
+    expect(agentItem).toBeTruthy();
+    agentItem?.click();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(createSessionForAgent).toHaveBeenCalledWith(
-      'general',
-      expect.objectContaining({ workingDir: '/workspaces/app' }),
+    expect(openSessionComposer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialAgentId: 'assistant',
+        initialMode: 'session',
+        onSessionCreated: expect.any(Function),
+      }),
     );
+    const callback = openSessionComposer.mock.calls[0]?.[0]?.onSessionCreated as
+      | ((sessionId: string) => void)
+      | undefined;
+    callback?.('new-session');
     expect(onSelectSession).toHaveBeenCalledWith('new-session');
+
+    controller.close();
+  });
+
+  it('forwards createSessionOptions into the composer open request', async () => {
+    const openSessionComposer = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [],
+      getAgentSummaries: () => [
+        {
+          agentId: 'general',
+          displayName: 'General',
+          sessionWorkingDir: {
+            mode: 'prompt',
+            roots: ['/workspaces'],
+          },
+        },
+      ],
+      openSessionComposer,
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession: () => undefined,
+      createSessionOptions: {
+        sessionConfig: {
+          model: 'gpt-5.4',
+        },
+      },
+    });
+
+    document.querySelector<HTMLDivElement>('.session-picker-item')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(openSessionComposer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialAgentId: 'general',
+        createSessionOptions: {
+          sessionConfig: {
+            model: 'gpt-5.4',
+          },
+        },
+      }),
+    );
 
     controller.close();
   });

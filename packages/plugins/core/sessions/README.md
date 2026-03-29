@@ -42,18 +42,35 @@ Create a new session for an agent.
 
 - `agentId` (string, required): Agent id for the new session.
 - `sessionId` (string, optional): Optional session id (required for external agents).
+- `sessionConfig` (object, optional): Session configuration constrained by the selected agent.
+  - `model` (string, optional): Allowed session model override.
+  - `thinking` (string, optional): Allowed thinking override.
+  - `workingDir` (string, optional): Absolute working directory for the new session.
+  - `skills` (string[], optional): Selected skill ids allowed by the agent.
+  - `sessionTitle` (string, optional): Explicit session title for the new session.
 
 **HTTP:** `POST /api/plugins/sessions/operations/create` (returns 201 on success)
 
 ### `sessions_update`
 
-Rename or pin a session.
+Rename, pin, or replace editable session configuration for a session.
 
 **Parameters:**
 
 - `sessionId` (string, required): Session id.
 - `name` (string | null, optional): New session name (null clears).
 - `pinnedAt` (string | null, optional): Pinned timestamp ISO string (null clears).
+- `sessionConfig` (object, optional): Full replacement for editable session config fields.
+  - `model` (string, optional): Allowed session model override.
+  - `thinking` (string, optional): Allowed thinking override.
+  - `workingDir` (string, optional): Absolute working directory for the session.
+  - `skills` (string[], optional): Selected skill ids allowed by the agent.
+  - `sessionTitle` (string, optional): Explicit session title for the session.
+
+When `sessionConfig` is provided, editable session config fields are replaced from that object:
+- omitted `model` / `thinking` clear those overrides back to agent defaults
+- omitted `workingDir` / `skills` clear the stored session-scoped values
+- omitted `sessionTitle` clears the explicit session name
 
 **HTTP:** `POST /api/plugins/sessions/operations/update`
 
@@ -120,7 +137,7 @@ Delete a session.
 | ----------------------------- | --------------------------- |
 | `sessions_list`               | List all sessions           |
 | `sessions_create`             | Create a new session        |
-| `sessions_update`             | Rename or pin a session     |
+| `sessions_update`             | Rename, pin, or update session config |
 | `sessions_update-attributes`  | Patch session attributes    |
 | `sessions_events`             | Fetch session events        |
 | `sessions_message`            | Send a message to a session |

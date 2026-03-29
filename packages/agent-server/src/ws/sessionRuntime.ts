@@ -54,6 +54,7 @@ import { handleHello as handleHelloMessage } from './helloHandling';
 import type { SessionConnection } from './sessionConnection';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './toolCallHandling';
 import { updateSystemPromptWithTools } from '../systemPromptUpdater';
+import { filterSessionSkills, getSelectedSessionSkillIds } from '../sessionConfig';
 import type { WsTransport } from './wsTransport';
 
 export interface SessionRuntimeOptions {
@@ -785,13 +786,17 @@ export class SessionRuntime {
         ...(agent ? { agent } : {}),
         manifests,
       });
+      const selectedSkills = filterSessionSkills({
+        availableSkills: skills,
+        selectedSkillIds: getSelectedSessionSkillIds(state?.summary.attributes),
+      });
       const specs = visibleTools.length > 0 ? mapToolsToChatCompletionSpecs(visibleTools) : [];
-      if (visibleTools.length > 0 || skills.length > 0) {
+      if (visibleTools.length > 0 || (selectedSkills && selectedSkills.length > 0)) {
         await updateSystemPromptWithTools({
           state,
           sessionHub: this.sessionHub,
           tools: visibleTools,
-          ...(skills.length > 0 ? { skills } : {}),
+          ...(selectedSkills && selectedSkills.length > 0 ? { skills: selectedSkills } : {}),
           log: (...args) => this.log(...args),
         });
       }
@@ -800,10 +805,10 @@ export class SessionRuntime {
         debug: {
           availableToolsCount: availableTools.length,
           visibleToolsCount: visibleTools.length,
-          skillCount: skills.length,
+          skillCount: selectedSkills?.length ?? 0,
           toolNamesSample: availableTools.slice(0, 10).map((tool) => tool.name),
           visibleToolNamesSample: visibleTools.slice(0, 10).map((tool) => tool.name),
-          skillsSample: skills.slice(0, 10).map((skill) => skill.id),
+          skillsSample: (selectedSkills ?? []).slice(0, 10).map((skill) => skill.id),
         },
       };
     } catch (err) {
