@@ -612,6 +612,47 @@ describe('ChatRenderer', () => {
     expect(assistantText?.querySelector('strong')?.textContent).toBe('tool');
   });
 
+  it('does not duplicate a finalized segment when a tool split has no follow-up assistant chunk', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Before tool' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc-split',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'Before tool' },
+      }),
+    );
+
+    const assistantTexts = container.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.textContent).toContain('Before tool');
+  });
+
   it('finalizes the current streamed segment when assistant_done matches the same stream', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

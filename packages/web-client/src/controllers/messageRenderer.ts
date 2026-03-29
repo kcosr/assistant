@@ -1,7 +1,7 @@
 import {
+  appendStreamingMarkdownText,
   finalizeStreamingMarkdownText,
-  isStreamingMarkdownText,
-  renderStreamingMarkdownText,
+  finalizeStreamingMarkdownTextIfNeeded,
 } from '../utils/markdown';
 import {
   createToolCallGroup,
@@ -148,6 +148,7 @@ export class MessageRenderer {
 
   private readonly currentTextSegments: Map<string, HTMLDivElement>;
   private readonly segmentTexts: Map<string, string>;
+  private readonly textSegmentCounts = new Map<string, number>();
   private readonly needsNewSegment: Set<string>;
 
   private readonly pendingAgentCallbackBlocks: Map<string, HTMLDivElement>;
@@ -178,6 +179,7 @@ export class MessageRenderer {
     this.thinkingTexts.clear();
     this.currentTextSegments.clear();
     this.segmentTexts.clear();
+    this.textSegmentCounts.clear();
     this.needsNewSegment.clear();
     this.pendingAgentCallbackBlocks.clear();
     this.unclaimedAssistantBubble = null;
@@ -278,12 +280,16 @@ export class MessageRenderer {
       this.insertBeforeTypingIndicator(bubble, segment);
       this.currentTextSegments.set(event.responseId, segment);
       this.segmentTexts.set(event.responseId, '');
+      this.textSegmentCounts.set(
+        event.responseId,
+        (this.textSegmentCounts.get(event.responseId) ?? 0) + 1,
+      );
       this.needsNewSegment.delete(event.responseId);
     }
 
     const segmentText = (this.segmentTexts.get(event.responseId) ?? '') + event.delta;
     this.segmentTexts.set(event.responseId, segmentText);
-    renderStreamingMarkdownText(segment, segmentText);
+    appendStreamingMarkdownText(segment, event.delta);
 
     const fullText = (this.responseTexts.get(event.responseId) ?? '') + event.delta;
     this.responseTexts.set(event.responseId, fullText);
@@ -293,23 +299,21 @@ export class MessageRenderer {
     const bubble = this.getOrCreateAssistantBubbleForResponse(event.responseId);
     this.setBubbleTyping(bubble, false);
 
-    const mains = bubble.querySelectorAll<HTMLDivElement>(':scope > .assistant-message-main');
-    if (mains.length <= 1) {
-      const existing = mains.item(0);
+    const segmentCount = this.textSegmentCounts.get(event.responseId) ?? 0;
+    const currentSegment = this.currentTextSegments.get(event.responseId);
+    if (segmentCount <= 1) {
+      const existing =
+        currentSegment ?? bubble.querySelector<HTMLDivElement>(':scope > .assistant-message-main');
       const segment = existing ?? this.createTextSegment(bubble);
       finalizeStreamingMarkdownText(segment, event.text);
-    } else {
-      for (const segment of Array.from(mains)) {
-        if (!isStreamingMarkdownText(segment)) {
-          continue;
-        }
-        finalizeStreamingMarkdownText(segment, segment.textContent ?? '');
-      }
+    } else if (currentSegment) {
+      this.finalizeCurrentTextSegment(event.responseId);
     }
 
     this.responseTexts.delete(event.responseId);
     this.currentTextSegments.delete(event.responseId);
     this.segmentTexts.delete(event.responseId);
+    this.textSegmentCounts.delete(event.responseId);
     this.needsNewSegment.delete(event.responseId);
   }
 
@@ -739,11 +743,11 @@ export class MessageRenderer {
 
   private finalizeCurrentTextSegment(responseId: string): void {
     const segment = this.currentTextSegments.get(responseId);
-    if (!segment || !isStreamingMarkdownText(segment)) {
+    const text = this.segmentTexts.get(responseId);
+    if (typeof text !== 'string') {
       return;
     }
-    const text = this.segmentTexts.get(responseId) ?? segment.textContent ?? '';
-    finalizeStreamingMarkdownText(segment, text);
+    finalizeStreamingMarkdownTextIfNeeded(segment, text);
   }
 
   private getOrCreateThinkingElement(

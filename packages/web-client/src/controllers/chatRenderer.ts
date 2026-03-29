@@ -24,9 +24,9 @@ import type {
 } from '@assistant/shared';
 import {
   applyMarkdownToElement,
+  appendStreamingMarkdownText,
   finalizeStreamingMarkdownText,
-  isStreamingMarkdownText,
-  renderStreamingMarkdownText,
+  finalizeStreamingMarkdownTextIfNeeded,
 } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
@@ -467,7 +467,7 @@ export class ChatRenderer {
     const combined = previous + event.payload.text;
     this.assistantTextBuffers.set(bufferKey, combined);
 
-    renderStreamingMarkdownText(textEl, combined);
+    appendStreamingMarkdownText(textEl, event.payload.text);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -497,16 +497,27 @@ export class ChatRenderer {
     const currentBufferKey = `${responseId}:${previousSegmentIdx}`;
     const currentBuffer = this.assistantTextBuffers.get(currentBufferKey);
     const currentTextEl = this.assistantTextElements.get(currentBufferKey);
+    const hasPendingSegmentBreak = this.needsNewTextSegment.has(responseId);
     const canFinalizeExistingSegment =
-      !this.needsNewTextSegment.has(responseId) &&
+      !hasPendingSegmentBreak &&
       !!currentTextEl &&
       typeof currentBuffer === 'string' &&
       currentBuffer.length > 0 &&
       (event.payload.text === currentBuffer || event.payload.text.startsWith(currentBuffer));
+    const canFinalizeClosedSegment =
+      hasPendingSegmentBreak &&
+      !!currentTextEl &&
+      typeof currentBuffer === 'string' &&
+      currentBuffer.length > 0 &&
+      event.payload.text === currentBuffer;
 
-    if (canFinalizeExistingSegment && currentTextEl) {
+    if ((canFinalizeExistingSegment || canFinalizeClosedSegment) && currentTextEl) {
       this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
       finalizeStreamingMarkdownText(currentTextEl, event.payload.text);
+      this.assistantTextBuffers.delete(currentBufferKey);
+      this.assistantTextElements.delete(currentBufferKey);
+      this.needsNewTextSegment.delete(responseId);
+      this.assistantTextSegmentTokens.delete(responseId);
       if (event.payload.phase) {
         currentTextEl.dataset['phase'] = event.payload.phase;
       }
@@ -541,6 +552,8 @@ export class ChatRenderer {
     const text = event.payload.text;
     this.assistantTextBuffers.set(bufferKey, text);
     finalizeStreamingMarkdownText(textEl, text);
+    this.assistantTextBuffers.delete(bufferKey);
+    this.assistantTextElements.delete(bufferKey);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -1752,7 +1765,7 @@ export class ChatRenderer {
    * Called when a tool block is inserted to start a new text segment after it.
    */
   private advanceTextSegment(responseId: string): void {
-    this.finalizeCurrentAssistantTextSegment(responseId);
+    this.finalizeCurrentAssistantTextSegment(responseId, true);
     const current = this.textSegmentIndex.get(responseId) ?? 0;
     this.textSegmentIndex.set(responseId, current + 1);
     this.debugLog('advance_text_segment', {
@@ -1806,15 +1819,18 @@ export class ChatRenderer {
     });
   }
 
-  private finalizeCurrentAssistantTextSegment(responseId: string): void {
+  private finalizeCurrentAssistantTextSegment(responseId: string, release = false): void {
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
     const segmentKey = `${responseId}:${segmentIdx}`;
     const textEl = this.assistantTextElements.get(segmentKey);
-    if (!textEl || !isStreamingMarkdownText(textEl)) {
-      return;
+    const text = this.assistantTextBuffers.get(segmentKey);
+    if (textEl && typeof text === 'string') {
+      finalizeStreamingMarkdownTextIfNeeded(textEl, text);
     }
-    const text = this.assistantTextBuffers.get(segmentKey) ?? textEl.textContent ?? '';
-    finalizeStreamingMarkdownText(textEl, text);
+    if (release) {
+      this.assistantTextBuffers.delete(segmentKey);
+      this.assistantTextElements.delete(segmentKey);
+    }
   }
 
   private getThinkingSegmentKey(responseId: string): { segmentIdx: number; segmentKey: string } {
