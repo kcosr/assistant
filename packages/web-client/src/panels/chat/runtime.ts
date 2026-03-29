@@ -7,6 +7,7 @@ import {
 import type { ToolOutputPreferencesClient } from '../../utils/toolOutputPreferences';
 import type { ThinkingPreferencesClient } from '../../utils/thinkingPreferences';
 import type { InteractionResponseDraft } from '../../utils/interactionRenderer';
+import { createTurnWindowManager } from './turnWindowManager';
 
 export interface ChatRuntimeElements {
   chatPanel: HTMLElement | null;
@@ -156,7 +157,17 @@ function createToolOutputViewportManager(chatLog: HTMLElement): ToolOutputViewpo
 export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
     options;
-  const toolOutputViewportManager = createToolOutputViewportManager(elements.chatLog);
+  const contentHost =
+    elements.chatLog.querySelector<HTMLElement>('[data-role="chat-content"]') ??
+    document.createElement('div');
+  if (!contentHost.parentElement) {
+    contentHost.dataset['role'] = 'chat-content';
+    contentHost.className = 'chat-log-content';
+    elements.chatLog.appendChild(contentHost);
+  }
+
+  const toolOutputViewportManager = createToolOutputViewportManager(contentHost);
+  const turnWindowManager = createTurnWindowManager(elements.chatLog, contentHost);
 
   const applyToolOutputVisibility = (show: boolean): void => {
     if (elements.chatPanel) {
@@ -199,6 +210,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
       if (!toolOutputViewportManager.hasIntersectionObserver()) {
         toolOutputViewportManager.refresh();
       }
+      turnWindowManager.refresh();
     }
   };
 
@@ -240,7 +252,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   );
   chatScrollManager.setAutoScrollEnabled(autoScrollEnabled);
 
-  const chatRenderer = new ChatRenderer(elements.chatLog, {
+  const chatRenderer = new ChatRenderer(contentHost, {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
     ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
@@ -256,6 +268,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     if (!toolOutputViewportManager.hasIntersectionObserver()) {
       toolOutputViewportManager.refresh();
     }
+    turnWindowManager.refresh();
   });
 
   elements.chatLog.addEventListener(
@@ -283,6 +296,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     chatRenderer,
     chatScrollManager,
     dispose: () => {
+      turnWindowManager.dispose();
       toolOutputViewportManager.dispose();
     },
   };
