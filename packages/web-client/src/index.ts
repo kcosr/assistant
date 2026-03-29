@@ -252,6 +252,7 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  provider?: string;
   sessionWorkingDir?:
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
@@ -1177,6 +1178,20 @@ async function main(): Promise<void> {
     runtime.chatRenderer.setFocusInputHandler(() => {
       inputRuntime.focusInput();
     });
+    runtime.chatRenderer.setTurnDividerActionHandler(
+      ({ turnId, anchorEl, hasBefore, hasAfter }) => {
+        if (!bindingSessionId || !isSessionPiBacked(bindingSessionId)) {
+          return;
+        }
+        showTurnHistoryMenu({
+          sessionId: bindingSessionId,
+          turnId,
+          anchorEl,
+          hasBefore,
+          hasAfter,
+        });
+      },
+    );
     chatPanelsById.set(panelId, entry);
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
@@ -1365,7 +1380,9 @@ async function main(): Promise<void> {
       unsubBinding();
       unsubSessionContext();
       unsubActive();
+      contextMenuManager.close();
       runtime.chatRenderer.setFocusInputHandler(null);
+      runtime.chatRenderer.setTurnDividerActionHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
         loadedChatTranscripts.delete(entry.bindingSessionId);
@@ -1487,6 +1504,19 @@ async function main(): Promise<void> {
     }
     const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
     return agent?.type === 'external';
+  }
+
+  function isSessionPiBacked(sessionId: string | null): boolean {
+    if (!sessionId) {
+      return false;
+    }
+    const session = sessionSummaries.find((summary) => summary.sessionId === sessionId) ?? null;
+    if (!session?.agentId) {
+      return false;
+    }
+    const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
+    const provider = agent?.provider ?? null;
+    return provider === 'pi' || provider === 'pi-cli';
   }
 
   function sendSetSessionModel(sessionId: string, model: string): void {
@@ -2520,6 +2550,106 @@ async function main(): Promise<void> {
       console.error('Failed to rename session', err);
       setStatus(statusEl, 'Failed to rename session');
     }
+  }
+
+  function showTurnHistoryEditConfirmation(
+    sessionId: string,
+    turnId: string,
+    action: 'trim_before' | 'trim_after' | 'delete_turn',
+  ): void {
+    panelWorkspace?.closeHeaderPopover();
+    const options =
+      action === 'trim_before'
+        ? {
+            title: 'Delete Before',
+            message: 'Remove all turns before this one? This turn will be kept.',
+            confirmText: 'Delete',
+          }
+        : action === 'trim_after'
+          ? {
+              title: 'Delete After',
+              message: 'Remove all turns after this one? This turn will be kept.',
+              confirmText: 'Delete',
+            }
+          : {
+              title: 'Delete Turn',
+              message: 'Remove this turn from the session history?',
+              confirmText: 'Delete',
+            };
+
+    dialogManager.showConfirmDialog({
+      ...options,
+      confirmClassName: 'danger',
+      onConfirm: () => {
+        void requireSessionManager().editSessionHistory(sessionId, action, turnId);
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  function showResetHistoryConfirmation(sessionId: string): void {
+    panelWorkspace?.closeHeaderPopover();
+    dialogManager.showConfirmDialog({
+      title: 'Reset Session',
+      message: 'Delete all transcript turns from this session? The session itself will be kept.',
+      confirmText: 'Delete',
+      confirmClassName: 'danger',
+      onConfirm: () => {
+        void clearSession(sessionId);
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  function showTurnHistoryMenu(options: {
+    sessionId: string;
+    turnId: string;
+    anchorEl: HTMLElement;
+    hasBefore: boolean;
+    hasAfter: boolean;
+  }): void {
+    const { sessionId, turnId, anchorEl, hasBefore, hasAfter } = options;
+    contextMenuManager.showAnchoredMenu({
+      anchorEl,
+      menuClassName: 'context-menu turn-history-menu',
+      closeOnScrollTarget: anchorEl.closest<HTMLElement>('.chat-log'),
+      items: [
+        ...(hasBefore
+          ? [
+              {
+                label: 'Delete Before',
+                onClick: () => {
+                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_before');
+                },
+              },
+            ]
+          : []),
+        {
+          label: 'Delete Turn',
+          onClick: () => {
+            showTurnHistoryEditConfirmation(sessionId, turnId, 'delete_turn');
+          },
+        },
+        ...(hasAfter
+          ? [
+              {
+                label: 'Delete After',
+                onClick: () => {
+                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_after');
+                },
+              },
+            ]
+          : []),
+        {
+          label: 'Reset Session',
+          onClick: () => {
+            showResetHistoryConfirmation(sessionId);
+          },
+        },
+      ],
+    });
   }
 
   function showClearHistoryConfirmation(sessionId: string): void {

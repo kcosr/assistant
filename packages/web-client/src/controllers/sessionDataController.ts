@@ -42,6 +42,7 @@ interface AgentSummary {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  provider?: string;
   sessionWorkingDir?:
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
@@ -130,6 +131,7 @@ export class SessionDataController {
           displayName?: unknown;
           description?: unknown;
           type?: unknown;
+          provider?: unknown;
           sessionWorkingDir?: unknown;
           sessionConfigCapabilities?: unknown;
         };
@@ -150,6 +152,10 @@ export class SessionDataController {
 
         const typeRaw = typeof anyAgent.type === 'string' ? anyAgent.type.trim() : '';
         const type = typeRaw === 'external' || typeRaw === 'chat' ? typeRaw : undefined;
+        const provider =
+          typeof anyAgent.provider === 'string' && anyAgent.provider.trim()
+            ? anyAgent.provider.trim()
+            : undefined;
 
         let sessionWorkingDir:
           | { mode: 'none' }
@@ -247,6 +253,7 @@ export class SessionDataController {
           displayName,
           ...(description ? { description } : {}),
           ...(type ? { type } : {}),
+          ...(provider ? { provider } : {}),
           ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
           ...(sessionConfigCapabilities ? { sessionConfigCapabilities } : {}),
         });

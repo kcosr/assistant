@@ -75,6 +75,13 @@ export type SessionIndexRecord =
       sessionId: string;
       timestamp: string;
       contextUsage: SessionContextUsage | null;
+    }
+  | {
+      type: 'session_history_edited';
+      sessionId: string;
+      timestamp: string;
+      action: 'trim_before' | 'trim_after' | 'delete_turn';
+      turnId: string;
     };
 
 export function loadSessionIndexFromFileContent(
@@ -227,6 +234,10 @@ export function loadSessionIndexFromFileContent(
             summary.contextUsage = parsedContextUsage.data;
           }
         }
+      } else if (parsed.type === 'session_history_edited') {
+        summary.updatedAt = timestamp;
+        delete summary.lastSnippet;
+        delete summary.contextUsage;
       }
 
       sessions.set(sessionId, summary);

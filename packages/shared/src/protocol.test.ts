@@ -209,6 +209,17 @@ describe('server message validation', () => {
     expect(parsed).toEqual(message);
   });
 
+  it('accepts a session_history_changed message', () => {
+    const message: ServerMessage = {
+      type: 'session_history_changed',
+      sessionId: 'session-1',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+
+    const parsed = validateServerMessage(message);
+    expect(parsed).toEqual(message);
+  });
+
   it('accepts a panel_event message', () => {
     const message: ServerMessage = {
       type: 'panel_event',

@@ -186,6 +186,30 @@
       "capabilities": ["sessions.write"]
     },
     {
+      "id": "history-edit",
+      "summary": "Edit Pi-backed session history at explicit turn boundaries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          },
+          "action": {
+            "type": "string",
+            "enum": ["trim_before", "trim_after", "delete_turn"],
+            "description": "History edit action."
+          },
+          "turnId": {
+            "type": "string",
+            "description": "Explicit turn id anchor."
+          }
+        },
+        "required": ["sessionId", "action", "turnId"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
       "id": "delete",
       "summary": "Delete a session.",
       "inputSchema": {

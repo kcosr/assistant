@@ -24,6 +24,7 @@ type AgentSummary = {
   displayName: string;
   description?: string;
   type?: 'chat' | 'external';
+  provider?: string;
   supportedArtifactTypes?: string[];
   sessionWorkingDir?: AgentSessionWorkingDirConfig;
   sessionConfigCapabilities?: {
@@ -210,6 +211,7 @@ async function listAgents(args: unknown, ctx: ToolContext): Promise<ListAgentsRe
       displayName: agent.displayName,
       description: agent.description,
       type: agent.type ?? 'chat',
+      ...(typeof agent.chat?.provider === 'string' ? { provider: agent.chat.provider } : {}),
       supportedArtifactTypes: computeSupportedArtifactTypes(agent),
       ...(agent.sessionWorkingDir ? { sessionWorkingDir: agent.sessionWorkingDir } : {}),
       ...(models.length > 0 || thinking.length > 0 || capabilities.skills.length > 0

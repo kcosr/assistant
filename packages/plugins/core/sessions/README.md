@@ -121,6 +121,18 @@ Clear session history.
 
 **HTTP:** `POST /api/plugins/sessions/operations/clear`
 
+### `sessions_history-edit`
+
+Edit Pi-backed session history at explicit turn boundaries.
+
+**Parameters:**
+
+- `sessionId` (string, required): Session id.
+- `action` (string, required): One of `trim_before`, `trim_after`, or `delete_turn`.
+- `turnId` (string, required): Explicit turn id anchor.
+
+**HTTP:** `POST /api/plugins/sessions/operations/history-edit`
+
 ### `sessions_delete`
 
 Delete a session.
@@ -142,4 +154,5 @@ Delete a session.
 | `sessions_events`             | Fetch session events        |
 | `sessions_message`            | Send a message to a session |
 | `sessions_clear`              | Clear session history       |
+| `sessions_history-edit`       | Edit Pi-backed session history at turn boundaries |
 | `sessions_delete`             | Delete a session            |

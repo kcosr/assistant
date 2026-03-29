@@ -98,9 +98,21 @@ type PiSessionWriterState = {
   toolCallIds: Set<string>;
   lastModel?: ModelInfo;
   lastThinking?: PiThinkingLevel;
+  openTurnId: string | null;
   flushed: boolean;
   pendingEntries: PiSessionEntry[];
   writeQueue: Promise<void>;
+};
+
+type PiTurnTrigger = 'user' | 'callback';
+type PiTurnStatus = 'completed' | 'interrupted';
+export type PiTurnHistoryAction = 'trim_before' | 'trim_after' | 'delete_turn';
+
+type PiTurnBoundaryData = {
+  v: 1;
+  turnId: string;
+  trigger?: PiTurnTrigger;
+  status?: PiTurnStatus;
 };
 
 export type PiSessionWriterOptions = {
@@ -111,9 +123,37 @@ export type PiSessionWriterOptions = {
 
 const CURRENT_SESSION_VERSION = 3;
 const ORPHAN_TOOL_RESULT_CUSTOM_TYPE = 'assistant.orphan_tool_result';
+const ASSISTANT_TURN_START_CUSTOM_TYPE = 'assistant.turn_start';
+const ASSISTANT_TURN_END_CUSTOM_TYPE = 'assistant.turn_end';
+const ASSISTANT_TURN_BOUNDARY_VERSION = 1 as const;
+
+type PiSessionHeaderRecord = Record<string, unknown> & {
+  type: 'session';
+};
+
+type PiSessionEntryRecord = Record<string, unknown> & {
+  type: string;
+  id: string;
+  parentId: string | null;
+};
+
+type PiSessionFileRecords = {
+  header: PiSessionHeaderRecord;
+  entries: PiSessionEntryRecord[];
+};
+
+type PiTurnSpan = {
+  turnId: string;
+  startIndex: number;
+  endIndex: number;
+};
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function normalizeThinkingLevel(value?: string): PiThinkingLevel | null {
@@ -134,6 +174,10 @@ function normalizeThinkingLevel(value?: string): PiThinkingLevel | null {
 
 function generateEntryId(): string {
   return randomUUID().slice(0, 8);
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function createEmptyUsage(): Usage {
@@ -438,6 +482,7 @@ async function loadExistingPiSessionState(
   toolCallIds: Set<string>;
   lastModel?: ModelInfo;
   lastThinking?: PiThinkingLevel;
+  openTurnId: string | null;
 }> {
   let content: string;
   try {
@@ -455,6 +500,7 @@ async function loadExistingPiSessionState(
       messageCount: 0,
       hasAssistant: false,
       toolCallIds: new Set<string>(),
+      openTurnId: null,
     };
   }
 
@@ -469,6 +515,7 @@ async function loadExistingPiSessionState(
   const toolCallIds = new Set<string>();
   let lastModel: ModelInfo | undefined;
   let lastThinking: PiThinkingLevel | undefined;
+  let openTurnId: string | null = null;
 
   for (const line of lines) {
     let entry: Record<string, unknown> | null = null;
@@ -518,6 +565,22 @@ async function loadExistingPiSessionState(
         messageCount += 1;
       }
     }
+    if (entryType === 'custom') {
+      const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
+      const data =
+        entry['data'] && typeof entry['data'] === 'object' && !Array.isArray(entry['data'])
+          ? (entry['data'] as Record<string, unknown>)
+          : undefined;
+      const turnId =
+        data && typeof data['turnId'] === 'string' && data['turnId'].trim().length > 0
+          ? data['turnId'].trim()
+          : null;
+      if (customType === ASSISTANT_TURN_START_CUSTOM_TYPE && turnId) {
+        openTurnId = turnId;
+      } else if (customType === ASSISTANT_TURN_END_CUSTOM_TYPE && turnId && openTurnId === turnId) {
+        openTurnId = null;
+      }
+    }
     if (entryType === 'model_change') {
       const provider = typeof entry['provider'] === 'string' ? entry['provider'] : undefined;
       const modelId = typeof entry['modelId'] === 'string' ? entry['modelId'] : undefined;
@@ -543,9 +606,202 @@ async function loadExistingPiSessionState(
     messageCount,
     hasAssistant,
     toolCallIds,
+    openTurnId,
     ...(lastModel ? { lastModel } : {}),
     ...(lastThinking ? { lastThinking } : {}),
   };
+}
+
+async function loadPiSessionFileRecords(filePath: string): Promise<PiSessionFileRecords | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(filePath, 'utf8');
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      console.error('[pi-session] Failed to read session file', {
+        path: filePath,
+        error: error.message,
+      });
+    }
+    return null;
+  }
+
+  const lines = content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return null;
+  }
+
+  let header: PiSessionHeaderRecord | null = null;
+  const entries: PiSessionEntryRecord[] = [];
+
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(parsed)) {
+      continue;
+    }
+    const type = typeof parsed['type'] === 'string' ? parsed['type'] : '';
+    if (!type) {
+      continue;
+    }
+    if (type === 'session') {
+      header = cloneJson(parsed as PiSessionHeaderRecord);
+      continue;
+    }
+    const id = typeof parsed['id'] === 'string' ? parsed['id'].trim() : '';
+    if (!id) {
+      continue;
+    }
+    const parentIdRaw = parsed['parentId'];
+    const parentId =
+      typeof parentIdRaw === 'string' && parentIdRaw.trim().length > 0 ? parentIdRaw.trim() : null;
+    entries.push({
+      ...(cloneJson(parsed) as Record<string, unknown>),
+      type,
+      id,
+      parentId,
+    });
+  }
+
+  if (!header) {
+    return null;
+  }
+  return { header, entries };
+}
+
+function getTurnBoundaryRecord(
+  entry: PiSessionEntryRecord,
+):
+  | { kind: 'start' | 'end'; turnId: string; status?: PiTurnStatus; trigger?: PiTurnTrigger }
+  | null {
+  if (entry.type !== 'custom') {
+    return null;
+  }
+  const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
+  if (
+    customType !== ASSISTANT_TURN_START_CUSTOM_TYPE &&
+    customType !== ASSISTANT_TURN_END_CUSTOM_TYPE
+  ) {
+    return null;
+  }
+  const data = isRecord(entry['data']) ? entry['data'] : null;
+  const turnId =
+    data && typeof data['turnId'] === 'string' && data['turnId'].trim().length > 0
+      ? data['turnId'].trim()
+      : '';
+  if (!turnId) {
+    return null;
+  }
+  const triggerRaw = data?.['trigger'];
+  const trigger =
+    triggerRaw === 'user' || triggerRaw === 'callback' ? triggerRaw : undefined;
+  const statusRaw = data?.['status'];
+  const status =
+    statusRaw === 'completed' || statusRaw === 'interrupted' ? statusRaw : undefined;
+  return {
+    kind: customType === ASSISTANT_TURN_START_CUSTOM_TYPE ? 'start' : 'end',
+    turnId,
+    ...(trigger ? { trigger } : {}),
+    ...(status ? { status } : {}),
+  };
+}
+
+function collectExplicitTurnSpans(entries: PiSessionEntryRecord[]): PiTurnSpan[] {
+  const spans: PiTurnSpan[] = [];
+  let current: { turnId: string; startIndex: number } | null = null;
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const boundary = getTurnBoundaryRecord(entries[index]!);
+    if (!boundary) {
+      continue;
+    }
+    if (boundary.kind === 'start') {
+      if (current && current.startIndex <= index - 1) {
+        spans.push({
+          turnId: current.turnId,
+          startIndex: current.startIndex,
+          endIndex: index - 1,
+        });
+      }
+      current = { turnId: boundary.turnId, startIndex: index };
+      continue;
+    }
+    if (current && current.turnId === boundary.turnId) {
+      spans.push({
+        turnId: current.turnId,
+        startIndex: current.startIndex,
+        endIndex: index,
+      });
+      current = null;
+    }
+  }
+
+  if (current && current.startIndex <= entries.length - 1) {
+    spans.push({
+      turnId: current.turnId,
+      startIndex: current.startIndex,
+      endIndex: entries.length - 1,
+    });
+  }
+
+  return spans;
+}
+
+function selectDroppedTurnRanges(options: {
+  spans: PiTurnSpan[];
+  action: PiTurnHistoryAction;
+  turnId: string;
+}): Array<{ startIndex: number; endIndex: number }> {
+  const { spans, action, turnId } = options;
+  const anchorIndex = spans.findIndex((span) => span.turnId === turnId);
+  if (anchorIndex === -1) {
+    throw new Error(`Turn not found in Pi session history: ${turnId}`);
+  }
+
+  switch (action) {
+    case 'trim_before':
+      return spans.slice(0, anchorIndex);
+    case 'trim_after':
+      return spans.slice(anchorIndex + 1);
+    case 'delete_turn':
+      return [spans[anchorIndex]!];
+    default:
+      return [];
+  }
+}
+
+function filterEntriesByDroppedRanges(
+  entries: PiSessionEntryRecord[],
+  droppedRanges: Array<{ startIndex: number; endIndex: number }>,
+): PiSessionEntryRecord[] {
+  if (droppedRanges.length === 0) {
+    return entries.map((entry) => cloneJson(entry));
+  }
+  return entries
+    .filter((_, index) =>
+      droppedRanges.every((range) => index < range.startIndex || index > range.endIndex),
+    )
+    .map((entry) => cloneJson(entry));
+}
+
+function rechainEntries(entries: PiSessionEntryRecord[]): PiSessionEntryRecord[] {
+  let parentId: string | null = null;
+  return entries.map((entry) => {
+    const nextEntry: PiSessionEntryRecord = {
+      ...entry,
+      parentId,
+    };
+    parentId = nextEntry.id;
+    return nextEntry;
+  });
 }
 
 export class PiSessionWriter {
@@ -601,6 +857,58 @@ export class PiSessionWriter {
     }
 
     return undefined;
+  }
+
+  async rewriteHistoryByTurn(options: {
+    summary: SessionSummary;
+    action: PiTurnHistoryAction;
+    turnId: string;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<{ summary: SessionSummary; changed: boolean }> {
+    const { summary, action, turnId, updateAttributes } = options;
+    const trimmedTurnId = turnId.trim();
+    if (!trimmedTurnId) {
+      throw new Error('turnId must not be empty');
+    }
+
+    const stateInfo = await this.ensureSessionState({
+      summary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    const state = stateInfo.state;
+    const records = await loadPiSessionFileRecords(state.sessionFile);
+    if (!records) {
+      throw new Error('Pi session history is unavailable');
+    }
+
+    const spans = collectExplicitTurnSpans(records.entries);
+    if (spans.length === 0) {
+      throw new Error('Pi session history does not contain explicit turn markers');
+    }
+
+    const droppedRanges = selectDroppedTurnRanges({
+      spans,
+      action,
+      turnId: trimmedTurnId,
+    });
+    if (droppedRanges.length === 0) {
+      return { summary: stateInfo.summary, changed: false };
+    }
+
+    const keptEntries = rechainEntries(filterEntriesByDroppedRanges(records.entries, droppedRanges));
+    const tempFilePath = `${state.sessionFile}.tmp-${randomUUID()}`;
+
+    await this.queueWrite(state, async () => {
+      await fs.mkdir(state.sessionDir, { recursive: true });
+      const payload = [records.header, ...keptEntries].map((entry) => JSON.stringify(entry)).join('\n');
+      await fs.writeFile(tempFilePath, `${payload}\n`, 'utf8');
+      await fs.rename(tempFilePath, state.sessionFile);
+    });
+
+    this.sessions.delete(summary.sessionId);
+    return { summary: stateInfo.summary, changed: true };
   }
 
   async sync(options: {
@@ -891,6 +1199,121 @@ export class PiSessionWriter {
     return currentSummary === summary ? undefined : currentSummary;
   }
 
+  async appendTurnStart(options: {
+    summary: SessionSummary;
+    turnId: string;
+    trigger: PiTurnTrigger;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, turnId, trigger, updateAttributes } = options;
+    const trimmedTurnId = turnId.trim();
+    if (!trimmedTurnId) {
+      return undefined;
+    }
+
+    let currentSummary = summary;
+    const stateInfo = await this.ensureSessionState({
+      summary: currentSummary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    currentSummary = stateInfo.summary;
+    const state = stateInfo.state;
+
+    const entries: PiSessionEntry[] = [];
+    let nextParentId = state.leafId;
+    if (state.openTurnId && state.openTurnId !== trimmedTurnId) {
+      const interruptedEnd = this.createTurnBoundaryEntry(nextParentId, ASSISTANT_TURN_END_CUSTOM_TYPE, {
+          v: ASSISTANT_TURN_BOUNDARY_VERSION,
+          turnId: state.openTurnId,
+          status: 'interrupted',
+        });
+      entries.push(interruptedEnd);
+      nextParentId = interruptedEnd.id;
+    }
+    if (state.openTurnId !== trimmedTurnId) {
+      const turnStart = this.createTurnBoundaryEntry(nextParentId, ASSISTANT_TURN_START_CUSTOM_TYPE, {
+          v: ASSISTANT_TURN_BOUNDARY_VERSION,
+          turnId: trimmedTurnId,
+          trigger,
+        });
+      entries.push(turnStart);
+    }
+    if (entries.length === 0) {
+      return currentSummary === summary ? undefined : currentSummary;
+    }
+
+    const nextLeafId = entries[entries.length - 1]?.id ?? state.leafId;
+    await this.queueWrite(state, async () => {
+      if (!state.flushed && !state.hasAssistant) {
+        state.pendingEntries.push(...entries);
+        return;
+      }
+      if (!state.flushed) {
+        await this.flushPending(state, entries, state.hasAssistant);
+        return;
+      }
+      await this.appendEntries(state, entries);
+    });
+
+    state.leafId = nextLeafId;
+    state.openTurnId = trimmedTurnId;
+    return currentSummary === summary ? undefined : currentSummary;
+  }
+
+  async appendTurnEnd(options: {
+    summary: SessionSummary;
+    turnId: string;
+    status: PiTurnStatus;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, turnId, status, updateAttributes } = options;
+    const trimmedTurnId = turnId.trim();
+    if (!trimmedTurnId) {
+      return undefined;
+    }
+
+    let currentSummary = summary;
+    const stateInfo = await this.ensureSessionState({
+      summary: currentSummary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    currentSummary = stateInfo.summary;
+    const state = stateInfo.state;
+
+    const targetTurnId = state.openTurnId;
+    if (!targetTurnId) {
+      return currentSummary === summary ? undefined : currentSummary;
+    }
+
+    const entry = this.createTurnBoundaryEntry(state.leafId, ASSISTANT_TURN_END_CUSTOM_TYPE, {
+      v: ASSISTANT_TURN_BOUNDARY_VERSION,
+      turnId: targetTurnId,
+      status,
+    });
+
+    await this.queueWrite(state, async () => {
+      if (!state.flushed && !state.hasAssistant) {
+        state.pendingEntries.push(entry);
+        return;
+      }
+      if (!state.flushed) {
+        await this.flushPending(state, [entry], state.hasAssistant);
+        return;
+      }
+      await this.appendEntries(state, [entry]);
+    });
+
+    state.leafId = entry.id;
+    if (state.openTurnId === targetTurnId) {
+      state.openTurnId = null;
+    }
+    return currentSummary === summary ? undefined : currentSummary;
+  }
+
   async appendSessionInfo(options: {
     summary: SessionSummary;
     name: string;
@@ -1022,6 +1445,7 @@ export class PiSessionWriter {
     let toolCallIds = new Set<string>();
     let lastModel: ModelInfo | undefined;
     let lastThinking: PiThinkingLevel | undefined;
+    let openTurnId: string | null = null;
     let flushed = false;
 
     if (sessionFile) {
@@ -1035,6 +1459,7 @@ export class PiSessionWriter {
           toolCallIds = existingState.toolCallIds;
           lastModel = existingState.lastModel;
           lastThinking = existingState.lastThinking;
+          openTurnId = existingState.openTurnId;
           flushed = true;
         }
       } catch (err) {
@@ -1066,6 +1491,7 @@ export class PiSessionWriter {
       toolCallIds,
       ...(lastModel ? { lastModel } : {}),
       ...(lastThinking ? { lastThinking } : {}),
+      openTurnId,
       flushed,
       pendingEntries: [],
       writeQueue: Promise.resolve(),
@@ -1110,5 +1536,20 @@ export class PiSessionWriter {
     await fs.mkdir(state.sessionDir, { recursive: true });
     const payload = entries.map((entry) => JSON.stringify(entry)).join('\n');
     await fs.appendFile(state.sessionFile, `${payload}\n`, 'utf8');
+  }
+
+  private createTurnBoundaryEntry(
+    parentId: string | null,
+    customType: typeof ASSISTANT_TURN_START_CUSTOM_TYPE | typeof ASSISTANT_TURN_END_CUSTOM_TYPE,
+    data: PiTurnBoundaryData,
+  ): PiSessionCustomEntry {
+    return {
+      type: 'custom',
+      id: generateEntryId(),
+      parentId,
+      timestamp: this.now().toISOString(),
+      customType,
+      data,
+    };
   }
 }

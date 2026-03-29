@@ -14,6 +14,8 @@ import type { SpeechAudioController } from './speechAudioController';
 
 function makeHandler() {
   const typingIndicators = new Set<string>();
+  const refreshSessions = vi.fn(async () => {});
+  const loadSessionTranscript = vi.fn(async () => {});
 
   const options: ServerMessageHandlerOptions = {
     statusEl: document.createElement('div'),
@@ -29,8 +31,8 @@ function makeHandler() {
     sendModesUpdate: () => {},
     supportsAudioOutput: () => false,
     enableAudioResponses: () => {},
-    refreshSessions: async () => {},
-    loadSessionTranscript: async () => {},
+    refreshSessions,
+    loadSessionTranscript,
     renderAgentSidebar: () => {},
     appendMessage: () => document.createElement('div'),
     scrollMessageIntoView: () => {},
@@ -57,7 +59,7 @@ function makeHandler() {
 
   const handler = new ServerMessageHandler(options);
 
-  return { handler, typingIndicators };
+  return { handler, typingIndicators, refreshSessions, loadSessionTranscript };
 }
 
 describe('ServerMessageHandler agent_callback_result typing indicator', () => {
@@ -118,5 +120,18 @@ describe('ServerMessageHandler agent_callback_result typing indicator', () => {
     });
 
     expect(typingIndicators.has('s-1')).toBe(true);
+  });
+
+  it('forces transcript reload when session history changes', async () => {
+    const { handler, refreshSessions, loadSessionTranscript } = makeHandler();
+
+    await handler.handle({
+      type: 'session_history_changed',
+      sessionId: 's-1',
+      updatedAt: '2026-03-29T15:45:00.000Z',
+    });
+
+    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+    expect(refreshSessions).toHaveBeenCalledWith('s-1');
   });
 });

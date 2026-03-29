@@ -321,4 +321,97 @@ describe('sessions plugin operations', () => {
       entries.some((entry) => entry['type'] === 'session_info' && entry['name'] === 'CLI Session'),
     ).toBe(true);
   });
+
+  it('edits Pi-backed session history at explicit turn boundaries', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-history-edit'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-plugin-history-edit-'));
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, piSessionWriter });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    let summary = (await plugin.operations?.create(
+      { agentId: 'pi-agent', sessionConfig: { workingDir: '/tmp/project' } },
+      ctx,
+    )) as SessionSummary;
+
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+
+    summary = (await sessionIndex.getSession(summary.sessionId)) ?? summary;
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+
+    const result = await plugin.operations?.['history-edit'](
+      {
+        sessionId: summary.sessionId,
+        action: 'trim_before',
+        turnId: 'turn-2',
+      },
+      ctx,
+    );
+
+    expect(result).toEqual({
+      sessionId: summary.sessionId,
+      action: 'trim_before',
+      turnId: 'turn-2',
+      changed: true,
+      updatedAt: expect.any(String),
+    });
+  });
 });

@@ -176,9 +176,26 @@ export async function handleTextInputWithChatCompletions(options: {
   const agentId = state.summary.agentId;
   const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
 
   const shouldEmitChatEvents = !!eventStore;
-  const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
+  const turnId = shouldEmitChatEvents || chatProvider === 'pi' ? randomUUID() : undefined;
+
+  if (piSessionWriter && chatProvider === 'pi' && turnId) {
+    try {
+      const updatedSummary = await piSessionWriter.appendTurnStart({
+        summary: state.summary,
+        turnId,
+        trigger: 'user',
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+      });
+      if (updatedSummary) {
+        state.summary = updatedSummary;
+      }
+    } catch (err) {
+      log('failed to append Pi turn start', err);
+    }
+  }
 
   void sessionHub.recordSessionActivity(
     sessionId,
@@ -331,7 +348,6 @@ export async function handleTextInputWithChatCompletions(options: {
         state.chatMessages.pop();
       }
 
-      const piSessionWriter = sessionHub.getPiSessionWriter?.();
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
@@ -352,6 +368,17 @@ export async function handleTextInputWithChatCompletions(options: {
           });
           if (updatedSummary) {
             state.summary = updatedSummary;
+          }
+          if (turnId) {
+            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
+              summary: state.summary,
+              turnId,
+              status: 'interrupted',
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+            if (updatedSummaryAfterTurnEnd) {
+              state.summary = updatedSummaryAfterTurnEnd;
+            }
           }
         } catch (err) {
           log('failed to sync Pi session history', err);
@@ -427,11 +454,6 @@ export async function handleTextInputWithChatCompletions(options: {
       if (ttsSessionForRun) {
         await ttsSessionForRun.finish();
       }
-      const ttsGenerated = ttsSessionForRun?.hasOutput() ?? false;
-      const audioTruncatedAtMs =
-        active && typeof active.audioTruncatedAtMs === 'number'
-          ? active.audioTruncatedAtMs
-          : undefined;
       void sessionHub.recordSessionActivity(
         sessionId,
         visibleAssistant.text.length > 120
@@ -444,7 +466,6 @@ export async function handleTextInputWithChatCompletions(options: {
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 
-      const piSessionWriter = sessionHub.getPiSessionWriter?.();
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
@@ -470,6 +491,17 @@ export async function handleTextInputWithChatCompletions(options: {
           });
           if (updatedSummary) {
             state.summary = updatedSummary;
+          }
+          if (turnId) {
+            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
+              summary: state.summary,
+              turnId,
+              status: 'completed',
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+            if (updatedSummaryAfterTurnEnd) {
+              state.summary = updatedSummaryAfterTurnEnd;
+            }
           }
         } catch (err) {
           log('failed to sync Pi session history', err);

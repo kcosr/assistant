@@ -1164,6 +1164,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
+  let currentTurnExplicit = false;
+
+  const normalizeTrigger = (value: unknown): 'user' | 'system' | 'callback' => {
+    return value === 'callback' ? 'callback' : value === 'user' ? 'user' : 'system';
+  };
 
   const endTurn = (timestamp: number): void => {
     if (!currentTurnId) {
@@ -1179,11 +1184,18 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     });
     currentTurnId = null;
     currentResponseId = null;
+    currentTurnExplicit = false;
   };
 
-  const startTurn = (turnId: string, trigger: 'user' | 'system' | 'callback', timestamp: number): void => {
+  const startTurn = (
+    turnId: string,
+    trigger: 'user' | 'system' | 'callback',
+    timestamp: number,
+    explicit = false,
+  ): void => {
     currentTurnId = turnId;
     currentResponseId = null;
+    currentTurnExplicit = explicit;
     events.push({
       id: randomUUID(),
       timestamp,
@@ -1297,11 +1309,41 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
     if (entryType === 'custom') {
       const customType = getString(entry['customType']);
+      const timestamp = resolveTimestamp(entry);
+      const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+      if (customType === 'assistant.turn_start' && data) {
+        const version = Number(data['v']);
+        const turnIdFromEntry = getString(data['turnId']);
+        if (version !== 1 || !turnIdFromEntry) {
+          continue;
+        }
+        endTurn(timestamp);
+        startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
+        continue;
+      }
+      if (customType === 'assistant.turn_end' && data) {
+        const version = Number(data['v']);
+        const turnIdFromEntry = getString(data['turnId']);
+        if (version !== 1 || !turnIdFromEntry) {
+          continue;
+        }
+        if (currentTurnId === turnIdFromEntry) {
+          endTurn(timestamp);
+        } else {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId: turnIdFromEntry,
+            type: 'turn_end',
+            payload: {},
+          });
+        }
+        continue;
+      }
       if (customType !== 'assistant.event') {
         continue;
       }
-      const timestamp = resolveTimestamp(entry);
-      const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
       const chatEventType = data ? getString(data['chatEventType']) : '';
       const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
       const turnIdFromEntry = data ? getString(data['turnId']) : '';
@@ -1441,9 +1483,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           continue;
         }
         if (kind === 'agent') {
-          endTurn(timestamp);
-          const turnId = getTurnId(entry);
-          startTurn(turnId, 'user', timestamp);
+          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
+          if (!currentTurnId || !currentTurnExplicit) {
+            endTurn(timestamp);
+            startTurn(turnId, 'user', timestamp);
+          }
           const fromAgentId = details ? getString(details['fromAgentId']) : '';
           const fromSessionId = details ? getString(details['fromSessionId']) : '';
           events.push({
@@ -1462,9 +1506,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         }
 
         if (kind === 'callback') {
-          endTurn(timestamp);
-          const turnId = getTurnId(entry);
-          startTurn(turnId, 'callback', timestamp);
+          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
+          if (!currentTurnId || !currentTurnExplicit) {
+            endTurn(timestamp);
+            startTurn(turnId, 'callback', timestamp);
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1485,10 +1531,12 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         // Unknown assistant.input shape - fall back to a generic custom_message event.
       }
       const timestamp = resolveTimestamp(entry);
-      endTurn(timestamp);
-      const turnId = getTurnId(entry);
+      const turnId = currentTurnId ?? getTurnId(entry);
       const label = extractLabel(entry);
-      startTurn(turnId, 'system', timestamp);
+      if (!currentTurnId) {
+        endTurn(timestamp);
+        startTurn(turnId, 'system', timestamp);
+      }
       events.push({
         id: randomUUID(),
         timestamp,
@@ -1500,7 +1548,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           ...(label ? { label } : {}),
         },
       });
-      endTurn(timestamp);
+      if (!currentTurnId) {
+        endTurn(timestamp);
+      }
       continue;
     }
 
@@ -1541,9 +1591,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     const role = getString(messageEntry['role']);
     if (role === 'user') {
       const timestamp = resolveTimestamp(messageEntry, entry);
-      endTurn(timestamp);
-      const turnId = getTurnId(messageEntry);
-      startTurn(turnId, 'user', timestamp);
+      const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
+      if (!currentTurnId || !currentTurnExplicit) {
+        endTurn(timestamp);
+        startTurn(turnId, 'user', timestamp);
+      }
       events.push({
         id: randomUUID(),
         timestamp,

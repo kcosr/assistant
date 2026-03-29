@@ -19,6 +19,7 @@ import {
 import { startSessionMessage } from '../../../../agent-server/src/sessionMessages';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
+import type { PiTurnHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
@@ -80,6 +81,20 @@ function requireSessionId(raw: unknown): string {
   return sessionId;
 }
 
+function requireTurnId(raw: unknown): string {
+  return requireNonEmptyString(raw, 'turnId');
+}
+
+function requireHistoryAction(raw: unknown): PiTurnHistoryAction {
+  if (raw === 'trim_before' || raw === 'trim_after' || raw === 'delete_turn') {
+    return raw;
+  }
+  throw new ToolError(
+    'invalid_arguments',
+    'action must be one of trim_before, trim_after, or delete_turn',
+  );
+}
+
 function parseSessionIdOverride(raw: unknown): string | undefined {
   if (raw === undefined) {
     return undefined;
@@ -103,15 +118,6 @@ function parseAttributesPatch(args: Record<string, unknown>): SessionAttributesP
     throw new ToolError('invalid_arguments', 'Session attributes patch must be an object');
   }
   return patch as SessionAttributesPatch;
-}
-
-function parseOptionalAttributesPatch(
-  args: Record<string, unknown>,
-): SessionAttributesPatch | undefined {
-  if (!('attributes' in args) && !('patch' in args)) {
-    return undefined;
-  }
-  return parseAttributesPatch(args);
 }
 
 function parseOptionalSessionConfig(args: Record<string, unknown>): SessionConfig | undefined {
@@ -220,7 +226,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const model = resolvedConfig.model ?? getDefaultModelForNewSession(agent);
           const thinking = resolvedConfig.thinking ?? getDefaultThinkingForNewSession(agent);
           const attributesPatch = buildSessionAttributesPatchFromConfig(resolvedConfig);
-          let summary = await sessionIndex.createSession({
+          const summary = await sessionIndex.createSession({
             agentId,
             ...(sessionId ? { sessionId } : {}),
             ...(model ? { model } : {}),
@@ -559,6 +565,47 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to clear session';
+          throw new ToolError('invalid_arguments', message);
+        }
+      },
+      'history-edit': async (
+        args,
+        ctx,
+      ): Promise<{
+        sessionId: string;
+        action: PiTurnHistoryAction;
+        turnId: string;
+        changed: boolean;
+        updatedAt: string;
+      }> => {
+        const sessionHub = requireSessionHub(ctx);
+        const sessionIndex = requireSessionIndex(ctx);
+        const parsed = asObject(args);
+        const sessionId = requireSessionId(parsed['sessionId']);
+        const action = requireHistoryAction(parsed['action']);
+        const turnId = requireTurnId(parsed['turnId']);
+
+        const existing = await sessionIndex.getSession(sessionId);
+        if (!existing) {
+          throw new ToolError('session_not_found', 'Session not found');
+        }
+
+        try {
+          const { summary, changed } = await sessionHub.editSessionHistory({
+            sessionId,
+            action,
+            turnId,
+          });
+          return {
+            sessionId,
+            action,
+            turnId,
+            changed,
+            updatedAt: summary.updatedAt,
+          };
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : 'Failed to edit session history';
           throw new ToolError('invalid_arguments', message);
         }
       },

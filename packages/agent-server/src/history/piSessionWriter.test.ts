@@ -414,6 +414,479 @@ describe('PiSessionWriter', () => {
     expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
   });
 
+  it('appends explicit turn boundary entries', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-boundaries');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-1',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+    await writer.sync({
+      summary,
+      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+    });
+    await writer.appendTurnEnd({ summary, turnId: 'turn-1', status: 'completed' });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const turnStart = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_start',
+    ) as Record<string, unknown> | undefined;
+    const turnEnd = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_end',
+    ) as Record<string, unknown> | undefined;
+
+    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
+    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
+    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['trigger']).toBe('user');
+    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
+    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
+    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe('completed');
+  });
+
+  it('repairs an unterminated persisted turn before starting the next one', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-repair');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-2',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+    await writer.sync({
+      summary,
+      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+    });
+
+    const writer2 = new PiSessionWriter({ baseDir, now });
+    await writer2.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+    const boundaries = entries.filter(
+      (entry) =>
+        entry['type'] === 'custom' &&
+        (entry['customType'] === 'assistant.turn_start' ||
+          entry['customType'] === 'assistant.turn_end'),
+    );
+
+    expect(boundaries).toHaveLength(3);
+    expect((boundaries[0]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
+    expect((boundaries[1]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
+    expect((boundaries[1]?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe(
+      'interrupted',
+    );
+    expect((boundaries[2]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-2');
+  });
+
+  it('rewrites Pi history when trimming turns before an anchor', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-trim-before');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-trim-before',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    const result = await writer.rewriteHistoryByTurn({
+      summary,
+      action: 'trim_before',
+      turnId: 'turn-2',
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    expect(JSON.stringify(entries)).not.toContain('turn-1');
+    expect(JSON.stringify(entries)).toContain('turn-2');
+    expect(JSON.stringify(entries)).not.toContain('first turn');
+    expect(JSON.stringify(entries)).toContain('second turn');
+    expect(entries[1]?.['parentId']).toBeNull();
+  });
+
+  it('rewrites Pi history when deleting a specific turn', async () => {
+    const baseDir = await createTempDir('pi-session-writer-delete-turn');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-delete',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({ summary, turnId: 'turn-1', status: 'completed', updateAttributes });
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({ summary, turnId: 'turn-2', status: 'completed', updateAttributes });
+
+    const result = await writer.rewriteHistoryByTurn({
+      summary,
+      action: 'delete_turn',
+      turnId: 'turn-1',
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+
+    expect(content).not.toContain('first turn');
+    expect(content).toContain('second turn');
+    expect(content).not.toContain('"turnId":"turn-1"');
+    expect(content).toContain('"turnId":"turn-2"');
+  });
+
+  it('rewrites Pi history when trimming turns after an anchor', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-trim-after');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-trim-after',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    const result = await writer.rewriteHistoryByTurn({
+      summary,
+      action: 'trim_after',
+      turnId: 'turn-1',
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    expect(JSON.stringify(entries)).toContain('turn-1');
+    expect(JSON.stringify(entries)).not.toContain('turn-2');
+    expect(JSON.stringify(entries)).toContain('first turn');
+    expect(JSON.stringify(entries)).not.toContain('second turn');
+    expect(entries[1]?.['parentId']).toBeNull();
+  });
+
+  it('rejects history rewrites when explicit turn markers are missing', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-missing-markers');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-missing-markers',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'legacy turn' },
+        { role: 'assistant', content: 'Legacy reply' },
+      ],
+      updateAttributes,
+    });
+
+    await expect(
+      writer.rewriteHistoryByTurn({
+        summary,
+        action: 'trim_before',
+        turnId: 'turn-1',
+        updateAttributes,
+      }),
+    ).rejects.toThrow('Pi session history does not contain explicit turn markers');
+  });
+
+  it('rejects history rewrites when the anchor turn does not exist', async () => {
+    const baseDir = await createTempDir('pi-session-writer-turn-unknown-anchor');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-unknown-anchor',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    await expect(
+      writer.rewriteHistoryByTurn({
+        summary,
+        action: 'delete_turn',
+        turnId: 'missing-turn',
+        updateAttributes,
+      }),
+    ).rejects.toThrow('Turn not found in Pi session history: missing-turn');
+  });
+
   it('appends session_info entries after the session is flushed', async () => {
     const baseDir = await createTempDir('pi-session-writer-session-info');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
