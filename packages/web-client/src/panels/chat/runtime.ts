@@ -42,6 +42,8 @@ export interface ChatRuntime {
   dispose: () => void;
 }
 
+const TURN_WINDOWING_ENABLED = false;
+
 const TOOL_OUTPUT_VIEWPORT_OVERSCAN_PX = 400;
 
 function isToolOutputBlockNearViewport(block: HTMLDivElement, root: HTMLElement): boolean {
@@ -159,7 +161,13 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
     options;
   const toolOutputViewportManager = createToolOutputViewportManager(elements.chatContent);
-  const turnWindowManager = createTurnWindowManager(elements.chatLog, elements.chatContent);
+  const turnWindowManager = TURN_WINDOWING_ENABLED
+    ? createTurnWindowManager(elements.chatLog, elements.chatContent)
+    : {
+        refresh: () => {},
+        scheduleRefresh: () => {},
+        dispose: () => {},
+      };
 
   const applyToolOutputVisibility = (show: boolean): void => {
     if (elements.chatPanel) {
