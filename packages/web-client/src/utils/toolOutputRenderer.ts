@@ -72,10 +72,9 @@ interface ToolOutputBlockState {
   readonly content: HTMLDivElement;
   readonly inputSection: HTMLDivElement;
   readonly outputSection: HTMLDivElement;
-  readonly toolName: string;
+  toolName: string;
   input: ToolOutputInputState;
   outputText: string;
-  outputToolName: string;
   outputStatus?: ToolOutputStatus;
   // Blocks with dedicated custom DOM manage their own body lifecycle and should not be dehydrated.
   staticContent: boolean;
@@ -183,7 +182,6 @@ export function createToolOutputBlock(options: ToolOutputBlockOptions): HTMLDivE
     toolName,
     input: { kind: 'none' },
     outputText: '',
-    outputToolName: toolName,
     staticContent: false,
   });
 
@@ -334,7 +332,38 @@ function getToolOutputBlockState(block: HTMLDivElement): ToolOutputBlockState | 
   return toolOutputBlockStates.get(block) ?? null;
 }
 
-function renderToolOutputInput(block: HTMLDivElement, state: ToolOutputBlockState): void {
+function createToolOutputJsonToggleButton(): HTMLButtonElement {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'tool-output-json-toggle';
+  toggleBtn.textContent = 'JSON';
+  toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
+  toggleBtn.dataset['showingJson'] = 'false';
+  return toggleBtn;
+}
+
+function attachToolOutputJsonToggle(
+  toggleBtn: HTMLButtonElement,
+  renderFormatted: () => void,
+  renderJson: () => void,
+): void {
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const showingJson = toggleBtn.dataset['showingJson'] === 'true';
+    if (showingJson) {
+      renderFormatted();
+      toggleBtn.textContent = 'JSON';
+      toggleBtn.dataset['showingJson'] = 'false';
+      return;
+    }
+
+    renderJson();
+    toggleBtn.textContent = 'Formatted';
+    toggleBtn.dataset['showingJson'] = 'true';
+  });
+}
+
+function renderToolOutputInput(state: ToolOutputBlockState): void {
   const inputSection = state.inputSection;
   inputSection.replaceChildren();
 
@@ -411,13 +440,7 @@ function renderToolOutputInput(block: HTMLDivElement, state: ToolOutputBlockStat
 
   const hasJsonToggle = rawJson.trim().length > 0;
   if (hasJsonToggle) {
-    const toggleBtn = document.createElement('button');
-    toggleBtn.type = 'button';
-    toggleBtn.className = 'tool-output-json-toggle';
-    toggleBtn.textContent = 'JSON';
-    toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
-    toggleBtn.dataset['showingJson'] = 'false';
-    labelRow.appendChild(toggleBtn);
+    labelRow.appendChild(createToolOutputJsonToggleButton());
   }
 
   inputSection.appendChild(labelRow);
@@ -453,25 +476,13 @@ function renderToolOutputInput(block: HTMLDivElement, state: ToolOutputBlockStat
 
   const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
   if (toggleBtn) {
-    toggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const showingJson = toggleBtn.dataset['showingJson'] === 'true';
-      if (showingJson) {
-        renderFormatted();
-        toggleBtn.textContent = 'JSON';
-        toggleBtn.dataset['showingJson'] = 'false';
-      } else {
-        renderJson();
-        toggleBtn.textContent = 'Formatted';
-        toggleBtn.dataset['showingJson'] = 'true';
-      }
-    });
+    attachToolOutputJsonToggle(toggleBtn, renderFormatted, renderJson);
   }
 
   inputSection.appendChild(inputBody);
 }
 
-function renderToolOutputResult(block: HTMLDivElement, state: ToolOutputBlockState): void {
+function renderToolOutputResult(state: ToolOutputBlockState): void {
   const outputSection = state.outputSection;
   const preservedInteractions = Array.from(outputSection.children).filter((child) =>
     child.classList.contains('tool-interaction'),
@@ -481,7 +492,7 @@ function renderToolOutputResult(block: HTMLDivElement, state: ToolOutputBlockSta
   const status = state.outputStatus;
   const text = state.outputText;
   const trimmed = text.replace(/\s+$/, '');
-  const toolName = state.outputToolName;
+  const toolName = state.toolName;
 
   const streaming = status?.streaming === true;
   const interrupted = status?.interrupted === true;
@@ -521,13 +532,7 @@ function renderToolOutputResult(block: HTMLDivElement, state: ToolOutputBlockSta
   labelRow.textContent = outputLabel;
 
   if (status?.rawJson && !(isPendingState && status?.pendingText)) {
-    const toggleBtn = document.createElement('button');
-    toggleBtn.type = 'button';
-    toggleBtn.className = 'tool-output-json-toggle';
-    toggleBtn.textContent = 'JSON';
-    toggleBtn.setAttribute('aria-label', 'Toggle raw JSON view');
-    toggleBtn.dataset['showingJson'] = 'false';
-    labelRow.appendChild(toggleBtn);
+    labelRow.appendChild(createToolOutputJsonToggleButton());
   }
 
   outputSection.appendChild(labelRow);
@@ -572,25 +577,21 @@ function renderToolOutputResult(block: HTMLDivElement, state: ToolOutputBlockSta
     const toggleBtn = labelRow.querySelector<HTMLButtonElement>('.tool-output-json-toggle');
     if (toggleBtn) {
       const rawJson = status.rawJson;
-      toggleBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const showingJson = toggleBtn.dataset['showingJson'] === 'true';
-        if (showingJson) {
+      attachToolOutputJsonToggle(
+        toggleBtn,
+        () => {
           outputBody.innerHTML = '';
           if (isMarkdownResult || agentCallback || isAgentMessage) {
             outputBody.classList.add('markdown-content');
           }
           applyMarkdownToElement(outputBody, formattedMarkdown);
-          toggleBtn.textContent = 'JSON';
-          toggleBtn.dataset['showingJson'] = 'false';
-        } else {
+        },
+        () => {
           outputBody.innerHTML = '';
           outputBody.classList.remove('markdown-content');
           applyMarkdownToElement(outputBody, '```json\n' + rawJson + '\n```');
-          toggleBtn.textContent = 'Formatted';
-          toggleBtn.dataset['showingJson'] = 'true';
-        }
-      });
+        },
+      );
     }
   }
 
@@ -634,13 +635,16 @@ function syncToolOutputBlockContent(block: HTMLDivElement): void {
     block.classList.contains('has-pending-approval') ||
     block.querySelector('.tool-interaction') !== null;
   if (!block.classList.contains('expanded') && !shouldKeepMountedBody) {
+    if (!state.inputSection.hasChildNodes() && !state.outputSection.hasChildNodes()) {
+      return;
+    }
     state.inputSection.replaceChildren();
     state.outputSection.replaceChildren();
     return;
   }
 
-  renderToolOutputInput(block, state);
-  renderToolOutputResult(block, state);
+  renderToolOutputInput(state);
+  renderToolOutputResult(state);
 }
 
 export function setToolOutputBlockExpanded(block: HTMLDivElement, expanded: boolean): void {
@@ -822,7 +826,7 @@ export function updateToolOutputBlockContent(
   }
 
   state.outputText = text;
-  state.outputToolName = toolName;
+  state.toolName = toolName;
   if (status) {
     state.outputStatus = status;
   } else {
@@ -921,7 +925,7 @@ export function setToolOutputBlockPending(
     return;
   }
   blockState.outputText = '';
-  blockState.outputToolName = toolName;
+  blockState.toolName = toolName;
   const outputStatus: ToolOutputStatus = {
     state,
     outputLabel: options?.outputLabel ?? (isAgentMessage ? 'Received' : 'Output'),
