@@ -561,6 +561,15 @@ function renderToolOutputResult(state: ToolOutputBlockState): void {
   const isMarkdownResult = toolName === 'notes_read' || toolName === 'notes_show';
   const isAgentMessage = toolName === 'agents_message';
   const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
+  const useStreamingPlainText = canUseStreamingPlainTextOutput(status, toolName);
+
+  if (useStreamingPlainText) {
+    const pre = document.createElement('pre');
+    pre.className = 'tool-output-streaming-pre';
+    pre.textContent = text;
+    outputBody.appendChild(pre);
+    return;
+  }
 
   let formattedMarkdown: string;
   if (isMarkdownResult || agentCallback || isAgentMessage) {
@@ -658,6 +667,16 @@ function syncToolOutputBlockContent(block: HTMLDivElement): void {
   renderToolOutputResult(state);
 }
 
+function canUseStreamingPlainTextOutput(status: ToolOutputStatus | undefined, toolName: string): boolean {
+  if (!status || status.streaming !== true) {
+    return false;
+  }
+  if (status.rawJson || status.pendingText || status.truncated || status.agentCallback) {
+    return false;
+  }
+  return toolName !== 'notes_read' && toolName !== 'notes_show' && toolName !== 'agents_message';
+}
+
 export function setToolOutputBlockNearViewport(
   block: HTMLDivElement,
   nearViewport: boolean,
@@ -699,6 +718,13 @@ export function updateToolOutputBlockStreamingInput(
     return;
   }
   state.input = { kind: 'streaming', text, label };
+  const mountedBody = state.inputSection.querySelector<HTMLDivElement>('.tool-output-input-body.streaming');
+  const mountedLabel = state.inputSection.querySelector<HTMLDivElement>('.tool-output-section-label');
+  if (mountedBody && mountedLabel) {
+    mountedBody.textContent = text;
+    mountedLabel.textContent = label;
+    return;
+  }
   syncToolOutputBlockContent(block);
 }
 
@@ -854,6 +880,15 @@ export function updateToolOutputBlockContent(
     state.outputStatus = status;
   } else {
     delete state.outputStatus;
+  }
+  if (canUseStreamingPlainTextOutput(status, toolName)) {
+    const streamingPre = state.outputSection.querySelector<HTMLPreElement>(
+      '.tool-output-streaming-pre',
+    );
+    if (streamingPre) {
+      streamingPre.textContent = text;
+      return;
+    }
   }
   syncToolOutputBlockContent(block);
 }

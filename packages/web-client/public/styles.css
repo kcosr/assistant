@@ -4083,6 +4083,11 @@ body.panel-reordering {
   user-select: text;
 }
 
+.chat-log > * {
+  content-visibility: auto;
+  contain-intrinsic-size: 480px;
+}
+
 .chat-scroll-to-bottom {
   position: absolute;
   bottom: var(--spacing-md);
