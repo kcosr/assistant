@@ -1,6 +1,6 @@
 import { ChatScrollManager } from '../../controllers/chatScroll';
 import { ChatRenderer } from '../../controllers/chatRenderer';
-import { getToolOutputToggleSymbol } from '../../utils/toolOutputRenderer';
+import { setToolOutputBlockExpanded } from '../../utils/toolOutputRenderer';
 import type { ToolOutputPreferencesClient } from '../../utils/toolOutputPreferences';
 import type { ThinkingPreferencesClient } from '../../utils/thinkingPreferences';
 import type { InteractionResponseDraft } from '../../utils/interactionRenderer';
@@ -76,15 +76,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     if (updateExisting) {
       const toolBlocks = elements.chatLog.querySelectorAll<HTMLDivElement>('.tool-output-block');
       for (const block of toolBlocks) {
-        block.classList.toggle('expanded', expand);
-        const headerButton = block.querySelector<HTMLButtonElement>('.tool-output-header');
-        if (headerButton) {
-          headerButton.setAttribute('aria-expanded', expand ? 'true' : 'false');
-        }
-        const toggleIcon = block.querySelector<HTMLElement>('.tool-output-toggle');
-        if (toggleIcon) {
-          toggleIcon.textContent = getToolOutputToggleSymbol(expand);
-        }
+        setToolOutputBlockExpanded(block, expand);
       }
     }
   };

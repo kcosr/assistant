@@ -37,6 +37,7 @@ import {
   getToolCallSummary,
   setToolOutputBlockInput,
   setToolOutputBlockPending,
+  updateToolOutputBlockStreamingInput,
   updateToolCallGroup,
   updateToolOutputBlockLabel,
   updateToolOutputBlockContent,
@@ -697,10 +698,6 @@ export class ChatRenderer {
     if (block) {
       // Block exists from streaming - update it with final args
       block.classList.remove('streaming-input');
-      const inputSection = block.querySelector('.tool-output-input-body');
-      if (inputSection) {
-        inputSection.classList.remove('streaming');
-      }
       if (isAgentMessageTool) {
         const titleEl = block.querySelector<HTMLElement>('.tool-output-title');
         if (titleEl && agentDisplayName) {
@@ -868,11 +865,7 @@ export class ChatRenderer {
     }
 
     // Update the input section with streaming args
-    const inputSection = block.querySelector('.tool-output-input-body');
-    if (inputSection) {
-      inputSection.textContent = newBuffer;
-      inputSection.classList.add('streaming');
-    }
+    updateToolOutputBlockStreamingInput(block, newBuffer);
 
     this.updateToolCallGroupForBlock(block);
   }
