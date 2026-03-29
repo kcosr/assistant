@@ -12,6 +12,7 @@ import { createTurnWindowManager } from './turnWindowManager';
 export interface ChatRuntimeElements {
   chatPanel: HTMLElement | null;
   chatLog: HTMLElement;
+  chatContent: HTMLElement;
   scrollToBottomButtonEl: HTMLButtonElement;
   toggleToolOutputButton: HTMLButtonElement | null;
   toggleToolExpandButton: HTMLButtonElement | null;
@@ -157,17 +158,8 @@ function createToolOutputViewportManager(chatLog: HTMLElement): ToolOutputViewpo
 export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
     options;
-  const contentHost =
-    elements.chatLog.querySelector<HTMLElement>('[data-role="chat-content"]') ??
-    document.createElement('div');
-  if (!contentHost.parentElement) {
-    contentHost.dataset['role'] = 'chat-content';
-    contentHost.className = 'chat-log-content';
-    elements.chatLog.appendChild(contentHost);
-  }
-
-  const toolOutputViewportManager = createToolOutputViewportManager(contentHost);
-  const turnWindowManager = createTurnWindowManager(elements.chatLog, contentHost);
+  const toolOutputViewportManager = createToolOutputViewportManager(elements.chatContent);
+  const turnWindowManager = createTurnWindowManager(elements.chatLog, elements.chatContent);
 
   const applyToolOutputVisibility = (show: boolean): void => {
     if (elements.chatPanel) {
@@ -252,7 +244,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   );
   chatScrollManager.setAutoScrollEnabled(autoScrollEnabled);
 
-  const chatRenderer = new ChatRenderer(contentHost, {
+  const chatRenderer = new ChatRenderer(elements.chatContent, {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
     ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
@@ -268,7 +260,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     if (!toolOutputViewportManager.hasIntersectionObserver()) {
       toolOutputViewportManager.refresh();
     }
-    turnWindowManager.refresh();
+    turnWindowManager.scheduleRefresh();
   });
 
   elements.chatLog.addEventListener(

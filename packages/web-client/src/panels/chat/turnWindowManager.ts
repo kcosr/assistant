@@ -5,6 +5,7 @@ const TURN_HEIGHT_ESTIMATE_PX = 220;
 
 export interface TurnWindowManager {
   refresh: () => void;
+  scheduleRefresh: () => void;
   dispose: () => void;
 }
 
@@ -77,12 +78,17 @@ export function createTurnWindowManager(
 ): TurnWindowManager {
   const turns: HTMLDivElement[] = [];
   const heightCache = new WeakMap<HTMLDivElement, number>();
+  const observedTurns = new Set<HTMLDivElement>();
   const topSpacer = createSpacer('turn-window-spacer turn-window-spacer-top');
   const middleSpacer = createSpacer('turn-window-spacer turn-window-spacer-middle');
   let isApplyingLayout = false;
   let refreshScheduled = false;
 
   const observeTurn = (turn: HTMLDivElement): void => {
+    if (observedTurns.has(turn)) {
+      return;
+    }
+    observedTurns.add(turn);
     if (!heightCache.has(turn)) {
       const measuredHeight = turn.getBoundingClientRect().height;
       heightCache.set(turn, measuredHeight > 0 ? measuredHeight : TURN_HEIGHT_ESTIMATE_PX);
@@ -91,6 +97,9 @@ export function createTurnWindowManager(
   };
 
   const unobserveTurn = (turn: HTMLDivElement): void => {
+    if (!observedTurns.delete(turn)) {
+      return;
+    }
     resizeObserver?.unobserve(turn);
   };
 
@@ -136,6 +145,46 @@ export function createTurnWindowManager(
     });
   };
 
+  const insertTurnInDomOrder = (turn: HTMLDivElement): void => {
+    let previousTurn: HTMLDivElement | null = null;
+    let sibling: Element | null = turn.previousElementSibling;
+    while (sibling) {
+      if (sibling instanceof HTMLDivElement && sibling.classList.contains('turn')) {
+        previousTurn = sibling;
+        break;
+      }
+      sibling = sibling.previousElementSibling;
+    }
+
+    if (previousTurn) {
+      const previousIndex = turns.indexOf(previousTurn);
+      if (previousIndex !== -1) {
+        turns.splice(previousIndex + 1, 0, turn);
+        return;
+      }
+    }
+
+    let nextTurn: HTMLDivElement | null = null;
+    sibling = turn.nextElementSibling;
+    while (sibling) {
+      if (sibling instanceof HTMLDivElement && sibling.classList.contains('turn')) {
+        nextTurn = sibling;
+        break;
+      }
+      sibling = sibling.nextElementSibling;
+    }
+
+    if (nextTurn) {
+      const nextIndex = turns.indexOf(nextTurn);
+      if (nextIndex !== -1) {
+        turns.splice(nextIndex, 0, turn);
+        return;
+      }
+    }
+
+    turns.push(turn);
+  };
+
   const mutationObserver =
     typeof MutationObserver === 'undefined'
       ? null
@@ -153,7 +202,7 @@ export function createTurnWindowManager(
               if (turns.includes(node)) {
                 return;
               }
-              turns.push(node);
+              insertTurnInDomOrder(node);
               observeTurn(node);
               didChange = true;
             });
@@ -199,7 +248,31 @@ export function createTurnWindowManager(
           }
         });
 
+  const appendTurnRangeToFragment = (
+    fragment: DocumentFragment,
+    start: number,
+    end: number,
+  ): void => {
+    for (let index = start; index <= end; index += 1) {
+      const turn = turns[index];
+      if (!turn) {
+        continue;
+      }
+      observeTurn(turn);
+      fragment.appendChild(turn);
+    }
+  };
+
+  const areAllTurnsMounted = (): boolean =>
+    turns.every((turn) => turn.parentElement === contentHost) &&
+    topSpacer.parentElement !== contentHost &&
+    middleSpacer.parentElement !== contentHost;
+
   const mountAllTurns = (): void => {
+    if (areAllTurnsMounted()) {
+      return;
+    }
+
     isApplyingLayout = true;
     try {
       topSpacer.remove();
@@ -207,10 +280,7 @@ export function createTurnWindowManager(
 
       const anchor = getAnchorNode();
       const fragment = document.createDocumentFragment();
-      for (const turn of turns) {
-        observeTurn(turn);
-        fragment.appendChild(turn);
-      }
+      appendTurnRangeToFragment(fragment, 0, turns.length - 1);
       contentHost.insertBefore(fragment, anchor);
     } finally {
       isApplyingLayout = false;
@@ -283,24 +353,10 @@ export function createTurnWindowManager(
       const anchor = getAnchorNode();
       const fragment = document.createDocumentFragment();
       fragment.appendChild(topSpacer);
-      for (let index = ranges[0]!.start; index <= ranges[0]!.end; index += 1) {
-        const turn = turns[index];
-        if (!turn) {
-          continue;
-        }
-        observeTurn(turn);
-        fragment.appendChild(turn);
-      }
+      appendTurnRangeToFragment(fragment, ranges[0]!.start, ranges[0]!.end);
       if (ranges.length === 2) {
         fragment.appendChild(middleSpacer);
-        for (let index = ranges[1]!.start; index <= ranges[1]!.end; index += 1) {
-          const turn = turns[index];
-          if (!turn) {
-            continue;
-          }
-          observeTurn(turn);
-          fragment.appendChild(turn);
-        }
+        appendTurnRangeToFragment(fragment, ranges[1]!.start, ranges[1]!.end);
       } else {
         middleSpacer.remove();
       }
@@ -322,11 +378,13 @@ export function createTurnWindowManager(
 
   return {
     refresh,
+    scheduleRefresh,
     dispose: () => {
       mutationObserver?.disconnect();
       resizeObserver?.disconnect();
       topSpacer.remove();
       middleSpacer.remove();
+      observedTurns.clear();
       turns.splice(0, turns.length);
     },
   };

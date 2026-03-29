@@ -50,6 +50,11 @@ function getChatPanelDom(container: HTMLElement): ChatPanelDom {
   const runtimeElements: ChatRuntimeElements = {
     chatPanel: container,
     chatLog: requireElement<HTMLElement>(container, '[data-role="chat-log"]', 'chat log'),
+    chatContent: requireElement<HTMLElement>(
+      container,
+      '[data-role="chat-content"]',
+      'chat content',
+    ),
     scrollToBottomButtonEl: requireElement<HTMLButtonElement>(
       container,
       '[data-role="chat-scroll-to-bottom"]',
