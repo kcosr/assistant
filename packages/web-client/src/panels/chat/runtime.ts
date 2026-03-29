@@ -37,6 +37,7 @@ export interface ChatRuntime {
   elements: ChatRuntimeElements;
   chatRenderer: ChatRenderer;
   chatScrollManager: ChatScrollManager;
+  dispose: () => void;
 }
 
 const TOOL_OUTPUT_VIEWPORT_OVERSCAN_PX = 400;
@@ -50,59 +51,32 @@ function isToolOutputBlockNearViewport(block: HTMLDivElement, root: HTMLElement)
   );
 }
 
-export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
-  const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
-    options;
+interface ToolOutputViewportManager {
+  refresh: () => void;
+  dispose: () => void;
+  hasIntersectionObserver: () => boolean;
+}
+
+function visitToolBlocksInSubtree(
+  node: Node,
+  visit: (block: HTMLDivElement) => void,
+): void {
+  if (!(node instanceof HTMLElement)) {
+    return;
+  }
+  if (node.matches('.tool-output-block')) {
+    visit(node as HTMLDivElement);
+  }
+  for (const block of node.querySelectorAll<HTMLDivElement>('.tool-output-block')) {
+    visit(block);
+  }
+}
+
+function createToolOutputViewportManager(chatLog: HTMLElement): ToolOutputViewportManager {
   const observedToolBlocks = new Set<HTMLDivElement>();
 
   const syncToolOutputViewport = (block: HTMLDivElement): void => {
-    setToolOutputBlockNearViewport(block, isToolOutputBlockNearViewport(block, elements.chatLog));
-  };
-
-  const observeToolBlock = (block: HTMLDivElement): void => {
-    if (observedToolBlocks.has(block)) {
-      return;
-    }
-    observedToolBlocks.add(block);
-    syncToolOutputViewport(block);
-    toolOutputIntersectionObserver?.observe(block);
-  };
-
-  const unobserveToolBlock = (block: HTMLDivElement): void => {
-    if (!observedToolBlocks.delete(block)) {
-      return;
-    }
-    toolOutputIntersectionObserver?.unobserve(block);
-  };
-
-  const observeToolBlocksInSubtree = (node: Node): void => {
-    if (!(node instanceof HTMLElement)) {
-      return;
-    }
-    if (node.matches('.tool-output-block')) {
-      observeToolBlock(node as HTMLDivElement);
-    }
-    for (const block of node.querySelectorAll<HTMLDivElement>('.tool-output-block')) {
-      observeToolBlock(block);
-    }
-  };
-
-  const unobserveToolBlocksInSubtree = (node: Node): void => {
-    if (!(node instanceof HTMLElement)) {
-      return;
-    }
-    if (node.matches('.tool-output-block')) {
-      unobserveToolBlock(node as HTMLDivElement);
-    }
-    for (const block of node.querySelectorAll<HTMLDivElement>('.tool-output-block')) {
-      unobserveToolBlock(block);
-    }
-  };
-
-  const refreshObservedToolBlocks = (): void => {
-    for (const block of observedToolBlocks) {
-      syncToolOutputViewport(block);
-    }
+    setToolOutputBlockNearViewport(block, isToolOutputBlockNearViewport(block, chatLog));
   };
 
   const toolOutputIntersectionObserver =
@@ -114,37 +88,75 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
               if (!(entry.target instanceof HTMLDivElement)) {
                 continue;
               }
-              setToolOutputBlockNearViewport(
-                entry.target,
-                entry.isIntersecting ||
-                  entry.intersectionRatio > 0 ||
-                  isToolOutputBlockNearViewport(entry.target, elements.chatLog),
-              );
+              setToolOutputBlockNearViewport(entry.target, entry.isIntersecting || entry.intersectionRatio > 0);
             }
           },
           {
-            root: elements.chatLog,
+            root: chatLog,
             rootMargin: `${TOOL_OUTPUT_VIEWPORT_OVERSCAN_PX}px 0px ${TOOL_OUTPUT_VIEWPORT_OVERSCAN_PX}px 0px`,
           },
         );
+
+  const observeToolBlock = (block: HTMLDivElement): void => {
+    if (observedToolBlocks.has(block)) {
+      return;
+    }
+    observedToolBlocks.add(block);
+    if (toolOutputIntersectionObserver) {
+      toolOutputIntersectionObserver.observe(block);
+      return;
+    }
+    syncToolOutputViewport(block);
+  };
+
+  const unobserveToolBlock = (block: HTMLDivElement): void => {
+    if (!observedToolBlocks.delete(block)) {
+      return;
+    }
+    toolOutputIntersectionObserver?.unobserve(block);
+  };
 
   const toolOutputMutationObserver =
     typeof MutationObserver === 'undefined'
       ? null
       : new MutationObserver((records) => {
           for (const record of records) {
-            record.addedNodes.forEach(observeToolBlocksInSubtree);
-            record.removedNodes.forEach(unobserveToolBlocksInSubtree);
+            record.addedNodes.forEach((node) => {
+              visitToolBlocksInSubtree(node, observeToolBlock);
+            });
+            record.removedNodes.forEach((node) => {
+              visitToolBlocksInSubtree(node, unobserveToolBlock);
+            });
           }
         });
 
-  toolOutputMutationObserver?.observe(elements.chatLog, {
+  toolOutputMutationObserver?.observe(chatLog, {
     childList: true,
     subtree: true,
   });
-  for (const block of elements.chatLog.querySelectorAll<HTMLDivElement>('.tool-output-block')) {
+  for (const block of chatLog.querySelectorAll<HTMLDivElement>('.tool-output-block')) {
     observeToolBlock(block);
   }
+
+  return {
+    refresh: () => {
+      for (const block of observedToolBlocks) {
+        syncToolOutputViewport(block);
+      }
+    },
+    dispose: () => {
+      toolOutputMutationObserver?.disconnect();
+      toolOutputIntersectionObserver?.disconnect();
+      observedToolBlocks.clear();
+    },
+    hasIntersectionObserver: () => toolOutputIntersectionObserver !== null,
+  };
+}
+
+export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
+  const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
+    options;
+  const toolOutputViewportManager = createToolOutputViewportManager(elements.chatLog);
 
   const applyToolOutputVisibility = (show: boolean): void => {
     if (elements.chatPanel) {
@@ -184,7 +196,9 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
       for (const block of toolBlocks) {
         setToolOutputBlockExpanded(block, expand);
       }
-      refreshObservedToolBlocks();
+      if (!toolOutputViewportManager.hasIntersectionObserver()) {
+        toolOutputViewportManager.refresh();
+      }
     }
   };
 
@@ -239,8 +253,8 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
 
   elements.chatLog.addEventListener('scroll', () => {
     chatScrollManager.handleScroll();
-    if (!toolOutputIntersectionObserver) {
-      refreshObservedToolBlocks();
+    if (!toolOutputViewportManager.hasIntersectionObserver()) {
+      toolOutputViewportManager.refresh();
     }
   });
 
@@ -268,5 +282,8 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     elements,
     chatRenderer,
     chatScrollManager,
+    dispose: () => {
+      toolOutputViewportManager.dispose();
+    },
   };
 }

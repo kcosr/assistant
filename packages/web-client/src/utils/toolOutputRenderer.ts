@@ -646,11 +646,11 @@ function syncToolOutputBlockContent(block: HTMLDivElement): void {
     block.classList.contains('has-pending-approval') ||
     block.querySelector('.tool-interaction') !== null;
   const isRunning =
-    block.classList.contains('streaming') ||
-    block.classList.contains('streaming-input') ||
-    block.dataset['status'] === 'queued' ||
-    block.dataset['status'] === 'waiting' ||
-    block.dataset['status'] === 'running';
+    state.input.kind === 'streaming' ||
+    state.outputStatus?.streaming === true ||
+    state.outputStatus?.state === 'queued' ||
+    state.outputStatus?.state === 'waiting' ||
+    state.outputStatus?.state === 'running';
   const shouldHydrateExpandedBody =
     block.classList.contains('expanded') && (state.nearViewport || isRunning);
 
