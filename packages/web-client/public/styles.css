@@ -4083,7 +4083,7 @@ body.panel-reordering {
   user-select: text;
 }
 
-.chat-log > * {
+.chat-log-content > .turn {
   content-visibility: auto;
   contain-intrinsic-size: 480px;
 }
