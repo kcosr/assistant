@@ -343,6 +343,23 @@ export function applyMarkdownToElement(element: HTMLElement, text: string): void
   enhanceCodeBlocksWithCopyButtons(element);
 }
 
+const STREAMING_MARKDOWN_TEXT_CLASS = 'streaming-markdown-text';
+
+export function renderStreamingMarkdownText(element: HTMLElement, text: string): void {
+  element.classList.remove('markdown-content');
+  element.classList.add(STREAMING_MARKDOWN_TEXT_CLASS);
+  element.textContent = text;
+}
+
+export function finalizeStreamingMarkdownText(element: HTMLElement, text: string): void {
+  element.classList.remove(STREAMING_MARKDOWN_TEXT_CLASS);
+  applyMarkdownToElement(element, text);
+}
+
+export function isStreamingMarkdownText(element: HTMLElement): boolean {
+  return element.classList.contains(STREAMING_MARKDOWN_TEXT_CLASS);
+}
+
 export function enhanceCodeBlocksWithCopyButtons(container: HTMLElement): void {
   const preElements = container.querySelectorAll<HTMLPreElement>('pre');
   for (const pre of Array.from(preElements)) {

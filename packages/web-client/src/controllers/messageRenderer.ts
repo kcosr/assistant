@@ -1,4 +1,8 @@
-import { applyMarkdownToElement } from '../utils/markdown';
+import {
+  finalizeStreamingMarkdownText,
+  isStreamingMarkdownText,
+  renderStreamingMarkdownText,
+} from '../utils/markdown';
 import {
   createToolCallGroup,
   createToolOutputBlock,
@@ -279,7 +283,7 @@ export class MessageRenderer {
 
     const segmentText = (this.segmentTexts.get(event.responseId) ?? '') + event.delta;
     this.segmentTexts.set(event.responseId, segmentText);
-    applyMarkdownToElement(segment, segmentText);
+    renderStreamingMarkdownText(segment, segmentText);
 
     const fullText = (this.responseTexts.get(event.responseId) ?? '') + event.delta;
     this.responseTexts.set(event.responseId, fullText);
@@ -293,7 +297,14 @@ export class MessageRenderer {
     if (mains.length <= 1) {
       const existing = mains.item(0);
       const segment = existing ?? this.createTextSegment(bubble);
-      applyMarkdownToElement(segment, event.text);
+      finalizeStreamingMarkdownText(segment, event.text);
+    } else {
+      for (const segment of Array.from(mains)) {
+        if (!isStreamingMarkdownText(segment)) {
+          continue;
+        }
+        finalizeStreamingMarkdownText(segment, segment.textContent ?? '');
+      }
     }
 
     this.responseTexts.delete(event.responseId);
@@ -372,6 +383,7 @@ export class MessageRenderer {
 
     const responseId = this.findResponseIdForBubble(hostBubble);
     if (responseId) {
+      this.finalizeCurrentTextSegment(responseId);
       this.currentTextSegments.delete(responseId);
       this.segmentTexts.delete(responseId);
       this.needsNewSegment.add(responseId);
@@ -409,6 +421,7 @@ export class MessageRenderer {
 
       const responseId = this.findResponseIdForBubble(hostBubble);
       if (responseId) {
+        this.finalizeCurrentTextSegment(responseId);
         this.currentTextSegments.delete(responseId);
         this.segmentTexts.delete(responseId);
         this.needsNewSegment.add(responseId);
@@ -722,6 +735,15 @@ export class MessageRenderer {
     segment.className = 'assistant-message-main';
     this.insertBeforeTypingIndicator(bubble, segment);
     return segment;
+  }
+
+  private finalizeCurrentTextSegment(responseId: string): void {
+    const segment = this.currentTextSegments.get(responseId);
+    if (!segment || !isStreamingMarkdownText(segment)) {
+      return;
+    }
+    const text = this.segmentTexts.get(responseId) ?? segment.textContent ?? '';
+    finalizeStreamingMarkdownText(segment, text);
   }
 
   private getOrCreateThinkingElement(

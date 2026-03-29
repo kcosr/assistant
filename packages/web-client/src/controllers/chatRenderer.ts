@@ -22,7 +22,12 @@ import type {
   UserAudioEvent,
   UserMessageEvent,
 } from '@assistant/shared';
-import { applyMarkdownToElement } from '../utils/markdown';
+import {
+  applyMarkdownToElement,
+  finalizeStreamingMarkdownText,
+  isStreamingMarkdownText,
+  renderStreamingMarkdownText,
+} from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
@@ -462,7 +467,7 @@ export class ChatRenderer {
     const combined = previous + event.payload.text;
     this.assistantTextBuffers.set(bufferKey, combined);
 
-    applyMarkdownToElement(textEl, combined);
+    renderStreamingMarkdownText(textEl, combined);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -501,7 +506,7 @@ export class ChatRenderer {
 
     if (canFinalizeExistingSegment && currentTextEl) {
       this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
-      applyMarkdownToElement(currentTextEl, event.payload.text);
+      finalizeStreamingMarkdownText(currentTextEl, event.payload.text);
       if (event.payload.phase) {
         currentTextEl.dataset['phase'] = event.payload.phase;
       }
@@ -535,7 +540,7 @@ export class ChatRenderer {
 
     const text = event.payload.text;
     this.assistantTextBuffers.set(bufferKey, text);
-    applyMarkdownToElement(textEl, text);
+    finalizeStreamingMarkdownText(textEl, text);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -1747,6 +1752,7 @@ export class ChatRenderer {
    * Called when a tool block is inserted to start a new text segment after it.
    */
   private advanceTextSegment(responseId: string): void {
+    this.finalizeCurrentAssistantTextSegment(responseId);
     const current = this.textSegmentIndex.get(responseId) ?? 0;
     this.textSegmentIndex.set(responseId, current + 1);
     this.debugLog('advance_text_segment', {
@@ -1792,11 +1798,23 @@ export class ChatRenderer {
   }
 
   private markTextSegmentBreak(responseId: string): void {
+    this.finalizeCurrentAssistantTextSegment(responseId);
     this.needsNewTextSegment.add(responseId);
     this.debugLog('mark_text_segment_break', {
       responseId,
       segmentIdx: this.textSegmentIndex.get(responseId) ?? 0,
     });
+  }
+
+  private finalizeCurrentAssistantTextSegment(responseId: string): void {
+    const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
+    const segmentKey = `${responseId}:${segmentIdx}`;
+    const textEl = this.assistantTextElements.get(segmentKey);
+    if (!textEl || !isStreamingMarkdownText(textEl)) {
+      return;
+    }
+    const text = this.assistantTextBuffers.get(segmentKey) ?? textEl.textContent ?? '';
+    finalizeStreamingMarkdownText(textEl, text);
   }
 
   private getThinkingSegmentKey(responseId: string): { segmentIdx: number; segmentKey: string } {

@@ -561,6 +561,7 @@ describe('ChatRenderer', () => {
 
     let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(true);
     expect(assistantText?.textContent).toContain('Hello world');
 
     renderer.renderEvent(
@@ -572,8 +573,43 @@ describe('ChatRenderer', () => {
 
     assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
     expect(assistantText?.dataset['eventId']).toBe('e3');
     expect(assistantText?.textContent).toContain('Hello world!');
+  });
+
+  it('finalizes streamed assistant markdown before inserting a tool block', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'Before **tool**' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc-split',
+          toolName: 'bash',
+          args: { command: 'echo hi' },
+        },
+      }),
+    );
+
+    const assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+    expect(assistantText).not.toBeNull();
+    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
+    expect(assistantText?.querySelector('strong')?.textContent).toBe('tool');
   });
 
   it('finalizes the current streamed segment when assistant_done matches the same stream', () => {

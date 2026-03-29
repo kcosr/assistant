@@ -61,6 +61,33 @@ describe('MessageRenderer', () => {
     expect(bubble.querySelectorAll(':scope > .typing-indicator')).toHaveLength(0);
   });
 
+  it('finalizes streamed markdown segments when a tool splits the response', () => {
+    const chatLogEl = document.createElement('div');
+    document.body.appendChild(chatLogEl);
+
+    const renderer = new MessageRenderer({
+      chatLogEl,
+      appendMessage,
+      appendInterruptedIndicator,
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.handleEvent({ type: 'text_delta', responseId: 'r1', delta: 'Before **tool**' });
+
+    const firstSegment = chatLogEl.querySelector<HTMLDivElement>('.assistant-message-main');
+    expect(firstSegment?.classList.contains('streaming-markdown-text')).toBe(true);
+
+    renderer.handleEvent({
+      type: 'tool_call_start',
+      callId: 'c1',
+      toolName: 'bash',
+      arguments: JSON.stringify({ command: 'echo hi' }),
+    });
+
+    expect(firstSegment?.classList.contains('streaming-markdown-text')).toBe(false);
+    expect(firstSegment?.querySelector('strong')?.textContent).toBe('tool');
+  });
+
   it('preserves interrupted tool block and appends interrupted indicator on cancel', () => {
     const chatLogEl = document.createElement('div');
     document.body.appendChild(chatLogEl);
