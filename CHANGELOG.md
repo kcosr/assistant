@@ -9,8 +9,10 @@
 ### Changed
 
 ### Fixed
+- Fixed chat transcript scrolling regressions by removing the experimental turn-windowing path while keeping tool-output hydration/dehydration and streaming rendering optimizations. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ### Removed
+- Removed the unused chat turn-windowing runtime and DOM wrapper from the web client pending a future revisit. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ## [0.15.1] - 2026-03-29
 

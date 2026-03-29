@@ -4083,7 +4083,7 @@ body.panel-reordering {
   user-select: text;
 }
 
-.chat-log-content > .turn {
+.chat-log > .turn {
   content-visibility: auto;
   contain-intrinsic-size: 480px;
 }
@@ -4139,7 +4139,6 @@ body.panel-reordering {
   letter-spacing: 0.02em;
 }
 
-.chat-log-content > .turn:first-child > .turn-divider,
 .chat-log > .turn:first-child > .turn-divider {
   display: none;
 }

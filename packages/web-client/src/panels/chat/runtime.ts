@@ -7,12 +7,10 @@ import {
 import type { ToolOutputPreferencesClient } from '../../utils/toolOutputPreferences';
 import type { ThinkingPreferencesClient } from '../../utils/thinkingPreferences';
 import type { InteractionResponseDraft } from '../../utils/interactionRenderer';
-import { createTurnWindowManager } from './turnWindowManager';
 
 export interface ChatRuntimeElements {
   chatPanel: HTMLElement | null;
   chatLog: HTMLElement;
-  chatContent: HTMLElement;
   scrollToBottomButtonEl: HTMLButtonElement;
   toggleToolOutputButton: HTMLButtonElement | null;
   toggleToolExpandButton: HTMLButtonElement | null;
@@ -41,8 +39,6 @@ export interface ChatRuntime {
   chatScrollManager: ChatScrollManager;
   dispose: () => void;
 }
-
-const TURN_WINDOWING_ENABLED = false;
 
 const TOOL_OUTPUT_VIEWPORT_OVERSCAN_PX = 400;
 
@@ -160,14 +156,7 @@ function createToolOutputViewportManager(chatLog: HTMLElement): ToolOutputViewpo
 export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   const { elements, toolOutputPreferencesClient, thinkingPreferencesClient, autoScrollEnabled } =
     options;
-  const toolOutputViewportManager = createToolOutputViewportManager(elements.chatContent);
-  const turnWindowManager = TURN_WINDOWING_ENABLED
-    ? createTurnWindowManager(elements.chatLog, elements.chatContent)
-    : {
-        refresh: () => {},
-        scheduleRefresh: () => {},
-        dispose: () => {},
-      };
+  const toolOutputViewportManager = createToolOutputViewportManager(elements.chatLog);
 
   const applyToolOutputVisibility = (show: boolean): void => {
     if (elements.chatPanel) {
@@ -210,7 +199,6 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
       if (!toolOutputViewportManager.hasIntersectionObserver()) {
         toolOutputViewportManager.refresh();
       }
-      turnWindowManager.refresh();
     }
   };
 
@@ -252,7 +240,7 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
   );
   chatScrollManager.setAutoScrollEnabled(autoScrollEnabled);
 
-  const chatRenderer = new ChatRenderer(elements.chatContent, {
+  const chatRenderer = new ChatRenderer(elements.chatLog, {
     getAgentDisplayName: options.getAgentDisplayName,
     getExpandToolOutput: () => toolOutputPreferencesClient.getExpandToolOutput(),
     ...(options.getInteractionEnabled ? { getInteractionEnabled: options.getInteractionEnabled } : {}),
@@ -268,7 +256,6 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     if (!toolOutputViewportManager.hasIntersectionObserver()) {
       toolOutputViewportManager.refresh();
     }
-    turnWindowManager.scheduleRefresh();
   });
 
   elements.chatLog.addEventListener(
@@ -296,7 +283,6 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     chatRenderer,
     chatScrollManager,
     dispose: () => {
-      turnWindowManager.dispose();
       toolOutputViewportManager.dispose();
     },
   };

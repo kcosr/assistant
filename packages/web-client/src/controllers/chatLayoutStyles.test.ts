@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('chat layout styles', () => {
-  it('applies content-visibility to turns instead of the chat content wrapper', () => {
+  it('applies content-visibility directly to chat turns', () => {
     const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
     const css = readFileSync(cssPath, 'utf8');
 
-    expect(css).toContain('.chat-log-content > .turn');
-    expect(css).not.toContain('.chat-log > *');
+    expect(css).toContain('.chat-log > .turn');
+    expect(css).not.toContain('.chat-log-content > .turn');
   });
 });
