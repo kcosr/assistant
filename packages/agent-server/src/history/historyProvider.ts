@@ -9,6 +9,7 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
+import { isOverlayChatEvent, isOverlayChatEventType } from '../events/overlayEventTypes';
 import { parseAssistantTextSignature } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
 
@@ -597,18 +598,6 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function isOverlayEvent(event: ChatEvent): boolean {
-  return (
-    event.type === 'interaction_request' ||
-    event.type === 'interaction_response' ||
-    event.type === 'interaction_pending' ||
-    event.type === 'questionnaire_request' ||
-    event.type === 'questionnaire_submission' ||
-    event.type === 'questionnaire_reprompt' ||
-    event.type === 'questionnaire_update'
-  );
-}
-
 function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
   if (overlayEvents.length === 0) {
     return baseEvents;
@@ -635,7 +624,7 @@ async function mergeOverlayEvents(
   if (!eventStore) {
     return baseEvents;
   }
-  const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayEvent);
+  const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayChatEvent);
   const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
   historyDebug('merge overlay events', {
     sessionId,
@@ -1379,16 +1368,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         continue;
       }
 
-      if (
-        (chatEventType === 'interaction_request' ||
-          chatEventType === 'interaction_response' ||
-          chatEventType === 'interaction_pending' ||
-          chatEventType === 'questionnaire_request' ||
-          chatEventType === 'questionnaire_submission' ||
-          chatEventType === 'questionnaire_reprompt' ||
-          chatEventType === 'questionnaire_update') &&
-        payload
-      ) {
+      if (chatEventType && isOverlayChatEventType(chatEventType) && payload) {
         const turnId = turnIdFromEntry || currentTurnId || '';
         const responseId = responseIdFromEntry || '';
         events.push({

@@ -433,16 +433,13 @@ export class SessionRuntime {
       return undefined;
     }
 
-    const historyEvents = await this.sessionHub.loadSessionEvents(state.summary, true);
-    let questionnaireState = getQuestionnaireState(historyEvents, questionnaireRequestId);
+    const overlayEvents = await this.eventStore.getEvents(sessionId);
+    let questionnaireState = getQuestionnaireState(overlayEvents, questionnaireRequestId);
     if (!questionnaireState) {
-      // Some environments resolve overlay events from the event store rather than the
-      // history provider, so fall back before treating the questionnaire as missing.
-      const overlayEvents = await this.eventStore.getEvents(sessionId);
-      questionnaireState = getQuestionnaireState(
-        historyEvents.length > 0 ? [...historyEvents, ...overlayEvents] : overlayEvents,
-        questionnaireRequestId,
-      );
+      // Pi-backed sessions mirror overlay events through their history provider rather than the
+      // event store, so fall back to a fresh history load only when the overlay lookup misses.
+      const historyEvents = await this.sessionHub.loadSessionEvents(state.summary, true);
+      questionnaireState = getQuestionnaireState(historyEvents, questionnaireRequestId);
     }
     return {
       state,
