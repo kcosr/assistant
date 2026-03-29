@@ -4139,10 +4139,6 @@ body.panel-reordering {
   letter-spacing: 0.02em;
 }
 
-.chat-log > .turn:first-child > .turn-divider {
-  display: none;
-}
-
 .turn-divider-line {
   flex: 1;
   height: 1px;
@@ -4152,6 +4148,30 @@ body.panel-reordering {
 .turn-divider-label {
   white-space: nowrap;
   padding: 0 var(--spacing-xs);
+}
+
+.turn-divider-button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.turn-divider-button:hover,
+.turn-divider-button:focus-visible {
+  color: var(--color-text-secondary);
+  background-color: color-mix(in srgb, var(--color-bg-hover) 80%, transparent);
+  outline: none;
+}
+
+.turn-history-menu {
+  min-width: 170px;
 }
 
 .turn:last-child {

@@ -40,6 +40,8 @@ export interface UpdateSessionOptions {
   sessionConfig?: SessionConfig;
 }
 
+type SessionHistoryEditAction = 'trim_before' | 'trim_after' | 'delete_turn';
+
 export class SessionManager {
   constructor(private readonly options: SessionManagerOptions) {}
 
@@ -125,6 +127,30 @@ export class SessionManager {
     } catch (err) {
       console.error('Failed to clear session', err);
       this.options.setStatus('Failed to clear session');
+    }
+  }
+
+  async editSessionHistory(
+    sessionId: string,
+    action: SessionHistoryEditAction,
+    turnId: string,
+  ): Promise<void> {
+    try {
+      const response = await apiFetch(sessionsOperationPath('history-edit'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, action, turnId }),
+      });
+      if (!response.ok) {
+        this.options.setStatus('Failed to edit session history');
+        return;
+      }
+
+      await readSessionOperationResult<{ changed?: boolean }>(response);
+      await this.options.refreshSessions(this.options.getSelectedSessionId());
+    } catch (err) {
+      console.error('Failed to edit session history', err);
+      this.options.setStatus('Failed to edit session history');
     }
   }
 

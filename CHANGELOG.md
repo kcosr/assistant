@@ -5,9 +5,12 @@
 ### Breaking Changes
 
 ### Added
+- Added explicit Pi session `assistant.turn_start` / `assistant.turn_end` markers plus Pi-backed session history edit operations for trimming before/after a turn or deleting a specific turn. ([#69](https://github.com/kcosr/assistant/pull/69))
+- Added clickable turn timestamp dividers with chat turn history actions for trimming surrounding turns, deleting a turn, or resetting transcript history. ([#69](https://github.com/kcosr/assistant/pull/69))
 
 ### Changed
 - Changed chat web/mobile typography to use a 13px shared base size with tighter tool header padding, including an Android-specific tool-header spacing adjustment for WebView. ([#68](https://github.com/kcosr/assistant/pull/68))
+- Changed Pi callback and interrupted-run persistence so callback turns and interrupted turns close cleanly inside explicit Pi turn boundaries. ([#69](https://github.com/kcosr/assistant/pull/69))
 
 ### Fixed
 - Fixed chat transcript scrolling regressions by removing the experimental turn-windowing path while keeping tool-output hydration/dehydration and streaming rendering optimizations. ([#68](https://github.com/kcosr/assistant/pull/68))

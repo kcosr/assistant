@@ -5,6 +5,7 @@ import type { ChatEvent, ClientControlMessage, ServerMessage } from '@assistant/
 import { handleChatOutputCancel } from './chatOutputCancelHandling';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
+import type { PiSessionWriter } from '../history/piSessionWriter';
 
 describe('handleChatOutputCancel', () => {
   it('persists interrupted partial assistant text alongside interrupted tool results', async () => {
@@ -262,5 +263,68 @@ describe('handleChatOutputCancel', () => {
     expect(events.some((event) => event.type === 'interrupt')).toBe(false);
     expect(events.some((event) => event.type === 'assistant_done')).toBe(false);
     expect(recordSessionActivity).not.toHaveBeenCalled();
+  });
+
+  it('closes the Pi turn as interrupted when cancelling a Pi-backed run', async () => {
+    const sessionId = 'session-4';
+    const appendTurnEnd = vi.fn(async () => undefined);
+    const appendAssistantEvent = vi.fn(async () => undefined);
+    const piSessionWriter = {
+      appendAssistantEvent,
+      appendTurnEnd,
+    } as unknown as PiSessionWriter;
+
+    const sessionHub = {
+      broadcastToSession: vi.fn(),
+      recordSessionActivity: vi.fn(async () => undefined),
+      getPiSessionWriter: () => piSessionWriter,
+      getAgentRegistry: () => ({
+        getAgent: () => ({ chat: { provider: 'pi' } }),
+      }),
+      updateSessionAttributes: vi.fn(async () => undefined),
+    } as unknown as SessionHub;
+
+    const abortController = new AbortController();
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId,
+        agentId: 'pi',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as LogicalSessionState['summary'],
+      chatMessages: [],
+      activeChatRun: {
+        responseId: 'resp-4',
+        turnId: 'turn-4',
+        abortController,
+        accumulatedText: '',
+      },
+      messageQueue: [],
+    };
+
+    handleChatOutputCancel({
+      message: {
+        type: 'control',
+        action: 'cancel',
+        target: 'output',
+      },
+      activeRunState: { sessionId, state },
+      sessionHub,
+      broadcastOutputCancelled: vi.fn(),
+      log: vi.fn(),
+      eventStore: undefined,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(appendAssistantEvent).not.toHaveBeenCalled();
+    expect(appendTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: state.summary,
+        turnId: 'turn-4',
+        status: 'interrupted',
+      }),
+    );
   });
 });

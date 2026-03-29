@@ -8,6 +8,7 @@ import type {
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
   ServerSessionClearedMessage,
+  ServerSessionHistoryChangedMessage,
   ServerSessionCreatedMessage,
   ServerSessionDeletedMessage,
   ServerSessionUpdatedMessage,
@@ -23,7 +24,7 @@ import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
 import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
-import type { PiSessionWriter } from './history/piSessionWriter';
+import type { PiSessionWriter, PiTurnHistoryAction } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { isSessionContextUsageEqual } from './contextUsage';
 import { getSelectedSessionSkillIds } from './sessionConfig';
@@ -548,6 +549,72 @@ export class SessionHub {
     this.connections.broadcastToSession(sessionId, clearedMessage);
 
     return summary;
+  }
+
+  async editSessionHistory(options: {
+    sessionId: string;
+    action: PiTurnHistoryAction;
+    turnId: string;
+  }): Promise<{ summary: SessionSummary; changed: boolean }> {
+    const { sessionId, action, turnId } = options;
+    const existing = await this.sessionIndex.getSession(sessionId);
+    if (!existing) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (existing.deleted) {
+      throw new Error(`Cannot edit deleted session: ${sessionId}`);
+    }
+    const state = this.sessions.get(sessionId);
+    if (state?.activeChatRun) {
+      throw new Error('Cannot edit history while the session is running');
+    }
+
+    const agentId = existing.agentId;
+    const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
+    const provider = agent?.chat?.provider ?? null;
+    if (provider !== 'pi' && provider !== 'pi-cli') {
+      throw new Error('Turn history edits are only supported for Pi-backed sessions');
+    }
+    if (!this.piSessionWriter) {
+      throw new Error('Pi session writer is unavailable');
+    }
+
+    const result = await this.piSessionWriter.rewriteHistoryByTurn({
+      summary: existing,
+      action,
+      turnId,
+      updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
+    });
+    if (!result.changed) {
+      return { summary: result.summary, changed: false };
+    }
+
+    if (this.eventStore) {
+      await this.eventStore.clearSession(sessionId);
+    }
+    this.interactionRegistry.clearSession(sessionId);
+    this.cliToolCallRendezvous.clearSession(sessionId);
+
+    const summary =
+      (await this.sessionIndex.recordSessionHistoryEdit(sessionId, action, turnId)) ?? result.summary;
+
+    const currentState = this.sessions.get(sessionId);
+    if (currentState) {
+      const chatMessages = await this.resolveChatMessages(summary, true);
+      currentState.summary = summary;
+      currentState.chatMessages = chatMessages;
+    }
+
+    this.broadcastSessionUpdated(summary, { includeAttributes: true, contextUsage: null });
+
+    const changedMessage: ServerSessionHistoryChangedMessage = {
+      type: 'session_history_changed',
+      sessionId,
+      updatedAt: summary.updatedAt,
+    };
+    this.connections.broadcastToSession(sessionId, changedMessage);
+
+    return { summary, changed: true };
   }
 
   async touchSession(sessionId: string): Promise<SessionSummary | undefined> {

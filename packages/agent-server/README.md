@@ -46,6 +46,7 @@ Server listens on `http://localhost:3000` (configurable via `PORT`).
 │  ├── POST /api/plugins/sessions/operations/update-attributes → Update session attributes │
 │  ├── POST /external/sessions/:id/messages → Inject assistant (external) │
 │  ├── POST /api/plugins/sessions/operations/clear → Clear session history │
+│  ├── POST /api/plugins/sessions/operations/history-edit → Edit Pi-backed session history │
 │  ├── POST /api/plugins/sessions/operations/message → Send message (headless) │
 │  ├── POST /api/plugins/agents/operations/list → List configured agents │
 │  ├── POST /api/plugins/agents/operations/message → Send to agent │

@@ -210,6 +210,63 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('invokes the turn divider action handler with surrounding turn context', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const onTurnDividerActivate = vi.fn();
+    const renderer = new ChatRenderer(container);
+    renderer.setTurnDividerActionHandler(onTurnDividerActivate);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-turn-1',
+        turnId: 't-turn-1',
+        timestamp: new Date('2026-03-29T15:20:00.000Z').getTime(),
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('user_message', {
+        id: 'e-user-1',
+        turnId: 't-turn-1',
+        payload: { text: 'First' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-turn-2',
+        turnId: 't-turn-2',
+        timestamp: new Date('2026-03-29T15:26:00.000Z').getTime(),
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderEvent(
+      createBaseEvent('user_message', {
+        id: 'e-user-2',
+        turnId: 't-turn-2',
+        payload: { text: 'Second' },
+      }),
+    );
+
+    const secondTurnDividerButton = container.querySelector<HTMLButtonElement>(
+      '.turn[data-turn-id="t-turn-2"] .turn-divider-button',
+    );
+    expect(secondTurnDividerButton).not.toBeNull();
+
+    secondTurnDividerButton?.click();
+
+    expect(onTurnDividerActivate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        turnId: 't-turn-2',
+        anchorEl: secondTurnDividerButton,
+        hasBefore: true,
+        hasAfter: false,
+      }),
+    );
+  });
+
   it('groups contiguous tool calls within the same segment', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

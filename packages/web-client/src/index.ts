@@ -1177,6 +1177,20 @@ async function main(): Promise<void> {
     runtime.chatRenderer.setFocusInputHandler(() => {
       inputRuntime.focusInput();
     });
+    runtime.chatRenderer.setTurnDividerActionHandler(
+      ({ turnId, anchorEl, hasBefore, hasAfter }) => {
+        if (!bindingSessionId || !isSessionPiBacked(bindingSessionId)) {
+          return;
+        }
+        showTurnHistoryMenu({
+          sessionId: bindingSessionId,
+          turnId,
+          anchorEl,
+          hasBefore,
+          hasAfter,
+        });
+      },
+    );
     chatPanelsById.set(panelId, entry);
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
@@ -1365,7 +1379,9 @@ async function main(): Promise<void> {
       unsubBinding();
       unsubSessionContext();
       unsubActive();
+      closeTurnHistoryMenu();
       runtime.chatRenderer.setFocusInputHandler(null);
+      runtime.chatRenderer.setTurnDividerActionHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
         loadedChatTranscripts.delete(entry.bindingSessionId);
@@ -1487,6 +1503,19 @@ async function main(): Promise<void> {
     }
     const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
     return agent?.type === 'external';
+  }
+
+  function isSessionPiBacked(sessionId: string | null): boolean {
+    if (!sessionId) {
+      return false;
+    }
+    const session = sessionSummaries.find((summary) => summary.sessionId === sessionId) ?? null;
+    if (!session?.agentId) {
+      return false;
+    }
+    const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
+    const provider = agent?.chat?.provider ?? null;
+    return provider === 'pi' || provider === 'pi-cli';
   }
 
   function sendSetSessionModel(sessionId: string, model: string): void {
@@ -2520,6 +2549,186 @@ async function main(): Promise<void> {
       console.error('Failed to rename session', err);
       setStatus(statusEl, 'Failed to rename session');
     }
+  }
+
+  let activeTurnHistoryMenu: HTMLElement | null = null;
+  let releaseTurnHistoryMenu: (() => void) | null = null;
+
+  function closeTurnHistoryMenu(): void {
+    releaseTurnHistoryMenu?.();
+    releaseTurnHistoryMenu = null;
+    activeTurnHistoryMenu = null;
+  }
+
+  function showTurnHistoryEditConfirmation(
+    sessionId: string,
+    turnId: string,
+    action: 'trim_before' | 'trim_after' | 'delete_turn',
+  ): void {
+    panelWorkspace?.closeHeaderPopover();
+    const options =
+      action === 'trim_before'
+        ? {
+            title: 'Trim Before',
+            message: 'Remove all turns before this one? This turn will be kept.',
+            confirmText: 'Trim',
+          }
+        : action === 'trim_after'
+          ? {
+              title: 'Trim After',
+              message: 'Remove all turns after this one? This turn will be kept.',
+              confirmText: 'Trim',
+            }
+          : {
+              title: 'Delete Turn',
+              message: 'Remove this turn from the session history?',
+              confirmText: 'Delete',
+            };
+
+    dialogManager.showConfirmDialog({
+      ...options,
+      confirmClassName: action === 'delete_turn' ? 'danger' : 'primary',
+      onConfirm: () => {
+        void requireSessionManager().editSessionHistory(sessionId, action, turnId);
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  function showResetHistoryConfirmation(sessionId: string): void {
+    panelWorkspace?.closeHeaderPopover();
+    dialogManager.showConfirmDialog({
+      title: 'Reset History',
+      message: 'Clear all transcript turns from this session? The session itself will be kept.',
+      confirmText: 'Reset',
+      confirmClassName: 'danger',
+      onConfirm: () => {
+        void clearSession(sessionId);
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  function showTurnHistoryMenu(options: {
+    sessionId: string;
+    turnId: string;
+    anchorEl: HTMLElement;
+    hasBefore: boolean;
+    hasAfter: boolean;
+  }): void {
+    const { sessionId, turnId, anchorEl, hasBefore, hasAfter } = options;
+    if (
+      activeTurnHistoryMenu &&
+      activeTurnHistoryMenu.dataset['sessionId'] === sessionId &&
+      activeTurnHistoryMenu.dataset['turnId'] === turnId
+    ) {
+      closeTurnHistoryMenu();
+      return;
+    }
+
+    closeTurnHistoryMenu();
+
+    const menu = document.createElement('div');
+    menu.className = 'context-menu turn-history-menu';
+    menu.dataset['sessionId'] = sessionId;
+    menu.dataset['turnId'] = turnId;
+
+    const addMenuItem = (
+      label: string,
+      onClick: () => void,
+      extraClass?: string,
+    ): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = extraClass ? `context-menu-item ${extraClass}` : 'context-menu-item';
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        closeTurnHistoryMenu();
+        onClick();
+      });
+      menu.appendChild(button);
+      return button;
+    };
+
+    if (hasBefore) {
+      addMenuItem('Trim Before', () => {
+        showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_before');
+      });
+    }
+
+    addMenuItem(
+      'Delete Turn',
+      () => {
+        showTurnHistoryEditConfirmation(sessionId, turnId, 'delete_turn');
+      },
+      'danger',
+    );
+
+    if (hasAfter) {
+      addMenuItem('Trim After', () => {
+        showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_after');
+      });
+    }
+
+    addMenuItem(
+      'Reset History',
+      () => {
+        showResetHistoryConfirmation(sessionId);
+      },
+      'danger',
+    );
+
+    document.body.appendChild(menu);
+    activeTurnHistoryMenu = menu;
+
+    const anchorRect = anchorEl.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let left = anchorRect.left + anchorRect.width / 2 - menuRect.width / 2;
+    let top = anchorRect.bottom + 6;
+    if (left + menuRect.width > window.innerWidth - 8) {
+      left = window.innerWidth - menuRect.width - 8;
+    }
+    if (left < 8) {
+      left = 8;
+    }
+    if (top + menuRect.height > window.innerHeight - 8) {
+      top = anchorRect.top - menuRect.height - 6;
+    }
+    if (top < 8) {
+      top = 8;
+    }
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    const handleOutside = (event: MouseEvent | FocusEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== 'Escape') {
+        return;
+      }
+      if (event.target instanceof Node && menu.contains(event.target)) {
+        return;
+      }
+      closeTurnHistoryMenu();
+    };
+
+    const scrollTarget = anchorEl.closest('.chat-log');
+    const handleScroll = () => {
+      closeTurnHistoryMenu();
+    };
+
+    document.addEventListener('click', handleOutside);
+    document.addEventListener('contextmenu', handleOutside);
+    document.addEventListener('keydown', handleOutside);
+    scrollTarget?.addEventListener('scroll', handleScroll, { passive: true });
+
+    releaseTurnHistoryMenu = () => {
+      menu.remove();
+      document.removeEventListener('click', handleOutside);
+      document.removeEventListener('contextmenu', handleOutside);
+      document.removeEventListener('keydown', handleOutside);
+      scrollTarget?.removeEventListener('scroll', handleScroll);
+    };
   }
 
   function showClearHistoryConfirmation(sessionId: string): void {

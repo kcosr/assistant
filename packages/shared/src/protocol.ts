@@ -648,6 +648,12 @@ export const ServerSessionUpdatedMessageSchema = z.object({
   contextUsage: SessionContextUsageSchema.nullable().optional(),
 });
 
+export const ServerSessionHistoryChangedMessageSchema = z.object({
+  type: z.literal('session_history_changed'),
+  sessionId: z.string(),
+  updatedAt: z.string(),
+});
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerSessionReadyMessageSchema,
   ServerTextDeltaMessageSchema,
@@ -678,6 +684,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerSessionCreatedMessageSchema,
   ServerSessionDeletedMessageSchema,
   ServerSessionUpdatedMessageSchema,
+  ServerSessionHistoryChangedMessageSchema,
 ]);
 
 export type ServerSessionReadyMessage = z.infer<typeof ServerSessionReadyMessageSchema>;
@@ -711,6 +718,9 @@ export type ServerSessionClearedMessage = z.infer<typeof ServerSessionClearedMes
 export type ServerSessionCreatedMessage = z.infer<typeof ServerSessionCreatedMessageSchema>;
 export type ServerSessionDeletedMessage = z.infer<typeof ServerSessionDeletedMessageSchema>;
 export type ServerSessionUpdatedMessage = z.infer<typeof ServerSessionUpdatedMessageSchema>;
+export type ServerSessionHistoryChangedMessage = z.infer<
+  typeof ServerSessionHistoryChangedMessageSchema
+>;
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 export type SavedView = z.infer<typeof SavedViewSchema>;

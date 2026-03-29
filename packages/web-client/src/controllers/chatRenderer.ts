@@ -66,6 +66,13 @@ export interface ChatRendererOptions {
     interactionId: string;
     response: InteractionResponseDraft;
   }) => void;
+  onTurnDividerActivate?: (options: {
+    turnId: string;
+    timestamp: number;
+    anchorEl: HTMLElement;
+    hasBefore: boolean;
+    hasAfter: boolean;
+  }) => void;
 }
 
 export class ChatRenderer {
@@ -109,6 +116,15 @@ export class ChatRenderer {
   private debugEnabled: boolean | null = null;
   private suppressTypingIndicator = false;
   private focusInputHandler: (() => void) | null = null;
+  private turnDividerActionHandler:
+    | ((options: {
+        turnId: string;
+        timestamp: number;
+        anchorEl: HTMLElement;
+        hasBefore: boolean;
+        hasAfter: boolean;
+      }) => void)
+    | null;
   private readonly turnTimestampFormatter = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
@@ -117,6 +133,7 @@ export class ChatRenderer {
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
     this.options = options;
+    this.turnDividerActionHandler = options.onTurnDividerActivate ?? null;
   }
 
   get isStreaming(): boolean {
@@ -355,6 +372,20 @@ export class ChatRenderer {
 
   setFocusInputHandler(handler: (() => void) | null): void {
     this.focusInputHandler = handler;
+  }
+
+  setTurnDividerActionHandler(
+    handler:
+      | ((options: {
+          turnId: string;
+          timestamp: number;
+          anchorEl: HTMLElement;
+          hasBefore: boolean;
+          hasAfter: boolean;
+        }) => void)
+      | null,
+  ): void {
+    this.turnDividerActionHandler = handler;
   }
 
   focusFirstQuestionnaireInput(): boolean {
@@ -1717,13 +1748,31 @@ export class ChatRenderer {
 
     const divider = document.createElement('div');
     divider.className = 'turn-divider';
-    divider.setAttribute('aria-hidden', 'true');
 
     const leftLine = document.createElement('span');
     leftLine.className = 'turn-divider-line';
-    const label = document.createElement('span');
-    label.className = 'turn-divider-label';
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'turn-divider-label turn-divider-button';
     label.textContent = this.turnTimestampFormatter.format(new Date(timestamp));
+    label.setAttribute('aria-label', 'Turn actions');
+    label.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const turnId = turnEl.dataset['turnId'];
+      if (!turnId || !this.turnDividerActionHandler) {
+        return;
+      }
+      const previousTurn = turnEl.previousElementSibling;
+      const nextTurn = turnEl.nextElementSibling;
+      this.turnDividerActionHandler({
+        turnId,
+        timestamp,
+        anchorEl: label,
+        hasBefore: previousTurn instanceof HTMLElement && previousTurn.classList.contains('turn'),
+        hasAfter: nextTurn instanceof HTMLElement && nextTurn.classList.contains('turn'),
+      });
+    });
     const rightLine = document.createElement('span');
     rightLine.className = 'turn-divider-line';
 

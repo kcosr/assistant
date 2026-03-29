@@ -194,4 +194,114 @@ describe('SessionHub clearSession', () => {
     const updated = await sessionIndex.getSession(session.sessionId);
     expect(updated?.attributes?.['providers']).toBeUndefined();
   });
+
+  it('rewrites Pi history for turn edits and clears stale context usage', async () => {
+    const sessionsFile = createTempFile('session-hub-edit-history');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = createTempDir('pi-sessions-edit');
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-edit-history',
+      agentId: 'pi-agent',
+    });
+    const summaryWithDir =
+      (await sessionIndex.updateSessionAttributes(session.sessionId, {
+        core: { workingDir: '/tmp/project' },
+      })) ?? session;
+    await sessionIndex.setSessionContextUsage(session.sessionId, {
+      availablePercent: 50,
+      contextWindow: 200000,
+      usage: {
+        input: 100,
+        output: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 150,
+      },
+    });
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter,
+    });
+
+    let summary =
+      (await sessionIndex.getSession(session.sessionId)) ?? summaryWithDir;
+
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+
+    summary = (await sessionIndex.getSession(session.sessionId)) ?? summary;
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+
+    const result = await sessionHub.editSessionHistory({
+      sessionId: session.sessionId,
+      action: 'trim_before',
+      turnId: 'turn-2',
+    });
+
+    expect(result.changed).toBe(true);
+    const updated = await sessionIndex.getSession(session.sessionId);
+    expect(updated?.contextUsage).toBeUndefined();
+
+    const encoded = encodePiCwd('/tmp/project');
+    const sessionDir = path.join(baseDir, encoded);
+    const files = await fs.readdir(sessionDir);
+    const sessionFile = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(sessionFile, 'utf8');
+    expect(content).not.toContain('first turn');
+    expect(content).toContain('second turn');
+  });
 });

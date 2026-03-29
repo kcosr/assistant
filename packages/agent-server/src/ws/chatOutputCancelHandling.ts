@@ -160,7 +160,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   }
 
   const piSessionWriter = sessionHub.getPiSessionWriter?.();
-  if (piSessionWriter && hasOutputActivity) {
+  if (piSessionWriter && run.turnId) {
     const agentId = state.summary.agentId;
     const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
     if (agent?.chat?.provider === 'pi') {
@@ -179,12 +179,20 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
               updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
             });
           }
-          await piSessionWriter.appendAssistantEvent({
+          if (hasOutputActivity) {
+            await piSessionWriter.appendAssistantEvent({
+              summary: state.summary,
+              eventType: 'interrupt',
+              payload: { reason: 'user_cancel' },
+              ...(run.turnId ? { turnId: run.turnId } : {}),
+              ...(run.responseId ? { responseId: run.responseId } : {}),
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+          }
+          await piSessionWriter.appendTurnEnd({
             summary: state.summary,
-            eventType: 'interrupt',
-            payload: { reason: 'user_cancel' },
-            ...(run.turnId ? { turnId: run.turnId } : {}),
-            ...(run.responseId ? { responseId: run.responseId } : {}),
+            turnId: run.turnId,
+            status: 'interrupted',
             updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
           });
         } catch (err) {

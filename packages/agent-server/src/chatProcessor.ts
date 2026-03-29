@@ -102,6 +102,12 @@ export interface ChatProcessorOptions {
     fromSessionId: string;
     fromAgentId?: string;
     responseId?: string;
+    callbackEvent?: {
+      messageId: string;
+      fromAgentId?: string;
+      fromSessionId: string;
+      result: string;
+    };
     /**
      * Optional override for how the message is logged when it
      * originates from another agent. When omitted, the message is
@@ -186,7 +192,6 @@ export async function processUserMessage(
   // Emit ChatEvents unless logType is 'none'. 'callback' emits events but skips user_message.
   const logType = agentMessageContext?.logType;
   const shouldEmitChatEvents = !!eventStore && logType !== 'none';
-  const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
 
   const startTime = Date.now();
   const responseId = options.responseId ?? randomUUID();
@@ -205,6 +210,47 @@ export async function processUserMessage(
   const agentId = state.summary.agentId;
   const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
+  const turnId = shouldEmitChatEvents || chatProvider === 'pi' ? randomUUID() : undefined;
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  if (piSessionWriter && chatProvider === 'pi' && turnId) {
+    const trigger: TurnStartTrigger =
+      agentMessageContext?.logType === 'callback' ? 'callback' : 'user';
+    try {
+      const updatedSummary = await piSessionWriter.appendTurnStart({
+        summary: state.summary,
+        turnId,
+        trigger,
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+      });
+      if (updatedSummary) {
+        state.summary = updatedSummary;
+      }
+      if (
+        agentMessageContext?.logType === 'callback' &&
+        agentMessageContext.callbackEvent
+      ) {
+        const updatedSummaryFromEvent = await piSessionWriter.appendAssistantEvent({
+          summary: state.summary,
+          eventType: 'agent_callback',
+          payload: {
+            messageId: agentMessageContext.callbackEvent.messageId,
+            ...(agentMessageContext.callbackEvent.fromAgentId
+              ? { fromAgentId: agentMessageContext.callbackEvent.fromAgentId }
+              : {}),
+            fromSessionId: agentMessageContext.callbackEvent.fromSessionId,
+            result: agentMessageContext.callbackEvent.result,
+          },
+          turnId,
+          updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+        });
+        if (updatedSummaryFromEvent) {
+          state.summary = updatedSummaryFromEvent;
+        }
+      }
+    } catch (err) {
+      log('failed to append Pi turn start', err);
+    }
+  }
   if (shouldEmitChatEvents && eventStore && turnId) {
     const trigger: TurnStartTrigger = agentMessageContext
       ? logType === 'callback'
@@ -222,6 +268,21 @@ export async function processUserMessage(
         payload: { trigger },
       },
     ];
+    if (logType === 'callback' && agentMessageContext?.callbackEvent) {
+      events.push({
+        ...createChatEventBase({
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+        }),
+        type: 'agent_callback',
+        payload: {
+          messageId: agentMessageContext.callbackEvent.messageId,
+          fromAgentId: agentMessageContext.callbackEvent.fromAgentId ?? 'unknown',
+          fromSessionId: agentMessageContext.callbackEvent.fromSessionId,
+          result: agentMessageContext.callbackEvent.result,
+        },
+      });
+    }
 
     // Skip user_message for 'callback' (internal callback text shouldn't be shown)
     const skipUserMessage = logType === 'callback';
@@ -419,7 +480,6 @@ export async function processUserMessage(
 
     const wasAborted = runResult.aborted || abortSignal.aborted;
     if (wasAborted) {
-      const piSessionWriter = sessionHub.getPiSessionWriter?.();
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
@@ -440,6 +500,17 @@ export async function processUserMessage(
           });
           if (updatedSummary) {
             state.summary = updatedSummary;
+          }
+          if (turnId) {
+            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
+              summary: state.summary,
+              turnId,
+              status: 'interrupted',
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+            if (updatedSummaryAfterTurnEnd) {
+              state.summary = updatedSummaryAfterTurnEnd;
+            }
           }
         } catch (err) {
           log('failed to sync Pi session history', err);
@@ -544,7 +615,6 @@ export async function processUserMessage(
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 
-      const piSessionWriter = sessionHub.getPiSessionWriter?.();
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
@@ -570,6 +640,17 @@ export async function processUserMessage(
           });
           if (updatedSummary) {
             state.summary = updatedSummary;
+          }
+          if (turnId) {
+            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
+              summary: state.summary,
+              turnId,
+              status: 'completed',
+              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+            });
+            if (updatedSummaryAfterTurnEnd) {
+              state.summary = updatedSummaryAfterTurnEnd;
+            }
           }
         } catch (err) {
           log('failed to sync Pi session history', err);

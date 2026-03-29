@@ -311,6 +311,180 @@ describe('PiSessionHistoryProvider', () => {
     expect(interactionEvent?.payload.toolCallId).toBe('call-1');
   });
 
+  it('uses explicit Pi turn markers as authoritative turn boundaries', async () => {
+    const baseDir = await createTempDir('pi-session-history-turn-markers');
+    const sessionId = 'session-marked';
+    const piSessionId = 'pi-session-marked';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-21T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'turn-start-1',
+        parentId: null,
+        timestamp: '2026-01-21T00:00:00.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-explicit-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-user-1',
+        parentId: 'turn-start-1',
+        timestamp: '2026-01-21T00:00:01.000Z',
+        message: { role: 'user', id: 'ignored-user-id', content: 'Hello there' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-assistant-1',
+        parentId: 'msg-user-1',
+        timestamp: '2026-01-21T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          id: 'ignored-assistant-id',
+          content: [{ type: 'text', text: 'Hi back' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'turn-end-1',
+        parentId: 'msg-assistant-1',
+        timestamp: '2026-01-21T00:00:03.000Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-explicit-1', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi',
+      chat: { provider: 'pi' },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+    });
+
+    const turnStarts = events.filter((event) => event.type === 'turn_start');
+    const turnEnds = events.filter((event) => event.type === 'turn_end');
+    const user = events.find((event) => event.type === 'user_message');
+    const assistant = events.find((event) => event.type === 'assistant_done');
+
+    expect(turnStarts).toHaveLength(1);
+    expect(turnStarts[0]?.turnId).toBe('turn-explicit-1');
+    expect(turnStarts[0]?.payload).toEqual({ trigger: 'user' });
+    expect(user?.turnId).toBe('turn-explicit-1');
+    expect(assistant?.turnId).toBe('turn-explicit-1');
+    expect(turnEnds).toHaveLength(1);
+    expect(turnEnds[0]?.turnId).toBe('turn-explicit-1');
+  });
+
+  it('supports mixed replay with unmarked history before explicit turn markers', async () => {
+    const baseDir = await createTempDir('pi-session-history-mixed');
+    const sessionId = 'session-mixed';
+    const piSessionId = 'pi-session-mixed';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-22T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: { role: 'user', id: 'legacy-turn', content: 'Legacy hello' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'legacy-resp',
+          content: [{ type: 'text', text: 'Legacy reply' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'turn-start-2',
+        parentId: null,
+        timestamp: '2026-01-22T00:00:03.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-explicit-2', trigger: 'callback' },
+      }),
+      JSON.stringify({
+        type: 'custom_message',
+        id: 'callback-input-1',
+        parentId: 'turn-start-2',
+        timestamp: '2026-01-22T00:00:04.000Z',
+        customType: 'assistant.input',
+        content: 'Hidden callback input',
+        display: false,
+        details: { kind: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'callback-resp',
+          content: [{ type: 'text', text: 'Callback handled' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'turn-end-2',
+        parentId: 'callback-resp',
+        timestamp: '2026-01-22T00:00:06.000Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-explicit-2', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi',
+      chat: { provider: 'pi' },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+    });
+
+    const turnStarts = events.filter((event) => event.type === 'turn_start');
+    const turnEnds = events.filter((event) => event.type === 'turn_end');
+    const legacyUser = events.find(
+      (event) => event.type === 'user_message' && event.payload.text === 'Legacy hello',
+    );
+    const callbackInput = events.find(
+      (event) => event.type === 'agent_message' && event.payload.message === 'Hidden callback input',
+    );
+
+    expect(turnStarts).toHaveLength(2);
+    expect(turnEnds).toHaveLength(2);
+    expect(legacyUser?.turnId).toBe('legacy-turn');
+    expect(callbackInput?.turnId).toBe('turn-explicit-2');
+    expect(turnStarts[1]?.turnId).toBe('turn-explicit-2');
+    expect(turnStarts[1]?.payload).toEqual({ trigger: 'callback' });
+  });
+
   it('skips aborted assistant messages when mapping Pi history', async () => {
     const baseDir = await createTempDir('pi-session-history-aborted');
     const sessionId = 'session-aborted';

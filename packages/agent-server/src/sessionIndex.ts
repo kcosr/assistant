@@ -543,6 +543,36 @@ export class SessionIndex {
     return existing;
   }
 
+  async recordSessionHistoryEdit(
+    sessionId: string,
+    action: 'trim_before' | 'trim_after' | 'delete_turn',
+    turnId: string,
+  ): Promise<SessionSummary | undefined> {
+    await this.ensureLoaded();
+
+    const existing = this.sessions.get(sessionId);
+    if (!existing || existing.deleted) {
+      return undefined;
+    }
+
+    const timestamp = new Date().toISOString();
+    existing.updatedAt = timestamp;
+    delete existing.lastSnippet;
+    delete existing.contextUsage;
+    this.sessions.set(sessionId, existing);
+
+    const record: SessionIndexRecord = {
+      type: 'session_history_edited',
+      sessionId,
+      timestamp,
+      action,
+      turnId,
+    };
+    await this.append(record);
+
+    return { ...existing };
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) {
       return;

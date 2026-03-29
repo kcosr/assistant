@@ -117,6 +117,7 @@ All session-specific messages include `sessionId` field.
 | `session_created`   | New session created (broadcast to all) |
 | `session_deleted`   | Session deleted (broadcast to all)     |
 | `session_updated`   | Session timestamp updated              |
+| `session_history_changed` | Transcript history was rewritten and should be force-reloaded |
 | `thinking_start`    | Assistant thinking started             |
 | `thinking_delta`    | Streaming thinking chunk               |
 | `thinking_done`     | Complete thinking content              |

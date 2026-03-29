@@ -48,7 +48,7 @@ export interface ServerMessageHandlerOptions {
   supportsAudioOutput: () => boolean;
   enableAudioResponses: () => void;
   refreshSessions: (preferredSessionId?: string | null) => Promise<void>;
-  loadSessionTranscript: (sessionId: string) => Promise<void>;
+  loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
   renderAgentSidebar: () => void;
   appendMessage: (
     container: HTMLElement,
@@ -573,6 +573,14 @@ export class ServerMessageHandler {
           this.options.renderAgentSidebar();
           this.options.onSessionUpdated?.(message.sessionId);
         }
+        break;
+      }
+      case 'session_history_changed': {
+        const sessionId = message.sessionId;
+        if (sessionId) {
+          void this.options.loadSessionTranscript(sessionId, { force: true });
+        }
+        void this.options.refreshSessions(this.options.getSelectedSessionId());
         break;
       }
       case 'panel_event': {
