@@ -4129,6 +4129,32 @@ body.panel-reordering {
   margin-bottom: var(--spacing-xl);
 }
 
+.turn-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+}
+
+.chat-log-content > .turn:first-child > .turn-divider,
+.chat-log > .turn:first-child > .turn-divider {
+  display: none;
+}
+
+.turn-divider-line {
+  flex: 1;
+  height: 1px;
+  background-color: color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+}
+
+.turn-divider-label {
+  white-space: nowrap;
+  padding: 0 var(--spacing-xs);
+}
+
 .turn:last-child {
   margin-bottom: 0;
 }

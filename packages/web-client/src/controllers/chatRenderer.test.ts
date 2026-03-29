@@ -170,6 +170,46 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('renders a turn divider with the turn timestamp', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log-content';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const timestamp = new Date('2026-03-29T15:26:00.000Z').getTime();
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-turn',
+        timestamp,
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('user_message', {
+        id: 'e-user',
+        turnId: 't-turn',
+        timestamp: timestamp + 1,
+        responseId: undefined,
+        payload: { text: 'Hello' },
+      }),
+    );
+
+    const turn = container.querySelector<HTMLDivElement>('.turn');
+    expect(turn).not.toBeNull();
+    const divider = turn?.querySelector<HTMLDivElement>(':scope > .turn-divider');
+    expect(divider).not.toBeNull();
+    expect(divider?.querySelectorAll('.turn-divider-line')).toHaveLength(2);
+    expect(divider?.querySelector<HTMLElement>('.turn-divider-label')?.textContent).toBe(
+      new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(timestamp)),
+    );
+  });
+
   it('groups contiguous tool calls within the same segment', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

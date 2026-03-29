@@ -109,6 +109,10 @@ export class ChatRenderer {
   private debugEnabled: boolean | null = null;
   private suppressTypingIndicator = false;
   private focusInputHandler: (() => void) | null = null;
+  private readonly turnTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -394,7 +398,7 @@ export class ChatRenderer {
 
   private handleTurnStart(event: TurnStartEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    this.getOrCreateTurnContainer(turnId);
+    this.getOrCreateTurnContainer(turnId, event.timestamp);
   }
 
   private handleTurnEnd(event: TurnEndEvent): void {
@@ -407,7 +411,7 @@ export class ChatRenderer {
 
   private handleUserMessage(event: UserMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const text = stripContextLine(event.payload.text);
     const bubble = appendMessage(turnEl, 'user', text);
@@ -433,7 +437,7 @@ export class ChatRenderer {
 
   private handleUserAudio(event: UserAudioEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const transcription = event.payload.transcription;
     const bubble = appendMessage(turnEl, 'user', transcription);
@@ -456,6 +460,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
@@ -542,6 +547,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
 
@@ -583,6 +589,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
     const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
@@ -608,6 +615,7 @@ export class ChatRenderer {
       event.turnId,
       event.id,
       responseId,
+      event.timestamp,
     );
     const { segmentIdx, segmentKey } = this.getThinkingSegmentKey(responseId);
     const thinkingEl = this.getOrCreateThinkingElement(segmentKey, responseEl, segmentIdx);
@@ -650,7 +658,7 @@ export class ChatRenderer {
 
   private handleCustomMessage(event: CustomMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
     const label = event.payload.label?.trim();
     const messageEl = this.renderInfoMessage(turnEl, text, {
@@ -664,7 +672,7 @@ export class ChatRenderer {
 
   private handleSummaryMessage(event: SummaryMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
     const summaryType = event.payload.summaryType;
     const label =
@@ -740,7 +748,13 @@ export class ChatRenderer {
       }
     } else {
       // Create new block
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       // Use styled agent block for agents_message
       if (isAgentMessageTool) {
@@ -855,7 +869,13 @@ export class ChatRenderer {
     if (!block) {
       // Create the block early so we can show streaming input
       const responseId = this.getResponseId(event.responseId);
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       const headerLabel = extractToolCallLabel(toolName, '');
       block = createToolOutputBlock({
@@ -940,7 +960,13 @@ export class ChatRenderer {
       if (this.questionnaireToolCalls.has(callId)) {
         return;
       }
-      const responseEl = this.getOrCreateToolCallContainer(event.id, event.turnId, callId, responseId);
+      const responseEl = this.getOrCreateToolCallContainer(
+        event.id,
+        event.turnId,
+        callId,
+        responseId,
+        event.timestamp,
+      );
 
       block = createToolOutputBlock({
         callId,
@@ -1246,6 +1272,7 @@ export class ChatRenderer {
       event.turnId,
       payload.toolCallId,
       responseId,
+      event.timestamp,
     );
     const block = createToolOutputBlock({
       callId: payload.toolCallId,
@@ -1315,13 +1342,19 @@ export class ChatRenderer {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
       const container =
         responseId
-          ? this.getOrCreateAssistantResponseContainer(event.turnId, event.id, responseId)
+          ? this.getOrCreateAssistantResponseContainer(
+              event.turnId,
+              event.id,
+              responseId,
+              event.timestamp,
+            )
           : fallbackContainer ??
             this.getOrCreateToolCallContainer(
               event.id,
               event.turnId,
               payload.toolCallId,
               responseId,
+              event.timestamp,
             );
       container.appendChild(element);
     }
@@ -1601,7 +1634,7 @@ export class ChatRenderer {
     // Only add turn-level indicator if no tool blocks were interrupted
     if (!hasInterruptedToolBlock) {
       const turnId = this.getTurnId(event.turnId, event.id);
-      const turnEl = this.getOrCreateTurnContainer(turnId);
+      const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
       const indicator = document.createElement('div');
       indicator.className = 'message-interrupted';
@@ -1614,7 +1647,7 @@ export class ChatRenderer {
 
   private handleError(event: ErrorEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const errorEl = document.createElement('div');
     errorEl.className = 'error-message';
@@ -1656,19 +1689,46 @@ export class ChatRenderer {
     return hasInterruptedToolBlock;
   }
 
-  private getOrCreateTurnContainer(turnId: string): HTMLDivElement {
+  private getOrCreateTurnContainer(turnId: string, timestamp?: number): HTMLDivElement {
     const existing = this.turnElements.get(turnId);
     if (existing) {
+      this.ensureTurnTimestamp(existing, timestamp);
       return existing;
     }
 
     const turnEl = document.createElement('div');
     turnEl.className = 'turn';
     turnEl.dataset['turnId'] = turnId;
+    this.ensureTurnTimestamp(turnEl, timestamp);
     this.container.appendChild(turnEl);
 
     this.turnElements.set(turnId, turnEl);
     return turnEl;
+  }
+
+  private ensureTurnTimestamp(turnEl: HTMLDivElement, timestamp?: number): void {
+    if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+      return;
+    }
+    if (turnEl.dataset['turnTimestamp']) {
+      return;
+    }
+    turnEl.dataset['turnTimestamp'] = String(timestamp);
+
+    const divider = document.createElement('div');
+    divider.className = 'turn-divider';
+    divider.setAttribute('aria-hidden', 'true');
+
+    const leftLine = document.createElement('span');
+    leftLine.className = 'turn-divider-line';
+    const label = document.createElement('span');
+    label.className = 'turn-divider-label';
+    label.textContent = this.turnTimestampFormatter.format(new Date(timestamp));
+    const rightLine = document.createElement('span');
+    rightLine.className = 'turn-divider-line';
+
+    divider.append(leftLine, label, rightLine);
+    turnEl.prepend(divider);
   }
 
   private getDisplayToolNameForOutput(block: HTMLDivElement, eventToolName?: string): string {
@@ -1688,9 +1748,10 @@ export class ChatRenderer {
     turnIdRaw: string | undefined,
     toolCallId: string,
     responseId: string | null,
+    timestamp?: number,
   ): HTMLDivElement {
     if (responseId) {
-      return this.getOrCreateAssistantResponseContainer(turnIdRaw, eventId, responseId);
+      return this.getOrCreateAssistantResponseContainer(turnIdRaw, eventId, responseId, timestamp);
     }
 
     const existing = this.toolCallContainers.get(toolCallId);
@@ -1699,7 +1760,7 @@ export class ChatRenderer {
     }
 
     const turnId = this.getTurnId(turnIdRaw, eventId);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, timestamp);
 
     const responseEl = document.createElement('div');
     responseEl.className = 'assistant-response tool-call-only';
@@ -1716,6 +1777,7 @@ export class ChatRenderer {
     turnIdRaw: string | undefined,
     fallbackTurnKey: string,
     responseId: string,
+    timestamp?: number,
   ): HTMLDivElement {
     const existing = this.responseElements.get(responseId);
     if (existing) {
@@ -1723,7 +1785,7 @@ export class ChatRenderer {
     }
 
     const turnId = this.getTurnId(turnIdRaw, fallbackTurnKey);
-    const turnEl = this.getOrCreateTurnContainer(turnId);
+    const turnEl = this.getOrCreateTurnContainer(turnId, timestamp);
 
     const responseEl = document.createElement('div');
     responseEl.className = 'assistant-response';
