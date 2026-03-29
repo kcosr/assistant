@@ -1328,6 +1328,7 @@ export class ChatRenderer {
       action: 'submit',
       input: event.payload.answers,
     });
+    this.questionnaireRequests.delete(event.payload.questionnaireRequestId);
   }
 
   private handleQuestionnaireUpdate(event: QuestionnaireUpdateEvent): void {
@@ -1357,6 +1358,7 @@ export class ChatRenderer {
       action: 'cancel',
       ...(event.payload.reason ? { reason: event.payload.reason } : {}),
     });
+    this.questionnaireRequests.delete(event.payload.questionnaireRequestId);
   }
 
   private updateTypingSuppression(): void {

@@ -181,4 +181,82 @@ describe('questions plugin', () => {
     expect((appendedEvents[0] as { type?: string }).type).toBe('questionnaire_request');
     expect(broadcastEvents).toHaveLength(1);
   });
+
+  it('converts timed-out sync questionnaires into async mode when requested', async () => {
+    const appendedEvents: unknown[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        appendedEvents.push(event);
+      },
+      appendBatch: async (_sessionId, events) => {
+        appendedEvents.push(...events);
+      },
+      getEvents: async () => [],
+      getEventsSince: async () => [],
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+    const sessionHub = {
+      broadcastToSession: () => {},
+    } as SessionHub;
+    const ctx = createTestContext({
+      eventStore,
+      sessionHub,
+      requestInteraction: async (request) => {
+        const outcome = await request.onTimeout?.();
+        return 'complete' in (outcome ?? {}) ? outcome.complete : outcome;
+      },
+    });
+
+    const plugin = createTestPlugin();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    const result = (await ops.ask(
+      {
+        onTimeout: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+      },
+      ctx,
+    )) as { pending?: boolean; mode?: string; convertedFromSync?: boolean };
+
+    expect(result.pending).toBe(true);
+    expect(result.mode).toBe('async');
+    expect(result.convertedFromSync).toBe(true);
+    expect((appendedEvents[0] as { type?: string }).type).toBe('questionnaire_request');
+  });
+
+  it('returns a cancelled result when sync timeout is configured to cancel', async () => {
+    const ctx = createTestContext({
+      requestInteraction: async (request) => {
+        const outcome = await request.onTimeout?.();
+        return 'complete' in (outcome ?? {}) ? outcome.complete : outcome;
+      },
+    });
+
+    const plugin = createTestPlugin();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    const result = (await ops.ask(
+      {
+        onTimeout: 'cancel',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name' }],
+        },
+      },
+      ctx,
+    )) as { ok?: boolean; cancelled?: boolean };
+
+    expect(result).toEqual({ ok: false, cancelled: true });
+  });
 });

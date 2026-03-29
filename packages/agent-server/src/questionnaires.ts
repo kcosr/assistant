@@ -123,16 +123,23 @@ export function buildQuestionnaireCallbackText(options: {
     interactionId,
     submittedAt,
   } = options;
-  const encodedAnswers = JSON.stringify(answers).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const encodeAttribute = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  const encodedAnswers = encodeAttribute(JSON.stringify(answers));
   const title = schemaTitle?.trim() ?? '';
   return [
     `<questionnaire-response`,
-    ` questionnaire-request-id="${questionnaireRequestId}"`,
-    ` tool-call-id="${toolCallId}"`,
-    interactionId ? ` interaction-id="${interactionId}"` : '',
-    ` tool="${toolName}"`,
-    title ? ` schema-title="${title.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` : '',
-    ` submitted-at="${submittedAt}"`,
+    ` questionnaire-request-id="${encodeAttribute(questionnaireRequestId)}"`,
+    ` tool-call-id="${encodeAttribute(toolCallId)}"`,
+    interactionId ? ` interaction-id="${encodeAttribute(interactionId)}"` : '',
+    ` tool="${encodeAttribute(toolName)}"`,
+    title ? ` schema-title="${encodeAttribute(title)}"` : '',
+    ` submitted-at="${encodeAttribute(submittedAt)}"`,
     ` answers-json="${encodedAnswers}" />`,
   ].join('');
 }

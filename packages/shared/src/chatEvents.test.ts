@@ -159,4 +159,39 @@ describe('chat event validation', () => {
     expect(validateChatEvent(request)).toEqual(request);
     expect(validateChatEvent(submission)).toEqual(submission);
   });
+
+  it('accepts questionnaire reprompt and update events', () => {
+    const reprompt: ChatEvent = {
+      id: 'event-9',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_reprompt',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        status: 'pending',
+        updatedAt: '2026-03-29T12:02:00.000Z',
+        errorSummary: 'Please correct the highlighted fields.',
+        fieldErrors: { name: 'This field is required.' },
+        initialValues: { name: '' },
+      },
+    };
+
+    const update: ChatEvent = {
+      id: 'event-10',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_update',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        status: 'cancelled',
+        updatedAt: '2026-03-29T12:03:00.000Z',
+        reason: 'User dismissed it',
+      },
+    };
+
+    expect(validateChatEvent(reprompt)).toEqual(reprompt);
+    expect(validateChatEvent(update)).toEqual(update);
+  });
 });
