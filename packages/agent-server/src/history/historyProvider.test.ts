@@ -485,6 +485,76 @@ describe('PiSessionHistoryProvider', () => {
     expect(turnStarts[1]?.payload).toEqual({ trigger: 'callback' });
   });
 
+  it('starts a new legacy fallback turn for each unmarked user message', async () => {
+    const baseDir = await createTempDir('pi-session-history-legacy-turns');
+    const sessionId = 'session-legacy-turns';
+    const piSessionId = 'pi-session-legacy-turns';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-22T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: { role: 'user', id: 'legacy-turn-1', content: 'Legacy first' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'legacy-resp-1',
+          content: [{ type: 'text', text: 'Legacy reply one' }],
+        },
+      }),
+      JSON.stringify({
+        message: { role: 'user', id: 'legacy-turn-2', content: 'Legacy second' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'legacy-resp-2',
+          content: [{ type: 'text', text: 'Legacy reply two' }],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const agent: AgentDefinition = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi',
+      chat: { provider: 'pi' },
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      agentId: agent.agentId,
+      agent,
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+    });
+
+    const turnStarts = events.filter((event) => event.type === 'turn_start');
+    const turnEnds = events.filter((event) => event.type === 'turn_end');
+    const userMessages = events.filter((event) => event.type === 'user_message');
+    const assistantMessages = events.filter((event) => event.type === 'assistant_done');
+
+    expect(turnStarts).toHaveLength(2);
+    expect(turnStarts[0]?.turnId).toBe('legacy-turn-1');
+    expect(turnStarts[1]?.turnId).toBe('legacy-turn-2');
+    expect(turnEnds).toHaveLength(2);
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages[0]?.turnId).toBe('legacy-turn-1');
+    expect(userMessages[1]?.turnId).toBe('legacy-turn-2');
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0]?.turnId).toBe('legacy-turn-1');
+    expect(assistantMessages[1]?.turnId).toBe('legacy-turn-2');
+  });
+
   it('skips aborted assistant messages when mapping Pi history', async () => {
     const baseDir = await createTempDir('pi-session-history-aborted');
     const sessionId = 'session-aborted';

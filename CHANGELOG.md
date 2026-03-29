@@ -13,6 +13,7 @@
 - Changed Pi callback and interrupted-run persistence so callback turns and interrupted turns close cleanly inside explicit Pi turn boundaries. ([#69](https://github.com/kcosr/assistant/pull/69))
 
 ### Fixed
+- Fixed legacy Pi transcript replay to start a fresh turn for each unmarked user message so older sessions do not collapse multiple user turns under one divider. ([#69](https://github.com/kcosr/assistant/pull/69))
 - Fixed chat transcript scrolling regressions by removing the experimental turn-windowing path while keeping tool-output hydration/dehydration and streaming rendering optimizations. ([#68](https://github.com/kcosr/assistant/pull/68))
 - Fixed bash tool formatted input rendering to show the shell command as the primary expanded view while keeping the JSON toggle available for the full argument payload. ([#68](https://github.com/kcosr/assistant/pull/68))
 

@@ -1164,6 +1164,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
+  let currentTurnExplicit = false;
 
   const normalizeTrigger = (value: unknown): 'user' | 'system' | 'callback' => {
     return value === 'callback' ? 'callback' : value === 'user' ? 'user' : 'system';
@@ -1183,11 +1184,18 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     });
     currentTurnId = null;
     currentResponseId = null;
+    currentTurnExplicit = false;
   };
 
-  const startTurn = (turnId: string, trigger: 'user' | 'system' | 'callback', timestamp: number): void => {
+  const startTurn = (
+    turnId: string,
+    trigger: 'user' | 'system' | 'callback',
+    timestamp: number,
+    explicit = false,
+  ): void => {
     currentTurnId = turnId;
     currentResponseId = null;
+    currentTurnExplicit = explicit;
     events.push({
       id: randomUUID(),
       timestamp,
@@ -1310,7 +1318,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           continue;
         }
         endTurn(timestamp);
-        startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp);
+        startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
         continue;
       }
       if (customType === 'assistant.turn_end' && data) {
@@ -1475,8 +1483,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           continue;
         }
         if (kind === 'agent') {
-          const turnId = currentTurnId ?? getTurnId(entry);
-          if (!currentTurnId) {
+          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
+          if (!currentTurnId || !currentTurnExplicit) {
             endTurn(timestamp);
             startTurn(turnId, 'user', timestamp);
           }
@@ -1498,8 +1506,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         }
 
         if (kind === 'callback') {
-          const turnId = currentTurnId ?? getTurnId(entry);
-          if (!currentTurnId) {
+          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
+          if (!currentTurnId || !currentTurnExplicit) {
             endTurn(timestamp);
             startTurn(turnId, 'callback', timestamp);
           }
@@ -1583,8 +1591,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     const role = getString(messageEntry['role']);
     if (role === 'user') {
       const timestamp = resolveTimestamp(messageEntry, entry);
-      const turnId = currentTurnId ?? getTurnId(messageEntry);
-      if (!currentTurnId) {
+      const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
+      if (!currentTurnId || !currentTurnExplicit) {
         endTurn(timestamp);
         startTurn(turnId, 'user', timestamp);
       }
