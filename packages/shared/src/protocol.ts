@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { AssistantTextPhaseSchema, ChatEventSchema } from './chatEvents';
 import { PanelEventEnvelopeSchema } from './panelProtocol';
 
-const TokenUsageBreakdownSchema = z.object({
+export const TokenUsageBreakdownSchema = z.object({
   input: z.number(),
   output: z.number(),
   cacheRead: z.number(),
@@ -10,7 +10,7 @@ const TokenUsageBreakdownSchema = z.object({
   totalTokens: z.number(),
 });
 
-const SessionContextUsageSchema = z.object({
+export const SessionContextUsageSchema = z.object({
   availablePercent: z.number().int().min(0).max(100),
   contextWindow: z.number().int().positive(),
   usage: TokenUsageBreakdownSchema,

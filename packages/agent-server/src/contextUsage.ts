@@ -44,6 +44,27 @@ export function buildSessionContextUsage(options: {
   };
 }
 
+export function isSessionContextUsageEqual(
+  a: SessionContextUsage | null | undefined,
+  b: SessionContextUsage | null | undefined,
+): boolean {
+  if (!a && !b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return (
+    a.availablePercent === b.availablePercent &&
+    a.contextWindow === b.contextWindow &&
+    a.usage.input === b.usage.input &&
+    a.usage.output === b.usage.output &&
+    a.usage.cacheRead === b.usage.cacheRead &&
+    a.usage.cacheWrite === b.usage.cacheWrite &&
+    a.usage.totalTokens === b.usage.totalTokens
+  );
+}
+
 export function extractSessionContextUsageFromAssistantMessage(options: {
   contextWindow: number;
   message: AssistantMessage | undefined;

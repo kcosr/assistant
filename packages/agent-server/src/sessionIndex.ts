@@ -12,6 +12,7 @@ import {
   mergeSessionAttributes,
   validateSessionAttributesPatch,
 } from './sessionAttributes';
+import { isSessionContextUsageEqual } from './contextUsage';
 import { loadSessionIndexFromFileContent, type SessionIndexRecord } from './sessionIndexRecords';
 
 export interface SessionSummary {
@@ -259,6 +260,9 @@ export class SessionIndex {
     const existing = this.sessions.get(sessionId);
     if (!existing || existing.deleted) {
       return undefined;
+    }
+    if (isSessionContextUsageEqual(existing.contextUsage, contextUsage)) {
+      return { ...existing };
     }
 
     const timestamp = new Date().toISOString();

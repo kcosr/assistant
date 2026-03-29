@@ -1,6 +1,6 @@
 import type { SessionContextUsage } from '@assistant/shared';
 import { stripContextLine } from '../utils/chatMessageRenderer';
-import { formatContextUsagePercent, getContextUsageTone } from '../utils/contextUsage';
+import { createContextUsageBadge } from '../utils/contextUsage';
 import { resolveAutoTitle } from '../utils/sessionLabel';
 import type { SessionComposerOpenOptions } from './sessionComposerController';
 
@@ -36,6 +36,16 @@ interface AgentSummary {
     | { mode: 'none' }
     | { mode: 'fixed'; path: string }
     | { mode: 'prompt'; roots: string[] };
+}
+
+function appendContextUsageBadge(
+  meta: HTMLElement,
+  contextUsage: SessionContextUsage | null | undefined,
+): void {
+  const badge = createContextUsageBadge('agent-sidebar-session-context-usage', contextUsage);
+  if (badge) {
+    meta.appendChild(badge);
+  }
 }
 
 export type SidebarViewMode = 'by-agent' | 'all-sessions';
@@ -393,17 +403,7 @@ export class AgentSidebarController {
       });
       meta.appendChild(timeEl);
 
-      const contextUsageLabel = formatContextUsagePercent(session.contextUsage);
-      if (contextUsageLabel) {
-        const contextUsageEl = document.createElement('span');
-        contextUsageEl.className = 'agent-sidebar-session-context-usage';
-        contextUsageEl.textContent = contextUsageLabel;
-        const contextUsageTone = getContextUsageTone(session.contextUsage);
-        if (contextUsageTone) {
-          contextUsageEl.classList.add(`context-usage-${contextUsageTone}`);
-        }
-        meta.appendChild(contextUsageEl);
-      }
+      appendContextUsageBadge(meta, session.contextUsage);
 
       const typingIndicator = document.createElement('span');
       typingIndicator.className = 'session-typing-indicator';
@@ -627,17 +627,7 @@ export class AgentSidebarController {
         timeEl.textContent = timeText;
         meta.appendChild(timeEl);
 
-        const contextUsageLabel = formatContextUsagePercent(session.contextUsage);
-        if (contextUsageLabel) {
-          const contextUsageEl = document.createElement('span');
-          contextUsageEl.className = 'agent-sidebar-session-context-usage';
-          contextUsageEl.textContent = contextUsageLabel;
-          const contextUsageTone = getContextUsageTone(session.contextUsage);
-          if (contextUsageTone) {
-            contextUsageEl.classList.add(`context-usage-${contextUsageTone}`);
-          }
-          meta.appendChild(contextUsageEl);
-        }
+        appendContextUsageBadge(meta, session.contextUsage);
 
         const typingIndicator = document.createElement('span');
         typingIndicator.className = 'session-typing-indicator';

@@ -3,6 +3,7 @@ import type {
   SessionAttributesPatch,
   SessionContextUsage,
 } from '@assistant/shared';
+import { SessionContextUsageSchema } from '@assistant/shared';
 import type { SessionSummary } from './sessionIndex';
 import { isPlainObject, mergeSessionAttributes } from './sessionAttributes';
 
@@ -218,54 +219,12 @@ export function loadSessionIndexFromFileContent(
         summary.updatedAt = timestamp;
         if (contextUsageRecord.contextUsage === null) {
           delete summary.contextUsage;
-        } else if (
-          contextUsageRecord.contextUsage &&
-          typeof contextUsageRecord.contextUsage === 'object' &&
-          !Array.isArray(contextUsageRecord.contextUsage)
-        ) {
-          const raw = contextUsageRecord.contextUsage as {
-            availablePercent?: unknown;
-            contextWindow?: unknown;
-            usage?: unknown;
-          };
-          const usage =
-            raw.usage && typeof raw.usage === 'object' && !Array.isArray(raw.usage)
-              ? (raw.usage as {
-                  input?: unknown;
-                  output?: unknown;
-                  cacheRead?: unknown;
-                  cacheWrite?: unknown;
-                  totalTokens?: unknown;
-                })
-              : null;
-          if (
-            typeof raw.availablePercent === 'number' &&
-            Number.isFinite(raw.availablePercent) &&
-            typeof raw.contextWindow === 'number' &&
-            Number.isFinite(raw.contextWindow) &&
-            usage &&
-            typeof usage.input === 'number' &&
-            Number.isFinite(usage.input) &&
-            typeof usage.output === 'number' &&
-            Number.isFinite(usage.output) &&
-            typeof usage.cacheRead === 'number' &&
-            Number.isFinite(usage.cacheRead) &&
-            typeof usage.cacheWrite === 'number' &&
-            Number.isFinite(usage.cacheWrite) &&
-            typeof usage.totalTokens === 'number' &&
-            Number.isFinite(usage.totalTokens)
-          ) {
-            summary.contextUsage = {
-              availablePercent: raw.availablePercent,
-              contextWindow: raw.contextWindow,
-              usage: {
-                input: usage.input,
-                output: usage.output,
-                cacheRead: usage.cacheRead,
-                cacheWrite: usage.cacheWrite,
-                totalTokens: usage.totalTokens,
-              },
-            };
+        } else {
+          const parsedContextUsage = SessionContextUsageSchema.safeParse(
+            contextUsageRecord.contextUsage,
+          );
+          if (parsedContextUsage.success) {
+            summary.contextUsage = parsedContextUsage.data;
           }
         }
       }

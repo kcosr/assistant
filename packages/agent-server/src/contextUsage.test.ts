@@ -5,6 +5,7 @@ import {
   buildSessionContextUsage,
   calculateContextTokens,
   extractSessionContextUsageFromAssistantMessage,
+  isSessionContextUsageEqual,
 } from './contextUsage';
 
 describe('contextUsage', () => {
@@ -121,5 +122,27 @@ describe('contextUsage', () => {
         message,
       }),
     ).toBeNull();
+  });
+
+  it('compares context usage payloads structurally', () => {
+    const usage = {
+      availablePercent: 73,
+      contextWindow: 200000,
+      usage: {
+        input: 12000,
+        output: 1800,
+        cacheRead: 35000,
+        cacheWrite: 5200,
+        totalTokens: 54000,
+      },
+    };
+
+    expect(isSessionContextUsageEqual(usage, { ...usage, usage: { ...usage.usage } })).toBe(true);
+    expect(
+      isSessionContextUsageEqual(usage, {
+        ...usage,
+        usage: { ...usage.usage, totalTokens: 54001 },
+      }),
+    ).toBe(false);
   });
 });
