@@ -121,18 +121,7 @@ public final class AssistantVoicePlugin extends Plugin {
             : selection.optString("sessionId", null);
 
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = new AssistantVoiceConfig(
-            current.audioMode,
-            current.autoListenEnabled,
-            current.selectedMicDeviceId,
-            current.recognitionStartTimeoutMs,
-            current.recognitionCompletionTimeoutMs,
-            current.recognitionEndSilenceMs,
-            panelId,
-            sessionId,
-            current.voiceAdapterBaseUrl,
-            current.assistantBaseUrl
-        );
+        AssistantVoiceConfig updated = current.withSelection(panelId, sessionId);
         applyConfig(updated);
         call.resolve(buildStatePayload());
     }
@@ -144,18 +133,7 @@ public final class AssistantVoicePlugin extends Plugin {
             url = call.getString(AssistantVoiceConfig.EXTRA_ASSISTANT_BASE_URL);
         }
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = new AssistantVoiceConfig(
-            current.audioMode,
-            current.autoListenEnabled,
-            current.selectedMicDeviceId,
-            current.recognitionStartTimeoutMs,
-            current.recognitionCompletionTimeoutMs,
-            current.recognitionEndSilenceMs,
-            current.selectedPanelId,
-            current.selectedSessionId,
-            current.voiceAdapterBaseUrl,
-            url
-        );
+        AssistantVoiceConfig updated = current.withAssistantBaseUrl(url);
         applyConfig(updated);
         call.resolve(buildStatePayload());
     }
@@ -320,27 +298,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current
     ) {
         JSONObject settings = call.getData().optJSONObject("settings");
-        if (settings == null) {
-            return null;
-        }
-        return new AssistantVoiceConfig(
-            settings.optString("audioMode", current.audioMode),
-            settings.optBoolean("autoListenEnabled", current.autoListenEnabled),
-            settings.optString("selectedMicDeviceId", current.selectedMicDeviceId),
-            settings.optInt(
-                "recognitionStartTimeoutMs",
-                current.recognitionStartTimeoutMs
-            ),
-            settings.optInt(
-                "recognitionCompletionTimeoutMs",
-                current.recognitionCompletionTimeoutMs
-            ),
-            settings.optInt("recognitionEndSilenceMs", current.recognitionEndSilenceMs),
-            current.selectedPanelId,
-            current.selectedSessionId,
-            settings.optString("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl),
-            current.assistantBaseUrl
-        );
+        return settings == null ? null : current.withVoiceSettings(settings);
     }
 
     private boolean hasVoiceModePermissions() {

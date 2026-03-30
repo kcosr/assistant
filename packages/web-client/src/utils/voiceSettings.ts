@@ -92,3 +92,15 @@ export function normalizeVoiceSettings(
     ),
   };
 }
+
+export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings): boolean {
+  return (
+    left.audioMode === right.audioMode &&
+    left.autoListenEnabled === right.autoListenEnabled &&
+    left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
+    left.selectedMicDeviceId === right.selectedMicDeviceId &&
+    left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
+    left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
+    left.recognitionEndSilenceMs === right.recognitionEndSilenceMs
+  );
+}

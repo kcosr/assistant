@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 
 import java.util.Objects;
+import org.json.JSONObject;
 
 final class AssistantVoiceConfig {
     static final String DEFAULT_VOICE_ADAPTER_BASE_URL = "https://assistant/agent-voice-adapter";
@@ -241,6 +242,36 @@ final class AssistantVoiceConfig {
         return AUDIO_MODE_RESPONSE.equals(audioMode);
     }
 
+    AssistantVoiceConfig withSelection(String panelId, String sessionId) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            panelId,
+            sessionId,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withAssistantBaseUrl(String url) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            voiceAdapterBaseUrl,
+            url
+        );
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) {
@@ -274,6 +305,24 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withVoiceSettings(JSONObject settings) {
+        if (settings == null) {
+            return this;
+        }
+        return new AssistantVoiceConfig(
+            settings.optString("audioMode", audioMode),
+            settings.optBoolean("autoListenEnabled", autoListenEnabled),
+            settings.optString("selectedMicDeviceId", selectedMicDeviceId),
+            settings.optInt("recognitionStartTimeoutMs", recognitionStartTimeoutMs),
+            settings.optInt("recognitionCompletionTimeoutMs", recognitionCompletionTimeoutMs),
+            settings.optInt("recognitionEndSilenceMs", recognitionEndSilenceMs),
+            selectedPanelId,
+            selectedSessionId,
+            settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
             assistantBaseUrl
         );
     }

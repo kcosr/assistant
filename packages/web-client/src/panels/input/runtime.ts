@@ -107,6 +107,8 @@ export interface InputRuntime {
   getIncludePanelContext: () => boolean;
   getBriefModeEnabled: () => boolean;
   sendModesUpdate: () => void;
+  setVoiceSettings: (settings: VoiceSettings) => void;
+  setVoiceSettingsFromExternal: (settings: VoiceSettings) => void;
   getVoiceSettings: () => VoiceSettings;
   getAudioMode: () => AudioMode;
   getAutoListenEnabled: () => boolean;
@@ -406,6 +408,12 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getIncludePanelContext: () => includePanelContext,
     getBriefModeEnabled: () => briefModeEnabled,
     sendModesUpdate,
+    setVoiceSettings: (settings: VoiceSettings) => {
+      speechAudioController?.setVoiceSettings(settings);
+    },
+    setVoiceSettingsFromExternal: (settings: VoiceSettings) => {
+      speechAudioController?.setVoiceSettingsFromExternal(settings);
+    },
     getVoiceSettings: () => speechAudioController?.voiceSettings ?? initialVoiceSettings,
     getAudioMode: () => speechAudioController?.audioMode ?? initialVoiceSettings.audioMode,
     getAutoListenEnabled: () =>

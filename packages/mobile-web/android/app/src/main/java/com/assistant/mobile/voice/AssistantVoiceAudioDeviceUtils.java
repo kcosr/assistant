@@ -5,7 +5,9 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 final class AssistantVoiceAudioDeviceUtils {
     static final class InputDeviceOption {
@@ -27,11 +29,19 @@ final class AssistantVoiceAudioDeviceUtils {
         }
         AudioDeviceInfo[] devices = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS);
         List<InputDeviceOption> options = new ArrayList<>(devices.length);
+        Set<String> seenLabels = new LinkedHashSet<>();
         for (AudioDeviceInfo device : devices) {
+            if (!isSelectableInputDevice(device)) {
+                continue;
+            }
+            String label = describeInputDevice(device);
+            if (!seenLabels.add(label)) {
+                continue;
+            }
             options.add(
                 new InputDeviceOption(
                     String.valueOf(device.getId()),
-                    describeInputDevice(device)
+                    label
                 )
             );
         }
@@ -76,11 +86,8 @@ final class AssistantVoiceAudioDeviceUtils {
             case AudioDeviceInfo.TYPE_USB_HEADSET:
                 typeName = "USB headset mic";
                 break;
-            case AudioDeviceInfo.TYPE_TELEPHONY:
-                typeName = "Telephony mic";
-                break;
             default:
-                typeName = "Input device";
+                typeName = "Microphone";
                 break;
         }
 
@@ -90,5 +97,22 @@ final class AssistantVoiceAudioDeviceUtils {
             return typeName + " [id:" + device.getId() + "]";
         }
         return typeName + " (" + product + ") [id:" + device.getId() + "]";
+    }
+
+    private static boolean isSelectableInputDevice(AudioDeviceInfo device) {
+        if (device == null) {
+            return false;
+        }
+        switch (device.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_MIC:
+            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+            case AudioDeviceInfo.TYPE_BLE_HEADSET:
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+            case AudioDeviceInfo.TYPE_USB_DEVICE:
+            case AudioDeviceInfo.TYPE_USB_HEADSET:
+                return true;
+            default:
+                return false;
+        }
     }
 }

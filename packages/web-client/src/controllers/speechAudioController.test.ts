@@ -302,20 +302,65 @@ describe('AssistantNativeVoiceBridge', () => {
     });
 
     controller.attach();
-    await Promise.resolve();
-    await Promise.resolve();
+    await controller.refreshNativeInputDevices();
 
     expect(inputs.voiceMicInputSelectEl.options).toHaveLength(3);
     expect(inputs.voiceMicInputSelectEl.options[1]?.value).toBe('7');
     expect(inputs.voiceMicInputSelectEl.options[2]?.value).toBe('11');
 
-    inputs.voiceMicInputSelectEl.value = '11';
-    inputs.voiceMicInputSelectEl.dispatchEvent(new Event('change'));
+    controller.setVoiceSettings({
+      ...controller.voiceSettings,
+      selectedMicDeviceId: '11',
+    });
 
     expect(controller.voiceSettings.selectedMicDeviceId).toBe('11');
+    expect(inputs.voiceMicInputSelectEl.value).toBe('11');
     expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
       selectedMicDeviceId: '11',
     });
+  });
+
+  it('skips rewriting mic input options when the native device list is unchanged', async () => {
+    ensureWebSocketGlobal();
+
+    const nativeDevices = [
+      { id: '7', label: 'USB mic [id:7]' },
+      { id: '11', label: 'Bluetooth headset mic [id:11]' },
+    ];
+    const nativeVoiceBridge = {
+      listInputDevices: vi.fn(async () => nativeDevices),
+    } as unknown as AssistantNativeVoiceBridge;
+
+    const inputs = createVoiceSettingsInputs();
+    const replaceChildrenSpy = vi.spyOn(inputs.voiceMicInputSelectEl, 'replaceChildren');
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge,
+    });
+
+    await controller.refreshNativeInputDevices();
+    replaceChildrenSpy.mockClear();
+    await controller.refreshNativeInputDevices();
+
+    expect(replaceChildrenSpy).not.toHaveBeenCalled();
   });
 });
 

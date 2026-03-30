@@ -91,7 +91,12 @@ import {
   UI_FONT_OPTIONS,
   watchSystemThemeChanges,
 } from './utils/themeManager';
-import { DEFAULT_VOICE_ADAPTER_BASE_URL, type VoiceSettings } from './utils/voiceSettings';
+import {
+  areVoiceSettingsEqual,
+  DEFAULT_VOICE_ADAPTER_BASE_URL,
+  normalizeVoiceSettings,
+  type VoiceSettings,
+} from './utils/voiceSettings';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
 import {
@@ -881,17 +886,9 @@ async function main(): Promise<void> {
     return chatPanelsById.get(active.panelId) ?? null;
   }
 
-  const isVoiceSettingsEqual = (left: VoiceSettings, right: VoiceSettings): boolean =>
-    left.audioMode === right.audioMode &&
-    left.autoListenEnabled === right.autoListenEnabled &&
-    left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
-    left.selectedMicDeviceId === right.selectedMicDeviceId &&
-    left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
-    left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
-    left.recognitionEndSilenceMs === right.recognitionEndSilenceMs;
   const nativeVoiceSettingsSync = new AsyncValueSync<VoiceSettings>(
     (settings) => nativeVoiceBridge.setVoiceSettings(settings),
-    isVoiceSettingsEqual,
+    areVoiceSettingsEqual,
   );
   const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
     (selection) => nativeVoiceBridge.setSelectedSession(selection),
@@ -950,6 +947,19 @@ async function main(): Promise<void> {
     nativeVoiceSettingsSync.request(settings);
   }
 
+  function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
+    const primary = getPrimaryChatInputRuntime();
+    if (primary) {
+      primary.setVoiceSettings(settings);
+    }
+    for (const entry of chatPanelsById.values()) {
+      if (entry.inputRuntime === primary) {
+        continue;
+      }
+      entry.inputRuntime.setVoiceSettingsFromExternal(settings);
+    }
+  }
+
   function syncNativeAssistantBaseUrl(): void {
     if (!assistantBaseUrl) {
       return;
@@ -980,6 +990,9 @@ async function main(): Promise<void> {
   }
 
   function applyNativeVoiceRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
+    if (nativeVoiceRuntimeState === state) {
+      return;
+    }
     nativeVoiceRuntimeState = state;
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.speechAudioController?.setNativeRuntimeState(state);
@@ -3241,6 +3254,7 @@ async function main(): Promise<void> {
   };
   const openVoiceSettingsModal = (): void => {
     settingsDropdownController.close();
+    resetVoiceSettingsInputs();
     voiceSettingsModalEl.hidden = false;
     voiceSettingsModalEl.style.display = 'flex';
     voiceSettingsModalEl.classList.add('open');
@@ -3248,10 +3262,54 @@ async function main(): Promise<void> {
     void getPrimaryChatInputRuntime()?.speechAudioController?.refreshNativeInputDevices();
     audioModeSelectEl.focus();
   };
+  const syncVoiceSettingsFromInputs = (): void => {
+    const currentSettings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const nextSettings = normalizeVoiceSettings({
+      ...currentSettings,
+      audioMode: audioModeSelectEl.value,
+      autoListenEnabled: autoListenCheckboxEl.checked,
+      voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
+      selectedMicDeviceId: voiceMicInputSelectEl.value,
+      recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
+      recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
+      recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
+    });
+    if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
+      return;
+    }
+    applyVoiceSettingsToChatInputs(nextSettings);
+  };
   closeVoiceSettingsModal();
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
   });
+  audioModeSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceMicInputSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionCompletionTimeoutInputEl.addEventListener(
+    'change',
+    syncVoiceSettingsFromInputs,
+  );
+  voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  const resetVoiceSettingsInputs = (): void => {
+    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    audioModeSelectEl.value = settings.audioMode;
+    autoListenCheckboxEl.checked = settings.autoListenEnabled;
+    voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
+    voiceMicInputSelectEl.value = settings.selectedMicDeviceId;
+    if (voiceMicInputSelectEl.value !== settings.selectedMicDeviceId) {
+      voiceMicInputSelectEl.value = '';
+    }
+    voiceRecognitionStartTimeoutInputEl.value = String(settings.recognitionStartTimeoutMs);
+    voiceRecognitionCompletionTimeoutInputEl.value = String(settings.recognitionCompletionTimeoutMs);
+    voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
+  };
+  voiceAdapterBaseUrlInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionStartTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionCompletionTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionEndSilenceInputEl.addEventListener('blur', resetVoiceSettingsInputs);
   voiceSettingsCloseButtonEl.addEventListener('click', () => {
     closeVoiceSettingsModal();
   });
