@@ -163,10 +163,10 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   if (piSessionWriter && run.turnId) {
     const agentId = state.summary.agentId;
     const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
-    if (agent?.chat?.provider === 'pi') {
+    if (agent?.chat?.provider === 'pi' || agent?.chat?.provider === 'pi-cli') {
       void (async () => {
         try {
-          if (hasPartialText) {
+          if (!eventStore && hasPartialText) {
             await piSessionWriter.appendAssistantEvent({
               summary: state.summary,
               eventType: 'assistant_done',
@@ -179,7 +179,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
               updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
             });
           }
-          if (hasOutputActivity) {
+          if (!eventStore && hasOutputActivity) {
             await piSessionWriter.appendAssistantEvent({
               summary: state.summary,
               eventType: 'interrupt',

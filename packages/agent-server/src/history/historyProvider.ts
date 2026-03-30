@@ -1236,10 +1236,29 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
 function buildChatEventsFromPiSession(content: string, sessionId: string): ChatEvent[] {
   const entries = parseJsonLines(content);
   const events: ChatEvent[] = [];
+  const explicitTurnEndIds = new Set<string>();
+
+  for (const entry of entries) {
+    if (getString(entry['type']) !== 'custom') {
+      continue;
+    }
+    if (getString(entry['customType']) !== 'assistant.turn_end') {
+      continue;
+    }
+    const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+    const turnId = data ? getString(data['turnId']) : '';
+    if (turnId) {
+      explicitTurnEndIds.add(turnId);
+    }
+  }
 
   const emittedToolCalls = new Set<string>();
   const emittedToolResults = new Set<string>();
   const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+  const emittedTurnStarts = new Set<string>();
+  const emittedUserInputs = new Set<string>();
+  const emittedAssistantDone = new Set<string>();
+  let seenExplicitTurnMarkers = false;
 
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
@@ -1272,6 +1291,12 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     timestamp: number,
     explicit = false,
   ): void => {
+    if (emittedTurnStarts.has(turnId)) {
+      currentTurnId = turnId;
+      currentResponseId = null;
+      currentTurnExplicit = explicit;
+      return;
+    }
     currentTurnId = turnId;
     currentResponseId = null;
     currentTurnExplicit = explicit;
@@ -1283,6 +1308,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       type: 'turn_start',
       payload: { trigger },
     });
+    emittedTurnStarts.add(turnId);
   };
 
   const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
@@ -1313,6 +1339,15 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
     return { toolName: mergedName, args: mergedArgs };
   };
+
+  const getUserInputKey = (turnId: string, text: string): string => `${turnId}|${text}`;
+  const getAssistantDoneKey = (
+    turnId: string,
+    text: string,
+    phase?: 'commentary' | 'final_answer',
+    textSignature?: string,
+  ): string =>
+    `${turnId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
 
   const emitToolCall = (
     entry: Record<string, unknown>,
@@ -1396,6 +1431,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
+        seenExplicitTurnMarkers = true;
         endTurn(timestamp);
         startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
         continue;
@@ -1406,6 +1442,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
+        seenExplicitTurnMarkers = true;
         if (currentTurnId === turnIdFromEntry) {
           endTurn(timestamp);
         } else {
@@ -1427,6 +1464,40 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
       const turnIdFromEntry = data ? getString(data['turnId']) : '';
       const responseIdFromEntry = data ? getString(data['responseId']) : '';
+
+      if (chatEventType === 'turn_start') {
+        if (!turnIdFromEntry || emittedTurnStarts.has(turnIdFromEntry)) {
+          continue;
+        }
+        startTurn(
+          turnIdFromEntry,
+          normalizeTrigger(payload?.['trigger']),
+          timestamp,
+          false,
+        );
+        continue;
+      }
+      if (chatEventType === 'turn_end') {
+        if (!turnIdFromEntry) {
+          continue;
+        }
+        if (explicitTurnEndIds.has(turnIdFromEntry)) {
+          continue;
+        }
+        if (currentTurnId === turnIdFromEntry) {
+          endTurn(timestamp);
+        } else {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId: turnIdFromEntry,
+            type: 'turn_end',
+            payload: {},
+          });
+        }
+        continue;
+      }
 
       if (chatEventType === 'agent_callback' && payload) {
         const messageId = getString(payload['messageId']) || randomUUID();
@@ -1457,6 +1528,44 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (chatEventType && isOverlayChatEventType(chatEventType) && payload) {
         const turnId = turnIdFromEntry || currentTurnId || '';
         const responseId = responseIdFromEntry || '';
+        if ((chatEventType === 'user_message' || chatEventType === 'user_audio') && turnId) {
+          const text =
+            typeof payload['text'] === 'string'
+              ? payload['text']
+              : typeof payload['transcription'] === 'string'
+                ? payload['transcription']
+                : '';
+          if (text) {
+            emittedUserInputs.add(getUserInputKey(turnId, text));
+          }
+        }
+        if (chatEventType === 'assistant_done' && turnId) {
+          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+          if (text) {
+            const phase =
+              payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
+                ? payload['phase']
+                : undefined;
+            const textSignature =
+              typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
+            emittedAssistantDone.add(getAssistantDoneKey(turnId, text, phase, textSignature));
+          }
+        }
+        if (chatEventType === 'tool_call') {
+          const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+          const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
+          const args = isRecord(payload['args']) ? (payload['args'] as Record<string, unknown>) : {};
+          if (toolCallId) {
+            emittedToolCalls.add(toolCallId);
+            resolveToolMeta(toolCallId, toolName, args);
+          }
+        }
+        if (chatEventType === 'tool_result') {
+          const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+          if (toolCallId) {
+            emittedToolResults.add(toolCallId);
+          }
+        }
         events.push({
           id: randomUUID(),
           timestamp,
@@ -1664,24 +1773,35 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     const messageEntry = resolveMessageEntry(entry);
     const role = getString(messageEntry['role']);
     if (role === 'user') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
+      const text = extractText(messageEntry);
+      if (emittedUserInputs.has(getUserInputKey(turnId, text))) {
+        continue;
+      }
       if (!currentTurnId || !currentTurnExplicit) {
         endTurn(timestamp);
         startTurn(turnId, 'user', timestamp);
       }
+      emittedUserInputs.add(getUserInputKey(turnId, text));
       events.push({
         id: randomUUID(),
         timestamp,
         sessionId,
         turnId,
         type: 'user_message',
-        payload: { text: extractText(messageEntry) },
+        payload: { text },
       });
       continue;
     }
 
     if (role === 'assistant') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const stopReason = getString(messageEntry['stopReason']);
       if (stopReason === 'aborted' || stopReason === 'error') {
@@ -1725,6 +1845,18 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           if (!textBuffer) {
             return;
           }
+          const assistantDoneKey = getAssistantDoneKey(
+            turnId,
+            textBuffer,
+            textPhase,
+            textSignature,
+          );
+          if (emittedAssistantDone.has(assistantDoneKey)) {
+            textBuffer = '';
+            textPhase = undefined;
+            textSignature = undefined;
+            return;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1738,6 +1870,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
               ...(textSignature ? { textSignature } : {}),
             },
           });
+          emittedAssistantDone.add(assistantDoneKey);
           textBuffer = '';
           textPhase = undefined;
           textSignature = undefined;
@@ -1830,6 +1963,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
         const assistantText = extractText(messageEntry);
         if (assistantText) {
+          const assistantDoneKey = getAssistantDoneKey(turnId, assistantText);
+          if (emittedAssistantDone.has(assistantDoneKey)) {
+            continue;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1839,6 +1976,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'assistant_done',
             payload: { text: assistantText },
           });
+          emittedAssistantDone.add(assistantDoneKey);
         }
       }
 
@@ -1846,6 +1984,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
 
     if (role === 'toolResult' || role === 'tool_result' || entryType === 'tool_result') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const toolCallId = getToolCallId(messageEntry);
       const toolResult = extractToolResult(messageEntry);

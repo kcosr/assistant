@@ -4,6 +4,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { PendingMessageListController } from './pendingMessageListController';
 
 describe('PendingMessageListController', () => {
+  it('hides the container when there are no queued messages', () => {
+    const container = document.createElement('div');
+    new PendingMessageListController({
+      container,
+      getSessionId: () => 'session-1',
+      getAgentDisplayName: () => 'Agent',
+      cancelQueuedMessage: vi.fn(),
+    });
+
+    expect(container.hidden).toBe(true);
+  });
+
   it('hides the prepended context line in visible queued message text', () => {
     const container = document.createElement('div');
     const controller = new PendingMessageListController({
@@ -22,6 +34,7 @@ describe('PendingMessageListController', () => {
     });
 
     const textEl = container.querySelector<HTMLDivElement>('.pending-message-text');
+    expect(container.hidden).toBe(false);
     expect(textEl?.textContent).toBe('Call Sam when I get home.');
   });
 

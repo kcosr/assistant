@@ -132,6 +132,7 @@ export class PendingMessageListController {
 
     this.countEl.textContent = items.length > 0 ? String(items.length) : '';
     container.classList.toggle('has-items', items.length > 0);
+    container.hidden = items.length === 0;
 
     this.listEl.innerHTML = '';
 

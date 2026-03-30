@@ -326,4 +326,79 @@ describe('handleChatOutputCancel', () => {
       }),
     );
   });
+
+  it('does not double-write Pi interrupt events when eventStore mirroring is active', async () => {
+    const sessionId = 'session-5';
+    const appendTurnEnd = vi.fn(async () => undefined);
+    const appendAssistantEvent = vi.fn(async () => undefined);
+    const appendBatch = vi.fn(async () => undefined);
+    const piSessionWriter = {
+      appendAssistantEvent,
+      appendTurnEnd,
+    } as unknown as PiSessionWriter;
+
+    const sessionHub = {
+      broadcastToSession: vi.fn(),
+      recordSessionActivity: vi.fn(async () => undefined),
+      getPiSessionWriter: () => piSessionWriter,
+      getAgentRegistry: () => ({
+        getAgent: () => ({ chat: { provider: 'pi' } }),
+      }),
+      updateSessionAttributes: vi.fn(async () => undefined),
+    } as unknown as SessionHub;
+
+    const abortController = new AbortController();
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId,
+        agentId: 'pi',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as LogicalSessionState['summary'],
+      chatMessages: [],
+      activeChatRun: {
+        responseId: 'resp-5',
+        turnId: 'turn-5',
+        abortController,
+        accumulatedText: 'Partial answer',
+      },
+      messageQueue: [],
+    };
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch,
+      getEvents: async () => [],
+      getEventsSince: async () => [],
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    handleChatOutputCancel({
+      message: {
+        type: 'control',
+        action: 'cancel',
+        target: 'output',
+      },
+      activeRunState: { sessionId, state },
+      sessionHub,
+      broadcastOutputCancelled: vi.fn(),
+      log: vi.fn(),
+      eventStore,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(appendBatch).toHaveBeenCalledTimes(1);
+    expect(appendAssistantEvent).not.toHaveBeenCalled();
+    expect(appendTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: state.summary,
+        turnId: 'turn-5',
+        status: 'interrupted',
+      }),
+    );
+  });
 });

@@ -1107,6 +1107,286 @@ describe('PiSessionHistoryProvider', () => {
     expect(events.some((event) => event.type === 'turn_end' && event.turnId === 'turn-open')).toBe(false);
   });
 
+  it('replays Pi assistant.event in-flight voice turns before finalized messages exist', async () => {
+    const baseDir = await createTempDir('pi-session-history-event-only');
+    const sessionId = 'session-event-only';
+    const piSessionId = 'pi-session-event-only';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-voice', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.001Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_start',
+          payload: { trigger: 'user' },
+          turnId: 'turn-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.002Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_audio',
+          payload: { transcription: 'run sleep for ten seconds', durationMs: 221 },
+          turnId: 'turn-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          payload: {
+            toolCallId: 'tool-voice',
+            toolName: 'bash',
+            args: { command: 'sleep 10' },
+          },
+          turnId: 'turn-voice',
+          responseId: 'resp-voice',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.filter((event) => event.type === 'turn_start' && event.turnId === 'turn-voice')).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'user_audio' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.transcription === 'run sleep for ten seconds',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.toolCallId === 'tool-voice',
+      ),
+    ).toHaveLength(1);
+    expect(events.some((event) => event.type === 'turn_end' && event.turnId === 'turn-voice')).toBe(false);
+  });
+
+  it('dedupes Pi assistant.event replay against later finalized messages for the same voice turn', async () => {
+    const baseDir = await createTempDir('pi-session-history-voice-dedupe');
+    const sessionId = 'session-voice-dedupe';
+    const piSessionId = 'pi-session-voice-dedupe';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-voice', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.001Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_start',
+          payload: { trigger: 'user' },
+          turnId: 'turn-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.002Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_audio',
+          payload: { transcription: 'run sleep for ten seconds', durationMs: 221 },
+          turnId: 'turn-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          payload: {
+            toolCallId: 'tool-voice',
+            toolName: 'bash',
+            args: { command: 'sleep 10' },
+          },
+          turnId: 'turn-voice',
+          responseId: 'resp-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:11.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_result',
+          payload: {
+            toolCallId: 'tool-voice',
+            result: { ok: true, output: '', exitCode: 0 },
+          },
+          turnId: 'turn-voice',
+          responseId: 'resp-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'assistant_done',
+          payload: { text: 'Done! The sleep completed.' },
+          turnId: 'turn-voice',
+          responseId: 'resp-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'run sleep for ten seconds' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-voice',
+          content: [
+            { type: 'toolCall', id: 'tool-voice', name: 'bash', arguments: { command: 'sleep 10' } },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'tool-voice',
+          toolName: 'bash',
+          content: [{ type: 'text', text: '{\"ok\":true,\"result\":{\"ok\":true,\"output\":\"\",\"exitCode\":0}}' }],
+          isError: false,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-voice-final',
+          content: [{ type: 'text', text: 'Done! The sleep completed.' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:12.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_end',
+          payload: {},
+          turnId: 'turn-voice',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:12.001Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-voice', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.filter((event) => event.type === 'turn_start' && event.turnId === 'turn-voice')).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'user_audio' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.transcription === 'run sleep for ten seconds',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'user_message' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.text === 'run sleep for ten seconds',
+      ),
+    ).toHaveLength(0);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.toolCallId === 'tool-voice',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'tool_result' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.toolCallId === 'tool-voice',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'assistant_done' &&
+          event.turnId === 'turn-voice' &&
+          event.payload.text === 'Done! The sleep completed.',
+      ),
+    ).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'turn_end' && event.turnId === 'turn-voice')).toHaveLength(1);
+  });
+
   it('preserves commentary-phase assistant text with phase metadata', async () => {
     const baseDir = await createTempDir('pi-session-history-phase');
     const sessionId = 'session-phase';
