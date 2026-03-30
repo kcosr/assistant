@@ -1,4 +1,5 @@
 import type { ClientTextInputMessage } from '@assistant/shared';
+import { resolveInputContext } from '../utils/inputContext';
 
 export interface TextInputControllerOptions {
   form: HTMLFormElement;
@@ -128,32 +129,18 @@ export class TextInputController {
     }
 
     const isBrief = this.options.getBriefModeEnabled();
-    const includePanelContext = this.options.getIncludePanelContext();
-    const activePanel = includePanelContext ? this.options.getActivePanelContext() : null;
-    const activeContextItem = includePanelContext ? this.options.getActiveContextItem() : null;
-    const useContextItem = includePanelContext && !!activeContextItem;
-    const contextAttributes = includePanelContext
-      ? (this.options.getActivePanelContextAttributes?.() ?? null)
-      : null;
-    const hasContextAttributes =
-      includePanelContext && !!contextAttributes && Object.keys(contextAttributes).length > 0;
-    const selectedItemTitles = this.options.getSelectedItemTitles
-      ? this.options.getSelectedItemTitles()
-      : [];
-    const contextLine = this.options.buildContextLine(
-      useContextItem ? activeContextItem : null,
-      useContextItem ? this.options.getActiveContextItemName() : null,
-      useContextItem ? this.options.getSelectedItemIds() : [],
-      useContextItem ? this.options.getActiveContextItemDescription() : null,
-      {
-        mode: isBrief ? 'brief' : null,
-        panel: activePanel,
-        contextAttributes,
-      },
-      useContextItem ? selectedItemTitles : [],
-    );
-
-    const includeContext = Boolean(activePanel) || useContextItem || hasContextAttributes;
+    const { enabled: includeContext, contextLine } = resolveInputContext({
+      includePanelContext: this.options.getIncludePanelContext(),
+      briefModeEnabled: isBrief,
+      activePanel: this.options.getActivePanelContext(),
+      activeContextItem: this.options.getActiveContextItem(),
+      activeContextItemName: this.options.getActiveContextItemName(),
+      activeContextItemDescription: this.options.getActiveContextItemDescription(),
+      selectedItemIds: this.options.getSelectedItemIds(),
+      selectedItemTitles: this.options.getSelectedItemTitles ? this.options.getSelectedItemTitles() : [],
+      contextAttributes: this.options.getActivePanelContextAttributes?.() ?? null,
+      buildContextLine: this.options.buildContextLine,
+    });
     const textWithContext = includeContext ? `${contextLine}\n${text}` : text;
 
     const clientMessageId =

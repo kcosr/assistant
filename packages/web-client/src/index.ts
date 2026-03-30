@@ -27,6 +27,7 @@ import {
   type AssistantNativeVoiceSelection,
 } from './controllers/speechAudioController';
 import { resolveNativeVoiceSelectedSession } from './utils/nativeVoiceSelection';
+import { resolveInputContext } from './utils/inputContext';
 import { AsyncValueSync } from './utils/asyncValueSync';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
 import { SessionDataController } from './controllers/sessionDataController';
@@ -950,29 +951,18 @@ async function main(): Promise<void> {
   }
 
   function getNativeVoiceInputContext(): AssistantNativeVoiceInputContext {
-    const activePanel = includePanelContext ? getActivePanelContext() : null;
-    const activeContextItem = includePanelContext ? getActiveContextItem() : null;
-    const useContextItem = includePanelContext && !!activeContextItem;
-    const contextAttributes = includePanelContext ? getActivePanelContextAttributes() : null;
-    const hasContextAttributes =
-      includePanelContext && !!contextAttributes && Object.keys(contextAttributes).length > 0;
-    const selectedItemTitles = useContextItem ? getSelectedItemTitles() : [];
-    const contextLine = buildContextLine(
-      useContextItem ? activeContextItem : null,
-      useContextItem ? getActiveContextItemName() : null,
-      useContextItem ? getSelectedItemIds() : [],
-      useContextItem ? getActiveContextItemDescription() : null,
-      {
-        mode: briefModeEnabled ? 'brief' : null,
-        panel: activePanel,
-        contextAttributes,
-      },
-      useContextItem ? selectedItemTitles : [],
-    );
-    return {
-      enabled: Boolean(activePanel) || useContextItem || hasContextAttributes,
-      contextLine,
-    };
+    return resolveInputContext({
+      includePanelContext,
+      briefModeEnabled,
+      activePanel: getActivePanelContext(),
+      activeContextItem: getActiveContextItem(),
+      activeContextItemName: getActiveContextItemName(),
+      activeContextItemDescription: getActiveContextItemDescription(),
+      selectedItemIds: getSelectedItemIds(),
+      selectedItemTitles: getSelectedItemTitles(),
+      contextAttributes: getActivePanelContextAttributes(),
+      buildContextLine,
+    });
   }
 
   function syncNativeInputContext(): void {
