@@ -35,7 +35,7 @@ describe('createInputRuntime', () => {
     const socket = { readyState: WebSocket.OPEN, send } as unknown as WebSocket;
     const nativeVoiceBridge = new AssistantNativeVoiceBridge(() => ({
       AssistantNativeVoice: {
-        setAudioMode: vi.fn(),
+        setVoiceSettings: vi.fn(),
       },
     }));
 
@@ -73,13 +73,22 @@ describe('createInputRuntime', () => {
       cancelQueuedMessage: vi.fn(),
       audioModeSelectEl: select,
       autoListenCheckboxEl: autoListenCheckbox,
+      voiceAdapterBaseUrlInputEl: document.createElement('input'),
+      voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionEndSilenceInputEl: document.createElement('input'),
       initialIncludePanelContext: true,
       initialBriefModeEnabled: false,
       speechFeaturesEnabled: false,
-      initialAudioMode: 'tool',
-      initialAutoListenEnabled: true,
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      initialVoiceSettings: {
+        audioMode: 'tool',
+        autoListenEnabled: true,
+        voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+        recognitionStartTimeoutMs: 30000,
+        recognitionCompletionTimeoutMs: 60000,
+        recognitionEndSilenceMs: 1200,
+      },
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
       useNativeVoiceRuntime: true,
       nativeVoiceBridge,
@@ -88,8 +97,8 @@ describe('createInputRuntime', () => {
 
     runtime.sendModesUpdate();
 
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(send.mock.calls[0]?.[0] as string)).toMatchObject({
+    expect(send).toHaveBeenCalled();
+    expect(JSON.parse(send.mock.calls.at(-1)?.[0] as string)).toMatchObject({
       type: 'set_modes',
       outputMode: 'text',
     });

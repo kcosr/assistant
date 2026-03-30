@@ -20,6 +20,7 @@ vi.mock('../utils/audio', () => {
 
 import type { AssistantNativeVoiceBridgeTarget } from './speechAudioController';
 import { AssistantNativeVoiceBridge, SpeechAudioController } from './speechAudioController';
+import type { VoiceSettings } from '../utils/voiceSettings';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -43,6 +44,36 @@ function createAudioModeSelect(): HTMLSelectElement {
   return select;
 }
 
+function createVoiceSettingsInputs(): {
+  audioModeSelectEl: HTMLSelectElement;
+  autoListenCheckboxEl: HTMLInputElement;
+  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+} {
+  return {
+    audioModeSelectEl: createAudioModeSelect(),
+    autoListenCheckboxEl: document.createElement('input'),
+    voiceAdapterBaseUrlInputEl: document.createElement('input'),
+    voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
+    voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
+    voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+  };
+}
+
+function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSettings {
+  return {
+    audioMode: 'off',
+    autoListenEnabled: false,
+    voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+    recognitionStartTimeoutMs: 30000,
+    recognitionCompletionTimeoutMs: 60000,
+    recognitionEndSilenceMs: 1200,
+    ...overrides,
+  };
+}
+
 function dispatchPointerEvent(
   target: HTMLElement,
   type: string,
@@ -57,10 +88,8 @@ function dispatchPointerEvent(
 describe('AssistantNativeVoiceBridge', () => {
   it('calls the direct AssistantNativeVoice bridge when available', async () => {
     const target = {
-      setAudioMode: vi.fn(),
-      setAutoListenEnabled: vi.fn(),
+      setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
-      setVoiceAdapterBaseUrl: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
 
@@ -68,25 +97,29 @@ describe('AssistantNativeVoiceBridge', () => {
       AssistantNativeVoice: target,
     }));
 
-    await expect(bridge.setAudioMode('tool')).resolves.toBe(true);
-    await expect(bridge.setAutoListenEnabled(true)).resolves.toBe(true);
+    await expect(
+      bridge.setVoiceSettings(
+        createInitialVoiceSettings({
+          audioMode: 'tool',
+          autoListenEnabled: true,
+        }),
+      ),
+    ).resolves.toBe(true);
     await expect(
       bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
     ).resolves.toBe(true);
-    await expect(
-      bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter'),
-    ).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
-    expect(target.setAudioMode).toHaveBeenCalledWith({ mode: 'tool' });
-    expect(target.setAutoListenEnabled).toHaveBeenCalledWith({ enabled: true });
+    expect(target.setVoiceSettings).toHaveBeenCalledWith({
+      settings: createInitialVoiceSettings({
+        audioMode: 'tool',
+        autoListenEnabled: true,
+      }),
+    });
     expect(target.setSelectedSession).toHaveBeenCalledWith({
       selection: {
         panelId: 'panel-1',
         sessionId: 'session-1',
       },
-    });
-    expect(target.setVoiceAdapterBaseUrl).toHaveBeenCalledWith({
-      url: 'https://assistant/agent-voice-adapter',
     });
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
   });
@@ -106,10 +139,8 @@ describe('AssistantNativeVoiceBridge', () => {
 
   it('calls the Capacitor plugin bridge surface with the final contract methods', async () => {
     const target = {
-      setAudioMode: vi.fn(),
-      setAutoListenEnabled: vi.fn(),
+      setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
-      setVoiceAdapterBaseUrl: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
 
@@ -121,25 +152,19 @@ describe('AssistantNativeVoiceBridge', () => {
       },
     }));
 
-    await expect(bridge.setAudioMode('off')).resolves.toBe(true);
-    await expect(bridge.setAutoListenEnabled(false)).resolves.toBe(true);
+    await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(true);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
-    await expect(
-      bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter'),
-    ).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
-    expect(target.setAudioMode).toHaveBeenCalledWith({ mode: 'off' });
-    expect(target.setAutoListenEnabled).toHaveBeenCalledWith({ enabled: false });
-    expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
-    expect(target.setVoiceAdapterBaseUrl).toHaveBeenCalledWith({
-      url: 'https://assistant/agent-voice-adapter',
+    expect(target.setVoiceSettings).toHaveBeenCalledWith({
+      settings: createInitialVoiceSettings(),
     });
+    expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
   });
 
   it('does not support alternate plugin names', async () => {
     const legacyTarget = {
-      setAudioMode: vi.fn(),
+      setVoiceSettings: vi.fn(),
     };
 
     const plugins: { AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget } & Record<
@@ -154,20 +179,20 @@ describe('AssistantNativeVoiceBridge', () => {
       },
     }));
 
-    await expect(bridge.setAudioMode('tool')).resolves.toBe(false);
-    expect(legacyTarget.setAudioMode).not.toHaveBeenCalled();
+    await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(false);
+    expect(legacyTarget.setVoiceSettings).not.toHaveBeenCalled();
   });
 
   it('returns false when no native voice bridge is installed', async () => {
     const bridge = new AssistantNativeVoiceBridge(() => ({}));
 
-    await expect(bridge.setAudioMode('tool')).resolves.toBe(false);
+    await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(false);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(false);
   });
 
   it('returns false when an async native setter rejects', async () => {
     const target = {
-      setAudioMode: vi.fn(async () => {
+      setVoiceSettings: vi.fn(async () => {
         throw new Error('boom');
       }),
     };
@@ -175,7 +200,7 @@ describe('AssistantNativeVoiceBridge', () => {
       AssistantNativeVoice: target,
     }));
 
-    await expect(bridge.setAudioMode('tool')).resolves.toBe(false);
+    await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(false);
   });
 
   it('waits for an async native setter to resolve successfully', async () => {
@@ -262,8 +287,7 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       speechFeaturesEnabled: false,
       speechInputController: null,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => pending,
       setPendingAssistantBubble: (bubble) => {
@@ -279,11 +303,9 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => true,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     const cancelled = controller.cancelAllActiveOperations();
@@ -318,8 +340,7 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       speechFeaturesEnabled: false,
       speechInputController: null,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => pending,
       setPendingAssistantBubble: (bubble) => {
@@ -335,11 +356,9 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => true,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     const cancelled = controller.cancelAllActiveOperations();
@@ -360,8 +379,7 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       speechFeaturesEnabled: false,
       speechInputController: null,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getSocket: () => socket,
       getSessionId: () => 'session-a',
@@ -373,11 +391,9 @@ describe('SpeechAudioController.cancelAllActiveOperations', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     const controllerState = controller as unknown as {
@@ -417,8 +433,7 @@ describe('SpeechAudioController.micButtonState', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -432,11 +447,9 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => isStreaming,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     controller.syncMicButtonState();
@@ -457,8 +470,7 @@ describe('SpeechAudioController.micButtonState', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -472,11 +484,9 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     controller.onConnectionLostCleanup();
@@ -492,8 +502,7 @@ describe('SpeechAudioController.micButtonState', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -507,20 +516,21 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => true,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
     const handler = vi.fn();
 
-    controller.setAudioModeChangeHandler(handler);
+    controller.setVoiceSettingsChangeHandler(handler);
     controller.setAudioMode('response');
     controller.setAudioMode('off');
 
-    expect(handler).toHaveBeenNthCalledWith(1, 'response');
-    expect(handler).toHaveBeenNthCalledWith(2, 'off');
+    expect(handler).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ audioMode: 'response' }),
+    );
+    expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({ audioMode: 'off' }));
   });
 
   it('notifies listeners when auto-listen changes and persists the value', () => {
@@ -532,6 +542,10 @@ describe('SpeechAudioController.micButtonState', () => {
       micButtonEl: document.createElement('button'),
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
+      voiceAdapterBaseUrlInputEl: document.createElement('input'),
+      voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionEndSilenceInputEl: document.createElement('input'),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -545,21 +559,27 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => true,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
     const handler = vi.fn();
 
-    controller.setAutoListenChangeHandler(handler);
+    controller.setVoiceSettingsChangeHandler(handler);
     controller.setAutoListenEnabled(true);
     controller.setAutoListenEnabled(false);
 
-    expect(handler).toHaveBeenNthCalledWith(1, true);
-    expect(handler).toHaveBeenNthCalledWith(2, false);
-    expect(localStorage.getItem('test-auto-listen')).toBe('false');
+    expect(handler).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ autoListenEnabled: true }),
+    );
+    expect(handler).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ autoListenEnabled: false }),
+    );
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      autoListenEnabled: false,
+    });
     expect(autoListenCheckbox.checked).toBe(false);
   });
 
@@ -578,8 +598,7 @@ describe('SpeechAudioController.micButtonState', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -593,11 +612,9 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => true,
       isOutputActive: () => true,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
       useNativeVoiceRuntime: true,
       nativeVoiceBridge: bridge,
     });
@@ -633,8 +650,7 @@ describe('SpeechAudioController.micButtonState', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -648,11 +664,9 @@ describe('SpeechAudioController.micButtonState', () => {
       supportsAudioOutput: () => true,
       isOutputActive: () => true,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
       useNativeVoiceRuntime: true,
       nativeVoiceBridge: bridge,
     });
@@ -685,8 +699,7 @@ describe('SpeechAudioController.longPress', () => {
       speechFeaturesEnabled: true,
       speechInputController,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -700,11 +713,9 @@ describe('SpeechAudioController.longPress', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     controller.attach();
@@ -738,8 +749,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
       speechFeaturesEnabled: true,
       speechInputController: null,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -753,11 +763,9 @@ describe('SpeechAudioController.startPushToTalk', () => {
       supportsAudioOutput: () => true,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'tool',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'tool' }),
       useNativeVoiceRuntime: true,
       nativeVoiceBridge: bridge,
     });
@@ -800,8 +808,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
       speechFeaturesEnabled: true,
       speechInputController,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -815,11 +822,9 @@ describe('SpeechAudioController.startPushToTalk', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     await controller.startPushToTalk();
@@ -863,8 +868,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
       speechFeaturesEnabled: true,
       speechInputController,
       micButtonEl: document.createElement('button'),
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -878,11 +882,9 @@ describe('SpeechAudioController.startPushToTalk', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     await controller.startPushToTalk();
@@ -927,8 +929,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
       speechFeaturesEnabled: true,
       speechInputController,
       micButtonEl: micButton,
-      audioModeSelectEl: createAudioModeSelect(),
-      autoListenCheckboxEl: document.createElement('input'),
+      ...createVoiceSettingsInputs(),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
@@ -942,11 +943,9 @@ describe('SpeechAudioController.startPushToTalk', () => {
       supportsAudioOutput: () => false,
       isOutputActive: () => false,
       updateScrollButtonVisibility: vi.fn(),
-      audioModeStorageKey: 'test-audio-mode',
-      autoListenStorageKey: 'test-auto-listen',
+      voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
-      initialAudioMode: 'off',
-      initialAutoListenEnabled: false,
+      initialVoiceSettings: createInitialVoiceSettings(),
     });
 
     await controller.startPushToTalk();

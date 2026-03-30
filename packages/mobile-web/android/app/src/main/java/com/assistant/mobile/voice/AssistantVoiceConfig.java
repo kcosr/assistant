@@ -13,10 +13,16 @@ final class AssistantVoiceConfig {
     static final String AUDIO_MODE_TOOL = "tool";
     static final String AUDIO_MODE_RESPONSE = "response";
     static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
+    static final int DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30000;
+    static final int DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60000;
+    static final int DEFAULT_RECOGNITION_END_SILENCE_MS = 1200;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
     private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
+    private static final String KEY_RECOGNITION_START_TIMEOUT_MS = "recognition_start_timeout_ms";
+    private static final String KEY_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognition_completion_timeout_ms";
+    private static final String KEY_RECOGNITION_END_SILENCE_MS = "recognition_end_silence_ms";
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
@@ -26,6 +32,9 @@ final class AssistantVoiceConfig {
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
     static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
+    static final String EXTRA_RECOGNITION_START_TIMEOUT_MS = "recognitionStartTimeoutMs";
+    static final String EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognitionCompletionTimeoutMs";
+    static final String EXTRA_RECOGNITION_END_SILENCE_MS = "recognitionEndSilenceMs";
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
@@ -33,6 +42,9 @@ final class AssistantVoiceConfig {
 
     final String audioMode;
     final boolean autoListenEnabled;
+    final int recognitionStartTimeoutMs;
+    final int recognitionCompletionTimeoutMs;
+    final int recognitionEndSilenceMs;
     final String selectedPanelId;
     final String selectedSessionId;
     final String voiceAdapterBaseUrl;
@@ -41,6 +53,9 @@ final class AssistantVoiceConfig {
     AssistantVoiceConfig(
         String audioMode,
         boolean autoListenEnabled,
+        int recognitionStartTimeoutMs,
+        int recognitionCompletionTimeoutMs,
+        int recognitionEndSilenceMs,
         String selectedPanelId,
         String selectedSessionId,
         String voiceAdapterBaseUrl,
@@ -48,6 +63,18 @@ final class AssistantVoiceConfig {
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.autoListenEnabled = autoListenEnabled;
+        this.recognitionStartTimeoutMs = normalizePositiveInt(
+            recognitionStartTimeoutMs,
+            DEFAULT_RECOGNITION_START_TIMEOUT_MS
+        );
+        this.recognitionCompletionTimeoutMs = normalizePositiveInt(
+            recognitionCompletionTimeoutMs,
+            DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS
+        );
+        this.recognitionEndSilenceMs = normalizePositiveInt(
+            recognitionEndSilenceMs,
+            DEFAULT_RECOGNITION_END_SILENCE_MS
+        );
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
         this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
@@ -65,6 +92,12 @@ final class AssistantVoiceConfig {
         return new AssistantVoiceConfig(
             prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
             prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
+            prefs.getInt(KEY_RECOGNITION_START_TIMEOUT_MS, DEFAULT_RECOGNITION_START_TIMEOUT_MS),
+            prefs.getInt(
+                KEY_RECOGNITION_COMPLETION_TIMEOUT_MS,
+                DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS
+            ),
+            prefs.getInt(KEY_RECOGNITION_END_SILENCE_MS, DEFAULT_RECOGNITION_END_SILENCE_MS),
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
@@ -77,6 +110,9 @@ final class AssistantVoiceConfig {
             .edit()
             .putString(KEY_AUDIO_MODE, config.audioMode)
             .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
+            .putInt(KEY_RECOGNITION_START_TIMEOUT_MS, config.recognitionStartTimeoutMs)
+            .putInt(KEY_RECOGNITION_COMPLETION_TIMEOUT_MS, config.recognitionCompletionTimeoutMs)
+            .putInt(KEY_RECOGNITION_END_SILENCE_MS, config.recognitionEndSilenceMs)
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
@@ -93,6 +129,18 @@ final class AssistantVoiceConfig {
                 ? intent.getStringExtra(EXTRA_AUDIO_MODE)
                 : fallback.audioMode,
             intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_START_TIMEOUT_MS,
+                fallback.recognitionStartTimeoutMs
+            ),
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS,
+                fallback.recognitionCompletionTimeoutMs
+            ),
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_END_SILENCE_MS,
+                fallback.recognitionEndSilenceMs
+            ),
             intent.hasExtra(EXTRA_SELECTED_PANEL_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_PANEL_ID)
                 : fallback.selectedPanelId,
@@ -111,6 +159,9 @@ final class AssistantVoiceConfig {
     Intent applyToIntent(Intent intent) {
         intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
         intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
+        intent.putExtra(EXTRA_RECOGNITION_START_TIMEOUT_MS, recognitionStartTimeoutMs);
+        intent.putExtra(EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS, recognitionCompletionTimeoutMs);
+        intent.putExtra(EXTRA_RECOGNITION_END_SILENCE_MS, recognitionEndSilenceMs);
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
@@ -151,6 +202,10 @@ final class AssistantVoiceConfig {
         return normalized.isEmpty() ? null : normalized;
     }
 
+    private static int normalizePositiveInt(int value, int fallback) {
+        return value > 0 ? value : fallback;
+    }
+
     private static String normalizeAudioMode(String value) {
         String normalized = normalizeOptional(value);
         switch (normalized) {
@@ -186,6 +241,9 @@ final class AssistantVoiceConfig {
         AssistantVoiceConfig config = (AssistantVoiceConfig) other;
         return Objects.equals(audioMode, config.audioMode)
             && autoListenEnabled == config.autoListenEnabled
+            && recognitionStartTimeoutMs == config.recognitionStartTimeoutMs
+            && recognitionCompletionTimeoutMs == config.recognitionCompletionTimeoutMs
+            && recognitionEndSilenceMs == config.recognitionEndSilenceMs
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
@@ -197,6 +255,9 @@ final class AssistantVoiceConfig {
         return Objects.hash(
             audioMode,
             autoListenEnabled,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
             voiceAdapterBaseUrl,

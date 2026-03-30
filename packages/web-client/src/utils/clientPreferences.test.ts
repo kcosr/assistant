@@ -12,8 +12,7 @@ vi.mock('./capacitor', () => ({
 import { loadClientPreferences } from './clientPreferences';
 
 const defaultOptions = {
-  audioModeStorageKey: 'audio-mode',
-  autoListenStorageKey: 'auto-listen',
+  voiceStorageKey: 'voice',
   keyboardShortcutsStorageKey: 'shortcuts',
   keyboardShortcutsBindingsStorageKey: 'shortcut-bindings',
   autoFocusChatStorageKey: 'autofocus',
@@ -31,8 +30,11 @@ describe('loadClientPreferences', () => {
   it('defaults audio responses off outside Capacitor Android', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
-    expect(preferences.audioMode).toBe('off');
-    expect(preferences.autoListenEnabled).toBe(false);
+    expect(preferences.voice.audioMode).toBe('off');
+    expect(preferences.voice.autoListenEnabled).toBe(false);
+    expect(preferences.voice.recognitionStartTimeoutMs).toBe(30000);
+    expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(60000);
+    expect(preferences.voice.recognitionEndSilenceMs).toBe(1200);
   });
 
   it('defaults tool audio mode on in Capacitor Android when unset', () => {
@@ -40,25 +42,52 @@ describe('loadClientPreferences', () => {
 
     const preferences = loadClientPreferences(defaultOptions);
 
-    expect(preferences.audioMode).toBe('tool');
-    expect(preferences.autoListenEnabled).toBe(true);
+    expect(preferences.voice.audioMode).toBe('tool');
+    expect(preferences.voice.autoListenEnabled).toBe(true);
   });
 
   it('respects an explicit stored response mode on Capacitor Android', () => {
     isCapacitorAndroid.mockReturnValue(true);
-    localStorage.setItem(defaultOptions.audioModeStorageKey, 'response');
+    localStorage.setItem(
+      defaultOptions.voiceStorageKey,
+      JSON.stringify({
+        audioMode: 'response',
+      }),
+    );
 
     const preferences = loadClientPreferences(defaultOptions);
 
-    expect(preferences.audioMode).toBe('response');
+    expect(preferences.voice.audioMode).toBe('response');
   });
 
   it('respects an explicit stored false auto-listen value on Capacitor Android', () => {
     isCapacitorAndroid.mockReturnValue(true);
-    localStorage.setItem(defaultOptions.autoListenStorageKey, 'false');
+    localStorage.setItem(
+      defaultOptions.voiceStorageKey,
+      JSON.stringify({
+        autoListenEnabled: false,
+      }),
+    );
 
     const preferences = loadClientPreferences(defaultOptions);
 
-    expect(preferences.autoListenEnabled).toBe(false);
+    expect(preferences.voice.autoListenEnabled).toBe(false);
+  });
+
+  it('normalizes persisted voice timing settings', () => {
+    localStorage.setItem(
+      defaultOptions.voiceStorageKey,
+      JSON.stringify({
+        recognitionStartTimeoutMs: '4500',
+        recognitionCompletionTimeoutMs: 15000,
+        recognitionEndSilenceMs: '900',
+      }),
+    );
+
+    const preferences = loadClientPreferences(defaultOptions);
+
+    expect(preferences.voice.recognitionStartTimeoutMs).toBe(4500);
+    expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(15000);
+    expect(preferences.voice.recognitionEndSilenceMs).toBe(900);
   });
 });

@@ -11,9 +11,9 @@ import {
   SpeechAudioController,
 } from '../../controllers/speechAudioController';
 import { TextInputController } from '../../controllers/textInputController';
-import { initializeAudioModeSelect, initializeAutoListenCheckbox } from '../../utils/clientPreferences';
 import type { AudioMode } from '../../utils/audioMode';
 import { isCapacitorAndroid } from '../../utils/capacitor';
+import type { VoiceSettings } from '../../utils/voiceSettings';
 import type { ChatRuntime } from '../chat/runtime';
 
 export interface InputRuntimeElements {
@@ -72,15 +72,17 @@ export interface InputRuntimeOptions {
   cancelQueuedMessage: (messageId: string) => void;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionEndSilenceInputEl: HTMLInputElement;
   initialIncludePanelContext: boolean;
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
   onBriefModeChange?: (enabled: boolean) => void;
   speechFeaturesEnabled: boolean;
-  initialAudioMode: AudioMode;
-  initialAutoListenEnabled: boolean;
-  audioModeStorageKey: string;
-  autoListenStorageKey: string;
+  initialVoiceSettings: VoiceSettings;
+  voiceSettingsStorageKey: string;
   continuousListeningLongPressMs: number;
   useNativeVoiceRuntime?: boolean | undefined;
   nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
@@ -104,6 +106,7 @@ export interface InputRuntime {
   getIncludePanelContext: () => boolean;
   getBriefModeEnabled: () => boolean;
   sendModesUpdate: () => void;
+  getVoiceSettings: () => VoiceSettings;
   getAudioMode: () => AudioMode;
   getAutoListenEnabled: () => boolean;
   supportsAudioOutput: () => boolean;
@@ -290,16 +293,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     );
   };
 
-  const audioMode = initializeAudioModeSelect({
-    select: options.audioModeSelectEl,
-    initialAudioMode: options.initialAudioMode,
-    supportsAudioOutput: supportsAudioOutput(),
-  });
-  const autoListenEnabled = initializeAutoListenCheckbox({
-    checkbox: options.autoListenCheckboxEl,
-    initialAutoListenEnabled: options.initialAutoListenEnabled,
-    supportsAudioOutput: supportsAudioOutput(),
-  });
+  const initialVoiceSettings = options.initialVoiceSettings;
 
   const sendModesUpdate = (): void => {
     const socket = options.getSocket();
@@ -307,7 +301,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       return;
     }
 
-    const currentAudioMode = speechAudioController?.audioMode ?? audioMode;
+    const currentAudioMode = speechAudioController?.audioMode ?? initialVoiceSettings.audioMode;
     const message: ClientSetModesMessage = {
       type: 'set_modes',
       outputMode:
@@ -322,6 +316,10 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     micButtonEl: elements.micButtonEl,
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
+    voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
+    voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInputEl: options.voiceRecognitionEndSilenceInputEl,
     inputEl: elements.inputEl,
     getSocket: options.getSocket,
     getSessionId: options.getSelectedSessionId,
@@ -335,11 +333,9 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     updateScrollButtonVisibility: () => {
       getActiveChatRuntime()?.chatScrollManager.updateScrollButtonVisibility();
     },
-    audioModeStorageKey: options.audioModeStorageKey,
-    autoListenStorageKey: options.autoListenStorageKey,
+    voiceSettingsStorageKey: options.voiceSettingsStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
-    initialAudioMode: audioMode,
-    initialAutoListenEnabled: autoListenEnabled,
+    initialVoiceSettings,
     useNativeVoiceRuntime: options.useNativeVoiceRuntime,
     nativeVoiceBridge: options.nativeVoiceBridge,
   });
@@ -408,8 +404,10 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getIncludePanelContext: () => includePanelContext,
     getBriefModeEnabled: () => briefModeEnabled,
     sendModesUpdate,
-    getAudioMode: () => speechAudioController?.audioMode ?? audioMode,
-    getAutoListenEnabled: () => speechAudioController?.autoListenEnabled ?? autoListenEnabled,
+    getVoiceSettings: () => speechAudioController?.voiceSettings ?? initialVoiceSettings,
+    getAudioMode: () => speechAudioController?.audioMode ?? initialVoiceSettings.audioMode,
+    getAutoListenEnabled: () =>
+      speechAudioController?.autoListenEnabled ?? initialVoiceSettings.autoListenEnabled,
     supportsAudioOutput,
   };
 }

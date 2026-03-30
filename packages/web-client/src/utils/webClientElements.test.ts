@@ -8,12 +8,18 @@ describe('getWebClientElements', () => {
     document.body.innerHTML = '';
   });
 
-  it('returns the static voice adapter base url input when present', () => {
+  it('returns the voice settings controls when present', () => {
     document.body.innerHTML = `
       <button id="controls-toggle-button"></button>
+      <button id="voice-settings-button"></button>
+      <div id="voice-settings-modal"></div>
+      <button id="voice-settings-close-button"></button>
       <select id="audio-mode-select"></select>
       <input id="auto-listen-checkbox" type="checkbox" />
       <input id="voice-adapter-base-url-input" type="url" />
+      <input id="voice-recognition-start-timeout-input" type="number" />
+      <input id="voice-recognition-completion-timeout-input" type="number" />
+      <input id="voice-recognition-end-silence-input" type="number" />
       <input id="autofocus-chat-checkbox" type="checkbox" />
       <input id="keyboard-shortcuts-checkbox" type="checkbox" />
       <input id="auto-scroll-checkbox" type="checkbox" />
@@ -24,8 +30,20 @@ describe('getWebClientElements', () => {
     const elements = getWebClientElements();
 
     expect(elements).not.toBeNull();
+    expect(elements?.voiceSettingsButton.id).toBe('voice-settings-button');
+    expect(elements?.voiceSettingsModal.id).toBe('voice-settings-modal');
+    expect(elements?.voiceSettingsCloseButton.id).toBe('voice-settings-close-button');
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
-    expect(elements?.voiceAdapterBaseUrlInput?.id).toBe('voice-adapter-base-url-input');
+    expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
+    expect(elements?.voiceRecognitionStartTimeoutInput.id).toBe(
+      'voice-recognition-start-timeout-input',
+    );
+    expect(elements?.voiceRecognitionCompletionTimeoutInput.id).toBe(
+      'voice-recognition-completion-timeout-input',
+    );
+    expect(elements?.voiceRecognitionEndSilenceInput.id).toBe(
+      'voice-recognition-end-silence-input',
+    );
   });
 });

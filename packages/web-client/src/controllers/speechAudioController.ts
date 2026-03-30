@@ -1,6 +1,7 @@
 import type { ClientControlMessage } from '@assistant/shared';
 import { TtsAudioPlayer } from '../utils/audio';
 import type { AudioMode } from '../utils/audioMode';
+import { normalizeVoiceSettings, type VoiceSettings } from '../utils/voiceSettings';
 import type { SpeechInputController } from './speechInput';
 
 export interface AssistantNativeVoiceSelection {
@@ -8,12 +9,8 @@ export interface AssistantNativeVoiceSelection {
   sessionId: string;
 }
 
-export interface AssistantNativeVoiceAudioModeArgs {
-  mode: AudioMode;
-}
-
-export interface AssistantNativeVoiceAutoListenArgs {
-  enabled: boolean;
+export interface AssistantNativeVoiceSettingsArgs {
+  settings: VoiceSettings;
 }
 
 export interface AssistantNativeVoiceSelectionArgs {
@@ -34,9 +31,7 @@ export type AssistantNativeVoiceRuntimeState =
 
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
-  audioMode?: AudioMode;
-  autoListenEnabled?: boolean;
-  voiceAdapterBaseUrl?: string;
+  voiceSettings?: VoiceSettings;
   assistantBaseUrl?: string;
   selectedSession?: AssistantNativeVoiceSelection | null;
   lastError?: string;
@@ -51,10 +46,8 @@ interface AssistantNativeVoiceListenerHandle {
 }
 
 export interface AssistantNativeVoiceBridgeTarget {
-  setAudioMode?: (args: AssistantNativeVoiceAudioModeArgs) => void | Promise<void>;
-  setAutoListenEnabled?: (args: AssistantNativeVoiceAutoListenArgs) => void | Promise<void>;
+  setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
-  setVoiceAdapterBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: () => void | Promise<void>;
@@ -84,20 +77,12 @@ export class AssistantNativeVoiceBridge {
     },
   ) {}
 
-  setAudioMode(mode: AudioMode): Promise<boolean> {
-    return this.invokeAsync('setAudioMode', { mode });
-  }
-
-  setAutoListenEnabled(enabled: boolean): Promise<boolean> {
-    return this.invokeAsync('setAutoListenEnabled', { enabled });
-  }
-
   setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
     return this.invokeAsync('setSelectedSession', { selection });
   }
 
-  setVoiceAdapterBaseUrl(url: string): Promise<boolean> {
-    return this.invokeAsync('setVoiceAdapterBaseUrl', { url });
+  setVoiceSettings(settings: VoiceSettings): Promise<boolean> {
+    return this.invokeAsync('setVoiceSettings', { settings });
   }
 
   setAssistantBaseUrl(url: string): Promise<boolean> {
@@ -255,6 +240,10 @@ export interface SpeechAudioControllerOptions {
   micButtonEl: HTMLButtonElement;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionEndSilenceInputEl: HTMLInputElement;
   inputEl: HTMLInputElement;
   getSocket: () => WebSocket | null;
   getSessionId: () => string | null;
@@ -268,11 +257,9 @@ export interface SpeechAudioControllerOptions {
   updateScrollButtonVisibility: () => void;
   getPendingAssistantBubble?: () => HTMLDivElement | null;
   setPendingAssistantBubble?: (bubble: HTMLDivElement | null) => void;
-  audioModeStorageKey: string;
-  autoListenStorageKey: string;
+  voiceSettingsStorageKey: string;
   continuousListeningLongPressMs: number;
-  initialAudioMode: AudioMode;
-  initialAutoListenEnabled: boolean;
+  initialVoiceSettings: VoiceSettings;
   useNativeVoiceRuntime?: boolean | undefined;
   nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
 }
@@ -296,13 +283,18 @@ export class SpeechAudioController {
   private chimeContext: AudioContext | null = null;
   private autoRearmTimer: ReturnType<typeof setTimeout> | null = null;
   private autoRearmToken = 0;
-  private audioModeChangeHandler: ((mode: AudioMode) => void) | null = null;
-  private autoListenChangeHandler: ((enabled: boolean) => void) | null = null;
+  private voiceSettingsChangeHandler: ((settings: VoiceSettings) => void) | null = null;
   private nativeRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
+  private currentVoiceSettings: VoiceSettings;
 
   constructor(private readonly options: SpeechAudioControllerOptions) {
-    this.currentAudioMode = options.initialAudioMode;
-    this.currentAutoListenEnabled = options.initialAutoListenEnabled;
+    this.currentVoiceSettings = normalizeVoiceSettings(options.initialVoiceSettings);
+    this.currentAudioMode = this.currentVoiceSettings.audioMode;
+    this.currentAutoListenEnabled = this.currentVoiceSettings.autoListenEnabled;
+  }
+
+  get voiceSettings(): VoiceSettings {
+    return { ...this.currentVoiceSettings };
   }
 
   get audioMode(): AudioMode {
@@ -313,12 +305,8 @@ export class SpeechAudioController {
     return this.currentAutoListenEnabled;
   }
 
-  setAudioModeChangeHandler(handler: ((mode: AudioMode) => void) | null): void {
-    this.audioModeChangeHandler = handler;
-  }
-
-  setAutoListenChangeHandler(handler: ((enabled: boolean) => void) | null): void {
-    this.autoListenChangeHandler = handler;
+  setVoiceSettingsChangeHandler(handler: ((settings: VoiceSettings) => void) | null): void {
+    this.voiceSettingsChangeHandler = handler;
   }
 
   setNativeRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
@@ -609,14 +597,43 @@ export class SpeechAudioController {
     });
 
     audioModeSelectEl.addEventListener('change', () => {
-      this.setAudioMode(audioModeSelectEl.value as AudioMode);
+      this.setVoiceSettings({
+        ...this.currentVoiceSettings,
+        audioMode: audioModeSelectEl.value as AudioMode,
+      });
     });
     autoListenCheckboxEl.addEventListener('change', () => {
-      this.setAutoListenEnabled(autoListenCheckboxEl.checked);
+      this.setVoiceSettings({
+        ...this.currentVoiceSettings,
+        autoListenEnabled: autoListenCheckboxEl.checked,
+      });
+    });
+    this.options.voiceAdapterBaseUrlInputEl.addEventListener('change', () => {
+      this.commitVoiceSettingsFromInputs();
+    });
+    this.options.voiceRecognitionStartTimeoutInputEl.addEventListener('change', () => {
+      this.commitVoiceSettingsFromInputs();
+    });
+    this.options.voiceRecognitionCompletionTimeoutInputEl.addEventListener('change', () => {
+      this.commitVoiceSettingsFromInputs();
+    });
+    this.options.voiceRecognitionEndSilenceInputEl.addEventListener('change', () => {
+      this.commitVoiceSettingsFromInputs();
+    });
+    this.options.voiceAdapterBaseUrlInputEl.addEventListener('blur', () => {
+      this.syncVoiceSettingsInputs();
+    });
+    this.options.voiceRecognitionStartTimeoutInputEl.addEventListener('blur', () => {
+      this.syncVoiceSettingsInputs();
+    });
+    this.options.voiceRecognitionCompletionTimeoutInputEl.addEventListener('blur', () => {
+      this.syncVoiceSettingsInputs();
+    });
+    this.options.voiceRecognitionEndSilenceInputEl.addEventListener('blur', () => {
+      this.syncVoiceSettingsInputs();
     });
 
-    this.applyAudioMode(this.currentAudioMode, { persist: false, notify: false });
-    this.applyAutoListenEnabled(this.currentAutoListenEnabled, { persist: false, notify: false });
+    this.applyVoiceSettings(this.currentVoiceSettings, { persist: false, notify: false });
 
     this.syncMicButtonState();
     this.attachMediaSessionHandlers();
@@ -722,24 +739,58 @@ export class SpeechAudioController {
   }
 
   setAudioMode(mode: AudioMode): void {
-    this.applyAudioMode(mode, { persist: true, notify: true });
+    this.setVoiceSettings({
+      ...this.currentVoiceSettings,
+      audioMode: mode,
+    });
   }
 
   setAutoListenEnabled(enabled: boolean): void {
-    this.applyAutoListenEnabled(enabled, { persist: true, notify: true });
+    this.setVoiceSettings({
+      ...this.currentVoiceSettings,
+      autoListenEnabled: enabled,
+    });
   }
 
-  private applyAudioMode(
-    mode: AudioMode,
+  setVoiceSettings(settings: VoiceSettings): void {
+    this.applyVoiceSettings(settings, { persist: true, notify: true });
+  }
+
+  private commitVoiceSettingsFromInputs(): void {
+    this.applyVoiceSettings(
+      normalizeVoiceSettings({
+        ...this.currentVoiceSettings,
+        audioMode: this.options.audioModeSelectEl.value,
+        autoListenEnabled: this.options.autoListenCheckboxEl.checked,
+        voiceAdapterBaseUrl: this.options.voiceAdapterBaseUrlInputEl.value,
+        recognitionStartTimeoutMs: this.options.voiceRecognitionStartTimeoutInputEl.value,
+        recognitionCompletionTimeoutMs: this.options.voiceRecognitionCompletionTimeoutInputEl.value,
+        recognitionEndSilenceMs: this.options.voiceRecognitionEndSilenceInputEl.value,
+      }),
+      { persist: true, notify: true },
+    );
+  }
+
+  private applyVoiceSettings(
+    settings: VoiceSettings,
     options: { persist: boolean; notify: boolean },
   ): void {
+    let nextSettings = normalizeVoiceSettings(settings);
     if (!this.options.supportsAudioOutput()) {
-      return;
+      nextSettings = {
+        ...nextSettings,
+        audioMode: 'off',
+        autoListenEnabled: false,
+      };
     }
 
     const nextMode: AudioMode =
-      mode === 'response' && this.options.useNativeVoiceRuntime ? 'response' : mode;
-    const previousMode = this.currentAudioMode;
+      nextSettings.audioMode === 'response' && this.options.useNativeVoiceRuntime
+        ? 'response'
+        : nextSettings.audioMode;
+    const nextAutoListenEnabled = Boolean(nextSettings.autoListenEnabled);
+    const previousSettings = this.currentVoiceSettings;
+    const previousMode = previousSettings.audioMode;
     const previousEnabled = previousMode !== 'off';
     const nextEnabled = nextMode !== 'off';
 
@@ -775,49 +826,75 @@ export class SpeechAudioController {
       this.isTtsPlaying = false;
       this.options.setTtsStatus('');
     }
+    if (!nextAutoListenEnabled) {
+      this.clearAutoRearmTimer();
+    }
 
+    nextSettings = {
+      ...nextSettings,
+      audioMode: nextMode,
+      autoListenEnabled: nextAutoListenEnabled,
+    };
+    this.currentVoiceSettings = nextSettings;
     this.currentAudioMode = nextMode;
-    this.options.audioModeSelectEl.value = nextMode;
+    this.currentAutoListenEnabled = nextAutoListenEnabled;
+    this.syncVoiceSettingsInputs();
+    this.syncVoiceSettingsControlState();
     this.updateMediaSessionPlaybackState();
     this.syncMicButtonState();
 
     if (options.persist) {
       try {
-        localStorage.setItem(this.options.audioModeStorageKey, nextMode);
+        localStorage.setItem(
+          this.options.voiceSettingsStorageKey,
+          JSON.stringify(this.currentVoiceSettings),
+        );
       } catch {
         // Ignore localStorage errors
       }
     }
     this.options.sendModesUpdate();
-    if (options.notify && (previousMode !== nextMode || previousEnabled !== nextEnabled)) {
-      this.audioModeChangeHandler?.(nextMode);
+    if (
+      options.notify &&
+      (
+        previousMode !== nextMode ||
+        previousEnabled !== nextEnabled ||
+        previousSettings.autoListenEnabled !== nextAutoListenEnabled ||
+        previousSettings.voiceAdapterBaseUrl !== nextSettings.voiceAdapterBaseUrl ||
+        previousSettings.recognitionStartTimeoutMs !== nextSettings.recognitionStartTimeoutMs ||
+        previousSettings.recognitionCompletionTimeoutMs !==
+          nextSettings.recognitionCompletionTimeoutMs ||
+        previousSettings.recognitionEndSilenceMs !== nextSettings.recognitionEndSilenceMs
+      )
+    ) {
+      this.voiceSettingsChangeHandler?.({ ...this.currentVoiceSettings });
     }
   }
 
-  private applyAutoListenEnabled(
-    enabled: boolean,
-    options: { persist: boolean; notify: boolean },
-  ): void {
-    const nextEnabled = Boolean(enabled) && this.options.supportsAudioOutput();
-    const previousEnabled = this.currentAutoListenEnabled;
-    this.currentAutoListenEnabled = nextEnabled;
-    this.options.autoListenCheckboxEl.checked = nextEnabled;
+  private syncVoiceSettingsInputs(): void {
+    this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
+    this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
+    this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
+    this.options.voiceRecognitionStartTimeoutInputEl.value = String(
+      this.currentVoiceSettings.recognitionStartTimeoutMs,
+    );
+    this.options.voiceRecognitionCompletionTimeoutInputEl.value = String(
+      this.currentVoiceSettings.recognitionCompletionTimeoutMs,
+    );
+    this.options.voiceRecognitionEndSilenceInputEl.value = String(
+      this.currentVoiceSettings.recognitionEndSilenceMs,
+    );
+  }
 
-    if (!nextEnabled) {
-      this.clearAutoRearmTimer();
-    }
-
-    if (options.persist) {
-      try {
-        localStorage.setItem(this.options.autoListenStorageKey, nextEnabled ? 'true' : 'false');
-      } catch {
-        // Ignore localStorage errors
-      }
-    }
-
-    if (options.notify && previousEnabled !== nextEnabled) {
-      this.autoListenChangeHandler?.(nextEnabled);
-    }
+  private syncVoiceSettingsControlState(): void {
+    const supportsAudioOutput = this.options.supportsAudioOutput();
+    const supportsNativeVoiceSettings = Boolean(this.options.useNativeVoiceRuntime);
+    this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
+    this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
+    this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
   }
 
   async startPushToTalk(): Promise<void> {

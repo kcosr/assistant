@@ -113,7 +113,18 @@ Native should carry forward `durationMs` from the `agent-voice-adapter` recognit
 
 ## Adapter Configuration
 
-Native receives the `agent-voice-adapter` base URL from the web layer.
+Native receives a single `voiceSettings` payload from the web layer.
+
+Current fields:
+
+- `audioMode`
+- `autoListenEnabled`
+- `voiceAdapterBaseUrl`
+- `recognitionStartTimeoutMs`
+- `recognitionCompletionTimeoutMs`
+- `recognitionEndSilenceMs`
+
+`voiceAdapterBaseUrl` is sourced from that model.
 
 Default:
 
@@ -143,10 +154,8 @@ Recommended minimum web-to-native API:
 
 ### Config setters
 
-- `setAudioMode({ mode: 'off' | 'tool' | 'response' })`
-- `setAutoListenEnabled({ enabled: boolean })`
+- `setVoiceSettings({ settings })`
 - `setSelectedSession({ selection: { panelId, sessionId } | null })`
-- `setVoiceAdapterBaseUrl({ url: string })`
 - `setAssistantBaseUrl({ url: string })`
 
 ### User actions
@@ -167,6 +176,21 @@ Recommended minimum web-to-native API:
   - message suitable for local foreground display only
 
 The exact Capacitor plugin surface may differ, but these are the required semantics.
+
+Recommended `setVoiceSettings` payload:
+
+```json
+{
+  "settings": {
+    "audioMode": "tool",
+    "autoListenEnabled": true,
+    "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "recognitionStartTimeoutMs": 30000,
+    "recognitionCompletionTimeoutMs": 60000,
+    "recognitionEndSilenceMs": 1200
+  }
+}
+```
 
 ## Packaging Recommendation
 

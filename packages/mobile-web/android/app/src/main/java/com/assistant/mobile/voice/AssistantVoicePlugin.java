@@ -27,12 +27,12 @@ import org.json.JSONObject;
     }
 )
 public final class AssistantVoicePlugin extends Plugin {
-    private static final String PENDING_ACTION_SET_AUDIO_MODE = "set_audio_mode";
+    private static final String PENDING_ACTION_SET_VOICE_SETTINGS = "set_voice_settings";
     private static final String PENDING_ACTION_START_LISTEN = "start_manual_listen";
 
     private BroadcastReceiver receiver;
     private String pendingPermissionAction = "";
-    private String pendingAudioMode = AssistantVoiceConfig.AUDIO_MODE_OFF;
+    private AssistantVoiceConfig pendingVoiceSettings = null;
 
     @Override
     public void load() {
@@ -87,55 +87,22 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void setAudioMode(PluginCall call) {
-        String mode = call.getString(AssistantVoiceConfig.EXTRA_AUDIO_MODE);
-        if (mode == null) {
-            mode = call.getString("mode");
-        }
-        if (
-            mode == null
-                || (
-                    !AssistantVoiceConfig.AUDIO_MODE_OFF.equals(mode)
-                        && !AssistantVoiceConfig.AUDIO_MODE_TOOL.equals(mode)
-                        && !AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(mode)
-                )
-        ) {
-            call.reject("mode must be one of off, tool, or response");
+    public void setVoiceSettings(PluginCall call) {
+        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+        AssistantVoiceConfig updated = extractVoiceSettingsConfig(call, current);
+        if (updated == null) {
+            call.reject("settings is required");
             return;
         }
 
-        if (!AssistantVoiceConfig.AUDIO_MODE_OFF.equals(mode) && !hasVoiceModePermissions()) {
-            pendingPermissionAction = PENDING_ACTION_SET_AUDIO_MODE;
-            pendingAudioMode = mode;
+        if (updated.isEnabled() && !hasVoiceModePermissions()) {
+            pendingPermissionAction = PENDING_ACTION_SET_VOICE_SETTINGS;
+            pendingVoiceSettings = updated;
             saveCall(call);
             requestVoiceModePermissions(call);
             return;
         }
 
-        applyAudioMode(mode);
-        call.resolve(buildStatePayload());
-    }
-
-    @PluginMethod
-    public void setAutoListenEnabled(PluginCall call) {
-        Boolean enabled = call.getBoolean(AssistantVoiceConfig.EXTRA_AUTO_LISTEN_ENABLED, null);
-        if (enabled == null) {
-            enabled = call.getBoolean("enabled", null);
-        }
-        if (enabled == null) {
-            call.reject("enabled is required");
-            return;
-        }
-
-        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = new AssistantVoiceConfig(
-            current.audioMode,
-            enabled,
-            current.selectedPanelId,
-            current.selectedSessionId,
-            current.voiceAdapterBaseUrl,
-            current.assistantBaseUrl
-        );
         applyConfig(updated);
         call.resolve(buildStatePayload());
     }
@@ -154,28 +121,12 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
             current.autoListenEnabled,
+            current.recognitionStartTimeoutMs,
+            current.recognitionCompletionTimeoutMs,
+            current.recognitionEndSilenceMs,
             panelId,
             sessionId,
             current.voiceAdapterBaseUrl,
-            current.assistantBaseUrl
-        );
-        applyConfig(updated);
-        call.resolve(buildStatePayload());
-    }
-
-    @PluginMethod
-    public void setVoiceAdapterBaseUrl(PluginCall call) {
-        String url = call.getString("url");
-        if (url == null) {
-            url = call.getString(AssistantVoiceConfig.EXTRA_VOICE_ADAPTER_BASE_URL);
-        }
-        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = new AssistantVoiceConfig(
-            current.audioMode,
-            current.autoListenEnabled,
-            current.selectedPanelId,
-            current.selectedSessionId,
-            url,
             current.assistantBaseUrl
         );
         applyConfig(updated);
@@ -192,6 +143,9 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
             current.autoListenEnabled,
+            current.recognitionStartTimeoutMs,
+            current.recognitionCompletionTimeoutMs,
+            current.recognitionEndSilenceMs,
             current.selectedPanelId,
             current.selectedSessionId,
             current.voiceAdapterBaseUrl,
@@ -241,18 +195,18 @@ public final class AssistantVoicePlugin extends Plugin {
         }
         if (!hasVoiceModePermissions()) {
             pendingPermissionAction = "";
-            pendingAudioMode = AssistantVoiceConfig.AUDIO_MODE_OFF;
+            pendingVoiceSettings = null;
             savedCall.reject("Microphone and notification permissions are required");
             bridge.releaseCall(savedCall);
             return;
         }
 
-        if (PENDING_ACTION_SET_AUDIO_MODE.equals(pendingPermissionAction)) {
-            applyAudioMode(pendingAudioMode);
+        if (PENDING_ACTION_SET_VOICE_SETTINGS.equals(pendingPermissionAction) && pendingVoiceSettings != null) {
+            applyConfig(pendingVoiceSettings);
         }
 
         pendingPermissionAction = "";
-        pendingAudioMode = AssistantVoiceConfig.AUDIO_MODE_OFF;
+        pendingVoiceSettings = null;
         savedCall.resolve(buildStatePayload());
         bridge.releaseCall(savedCall);
     }
@@ -268,14 +222,14 @@ public final class AssistantVoicePlugin extends Plugin {
         }
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = "";
-            pendingAudioMode = AssistantVoiceConfig.AUDIO_MODE_OFF;
+            pendingVoiceSettings = null;
             savedCall.reject("Microphone permission is required");
             bridge.releaseCall(savedCall);
             return;
         }
 
-        if (PENDING_ACTION_SET_AUDIO_MODE.equals(pendingPermissionAction)) {
-            applyAudioMode(pendingAudioMode);
+        if (PENDING_ACTION_SET_VOICE_SETTINGS.equals(pendingPermissionAction) && pendingVoiceSettings != null) {
+            applyConfig(pendingVoiceSettings);
         } else if (PENDING_ACTION_START_LISTEN.equals(pendingPermissionAction)) {
             ContextCompat.startForegroundService(
                 getContext(),
@@ -284,22 +238,9 @@ public final class AssistantVoicePlugin extends Plugin {
         }
 
         pendingPermissionAction = "";
-        pendingAudioMode = AssistantVoiceConfig.AUDIO_MODE_OFF;
+        pendingVoiceSettings = null;
         savedCall.resolve(buildStatePayload());
         bridge.releaseCall(savedCall);
-    }
-
-    private void applyAudioMode(String mode) {
-        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        AssistantVoiceConfig updated = new AssistantVoiceConfig(
-            mode,
-            current.autoListenEnabled,
-            current.selectedPanelId,
-            current.selectedSessionId,
-            current.voiceAdapterBaseUrl,
-            current.assistantBaseUrl
-        );
-        applyConfig(updated);
     }
 
     private void applyConfig(AssistantVoiceConfig config) {
@@ -331,11 +272,17 @@ public final class AssistantVoicePlugin extends Plugin {
             selection.put("sessionId", current.selectedSessionId);
         }
 
+        JSObject voiceSettings = new JSObject();
+        voiceSettings.put("audioMode", current.audioMode);
+        voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
+        voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
+        voiceSettings.put("recognitionStartTimeoutMs", current.recognitionStartTimeoutMs);
+        voiceSettings.put("recognitionCompletionTimeoutMs", current.recognitionCompletionTimeoutMs);
+        voiceSettings.put("recognitionEndSilenceMs", current.recognitionEndSilenceMs);
+
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
-        payload.put("audioMode", current.audioMode);
-        payload.put("autoListenEnabled", current.autoListenEnabled);
-        payload.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
+        payload.put("voiceSettings", voiceSettings);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);
 
@@ -344,6 +291,33 @@ public final class AssistantVoicePlugin extends Plugin {
             payload.put("lastError", error);
         }
         return payload;
+    }
+
+    private AssistantVoiceConfig extractVoiceSettingsConfig(
+        PluginCall call,
+        AssistantVoiceConfig current
+    ) {
+        JSONObject settings = call.getData().optJSONObject("settings");
+        if (settings == null) {
+            return null;
+        }
+        return new AssistantVoiceConfig(
+            settings.optString("audioMode", current.audioMode),
+            settings.optBoolean("autoListenEnabled", current.autoListenEnabled),
+            settings.optInt(
+                "recognitionStartTimeoutMs",
+                current.recognitionStartTimeoutMs
+            ),
+            settings.optInt(
+                "recognitionCompletionTimeoutMs",
+                current.recognitionCompletionTimeoutMs
+            ),
+            settings.optInt("recognitionEndSilenceMs", current.recognitionEndSilenceMs),
+            current.selectedPanelId,
+            current.selectedSessionId,
+            settings.optString("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl),
+            current.assistantBaseUrl
+        );
     }
 
     private boolean hasVoiceModePermissions() {

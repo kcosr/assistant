@@ -9,7 +9,7 @@ This contract covers:
 
 - transcript rendering of `voice_speak` and `voice_ask`
 - rendering of spoken user input through `user_audio`
-- settings ownership for the adapter URL
+- settings ownership for the voice configuration model
 - sync responsibilities from web into native
 
 This contract does not define the native bridge implementation itself. It defines what the web
@@ -96,9 +96,23 @@ Behavior:
 
 ## Settings Ownership
 
+### Voice Settings Model
+
+The web layer owns a single persisted `voice` settings object and surfaces it from the main
+settings menu via a `Voice settings` modal.
+
+Current fields:
+
+- `audioMode`
+- `autoListenEnabled`
+- `voiceAdapterBaseUrl`
+- `recognitionStartTimeoutMs`
+- `recognitionCompletionTimeoutMs`
+- `recognitionEndSilenceMs`
+
 ### Audio Mode
 
-The `Audio Mode` preference is the source of truth for Android-native voice behavior.
+`audioMode` is the source of truth for Android-native voice behavior.
 
 Supported values:
 
@@ -113,7 +127,7 @@ Existing touchpoints:
 
 ### Auto-listen
 
-The `Auto-listen` preference is the source of truth for whether playback automatically transitions
+`autoListenEnabled` is the source of truth for whether playback automatically transitions
 into recognition.
 
 Rules:
@@ -126,28 +140,36 @@ Rules:
 
 ### Adapter URL
 
-The web layer must own and persist the `agent-voice-adapter` base URL.
+`voiceAdapterBaseUrl` is owned and persisted by the web layer.
 
 Initial default:
 
 - `https://assistant/agent-voice-adapter`
 
+### Recognition Timing
+
+The web layer also owns the recognition timing preferences used by native STT requests.
+
+Fields:
+
+- `recognitionStartTimeoutMs`
+- `recognitionCompletionTimeoutMs`
+- `recognitionEndSilenceMs`
+
 Requirements:
 
-- surface it in the existing settings dropdown
-- persist it using the normal web settings/preference model
-- push it into native during initialization
-- push updates to native whenever it changes
+- persist them in the `voice` settings model
+- render them in the `Voice settings` modal
+- push them into native during initialization
+- push updates to native whenever they change
 
 ## Web-To-Native Sync Contract
 
 The web layer must be able to push the following state into native:
 
-- audio mode
-- auto-listen enabled
+- `voiceSettings`
 - selected panel/session
 - Assistant base URL if needed by native submit logic
-- `agent-voice-adapter` base URL
 
 The web layer must also be able to receive high-level native runtime state for foreground UI.
 
@@ -164,6 +186,21 @@ Optional foreground-only details:
 
 - error message
 - adapter disconnected/reconnecting
+
+Recommended setter shape:
+
+```json
+{
+  "settings": {
+    "audioMode": "tool",
+    "autoListenEnabled": true,
+    "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "recognitionStartTimeoutMs": 30000,
+    "recognitionCompletionTimeoutMs": 60000,
+    "recognitionEndSilenceMs": 1200
+  }
+}
+```
 
 ## Existing Rendering Pattern To Reuse
 

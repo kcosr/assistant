@@ -1,10 +1,13 @@
 import type { ShortcutBindingOverrides } from './keyboardShortcuts';
-import { normalizeAudioMode, type AudioMode } from './audioMode';
 import { isCapacitorAndroid } from './capacitor';
+import {
+  createDefaultVoiceSettings,
+  normalizeVoiceSettings,
+  type VoiceSettings,
+} from './voiceSettings';
 
 export interface ClientPreferencesState {
-  audioMode: AudioMode;
-  autoListenEnabled: boolean;
+  voice: VoiceSettings;
   keyboardShortcutsEnabled: boolean;
   keyboardShortcutBindings: ShortcutBindingOverrides | null;
   autoFocusChatOnSessionReady: boolean;
@@ -13,16 +16,16 @@ export interface ClientPreferencesState {
 }
 
 export function loadClientPreferences(options: {
-  audioModeStorageKey: string;
-  autoListenStorageKey: string;
+  voiceStorageKey: string;
   keyboardShortcutsStorageKey: string;
   keyboardShortcutsBindingsStorageKey: string;
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   showContextStorageKey: string;
 }): ClientPreferencesState {
-  let audioMode = normalizeAudioMode(null);
-  let autoListenEnabled = isCapacitorAndroid();
+  let voice = createDefaultVoiceSettings({
+    isCapacitorAndroid: isCapacitorAndroid(),
+  });
   let keyboardShortcutsEnabled = true;
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
@@ -30,12 +33,11 @@ export function loadClientPreferences(options: {
   let showContextEnabled = false;
 
   try {
-    audioMode = normalizeAudioMode(localStorage.getItem(options.audioModeStorageKey));
-    const autoListenStored = localStorage.getItem(options.autoListenStorageKey);
-    if (autoListenStored === 'true') {
-      autoListenEnabled = true;
-    } else if (autoListenStored === 'false') {
-      autoListenEnabled = false;
+    const voiceStored = localStorage.getItem(options.voiceStorageKey);
+    if (voiceStored) {
+      voice = normalizeVoiceSettings(JSON.parse(voiceStored), {
+        isCapacitorAndroid: isCapacitorAndroid(),
+      });
     }
     const shortcutsStored = localStorage.getItem(options.keyboardShortcutsStorageKey);
     if (shortcutsStored === 'false') {
@@ -65,44 +67,13 @@ export function loadClientPreferences(options: {
   }
 
   return {
-    audioMode,
-    autoListenEnabled,
+    voice,
     keyboardShortcutsEnabled,
     keyboardShortcutBindings,
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
     showContextEnabled,
   };
-}
-
-export function initializeAudioModeSelect(options: {
-  select: HTMLSelectElement;
-  initialAudioMode: AudioMode;
-  supportsAudioOutput: boolean;
-}): AudioMode {
-  if (!options.supportsAudioOutput) {
-    options.select.disabled = true;
-    options.select.value = 'off';
-    return 'off';
-  }
-
-  options.select.value = options.initialAudioMode;
-  return options.initialAudioMode;
-}
-
-export function initializeAutoListenCheckbox(options: {
-  checkbox: HTMLInputElement;
-  initialAutoListenEnabled: boolean;
-  supportsAudioOutput: boolean;
-}): boolean {
-  if (!options.supportsAudioOutput) {
-    options.checkbox.disabled = true;
-    options.checkbox.checked = false;
-    return false;
-  }
-
-  options.checkbox.checked = options.initialAutoListenEnabled;
-  return options.initialAutoListenEnabled;
 }
 
 export function wirePreferencesCheckboxes(options: {

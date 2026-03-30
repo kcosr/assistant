@@ -82,7 +82,6 @@ import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboar
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
-import type { AudioMode } from './utils/audioMode';
 import {
   applyThemePreferences,
   CODE_FONT_OPTIONS,
@@ -92,6 +91,7 @@ import {
   UI_FONT_OPTIONS,
   watchSystemThemeChanges,
 } from './utils/themeManager';
+import { DEFAULT_VOICE_ADAPTER_BASE_URL, type VoiceSettings } from './utils/voiceSettings';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
 import {
@@ -133,7 +133,6 @@ const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
-const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-adapter';
 const WINDOW_ID = getClientWindowId();
 let stopWindowSlotHeartbeat: (() => void) | null = null;
 const startHeartbeat = (): void => {
@@ -394,9 +393,15 @@ async function main(): Promise<void> {
   const {
     status: statusEl,
     controlsToggleButton: controlsToggleButtonEl,
+    voiceSettingsButton: voiceSettingsButtonEl,
+    voiceSettingsModal: voiceSettingsModalEl,
+    voiceSettingsCloseButton: voiceSettingsCloseButtonEl,
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
+    voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
@@ -485,8 +490,7 @@ async function main(): Promise<void> {
   let socket: WebSocket | null = null;
 
   const speechFeaturesEnabled = isSpeechFeatureEnabled();
-  const AUDIO_MODE_STORAGE_KEY = 'aiAssistantAudioMode';
-  const AUTO_LISTEN_STORAGE_KEY = 'aiAssistantAutoListenEnabled';
+  const VOICE_SETTINGS_STORAGE_KEY = 'aiAssistantVoiceSettings';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
   const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
@@ -501,21 +505,12 @@ async function main(): Promise<void> {
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
-  const VOICE_ADAPTER_BASE_URL_STORAGE_KEY = 'aiAssistantVoiceAdapterBaseUrl';
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
   const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
-  const normalizeVoiceAdapterBaseUrl = (value: string | null | undefined): string => {
-    if (typeof value !== 'string') {
-      return DEFAULT_VOICE_ADAPTER_BASE_URL;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : DEFAULT_VOICE_ADAPTER_BASE_URL;
-  };
 
   const initialPreferences = loadClientPreferences({
-    audioModeStorageKey: AUDIO_MODE_STORAGE_KEY,
-    autoListenStorageKey: AUTO_LISTEN_STORAGE_KEY,
+    voiceStorageKey: VOICE_SETTINGS_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
@@ -523,15 +518,7 @@ async function main(): Promise<void> {
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
   });
 
-  const initialAudioMode = initialPreferences.audioMode;
-  const initialAutoListenEnabled = initialPreferences.autoListenEnabled;
-  let voiceAdapterBaseUrl = (() => {
-    try {
-      return normalizeVoiceAdapterBaseUrl(localStorage.getItem(VOICE_ADAPTER_BASE_URL_STORAGE_KEY));
-    } catch {
-      return DEFAULT_VOICE_ADAPTER_BASE_URL;
-    }
-  })();
+  const initialVoiceSettings = initialPreferences.voice;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
@@ -539,38 +526,7 @@ async function main(): Promise<void> {
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
-  if (voiceAdapterBaseUrlInputEl) {
-    voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
-    voiceAdapterBaseUrlInputEl.value = voiceAdapterBaseUrl;
-  }
-  const applyVoiceAdapterBaseUrl = (
-    nextValue: string,
-    options?: { persist?: boolean; sync?: boolean },
-  ): void => {
-    const persist = options?.persist ?? true;
-    const sync = options?.sync ?? true;
-    const normalized = normalizeVoiceAdapterBaseUrl(nextValue);
-    voiceAdapterBaseUrl = normalized;
-    if (voiceAdapterBaseUrlInputEl && voiceAdapterBaseUrlInputEl.value !== normalized) {
-      voiceAdapterBaseUrlInputEl.value = normalized;
-    }
-    if (persist) {
-      try {
-        localStorage.setItem(VOICE_ADAPTER_BASE_URL_STORAGE_KEY, normalized);
-      } catch {
-        // Ignore localStorage errors.
-      }
-    }
-    if (sync) {
-      syncNativeVoiceAdapterBaseUrl();
-    }
-  };
-  voiceAdapterBaseUrlInputEl?.addEventListener('change', () => {
-    applyVoiceAdapterBaseUrl(voiceAdapterBaseUrlInputEl.value);
-  });
-  voiceAdapterBaseUrlInputEl?.addEventListener('blur', () => {
-    voiceAdapterBaseUrlInputEl.value = voiceAdapterBaseUrl;
-  });
+  voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
     const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
@@ -924,18 +880,20 @@ async function main(): Promise<void> {
     return chatPanelsById.get(active.panelId) ?? null;
   }
 
-  const nativeAudioModeSync = new AsyncValueSync<AudioMode>((mode) =>
-    nativeVoiceBridge.setAudioMode(mode),
-  );
-  const nativeAutoListenSync = new AsyncValueSync<boolean>((enabled) =>
-    nativeVoiceBridge.setAutoListenEnabled(enabled),
+  const isVoiceSettingsEqual = (left: VoiceSettings, right: VoiceSettings): boolean =>
+    left.audioMode === right.audioMode &&
+    left.autoListenEnabled === right.autoListenEnabled &&
+    left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
+    left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
+    left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
+    left.recognitionEndSilenceMs === right.recognitionEndSilenceMs;
+  const nativeVoiceSettingsSync = new AsyncValueSync<VoiceSettings>(
+    (settings) => nativeVoiceBridge.setVoiceSettings(settings),
+    isVoiceSettingsEqual,
   );
   const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
     (selection) => nativeVoiceBridge.setSelectedSession(selection),
     (left, right) => left?.panelId === right?.panelId && left?.sessionId === right?.sessionId,
-  );
-  const nativeVoiceAdapterUrlSync = new AsyncValueSync<string>((url) =>
-    nativeVoiceBridge.setVoiceAdapterBaseUrl(url),
   );
   const nativeAssistantBaseUrlSync = new AsyncValueSync<string>((url) =>
     nativeVoiceBridge.setAssistantBaseUrl(url),
@@ -980,24 +938,14 @@ async function main(): Promise<void> {
     });
   }
 
-  function syncNativeAudioMode(): void {
-    const mode = getPrimaryChatInputRuntime()?.getAudioMode() ?? initialAudioMode;
-    nativeAudioModeSync.request(mode);
-  }
-
-  function syncNativeAutoListenEnabled(): void {
-    const enabled =
-      getPrimaryChatInputRuntime()?.getAutoListenEnabled() ?? initialAutoListenEnabled;
-    nativeAutoListenSync.request(enabled);
-  }
-
   function syncNativeSelectedSession(): void {
     const selection = getNativeVoiceSelectedSession();
     nativeSelectedSessionSync.request(selection);
   }
 
-  function syncNativeVoiceAdapterBaseUrl(): void {
-    nativeVoiceAdapterUrlSync.request(voiceAdapterBaseUrl);
+  function syncNativeVoiceSettings(): void {
+    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    nativeVoiceSettingsSync.request(settings);
   }
 
   function syncNativeAssistantBaseUrl(): void {
@@ -1009,9 +957,7 @@ async function main(): Promise<void> {
 
   function syncNativeVoiceBridgeState(): void {
     syncNativeAssistantBaseUrl();
-    syncNativeVoiceAdapterBaseUrl();
-    syncNativeAudioMode();
-    syncNativeAutoListenEnabled();
+    syncNativeVoiceSettings();
     syncNativeSelectedSession();
   }
 
@@ -1361,6 +1307,10 @@ async function main(): Promise<void> {
       cancelQueuedMessage,
       audioModeSelectEl,
       autoListenCheckboxEl,
+      voiceAdapterBaseUrlInputEl,
+      voiceRecognitionStartTimeoutInputEl,
+      voiceRecognitionCompletionTimeoutInputEl,
+      voiceRecognitionEndSilenceInputEl,
       initialIncludePanelContext: includePanelContext,
       initialBriefModeEnabled: briefModeEnabled,
       onIncludePanelContextChange: (enabled) => {
@@ -1370,10 +1320,8 @@ async function main(): Promise<void> {
         applyBriefModeEnabled(enabled);
       },
       speechFeaturesEnabled,
-      initialAudioMode,
-      initialAutoListenEnabled,
-      audioModeStorageKey: AUDIO_MODE_STORAGE_KEY,
-      autoListenStorageKey: AUTO_LISTEN_STORAGE_KEY,
+      initialVoiceSettings,
+      voiceSettingsStorageKey: VOICE_SETTINGS_STORAGE_KEY,
       continuousListeningLongPressMs: 500,
       useNativeVoiceRuntime,
       nativeVoiceBridge,
@@ -1404,11 +1352,8 @@ async function main(): Promise<void> {
       },
     );
     chatPanelsById.set(panelId, entry);
-    entry.inputRuntime.speechAudioController?.setAudioModeChangeHandler(() => {
-      syncNativeAudioMode();
-    });
-    entry.inputRuntime.speechAudioController?.setAutoListenChangeHandler(() => {
-      syncNativeAutoListenEnabled();
+    entry.inputRuntime.speechAudioController?.setVoiceSettingsChangeHandler(() => {
+      syncNativeVoiceSettings();
     });
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
@@ -3285,6 +3230,34 @@ async function main(): Promise<void> {
     toggleButton: controlsToggleButtonEl,
   });
   settingsDropdownController.attach();
+  const closeVoiceSettingsModal = (): void => {
+    voiceSettingsModalEl.classList.remove('open');
+    dialogManager.releaseExternalDialog(voiceSettingsModalEl);
+  };
+  const openVoiceSettingsModal = (): void => {
+    settingsDropdownController.close();
+    voiceSettingsModalEl.classList.add('open');
+    dialogManager.registerExternalDialog(voiceSettingsModalEl, closeVoiceSettingsModal);
+    audioModeSelectEl.focus();
+  };
+  voiceSettingsButtonEl.addEventListener('click', () => {
+    openVoiceSettingsModal();
+  });
+  voiceSettingsCloseButtonEl.addEventListener('click', () => {
+    closeVoiceSettingsModal();
+  });
+  voiceSettingsModalEl.addEventListener('click', (event) => {
+    if (event.target === voiceSettingsModalEl) {
+      closeVoiceSettingsModal();
+    }
+  });
+  voiceSettingsModalEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    closeVoiceSettingsModal();
+  });
   const layoutDropdownController =
     layoutDropdownButton && layoutDropdown
       ? new SettingsDropdownController({

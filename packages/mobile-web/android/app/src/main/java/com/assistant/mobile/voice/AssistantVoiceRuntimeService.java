@@ -805,6 +805,9 @@ public final class AssistantVoiceRuntimeService extends Service {
                 putJson(message, "sampleRate", sampleRate);
                 putJson(message, "channels", channels);
                 putJson(message, "encoding", encoding);
+                putJson(message, "startTimeoutMs", config.recognitionStartTimeoutMs);
+                putJson(message, "completionTimeoutMs", config.recognitionCompletionTimeoutMs);
+                putJson(message, "endSilenceMs", config.recognitionEndSilenceMs);
                 sendAdapterMessage(message);
             }
 
