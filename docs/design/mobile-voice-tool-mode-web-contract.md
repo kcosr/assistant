@@ -96,10 +96,15 @@ Behavior:
 
 ## Settings Ownership
 
-### Audio responses
+### Audio Mode
 
-The existing `audio responses` preference remains the source of truth for whether native voice mode
-is enabled on Android.
+The `Audio Mode` preference is the source of truth for Android-native voice behavior.
+
+Supported values:
+
+- `Off`
+- `Tool`
+- `Response`
 
 Existing touchpoints:
 
@@ -125,7 +130,7 @@ Requirements:
 
 The web layer must be able to push the following state into native:
 
-- voice-mode enabled/disabled
+- audio mode
 - selected panel/session
 - Assistant base URL if needed by native submit logic
 - `agent-voice-adapter` base URL

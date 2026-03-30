@@ -135,7 +135,7 @@ Recommended minimum web-to-native API:
 
 ### Config setters
 
-- `setVoiceModeEnabled({ enabled: boolean })`
+- `setAudioMode({ mode: 'off' | 'tool' | 'response' })`
 - `setSelectedSession({ selection: { panelId, sessionId } | null })`
 - `setVoiceAdapterBaseUrl({ url: string })`
 - `setAssistantBaseUrl({ url: string })`

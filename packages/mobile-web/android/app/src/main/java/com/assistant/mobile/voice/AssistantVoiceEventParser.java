@@ -3,15 +3,11 @@ package com.assistant.mobile.voice;
 final class AssistantVoiceEventParser {
     private AssistantVoiceEventParser() {}
 
-    static AssistantVoicePromptEvent parsePromptEventJson(String eventJson) {
+    static AssistantVoicePromptEvent parsePlaybackEventJson(String eventJson) {
         if (eventJson == null || eventJson.trim().isEmpty()) {
             return null;
         }
         String eventType = trim(findStringField(eventJson, "type", 0));
-        if (!"tool_call".equals(eventType)) {
-            return null;
-        }
-
         String eventId = trim(findStringField(eventJson, "id", 0));
         String sessionId = trim(findStringField(eventJson, "sessionId", 0));
         String payloadJson = extractObjectField(eventJson, "payload", 0);
@@ -19,19 +15,36 @@ final class AssistantVoiceEventParser {
             return null;
         }
 
-        String toolName = trim(findStringField(payloadJson, "toolName", 0));
-        String toolCallId = trim(findStringField(payloadJson, "toolCallId", 0));
-        String argsJson = extractObjectField(payloadJson, "args", 0);
-        String text = trim(findStringField(argsJson, "text", 0));
-        if (
-            !AssistantVoiceInteractionRules.isVoicePromptTool(toolName)
-                || toolCallId.isEmpty()
-                || text.isEmpty()
-        ) {
-            return null;
+        if ("tool_call".equals(eventType)) {
+            String toolName = trim(findStringField(payloadJson, "toolName", 0));
+            String toolCallId = trim(findStringField(payloadJson, "toolCallId", 0));
+            String argsJson = extractObjectField(payloadJson, "args", 0);
+            String text = trim(findStringField(argsJson, "text", 0));
+            if (
+                !AssistantVoiceInteractionRules.isVoicePromptTool(toolName)
+                    || toolCallId.isEmpty()
+                    || text.isEmpty()
+            ) {
+                return null;
+            }
+            return new AssistantVoicePromptEvent(eventId, sessionId, toolCallId, toolName, text);
         }
 
-        return new AssistantVoicePromptEvent(eventId, sessionId, toolCallId, toolName, text);
+        if ("assistant_done".equals(eventType)) {
+            String phase = trim(findStringField(payloadJson, "phase", 0));
+            String text = trim(findStringField(payloadJson, "text", 0));
+            if (!text.isEmpty() && (phase.isEmpty() || "final_answer".equals(phase))) {
+                return new AssistantVoicePromptEvent(
+                    eventId,
+                    sessionId,
+                    "",
+                    "assistant_response",
+                    text
+                );
+            }
+        }
+
+        return null;
     }
 
     private static String extractObjectField(String json, String key, int fromIndex) {

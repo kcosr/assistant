@@ -1,7 +1,7 @@
 export interface WebClientElements {
   status: HTMLElement;
   controlsToggleButton: HTMLButtonElement;
-  audioResponsesCheckbox: HTMLInputElement;
+  audioModeSelect: HTMLSelectElement;
   voiceAdapterBaseUrlInput: HTMLInputElement | null;
   includeContextCheckbox: HTMLInputElement | null;
   showContextCheckbox: HTMLInputElement | null;
@@ -55,7 +55,7 @@ function getElement<T extends HTMLElement>(id: string): T | null {
 export function getWebClientElements(): WebClientElements | null {
   const status = getElement<HTMLElement>('status');
   const controlsToggleButton = getElement<HTMLButtonElement>('controls-toggle-button');
-  const audioResponsesCheckbox = getElement<HTMLInputElement>('audio-responses-checkbox');
+  const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
   const includeContextCheckbox = getElement<HTMLInputElement>('include-context-checkbox');
   const showContextCheckbox = getElement<HTMLInputElement>('show-context-checkbox');
@@ -79,7 +79,7 @@ export function getWebClientElements(): WebClientElements | null {
   if (
     !status ||
     !controlsToggleButton ||
-    !audioResponsesCheckbox ||
+    !audioModeSelect ||
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
@@ -92,7 +92,7 @@ export function getWebClientElements(): WebClientElements | null {
   return {
     status,
     controlsToggleButton,
-    audioResponsesCheckbox,
+    audioModeSelect,
     voiceAdapterBaseUrlInput,
     includeContextCheckbox,
     showContextCheckbox,

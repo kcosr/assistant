@@ -15,10 +15,10 @@ describe('createInputRuntime', () => {
       <button></button>
       <button></button>
       <button><svg class="mic-icon"></svg></button>
-      <input type="checkbox" />
+      <select><option value="off">Off</option><option value="tool">Tool</option><option value="response">Response</option></select>
     `;
 
-    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, checkbox] = Array.from(
+    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select] = Array.from(
       document.body.children,
     ) as [
       HTMLFormElement,
@@ -26,14 +26,14 @@ describe('createInputRuntime', () => {
       HTMLButtonElement,
       HTMLButtonElement,
       HTMLButtonElement,
-      HTMLInputElement,
+      HTMLSelectElement,
     ];
 
     const send = vi.fn();
     const socket = { readyState: WebSocket.OPEN, send } as unknown as WebSocket;
     const nativeVoiceBridge = new AssistantNativeVoiceBridge(() => ({
       AssistantNativeVoice: {
-        setVoiceModeEnabled: vi.fn(),
+        setAudioMode: vi.fn(),
       },
     }));
 
@@ -69,12 +69,12 @@ describe('createInputRuntime', () => {
       getIsSessionExternal: () => false,
       getAgentDisplayName: () => 'Agent',
       cancelQueuedMessage: vi.fn(),
-      audioResponsesCheckboxEl: checkbox,
+      audioModeSelectEl: select,
       initialIncludePanelContext: true,
       initialBriefModeEnabled: false,
       speechFeaturesEnabled: false,
-      initialAudioResponsesEnabled: true,
-      audioResponsesStorageKey: 'test-audio-responses',
+      initialAudioMode: 'tool',
+      audioModeStorageKey: 'test-audio-mode',
       continuousListeningLongPressMs: 250,
       useNativeVoiceRuntime: true,
       nativeVoiceBridge,

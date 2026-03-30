@@ -14,6 +14,7 @@ import { openExternalUrl } from '../utils/capacitor';
 import type { PendingMessageListController } from './pendingMessageListController';
 import type { ChatRuntime } from '../panels/chat/runtime';
 import { ensureEmptySessionHint } from '../utils/emptySessionHint';
+import type { AudioMode } from '../utils/audioMode';
 
 interface SessionSummary {
   sessionId: string;
@@ -42,11 +43,10 @@ export interface ServerMessageHandlerOptions {
   isChatPanelVisible: (sessionId: string) => boolean;
   getSessionSummaries: () => SessionSummary[];
   getSpeechAudioControllerForSession: (sessionId: string) => SpeechAudioController | null;
-  getAudioEnabled: () => boolean;
+  getAudioMode: () => AudioMode;
   getAgentDisplayName: (agentId: string) => string;
   sendModesUpdate: () => void;
   supportsAudioOutput: () => boolean;
-  enableAudioResponses: () => void;
   refreshSessions: (preferredSessionId?: string | null) => Promise<void>;
   loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
   renderAgentSidebar: () => void;
@@ -393,14 +393,10 @@ export class ServerMessageHandler {
           `Connected (session ${message.sessionId.slice(0, 8)})`,
         );
 
-        const audioEnabled = this.options.getAudioEnabled();
+        const audioMode = this.options.getAudioMode();
 
-        if (audioEnabled && message.outputMode === 'text') {
+        if (audioMode !== 'off' && message.outputMode === 'text') {
           this.options.sendModesUpdate();
-        }
-
-        if (this.options.supportsAudioOutput() && audioEnabled) {
-          this.options.enableAudioResponses();
         }
 
         void this.options.refreshSessions(message.sessionId);

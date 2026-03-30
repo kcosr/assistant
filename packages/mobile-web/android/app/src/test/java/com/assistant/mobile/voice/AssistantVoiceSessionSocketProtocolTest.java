@@ -17,7 +17,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     }
 
     @Test
-    public void parsePromptMessageReturnsVoicePromptForMatchingSession() {
+    public void parsePlaybackMessageReturnsVoicePromptForMatchingSession() {
         String message = "{"
             + "\"type\":\"chat_event\","
             + "\"sessionId\":\"session-123\","
@@ -32,7 +32,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
             + "}"
             + "}"
             + "}";
-        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePromptMessage(
+        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(
             message,
             "session-123"
         );
@@ -46,17 +46,43 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     }
 
     @Test
-    public void parsePromptMessageIgnoresMessagesForOtherSessions() {
+    public void parsePlaybackMessageIgnoresMessagesForOtherSessions() {
         String message = "{"
             + "\"type\":\"chat_event\","
             + "\"sessionId\":\"session-other\","
             + "\"event\":{}"
             + "}";
-        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePromptMessage(
+        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(
             message,
             "session-123"
         );
 
         assertNull(prompt);
+    }
+
+    @Test
+    public void parsePlaybackMessageReturnsAssistantResponseForMatchingSession() {
+        String message = "{"
+            + "\"type\":\"chat_event\","
+            + "\"sessionId\":\"session-123\","
+            + "\"event\":{"
+            + "\"id\":\"event-2\","
+            + "\"sessionId\":\"session-123\","
+            + "\"type\":\"assistant_done\","
+            + "\"payload\":{"
+            + "\"phase\":\"final_answer\","
+            + "\"text\":\"Final response text\""
+            + "}"
+            + "}"
+            + "}";
+
+        AssistantVoicePromptEvent prompt = AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(
+            message,
+            "session-123"
+        );
+
+        assertNotNull(prompt);
+        assertTrue("assistant_response".equals(prompt.toolName));
+        assertTrue("Final response text".equals(prompt.text));
     }
 }

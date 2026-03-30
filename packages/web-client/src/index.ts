@@ -82,6 +82,7 @@ import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboar
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
+import type { AudioMode } from './utils/audioMode';
 import {
   applyThemePreferences,
   CODE_FONT_OPTIONS,
@@ -393,7 +394,7 @@ async function main(): Promise<void> {
   const {
     status: statusEl,
     controlsToggleButton: controlsToggleButtonEl,
-    audioResponsesCheckbox: audioResponsesCheckboxEl,
+    audioModeSelect: audioModeSelectEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
@@ -483,7 +484,7 @@ async function main(): Promise<void> {
   let socket: WebSocket | null = null;
 
   const speechFeaturesEnabled = isSpeechFeatureEnabled();
-  const AUDIO_RESPONSES_STORAGE_KEY = 'aiAssistantAudioResponsesEnabled';
+  const AUDIO_MODE_STORAGE_KEY = 'aiAssistantAudioMode';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
   const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
@@ -511,7 +512,7 @@ async function main(): Promise<void> {
   };
 
   const initialPreferences = loadClientPreferences({
-    audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
+    audioModeStorageKey: AUDIO_MODE_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
@@ -519,7 +520,7 @@ async function main(): Promise<void> {
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
   });
 
-  const initialAudioResponsesEnabled = initialPreferences.audioResponsesEnabled;
+  const initialAudioMode = initialPreferences.audioMode;
   let voiceAdapterBaseUrl = (() => {
     try {
       return normalizeVoiceAdapterBaseUrl(localStorage.getItem(VOICE_ADAPTER_BASE_URL_STORAGE_KEY));
@@ -919,8 +920,8 @@ async function main(): Promise<void> {
     return chatPanelsById.get(active.panelId) ?? null;
   }
 
-  const nativeVoiceModeSync = new AsyncValueSync<boolean>((enabled) =>
-    nativeVoiceBridge.setVoiceModeEnabled(enabled),
+  const nativeAudioModeSync = new AsyncValueSync<AudioMode>((mode) =>
+    nativeVoiceBridge.setAudioMode(mode),
   );
   const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
     (selection) => nativeVoiceBridge.setSelectedSession(selection),
@@ -972,9 +973,9 @@ async function main(): Promise<void> {
     });
   }
 
-  function syncNativeVoiceModeEnabled(): void {
-    const enabled = getPrimaryChatInputRuntime()?.getAudioEnabled() ?? initialAudioResponsesEnabled;
-    nativeVoiceModeSync.request(enabled);
+  function syncNativeAudioMode(): void {
+    const mode = getPrimaryChatInputRuntime()?.getAudioMode() ?? initialAudioMode;
+    nativeAudioModeSync.request(mode);
   }
 
   function syncNativeSelectedSession(): void {
@@ -996,7 +997,7 @@ async function main(): Promise<void> {
   function syncNativeVoiceBridgeState(): void {
     syncNativeAssistantBaseUrl();
     syncNativeVoiceAdapterBaseUrl();
-    syncNativeVoiceModeEnabled();
+    syncNativeAudioMode();
     syncNativeSelectedSession();
   }
 
@@ -1344,7 +1345,7 @@ async function main(): Promise<void> {
       getIsSessionExternal: (sessionId: string | null) => isSessionExternal(sessionId),
       getAgentDisplayName,
       cancelQueuedMessage,
-      audioResponsesCheckboxEl,
+      audioModeSelectEl,
       initialIncludePanelContext: includePanelContext,
       initialBriefModeEnabled: briefModeEnabled,
       onIncludePanelContextChange: (enabled) => {
@@ -1354,8 +1355,8 @@ async function main(): Promise<void> {
         applyBriefModeEnabled(enabled);
       },
       speechFeaturesEnabled,
-      initialAudioResponsesEnabled,
-      audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
+      initialAudioMode,
+      audioModeStorageKey: AUDIO_MODE_STORAGE_KEY,
       continuousListeningLongPressMs: 500,
       useNativeVoiceRuntime,
       nativeVoiceBridge,
@@ -1386,8 +1387,8 @@ async function main(): Promise<void> {
       },
     );
     chatPanelsById.set(panelId, entry);
-    entry.inputRuntime.speechAudioController?.setAudioResponsesChangeHandler(() => {
-      syncNativeVoiceModeEnabled();
+    entry.inputRuntime.speechAudioController?.setAudioModeChangeHandler(() => {
+      syncNativeAudioMode();
     });
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
@@ -4121,15 +4122,12 @@ async function main(): Promise<void> {
     getSessionSummaries: () => sessionSummaries,
     getSpeechAudioControllerForSession: (sessionId) =>
       getChatInputRuntimeForSession(sessionId)?.speechAudioController ?? null,
-    getAudioEnabled: () => getPrimaryChatInputRuntime()?.getAudioEnabled() ?? false,
+    getAudioMode: () => getPrimaryChatInputRuntime()?.getAudioMode() ?? 'off',
     getAgentDisplayName,
     sendModesUpdate: () => {
       getPrimaryChatInputRuntime()?.sendModesUpdate();
     },
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
-    enableAudioResponses: () => {
-      getPrimaryChatInputRuntime()?.enableAudioResponses();
-    },
     refreshSessions,
     loadSessionTranscript,
     renderAgentSidebar,

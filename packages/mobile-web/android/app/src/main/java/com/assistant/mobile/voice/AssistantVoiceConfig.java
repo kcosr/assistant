@@ -9,9 +9,13 @@ import java.util.Objects;
 final class AssistantVoiceConfig {
     static final String DEFAULT_VOICE_ADAPTER_BASE_URL = "https://assistant/agent-voice-adapter";
     static final String DEFAULT_ASSISTANT_BASE_URL = "https://assistant";
+    static final String AUDIO_MODE_OFF = "off";
+    static final String AUDIO_MODE_TOOL = "tool";
+    static final String AUDIO_MODE_RESPONSE = "response";
+    static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
-    private static final String KEY_VOICE_MODE_ENABLED = "voice_mode_enabled";
+    private static final String KEY_AUDIO_MODE = "audio_mode";
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
@@ -19,26 +23,26 @@ final class AssistantVoiceConfig {
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
-    static final String EXTRA_VOICE_MODE_ENABLED = "voiceModeEnabled";
+    static final String EXTRA_AUDIO_MODE = "audioMode";
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
     static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
 
-    final boolean voiceModeEnabled;
+    final String audioMode;
     final String selectedPanelId;
     final String selectedSessionId;
     final String voiceAdapterBaseUrl;
     final String assistantBaseUrl;
 
     AssistantVoiceConfig(
-        boolean voiceModeEnabled,
+        String audioMode,
         String selectedPanelId,
         String selectedSessionId,
         String voiceAdapterBaseUrl,
         String assistantBaseUrl
     ) {
-        this.voiceModeEnabled = voiceModeEnabled;
+        this.audioMode = normalizeAudioMode(audioMode);
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
         this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
@@ -54,7 +58,7 @@ final class AssistantVoiceConfig {
     static AssistantVoiceConfig load(Context context) {
         SharedPreferences prefs = prefs(context);
         return new AssistantVoiceConfig(
-            prefs.getBoolean(KEY_VOICE_MODE_ENABLED, false),
+            prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
@@ -65,7 +69,7 @@ final class AssistantVoiceConfig {
     static void save(Context context, AssistantVoiceConfig config) {
         prefs(context)
             .edit()
-            .putBoolean(KEY_VOICE_MODE_ENABLED, config.voiceModeEnabled)
+            .putString(KEY_AUDIO_MODE, config.audioMode)
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
@@ -78,7 +82,9 @@ final class AssistantVoiceConfig {
             return fallback;
         }
         return new AssistantVoiceConfig(
-            intent.getBooleanExtra(EXTRA_VOICE_MODE_ENABLED, fallback.voiceModeEnabled),
+            intent.hasExtra(EXTRA_AUDIO_MODE)
+                ? intent.getStringExtra(EXTRA_AUDIO_MODE)
+                : fallback.audioMode,
             intent.hasExtra(EXTRA_SELECTED_PANEL_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_PANEL_ID)
                 : fallback.selectedPanelId,
@@ -95,7 +101,7 @@ final class AssistantVoiceConfig {
     }
 
     Intent applyToIntent(Intent intent) {
-        intent.putExtra(EXTRA_VOICE_MODE_ENABLED, voiceModeEnabled);
+        intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
@@ -136,6 +142,30 @@ final class AssistantVoiceConfig {
         return normalized.isEmpty() ? null : normalized;
     }
 
+    private static String normalizeAudioMode(String value) {
+        String normalized = normalizeOptional(value);
+        switch (normalized) {
+            case AUDIO_MODE_OFF:
+            case AUDIO_MODE_TOOL:
+            case AUDIO_MODE_RESPONSE:
+                return normalized;
+            default:
+                return DEFAULT_AUDIO_MODE;
+        }
+    }
+
+    boolean isEnabled() {
+        return !AUDIO_MODE_OFF.equals(audioMode);
+    }
+
+    boolean isToolMode() {
+        return AUDIO_MODE_TOOL.equals(audioMode);
+    }
+
+    boolean isResponseMode() {
+        return AUDIO_MODE_RESPONSE.equals(audioMode);
+    }
+
     @Override
     public boolean equals(Object other) {
         if (this == other) {
@@ -145,7 +175,7 @@ final class AssistantVoiceConfig {
             return false;
         }
         AssistantVoiceConfig config = (AssistantVoiceConfig) other;
-        return voiceModeEnabled == config.voiceModeEnabled
+        return Objects.equals(audioMode, config.audioMode)
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
@@ -155,7 +185,7 @@ final class AssistantVoiceConfig {
     @Override
     public int hashCode() {
         return Objects.hash(
-            voiceModeEnabled,
+            audioMode,
             selectedPanelId,
             selectedSessionId,
             voiceAdapterBaseUrl,

@@ -11,7 +11,8 @@ import {
   SpeechAudioController,
 } from '../../controllers/speechAudioController';
 import { TextInputController } from '../../controllers/textInputController';
-import { initializeAudioResponsesCheckbox } from '../../utils/clientPreferences';
+import { initializeAudioModeSelect } from '../../utils/clientPreferences';
+import type { AudioMode } from '../../utils/audioMode';
 import { isCapacitorAndroid } from '../../utils/capacitor';
 import type { ChatRuntime } from '../chat/runtime';
 
@@ -69,14 +70,14 @@ export interface InputRuntimeOptions {
   getIsSessionExternal: (sessionId: string | null) => boolean;
   getAgentDisplayName: (agentId: string) => string;
   cancelQueuedMessage: (messageId: string) => void;
-  audioResponsesCheckboxEl: HTMLInputElement;
+  audioModeSelectEl: HTMLSelectElement;
   initialIncludePanelContext: boolean;
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
   onBriefModeChange?: (enabled: boolean) => void;
   speechFeaturesEnabled: boolean;
-  initialAudioResponsesEnabled: boolean;
-  audioResponsesStorageKey: string;
+  initialAudioMode: AudioMode;
+  audioModeStorageKey: string;
   continuousListeningLongPressMs: number;
   useNativeVoiceRuntime?: boolean | undefined;
   nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
@@ -100,8 +101,7 @@ export interface InputRuntime {
   getIncludePanelContext: () => boolean;
   getBriefModeEnabled: () => boolean;
   sendModesUpdate: () => void;
-  getAudioEnabled: () => boolean;
-  enableAudioResponses: () => void;
+  getAudioMode: () => AudioMode;
   supportsAudioOutput: () => boolean;
 }
 
@@ -286,9 +286,9 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     );
   };
 
-  const audioResponsesEnabled = initializeAudioResponsesCheckbox({
-    checkbox: options.audioResponsesCheckboxEl,
-    initialAudioResponsesEnabled: options.initialAudioResponsesEnabled,
+  const audioMode = initializeAudioModeSelect({
+    select: options.audioModeSelectEl,
+    initialAudioMode: options.initialAudioMode,
     supportsAudioOutput: supportsAudioOutput(),
   });
 
@@ -298,10 +298,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       return;
     }
 
-    const audioEnabled = speechAudioController?.isAudioResponsesEnabled ?? audioResponsesEnabled;
+    const currentAudioMode = speechAudioController?.audioMode ?? audioMode;
     const message: ClientSetModesMessage = {
       type: 'set_modes',
-      outputMode: audioEnabled && !options.useNativeVoiceRuntime ? 'both' : 'text',
+      outputMode:
+        currentAudioMode === 'response' && !options.useNativeVoiceRuntime ? 'both' : 'text',
     };
     socket.send(JSON.stringify(message));
   };
@@ -310,7 +311,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     speechFeaturesEnabled: options.speechFeaturesEnabled,
     speechInputController,
     micButtonEl: elements.micButtonEl,
-    audioResponsesCheckboxEl: options.audioResponsesCheckboxEl,
+    audioModeSelectEl: options.audioModeSelectEl,
     inputEl: elements.inputEl,
     getSocket: options.getSocket,
     getSessionId: options.getSelectedSessionId,
@@ -324,9 +325,9 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     updateScrollButtonVisibility: () => {
       getActiveChatRuntime()?.chatScrollManager.updateScrollButtonVisibility();
     },
-    audioResponsesStorageKey: options.audioResponsesStorageKey,
+    audioModeStorageKey: options.audioModeStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
-    initialAudioResponsesEnabled: audioResponsesEnabled,
+    initialAudioMode: audioMode,
     useNativeVoiceRuntime: options.useNativeVoiceRuntime,
     nativeVoiceBridge: options.nativeVoiceBridge,
   });
@@ -395,10 +396,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getIncludePanelContext: () => includePanelContext,
     getBriefModeEnabled: () => briefModeEnabled,
     sendModesUpdate,
-    getAudioEnabled: () => speechAudioController?.isAudioResponsesEnabled ?? audioResponsesEnabled,
-    enableAudioResponses: () => {
-      speechAudioController?.enableAudioResponses();
-    },
+    getAudioMode: () => speechAudioController?.audioMode ?? audioMode,
     supportsAudioOutput,
   };
 }

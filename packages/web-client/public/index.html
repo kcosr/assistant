@@ -209,10 +209,14 @@
             </svg>
           </button>
           <div id="settings-dropdown" class="settings-dropdown">
-            <div class="settings-dropdown-item">
-              <label for="audio-responses-checkbox">
-                <input type="checkbox" id="audio-responses-checkbox" />
-                Audio responses
+            <div class="settings-dropdown-item settings-dropdown-item--stacked">
+              <label for="audio-mode-select" class="settings-dropdown-label--stacked">
+                Audio Mode
+                <select id="audio-mode-select">
+                  <option value="off">Off</option>
+                  <option value="tool">Tool</option>
+                  <option value="response">Response</option>
+                </select>
               </label>
             </div>
             <div class="settings-dropdown-item settings-dropdown-item--stacked">

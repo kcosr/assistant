@@ -7,18 +7,27 @@ final class AssistantVoiceInteractionRules {
         return "voice_speak".equals(toolName) || "voice_ask".equals(toolName);
     }
 
-    static boolean shouldAutoplayPrompt(
-        boolean voiceModeEnabled,
+    static boolean shouldAutoplayEvent(
+        String audioMode,
         String selectedSessionId,
-        String promptSessionId,
+        AssistantVoicePromptEvent prompt,
         boolean idle
     ) {
-        if (!voiceModeEnabled || !idle) {
+        if (prompt == null || !idle) {
             return false;
         }
         String selected = selectedSessionId == null ? "" : selectedSessionId.trim();
-        String prompt = promptSessionId == null ? "" : promptSessionId.trim();
-        return !selected.isEmpty() && selected.equals(prompt);
+        String promptSessionId = prompt.sessionId == null ? "" : prompt.sessionId.trim();
+        if (selected.isEmpty() || !selected.equals(promptSessionId)) {
+            return false;
+        }
+        if (AssistantVoiceConfig.AUDIO_MODE_TOOL.equals(audioMode)) {
+            return prompt.isToolPrompt();
+        }
+        if (AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(audioMode)) {
+            return prompt.isAssistantResponse();
+        }
+        return false;
     }
 
     static boolean shouldStartRecognitionAfterManualStop(String toolName, boolean manualListenRequested) {

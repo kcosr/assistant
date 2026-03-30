@@ -21,6 +21,14 @@ final class AssistantVoicePromptEvent {
         this.text = text;
     }
 
+    boolean isToolPrompt() {
+        return AssistantVoiceInteractionRules.isVoicePromptTool(toolName);
+    }
+
+    boolean isAssistantResponse() {
+        return "assistant_response".equals(toolName);
+    }
+
     boolean startsListeningAfterPlayback() {
         return "voice_ask".equals(toolName);
     }

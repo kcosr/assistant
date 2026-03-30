@@ -23,7 +23,7 @@ final class AssistantVoiceSessionSocketProtocol {
             + "\"}";
     }
 
-    static AssistantVoicePromptEvent parsePromptMessage(String rawMessage, String selectedSessionId) {
+    static AssistantVoicePromptEvent parsePlaybackMessage(String rawMessage, String selectedSessionId) {
         String expectedSessionId = trim(selectedSessionId);
         if (rawMessage == null || rawMessage.trim().isEmpty() || expectedSessionId.isEmpty()) {
             return null;
@@ -43,7 +43,7 @@ final class AssistantVoiceSessionSocketProtocol {
         if (eventJson.isEmpty()) {
             return null;
         }
-        return AssistantVoiceEventParser.parsePromptEventJson(eventJson);
+        return AssistantVoiceEventParser.parsePlaybackEventJson(eventJson);
     }
 
     static String parseSubscriptionSessionId(String rawMessage, String type) {

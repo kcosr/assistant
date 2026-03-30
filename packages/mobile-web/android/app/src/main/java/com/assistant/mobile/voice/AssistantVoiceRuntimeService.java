@@ -121,7 +121,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         player.setListener(requestId -> mainHandler.post(() -> handlePlaybackDrained(requestId)));
         createNotificationChannel();
         startInForeground();
-        if (!config.voiceModeEnabled) {
+        if (!config.isEnabled()) {
             updateState(STATE_DISABLED, null);
             stopSelf();
             return;
@@ -144,7 +144,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_NOT_STICKY;
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
-            stopCurrentInteraction(!activeTtsRequestId.isEmpty(), "manual_stop");
+            stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
@@ -195,7 +195,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
 
-        if (!updated.voiceModeEnabled) {
+        if (!updated.isEnabled()) {
             stopCurrentInteraction(false, "voice_mode_disabled");
             disconnectAdapterSocket();
             disconnectAssistantSocket();
@@ -283,7 +283,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void connectAdapterSocketIfNeeded() {
-        if (destroyed || !config.voiceModeEnabled || adapterSocket != null) {
+        if (destroyed || !config.isEnabled() || adapterSocket != null) {
             return;
         }
         mainHandler.removeCallbacks(reconnectRunnable);
@@ -344,7 +344,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         adapterSocket = null;
         adapterSocketConnected = false;
         adapterClientId = "";
-        if (config.voiceModeEnabled && !destroyed) {
+        if (config.isEnabled() && !destroyed) {
             stopCurrentInteraction(false, "adapter_disconnect");
             updateState(STATE_CONNECTING, reason);
             mainHandler.removeCallbacks(reconnectRunnable);
@@ -353,7 +353,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void connectAssistantSocketIfNeeded() {
-        if (destroyed || !config.voiceModeEnabled || assistantSocket != null) {
+        if (destroyed || !config.isEnabled() || assistantSocket != null) {
             return;
         }
 
@@ -421,7 +421,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         assistantSocket = null;
         assistantSocketConnected = false;
         assistantSubscribedSessionId = "";
-        if (config.voiceModeEnabled && !destroyed) {
+        if (config.isEnabled() && !destroyed) {
             if (!hasActiveInteraction()) {
                 updateState(STATE_CONNECTING, reason);
             }
@@ -453,15 +453,15 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         AssistantVoicePromptEvent prompt =
-            AssistantVoiceSessionSocketProtocol.parsePromptMessage(rawText, config.selectedSessionId);
+            AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(rawText, config.selectedSessionId);
         if (prompt == null) {
             return;
         }
         if (
-            AssistantVoiceInteractionRules.shouldAutoplayPrompt(
-                config.voiceModeEnabled,
+            AssistantVoiceInteractionRules.shouldAutoplayEvent(
+                config.audioMode,
                 config.selectedSessionId,
-                prompt.sessionId,
+                prompt,
                 !hasActiveInteraction()
             )
         ) {
@@ -669,7 +669,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void beginPromptPlayback(AssistantVoicePromptEvent prompt) {
-        if (!config.voiceModeEnabled || prompt == null || hasActiveInteraction()) {
+        if (!config.isEnabled() || prompt == null || hasActiveInteraction()) {
             return;
         }
         if (!prompt.sessionId.equals(config.selectedSessionId)) {
@@ -744,15 +744,15 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         clearActivePromptContext();
         if (!hasActiveInteraction()) {
-            updateState(config.voiceModeEnabled && isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(config.isEnabled() && isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
         }
     }
 
     private void startManualListen() {
-        if (!config.voiceModeEnabled || config.selectedSessionId.isEmpty()) {
+        if (!config.isEnabled() || config.selectedSessionId.isEmpty()) {
             return;
         }
-        if (!activeTtsRequestId.isEmpty()) {
+        if (isPromptPlaybackActive()) {
             stopCurrentInteraction(true, "manual_listen");
             return;
         }
@@ -766,7 +766,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             return;
         }
-        if (!config.voiceModeEnabled || !adapterSocketConnected || adapterSocket == null) {
+        if (!config.isEnabled() || !adapterSocketConnected || adapterSocket == null) {
             updateState(STATE_CONNECTING, null);
             return;
         }
@@ -928,6 +928,10 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private boolean isRuntimeConnected() {
         return adapterSocketConnected && assistantSocketConnected;
+    }
+
+    private boolean isPromptPlaybackActive() {
+        return !activeTtsRequestId.isEmpty() || !pendingPlaybackDrainRequestId.isEmpty();
     }
 
     private void updateState(String nextState, String maybeErrorMessage) {
