@@ -485,7 +485,7 @@ export class ChatRenderer {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
-    const text = stripContextLine(event.payload.text);
+    const text = this.getRenderableUserText(event);
     const bubble = appendMessage(turnEl, 'user', text);
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
@@ -511,7 +511,7 @@ export class ChatRenderer {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
-    const transcription = stripContextLine(event.payload.transcription);
+    const transcription = this.getRenderableUserText(event);
     const bubble = appendMessage(turnEl, 'user', transcription);
     bubble.classList.add('user-audio');
     bubble.dataset['inputType'] = 'audio';
@@ -529,6 +529,12 @@ export class ChatRenderer {
     if (!this._isReplaying) {
       this.showTypingIndicator();
     }
+  }
+
+  private getRenderableUserText(event: UserMessageEvent | UserAudioEvent): string {
+    return event.type === 'user_audio'
+      ? stripContextLine(event.payload.transcription)
+      : stripContextLine(event.payload.text);
   }
 
   private handleAssistantChunk(event: AssistantChunkEvent): void {
