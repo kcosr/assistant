@@ -344,6 +344,34 @@ describe('ChatRenderer', () => {
     expect(bubble?.textContent).not.toContain('<context');
   });
 
+  it('shows the context line in rendered user_audio bubbles when debug context display is enabled', () => {
+    (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__ = false;
+
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio-context-visible',
+        turnId: 't-audio-context-visible',
+        responseId: undefined,
+        payload: {
+          transcription: '<context panel-id="panel-1" />\nCall Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble?.textContent).toContain('<context panel-id="panel-1" />');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+
+    delete (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__;
+  });
+
   it('shows the typing indicator for live voice tool bubbles', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

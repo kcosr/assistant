@@ -575,7 +575,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ? { scheduledSessionService: ctx.scheduledSessionService }
             : {}),
         });
-
         if (asyncTask) {
           void asyncTask;
         }

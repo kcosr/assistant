@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+const INLINE_API_HOST_MARKER = 'data-assistant-api-host-inline';
+
 function insertAfterHeader(contents, line) {
   const headerEnd = contents.indexOf('*/');
   if (headerEnd === -1) {
@@ -26,6 +28,26 @@ function upsertConfigLine(contents, key, valueLiteral) {
     return contents.replace(commentedRe, line);
   }
   return insertAfterHeader(contents, line);
+}
+
+function upsertInlineApiHostScript(contents, hostValue) {
+  const scriptTag = `<script ${INLINE_API_HOST_MARKER}>window.ASSISTANT_API_HOST = ${JSON.stringify(hostValue)};</script>`;
+  const existingRe = new RegExp(
+    `<script\\s+${INLINE_API_HOST_MARKER}[^>]*>.*?<\\/script>`,
+    's',
+  );
+  if (existingRe.test(contents)) {
+    return contents.replace(existingRe, scriptTag);
+  }
+  const configScript = '<script src="config.js"></script>';
+  if (contents.includes(configScript)) {
+    return contents.replace(configScript, `${configScript}\n    ${scriptTag}`);
+  }
+  const clientScript = '<script type="module" src="client.js"></script>';
+  if (contents.includes(clientScript)) {
+    return contents.replace(clientScript, `    ${scriptTag}\n    ${clientScript}`);
+  }
+  return contents.replace('</head>', `    ${scriptTag}\n  </head>`);
 }
 
 function parseEnvBoolean(value) {
@@ -57,7 +79,7 @@ export function applyConfigOverrides(
   contents,
   {
     apiHost,
-    defaultApiHost = 'assistant',
+    defaultApiHost = 'https://assistant',
     insecure,
     wsPort,
     preserveExistingHost = true,
@@ -66,7 +88,12 @@ export function applyConfigOverrides(
   let updated = contents;
   const normalizedHost = typeof apiHost === 'string' ? apiHost.trim() : '';
   const hasActiveHost = /^\s*window\.ASSISTANT_API_HOST\s*=/m.test(updated);
-  const shouldWriteHost = !!normalizedHost || !hasActiveHost || !preserveExistingHost;
+  const hasLegacyDefaultHost =
+    !normalizedHost &&
+    defaultApiHost !== 'assistant' &&
+    /^\s*window\.ASSISTANT_API_HOST\s*=\s*["']assistant["'];?$/m.test(updated);
+  const shouldWriteHost =
+    !!normalizedHost || !hasActiveHost || !preserveExistingHost || hasLegacyDefaultHost;
   if (shouldWriteHost) {
     const hostValue = normalizedHost || defaultApiHost;
     if (hostValue) {
@@ -89,10 +116,51 @@ export function applyConfigOverrides(
   return { contents: updated, changed: updated !== contents };
 }
 
+export function applyHtmlOverrides(
+  contents,
+  {
+    apiHost,
+    defaultApiHost = 'https://assistant',
+  } = {},
+) {
+  const normalizedHost = typeof apiHost === 'string' ? apiHost.trim() : '';
+  const hostValue = normalizedHost || defaultApiHost;
+  if (!hostValue) {
+    return { contents, changed: false };
+  }
+  const updated = upsertInlineApiHostScript(contents, hostValue);
+  return { contents: updated, changed: updated !== contents };
+}
+
+function loadFlavorDefaultApiHost(mobileDir) {
+  const capConfigPath = path.resolve(mobileDir, 'capacitor.config.json');
+  const flavorsPath = path.resolve(mobileDir, 'flavors.json');
+  try {
+    const capConfig = JSON.parse(fs.readFileSync(capConfigPath, 'utf8'));
+    const flavors = JSON.parse(fs.readFileSync(flavorsPath, 'utf8'));
+    const appId = typeof capConfig?.appId === 'string' ? capConfig.appId.trim() : '';
+    if (!appId || !flavors || typeof flavors !== 'object') {
+      return 'https://assistant';
+    }
+    for (const flavor of Object.values(flavors)) {
+      const record = flavor && typeof flavor === 'object' ? flavor : null;
+      const flavorAppId = typeof record?.appId === 'string' ? record.appId.trim() : '';
+      const apiHost = typeof record?.apiHost === 'string' ? record.apiHost.trim() : '';
+      if (flavorAppId === appId && apiHost) {
+        return apiHost;
+      }
+    }
+  } catch {
+    // Fall back to the default host when flavor metadata is unavailable.
+  }
+  return 'https://assistant';
+}
+
 function run() {
   const scriptPath = fileURLToPath(import.meta.url);
   const scriptDir = path.dirname(scriptPath);
   const mobileDir = path.resolve(scriptDir, '..');
+  const defaultApiHost = loadFlavorDefaultApiHost(mobileDir);
   const targets = [
     {
       platform: 'android',
@@ -106,10 +174,21 @@ function run() {
         'public',
         'config.js',
       ),
+      htmlPath: path.resolve(
+        mobileDir,
+        'android',
+        'app',
+        'src',
+        'main',
+        'assets',
+        'public',
+        'index.html',
+      ),
     },
     {
       platform: 'ios',
       configPath: path.resolve(mobileDir, 'ios', 'App', 'App', 'public', 'config.js'),
+      htmlPath: path.resolve(mobileDir, 'ios', 'App', 'App', 'public', 'index.html'),
     },
   ];
 
@@ -137,22 +216,39 @@ function run() {
       apiHost,
       insecure,
       wsPort,
-      defaultApiHost: 'assistant',
+      defaultApiHost,
       preserveExistingHost: true,
     });
 
-    if (!result.changed) {
+    if (result.changed) {
+      fs.writeFileSync(target.configPath, result.contents, 'utf8');
+      const relativePath = path.relative(process.cwd(), target.configPath);
+      const hostLabel = apiHost.trim() ? apiHost.trim() : defaultApiHost;
+      console.log(
+        `[patch-web-config] Updated ${relativePath} (ASSISTANT_API_HOST=${hostLabel})`,
+      );
+      patchedAny = true;
+    } else {
       console.log(`[patch-web-config] No config updates needed (${target.platform}).`);
+    }
+
+    if (!target.htmlPath || !fs.existsSync(target.htmlPath)) {
       continue;
     }
 
-    fs.writeFileSync(target.configPath, result.contents, 'utf8');
-    const relativePath = path.relative(process.cwd(), target.configPath);
-    const hostLabel = apiHost.trim() ? apiHost.trim() : 'assistant';
+    const htmlContents = fs.readFileSync(target.htmlPath, 'utf8');
+    const htmlResult = applyHtmlOverrides(htmlContents, {
+      apiHost,
+      defaultApiHost,
+    });
+    if (!htmlResult.changed) {
+      continue;
+    }
+    fs.writeFileSync(target.htmlPath, htmlResult.contents, 'utf8');
+    const relativeHtmlPath = path.relative(process.cwd(), target.htmlPath);
     console.log(
-      `[patch-web-config] Updated ${relativePath} (ASSISTANT_API_HOST=${hostLabel})`,
+      `[patch-web-config] Updated ${relativeHtmlPath} (inline ASSISTANT_API_HOST=${apiHost.trim() || defaultApiHost})`,
     );
-    patchedAny = true;
   }
 
   if (!foundAny) {

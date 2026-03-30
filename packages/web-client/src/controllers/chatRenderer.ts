@@ -532,9 +532,8 @@ export class ChatRenderer {
   }
 
   private getRenderableUserText(event: UserMessageEvent | UserAudioEvent): string {
-    return event.type === 'user_audio'
-      ? stripContextLine(event.payload.transcription)
-      : stripContextLine(event.payload.text);
+    const rawText = event.type === 'user_audio' ? event.payload.transcription : event.payload.text;
+    return stripContextLine(rawText);
   }
 
   private handleAssistantChunk(event: AssistantChunkEvent): void {
