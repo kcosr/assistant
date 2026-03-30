@@ -357,22 +357,26 @@ describe('agents plugin operations', () => {
         }),
       );
 
-      const eventsAfter = await eventStore.getEvents(callerSession.sessionId);
-      const callbackEvent = eventsAfter.find(
-        (event) =>
-          event.type === 'agent_callback' &&
-          (event as { payload?: { result?: string } }).payload?.result ===
-            'Worker finished the task',
-      ) as ChatEvent | undefined;
-      expect(callbackEvent).toBeTruthy();
-      expect(callbackEvent).toMatchObject({
-        type: 'agent_callback',
-        payload: {
+      expect(processUserMessageSpy).toHaveBeenCalledTimes(2);
+      const secondCall = processUserMessageSpy.mock.calls[1]?.[0];
+      if (!secondCall) {
+        throw new Error('Expected secondCall to be defined');
+      }
+      expect(secondCall.sessionId).toBe(callerSession.sessionId);
+      expect(secondCall.agentMessageContext).toEqual(
+        expect.objectContaining({
           fromSessionId: targetSession.sessionId,
           fromAgentId: 'worker',
-          result: 'Worker finished the task',
-        },
-      });
+          responseId: 'worker-resp-1',
+          logType: 'callback',
+          callbackEvent: {
+            messageId: expect.any(String),
+            fromSessionId: targetSession.sessionId,
+            fromAgentId: 'worker',
+            result: 'Worker finished the task',
+          },
+        }),
+      );
 
       const callbackMessages = broadcastSpy.mock.calls
         .map((call) => call[1])
@@ -534,23 +538,6 @@ describe('agents plugin operations', () => {
       expect(processUserMessageSpy).toHaveBeenCalledTimes(1);
       expect(processUserMessageSpy.mock.calls[0]?.[0].sessionId).toBe(targetSession.sessionId);
 
-      const eventsAfter = await eventStore.getEvents(callerSession.sessionId);
-      const callbackEvent = eventsAfter.find(
-        (event) =>
-          event.type === 'agent_callback' &&
-          (event as { payload?: { result?: string } }).payload?.result ===
-            'Worker finished queued task',
-      ) as ChatEvent | undefined;
-      expect(callbackEvent).toBeTruthy();
-      expect(callbackEvent).toMatchObject({
-        type: 'agent_callback',
-        payload: {
-          fromSessionId: targetSession.sessionId,
-          fromAgentId: 'worker',
-          result: 'Worker finished queued task',
-        },
-      });
-
       expect(queueMessageSpy).toHaveBeenCalledTimes(1);
       const queuedArgs = queueMessageSpy.mock.calls[0]?.[0];
       if (!queuedArgs) {
@@ -579,6 +566,12 @@ describe('agents plugin operations', () => {
           fromAgentId: 'worker',
           responseId: 'worker-resp-queued',
           logType: 'callback',
+          callbackEvent: {
+            messageId: expect.any(String),
+            fromSessionId: targetSession.sessionId,
+            fromAgentId: 'worker',
+            result: 'Worker finished queued task',
+          },
         }),
       );
     });

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
+  ChatEvent,
   ClientPanelEventMessage,
   ClientSubscribeMessage,
   ClientUnsubscribeMessage,
@@ -61,14 +62,34 @@ function createTestConfig(dataDir: string): EnvConfig {
 }
 
 function createTestEventStore(): EventStore {
+  const eventsBySession = new Map<string, ChatEvent[]>();
   return {
-    append: async () => {},
-    appendBatch: async () => {},
-    getEvents: async () => [],
-    getEventsSince: async () => [],
+    append: async (sessionId, event) => {
+      const events = eventsBySession.get(sessionId) ?? [];
+      events.push(event);
+      eventsBySession.set(sessionId, events);
+    },
+    appendBatch: async (sessionId, events) => {
+      const existing = eventsBySession.get(sessionId) ?? [];
+      existing.push(...events);
+      eventsBySession.set(sessionId, existing);
+    },
+    getEvents: async (sessionId) => [...(eventsBySession.get(sessionId) ?? [])],
+    getEventsSince: async (sessionId, afterEventId) => {
+      const events = eventsBySession.get(sessionId) ?? [];
+      if (!afterEventId) {
+        return [...events];
+      }
+      const index = events.findIndex((event) => event.id === afterEventId);
+      return index === -1 ? [...events] : events.slice(index + 1);
+    },
     subscribe: () => () => {},
-    clearSession: async () => {},
-    deleteSession: async () => {},
+    clearSession: async (sessionId) => {
+      eventsBySession.delete(sessionId);
+    },
+    deleteSession: async (sessionId) => {
+      eventsBySession.delete(sessionId);
+    },
   };
 }
 
@@ -85,6 +106,7 @@ function createRuntime(options: {
   sessionHub: SessionHub;
   subscriptions?: string[];
   toolHost?: ToolHost;
+  eventStore?: EventStore;
 }): {
   runtime: SessionRuntime;
   transportSent: ServerMessage[];
@@ -135,7 +157,7 @@ function createRuntime(options: {
     config,
     toolHost: options.toolHost ?? noopToolHost,
     sessionHub: options.sessionHub,
-    eventStore: createTestEventStore(),
+    eventStore: options.eventStore ?? createTestEventStore(),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     openaiClient: {} as any,
   };
@@ -739,5 +761,270 @@ describe('SessionRuntime subscription message handlers', () => {
     resolveChat();
     await new Promise((resolve) => setTimeout(resolve, 0));
     textSpy.mockRestore();
+  });
+
+  it('reprompts async questionnaires when submitted answers fail validation', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-reprompt-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.append(summary.sessionId, {
+      id: 'qreq-1',
+      timestamp: Date.now(),
+      sessionId: summary.sessionId,
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        mode: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+        status: 'pending',
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    });
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-1',
+      answers: { name: '' },
+    });
+
+    const events = await eventStore.getEvents(summary.sessionId);
+    const reprompt = events.find((event) => event.type === 'questionnaire_reprompt');
+    expect(reprompt).toBeDefined();
+    if (!reprompt || reprompt.type !== 'questionnaire_reprompt') {
+      return;
+    }
+    expect(reprompt.payload.fieldErrors).toEqual({ name: 'This field is required.' });
+    expect(reprompt.payload.initialValues).toEqual({ name: '' });
+  });
+
+  it('queues a hidden follow-up turn after a valid async questionnaire submission', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-submit-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.append(summary.sessionId, {
+      id: 'qreq-2',
+      timestamp: Date.now(),
+      sessionId: summary.sessionId,
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-2',
+        toolCallId: 'tool-2',
+        toolName: 'questions_ask',
+        mode: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+        status: 'pending',
+        autoResume: true,
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    });
+    const queueSpy = vi
+      .spyOn(sessionHub, 'queueMessage')
+      .mockResolvedValue({ id: 'msg-1', text: 'Questionnaire response received', queuedAt: '', source: 'user' });
+    const processNextSpy = vi.spyOn(sessionHub, 'processNextQueuedMessage').mockResolvedValue(true);
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-2',
+      answers: { name: 'Ada' },
+    });
+
+    const events = await eventStore.getEvents(summary.sessionId);
+    const submission = events.find((event) => event.type === 'questionnaire_submission');
+    expect(submission).toBeDefined();
+    expect(queueSpy).toHaveBeenCalledTimes(1);
+    expect(queueSpy.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: summary.sessionId,
+      text: 'Questionnaire response received',
+      source: 'user',
+    });
+    expect(processNextSpy).toHaveBeenCalledWith(summary.sessionId);
+  });
+
+  it('does not queue a follow-up turn when autoResume is false', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-passive-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.append(summary.sessionId, {
+      id: 'qreq-4',
+      timestamp: Date.now(),
+      sessionId: summary.sessionId,
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-4',
+        toolCallId: 'tool-4',
+        toolName: 'questions_ask',
+        mode: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+        status: 'pending',
+        autoResume: false,
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    });
+    const queueSpy = vi.spyOn(sessionHub, 'queueMessage');
+    const processNextSpy = vi.spyOn(sessionHub, 'processNextQueuedMessage');
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-4',
+      answers: { name: 'Ada' },
+    });
+
+    expect(queueSpy).not.toHaveBeenCalled();
+    expect(processNextSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects questionnaire submits after the request is no longer pending', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-terminal-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.appendBatch(summary.sessionId, [
+      {
+        id: 'qreq-5',
+        timestamp: Date.now(),
+        sessionId: summary.sessionId,
+        type: 'questionnaire_request',
+        payload: {
+          questionnaireRequestId: 'qr-5',
+          toolCallId: 'tool-5',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      },
+      {
+        id: 'qsub-5',
+        timestamp: Date.now() + 1,
+        sessionId: summary.sessionId,
+        type: 'questionnaire_submission',
+        payload: {
+          questionnaireRequestId: 'qr-5',
+          toolCallId: 'tool-5',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:01:00.000Z',
+          answers: { name: 'Ada' },
+        },
+      },
+    ]);
+    const { runtime, connection, transportSent } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-5',
+      answers: { name: 'Grace' },
+    });
+
+    const error = transportSent.find(
+      (message) => message.type === 'error' && message.code === 'questionnaire_not_pending',
+    );
+    expect(error).toBeDefined();
+  });
+
+  it('records questionnaire cancellation updates', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-cancel-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.append(summary.sessionId, {
+      id: 'qreq-3',
+      timestamp: Date.now(),
+      sessionId: summary.sessionId,
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-3',
+        toolCallId: 'tool-3',
+        toolName: 'questions_ask',
+        mode: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name' }],
+        },
+        status: 'pending',
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    });
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireCancel({
+      type: 'questionnaire_cancel',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-3',
+      reason: 'User dismissed it',
+    });
+
+    const events = await eventStore.getEvents(summary.sessionId);
+    const update = events.find((event) => event.type === 'questionnaire_update');
+    expect(update).toBeDefined();
+    if (!update || update.type !== 'questionnaire_update') {
+      return;
+    }
+    expect(update.payload.status).toBe('cancelled');
+    expect(update.payload.reason).toBe('User dismissed it');
   });
 });

@@ -6,3 +6,4 @@ export * from './sessionTypes';
 export * from './tags';
 export * from './aql';
 export * from './globalQuery';
+export * from './questionnaireUtils';

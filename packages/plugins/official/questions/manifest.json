@@ -10,7 +10,7 @@
   "operations": [
     {
       "id": "ask",
-      "summary": "Ask the user a structured questionnaire.",
+      "summary": "Ask the user a structured questionnaire using schema.fields or schema.sections.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -20,7 +20,7 @@
           },
           "schema": {
             "type": "object",
-            "description": "Questionnaire schema (title, fields, sections, validation hints).",
+            "description": "Questionnaire schema. Provide either schema.fields or schema.sections. Valid field types: text, textarea, number, boolean, select, multiselect, checkbox, radio, date, time, datetime. For select, radio, and multiselect fields, options must be objects with { label, value }.",
             "properties": {
               "title": { "type": "string" },
               "description": { "type": "string" },
@@ -39,17 +39,6 @@
                 "description": "Prefill values keyed by field id.",
                 "additionalProperties": true
               }
-            }
-          },
-          "timeoutMs": {
-            "type": "number",
-            "description": "Optional timeout in milliseconds."
-          },
-          "completedView": {
-            "type": "object",
-            "properties": {
-              "showInputs": { "type": "boolean" },
-              "summaryTemplate": { "type": "string" }
             }
           },
           "validate": {
@@ -124,7 +113,7 @@
       },
       "capabilities": ["questions.ask"],
       "tool": {
-        "description": "Ask the user a questionnaire and return their answers. Use schema.fields or schema.sections to define the form inputs."
+        "description": "Ask the user a questionnaire and return their answers. Define inputs with either schema.fields or schema.sections[].fields. Valid field types are text, textarea, number, boolean, select, multiselect, checkbox, radio, date, time, and datetime. For select, radio, and multiselect fields, options must be objects with { label, value }, for example: { id: \"color\", type: \"select\", label: \"Favorite color\", options: [{ label: \"Red\", value: \"red\" }, { label: \"Blue\", value: \"blue\" }] }."
       }
     }
   ]

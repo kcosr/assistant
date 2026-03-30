@@ -100,6 +100,24 @@ describe('client message validation', () => {
     const parsed = validateClientMessage(message);
     expect(parsed).toEqual(message);
   });
+
+  it('accepts questionnaire submit and cancel messages', () => {
+    const submitMessage: ClientMessage = {
+      type: 'questionnaire_submit',
+      sessionId: 'session-1',
+      questionnaireRequestId: 'qr-1',
+      answers: { name: 'Ada' },
+    };
+    const cancelMessage: ClientMessage = {
+      type: 'questionnaire_cancel',
+      sessionId: 'session-1',
+      questionnaireRequestId: 'qr-1',
+      reason: 'No longer needed',
+    };
+
+    expect(validateClientMessage(submitMessage)).toEqual(submitMessage);
+    expect(validateClientMessage(cancelMessage)).toEqual(cancelMessage);
+  });
 });
 
 describe('server message validation', () => {

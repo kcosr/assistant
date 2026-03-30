@@ -9,6 +9,10 @@ import type {
   InteractionRequestEvent,
   InteractionResponseEvent,
   InteractionPendingEvent,
+  QuestionnaireRepromptEvent,
+  QuestionnaireRequestEvent,
+  QuestionnaireSubmissionEvent,
+  QuestionnaireUpdateEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
   ToolCallEvent,
@@ -23,10 +27,11 @@ import type {
   UserMessageEvent,
 } from '@assistant/shared';
 import {
+  parseQuestionnaireCallbackText,
+  type QuestionnaireCallbackPayload,
+} from '@assistant/shared';
+import {
   applyMarkdownToElement,
-  appendStreamingMarkdownText,
-  finalizeStreamingMarkdownText,
-  finalizeStreamingMarkdownTextIfNeeded,
 } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
@@ -51,7 +56,9 @@ import { formatToolResultText } from '../utils/toolResultFormatting';
 import {
   applyInteractionResponse,
   createInteractionElement,
+  createQuestionnaireElement,
   type InteractionResponseDraft,
+  type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
 
 export interface ChatRendererOptions {
@@ -65,6 +72,16 @@ export interface ChatRendererOptions {
     callId: string;
     interactionId: string;
     response: InteractionResponseDraft;
+  }) => void;
+  sendQuestionnaireSubmit?: (options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    answers: Record<string, unknown>;
+  }) => void;
+  sendQuestionnaireCancel?: (options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    reason?: string;
   }) => void;
   onTurnDividerActivate?: (options: {
     turnId: string;
@@ -100,6 +117,12 @@ export class ChatRenderer {
   private readonly interactionElements = new Map<string, HTMLDivElement>();
   private readonly interactionByToolCall = new Map<string, string>();
   private readonly questionnaireToolCalls = new Set<string>();
+  private readonly questionnaireRequests = new Map<string, QuestionnaireRequestEvent['payload']>();
+  private readonly questionnaireReprompts = new Map<
+    string,
+    QuestionnaireRepromptEvent['payload']
+  >();
+  private readonly questionnaireResponses = new Map<string, InteractionResponseDraft>();
   private readonly standaloneToolCalls = new Set<string>();
   private readonly pendingInteractionToolCalls = new Set<string>();
   private readonly pendingInteractionRequests = new Map<
@@ -231,10 +254,13 @@ export class ChatRenderer {
       event.type === 'tool_call' ||
       event.type === 'assistant_chunk' ||
       event.type === 'assistant_done' ||
-      event.type === 'interaction_request'
+      event.type === 'interaction_request' ||
+      event.type === 'questionnaire_request'
     ) {
       const toolCallId =
-        (event.type === 'tool_call' || event.type === 'interaction_request') &&
+        (event.type === 'tool_call' ||
+          event.type === 'interaction_request' ||
+          event.type === 'questionnaire_request') &&
         event.payload &&
         typeof event.payload === 'object'
           ? (event.payload as { toolCallId?: string }).toolCallId ?? null
@@ -309,6 +335,18 @@ export class ChatRenderer {
       case 'interaction_pending':
         this.handleInteractionPending(event);
         break;
+      case 'questionnaire_request':
+        this.handleQuestionnaireRequest(event);
+        break;
+      case 'questionnaire_reprompt':
+        this.handleQuestionnaireReprompt(event);
+        break;
+      case 'questionnaire_submission':
+        this.handleQuestionnaireSubmission(event);
+        break;
+      case 'questionnaire_update':
+        this.handleQuestionnaireUpdate(event);
+        break;
       case 'agent_message':
         this.handleAgentMessage(event);
         break;
@@ -365,6 +403,9 @@ export class ChatRenderer {
     this.pendingInteractionResponses.clear();
     this.interactionByToolCall.clear();
     this.questionnaireToolCalls.clear();
+    this.questionnaireRequests.clear();
+    this.questionnaireReprompts.clear();
+    this.questionnaireResponses.clear();
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
     this.suppressTypingIndicator = false;
@@ -503,7 +544,7 @@ export class ChatRenderer {
     const combined = previous + event.payload.text;
     this.assistantTextBuffers.set(bufferKey, combined);
 
-    appendStreamingMarkdownText(textEl, event.payload.text);
+    applyMarkdownToElement(textEl, combined);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -549,7 +590,7 @@ export class ChatRenderer {
 
     if ((canFinalizeExistingSegment || canFinalizeClosedSegment) && currentTextEl) {
       this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
-      finalizeStreamingMarkdownText(currentTextEl, event.payload.text);
+      applyMarkdownToElement(currentTextEl, event.payload.text);
       this.assistantTextBuffers.delete(currentBufferKey);
       this.assistantTextElements.delete(currentBufferKey);
       this.needsNewTextSegment.delete(responseId);
@@ -588,7 +629,7 @@ export class ChatRenderer {
 
     const text = event.payload.text;
     this.assistantTextBuffers.set(bufferKey, text);
-    finalizeStreamingMarkdownText(textEl, text);
+    applyMarkdownToElement(textEl, text);
     this.assistantTextBuffers.delete(bufferKey);
     this.assistantTextElements.delete(bufferKey);
     textEl.dataset['eventId'] = event.id;
@@ -1233,6 +1274,126 @@ export class ChatRenderer {
     }
   }
 
+  private handleQuestionnaireRequest(event: QuestionnaireRequestEvent): void {
+    const payload = event.payload;
+    this.questionnaireRequests.set(payload.questionnaireRequestId, payload);
+    this.questionnaireToolCalls.add(payload.toolCallId);
+    this.standaloneToolCalls.add(payload.toolCallId);
+    const completion = this.questionnaireResponses.get(payload.questionnaireRequestId);
+    const reprompt = completion
+      ? undefined
+      : this.questionnaireReprompts.get(payload.questionnaireRequestId);
+    const enabled = this.options.getInteractionEnabled?.() ?? true;
+    this.renderStandaloneQuestionnaire({
+      request: payload,
+      ...(reprompt ? { reprompt } : {}),
+      enabled: completion ? false : enabled,
+      sessionId: event.sessionId,
+      eventId: event.id,
+      turnId: event.turnId,
+      responseId: event.responseId,
+      timestamp: event.timestamp,
+    });
+    if (completion) {
+      this.applyQuestionnaireResponse(payload.questionnaireRequestId, completion);
+    }
+  }
+
+  private handleQuestionnaireReprompt(event: QuestionnaireRepromptEvent): void {
+    this.questionnaireReprompts.set(event.payload.questionnaireRequestId, event.payload);
+    if (this.questionnaireResponses.has(event.payload.questionnaireRequestId)) {
+      return;
+    }
+    const request = this.questionnaireRequests.get(event.payload.questionnaireRequestId);
+    if (!request) {
+      return;
+    }
+    const enabled = this.options.getInteractionEnabled?.() ?? true;
+    this.renderStandaloneQuestionnaire({
+      request,
+      reprompt: event.payload,
+      enabled,
+      sessionId: event.sessionId,
+      eventId: event.id,
+      turnId: event.turnId,
+      responseId: event.responseId,
+      timestamp: event.timestamp,
+    });
+  }
+
+  private handleQuestionnaireSubmission(event: QuestionnaireSubmissionEvent): void {
+    const response: InteractionResponseDraft = {
+      action: 'submit',
+      input: event.payload.answers,
+    };
+    this.questionnaireResponses.set(event.payload.questionnaireRequestId, response);
+    const element = this.interactionElements.get(event.payload.questionnaireRequestId);
+    const request = this.questionnaireRequests.get(event.payload.questionnaireRequestId);
+    if (!element && request) {
+      this.renderStandaloneQuestionnaire({
+        request,
+        enabled: false,
+        sessionId: event.sessionId,
+        eventId: event.id,
+        turnId: event.turnId,
+        responseId: event.responseId,
+        timestamp: event.timestamp,
+      });
+    }
+    this.applyQuestionnaireResponse(event.payload.questionnaireRequestId, response, {
+      toolCallId: event.payload.toolCallId,
+    });
+  }
+
+  private handleQuestionnaireUpdate(event: QuestionnaireUpdateEvent): void {
+    const response: InteractionResponseDraft = {
+      action: 'cancel',
+      ...(event.payload.reason ? { reason: event.payload.reason } : {}),
+    };
+    this.questionnaireResponses.set(event.payload.questionnaireRequestId, response);
+    const element = this.interactionElements.get(event.payload.questionnaireRequestId);
+    const request = this.questionnaireRequests.get(event.payload.questionnaireRequestId);
+    if (!element && request) {
+      this.renderStandaloneQuestionnaire({
+        request,
+        enabled: false,
+        sessionId: event.sessionId,
+        eventId: event.id,
+        turnId: event.turnId,
+        responseId: event.responseId,
+        timestamp: event.timestamp,
+      });
+    }
+    this.applyQuestionnaireResponse(event.payload.questionnaireRequestId, response, {
+      toolCallId: event.payload.toolCallId,
+    });
+  }
+
+  private applyQuestionnaireResponse(
+    questionnaireRequestId: string,
+    response: InteractionResponseDraft,
+    overrides?: { toolCallId?: string },
+  ): void {
+    const element = this.interactionElements.get(questionnaireRequestId);
+    if (!element) {
+      return;
+    }
+    const toolCallId =
+      overrides?.toolCallId ??
+      this.questionnaireRequests.get(questionnaireRequestId)?.toolCallId ??
+      '';
+    applyInteractionResponse(element, {
+      toolCallId,
+      interactionId: questionnaireRequestId,
+      ...response,
+    });
+    if (response.action === 'submit' || response.action === 'cancel') {
+      this.questionnaireRequests.delete(questionnaireRequestId);
+      this.questionnaireReprompts.delete(questionnaireRequestId);
+      this.questionnaireResponses.delete(questionnaireRequestId);
+    }
+  }
+
   private updateTypingSuppression(): void {
     const shouldSuppress = this.pendingInteractionToolCalls.size > 0;
     if (this.suppressTypingIndicator === shouldSuppress) {
@@ -1397,6 +1558,109 @@ export class ChatRenderer {
       this.pendingInteractionResponses.delete(payload.interactionId);
       applyInteractionResponse(element, pendingResponse);
     }
+    if (enabled) {
+      this.focusFirstQuestionnaireInput();
+    }
+  }
+
+  private buildQuestionnaireView(
+    request: QuestionnaireRequestEvent['payload'],
+    reprompt?: QuestionnaireRepromptEvent['payload'],
+  ): QuestionnaireRequestView {
+    const initialValues = reprompt
+      ? {
+          ...(request.schema.initialValues ?? {}),
+          ...reprompt.initialValues,
+        }
+      : request.schema.initialValues;
+    return {
+      ...(request.prompt ? { prompt: request.prompt } : {}),
+      ...(reprompt?.errorSummary ? { errorSummary: reprompt.errorSummary } : {}),
+      ...(reprompt?.fieldErrors ? { fieldErrors: reprompt.fieldErrors } : {}),
+      inputSchema: {
+        ...request.schema,
+        ...(initialValues ? { initialValues } : {}),
+      },
+    };
+  }
+
+  private renderStandaloneQuestionnaire(options: {
+    request: QuestionnaireRequestEvent['payload'];
+    reprompt?: QuestionnaireRepromptEvent['payload'];
+    enabled: boolean;
+    sessionId: string;
+    eventId: string;
+    turnId: string | undefined;
+    responseId: string | undefined;
+    timestamp: number;
+  }): void {
+    const { request, reprompt, enabled, sessionId, eventId, turnId, responseId, timestamp } =
+      options;
+    const questionnaireRequestId = request.questionnaireRequestId;
+    this.ungroupToolBlockIfNeeded(request.toolCallId);
+
+    const existingId = this.interactionByToolCall.get(request.toolCallId);
+    if (existingId) {
+      const existing = this.interactionElements.get(existingId);
+      if (existing) {
+        existing.remove();
+      }
+      this.interactionElements.delete(existingId);
+    }
+
+    const element = createQuestionnaireElement({
+      request: this.buildQuestionnaireView(request, reprompt),
+      enabled,
+      onSubmit: (response) => {
+        if (response.action === 'submit') {
+          this.sendQuestionnaireSubmit(sessionId, questionnaireRequestId, response.input ?? {});
+        } else if (response.action === 'cancel') {
+          this.sendQuestionnaireCancel(sessionId, questionnaireRequestId);
+        }
+        this.focusInputAfterInteraction();
+      },
+    });
+    element.classList.add('interaction-standalone');
+    element.dataset['interactionId'] = questionnaireRequestId;
+    element.dataset['questionnaireRequestId'] = questionnaireRequestId;
+    element.dataset['sessionId'] = sessionId;
+    const toolBlock = this.toolCallElements.get(request.toolCallId);
+    this.debugLog('questionnaire placement', {
+      questionnaireRequestId,
+      toolCallId: request.toolCallId,
+      responseId: responseId ?? null,
+      hasToolBlock: Boolean(toolBlock),
+    });
+    if (toolBlock?.parentElement) {
+      const nextSibling = toolBlock.nextSibling;
+      if (nextSibling) {
+        toolBlock.parentElement.insertBefore(element, nextSibling);
+      } else {
+        toolBlock.parentElement.appendChild(element);
+      }
+    } else {
+      const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
+      const container =
+        responseId
+          ? this.getOrCreateAssistantResponseContainer(
+              turnId,
+              eventId,
+              responseId ?? null,
+              timestamp,
+            )
+          : fallbackContainer ??
+            this.getOrCreateToolCallContainer(
+              eventId,
+              turnId,
+              request.toolCallId,
+              responseId ?? null,
+              timestamp,
+            );
+      container.appendChild(element);
+    }
+    this.interactionElements.set(questionnaireRequestId, element);
+    this.interactionByToolCall.set(request.toolCallId, questionnaireRequestId);
+
     if (enabled) {
       this.focusFirstQuestionnaireInput();
     }
@@ -1588,6 +1852,52 @@ export class ChatRenderer {
     });
   }
 
+  private sendQuestionnaireSubmit(
+    sessionId: string,
+    questionnaireRequestId: string,
+    answers: Record<string, unknown>,
+  ): void {
+    if (!this.options.sendQuestionnaireSubmit) {
+      return;
+    }
+    const trimmedSessionId = sessionId.trim();
+    if (!trimmedSessionId) {
+      return;
+    }
+    const trimmedQuestionnaireRequestId = questionnaireRequestId.trim();
+    if (!trimmedQuestionnaireRequestId) {
+      return;
+    }
+    this.options.sendQuestionnaireSubmit({
+      sessionId: trimmedSessionId,
+      questionnaireRequestId: trimmedQuestionnaireRequestId,
+      answers,
+    });
+  }
+
+  private sendQuestionnaireCancel(
+    sessionId: string,
+    questionnaireRequestId: string,
+    reason?: string,
+  ): void {
+    if (!this.options.sendQuestionnaireCancel) {
+      return;
+    }
+    const trimmedSessionId = sessionId.trim();
+    if (!trimmedSessionId) {
+      return;
+    }
+    const trimmedQuestionnaireRequestId = questionnaireRequestId.trim();
+    if (!trimmedQuestionnaireRequestId) {
+      return;
+    }
+    this.options.sendQuestionnaireCancel({
+      sessionId: trimmedSessionId,
+      questionnaireRequestId: trimmedQuestionnaireRequestId,
+      ...(reason ? { reason } : {}),
+    });
+  }
+
   private handleAgentMessage(_event: AgentMessageEvent): void {
     // agents_message tool blocks handle the display for both sync and async modes.
     // Skip rendering agent_message events entirely - they're just for tracking.
@@ -1598,6 +1908,11 @@ export class ChatRenderer {
     const messageId = event.payload.messageId;
     const messageEl = this.agentMessageElements.get(messageId);
     if (!messageEl) {
+      const questionnaireCallback = parseQuestionnaireCallbackText(event.payload.result);
+      if (questionnaireCallback) {
+        this.renderQuestionnaireCallbackMessage(event, questionnaireCallback);
+        return;
+      }
       console.warn('[ChatRenderer] agent_callback: no element found for messageId', messageId);
       return;
     }
@@ -1653,6 +1968,29 @@ export class ChatRenderer {
       if (statusEl) {
         statusEl.textContent = 'Complete';
       }
+    }
+  }
+
+  private renderQuestionnaireCallbackMessage(
+    event: AgentCallbackEvent,
+    payload: QuestionnaireCallbackPayload,
+  ): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
+    const indicator = document.createElement('div');
+    indicator.className = 'questionnaire-submission-indicator';
+    indicator.textContent = 'Submitted questionnaire answers';
+    indicator.dataset['eventId'] = event.id;
+    indicator.dataset['renderer'] = 'unified';
+    indicator.dataset['questionnaireRequestId'] = payload.questionnaireRequestId;
+    indicator.dataset['toolCallId'] = payload.toolCallId;
+    if (payload.schemaTitle) {
+      indicator.dataset['questionnaireTitle'] = payload.schemaTitle;
+    }
+    turnEl.appendChild(indicator);
+
+    if (!this._isReplaying) {
+      this.showTypingIndicator();
     }
   }
 
@@ -1936,7 +2274,7 @@ export class ChatRenderer {
     const textEl = this.assistantTextElements.get(segmentKey);
     const text = this.assistantTextBuffers.get(segmentKey);
     if (textEl && typeof text === 'string') {
-      finalizeStreamingMarkdownTextIfNeeded(textEl, text);
+      applyMarkdownToElement(textEl, text);
     }
     if (release) {
       this.assistantTextBuffers.delete(segmentKey);

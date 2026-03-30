@@ -31,6 +31,16 @@ export interface ChatRuntimeOptions {
     interactionId: string;
     response: InteractionResponseDraft;
   }) => void;
+  sendQuestionnaireSubmit?: (options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    answers: Record<string, unknown>;
+  }) => void;
+  sendQuestionnaireCancel?: (options: {
+    sessionId: string;
+    questionnaireRequestId: string;
+    reason?: string;
+  }) => void;
 }
 
 export interface ChatRuntime {
@@ -248,6 +258,12 @@ export function createChatRuntime(options: ChatRuntimeOptions): ChatRuntime {
     getShouldRestoreFocusAfterInteraction: () => !(options.isMobileViewport?.() ?? false),
     ...(options.sendInteractionResponse
       ? { sendInteractionResponse: options.sendInteractionResponse }
+      : {}),
+    ...(options.sendQuestionnaireSubmit
+      ? { sendQuestionnaireSubmit: options.sendQuestionnaireSubmit }
+      : {}),
+    ...(options.sendQuestionnaireCancel
+      ? { sendQuestionnaireCancel: options.sendQuestionnaireCancel }
       : {}),
   });
 

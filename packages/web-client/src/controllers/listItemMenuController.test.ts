@@ -79,6 +79,7 @@ describe('ListItemMenuController', () => {
     copyButton!.click();
 
     expect(writeText).toHaveBeenCalledWith('item-123');
+    expect(document.querySelector('.list-item-menu-wrapper')).toBeNull();
   });
 
   it('preserves provided target order in the move submenu', () => {

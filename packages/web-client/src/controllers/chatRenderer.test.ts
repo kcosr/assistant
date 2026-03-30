@@ -11,18 +11,18 @@ afterEach(() => {
 
 function createBaseEvent<T extends ChatEvent['type']>(
   type: T,
-  overrides: Partial<ChatEvent> = {},
-): ChatEvent {
-  const base: ChatEvent = {
+  overrides: Partial<Extract<ChatEvent, { type: T }>> = {},
+): Extract<ChatEvent, { type: T }> {
+  const base = {
     id: 'e-base',
     type,
     timestamp: Date.now(),
     sessionId: 's1',
     turnId: 't1',
     responseId: 'r1',
-    payload: {} as never,
-  };
-  return { ...base, ...overrides } as ChatEvent;
+    payload: {} as Extract<ChatEvent, { type: T }>['payload'],
+  } as unknown as Extract<ChatEvent, { type: T }>;
+  return { ...base, ...overrides } as Extract<ChatEvent, { type: T }>;
 }
 
 describe('ChatRenderer', () => {
@@ -658,7 +658,6 @@ describe('ChatRenderer', () => {
 
     let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
-    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(true);
     expect(assistantText?.textContent).toContain('Hello world');
 
     renderer.renderEvent(
@@ -670,9 +669,34 @@ describe('ChatRenderer', () => {
 
     assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
-    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
     expect(assistantText?.dataset['eventId']).toBe('e3');
     expect(assistantText?.textContent).toContain('Hello world!');
+  });
+
+  it('renders markdown progressively while assistant chunks stream', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e1',
+        payload: { text: 'Hello **wor' },
+      }),
+    );
+    let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+    expect(assistantText?.querySelector('strong')?.textContent).toBe('wor');
+
+    renderer.renderEvent(
+      createBaseEvent('assistant_chunk', {
+        id: 'e2',
+        payload: { text: 'ld**' },
+      }),
+    );
+
+    assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
+    expect(assistantText?.querySelector('strong')?.textContent).toBe('world');
   });
 
   it('finalizes streamed assistant markdown before inserting a tool block', () => {
@@ -705,7 +729,6 @@ describe('ChatRenderer', () => {
 
     const assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText).not.toBeNull();
-    expect(assistantText?.classList.contains('streaming-markdown-text')).toBe(false);
     expect(assistantText?.querySelector('strong')?.textContent).toBe('tool');
   });
 
@@ -1008,6 +1031,303 @@ describe('ChatRenderer', () => {
     const interaction = container.querySelector<HTMLElement>('.interaction-standalone');
     expect(interaction).not.toBeNull();
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+  });
+
+  it('renders async questionnaire lifecycle events and applies reprompt values', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const events: ChatEvent[] = [
+      createBaseEvent('questionnaire_request', {
+        id: 'q1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          prompt: 'Tell me about yourself',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+      createBaseEvent('questionnaire_reprompt', {
+        id: 'q2',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'pending',
+          updatedAt: '2026-03-29T12:01:00.000Z',
+          errorSummary: 'Please correct the highlighted fields.',
+          fieldErrors: { name: 'This field is required.' },
+          initialValues: { name: 'Ada' },
+        },
+      }),
+      createBaseEvent('questionnaire_submission', {
+        id: 'q3',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      }),
+    ];
+
+    renderer.replayEvents(events);
+
+    const interaction = container.querySelector<HTMLElement>(
+      '[data-questionnaire-request-id="qr1"]',
+    );
+    expect(interaction).not.toBeNull();
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('Submitted');
+    const input = interaction?.querySelector<HTMLInputElement>('[data-field-id="name"]');
+    expect(input?.value).toBe('Ada');
+    expect(input?.disabled).toBe(true);
+  });
+
+  it('replays completed async questionnaires as submitted even if events arrive out of order', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_submission', {
+        id: 'q-submitted',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      }),
+      createBaseEvent('questionnaire_request', {
+        id: 'q-request',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>(
+      '[data-questionnaire-request-id="qr1"]',
+    );
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('Submitted');
+    const input = interaction?.querySelector<HTMLInputElement>('[data-field-id="name"]');
+    expect(input?.value).toBe('Ada');
+    expect(input?.disabled).toBe(true);
+  });
+
+  it('renders questionnaire callbacks as user messages in the callback turn', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_request', {
+        id: 'q-request',
+        turnId: 't-request',
+        responseId: undefined,
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+      createBaseEvent('questionnaire_submission', {
+        id: 'q-submitted',
+        turnId: 't-request',
+        responseId: undefined,
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      }),
+      createBaseEvent('turn_start', {
+        id: 'cb-turn-start',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: { trigger: 'callback' },
+      }),
+      createBaseEvent('agent_callback', {
+        id: 'cb-1',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: {
+          messageId: 'qr1',
+          fromAgentId: 'unknown',
+          fromSessionId: 's1',
+          result:
+            '<questionnaire-response questionnaire-request-id="qr1" tool-call-id="tc1" tool="questions_ask" submitted-at="2026-03-29T12:02:00.000Z" answers-json="{&quot;name&quot;:&quot;Ada&quot;}" />',
+        },
+      }),
+    ]);
+
+    const callbackTurn = container.querySelector<HTMLElement>('.turn[data-turn-id="t-callback"]');
+    expect(callbackTurn).not.toBeNull();
+    const callbackIndicator = callbackTurn?.querySelector<HTMLElement>(
+      '.questionnaire-submission-indicator',
+    );
+    expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
+  });
+
+  it('shows typing immediately after a live questionnaire callback message renders', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.handleNewEvent(
+      createBaseEvent('turn_start', {
+        id: 'cb-turn-start',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: { trigger: 'callback' },
+      }),
+    );
+    renderer.handleNewEvent(
+      createBaseEvent('agent_callback', {
+        id: 'cb-1',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: {
+          messageId: 'qr1',
+          fromAgentId: 'unknown',
+          fromSessionId: 's1',
+          result:
+            '<questionnaire-response questionnaire-request-id="qr1" tool-call-id="tc1" tool="questions_ask" submitted-at="2026-03-29T12:02:00.000Z" answers-json="{&quot;name&quot;:&quot;Ada&quot;}" />',
+        },
+      }),
+    );
+
+    const callbackIndicator = container.querySelector<HTMLElement>(
+      '.turn[data-turn-id="t-callback"] .questionnaire-submission-indicator',
+    );
+    expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
+    expect(container.querySelector('.chat-typing-indicator.visible')).not.toBeNull();
+  });
+
+  it('submits async questionnaires through the dedicated websocket callbacks', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const sendQuestionnaireSubmit = vi.fn();
+    const renderer = new ChatRenderer(container, {
+      sendQuestionnaireSubmit,
+    });
+
+    renderer.renderEvent(
+      createBaseEvent('questionnaire_request', {
+        id: 'q1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+    );
+
+    const input = container.querySelector<HTMLInputElement>('[data-field-id="name"]');
+    expect(input).not.toBeNull();
+    if (!input) return;
+    input.value = 'Ada';
+
+    const form = container.querySelector<HTMLFormElement>('.interaction-form');
+    expect(form).not.toBeNull();
+    form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(sendQuestionnaireSubmit).toHaveBeenCalledWith({
+      sessionId: 's1',
+      questionnaireRequestId: 'qr1',
+      answers: { name: 'Ada' },
+    });
+  });
+
+  it('renders async questionnaire cancellations as completed interactions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_request', {
+        id: 'q1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name' }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+      createBaseEvent('questionnaire_update', {
+        id: 'q2',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'cancelled',
+          updatedAt: '2026-03-29T12:01:00.000Z',
+          reason: 'User dismissed it',
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>(
+      '[data-questionnaire-request-id="qr1"]',
+    );
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('User dismissed it');
   });
 
   it('renders tool calls and questionnaires without responseId', () => {
@@ -1594,7 +1914,7 @@ describe('ChatRenderer', () => {
       createBaseEvent('turn_start', {
         id: 't1',
         turnId: 'turn1',
-        payload: { trigger: 'user', agentId: 'agent1' },
+        payload: { trigger: 'user' },
       }),
     );
 

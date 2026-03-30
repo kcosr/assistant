@@ -119,4 +119,79 @@ describe('chat event validation', () => {
     expect(validateChatEvent(request)).toEqual(request);
     expect(validateChatEvent(response)).toEqual(response);
   });
+
+  it('accepts questionnaire lifecycle events', () => {
+    const request: ChatEvent = {
+      id: 'event-7',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        toolName: 'questions_ask',
+        mode: 'async',
+        prompt: 'Tell me more',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+        status: 'pending',
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    };
+
+    const submission: ChatEvent = {
+      id: 'event-8',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_submission',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        status: 'submitted',
+        submittedAt: '2026-03-29T12:01:00.000Z',
+        interactionId: 'i-1',
+        answers: { name: 'Ada' },
+      },
+    };
+
+    expect(validateChatEvent(request)).toEqual(request);
+    expect(validateChatEvent(submission)).toEqual(submission);
+  });
+
+  it('accepts questionnaire reprompt and update events', () => {
+    const reprompt: ChatEvent = {
+      id: 'event-9',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_reprompt',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        status: 'pending',
+        updatedAt: '2026-03-29T12:02:00.000Z',
+        errorSummary: 'Please correct the highlighted fields.',
+        fieldErrors: { name: 'This field is required.' },
+        initialValues: { name: '' },
+      },
+    };
+
+    const update: ChatEvent = {
+      id: 'event-10',
+      timestamp: Date.now(),
+      sessionId: 'session-1',
+      type: 'questionnaire_update',
+      payload: {
+        questionnaireRequestId: 'qr-1',
+        toolCallId: 'tool-1',
+        status: 'cancelled',
+        updatedAt: '2026-03-29T12:03:00.000Z',
+        reason: 'User dismissed it',
+      },
+    };
+
+    expect(validateChatEvent(reprompt)).toEqual(reprompt);
+    expect(validateChatEvent(update)).toEqual(update);
+  });
 });

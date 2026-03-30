@@ -7,6 +7,7 @@ import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
 import type { SessionHub } from '../sessionHub';
 import type { SessionSummary } from '../sessionIndex';
+import { isOverlayChatEvent } from './overlayEventTypes';
 
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
@@ -264,14 +265,6 @@ export class SessionScopedEventStore implements EventStore {
     private readonly sessionHub: SessionHub,
   ) {}
 
-  private isOverlayEvent(event: ChatEvent): boolean {
-    return (
-      event.type === 'interaction_request' ||
-      event.type === 'interaction_response' ||
-      event.type === 'interaction_pending'
-    );
-  }
-
   private resolveSessionProvider(summary: SessionSummary | undefined): string | null {
     const agentId = summary?.agentId;
     if (!agentId) {
@@ -316,7 +309,7 @@ export class SessionScopedEventStore implements EventStore {
       if (this.sessionHub.shouldPersistSessionEvents(activeSummary)) {
         return this.base.append(trimmed, event);
       }
-      if (!this.isOverlayEvent(event)) {
+      if (!isOverlayChatEvent(event)) {
         return;
       }
       this.assertEventSessionMatches(trimmed, event);
@@ -331,7 +324,7 @@ export class SessionScopedEventStore implements EventStore {
     if (!summary || this.sessionHub.shouldPersistSessionEvents(summary)) {
       return this.base.append(trimmed, event);
     }
-    if (!this.isOverlayEvent(event)) {
+    if (!isOverlayChatEvent(event)) {
       return;
     }
     this.assertEventSessionMatches(trimmed, event);
@@ -353,7 +346,7 @@ export class SessionScopedEventStore implements EventStore {
       if (this.sessionHub.shouldPersistSessionEvents(activeSummary)) {
         return this.base.appendBatch(trimmed, events);
       }
-      const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
+      const overlayEvents = events.filter(isOverlayChatEvent);
       if (overlayEvents.length === 0) {
         return;
       }
@@ -374,7 +367,7 @@ export class SessionScopedEventStore implements EventStore {
       return this.base.appendBatch(trimmed, events);
     }
 
-    const overlayEvents = events.filter((event) => this.isOverlayEvent(event));
+    const overlayEvents = events.filter(isOverlayChatEvent);
     if (overlayEvents.length === 0) {
       return;
     }
@@ -396,7 +389,7 @@ export class SessionScopedEventStore implements EventStore {
       return this.base.getEvents(trimmed);
     }
     const events = await this.base.getEvents(trimmed);
-    return events.filter((event) => this.isOverlayEvent(event));
+    return events.filter(isOverlayChatEvent);
   }
 
   async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
@@ -405,7 +398,7 @@ export class SessionScopedEventStore implements EventStore {
       return this.base.getEventsSince(trimmed, afterEventId);
     }
     const events = await this.base.getEventsSince(trimmed, afterEventId);
-    return events.filter((event) => this.isOverlayEvent(event));
+    return events.filter(isOverlayChatEvent);
   }
 
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void {

@@ -135,6 +135,4 @@ Example: sectioned form
 ```
 
 Optional behavior
-- `timeoutMs` sets a client timeout for the prompt.
-- `completedView` can hide inputs or define a summary template in the completed view.
 - `validateOnClient: false` on a field disables client-side HTML validation for that field.

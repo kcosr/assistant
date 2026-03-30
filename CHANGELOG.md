@@ -5,12 +5,18 @@
 ### Breaking Changes
 
 ### Added
+- Added durable async questionnaires with late submission replay, follow-up callback turns, and dedicated questionnaire submit/cancel websocket flows. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Changed
+- Changed `questions_ask` to default to async submission flow, simplified the public tool surface, and clarified the agent-facing questionnaire schema guidance for field types and `{ label, value }` option objects. ([#70](https://github.com/kcosr/assistant/pull/70))
+- Changed assistant message streaming to progressively re-render markdown again in the active chat renderer while leaving tool output rendering unchanged. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Fixed
+- Fixed questionnaire replay/rendering so submitted async forms stay disabled with submitted values, show a post-turn submission indicator, and avoid unnecessary questionnaire DOM rebuilds on completion. ([#70](https://github.com/kcosr/assistant/pull/70))
+- Fixed lists item action menus to close again after row actions, outside clicks, and Escape following the shared context-menu manager refactor for Pi turn history menus. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Removed
+- Removed the unused legacy `MessageRenderer` path from the web client now that the unified `ChatRenderer` is the only production chat transcript renderer. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ## [0.15.2] - 2026-03-29
 

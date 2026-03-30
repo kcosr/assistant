@@ -149,6 +149,20 @@ export const ClientToolInteractionResponseMessageSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const ClientQuestionnaireSubmitMessageSchema = z.object({
+  type: z.literal('questionnaire_submit'),
+  sessionId: z.string(),
+  questionnaireRequestId: z.string(),
+  answers: z.record(z.string(), z.unknown()),
+});
+
+export const ClientQuestionnaireCancelMessageSchema = z.object({
+  type: z.literal('questionnaire_cancel'),
+  sessionId: z.string(),
+  questionnaireRequestId: z.string(),
+  reason: z.string().optional(),
+});
+
 export const FilterOpSchema = z.enum([
   'eq',
   'neq',
@@ -291,6 +305,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   ClientCancelQueuedMessageSchema,
   ClientSetInteractionModeMessageSchema,
   ClientToolInteractionResponseMessageSchema,
+  ClientQuestionnaireSubmitMessageSchema,
+  ClientQuestionnaireCancelMessageSchema,
   PanelEventEnvelopeSchema,
   ClientSubscribeMessageSchema,
   ClientUnsubscribeMessageSchema,
@@ -312,6 +328,12 @@ export type ClientSetSessionThinkingMessage = z.infer<typeof ClientSetSessionThi
 export type ClientSetInteractionModeMessage = z.infer<typeof ClientSetInteractionModeMessageSchema>;
 export type ClientToolInteractionResponseMessage = z.infer<
   typeof ClientToolInteractionResponseMessageSchema
+>;
+export type ClientQuestionnaireSubmitMessage = z.infer<
+  typeof ClientQuestionnaireSubmitMessageSchema
+>;
+export type ClientQuestionnaireCancelMessage = z.infer<
+  typeof ClientQuestionnaireCancelMessageSchema
 >;
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 

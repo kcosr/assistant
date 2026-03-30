@@ -9,6 +9,16 @@ export type InteractionResponseDraft = Omit<
   'toolCallId' | 'interactionId'
 >;
 
+export type QuestionnaireRequestView = {
+  prompt?: string;
+  errorSummary?: string;
+  fieldErrors?: Record<string, string>;
+  interactionId?: string;
+  inputSchema?: InteractionRequestPayload['inputSchema'];
+};
+
+type QuestionnaireRenderableRequest = InteractionRequestPayload | QuestionnaireRequestView;
+
 export function createInteractionElement(options: {
   request: InteractionRequestPayload;
   enabled: boolean;
@@ -18,6 +28,14 @@ export function createInteractionElement(options: {
   if (request.interactionType === 'approval') {
     return createApprovalInteraction(options);
   }
+  return createQuestionnaireInteraction(options);
+}
+
+export function createQuestionnaireElement(options: {
+  request: QuestionnaireRequestView;
+  enabled: boolean;
+  onSubmit: (response: InteractionResponseDraft) => void;
+}): HTMLDivElement {
   return createQuestionnaireInteraction(options);
 }
 
@@ -33,24 +51,34 @@ export function applyInteractionResponse(
     control.disabled = true;
   }
 
-  let summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
-  if (!summary) {
-    summary = element.querySelector<HTMLElement>('.interaction-summary');
-  }
-
-  if (response.action === 'approve' || response.action === 'deny') {
-    if (summary) {
-      const scope = response.approvalScope ? ` (${response.approvalScope})` : '';
-      summary.textContent =
-        response.action === 'approve' ? `Approved${scope}` : 'Denied';
+  const ensureSummary = (): HTMLElement => {
+    let summary = element.querySelector<HTMLElement>('[data-role="interaction-summary"]');
+    if (!summary) {
+      summary = element.querySelector<HTMLElement>('.interaction-summary');
     }
-  } else if (response.action === 'cancel') {
     if (!summary) {
       summary = document.createElement('div');
       summary.className = 'interaction-summary';
       summary.dataset['role'] = 'interaction-summary';
-      element.appendChild(summary);
+      const form = element.querySelector<HTMLFormElement>('.interaction-form');
+      if (form) {
+        element.insertBefore(summary, form);
+      } else {
+        element.appendChild(summary);
+      }
     }
+    return summary;
+  };
+
+  if (response.action === 'approve' || response.action === 'deny') {
+    const summary = ensureSummary();
+    const scope = response.approvalScope ? ` (${response.approvalScope})` : '';
+    summary.textContent = response.action === 'approve' ? `Approved${scope}` : 'Denied';
+  } else if (response.action === 'submit') {
+    const summary = ensureSummary();
+    summary.textContent = 'Submitted';
+  } else if (response.action === 'cancel') {
+    const summary = ensureSummary();
     summary.textContent = response.reason ? response.reason : 'Cancelled';
   }
 
@@ -123,7 +151,7 @@ function createApprovalInteraction(options: {
 }
 
 function createQuestionnaireInteraction(options: {
-  request: InteractionRequestPayload;
+  request: QuestionnaireRenderableRequest;
   enabled: boolean;
   onSubmit: (response: InteractionResponseDraft) => void;
 }): HTMLDivElement {
@@ -132,7 +160,9 @@ function createQuestionnaireInteraction(options: {
 
   const wrapper = document.createElement('div');
   wrapper.className = 'interaction-block interaction-questionnaire';
-  wrapper.dataset['interactionId'] = request.interactionId;
+  if (request.interactionId) {
+    wrapper.dataset['interactionId'] = request.interactionId;
+  }
 
   if (request.prompt) {
     const prompt = document.createElement('div');
@@ -291,7 +321,7 @@ function requestFormSubmit(form: HTMLFormElement): void {
 function appendFields(
   container: HTMLElement,
   fields: QuestionnaireField[],
-  request: InteractionRequestPayload,
+  request: QuestionnaireRenderableRequest,
 ): void {
   for (const field of fields) {
     const isCheckbox = field.type === 'checkbox' || field.type === 'boolean';

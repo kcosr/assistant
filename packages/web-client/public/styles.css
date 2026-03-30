@@ -4186,11 +4186,6 @@ body.panel-reordering {
   line-height: var(--line-height-relaxed);
 }
 
-.assistant-text.streaming-markdown-text,
-.assistant-message-main.streaming-markdown-text {
-  white-space: pre-wrap;
-}
-
 /* ===== Messages ===== */
 .message {
   margin-bottom: var(--spacing-lg);
@@ -4321,6 +4316,16 @@ body.panel-reordering {
 }
 
 .message-interrupted {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-style: italic;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.questionnaire-submission-indicator {
   display: block;
   font-size: var(--font-size-xs);
   font-style: italic;
