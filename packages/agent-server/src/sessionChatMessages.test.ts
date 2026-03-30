@@ -53,7 +53,9 @@ describe('buildChatMessagesFromEvents', () => {
     expect(messages.length).toBe(2);
     expect(messages[0]?.role).toBe('system');
     expect(messages[1]?.role).toBe('user');
-    expect(messages[1]?.content).toBe('Callback from target agent');
+    expect(messages[1]?.content).toBe(
+      '[Callback from target-agent]: Callback from target agent',
+    );
   });
 
   it('skips interrupted assistant output when rebuilding prompt messages', () => {
