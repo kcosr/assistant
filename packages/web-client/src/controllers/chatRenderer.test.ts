@@ -320,6 +320,30 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('strips the context line from rendered user_audio bubbles', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio-context',
+        turnId: 't-audio-context',
+        responseId: undefined,
+        payload: {
+          transcription: '<context panel-id="panel-1" />\nCall Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+    expect(bubble?.textContent).not.toContain('<context');
+  });
+
   it('shows the typing indicator for live voice tool bubbles', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

@@ -511,7 +511,7 @@ export class ChatRenderer {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
-    const transcription = event.payload.transcription;
+    const transcription = stripContextLine(event.payload.transcription);
     const bubble = appendMessage(turnEl, 'user', transcription);
     bubble.classList.add('user-audio');
     bubble.dataset['inputType'] = 'audio';
