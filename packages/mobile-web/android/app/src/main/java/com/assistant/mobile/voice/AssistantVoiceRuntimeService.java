@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.media.app.NotificationCompat.MediaStyle;
 import androidx.core.content.ContextCompat;
 
 import com.assistant.mobile.MainActivity;
@@ -260,14 +261,59 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        return new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        PendingIntent startListenPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            startManualListenIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        PendingIntent stopInteractionPendingIntent = PendingIntent.getService(
+            this,
+            2,
+            stopCurrentInteractionIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle(getString(R.string.assistant_voice_notification_title))
             .setContentText(getString(R.string.assistant_voice_notification_text, state))
             .setContentIntent(launchPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build();
+            .setOngoing(true);
+        int compactActionCount = 0;
+        if (AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            config.isEnabled(),
+            config.selectedSessionId,
+            isPromptPlaybackActive(),
+            !activeSttRequestId.isEmpty(),
+            isRuntimeConnected()
+        )) {
+            builder.addAction(
+                android.R.drawable.ic_btn_speak_now,
+                getString(R.string.assistant_voice_notification_action_speak),
+                startListenPendingIntent
+            );
+            compactActionCount += 1;
+        }
+        if (AssistantVoiceInteractionRules.shouldShowNotificationStopAction(
+            isPromptPlaybackActive(),
+            !activeSttRequestId.isEmpty()
+        )) {
+            builder.addAction(
+                android.R.drawable.ic_media_pause,
+                getString(R.string.assistant_voice_notification_action_stop),
+                stopInteractionPendingIntent
+            );
+            compactActionCount += 1;
+        }
+        if (compactActionCount > 0) {
+            if (compactActionCount == 1) {
+                builder.setStyle(new MediaStyle().setShowActionsInCompactView(0));
+            } else {
+                builder.setStyle(new MediaStyle().setShowActionsInCompactView(0, 1));
+            }
+        }
+        return builder.build();
     }
 
     private void createNotificationChannel() {
@@ -901,9 +947,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         Log.d(TAG, "submitRecognizedSpeech sessionId=" + sessionId + " textLength=" + text.length() + " durationMs=" + durationMs);
         networkExecutor.execute(() -> {
             try {
+                String content = text;
+                if (config.inputContextEnabled && !config.inputContextLine.isEmpty()) {
+                    content = config.inputContextLine + "\n" + text;
+                }
                 JSONObject body = new JSONObject();
                 body.put("sessionId", sessionId);
-                body.put("content", text);
+                body.put("content", content);
                 body.put("mode", "async");
                 body.put("inputType", "audio");
                 body.put("durationMs", durationMs);

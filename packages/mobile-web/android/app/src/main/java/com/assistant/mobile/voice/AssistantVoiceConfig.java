@@ -27,6 +27,8 @@ final class AssistantVoiceConfig {
     private static final String KEY_SELECTED_MIC_DEVICE_ID = "selected_mic_device_id";
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
+    private static final String KEY_INPUT_CONTEXT_ENABLED = "input_context_enabled";
+    private static final String KEY_INPUT_CONTEXT_LINE = "input_context_line";
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
     private static final String KEY_ASSISTANT_BASE_URL = "assistant_base_url";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
@@ -40,6 +42,8 @@ final class AssistantVoiceConfig {
     static final String EXTRA_RECOGNITION_END_SILENCE_MS = "recognitionEndSilenceMs";
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
+    static final String EXTRA_INPUT_CONTEXT_ENABLED = "inputContextEnabled";
+    static final String EXTRA_INPUT_CONTEXT_LINE = "inputContextLine";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
     static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
 
@@ -51,6 +55,8 @@ final class AssistantVoiceConfig {
     final int recognitionEndSilenceMs;
     final String selectedPanelId;
     final String selectedSessionId;
+    final boolean inputContextEnabled;
+    final String inputContextLine;
     final String voiceAdapterBaseUrl;
     final String assistantBaseUrl;
 
@@ -63,6 +69,8 @@ final class AssistantVoiceConfig {
         int recognitionEndSilenceMs,
         String selectedPanelId,
         String selectedSessionId,
+        boolean inputContextEnabled,
+        String inputContextLine,
         String voiceAdapterBaseUrl,
         String assistantBaseUrl
     ) {
@@ -83,6 +91,8 @@ final class AssistantVoiceConfig {
         );
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
+        this.inputContextEnabled = inputContextEnabled;
+        this.inputContextLine = normalizeOptional(inputContextLine);
         this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
             voiceAdapterBaseUrl,
             DEFAULT_VOICE_ADAPTER_BASE_URL
@@ -107,6 +117,8 @@ final class AssistantVoiceConfig {
             prefs.getInt(KEY_RECOGNITION_END_SILENCE_MS, DEFAULT_RECOGNITION_END_SILENCE_MS),
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
+            prefs.getBoolean(KEY_INPUT_CONTEXT_ENABLED, false),
+            prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
             prefs.getString(KEY_ASSISTANT_BASE_URL, DEFAULT_ASSISTANT_BASE_URL)
         );
@@ -123,6 +135,8 @@ final class AssistantVoiceConfig {
             .putInt(KEY_RECOGNITION_END_SILENCE_MS, config.recognitionEndSilenceMs)
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
+            .putBoolean(KEY_INPUT_CONTEXT_ENABLED, config.inputContextEnabled)
+            .putString(KEY_INPUT_CONTEXT_LINE, emptyToNull(config.inputContextLine))
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
             .putString(KEY_ASSISTANT_BASE_URL, config.assistantBaseUrl)
             .apply();
@@ -158,6 +172,10 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_SELECTED_SESSION_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_SESSION_ID)
                 : fallback.selectedSessionId,
+            intent.getBooleanExtra(EXTRA_INPUT_CONTEXT_ENABLED, fallback.inputContextEnabled),
+            intent.hasExtra(EXTRA_INPUT_CONTEXT_LINE)
+                ? intent.getStringExtra(EXTRA_INPUT_CONTEXT_LINE)
+                : fallback.inputContextLine,
             intent.hasExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
                 ? intent.getStringExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
                 : fallback.voiceAdapterBaseUrl,
@@ -176,6 +194,8 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_RECOGNITION_END_SILENCE_MS, recognitionEndSilenceMs);
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
+        intent.putExtra(EXTRA_INPUT_CONTEXT_ENABLED, inputContextEnabled);
+        intent.putExtra(EXTRA_INPUT_CONTEXT_LINE, emptyToNull(inputContextLine));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
         intent.putExtra(EXTRA_ASSISTANT_BASE_URL, assistantBaseUrl);
         return intent;
@@ -252,6 +272,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             panelId,
             sessionId,
+            inputContextEnabled,
+            inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl
         );
@@ -267,6 +289,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
             voiceAdapterBaseUrl,
             url
         );
@@ -289,6 +313,8 @@ final class AssistantVoiceConfig {
             && recognitionEndSilenceMs == config.recognitionEndSilenceMs
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
+            && inputContextEnabled == config.inputContextEnabled
+            && Objects.equals(inputContextLine, config.inputContextLine)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
             && Objects.equals(assistantBaseUrl, config.assistantBaseUrl);
     }
@@ -304,6 +330,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl
         );
@@ -322,7 +350,26 @@ final class AssistantVoiceConfig {
             settings.optInt("recognitionEndSilenceMs", recognitionEndSilenceMs),
             selectedPanelId,
             selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
             settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withInputContext(boolean enabled, String contextLine) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            enabled,
+            contextLine,
+            voiceAdapterBaseUrl,
             assistantBaseUrl
         );
     }

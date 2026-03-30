@@ -128,8 +128,8 @@ export class TextInputController {
     }
 
     const isBrief = this.options.getBriefModeEnabled();
-    const activePanel = this.options.getActivePanelContext();
     const includePanelContext = this.options.getIncludePanelContext();
+    const activePanel = includePanelContext ? this.options.getActivePanelContext() : null;
     const activeContextItem = includePanelContext ? this.options.getActiveContextItem() : null;
     const useContextItem = includePanelContext && !!activeContextItem;
     const contextAttributes = includePanelContext

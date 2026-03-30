@@ -22,6 +22,7 @@ import { SessionManager, type CreateSessionOptions } from './controllers/session
 import { ServerMessageHandler } from './controllers/serverMessageHandler';
 import {
   AssistantNativeVoiceBridge,
+  type AssistantNativeVoiceInputContext,
   type AssistantNativeVoiceRuntimeState,
   type AssistantNativeVoiceSelection,
 } from './controllers/speechAudioController';
@@ -688,6 +689,7 @@ async function main(): Promise<void> {
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.setIncludePanelContext(enabled);
     }
+    syncNativeInputContext();
   };
 
   const applyBriefModeEnabled = (enabled: boolean): void => {
@@ -700,6 +702,7 @@ async function main(): Promise<void> {
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.setBriefModeEnabled(enabled);
     }
+    syncNativeInputContext();
   };
 
   let inputSessionId: string | null = null;
@@ -890,6 +893,10 @@ async function main(): Promise<void> {
     (settings) => nativeVoiceBridge.setVoiceSettings(settings),
     areVoiceSettingsEqual,
   );
+  const nativeInputContextSync = new AsyncValueSync<AssistantNativeVoiceInputContext>(
+    (inputContext) => nativeVoiceBridge.setInputContext(inputContext),
+    (left, right) => left.enabled === right.enabled && left.contextLine === right.contextLine,
+  );
   const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
     (selection) => nativeVoiceBridge.setSelectedSession(selection),
     (left, right) => left?.panelId === right?.panelId && left?.sessionId === right?.sessionId,
@@ -942,6 +949,36 @@ async function main(): Promise<void> {
     nativeSelectedSessionSync.request(selection);
   }
 
+  function getNativeVoiceInputContext(): AssistantNativeVoiceInputContext {
+    const activePanel = includePanelContext ? getActivePanelContext() : null;
+    const activeContextItem = includePanelContext ? getActiveContextItem() : null;
+    const useContextItem = includePanelContext && !!activeContextItem;
+    const contextAttributes = includePanelContext ? getActivePanelContextAttributes() : null;
+    const hasContextAttributes =
+      includePanelContext && !!contextAttributes && Object.keys(contextAttributes).length > 0;
+    const selectedItemTitles = useContextItem ? getSelectedItemTitles() : [];
+    const contextLine = buildContextLine(
+      useContextItem ? activeContextItem : null,
+      useContextItem ? getActiveContextItemName() : null,
+      useContextItem ? getSelectedItemIds() : [],
+      useContextItem ? getActiveContextItemDescription() : null,
+      {
+        mode: briefModeEnabled ? 'brief' : null,
+        panel: activePanel,
+        contextAttributes,
+      },
+      useContextItem ? selectedItemTitles : [],
+    );
+    return {
+      enabled: Boolean(activePanel) || useContextItem || hasContextAttributes,
+      contextLine,
+    };
+  }
+
+  function syncNativeInputContext(): void {
+    nativeInputContextSync.request(getNativeVoiceInputContext());
+  }
+
   function syncNativeVoiceSettings(): void {
     const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
     nativeVoiceSettingsSync.request(settings);
@@ -970,6 +1007,7 @@ async function main(): Promise<void> {
   function syncNativeVoiceBridgeState(): void {
     syncNativeAssistantBaseUrl();
     syncNativeVoiceSettings();
+    syncNativeInputContext();
     syncNativeSelectedSession();
   }
 
@@ -1213,103 +1251,11 @@ async function main(): Promise<void> {
       setAssistantBubbleTyping,
       scrollMessageIntoView,
       buildContextLine,
-      getActiveContextItem: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const typeValue = panelContext['type'];
-        const idValue = panelContext['id'];
-        const type = typeof typeValue === 'string' ? typeValue.trim() : '';
-        const id = typeof idValue === 'string' ? idValue.trim() : '';
-        if (!type || !id) {
-          return null;
-        }
-        return { type, id };
-      },
-      getActiveContextItemName: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const nameValue = panelContext['name'] ?? panelContext['title'];
-        const name = typeof nameValue === 'string' ? nameValue.trim() : '';
-        if (name) {
-          return name;
-        }
-        const idValue = panelContext['id'];
-        const id = typeof idValue === 'string' ? idValue.trim() : '';
-        return id || null;
-      },
-      getActiveContextItemDescription: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const descriptionValue = panelContext['description'];
-        const description = typeof descriptionValue === 'string' ? descriptionValue.trim() : '';
-        return description.length > 0 ? description : null;
-      },
-      getSelectedItemIds: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return [];
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        const rawSelected = panelContext ? panelContext['selectedItemIds'] : null;
-        if (!Array.isArray(rawSelected)) {
-          return [];
-        }
-        const selected = rawSelected
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map((entry) => entry.trim());
-        return Array.from(new Set(selected));
-      },
-      getSelectedItemTitles: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return [];
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return [];
-        }
-        const rawItems = panelContext['selectedItems'];
-        if (Array.isArray(rawItems)) {
-          const titles = rawItems
-            .map((entry) => {
-              if (!entry || typeof entry !== 'object') {
-                return '';
-              }
-              const obj = entry as Record<string, unknown>;
-              const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
-              return title;
-            })
-            .filter((title) => title.length > 0);
-          if (titles.length > 0) {
-            return titles;
-          }
-        }
-        const rawTitles = panelContext['selectedItemTitles'];
-        if (!Array.isArray(rawTitles)) {
-          return [];
-        }
-        return rawTitles
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map((entry) => entry.trim());
-      },
+      getActiveContextItem,
+      getActiveContextItemName,
+      getActiveContextItemDescription,
+      getSelectedItemIds,
+      getSelectedItemTitles,
       getActivePanelContext,
       getActivePanelContextAttributes,
       getContextPreviewData,
@@ -2272,6 +2218,7 @@ async function main(): Promise<void> {
       for (const entry of chatPanelsById.values()) {
         entry.inputRuntime.updateContextAvailability();
       }
+      syncNativeInputContext();
     },
     openCommandPalette: () => {
       commandPaletteController?.open();
@@ -2503,6 +2450,108 @@ async function main(): Promise<void> {
       ...(hasSelectedText ? { selectedText } : {}),
       ...(hasSelectedItems ? { selectedItemCount, selectedItemTitles } : {}),
     };
+  }
+
+  function getActiveContextItem() {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const typeValue = panelContext['type'];
+    const idValue = panelContext['id'];
+    const type = typeof typeValue === 'string' ? typeValue.trim() : '';
+    const id = typeof idValue === 'string' ? idValue.trim() : '';
+    if (!type || !id) {
+      return null;
+    }
+    return { type, id };
+  }
+
+  function getActiveContextItemName(): string | null {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const nameValue = panelContext['name'] ?? panelContext['title'];
+    const name = typeof nameValue === 'string' ? nameValue.trim() : '';
+    if (name) {
+      return name;
+    }
+    const idValue = panelContext['id'];
+    const id = typeof idValue === 'string' ? idValue.trim() : '';
+    return id || null;
+  }
+
+  function getActiveContextItemDescription(): string | null {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const descriptionValue = panelContext['description'];
+    const description = typeof descriptionValue === 'string' ? descriptionValue.trim() : '';
+    return description.length > 0 ? description : null;
+  }
+
+  function getSelectedItemIds(): string[] {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return [];
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    const rawSelected = panelContext ? panelContext['selectedItemIds'] : null;
+    if (!Array.isArray(rawSelected)) {
+      return [];
+    }
+    const selected = rawSelected
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+    return Array.from(new Set(selected));
+  }
+
+  function getSelectedItemTitles(): string[] {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return [];
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return [];
+    }
+    const rawItems = panelContext['selectedItems'];
+    if (Array.isArray(rawItems)) {
+      const titles = rawItems
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return '';
+          }
+          const obj = entry as Record<string, unknown>;
+          const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+          return title;
+        })
+        .filter((title) => title.length > 0);
+      if (titles.length > 0) {
+        return titles;
+      }
+    }
+    const rawTitles = panelContext['selectedItemTitles'];
+    if (!Array.isArray(rawTitles)) {
+      return [];
+    }
+    return rawTitles
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim());
   }
 
   function getChatRuntimeOptions(_host?: PanelHost) {

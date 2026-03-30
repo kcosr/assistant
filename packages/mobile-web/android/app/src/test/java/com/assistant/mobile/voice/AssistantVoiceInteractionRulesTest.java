@@ -108,4 +108,58 @@ public final class AssistantVoiceInteractionRulesTest {
         assertFalse(AssistantVoiceInteractionRules.shouldSendSttEndAfterMicStops("request-1", "request-2"));
         assertFalse(AssistantVoiceInteractionRules.shouldSendSttEndAfterMicStops("", "request-1"));
     }
+
+    @Test
+    public void showsNotificationStopActionDuringPlaybackOrListening() {
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(true, false));
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, true));
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(true, true));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationStopAction(false, false));
+    }
+
+    @Test
+    public void showsNotificationSpeakActionOnlyWhenManualListenIsAvailable() {
+        assertTrue(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "session-1",
+            false,
+            false,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            false,
+            "session-1",
+            false,
+            false,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "",
+            false,
+            false,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "session-1",
+            true,
+            false,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "session-1",
+            false,
+            true,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+            true,
+            "session-1",
+            false,
+            false,
+            false
+        ));
+    }
 }

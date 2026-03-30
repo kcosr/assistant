@@ -54,4 +54,26 @@ final class AssistantVoiceInteractionRules {
         String stopped = stoppedRequestId == null ? "" : stoppedRequestId.trim();
         return !active.isEmpty() && active.equals(stopped);
     }
+
+    static boolean shouldShowNotificationStopAction(
+        boolean promptPlaybackActive,
+        boolean listeningActive
+    ) {
+        return promptPlaybackActive || listeningActive;
+    }
+
+    static boolean shouldShowNotificationSpeakAction(
+        boolean voiceEnabled,
+        String selectedSessionId,
+        boolean promptPlaybackActive,
+        boolean listeningActive,
+        boolean runtimeConnected
+    ) {
+        String sessionId = selectedSessionId == null ? "" : selectedSessionId.trim();
+        return voiceEnabled
+            && !sessionId.isEmpty()
+            && !promptPlaybackActive
+            && !listeningActive
+            && runtimeConnected;
+    }
 }

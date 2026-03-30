@@ -226,7 +226,11 @@ export class ServerMessageHandler {
 
         runtime.chatRenderer.handleNewEvent(event);
         if (this.options.isChatPanelVisible(sessionId)) {
-          runtime.chatScrollManager.autoScrollIfEnabled();
+          if (event.type === 'turn_start') {
+            runtime.chatScrollManager.scrollToBottom();
+          } else {
+            runtime.chatScrollManager.autoScrollIfEnabled();
+          }
         }
         this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
         break;

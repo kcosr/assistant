@@ -11,8 +11,9 @@ vi.mock('dompurify', () => {
 
 import { ServerMessageHandler, type ServerMessageHandlerOptions } from './serverMessageHandler';
 import type { SpeechAudioController } from './speechAudioController';
+import type { ChatRuntime } from '../panels/chat/runtime';
 
-function makeHandler() {
+function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const typingIndicators = new Set<string>();
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
@@ -54,6 +55,7 @@ function makeHandler() {
     cancelQueuedMessage: () => {},
     editQueuedMessage: () => {},
     getPendingMessageListControllerForSession: () => null,
+    ...overrides,
   };
 
   const handler = new ServerMessageHandler(options);
@@ -132,5 +134,53 @@ describe('ServerMessageHandler agent_callback_result typing indicator', () => {
 
     expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
+  });
+
+  it('scrolls visible chat panels to bottom on turn_start', async () => {
+    const scrollToBottom = vi.fn();
+    const autoScrollIfEnabled = vi.fn();
+    const handleNewEvent = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom,
+        autoScrollIfEnabled,
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const { handler } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+    });
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'turn-1',
+        type: 'turn_start',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 'turn-1',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(handleNewEvent).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(autoScrollIfEnabled).not.toHaveBeenCalled();
   });
 });

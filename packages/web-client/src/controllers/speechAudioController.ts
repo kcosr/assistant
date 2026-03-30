@@ -22,6 +22,15 @@ export interface AssistantNativeVoiceSettingsArgs {
   settings: VoiceSettings;
 }
 
+export interface AssistantNativeVoiceInputContext {
+  enabled: boolean;
+  contextLine: string;
+}
+
+export interface AssistantNativeVoiceInputContextArgs {
+  inputContext: AssistantNativeVoiceInputContext;
+}
+
 export interface AssistantNativeVoiceSelectionArgs {
   selection: AssistantNativeVoiceSelection | null;
 }
@@ -41,6 +50,7 @@ export type AssistantNativeVoiceRuntimeState =
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
   voiceSettings?: VoiceSettings;
+  inputContext?: AssistantNativeVoiceInputContext;
   assistantBaseUrl?: string;
   selectedSession?: AssistantNativeVoiceSelection | null;
   lastError?: string;
@@ -56,6 +66,7 @@ interface AssistantNativeVoiceListenerHandle {
 
 export interface AssistantNativeVoiceBridgeTarget {
   setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
+  setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
@@ -96,6 +107,10 @@ export class AssistantNativeVoiceBridge {
 
   setVoiceSettings(settings: VoiceSettings): Promise<boolean> {
     return this.invokeAsync('setVoiceSettings', { settings });
+  }
+
+  setInputContext(inputContext: AssistantNativeVoiceInputContext): Promise<boolean> {
+    return this.invokeAsync('setInputContext', { inputContext });
   }
 
   setAssistantBaseUrl(url: string): Promise<boolean> {

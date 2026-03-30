@@ -127,6 +127,22 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setInputContext(PluginCall call) {
+        JSONObject inputContext = call.getData().optJSONObject("inputContext");
+        if (inputContext == null) {
+            call.reject("inputContext is required");
+            return;
+        }
+        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+        AssistantVoiceConfig updated = current.withInputContext(
+            inputContext.optBoolean("enabled", current.inputContextEnabled),
+            inputContext.optString("contextLine", current.inputContextLine)
+        );
+        applyConfig(updated);
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void setAssistantBaseUrl(PluginCall call) {
         String url = call.getString("url");
         if (url == null) {
@@ -270,6 +286,9 @@ public final class AssistantVoicePlugin extends Plugin {
         if (!current.selectedSessionId.isEmpty()) {
             selection.put("sessionId", current.selectedSessionId);
         }
+        JSObject inputContext = new JSObject();
+        inputContext.put("enabled", current.inputContextEnabled);
+        inputContext.put("contextLine", current.inputContextLine);
 
         JSObject voiceSettings = new JSObject();
         voiceSettings.put("audioMode", current.audioMode);
@@ -285,6 +304,7 @@ public final class AssistantVoicePlugin extends Plugin {
         payload.put("voiceSettings", voiceSettings);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);
+        payload.put("inputContext", inputContext);
 
         String error = AssistantVoiceConfig.loadRuntimeError(getContext());
         if (!error.isEmpty()) {

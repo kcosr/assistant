@@ -48,6 +48,7 @@ dependencies {
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.media:media:$androidxMediaVersion"
     implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"

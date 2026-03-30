@@ -156,6 +156,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   const setIncludePanelContext = (enabled: boolean, notify = false): void => {
     includePanelContext = enabled;
     applyIncludePanelContextState();
+    updateContextPreview();
     if (notify) {
       options.onIncludePanelContextChange?.(enabled);
     }
