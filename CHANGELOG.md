@@ -13,6 +13,7 @@
 
 ### Fixed
 - Fixed questionnaire replay/rendering so submitted async forms stay disabled with submitted values, show a post-turn submission indicator, and avoid unnecessary questionnaire DOM rebuilds on completion. ([#70](https://github.com/kcosr/assistant/pull/70))
+- Fixed lists item action menus to close again after row actions, outside clicks, and Escape following the shared context-menu manager refactor for Pi turn history menus. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Removed
 - Removed the unused legacy `MessageRenderer` path from the web client now that the unified `ChatRenderer` is the only production chat transcript renderer. ([#70](https://github.com/kcosr/assistant/pull/70))

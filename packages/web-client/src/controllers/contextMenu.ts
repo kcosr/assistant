@@ -29,7 +29,11 @@ export class ContextMenuManager {
   constructor(private readonly actions: ContextMenuActions) {}
 
   close(): void {
-    this.activeMenuCleanup?.();
+    if (this.activeMenuCleanup) {
+      this.activeMenuCleanup();
+    } else {
+      this.activeContextMenu?.remove();
+    }
     this.activeMenuCleanup = null;
     this.activeContextMenu = null;
   }
