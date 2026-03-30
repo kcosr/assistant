@@ -313,6 +313,37 @@ describe('ChatRenderer', () => {
     expect(
       bubble?.querySelector('.message-avatar.user-audio-avatar .voice-event-icon-microphone'),
     ).not.toBeNull();
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
+  it('shows the typing indicator for live voice tool bubbles', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e-voice-live',
+        turnId: 't-voice-live',
+        responseId: 'r-voice-live',
+        payload: {
+          toolCallId: 'tc-voice-live',
+          toolName: 'voice_ask',
+          args: { text: 'Are you still there?' },
+        },
+      }),
+    );
+
+    expect(container.querySelector('.voice-tool-bubble')?.textContent).toContain(
+      'Are you still there?',
+    );
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
   });
 
   it('renders a turn divider with the turn timestamp', () => {

@@ -500,6 +500,51 @@ describe('SpeechAudioController.micButtonState', () => {
     expect(micButton.getAttribute('aria-label')).toBe('Stop listening');
     expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
   });
+
+  it('prefers the stop icon once native listening starts even if playback cleanup is still finishing', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen: vi.fn(),
+        stopCurrentInteraction: vi.fn(),
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => true,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+    });
+
+    controller.enableAudioResponses();
+    (controller as unknown as { ttsPlayer: object | null }).ttsPlayer = {};
+    controller.setNativeRuntimeState('listening');
+
+    expect(micButton.classList.contains('native-listening')).toBe(true);
+    expect(micButton.classList.contains('stopping')).toBe(true);
+    expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
+  });
 });
 
 describe('SpeechAudioController.longPress', () => {

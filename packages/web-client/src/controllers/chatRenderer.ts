@@ -527,6 +527,10 @@ export class ChatRenderer {
       avatar.title = 'Spoken message';
     }
     bubble.setAttribute('aria-label', 'Spoken user message');
+
+    if (!this._isReplaying) {
+      this.showTypingIndicator();
+    }
   }
 
   private handleAssistantChunk(event: AssistantChunkEvent): void {
@@ -824,6 +828,9 @@ export class ChatRenderer {
       this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
+      if (!this._isReplaying) {
+        this.showTypingIndicator();
+      }
       return;
     }
 
@@ -998,6 +1005,9 @@ export class ChatRenderer {
       const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
       if (parsedText !== null) {
         this.updateVoiceToolBubble(bubble, toolName, parsedText);
+      }
+      if (!this._isReplaying) {
+        this.showTypingIndicator();
       }
       return;
     }

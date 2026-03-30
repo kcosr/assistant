@@ -1047,10 +1047,10 @@ export class SpeechAudioController {
     micButton.classList.toggle('native-speaking', isNativeSpeaking);
     micButton.classList.toggle('native-listening', isNativeListening);
     this.renderMicButtonIcon(
-      isNativeSpeaking || this.isTtsPlaying
-        ? 'speaker'
-        : this.isSpeechInputActive || shouldShowStop
-          ? 'stop'
+      this.isSpeechInputActive || shouldShowStop
+        ? 'stop'
+        : isNativeSpeaking || this.isTtsPlaying
+          ? 'speaker'
           : 'microphone',
     );
 
