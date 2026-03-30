@@ -9,7 +9,11 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
-import { isOverlayChatEvent, isOverlayChatEventType } from '../events/overlayEventTypes';
+import {
+  isOverlayChatEvent,
+  isOverlayChatEventType,
+  isTransientReplayChatEvent,
+} from '../events/overlayEventTypes';
 import { parseAssistantTextSignature } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
 
@@ -616,6 +620,25 @@ function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEven
   return combined.map((item) => item.event);
 }
 
+function shouldCloseOpenTurnAtEof(events: ChatEvent[], currentTurnId: string | null): boolean {
+  if (!currentTurnId) {
+    return false;
+  }
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.turnId !== currentTurnId) {
+      continue;
+    }
+    return (
+      event.type === 'assistant_done' ||
+      event.type === 'summary_message' ||
+      event.type === 'custom_message' ||
+      event.type === 'agent_callback'
+    );
+  }
+  return false;
+}
+
 async function mergeOverlayEvents(
   baseEvents: ChatEvent[],
   sessionId: string,
@@ -625,14 +648,75 @@ async function mergeOverlayEvents(
     return baseEvents;
   }
   const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayChatEvent);
-  const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
+  const retainedOverlayEvents = filterRedundantOverlayEvents(baseEvents, overlayEvents);
+  const alignedOverlayEvents = alignOverlayEvents(baseEvents, retainedOverlayEvents);
   historyDebug('merge overlay events', {
     sessionId,
     baseCount: baseEvents.length,
     overlayCount: overlayEvents.length,
+    retainedCount: retainedOverlayEvents.length,
     alignedCount: alignedOverlayEvents.length,
   });
   return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
+}
+
+function filterRedundantOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return overlayEvents;
+  }
+
+  const completedTurnIds = new Set(
+    baseEvents
+      .filter((event) => event.type === 'turn_end' && typeof event.turnId === 'string')
+      .map((event) => event.turnId as string),
+  );
+  const baseEventKeys = new Set(baseEvents.map(getOverlayComparableKey));
+
+  return overlayEvents.filter((event) => {
+    if (!isTransientReplayChatEvent(event)) {
+      return true;
+    }
+    if (event.turnId && completedTurnIds.has(event.turnId)) {
+      return false;
+    }
+    return !baseEventKeys.has(getOverlayComparableKey(event));
+  });
+}
+
+function getOverlayComparableKey(event: ChatEvent): string {
+  return [
+    event.type,
+    event.turnId ?? '',
+    event.responseId ?? '',
+    stableSerialize(event.payload),
+  ].join('|');
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+  if (value === undefined) {
+    return 'undefined';
+  }
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
@@ -1143,7 +1227,9 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 
@@ -1777,7 +1863,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 
@@ -2130,7 +2218,9 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 

@@ -704,6 +704,214 @@ describe('PiSessionHistoryProvider', () => {
     expect(events.some((event) => event.type === 'interaction_pending')).toBe(true);
   });
 
+  it('merges in-flight turn events from the event store for replay', async () => {
+    const baseDir = await createTempDir('pi-session-history-inflight');
+    const sessionId = 'session-inflight';
+    const piSessionId = 'pi-session-inflight';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-19T00-00-00-000Z_${piSessionId}.jsonl`);
+    await fs.writeFile(
+      filePath,
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-1',
+          content: 'Earlier turn',
+        },
+      }),
+      'utf8',
+    );
+
+    const overlayEvents: ChatEvent[] = [
+      {
+        id: 'turn-start-1',
+        timestamp: 2000,
+        sessionId,
+        turnId: 'turn-active',
+        type: 'turn_start',
+        payload: { trigger: 'user' },
+      },
+      {
+        id: 'user-1',
+        timestamp: 2001,
+        sessionId,
+        turnId: 'turn-active',
+        type: 'user_message',
+        payload: { text: 'sleep 10' },
+      },
+      {
+        id: 'tool-1',
+        timestamp: 2002,
+        sessionId,
+        turnId: 'turn-active',
+        responseId: 'resp-active',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-active',
+          toolName: 'shell_command',
+          args: { command: 'sleep 10' },
+        },
+      },
+    ];
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => overlayEvents,
+      getEventsSince: async () => overlayEvents,
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.some((event) => event.type === 'turn_start' && event.turnId === 'turn-active')).toBe(
+      true,
+    );
+    expect(
+      events.some(
+        (event) => event.type === 'user_message' && event.turnId === 'turn-active' && event.payload.text === 'sleep 10',
+      ),
+    ).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.turnId === 'turn-active' &&
+          event.payload.toolCallId === 'call-active',
+      ),
+    ).toBe(true);
+  });
+
+  it('drops transient replay overlays after provider history includes the completed turn', async () => {
+    const baseDir = await createTempDir('pi-session-history-complete');
+    const sessionId = 'session-complete';
+    const piSessionId = 'pi-session-complete';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-19T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        customType: 'assistant.turn_start',
+        type: 'custom',
+        timestamp: new Date(1000).toISOString(),
+        data: { v: 1, turnId: 'turn-active', trigger: 'user' },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-active',
+          content: 'sleep 10',
+        },
+        timestamp: new Date(1001).toISOString(),
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-active',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'call-active',
+              name: 'shell_command',
+              arguments: { command: 'sleep 10' },
+            },
+          ],
+        },
+        timestamp: new Date(1002).toISOString(),
+      }),
+      JSON.stringify({
+        customType: 'assistant.turn_end',
+        type: 'custom',
+        timestamp: new Date(1003).toISOString(),
+        data: { v: 1, turnId: 'turn-active' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvents: ChatEvent[] = [
+      {
+        id: 'turn-start-1',
+        timestamp: 2000,
+        sessionId,
+        turnId: 'turn-active',
+        type: 'turn_start',
+        payload: { trigger: 'user' },
+      },
+      {
+        id: 'user-1',
+        timestamp: 2001,
+        sessionId,
+        turnId: 'turn-active',
+        type: 'user_message',
+        payload: { text: 'sleep 10' },
+      },
+      {
+        id: 'tool-1',
+        timestamp: 2002,
+        sessionId,
+        turnId: 'turn-active',
+        responseId: 'resp-active',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-active',
+          toolName: 'shell_command',
+          args: { command: 'sleep 10' },
+        },
+      },
+    ];
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => overlayEvents,
+      getEventsSince: async () => overlayEvents,
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.filter((event) => event.type === 'turn_start' && event.turnId === 'turn-active')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'user_message' && event.turnId === 'turn-active')).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) => event.type === 'tool_call' && event.payload.toolCallId === 'call-active',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('treats sessions with provider metadata as external history', async () => {
     const provider = new PiSessionHistoryProvider({});
 
@@ -845,6 +1053,58 @@ describe('PiSessionHistoryProvider', () => {
     expect(secondThinkingIndex).toBeGreaterThan(-1);
     expect(firstThinkingIndex).toBeLessThan(toolCallIndex);
     expect(toolCallIndex).toBeLessThan(secondThinkingIndex);
+  });
+
+  it('keeps the turn open when Pi history ends on an in-progress tool call', async () => {
+    const baseDir = await createTempDir('pi-session-history-open-tool');
+    const sessionId = 'session-open-tool';
+    const piSessionId = 'pi-session-open-tool';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        message: {
+          role: 'user',
+          id: 'turn-open',
+          content: 'sleep 10',
+        },
+      }),
+      JSON.stringify({
+        message: {
+          role: 'assistant',
+          id: 'resp-open',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'tool-open',
+              name: 'shell_command',
+              arguments: { command: 'sleep 10' },
+            },
+          ],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(events.some((event) => event.type === 'tool_call' && event.payload.toolCallId === 'tool-open')).toBe(true);
+    expect(events.some((event) => event.type === 'turn_end' && event.turnId === 'turn-open')).toBe(false);
   });
 
   it('preserves commentary-phase assistant text with phase metadata', async () => {
@@ -1183,6 +1443,52 @@ describe('CodexSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'assistant_done' }>
       | undefined;
     expect(assistant?.payload.text).toBe('Hi back');
+  });
+
+  it('keeps the turn open when Codex history ends on an in-progress tool call', async () => {
+    const baseDir = await createTempDir('codex-session-history-open-tool');
+    const sessionId = 'session-open-tool';
+    const codexSessionId = 'codex-session-open-tool';
+    const sessionDir = path.join(baseDir, '2026', '01', '18');
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(
+      sessionDir,
+      `rollout-2026-01-18T00-00-00-000Z-${codexSessionId}.jsonl`,
+    );
+    const lines = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'user_message', message: 'sleep 10' },
+        timestamp: '2026-01-01T00:00:01.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'shell_command',
+          arguments: '{"command":"sleep 10"}',
+          call_id: 'call-open',
+        },
+        timestamp: '2026-01-01T00:00:02.000Z',
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new CodexSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: codexSessionId,
+          },
+        },
+      },
+    });
+
+    expect(events.some((event) => event.type === 'tool_call' && event.payload.toolCallId === 'call-open')).toBe(true);
+    expect(events.some((event) => event.type === 'turn_end')).toBe(false);
   });
 
   it('aligns overlay interactions with matching tool calls', async () => {

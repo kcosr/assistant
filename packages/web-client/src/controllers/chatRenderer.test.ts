@@ -297,6 +297,14 @@ describe('ChatRenderer', () => {
     const renderer = new ChatRenderer(container);
 
     renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-audio-turn-start',
+        turnId: 't-audio',
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderer.renderEvent(
       createBaseEvent('user_audio', {
         id: 'e-audio',
         turnId: 't-audio',
@@ -378,6 +386,14 @@ describe('ChatRenderer', () => {
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-voice-live-turn-start',
+        turnId: 't-voice-live',
+        payload: { trigger: 'user' },
+      }),
+    );
 
     renderer.renderEvent(
       createBaseEvent('tool_call', {
@@ -736,42 +752,120 @@ describe('ChatRenderer', () => {
     expect(container.querySelector('.chat-typing-indicator.visible')).toBeNull();
   });
 
-  it('suppresses typing indicator while interaction is pending', () => {
+  it('shows the typing indicator immediately on turn_start and clears it on turn_end', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
-    renderer.showTypingIndicator();
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'turn-1',
+        turnId: 'turn-1',
+        payload: { trigger: 'user' },
+      }),
+    );
+
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       true,
     );
 
     renderer.renderEvent(
-      createBaseEvent('interaction_pending', {
-        id: 'e1',
-        responseId: undefined,
-        payload: {
-          toolCallId: 'tc1',
-          toolName: 'questions_ask',
-          pending: true,
-          presentation: 'questionnaire',
-        },
+      createBaseEvent('turn_end', {
+        id: 'turn-1-end',
+        turnId: 'turn-1',
+        payload: {},
       }),
     );
 
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       false,
     );
+  });
+
+  it('restores typing indicator after replay when the latest turn is still active', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'turn-replay',
+        turnId: 'turn-replay',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('user_audio', {
+        id: 'turn-replay-audio',
+        turnId: 'turn-replay',
+        responseId: undefined,
+        payload: {
+          transcription: 'Testing live replay state.',
+          durationMs: 1200,
+        },
+      }),
+    ]);
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
+  it('reports active output after replay when the latest turn is still active', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'turn-replay',
+        turnId: 'turn-replay',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('user_message', {
+        id: 'turn-replay-message',
+        turnId: 'turn-replay',
+        payload: { text: 'sleep 10' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'turn-replay-tool',
+        turnId: 'turn-replay',
+        responseId: 'resp-replay',
+        payload: {
+          toolCallId: 'call-replay',
+          toolName: 'shell_command',
+          args: { command: 'sleep 10' },
+        },
+      }),
+    ]);
+
+    expect(renderer.hasActiveOutput()).toBe(true);
+  });
+
+  it('keeps typing indicator active while interaction is pending within an active turn', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'turn-pending',
+        turnId: 'turn-pending',
+        payload: { trigger: 'user' },
+      }),
+    );
 
     renderer.renderEvent(
       createBaseEvent('interaction_pending', {
-        id: 'e2',
+        id: 'pending-1',
+        turnId: 'turn-pending',
         responseId: undefined,
         payload: {
           toolCallId: 'tc1',
           toolName: 'questions_ask',
-          pending: false,
+          pending: true,
           presentation: 'questionnaire',
         },
       }),

@@ -98,6 +98,7 @@ export class ChatRenderer {
   private typingIndicator: HTMLDivElement | null = null;
   private _isStreaming = false;
   private _isReplaying = false;
+  private readonly activeTurnIds = new Set<string>();
 
   private readonly turnElements = new Map<string, HTMLDivElement>();
   private readonly responseElements = new Map<string, HTMLDivElement>();
@@ -137,7 +138,6 @@ export class ChatRenderer {
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
   private debugEnabled: boolean | null = null;
-  private suppressTypingIndicator = false;
   private focusInputHandler: (() => void) | null = null;
   private turnDividerActionHandler:
     | ((options: {
@@ -197,6 +197,10 @@ export class ChatRenderer {
   }
 
   hasActiveOutput(): boolean {
+    if (this.activeTurnIds.size > 0) {
+      return true;
+    }
+
     if (this._isStreaming) {
       return true;
     }
@@ -227,10 +231,17 @@ export class ChatRenderer {
   }
 
   showTypingIndicator(): void {
-    if (this.suppressTypingIndicator) {
+    this.setTypingIndicatorVisible(true);
+  }
+
+  private setTypingIndicatorVisible(visible: boolean): void {
+    this._isStreaming = visible;
+    if (!visible) {
+      if (this.typingIndicator) {
+        this.typingIndicator.classList.remove('visible');
+      }
       return;
     }
-    this._isStreaming = true;
     if (!this.typingIndicator) {
       this.typingIndicator = document.createElement('div');
       this.typingIndicator.className = 'chat-typing-indicator';
@@ -243,10 +254,11 @@ export class ChatRenderer {
   }
 
   hideTypingIndicator(): void {
-    this._isStreaming = false;
-    if (this.typingIndicator) {
-      this.typingIndicator.classList.remove('visible');
-    }
+    this.setTypingIndicatorVisible(false);
+  }
+
+  private syncTypingIndicatorFromTurnState(): void {
+    this.setTypingIndicatorVisible(this.activeTurnIds.size > 0);
   }
 
   renderEvent(event: ChatEvent): void {
@@ -372,6 +384,7 @@ export class ChatRenderer {
       this.renderEvent(event);
     }
     this._isReplaying = false;
+    this.syncTypingIndicatorFromTurnState();
   }
 
   handleNewEvent(event: ChatEvent): void {
@@ -408,7 +421,7 @@ export class ChatRenderer {
     this.questionnaireResponses.clear();
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
-    this.suppressTypingIndicator = false;
+    this.activeTurnIds.clear();
   }
 
   setFocusInputHandler(handler: (() => void) | null): void {
@@ -471,6 +484,10 @@ export class ChatRenderer {
   private handleTurnStart(event: TurnStartEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     this.getOrCreateTurnContainer(turnId, event.timestamp);
+    this.activeTurnIds.add(turnId);
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
   }
 
   private handleTurnEnd(event: TurnEndEvent): void {
@@ -478,6 +495,10 @@ export class ChatRenderer {
     const turnEl = this.turnElements.get(turnId);
     if (turnEl) {
       turnEl.classList.add('turn-complete');
+    }
+    this.activeTurnIds.delete(turnId);
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
     }
   }
 
@@ -501,10 +522,6 @@ export class ChatRenderer {
       decorateUserMessageAsAgent(bubble, displayName || fromAgentId);
     }
 
-    // Show typing indicator immediately after user message is rendered (live events only)
-    if (!this._isReplaying) {
-      this.showTypingIndicator();
-    }
   }
 
   private handleUserAudio(event: UserAudioEvent): void {
@@ -525,10 +542,6 @@ export class ChatRenderer {
       avatar.title = 'Spoken message';
     }
     bubble.setAttribute('aria-label', 'Spoken user message');
-
-    if (!this._isReplaying) {
-      this.showTypingIndicator();
-    }
   }
 
   private getRenderableUserText(event: UserMessageEvent | UserAudioEvent): string {
@@ -842,9 +855,6 @@ export class ChatRenderer {
       this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
-      if (!this._isReplaying) {
-        this.showTypingIndicator();
-      }
       return;
     }
 
@@ -1022,9 +1032,6 @@ export class ChatRenderer {
       const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
       if (parsedText !== null) {
         this.updateVoiceToolBubble(bubble, toolName, parsedText);
-      }
-      if (!this._isReplaying) {
-        this.showTypingIndicator();
       }
       return;
     }
@@ -1377,13 +1384,6 @@ export class ChatRenderer {
     } else {
       this.pendingInteractionToolCalls.delete(payload.toolCallId);
     }
-    this.updateTypingSuppression();
-    if (payload.pending) {
-      return;
-    }
-    if (this.pendingInteractionToolCalls.size === 0) {
-      this.showTypingIndicator();
-    }
   }
 
   private handleQuestionnaireRequest(event: QuestionnaireRequestEvent): void {
@@ -1503,17 +1503,6 @@ export class ChatRenderer {
       this.questionnaireRequests.delete(questionnaireRequestId);
       this.questionnaireReprompts.delete(questionnaireRequestId);
       this.questionnaireResponses.delete(questionnaireRequestId);
-    }
-  }
-
-  private updateTypingSuppression(): void {
-    const shouldSuppress = this.pendingInteractionToolCalls.size > 0;
-    if (this.suppressTypingIndicator === shouldSuppress) {
-      return;
-    }
-    this.suppressTypingIndicator = shouldSuppress;
-    if (shouldSuppress) {
-      this.hideTypingIndicator();
     }
   }
 
@@ -1928,12 +1917,7 @@ export class ChatRenderer {
     this.pendingInteractionRequests.delete(toolCallId);
 
     if (this.pendingInteractionToolCalls.delete(toolCallId)) {
-      if (!this._isReplaying) {
-        this.updateTypingSuppression();
-        if (this.pendingInteractionToolCalls.size === 0) {
-          this.showTypingIndicator();
-        }
-      }
+      // No typing state change here; turn lifecycle is the source of truth.
     }
   }
 
@@ -2094,14 +2078,19 @@ export class ChatRenderer {
     }
     turnEl.appendChild(indicator);
 
-    if (!this._isReplaying) {
-      this.showTypingIndicator();
-    }
   }
 
   // Interrupts and errors are rendered as indicators on the current turn.
 
   private handleInterrupt(event: InterruptEvent): void {
+    if (event.turnId) {
+      this.activeTurnIds.delete(event.turnId);
+    } else {
+      this.activeTurnIds.clear();
+    }
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
     // Mark any pending tool blocks as interrupted
     const hasInterruptedToolBlock = this.interruptPendingToolBlocks();
 
@@ -2120,6 +2109,14 @@ export class ChatRenderer {
   }
 
   private handleError(event: ErrorEvent): void {
+    if (event.turnId) {
+      this.activeTurnIds.delete(event.turnId);
+    } else {
+      this.activeTurnIds.clear();
+    }
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 

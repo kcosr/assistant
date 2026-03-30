@@ -92,12 +92,50 @@ export interface ServerMessageHandlerOptions {
 
 export class ServerMessageHandler {
   private readonly queuedMessageBubbles = new Map<string, HTMLDivElement>();
-  private readonly pendingInteractionsBySession = new Map<string, Set<string>>();
+  private readonly activeTurnsBySession = new Map<string, Set<string>>();
 
   constructor(private readonly options: ServerMessageHandlerOptions) {}
 
   resetRealtimeState(): void {
-    this.pendingInteractionsBySession.clear();
+    this.activeTurnsBySession.clear();
+  }
+
+  private syncSessionTurnActivity(sessionId: string): void {
+    const activeTurns = this.activeTurnsBySession.get(sessionId);
+    const hasActiveTurn = !!activeTurns && activeTurns.size > 0;
+    if (hasActiveTurn) {
+      this.options.showSessionTypingIndicator(sessionId);
+      this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
+      return;
+    }
+    this.options.hideSessionTypingIndicator(sessionId);
+    this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+  }
+
+  private markTurnStarted(sessionId: string, turnId: string | undefined): void {
+    const trimmedTurnId = typeof turnId === 'string' ? turnId.trim() : '';
+    if (!trimmedTurnId) {
+      return;
+    }
+    const activeTurns = this.activeTurnsBySession.get(sessionId) ?? new Set<string>();
+    activeTurns.add(trimmedTurnId);
+    this.activeTurnsBySession.set(sessionId, activeTurns);
+  }
+
+  private markTurnFinished(sessionId: string, turnId: string | undefined): void {
+    const activeTurns = this.activeTurnsBySession.get(sessionId);
+    if (!activeTurns) {
+      return;
+    }
+    const trimmedTurnId = typeof turnId === 'string' ? turnId.trim() : '';
+    if (!trimmedTurnId) {
+      activeTurns.clear();
+    } else {
+      activeTurns.delete(trimmedTurnId);
+    }
+    if (activeTurns.size === 0) {
+      this.activeTurnsBySession.delete(sessionId);
+    }
   }
 
   private markSessionHasPendingMessages(sessionId: string): void {
@@ -149,37 +187,14 @@ export class ServerMessageHandler {
         const sessionId = messageSessionId;
         const event: ChatEvent = chatEventMessage.event;
 
-        if (sessionId) {
-          if (event.type === 'interaction_pending') {
-            const pendingSet =
-              this.pendingInteractionsBySession.get(sessionId) ?? new Set<string>();
-            if (event.payload.pending) {
-              pendingSet.add(event.payload.toolCallId);
-              this.pendingInteractionsBySession.set(sessionId, pendingSet);
-              this.options.hideSessionTypingIndicator(sessionId);
-            } else {
-              pendingSet.delete(event.payload.toolCallId);
-              if (pendingSet.size === 0) {
-                this.pendingInteractionsBySession.delete(sessionId);
-                this.options.hideSessionTypingIndicator(sessionId);
-              }
-            }
-          } else if (
-            event.type === 'assistant_chunk' ||
-            event.type === 'thinking_chunk' ||
-            event.type === 'tool_call'
-          ) {
-            if (!this.pendingInteractionsBySession.has(sessionId)) {
-              this.options.showSessionTypingIndicator(sessionId);
-            }
-          } else if (
-            event.type === 'assistant_done' ||
-            event.type === 'turn_end' ||
-            event.type === 'interrupt' ||
-            event.type === 'error'
-          ) {
-            this.options.hideSessionTypingIndicator(sessionId);
-          }
+        if (event.type === 'turn_start') {
+          this.markTurnStarted(sessionId, event.turnId);
+        } else if (
+          event.type === 'turn_end' ||
+          event.type === 'interrupt' ||
+          event.type === 'error'
+        ) {
+          this.markTurnFinished(sessionId, event.turnId);
         }
 
         if (!this.options.isChatPanelVisible(sessionId)) {
@@ -191,39 +206,12 @@ export class ServerMessageHandler {
           break;
         }
 
+        this.syncSessionTurnActivity(sessionId);
+
         const runtime = this.options.getChatRuntimeForSession(sessionId);
         if (!runtime) {
           break;
         }
-
-        if (event.type === 'interaction_pending') {
-          if (event.payload.pending) {
-            runtime.chatRenderer.hideTypingIndicator();
-            this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
-          } else {
-            runtime.chatRenderer.hideTypingIndicator();
-            this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
-          }
-        } else if (
-          event.type === 'assistant_chunk' ||
-          event.type === 'thinking_chunk' ||
-          event.type === 'tool_call'
-        ) {
-          if (!this.pendingInteractionsBySession.has(sessionId)) {
-            runtime.chatRenderer.showTypingIndicator();
-            this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
-          }
-        } else if (
-          event.type === 'assistant_done' ||
-          event.type === 'turn_end' ||
-          event.type === 'interrupt' ||
-          event.type === 'error'
-        ) {
-          runtime.chatRenderer.hideTypingIndicator();
-          const status = event.type === 'error' ? 'error' : 'idle';
-          this.options.setChatPanelStatusForSession?.(sessionId, status);
-        }
-
         runtime.chatRenderer.handleNewEvent(event);
         if (this.options.isChatPanelVisible(sessionId)) {
           if (event.type === 'turn_start') {
@@ -418,12 +406,6 @@ export class ServerMessageHandler {
         break;
       }
       case 'agent_callback_result': {
-        // Legacy handler - agent_callback events are now handled via chat_event
-        // Still hide the typing indicator for backward compatibility
-        const rawSessionId = typeof message.sessionId === 'string' ? message.sessionId.trim() : '';
-        if (rawSessionId) {
-          this.options.hideSessionTypingIndicator(rawSessionId);
-        }
         break;
       }
       case 'transcript_delta':
@@ -454,6 +436,7 @@ export class ServerMessageHandler {
           this.options.scrollMessageIntoView(runtime.elements.chatLog, bubble);
         }
         if (selectedSessionId) {
+          this.markTurnFinished(selectedSessionId, undefined);
           this.options.hideSessionTypingIndicator(selectedSessionId);
           runtime?.chatRenderer.hideTypingIndicator();
           this.options.setChatPanelStatusForSession?.(selectedSessionId, 'error');
@@ -469,16 +452,13 @@ export class ServerMessageHandler {
         const sessionId = rawSessionId;
         if (!this.options.isChatPanelVisible(sessionId)) {
           this.markSessionHasPendingMessages(sessionId);
-          this.options.hideSessionTypingIndicator(sessionId);
           this.options.scheduleBackgroundSessionActivityIndicatorHide(sessionId);
         }
 
         this.options.getSpeechAudioControllerForSession(sessionId)?.handleOutputCancelled();
-        this.options.hideSessionTypingIndicator(sessionId);
         const runtime = this.options.getChatRuntimeForSession(sessionId);
-        runtime?.chatRenderer.hideTypingIndicator();
         runtime?.chatRenderer.markOutputCancelled();
-        this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+        this.syncSessionTurnActivity(sessionId);
         this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
         break;
       }

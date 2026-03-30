@@ -3974,11 +3974,12 @@ async function main(): Promise<void> {
       ensureEmptySessionHint(chatLogEl);
       loadedChatTranscripts.delete(trimmed);
     }
-    // Show typing indicator if session is currently busy
-    if (sessionsWithActiveTyping.has(trimmed)) {
-      chatRenderer.showTypingIndicator();
+    const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
+    if (shouldShowTyping) {
+      showSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'busy');
     } else {
+      hideSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'idle');
     }
     getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
