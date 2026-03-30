@@ -25,11 +25,9 @@ type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 type QuestionsAskArgs = {
   prompt?: string;
   schema: QuestionnaireSchema;
+  // Hidden from the public tool contract for now, but retained for future
+  // product work around async questionnaires and timeout policy.
   timeoutMs?: number;
-  completedView?: {
-    showInputs?: boolean;
-    summaryTemplate?: string;
-  };
   validate?: boolean;
   mode?: 'sync' | 'async';
   onTimeout?: 'error' | 'async' | 'cancel';
@@ -94,28 +92,6 @@ function parseOptionalTimeout(value: unknown): number | undefined {
   return value;
 }
 
-function parseCompletedView(value: unknown): QuestionsAskArgs['completedView'] | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ToolError('invalid_arguments', 'completedView must be an object');
-  }
-  const obj = value as Record<string, unknown>;
-  const showInputs = obj['showInputs'];
-  if (showInputs !== undefined && typeof showInputs !== 'boolean') {
-    throw new ToolError('invalid_arguments', 'completedView.showInputs must be a boolean');
-  }
-  const summaryTemplate = obj['summaryTemplate'];
-  if (summaryTemplate !== undefined && typeof summaryTemplate !== 'string') {
-    throw new ToolError('invalid_arguments', 'completedView.summaryTemplate must be a string');
-  }
-  return {
-    ...(showInputs !== undefined ? { showInputs } : {}),
-    ...(summaryTemplate !== undefined ? { summaryTemplate } : {}),
-  };
-}
-
 function ensureSchemaValid(schema: QuestionnaireSchema): void {
   const issue = findQuestionnaireSchemaIssue(schema);
   if (issue) {
@@ -141,7 +117,6 @@ function parseQuestionnaireArgs(raw: unknown): QuestionsAskArgs {
 
   const prompt = parseOptionalString(obj['prompt'], 'prompt');
   const timeoutMs = parseOptionalTimeout(obj['timeoutMs']);
-  const completedView = parseCompletedView(obj['completedView']);
   const validate = parseOptionalBoolean(obj['validate'], 'validate');
   const mode = parseOptionalMode(obj['mode']);
   const onTimeout = parseOptionalOnTimeout(obj['onTimeout']);
@@ -151,7 +126,6 @@ function parseQuestionnaireArgs(raw: unknown): QuestionsAskArgs {
     schema: parsedSchema.data,
     ...(prompt ? { prompt } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    ...(completedView ? { completedView } : {}),
     ...(validate !== undefined ? { validate } : {}),
     ...(mode !== undefined ? { mode } : {}),
     ...(onTimeout !== undefined ? { onTimeout } : {}),
@@ -201,7 +175,6 @@ async function emitQuestionnaireRequest(options: {
   mode: 'sync' | 'async';
   validate?: boolean;
   autoResume?: boolean;
-  completedView?: QuestionsAskArgs['completedView'];
   sourceInteractionId?: string;
 }): Promise<void> {
   const {
@@ -213,7 +186,6 @@ async function emitQuestionnaireRequest(options: {
     mode,
     validate,
     autoResume,
-    completedView,
     sourceInteractionId,
   } = options;
   const { eventStore, sessionHub } = requireDurableQuestionnaireContext(ctx);
@@ -236,7 +208,6 @@ async function emitQuestionnaireRequest(options: {
       status: 'pending',
       createdAt: new Date().toISOString(),
       ...(sourceInteractionId ? { sourceInteractionId } : {}),
-      ...(completedView ? { completedView } : {}),
     },
   };
   await appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId: ctx.sessionId }, [event]);
@@ -247,7 +218,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     operations: {
       ask: async (args, ctx) => {
         const parsed = parseQuestionnaireArgs(args);
-        const mode = parsed.mode ?? 'sync';
+        const mode = parsed.mode ?? 'async';
         const schemaWithDefaults = mergeQuestionnaireInitialValues(parsed.schema);
 
         if (mode === 'async') {
@@ -262,7 +233,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             mode,
             ...(parsed.validate !== undefined ? { validate: parsed.validate } : {}),
             ...(parsed.autoResume !== undefined ? { autoResume: parsed.autoResume } : {}),
-            ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
           });
           return {
             ok: true,
@@ -281,7 +251,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           presentation: 'questionnaire',
           ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
           ...(parsed.timeoutMs !== undefined ? { timeoutMs: parsed.timeoutMs } : {}),
-          ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
           inputSchema: schemaWithDefaults,
           onTimeout: async () => {
             if (parsed.onTimeout === 'cancel') {
@@ -304,7 +273,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
                 mode: 'async',
                 ...(parsed.validate !== undefined ? { validate: parsed.validate } : {}),
                 ...(parsed.autoResume !== undefined ? { autoResume: parsed.autoResume } : {}),
-                ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
               });
               return {
                 complete: {
@@ -339,7 +307,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
                     presentation: 'questionnaire',
                     ...(parsed.prompt ? { prompt: parsed.prompt } : {}),
                     ...(parsed.timeoutMs !== undefined ? { timeoutMs: parsed.timeoutMs } : {}),
-                    ...(parsed.completedView ? { completedView: parsed.completedView } : {}),
                     inputSchema: {
                       ...parsed.schema,
                       initialValues: input,

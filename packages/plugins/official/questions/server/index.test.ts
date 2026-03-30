@@ -44,6 +44,7 @@ describe('questions plugin', () => {
 
     const result = (await ops.ask(
       {
+        mode: 'sync',
         schema: {
           title: 'Team info',
           fields: [
@@ -92,6 +93,7 @@ describe('questions plugin', () => {
 
     const result = (await ops.ask(
       {
+        mode: 'sync',
         schema: {
           title: 'Contact',
           fields: [
@@ -182,6 +184,64 @@ describe('questions plugin', () => {
     expect(broadcastEvents).toHaveLength(1);
   });
 
+  it('defaults to async mode when mode is omitted', async () => {
+    const appendedEvents: unknown[] = [];
+    const broadcastEvents: unknown[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        appendedEvents.push(event);
+      },
+      appendBatch: async (_sessionId, events) => {
+        appendedEvents.push(...events);
+      },
+      getEvents: async () => [],
+      getEventsSince: async () => [],
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+    const sessionHub = {
+      broadcastToSession: (_sessionId: string, message: unknown) => {
+        broadcastEvents.push(message);
+      },
+    } as SessionHub;
+    const ctx = createTestContext({
+      eventStore,
+      sessionHub,
+    });
+
+    const plugin = createTestPlugin();
+    const ops = plugin.operations;
+    if (!ops) {
+      throw new Error('Expected operations to be defined');
+    }
+
+    const result = (await ops.ask(
+      {
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+      },
+      ctx,
+    )) as {
+      ok?: boolean;
+      pending?: boolean;
+      mode?: string;
+      questionnaireRequestId?: string;
+      toolCallId?: string;
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.pending).toBe(true);
+    expect(result.mode).toBe('async');
+    expect(result.questionnaireRequestId).toMatch(/\S/);
+    expect(result.toolCallId).toMatch(/\S/);
+    expect(appendedEvents).toHaveLength(1);
+    expect((appendedEvents[0] as { type?: string }).type).toBe('questionnaire_request');
+    expect(broadcastEvents).toHaveLength(1);
+  });
+
   it('converts timed-out sync questionnaires into async mode when requested', async () => {
     const appendedEvents: unknown[] = [];
     const eventStore: EventStore = {
@@ -217,6 +277,7 @@ describe('questions plugin', () => {
 
     const result = (await ops.ask(
       {
+        mode: 'sync',
         onTimeout: 'async',
         schema: {
           title: 'Profile',
@@ -248,6 +309,7 @@ describe('questions plugin', () => {
 
     const result = (await ops.ask(
       {
+        mode: 'sync',
         onTimeout: 'cancel',
         schema: {
           title: 'Profile',

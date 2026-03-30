@@ -1066,8 +1066,159 @@ describe('ChatRenderer', () => {
     );
     expect(interaction).not.toBeNull();
     expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('Submitted');
     const input = interaction?.querySelector<HTMLInputElement>('[data-field-id="name"]');
     expect(input?.value).toBe('Ada');
+    expect(input?.disabled).toBe(true);
+  });
+
+  it('replays completed async questionnaires as submitted even if events arrive out of order', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_submission', {
+        id: 'q-submitted',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      }),
+      createBaseEvent('questionnaire_request', {
+        id: 'q-request',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+    ]);
+
+    const interaction = container.querySelector<HTMLElement>(
+      '[data-questionnaire-request-id="qr1"]',
+    );
+    expect(interaction?.classList.contains('interaction-complete')).toBe(true);
+    expect(interaction?.textContent).toContain('Submitted');
+    const input = interaction?.querySelector<HTMLInputElement>('[data-field-id="name"]');
+    expect(input?.value).toBe('Ada');
+    expect(input?.disabled).toBe(true);
+  });
+
+  it('renders questionnaire callbacks as user messages in the callback turn', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('questionnaire_request', {
+        id: 'q-request',
+        turnId: 't-request',
+        responseId: undefined,
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      }),
+      createBaseEvent('questionnaire_submission', {
+        id: 'q-submitted',
+        turnId: 't-request',
+        responseId: undefined,
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tc1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      }),
+      createBaseEvent('turn_start', {
+        id: 'cb-turn-start',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: { trigger: 'callback' },
+      }),
+      createBaseEvent('agent_callback', {
+        id: 'cb-1',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: {
+          messageId: 'qr1',
+          fromAgentId: 'unknown',
+          fromSessionId: 's1',
+          result:
+            '<questionnaire-response questionnaire-request-id="qr1" tool-call-id="tc1" tool="questions_ask" submitted-at="2026-03-29T12:02:00.000Z" answers-json="{&quot;name&quot;:&quot;Ada&quot;}" />',
+        },
+      }),
+    ]);
+
+    const callbackTurn = container.querySelector<HTMLElement>('.turn[data-turn-id="t-callback"]');
+    expect(callbackTurn).not.toBeNull();
+    const callbackIndicator = callbackTurn?.querySelector<HTMLElement>(
+      '.questionnaire-submission-indicator',
+    );
+    expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
+  });
+
+  it('shows typing immediately after a live questionnaire callback message renders', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.handleNewEvent(
+      createBaseEvent('turn_start', {
+        id: 'cb-turn-start',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: { trigger: 'callback' },
+      }),
+    );
+    renderer.handleNewEvent(
+      createBaseEvent('agent_callback', {
+        id: 'cb-1',
+        turnId: 't-callback',
+        responseId: undefined,
+        payload: {
+          messageId: 'qr1',
+          fromAgentId: 'unknown',
+          fromSessionId: 's1',
+          result:
+            '<questionnaire-response questionnaire-request-id="qr1" tool-call-id="tc1" tool="questions_ask" submitted-at="2026-03-29T12:02:00.000Z" answers-json="{&quot;name&quot;:&quot;Ada&quot;}" />',
+        },
+      }),
+    );
+
+    const callbackIndicator = container.querySelector<HTMLElement>(
+      '.turn[data-turn-id="t-callback"] .questionnaire-submission-indicator',
+    );
+    expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
+    expect(container.querySelector('.chat-typing-indicator.visible')).not.toBeNull();
   });
 
   it('submits async questionnaires through the dedicated websocket callbacks', () => {

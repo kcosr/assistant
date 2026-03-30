@@ -96,6 +96,11 @@ type ToolResolutionResult = {
   debug: ToolResolutionDebugDetails;
 };
 
+type PendingQuestionnaireState = Extract<
+  NonNullable<ReturnType<typeof getQuestionnaireState>>,
+  { status: 'pending' }
+>;
+
 export class SessionRuntime {
   private readonly transport: WsTransport;
   private readonly connection: SessionConnection;
@@ -433,16 +438,80 @@ export class SessionRuntime {
       return undefined;
     }
 
-    const overlayEvents = await this.eventStore.getEvents(sessionId);
-    let questionnaireState = getQuestionnaireState(overlayEvents, questionnaireRequestId);
-    if (!questionnaireState) {
-      // Pi-backed sessions mirror overlay events through their history provider rather than the
-      // event store, so fall back to a fresh history load only when the overlay lookup misses.
-      const historyEvents = await this.sessionHub.loadSessionEvents(state.summary, true);
-      questionnaireState = getQuestionnaireState(historyEvents, questionnaireRequestId);
-    }
+    const events = this.sessionHub.shouldPersistSessionEvents(state.summary)
+      ? await this.eventStore.getEvents(sessionId)
+      : await this.sessionHub.loadSessionEvents(state.summary, true);
+    const questionnaireState = getQuestionnaireState(events, questionnaireRequestId);
     return {
       state,
+      questionnaireState,
+    };
+  }
+
+  private async resolvePendingQuestionnaire(options: {
+    rawSessionId: string;
+    rawQuestionnaireRequestId: string;
+    operation: string;
+    actionLabel: string;
+  }): Promise<
+    | {
+        sessionId: string;
+        questionnaireRequestId: string;
+        questionnaireState: PendingQuestionnaireState;
+      }
+    | undefined
+  > {
+    const { rawSessionId, rawQuestionnaireRequestId, operation, actionLabel } = options;
+    const sessionId = rawSessionId.trim();
+    if (!sessionId) {
+      this.sendError('invalid_session_id', 'Session id must not be empty');
+      return undefined;
+    }
+    const questionnaireRequestId = rawQuestionnaireRequestId.trim();
+    if (!questionnaireRequestId) {
+      this.sendError(
+        'invalid_questionnaire_request_id',
+        'Questionnaire request id must not be empty',
+      );
+      return undefined;
+    }
+    if (typeof this.connection.isSubscribedTo === 'function') {
+      const isSubscribed = this.connection.isSubscribedTo(sessionId);
+      if (!isSubscribed) {
+        this.sendError(
+          'invalid_session_id',
+          `Cannot ${actionLabel} a questionnaire for a session that this connection is not subscribed to`,
+          { sessionId },
+        );
+        return undefined;
+      }
+    }
+
+    const loaded = await this.loadQuestionnaireState(sessionId, questionnaireRequestId, operation);
+    if (!loaded) {
+      return undefined;
+    }
+
+    const { questionnaireState } = loaded;
+    if (!questionnaireState) {
+      this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
+        sessionId,
+        questionnaireRequestId,
+      });
+      return undefined;
+    }
+    if (questionnaireState.status !== 'pending') {
+      this.sendError('questionnaire_not_pending', 'Questionnaire is no longer pending', {
+        sessionId,
+        questionnaireRequestId,
+        status: questionnaireState.status,
+      });
+      return undefined;
+    }
+
+    return {
+      sessionId,
+      questionnaireRequestId,
       questionnaireState,
     };
   }
@@ -554,56 +623,16 @@ export class SessionRuntime {
   private async handleQuestionnaireSubmit(
     message: ClientQuestionnaireSubmitMessage,
   ): Promise<void> {
-    const sessionId = message.sessionId.trim();
-    if (!sessionId) {
-      this.sendError('invalid_session_id', 'Session id must not be empty');
+    const resolved = await this.resolvePendingQuestionnaire({
+      rawSessionId: message.sessionId,
+      rawQuestionnaireRequestId: message.questionnaireRequestId,
+      operation: 'questionnaire submit',
+      actionLabel: 'submit',
+    });
+    if (!resolved) {
       return;
     }
-    const questionnaireRequestId = message.questionnaireRequestId.trim();
-    if (!questionnaireRequestId) {
-      this.sendError(
-        'invalid_questionnaire_request_id',
-        'Questionnaire request id must not be empty',
-      );
-      return;
-    }
-    if (typeof this.connection.isSubscribedTo === 'function') {
-      const isSubscribed = this.connection.isSubscribedTo(sessionId);
-      if (!isSubscribed) {
-        this.sendError(
-          'invalid_session_id',
-          'Cannot submit a questionnaire for a session that this connection is not subscribed to',
-          { sessionId },
-        );
-        return;
-      }
-    }
-
-    const loaded = await this.loadQuestionnaireState(
-      sessionId,
-      questionnaireRequestId,
-      'questionnaire submit',
-    );
-    if (!loaded) {
-      return;
-    }
-
-    const { questionnaireState } = loaded;
-    if (!questionnaireState) {
-      this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
-        sessionId,
-        questionnaireRequestId,
-      });
-      return;
-    }
-    if (questionnaireState.status !== 'pending') {
-      this.sendError('questionnaire_not_pending', 'Questionnaire is no longer pending', {
-        sessionId,
-        questionnaireRequestId,
-        status: questionnaireState.status,
-      });
-      return;
-    }
+    const { sessionId, questionnaireRequestId, questionnaireState } = resolved;
 
     const answers = message.answers ?? {};
     if (questionnaireState.request.validate !== false) {
@@ -662,56 +691,16 @@ export class SessionRuntime {
   private async handleQuestionnaireCancel(
     message: ClientQuestionnaireCancelMessage,
   ): Promise<void> {
-    const sessionId = message.sessionId.trim();
-    if (!sessionId) {
-      this.sendError('invalid_session_id', 'Session id must not be empty');
+    const resolved = await this.resolvePendingQuestionnaire({
+      rawSessionId: message.sessionId,
+      rawQuestionnaireRequestId: message.questionnaireRequestId,
+      operation: 'questionnaire cancel',
+      actionLabel: 'cancel',
+    });
+    if (!resolved) {
       return;
     }
-    const questionnaireRequestId = message.questionnaireRequestId.trim();
-    if (!questionnaireRequestId) {
-      this.sendError(
-        'invalid_questionnaire_request_id',
-        'Questionnaire request id must not be empty',
-      );
-      return;
-    }
-    if (typeof this.connection.isSubscribedTo === 'function') {
-      const isSubscribed = this.connection.isSubscribedTo(sessionId);
-      if (!isSubscribed) {
-        this.sendError(
-          'invalid_session_id',
-          'Cannot cancel a questionnaire for a session that this connection is not subscribed to',
-          { sessionId },
-        );
-        return;
-      }
-    }
-
-    const loaded = await this.loadQuestionnaireState(
-      sessionId,
-      questionnaireRequestId,
-      'questionnaire cancel',
-    );
-    if (!loaded) {
-      return;
-    }
-
-    const { questionnaireState } = loaded;
-    if (!questionnaireState) {
-      this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
-        sessionId,
-        questionnaireRequestId,
-      });
-      return;
-    }
-    if (questionnaireState.status !== 'pending') {
-      this.sendError('questionnaire_not_pending', 'Questionnaire is no longer pending', {
-        sessionId,
-        questionnaireRequestId,
-        status: questionnaireState.status,
-      });
-      return;
-    }
+    const { sessionId, questionnaireRequestId, questionnaireState } = resolved;
 
     const updateEvent: ChatEvent = {
       ...createChatEventBase({ sessionId }),

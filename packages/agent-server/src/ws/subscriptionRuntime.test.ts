@@ -870,6 +870,114 @@ describe('SessionRuntime subscription message handlers', () => {
     expect(processNextSpy).toHaveBeenCalledWith(summary.sessionId);
   });
 
+  it('does not queue a follow-up turn when autoResume is false', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-passive-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.append(summary.sessionId, {
+      id: 'qreq-4',
+      timestamp: Date.now(),
+      sessionId: summary.sessionId,
+      type: 'questionnaire_request',
+      payload: {
+        questionnaireRequestId: 'qr-4',
+        toolCallId: 'tool-4',
+        toolName: 'questions_ask',
+        mode: 'async',
+        schema: {
+          title: 'Profile',
+          fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+        },
+        status: 'pending',
+        autoResume: false,
+        createdAt: '2026-03-29T12:00:00.000Z',
+      },
+    });
+    const queueSpy = vi.spyOn(sessionHub, 'queueMessage');
+    const processNextSpy = vi.spyOn(sessionHub, 'processNextQueuedMessage');
+    const { runtime, connection } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-4',
+      answers: { name: 'Ada' },
+    });
+
+    expect(queueSpy).not.toHaveBeenCalled();
+    expect(processNextSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects questionnaire submits after the request is no longer pending', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-questionnaire-terminal-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'general' });
+    const eventStore = createTestEventStore();
+    await eventStore.appendBatch(summary.sessionId, [
+      {
+        id: 'qreq-5',
+        timestamp: Date.now(),
+        sessionId: summary.sessionId,
+        type: 'questionnaire_request',
+        payload: {
+          questionnaireRequestId: 'qr-5',
+          toolCallId: 'tool-5',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      },
+      {
+        id: 'qsub-5',
+        timestamp: Date.now() + 1,
+        sessionId: summary.sessionId,
+        type: 'questionnaire_submission',
+        payload: {
+          questionnaireRequestId: 'qr-5',
+          toolCallId: 'tool-5',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:01:00.000Z',
+          answers: { name: 'Ada' },
+        },
+      },
+    ]);
+    const { runtime, connection, transportSent } = createRuntime({
+      sessionHub,
+      subscriptions: [summary.sessionId],
+      eventStore,
+    });
+    await sessionHub.subscribeConnection(connection, summary.sessionId);
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleQuestionnaireSubmit({
+      type: 'questionnaire_submit',
+      sessionId: summary.sessionId,
+      questionnaireRequestId: 'qr-5',
+      answers: { name: 'Grace' },
+    });
+
+    const error = transportSent.find(
+      (message) => message.type === 'error' && message.code === 'questionnaire_not_pending',
+    );
+    expect(error).toBeDefined();
+  });
+
   it('records questionnaire cancellation updates', async () => {
     const sessionsFile = createTempFile('subscription-runtime-questionnaire-cancel-sessions');
     const sessionIndex = new SessionIndex(sessionsFile);

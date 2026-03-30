@@ -273,7 +273,6 @@ export const QuestionnaireRequestPayloadSchema = z.object({
   status: z.literal('pending'),
   createdAt: z.string(),
   sourceInteractionId: z.string().optional(),
-  completedView: InteractionCompletedViewSchema.optional(),
 });
 export type QuestionnaireRequestPayload = z.infer<typeof QuestionnaireRequestPayloadSchema>;
 
