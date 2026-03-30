@@ -32,9 +32,6 @@ import {
 } from '@assistant/shared';
 import {
   applyMarkdownToElement,
-  appendStreamingMarkdownText,
-  finalizeStreamingMarkdownText,
-  finalizeStreamingMarkdownTextIfNeeded,
 } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
@@ -547,7 +544,7 @@ export class ChatRenderer {
     const combined = previous + event.payload.text;
     this.assistantTextBuffers.set(bufferKey, combined);
 
-    appendStreamingMarkdownText(textEl, event.payload.text);
+    applyMarkdownToElement(textEl, combined);
     textEl.dataset['eventId'] = event.id;
     textEl.dataset['renderer'] = 'unified';
 
@@ -593,7 +590,7 @@ export class ChatRenderer {
 
     if ((canFinalizeExistingSegment || canFinalizeClosedSegment) && currentTextEl) {
       this.assistantTextBuffers.set(currentBufferKey, event.payload.text);
-      finalizeStreamingMarkdownText(currentTextEl, event.payload.text);
+      applyMarkdownToElement(currentTextEl, event.payload.text);
       this.assistantTextBuffers.delete(currentBufferKey);
       this.assistantTextElements.delete(currentBufferKey);
       this.needsNewTextSegment.delete(responseId);
@@ -632,7 +629,7 @@ export class ChatRenderer {
 
     const text = event.payload.text;
     this.assistantTextBuffers.set(bufferKey, text);
-    finalizeStreamingMarkdownText(textEl, text);
+    applyMarkdownToElement(textEl, text);
     this.assistantTextBuffers.delete(bufferKey);
     this.assistantTextElements.delete(bufferKey);
     textEl.dataset['eventId'] = event.id;
@@ -2277,7 +2274,7 @@ export class ChatRenderer {
     const textEl = this.assistantTextElements.get(segmentKey);
     const text = this.assistantTextBuffers.get(segmentKey);
     if (textEl && typeof text === 'string') {
-      finalizeStreamingMarkdownTextIfNeeded(textEl, text);
+      applyMarkdownToElement(textEl, text);
     }
     if (release) {
       this.assistantTextBuffers.delete(segmentKey);

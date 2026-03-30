@@ -4186,11 +4186,6 @@ body.panel-reordering {
   line-height: var(--line-height-relaxed);
 }
 
-.assistant-text.streaming-markdown-text,
-.assistant-message-main.streaming-markdown-text {
-  white-space: pre-wrap;
-}
-
 /* ===== Messages ===== */
 .message {
   margin-bottom: var(--spacing-lg);
