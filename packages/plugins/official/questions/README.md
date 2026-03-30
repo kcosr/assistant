@@ -37,6 +37,9 @@ Enable the plugin in `config.json`:
 
 - `questions_ask`: Ask the user a questionnaire and return answers.
   - Args: `schema` (object, required), `prompt` (string, optional), `validate` (boolean, optional).
+  - Use either `schema.fields` or `schema.sections`.
+  - Valid field types: `text`, `textarea`, `number`, `boolean`, `select`, `multiselect`, `checkbox`, `radio`, `date`, `time`, `datetime`.
+  - `select`, `radio`, and `multiselect` fields require `options` entries shaped like `{ "label": "Red", "value": "red" }`.
 
 ## Notes
 

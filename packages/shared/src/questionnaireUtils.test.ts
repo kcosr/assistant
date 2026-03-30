@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildQuestionnaireCallbackText,
   findQuestionnaireSchemaIssue,
   mergeQuestionnaireInitialValues,
+  parseQuestionnaireCallbackText,
   validateQuestionnaireInput,
 } from './questionnaireUtils';
 
@@ -65,6 +67,28 @@ describe('questionnaireUtils', () => {
     expect(errors).toEqual({
       name: 'This field is required.',
       role: 'Select a valid option.',
+    });
+  });
+
+  it('round-trips questionnaire callback payloads', () => {
+    const text = buildQuestionnaireCallbackText({
+      questionnaireRequestId: 'qr1',
+      toolCallId: 'tc1',
+      toolName: 'questions_ask',
+      schemaTitle: 'Profile',
+      answers: { name: 'Ada', subscribe: true },
+      interactionId: 'i1',
+      submittedAt: '2026-03-29T12:02:00.000Z',
+    });
+
+    expect(parseQuestionnaireCallbackText(text)).toEqual({
+      questionnaireRequestId: 'qr1',
+      toolCallId: 'tc1',
+      toolName: 'questions_ask',
+      schemaTitle: 'Profile',
+      answers: { name: 'Ada', subscribe: true },
+      interactionId: 'i1',
+      submittedAt: '2026-03-29T12:02:00.000Z',
     });
   });
 });

@@ -105,41 +105,4 @@ export function getQuestionnaireState(
   };
 }
 
-export function buildQuestionnaireCallbackText(options: {
-  questionnaireRequestId: string;
-  toolCallId: string;
-  toolName: string;
-  schemaTitle?: string;
-  answers: Record<string, unknown>;
-  interactionId?: string;
-  submittedAt: string;
-}): string {
-  const {
-    questionnaireRequestId,
-    toolCallId,
-    toolName,
-    schemaTitle,
-    answers,
-    interactionId,
-    submittedAt,
-  } = options;
-  const encodeAttribute = (value: string): string =>
-    value
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  const encodedAnswers = encodeAttribute(JSON.stringify(answers));
-  const title = schemaTitle?.trim() ?? '';
-  return [
-    `<questionnaire-response`,
-    ` questionnaire-request-id="${encodeAttribute(questionnaireRequestId)}"`,
-    ` tool-call-id="${encodeAttribute(toolCallId)}"`,
-    interactionId ? ` interaction-id="${encodeAttribute(interactionId)}"` : '',
-    ` tool="${encodeAttribute(toolName)}"`,
-    title ? ` schema-title="${encodeAttribute(title)}"` : '',
-    ` submitted-at="${encodeAttribute(submittedAt)}"`,
-    ` answers-json="${encodedAnswers}" />`,
-  ].join('');
-}
+export { buildQuestionnaireCallbackText } from '@assistant/shared';

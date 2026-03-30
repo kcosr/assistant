@@ -4,12 +4,116 @@ import type {
   QuestionnaireSection,
 } from './chatEvents';
 
+export interface QuestionnaireCallbackPayload {
+  questionnaireRequestId: string;
+  toolCallId: string;
+  toolName: string;
+  schemaTitle?: string;
+  answers: Record<string, unknown>;
+  interactionId?: string;
+  submittedAt: string;
+}
+
 type FieldContext = {
   field: QuestionnaireField;
   section?: QuestionnaireSection;
 };
 
 const QUESTIONNAIRE_OPTION_TYPES = new Set(['select', 'radio', 'multiselect']);
+
+function encodeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function decodeXmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+export function buildQuestionnaireCallbackText(options: QuestionnaireCallbackPayload): string {
+  const {
+    questionnaireRequestId,
+    toolCallId,
+    toolName,
+    schemaTitle,
+    answers,
+    interactionId,
+    submittedAt,
+  } = options;
+  const encodedAnswers = encodeXmlAttribute(JSON.stringify(answers));
+  const title = schemaTitle?.trim() ?? '';
+  return [
+    `<questionnaire-response`,
+    ` questionnaire-request-id="${encodeXmlAttribute(questionnaireRequestId)}"`,
+    ` tool-call-id="${encodeXmlAttribute(toolCallId)}"`,
+    interactionId ? ` interaction-id="${encodeXmlAttribute(interactionId)}"` : '',
+    ` tool="${encodeXmlAttribute(toolName)}"`,
+    title ? ` schema-title="${encodeXmlAttribute(title)}"` : '',
+    ` submitted-at="${encodeXmlAttribute(submittedAt)}"`,
+    ` answers-json="${encodedAnswers}" />`,
+  ].join('');
+}
+
+export function parseQuestionnaireCallbackText(text: string): QuestionnaireCallbackPayload | null {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^<questionnaire-response\s+(.+?)\s*\/>$/s);
+  if (!match) {
+    return null;
+  }
+
+  const attributes = new Map<string, string>();
+  const attributePattern = /([a-z-]+)="([^"]*)"/g;
+  const attributeSource = match[1] ?? '';
+  for (const entry of attributeSource.matchAll(attributePattern)) {
+    const name = entry[1];
+    const value = entry[2];
+    if (!name || value === undefined) {
+      continue;
+    }
+    attributes.set(name, decodeXmlAttribute(value));
+  }
+
+  const questionnaireRequestId = attributes.get('questionnaire-request-id')?.trim() ?? '';
+  const toolCallId = attributes.get('tool-call-id')?.trim() ?? '';
+  const toolName = attributes.get('tool')?.trim() ?? '';
+  const submittedAt = attributes.get('submitted-at')?.trim() ?? '';
+  const answersJson = attributes.get('answers-json');
+  if (!questionnaireRequestId || !toolCallId || !toolName || !submittedAt || !answersJson) {
+    return null;
+  }
+
+  let answers: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(answersJson);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    answers = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const schemaTitle = attributes.get('schema-title')?.trim() ?? '';
+  const interactionId = attributes.get('interaction-id')?.trim() ?? '';
+  return {
+    questionnaireRequestId,
+    toolCallId,
+    toolName,
+    submittedAt,
+    answers,
+    ...(schemaTitle ? { schemaTitle } : {}),
+    ...(interactionId ? { interactionId } : {}),
+  };
+}
 
 export function listQuestionnaireFieldContexts(schema: QuestionnaireSchema): FieldContext[] {
   if (schema.fields && schema.fields.length > 0) {

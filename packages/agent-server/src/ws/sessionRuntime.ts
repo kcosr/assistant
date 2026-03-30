@@ -425,13 +425,7 @@ export class SessionRuntime {
     sessionId: string,
     questionnaireRequestId: string,
     operation: string,
-  ): Promise<
-    | {
-        state: LogicalSessionState;
-        questionnaireState: ReturnType<typeof getQuestionnaireState>;
-      }
-    | undefined
-  > {
+  ): Promise<ReturnType<typeof getQuestionnaireState> | undefined> {
     const state = await this.resolveSubscribedSessionState(sessionId, operation);
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
@@ -441,18 +435,13 @@ export class SessionRuntime {
     const events = this.sessionHub.shouldPersistSessionEvents(state.summary)
       ? await this.eventStore.getEvents(sessionId)
       : await this.sessionHub.loadSessionEvents(state.summary, true);
-    const questionnaireState = getQuestionnaireState(events, questionnaireRequestId);
-    return {
-      state,
-      questionnaireState,
-    };
+    return getQuestionnaireState(events, questionnaireRequestId);
   }
 
   private async resolvePendingQuestionnaire(options: {
     rawSessionId: string;
     rawQuestionnaireRequestId: string;
-    operation: string;
-    actionLabel: string;
+    action: 'submit' | 'cancel';
   }): Promise<
     | {
         sessionId: string;
@@ -461,7 +450,7 @@ export class SessionRuntime {
       }
     | undefined
   > {
-    const { rawSessionId, rawQuestionnaireRequestId, operation, actionLabel } = options;
+    const { rawSessionId, rawQuestionnaireRequestId, action } = options;
     const sessionId = rawSessionId.trim();
     if (!sessionId) {
       this.sendError('invalid_session_id', 'Session id must not be empty');
@@ -480,19 +469,21 @@ export class SessionRuntime {
       if (!isSubscribed) {
         this.sendError(
           'invalid_session_id',
-          `Cannot ${actionLabel} a questionnaire for a session that this connection is not subscribed to`,
+          `Cannot ${action} a questionnaire for a session that this connection is not subscribed to`,
           { sessionId },
         );
         return undefined;
       }
     }
 
-    const loaded = await this.loadQuestionnaireState(sessionId, questionnaireRequestId, operation);
-    if (!loaded) {
+    const questionnaireState = await this.loadQuestionnaireState(
+      sessionId,
+      questionnaireRequestId,
+      `questionnaire ${action}`,
+    );
+    if (questionnaireState === undefined) {
       return undefined;
     }
-
-    const { questionnaireState } = loaded;
     if (!questionnaireState) {
       this.sendError('questionnaire_not_found', 'Questionnaire request was not found', {
         sessionId,
@@ -626,8 +617,7 @@ export class SessionRuntime {
     const resolved = await this.resolvePendingQuestionnaire({
       rawSessionId: message.sessionId,
       rawQuestionnaireRequestId: message.questionnaireRequestId,
-      operation: 'questionnaire submit',
-      actionLabel: 'submit',
+      action: 'submit',
     });
     if (!resolved) {
       return;
@@ -694,8 +684,7 @@ export class SessionRuntime {
     const resolved = await this.resolvePendingQuestionnaire({
       rawSessionId: message.sessionId,
       rawQuestionnaireRequestId: message.questionnaireRequestId,
-      operation: 'questionnaire cancel',
-      actionLabel: 'cancel',
+      action: 'cancel',
     });
     if (!resolved) {
       return;

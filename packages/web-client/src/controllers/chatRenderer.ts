@@ -27,6 +27,10 @@ import type {
   UserMessageEvent,
 } from '@assistant/shared';
 import {
+  parseQuestionnaireCallbackText,
+  type QuestionnaireCallbackPayload,
+} from '@assistant/shared';
+import {
   applyMarkdownToElement,
   appendStreamingMarkdownText,
   finalizeStreamingMarkdownText,
@@ -59,45 +63,6 @@ import {
   type InteractionResponseDraft,
   type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
-
-interface QuestionnaireCallbackPayload {
-  questionnaireRequestId: string;
-  toolCallId: string;
-  schemaTitle?: string;
-}
-
-function parseQuestionnaireCallbackPayload(text: string): QuestionnaireCallbackPayload | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('<questionnaire-response')) {
-    return null;
-  }
-  if (typeof DOMParser === 'undefined') {
-    return null;
-  }
-
-  const doc = new DOMParser().parseFromString(trimmed, 'application/xml');
-  if (doc.querySelector('parsererror')) {
-    return null;
-  }
-
-  const root = doc.documentElement;
-  if (!root || root.tagName !== 'questionnaire-response') {
-    return null;
-  }
-
-  const questionnaireRequestId = root.getAttribute('questionnaire-request-id')?.trim() ?? '';
-  const toolCallId = root.getAttribute('tool-call-id')?.trim() ?? '';
-  if (!questionnaireRequestId || !toolCallId) {
-    return null;
-  }
-
-  const schemaTitle = root.getAttribute('schema-title')?.trim() ?? '';
-  return {
-    questionnaireRequestId,
-    toolCallId,
-    ...(schemaTitle ? { schemaTitle } : {}),
-  };
-}
 
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
@@ -1365,8 +1330,9 @@ export class ChatRenderer {
       input: event.payload.answers,
     };
     this.questionnaireResponses.set(event.payload.questionnaireRequestId, response);
+    const element = this.interactionElements.get(event.payload.questionnaireRequestId);
     const request = this.questionnaireRequests.get(event.payload.questionnaireRequestId);
-    if (request) {
+    if (!element && request) {
       this.renderStandaloneQuestionnaire({
         request,
         enabled: false,
@@ -1388,8 +1354,9 @@ export class ChatRenderer {
       ...(event.payload.reason ? { reason: event.payload.reason } : {}),
     };
     this.questionnaireResponses.set(event.payload.questionnaireRequestId, response);
+    const element = this.interactionElements.get(event.payload.questionnaireRequestId);
     const request = this.questionnaireRequests.get(event.payload.questionnaireRequestId);
-    if (request) {
+    if (!element && request) {
       this.renderStandaloneQuestionnaire({
         request,
         enabled: false,
@@ -1423,6 +1390,11 @@ export class ChatRenderer {
       interactionId: questionnaireRequestId,
       ...response,
     });
+    if (response.action === 'submit' || response.action === 'cancel') {
+      this.questionnaireRequests.delete(questionnaireRequestId);
+      this.questionnaireReprompts.delete(questionnaireRequestId);
+      this.questionnaireResponses.delete(questionnaireRequestId);
+    }
   }
 
   private updateTypingSuppression(): void {
@@ -1939,7 +1911,7 @@ export class ChatRenderer {
     const messageId = event.payload.messageId;
     const messageEl = this.agentMessageElements.get(messageId);
     if (!messageEl) {
-      const questionnaireCallback = parseQuestionnaireCallbackPayload(event.payload.result);
+      const questionnaireCallback = parseQuestionnaireCallbackText(event.payload.result);
       if (questionnaireCallback) {
         this.renderQuestionnaireCallbackMessage(event, questionnaireCallback);
         return;
