@@ -2520,7 +2520,7 @@ export class ChatRenderer {
     bubble.classList.toggle('voice-tool-speak', toolName === 'voice_speak');
     const label = bubble.querySelector<HTMLElement>('.voice-tool-label');
     if (label) {
-      label.textContent = toolName === 'voice_ask' ? 'Voice Ask' : 'Voice Speak';
+      label.textContent = toolName === 'voice_ask' ? 'Ask' : 'Speak';
     }
     const body = bubble.querySelector<HTMLDivElement>('.voice-tool-body');
     if (body) {
@@ -2566,7 +2566,7 @@ export class ChatRenderer {
     icon.style.height = '18px';
     icon.innerHTML =
       kind === 'microphone'
-        ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 11a7 7 0 0 1-14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 21h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+        ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"></rect><path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z" fill="currentColor"></path><rect x="11" y="19" width="2" height="3" fill="currentColor"></rect><path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z" fill="currentColor"></path></svg>'
         : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     return icon;
   }

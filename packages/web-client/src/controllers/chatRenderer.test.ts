@@ -229,9 +229,13 @@ describe('ChatRenderer', () => {
     expect(bubbles).toHaveLength(2);
     expect(bubbles[0]?.dataset['toolName']).toBe('voice_speak');
     expect(bubbles[0]?.textContent).toContain('Checking the porch camera now.');
+    expect(bubbles[0]?.querySelector('.voice-tool-label')?.textContent).toBe('Speak');
+    expect(bubbles[0]?.textContent).not.toContain('Voice Speak');
     expect(bubbles[0]?.textContent).not.toContain('accepted');
     expect(bubbles[1]?.dataset['toolName']).toBe('voice_ask');
     expect(bubbles[1]?.textContent).toContain('Do you want me to open the garage too?');
+    expect(bubbles[1]?.querySelector('.voice-tool-label')?.textContent).toBe('Ask');
+    expect(bubbles[1]?.textContent).not.toContain('Voice Ask');
     expect(bubbles[1]?.textContent).not.toContain('accepted');
     expect(container.querySelector('[data-tool-name="voice_speak"].tool-output-block')).toBeNull();
     expect(container.querySelector('[data-tool-name="voice_ask"].tool-output-block')).toBeNull();
