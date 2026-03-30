@@ -30,9 +30,7 @@ import {
   parseQuestionnaireCallbackText,
   type QuestionnaireCallbackPayload,
 } from '@assistant/shared';
-import {
-  applyMarkdownToElement,
-} from '../utils/markdown';
+import { applyMarkdownToElement } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
@@ -265,7 +263,7 @@ export class ChatRenderer {
           event.type === 'questionnaire_request') &&
         event.payload &&
         typeof event.payload === 'object'
-          ? (event.payload as { toolCallId?: string }).toolCallId ?? null
+          ? ((event.payload as { toolCallId?: string }).toolCallId ?? null)
           : null;
       this.debugLog('event', {
         type: event.type,
@@ -549,7 +547,11 @@ export class ChatRenderer {
       responseId,
       event.timestamp,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
+    const textEl = this.getOrCreateAssistantTextElement(
+      responseId,
+      responseEl,
+      event.payload.phase,
+    );
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -636,7 +638,11 @@ export class ChatRenderer {
       responseId,
       event.timestamp,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
+    const textEl = this.getOrCreateAssistantTextElement(
+      responseId,
+      responseEl,
+      event.payload.phase,
+    );
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -817,7 +823,10 @@ export class ChatRenderer {
         bubble = this.createVoiceToolBubble(callId, toolName);
         bubble.dataset['eventId'] = event.id;
         bubble.dataset['renderer'] = 'unified';
-        const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId ?? undefined);
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
         if (responseId) {
@@ -995,7 +1004,10 @@ export class ChatRenderer {
         bubble = this.createVoiceToolBubble(callId, toolName);
         bubble.dataset['eventId'] = event.id;
         bubble.dataset['renderer'] = 'unified';
-        const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId ?? undefined);
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
         if (responseId) {
@@ -1138,7 +1150,12 @@ export class ChatRenderer {
       block.dataset['toolCallId'] = callId;
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
-      this.appendToolCallBlock(responseEl, responseId ?? undefined, block, block.dataset['toolName'] ?? '');
+      this.appendToolCallBlock(
+        responseEl,
+        responseId ?? undefined,
+        block,
+        block.dataset['toolName'] ?? '',
+      );
       this.toolCallElements.set(callId, block);
 
       if (responseId) {
@@ -1622,22 +1639,21 @@ export class ChatRenderer {
       }
     } else {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
-      const container =
-        responseId
-          ? this.getOrCreateAssistantResponseContainer(
-              event.turnId,
-              event.id,
-              responseId,
-              event.timestamp,
-            )
-          : fallbackContainer ??
-            this.getOrCreateToolCallContainer(
-              event.id,
-              event.turnId,
-              payload.toolCallId,
-              responseId,
-              event.timestamp,
-            );
+      const container = responseId
+        ? this.getOrCreateAssistantResponseContainer(
+            event.turnId,
+            event.id,
+            responseId,
+            event.timestamp,
+          )
+        : (fallbackContainer ??
+          this.getOrCreateToolCallContainer(
+            event.id,
+            event.turnId,
+            payload.toolCallId,
+            responseId,
+            event.timestamp,
+          ));
       container.appendChild(element);
     }
     this.interactionElements.set(payload.interactionId, element);
@@ -1730,22 +1746,16 @@ export class ChatRenderer {
       }
     } else {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
-      const container =
-        responseId
-          ? this.getOrCreateAssistantResponseContainer(
-              turnId,
-              eventId,
-              responseId ?? null,
-              timestamp,
-            )
-          : fallbackContainer ??
-            this.getOrCreateToolCallContainer(
-              eventId,
-              turnId,
-              request.toolCallId,
-              responseId ?? null,
-              timestamp,
-            );
+      const container = responseId
+        ? this.getOrCreateAssistantResponseContainer(turnId, eventId, responseId ?? null, timestamp)
+        : (fallbackContainer ??
+          this.getOrCreateToolCallContainer(
+            eventId,
+            turnId,
+            request.toolCallId,
+            responseId ?? null,
+            timestamp,
+          ));
       container.appendChild(element);
     }
     this.interactionElements.set(questionnaireRequestId, element);

@@ -51,15 +51,11 @@ export interface AssistantNativeVoiceBridgeTarget {
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: () => void | Promise<void>;
-  getState?: () =>
-    | AssistantNativeVoiceStatePayload
-    | Promise<AssistantNativeVoiceStatePayload>;
+  getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
   addListener?: (
     eventName: 'stateChanged' | 'runtimeError',
     listener: (payload: unknown) => void,
-  ) =>
-    | AssistantNativeVoiceListenerHandle
-    | Promise<AssistantNativeVoiceListenerHandle>;
+  ) => AssistantNativeVoiceListenerHandle | Promise<AssistantNativeVoiceListenerHandle>;
 }
 
 interface AssistantNativeVoiceBridgeHost {
@@ -81,20 +77,20 @@ export class AssistantNativeVoiceBridge {
     },
   ) {}
 
-  setVoiceModeEnabled(enabled: boolean): boolean {
-    return this.invoke('setVoiceModeEnabled', { enabled });
+  setVoiceModeEnabled(enabled: boolean): Promise<boolean> {
+    return this.invokeAsync('setVoiceModeEnabled', { enabled });
   }
 
-  setSelectedSession(selection: AssistantNativeVoiceSelection | null): boolean {
-    return this.invoke('setSelectedSession', { selection });
+  setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
+    return this.invokeAsync('setSelectedSession', { selection });
   }
 
-  setVoiceAdapterBaseUrl(url: string): boolean {
-    return this.invoke('setVoiceAdapterBaseUrl', { url });
+  setVoiceAdapterBaseUrl(url: string): Promise<boolean> {
+    return this.invokeAsync('setVoiceAdapterBaseUrl', { url });
   }
 
-  setAssistantBaseUrl(url: string): boolean {
-    return this.invoke('setAssistantBaseUrl', { url });
+  setAssistantBaseUrl(url: string): Promise<boolean> {
+    return this.invokeAsync('setAssistantBaseUrl', { url });
   }
 
   stopCurrentInteraction(): boolean {
@@ -212,6 +208,28 @@ export class AssistantNativeVoiceBridge {
           console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
         });
       }
+      return true;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+      return false;
+    }
+  }
+
+  private async invokeAsync<K extends keyof AssistantNativeVoiceBridgeTarget>(
+    methodName: K,
+    ...args: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>
+  ): Promise<boolean> {
+    const target = this.getTarget();
+    const method = target?.[methodName] as
+      | ((...methodArgs: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>) => unknown)
+      | undefined;
+    if (typeof method !== 'function') {
+      return false;
+    }
+
+    try {
+      const result = method(...args);
+      await Promise.resolve(result);
       return true;
     } catch (error) {
       console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
@@ -1129,8 +1147,8 @@ export class SpeechAudioController {
   private isUsingNativeVoiceRuntime(): boolean {
     return Boolean(
       this.options.useNativeVoiceRuntime &&
-        this.audioResponsesEnabled &&
-        this.options.nativeVoiceBridge?.isAvailable(),
+      this.audioResponsesEnabled &&
+      this.options.nativeVoiceBridge?.isAvailable(),
     );
   }
 
@@ -1154,8 +1172,7 @@ export class SpeechAudioController {
     svg.dataset['mode'] = mode;
     if (mode === 'stop') {
       svg.setAttribute('viewBox', '0 0 24 24');
-      svg.innerHTML =
-        '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"></rect>';
+      svg.innerHTML = '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"></rect>';
       return;
     }
     if (mode === 'speaker') {

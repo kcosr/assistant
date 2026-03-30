@@ -26,6 +26,7 @@ import {
   type AssistantNativeVoiceSelection,
 } from './controllers/speechAudioController';
 import { resolveNativeVoiceSelectedSession } from './utils/nativeVoiceSelection';
+import { AsyncValueSync } from './utils/asyncValueSync';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
@@ -77,10 +78,7 @@ import {
   type SessionsRuntimeOptions,
 } from './panels/sessions';
 import { getWebClientElements } from './utils/webClientElements';
-import {
-  KeyboardShortcutRegistry,
-  createShortcutService,
-} from './utils/keyboardShortcuts';
+import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
@@ -115,10 +113,7 @@ import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
 import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
-import {
-  getPanelHeaderActionsKey,
-  type PanelHeaderActions,
-} from './utils/panelHeaderActions';
+import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 import {
   createWindowSlot,
@@ -196,9 +191,13 @@ const logWsMessage = (message: ServerMessage): void => {
     return;
   }
   if (type === 'chat_event') {
-    const event = anyMessage['event'] as
-      | { type?: unknown; id?: unknown; turnId?: unknown; responseId?: unknown; payload?: unknown }
-      | null;
+    const event = anyMessage['event'] as {
+      type?: unknown;
+      id?: unknown;
+      turnId?: unknown;
+      responseId?: unknown;
+      payload?: unknown;
+    } | null;
     const eventType = typeof event?.type === 'string' ? event.type : null;
     const payload = event?.payload as Record<string, unknown> | null | undefined;
     console.log('[ws] chat_event', {
@@ -212,7 +211,12 @@ const logWsMessage = (message: ServerMessage): void => {
     });
     return;
   }
-  if (type === 'text_delta' || type === 'text_done' || type === 'thinking_delta' || type === 'thinking_done') {
+  if (
+    type === 'text_delta' ||
+    type === 'text_done' ||
+    type === 'thinking_delta' ||
+    type === 'thinking_done'
+  ) {
     console.log(`[ws] ${type}`, {
       sessionId: anyMessage['sessionId'] ?? null,
       responseId: typeof anyMessage['responseId'] === 'string' ? anyMessage['responseId'] : null,
@@ -489,10 +493,8 @@ async function main(): Promise<void> {
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
-  const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY =
-    'aiAssistantListSingleClickSelectionEnabled';
-  const GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY =
-    'aiAssistantGlobalAqlTagChipClickBehavior';
+  const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+  const GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY = 'aiAssistantGlobalAqlTagChipClickBehavior';
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
@@ -577,7 +579,9 @@ async function main(): Promise<void> {
       for (const control of controls) {
         control.disabled = !enabled;
       }
-      const actions = block.querySelectorAll<HTMLElement>('.interaction-actions, .interaction-form');
+      const actions = block.querySelectorAll<HTMLElement>(
+        '.interaction-actions, .interaction-form',
+      );
       for (const action of actions) {
         action.classList.toggle('disabled', !enabled);
       }
@@ -673,9 +677,7 @@ async function main(): Promise<void> {
     const storedSingleClickBehavior = localStorage.getItem(
       LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY,
     );
-    listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(
-      storedSingleClickBehavior,
-    );
+    listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(storedSingleClickBehavior);
     const storedTagChipClickBehavior = localStorage.getItem(
       GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY,
     );
@@ -917,10 +919,19 @@ async function main(): Promise<void> {
     return chatPanelsById.get(active.panelId) ?? null;
   }
 
-  let lastSyncedVoiceModeEnabled: boolean | null = null;
-  let lastSyncedSelectedSessionKey: string | null = null;
-  let lastSyncedVoiceAdapterBaseUrl: string | null = null;
-  let lastSyncedAssistantBaseUrl: string | null = null;
+  const nativeVoiceModeSync = new AsyncValueSync<boolean>((enabled) =>
+    nativeVoiceBridge.setVoiceModeEnabled(enabled),
+  );
+  const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
+    (selection) => nativeVoiceBridge.setSelectedSession(selection),
+    (left, right) => left?.panelId === right?.panelId && left?.sessionId === right?.sessionId,
+  );
+  const nativeVoiceAdapterUrlSync = new AsyncValueSync<string>((url) =>
+    nativeVoiceBridge.setVoiceAdapterBaseUrl(url),
+  );
+  const nativeAssistantBaseUrlSync = new AsyncValueSync<string>((url) =>
+    nativeVoiceBridge.setAssistantBaseUrl(url),
+  );
 
   function getNativeVoiceSelectedSession(): AssistantNativeVoiceSelection | null {
     if (!panelHostController) {
@@ -963,37 +974,23 @@ async function main(): Promise<void> {
 
   function syncNativeVoiceModeEnabled(): void {
     const enabled = getPrimaryChatInputRuntime()?.getAudioEnabled() ?? initialAudioResponsesEnabled;
-    if (lastSyncedVoiceModeEnabled === enabled) {
-      return;
-    }
-    lastSyncedVoiceModeEnabled = enabled;
-    nativeVoiceBridge.setVoiceModeEnabled(enabled);
+    nativeVoiceModeSync.request(enabled);
   }
 
   function syncNativeSelectedSession(): void {
     const selection = getNativeVoiceSelectedSession();
-    const nextKey = selection ? `${selection.panelId}:${selection.sessionId}` : '';
-    if (lastSyncedSelectedSessionKey === nextKey) {
-      return;
-    }
-    lastSyncedSelectedSessionKey = nextKey;
-    nativeVoiceBridge.setSelectedSession(selection);
+    nativeSelectedSessionSync.request(selection);
   }
 
   function syncNativeVoiceAdapterBaseUrl(): void {
-    if (lastSyncedVoiceAdapterBaseUrl === voiceAdapterBaseUrl) {
-      return;
-    }
-    lastSyncedVoiceAdapterBaseUrl = voiceAdapterBaseUrl;
-    nativeVoiceBridge.setVoiceAdapterBaseUrl(voiceAdapterBaseUrl);
+    nativeVoiceAdapterUrlSync.request(voiceAdapterBaseUrl);
   }
 
   function syncNativeAssistantBaseUrl(): void {
-    if (!assistantBaseUrl || lastSyncedAssistantBaseUrl === assistantBaseUrl) {
+    if (!assistantBaseUrl) {
       return;
     }
-    lastSyncedAssistantBaseUrl = assistantBaseUrl;
-    nativeVoiceBridge.setAssistantBaseUrl(assistantBaseUrl);
+    nativeAssistantBaseUrlSync.request(assistantBaseUrl);
   }
 
   function syncNativeVoiceBridgeState(): void {
@@ -1126,7 +1123,7 @@ async function main(): Promise<void> {
       const summary =
         sessionId === null
           ? null
-          : sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null;
+          : (sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null);
       applyContextUsageBadge(entry.dom.sessionContextUsageEl, summary?.contextUsage);
     }
     entry.dom.chromeController?.scheduleLayoutCheck();
@@ -1778,9 +1775,7 @@ async function main(): Promise<void> {
       callId: options.callId,
       interactionId: options.interactionId,
       action: options.response.action,
-      ...(options.response.approvalScope
-        ? { approvalScope: options.response.approvalScope }
-        : {}),
+      ...(options.response.approvalScope ? { approvalScope: options.response.approvalScope } : {}),
       ...(options.response.input ? { input: options.response.input } : {}),
       ...(options.response.reason ? { reason: options.response.reason } : {}),
     };
@@ -1931,9 +1926,7 @@ async function main(): Promise<void> {
       }
       return { panelId: active.panelId, panelType: active.panelType };
     },
-    ...(keyboardShortcutBindings
-      ? { bindingOverrides: keyboardShortcutBindings }
-      : {}),
+    ...(keyboardShortcutBindings ? { bindingOverrides: keyboardShortcutBindings } : {}),
   });
   panelHostControllerInstance.subscribeContext('panel.active', (value) => {
     if (!value || typeof value !== 'object') {
@@ -2153,9 +2146,7 @@ async function main(): Promise<void> {
     return Array.isArray(data?.scopes) ? data.scopes : [];
   };
 
-  const fetchSearchResults = async (
-    options: GlobalSearchOptions,
-  ): Promise<SearchApiResponse> => {
+  const fetchSearchResults = async (options: GlobalSearchOptions): Promise<SearchApiResponse> => {
     const params = new URLSearchParams({ q: options.query });
     if (options.profiles && options.profiles.length > 0) {
       params.set('profiles', options.profiles.join(','));
@@ -2254,7 +2245,8 @@ async function main(): Promise<void> {
         'result' in json &&
         typeof (json as { result?: unknown }).result === 'object'
       ) {
-        const message = ((json as { result?: { error?: unknown } }).result?.error ?? null) as unknown;
+        const message = ((json as { result?: { error?: unknown } }).result?.error ??
+          null) as unknown;
         if (typeof message === 'string' && message.trim()) {
           return message.trim();
         }
@@ -3246,9 +3238,7 @@ async function main(): Promise<void> {
       } catch {
         // Ignore localStorage errors.
       }
-      document.dispatchEvent(
-        new CustomEvent('assistant:list-inline-custom-field-editing-updated'),
-      );
+      document.dispatchEvent(new CustomEvent('assistant:list-inline-custom-field-editing-updated'));
     });
   }
   if (listItemEditorModeSelectEl) {
@@ -4203,8 +4193,7 @@ async function main(): Promise<void> {
     cancelQueuedMessage,
     editQueuedMessage,
     handlePanelEvent: (event) => {
-      const eventWindowId =
-        typeof event.windowId === 'string' ? event.windowId.trim() : '';
+      const eventWindowId = typeof event.windowId === 'string' ? event.windowId.trim() : '';
       if (eventWindowId && eventWindowId !== WINDOW_ID) {
         return;
       }

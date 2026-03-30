@@ -44,7 +44,7 @@ function dispatchPointerEvent(
 }
 
 describe('AssistantNativeVoiceBridge', () => {
-  it('calls the direct AssistantNativeVoice bridge when available', () => {
+  it('calls the direct AssistantNativeVoice bridge when available', async () => {
     const target = {
       setVoiceModeEnabled: vi.fn(),
       setSelectedSession: vi.fn(),
@@ -56,10 +56,14 @@ describe('AssistantNativeVoiceBridge', () => {
       AssistantNativeVoice: target,
     }));
 
-    expect(bridge.setVoiceModeEnabled(true)).toBe(true);
-    expect(bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' })).toBe(true);
-    expect(bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter')).toBe(true);
-    expect(bridge.setAssistantBaseUrl('https://assistant')).toBe(true);
+    await expect(bridge.setVoiceModeEnabled(true)).resolves.toBe(true);
+    await expect(
+      bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
+    ).resolves.toBe(true);
+    await expect(
+      bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter'),
+    ).resolves.toBe(true);
+    await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceModeEnabled).toHaveBeenCalledWith({ enabled: true });
     expect(target.setSelectedSession).toHaveBeenCalledWith({
       selection: {
@@ -73,7 +77,7 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
   });
 
-  it('passes null selected session through the direct bridge', () => {
+  it('passes null selected session through the direct bridge', async () => {
     const target = {
       setSelectedSession: vi.fn(),
     };
@@ -82,11 +86,11 @@ describe('AssistantNativeVoiceBridge', () => {
       AssistantNativeVoice: target,
     }));
 
-    expect(bridge.setSelectedSession(null)).toBe(true);
+    await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
   });
 
-  it('calls the Capacitor plugin bridge surface with the final contract methods', () => {
+  it('calls the Capacitor plugin bridge surface with the final contract methods', async () => {
     const target = {
       setVoiceModeEnabled: vi.fn(),
       setSelectedSession: vi.fn(),
@@ -102,10 +106,12 @@ describe('AssistantNativeVoiceBridge', () => {
       },
     }));
 
-    expect(bridge.setVoiceModeEnabled(false)).toBe(true);
-    expect(bridge.setSelectedSession(null)).toBe(true);
-    expect(bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter')).toBe(true);
-    expect(bridge.setAssistantBaseUrl('https://assistant')).toBe(true);
+    await expect(bridge.setVoiceModeEnabled(false)).resolves.toBe(true);
+    await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
+    await expect(
+      bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter'),
+    ).resolves.toBe(true);
+    await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceModeEnabled).toHaveBeenCalledWith({ enabled: false });
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
     expect(target.setVoiceAdapterBaseUrl).toHaveBeenCalledWith({
@@ -114,7 +120,7 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
   });
 
-  it('does not support alternate plugin names', () => {
+  it('does not support alternate plugin names', async () => {
     const legacyTarget = {
       setVoiceModeEnabled: vi.fn(),
     };
@@ -125,23 +131,56 @@ describe('AssistantNativeVoiceBridge', () => {
     > = {};
     plugins['AssistantVoice'] = legacyTarget;
 
-    const bridge = new AssistantNativeVoiceBridge(
-      () => ({
-        Capacitor: {
-          Plugins: plugins,
-        },
-      }),
-    );
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      Capacitor: {
+        Plugins: plugins,
+      },
+    }));
 
-    expect(bridge.setVoiceModeEnabled(true)).toBe(false);
+    await expect(bridge.setVoiceModeEnabled(true)).resolves.toBe(false);
     expect(legacyTarget.setVoiceModeEnabled).not.toHaveBeenCalled();
   });
 
-  it('returns false when no native voice bridge is installed', () => {
+  it('returns false when no native voice bridge is installed', async () => {
     const bridge = new AssistantNativeVoiceBridge(() => ({}));
 
-    expect(bridge.setVoiceModeEnabled(true)).toBe(false);
-    expect(bridge.setSelectedSession(null)).toBe(false);
+    await expect(bridge.setVoiceModeEnabled(true)).resolves.toBe(false);
+    await expect(bridge.setSelectedSession(null)).resolves.toBe(false);
+  });
+
+  it('returns false when an async native setter rejects', async () => {
+    const target = {
+      setVoiceModeEnabled: vi.fn(async () => {
+        throw new Error('boom');
+      }),
+    };
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: target,
+    }));
+
+    await expect(bridge.setVoiceModeEnabled(true)).resolves.toBe(false);
+  });
+
+  it('waits for an async native setter to resolve successfully', async () => {
+    let resolveCall!: () => void;
+    const target = {
+      setAssistantBaseUrl: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveCall = resolve;
+          }),
+      ),
+    };
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: target,
+    }));
+
+    const result = bridge.setAssistantBaseUrl('https://assistant');
+    await Promise.resolve();
+    expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
+    resolveCall();
+
+    await expect(result).resolves.toBe(true);
   });
 
   it('supports native state queries, listeners, and control methods', async () => {
