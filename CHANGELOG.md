@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.3] - 2026-03-30
 
 ### Breaking Changes
 
@@ -17,6 +17,7 @@
 
 ### Removed
 - Removed the unused legacy `MessageRenderer` path from the web client now that the unified `ChatRenderer` is the only production chat transcript renderer. ([#70](https://github.com/kcosr/assistant/pull/70))
+
 
 ## [0.15.2] - 2026-03-29
 
