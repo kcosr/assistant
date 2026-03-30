@@ -931,20 +931,32 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void updateState(String nextState, String maybeErrorMessage) {
-        runtimeState = nextState;
-        AssistantVoiceConfig.saveRuntimeSnapshot(this, nextState, maybeErrorMessage);
+        String normalizedState = trim(nextState);
+        String normalizedError = trim(maybeErrorMessage);
+        if (normalizedState.isEmpty()) {
+            normalizedState = STATE_DISABLED;
+        }
+        if (runtimeState.equals(normalizedState) && normalizedError.isEmpty()) {
+            return;
+        }
+        runtimeState = normalizedState;
+        AssistantVoiceConfig.saveRuntimeSnapshot(
+            this,
+            normalizedState,
+            normalizedError.isEmpty() ? null : normalizedError
+        );
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
-            manager.notify(NOTIFICATION_ID, buildNotification(nextState));
+            manager.notify(NOTIFICATION_ID, buildNotification(normalizedState));
         }
         Intent stateIntent = new Intent(BROADCAST_STATE_CHANGED);
         stateIntent.setPackage(getPackageName());
-        stateIntent.putExtra(EXTRA_STATE, nextState);
+        stateIntent.putExtra(EXTRA_STATE, normalizedState);
         sendBroadcast(stateIntent);
-        if (maybeErrorMessage != null && !maybeErrorMessage.trim().isEmpty()) {
+        if (!normalizedError.isEmpty()) {
             Intent errorIntent = new Intent(BROADCAST_RUNTIME_ERROR);
             errorIntent.setPackage(getPackageName());
-            errorIntent.putExtra(EXTRA_MESSAGE, maybeErrorMessage);
+            errorIntent.putExtra(EXTRA_MESSAGE, normalizedError);
             sendBroadcast(errorIntent);
         }
     }

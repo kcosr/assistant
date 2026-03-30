@@ -2,6 +2,7 @@ import type { ChatEvent } from '@assistant/shared';
 
 import type { Tool } from './tools';
 import type { AgentRegistry } from './agents';
+import { getAgentCallbackText, getUserVisibleUserText } from './chatEventText';
 import { buildSystemPrompt } from './systemPrompt';
 import type {
   ChatCompletionMessage,
@@ -41,9 +42,7 @@ export function buildChatMessagesFromEvents(
     ...(tools !== undefined ? { tools } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),
     ...(workingDir !== undefined ? { workingDir } : {}),
-    ...(selectedInstructionSkillNames !== undefined
-      ? { selectedInstructionSkillNames }
-      : {}),
+    ...(selectedInstructionSkillNames !== undefined ? { selectedInstructionSkillNames } : {}),
   };
   const messages: ChatCompletionMessage[] = [
     {
@@ -92,18 +91,10 @@ export function buildChatMessagesFromEvents(
 
   for (const event of events) {
     switch (event.type) {
-      case 'user_message': {
-        closeAssistantToolCallSegment();
-        const text = event.payload.text.trim();
-        if (!text) {
-          break;
-        }
-        messages.push({ role: 'user', content: text });
-        break;
-      }
+      case 'user_message':
       case 'user_audio': {
         closeAssistantToolCallSegment();
-        const text = event.payload.transcription.trim();
+        const text = getUserVisibleUserText(event);
         if (!text) {
           break;
         }
@@ -121,7 +112,7 @@ export function buildChatMessagesFromEvents(
       }
       case 'agent_callback': {
         closeAssistantToolCallSegment();
-        const text = event.payload.result.trim();
+        const text = getAgentCallbackText(event);
         if (!text) {
           break;
         }

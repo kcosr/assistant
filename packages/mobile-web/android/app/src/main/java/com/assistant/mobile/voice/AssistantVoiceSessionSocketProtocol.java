@@ -43,32 +43,7 @@ final class AssistantVoiceSessionSocketProtocol {
         if (eventJson.isEmpty()) {
             return null;
         }
-
-        String eventType = trim(findStringField(eventJson, "type", 0));
-        if (!"tool_call".equals(eventType)) {
-            return null;
-        }
-
-        String eventId = trim(findStringField(eventJson, "id", 0));
-        String eventSessionId = trim(findStringField(eventJson, "sessionId", 0));
-        String payloadJson = extractObjectField(eventJson, "payload", 0);
-        if (eventId.isEmpty() || eventSessionId.isEmpty() || payloadJson.isEmpty()) {
-            return null;
-        }
-
-        String toolName = trim(findStringField(payloadJson, "toolName", 0));
-        String toolCallId = trim(findStringField(payloadJson, "toolCallId", 0));
-        String argsJson = extractObjectField(payloadJson, "args", 0);
-        String text = trim(findStringField(argsJson, "text", 0));
-        if (
-            !AssistantVoiceInteractionRules.isVoicePromptTool(toolName)
-                || toolCallId.isEmpty()
-                || text.isEmpty()
-        ) {
-            return null;
-        }
-
-        return new AssistantVoicePromptEvent(eventId, eventSessionId, toolCallId, toolName, text);
+        return AssistantVoiceEventParser.parsePromptEventJson(eventJson);
     }
 
     static String parseSubscriptionSessionId(String rawMessage, String type) {
