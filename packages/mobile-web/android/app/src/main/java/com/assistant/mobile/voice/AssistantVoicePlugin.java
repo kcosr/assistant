@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Build;
+import android.util.Log;
 
 import androidx.core.content.ContextCompat;
 
@@ -28,6 +29,7 @@ import org.json.JSONObject;
     }
 )
 public final class AssistantVoicePlugin extends Plugin {
+    private static final String TAG = "AssistantVoicePlugin";
     private static final String PENDING_ACTION_SET_VOICE_SETTINGS = "set_voice_settings";
     private static final String PENDING_ACTION_START_LISTEN = "start_manual_listen";
 
@@ -184,6 +186,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
     @PluginMethod
     public void listInputDevices(PluginCall call) {
+        Log.d(TAG, "listInputDevices invoked");
         JSArray devices = new JSArray();
         for (AssistantVoiceAudioDeviceUtils.InputDeviceOption option : AssistantVoiceAudioDeviceUtils.listInputDevices(getContext())) {
             JSObject entry = new JSObject();
@@ -191,6 +194,7 @@ public final class AssistantVoicePlugin extends Plugin {
             entry.put("label", option.label);
             devices.put(entry);
         }
+        Log.d(TAG, "listInputDevices resolved count=" + devices.length() + " payload=" + devices);
         JSObject payload = new JSObject();
         payload.put("devices", devices);
         call.resolve(payload);

@@ -101,6 +101,10 @@ export class AssistantNativeVoiceBridge {
   async listInputDevices(): Promise<AssistantNativeVoiceInputDevice[]> {
     const target = this.getTarget();
     if (!target || typeof target.listInputDevices !== 'function') {
+      console.warn('[client] AssistantNativeVoice.listInputDevices unavailable', {
+        hasTarget: Boolean(target),
+        targetKeys: target ? Object.keys(target) : [],
+      });
       return [];
     }
     try {
@@ -371,6 +375,10 @@ export class SpeechAudioController {
     this.availableNativeInputDevices = await (
       this.options.nativeVoiceBridge?.listInputDevices() ?? Promise.resolve([])
     );
+    console.log('[client] SpeechAudio native input devices refreshed', {
+      count: this.availableNativeInputDevices.length,
+      devices: this.availableNativeInputDevices,
+    });
     this.syncNativeInputDeviceOptions();
   }
 
