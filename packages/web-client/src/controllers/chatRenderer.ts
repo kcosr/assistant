@@ -92,6 +92,8 @@ export interface ChatRendererOptions {
   }) => void;
 }
 
+const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
+
 export class ChatRenderer {
   private readonly container: HTMLElement;
   private readonly options: ChatRendererOptions;
@@ -514,8 +516,17 @@ export class ChatRenderer {
     const transcription = event.payload.transcription;
     const bubble = appendMessage(turnEl, 'user', transcription);
     bubble.classList.add('user-audio');
+    bubble.dataset['inputType'] = 'audio';
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
+    const avatar = bubble.querySelector<HTMLDivElement>('.message-avatar');
+    if (avatar) {
+      avatar.classList.add('user-audio-avatar');
+      avatar.replaceChildren(this.createVoiceEventIcon('microphone'));
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.title = 'Spoken message';
+    }
+    bubble.setAttribute('aria-label', 'Spoken user message');
   }
 
   private handleAssistantChunk(event: AssistantChunkEvent): void {
@@ -789,6 +800,33 @@ export class ChatRenderer {
           agentId.charAt(0).toUpperCase() + agentId.slice(1).toLowerCase() + ' Agent')
         : '';
 
+    if (this.isVoiceToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createVoiceToolBubble(callId, toolName);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId ?? undefined);
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+
+      this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
+      this.toolInputBuffers.delete(callId);
+      this.toolInputOffsets.delete(callId);
+      return;
+    }
+
     // Check if block was already created by tool_input_chunk streaming
     let block = this.toolCallElements.get(callId);
     const existingBlock = !!block;
@@ -936,6 +974,34 @@ export class ChatRenderer {
     const newBuffer = currentBuffer + chunk;
     this.toolInputBuffers.set(callId, newBuffer);
 
+    if (this.isVoiceToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseId = this.getResponseId(event.responseId);
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createVoiceToolBubble(callId, toolName);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(responseEl, responseId ?? undefined);
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+      const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
+      if (parsedText !== null) {
+        this.updateVoiceToolBubble(bubble, toolName, parsedText);
+      }
+      return;
+    }
+
     // Get or create the tool block
     let block = this.toolCallElements.get(callId);
     if (!block) {
@@ -1005,6 +1071,9 @@ export class ChatRenderer {
       // Tool block not yet created - buffer will be used when it arrives
       return;
     }
+    if (this.isVoiceToolName(block.dataset['toolName'] ?? '')) {
+      return;
+    }
 
     const displayToolName = this.getDisplayToolNameForOutput(block, eventToolName);
 
@@ -1028,6 +1097,17 @@ export class ChatRenderer {
 
     // Prefer existing tool-call element; if missing, create a minimal one.
     let block = this.toolCallElements.get(callId) ?? null;
+    const existingToolName = block?.dataset['toolName'] ?? '';
+    if (block && this.isVoiceToolName(existingToolName)) {
+      if (event.payload.error) {
+        const message = event.payload.error.message;
+        this.updateVoiceToolBubbleError(block, message);
+        this.finalizeInteractionForFailedToolCall(callId, message);
+      } else {
+        this.finalizeVoiceToolBubble(block);
+      }
+      return;
+    }
     if (!block) {
       if (this.questionnaireToolCalls.has(callId)) {
         return;
@@ -2345,7 +2425,130 @@ export class ChatRenderer {
   }
 
   private isGroupableToolCall(toolName: string): boolean {
-    return toolName !== 'agents_message';
+    return toolName !== 'agents_message' && !this.isVoiceToolName(toolName);
+  }
+
+  private isVoiceToolName(toolName: string): toolName is 'voice_speak' | 'voice_ask' {
+    return VOICE_TOOL_NAMES.has(toolName);
+  }
+
+  private getVoiceToolText(args: Record<string, unknown>): string {
+    const text = args['text'];
+    return typeof text === 'string' ? text : '';
+  }
+
+  private getVoiceToolTextFromArgsJson(argsJson: string): string | null {
+    try {
+      const parsed = JSON.parse(argsJson) as Record<string, unknown>;
+      return this.getVoiceToolText(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  private createVoiceToolBubble(
+    callId: string,
+    toolName: 'voice_speak' | 'voice_ask',
+  ): HTMLDivElement {
+    const bubble = document.createElement('div');
+    bubble.className = `message assistant voice-tool-bubble ${toolName === 'voice_ask' ? 'voice-tool-ask' : 'voice-tool-speak'}`;
+    bubble.dataset['toolCallId'] = callId;
+    bubble.dataset['toolName'] = toolName;
+    bubble.dataset['status'] = 'pending';
+    bubble.style.display = 'flex';
+    bubble.style.flexDirection = 'column';
+    bubble.style.gap = '8px';
+    bubble.style.padding = '12px 14px';
+    bubble.style.borderRadius = '14px';
+    bubble.style.border = '1px solid var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.style.maxWidth = '680px';
+
+    const header = document.createElement('div');
+    header.className = 'voice-tool-header';
+    header.style.display = 'inline-flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+    header.style.color = 'var(--color-text-secondary)';
+    header.style.fontSize = '0.78em';
+    header.style.fontWeight = '600';
+    header.style.letterSpacing = '0.04em';
+    header.style.textTransform = 'uppercase';
+    header.appendChild(this.createVoiceEventIcon('speaker'));
+
+    const label = document.createElement('span');
+    label.className = 'voice-tool-label';
+    header.appendChild(label);
+
+    const body = document.createElement('div');
+    body.className = 'voice-tool-body markdown-content';
+    body.style.color = 'var(--color-message-assistant-text)';
+    body.style.lineHeight = 'var(--line-height-relaxed)';
+
+    bubble.append(header, body);
+    return bubble;
+  }
+
+  private updateVoiceToolBubble(
+    bubble: HTMLDivElement,
+    toolName: 'voice_speak' | 'voice_ask',
+    text: string,
+  ): void {
+    bubble.dataset['toolName'] = toolName;
+    bubble.dataset['status'] = 'pending';
+    bubble.classList.toggle('voice-tool-ask', toolName === 'voice_ask');
+    bubble.classList.toggle('voice-tool-speak', toolName === 'voice_speak');
+    const label = bubble.querySelector<HTMLElement>('.voice-tool-label');
+    if (label) {
+      label.textContent = toolName === 'voice_ask' ? 'Voice Ask' : 'Voice Speak';
+    }
+    const body = bubble.querySelector<HTMLDivElement>('.voice-tool-body');
+    if (body) {
+      applyMarkdownToElement(body, text);
+    }
+    bubble.querySelector('.voice-tool-error')?.remove();
+    bubble.classList.remove('error');
+    bubble.style.borderColor = 'var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+  }
+
+  private finalizeVoiceToolBubble(bubble: HTMLDivElement): void {
+    bubble.dataset['status'] = 'complete';
+    bubble.querySelector('.voice-tool-error')?.remove();
+    bubble.classList.remove('pending', 'error');
+  }
+
+  private updateVoiceToolBubbleError(bubble: HTMLDivElement, message: string): void {
+    this.finalizeVoiceToolBubble(bubble);
+    bubble.dataset['status'] = 'error';
+    bubble.classList.add('error');
+    bubble.style.borderColor = 'var(--color-error-border)';
+    bubble.style.background = 'var(--color-error-soft)';
+    let errorEl = bubble.querySelector<HTMLDivElement>('.voice-tool-error');
+    if (!errorEl) {
+      errorEl = document.createElement('div');
+      errorEl.className = 'voice-tool-error';
+      errorEl.style.fontSize = '0.9em';
+      errorEl.style.color = 'var(--color-message-error-text)';
+      bubble.appendChild(errorEl);
+    }
+    errorEl.textContent = message;
+  }
+
+  private createVoiceEventIcon(kind: 'speaker' | 'microphone'): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = `voice-event-icon voice-event-icon-${kind}`;
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.display = 'inline-flex';
+    icon.style.alignItems = 'center';
+    icon.style.justifyContent = 'center';
+    icon.style.width = '18px';
+    icon.style.height = '18px';
+    icon.innerHTML =
+      kind === 'microphone'
+        ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V7a3 3 0 0 1 3-3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 11a7 7 0 0 1-14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 21h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+        : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    return icon;
   }
 
   private appendToolCallBlock(

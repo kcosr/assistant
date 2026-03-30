@@ -10,37 +10,39 @@ vi.mock('./llm/piSdkProvider', () => {
   return {
     runPiSdkChatCompletionIteration: vi.fn(),
     resolvePiSdkModel: vi.fn(),
-    extractAssistantTextBlocksFromPiMessage: vi.fn((message: { content?: Array<Record<string, unknown>> } | undefined) => {
-      const content = Array.isArray(message?.content) ? message.content : [];
-      return content
-        .filter(
-          (block): block is Record<string, unknown> =>
-            Boolean(block) &&
-            typeof block === 'object' &&
-            block['type'] === 'text' &&
-            typeof block['text'] === 'string',
-        )
-        .map((block) => {
-          const textSignature =
-            typeof block['textSignature'] === 'string' ? block['textSignature'] : undefined;
-          let phase: 'commentary' | 'final_answer' | undefined;
-          if (textSignature?.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(textSignature) as { phase?: unknown };
-              if (parsed.phase === 'commentary' || parsed.phase === 'final_answer') {
-                phase = parsed.phase;
+    extractAssistantTextBlocksFromPiMessage: vi.fn(
+      (message: { content?: Array<Record<string, unknown>> } | undefined) => {
+        const content = Array.isArray(message?.content) ? message.content : [];
+        return content
+          .filter(
+            (block): block is Record<string, unknown> =>
+              Boolean(block) &&
+              typeof block === 'object' &&
+              block['type'] === 'text' &&
+              typeof block['text'] === 'string',
+          )
+          .map((block) => {
+            const textSignature =
+              typeof block['textSignature'] === 'string' ? block['textSignature'] : undefined;
+            let phase: 'commentary' | 'final_answer' | undefined;
+            if (textSignature?.startsWith('{')) {
+              try {
+                const parsed = JSON.parse(textSignature) as { phase?: unknown };
+                if (parsed.phase === 'commentary' || parsed.phase === 'final_answer') {
+                  phase = parsed.phase;
+                }
+              } catch {
+                // ignore malformed signatures in tests
               }
-            } catch {
-              // ignore malformed signatures in tests
             }
-          }
-          return {
-            text: String(block['text']),
-            ...(phase ? { phase } : {}),
-            ...(textSignature ? { textSignature } : {}),
-          };
-        });
-    }),
+            return {
+              text: String(block['text']),
+              ...(phase ? { phase } : {}),
+              ...(textSignature ? { textSignature } : {}),
+            };
+          });
+      },
+    ),
   };
 });
 
@@ -173,6 +175,149 @@ describe('processUserMessage stream event emission', () => {
     expect(doneEvent?.payload?.text).toBe('Hello world');
 
     expect(broadcast.some((message) => message.type === 'text_done')).toBe(true);
+  });
+
+  it('emits user_audio events for spoken submits while keeping user text in model state', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async () => {
+      return {
+        text: 'Heard you',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Heard you' }],
+          api: 'openai-responses',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        },
+      };
+    });
+
+    const broadcast: ServerMessage[] = [];
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const sessionHub: SessionHub = {
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await processUserMessage({
+      sessionId: 's1',
+      state,
+      text: '  spoken transcript  ',
+      userInput: {
+        type: 'audio',
+        durationMs: 4200,
+      },
+      sessionHub,
+      envConfig: {
+        apiKey: 'test-api-key',
+        port: 0,
+        toolsEnabled: false,
+        dataDir: '/tmp/assistant-tests',
+        audioInputMode: 'manual',
+        audioSampleRate: 24000,
+        audioTranscriptionEnabled: false,
+        audioOutputVoice: undefined,
+        audioOutputSpeed: undefined,
+        ttsModel: 'gpt-4o-mini-tts',
+        ttsVoice: undefined,
+        ttsFrameDurationMs: 250,
+        ttsBackend: 'openai',
+        elevenLabsApiKey: undefined,
+        elevenLabsVoiceId: undefined,
+        elevenLabsModelId: undefined,
+        elevenLabsBaseUrl: undefined,
+        maxMessagesPerMinute: 60,
+        maxAudioBytesPerMinute: 2_000_000,
+        maxToolCallsPerMinute: 30,
+        debugChatCompletions: false,
+        debugHttpRequests: false,
+      } as EnvConfig,
+      chatCompletionTools: [],
+      handleChatToolCalls: async () => undefined,
+      outputMode: 'text',
+      ttsBackendFactory: null,
+      eventStore,
+    });
+
+    expect(events.some((event) => event.type === 'user_message')).toBe(false);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'user_audio',
+          payload: {
+            transcription: 'spoken transcript',
+            durationMs: 4200,
+          },
+        }),
+      ]),
+    );
+    expect(broadcast).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'user_audio',
+          sessionId: 's1',
+          transcription: 'spoken transcript',
+          durationMs: 4200,
+        }),
+      ]),
+    );
+    expect(broadcast.some((message) => message.type === 'user_message')).toBe(false);
+    expect(state.chatMessages[0]).toMatchObject({
+      role: 'user',
+      content: 'spoken transcript',
+    });
   });
 
   it('throws when the pi tool iteration limit is reached', async () => {
@@ -406,9 +551,9 @@ describe('processUserMessage stream event emission', () => {
       eventStore,
     });
 
-    const assistantDoneEvents = events.filter(
-      (event) => event.type === 'assistant_done',
-    ) as Array<Extract<ChatEvent, { type: 'assistant_done' }>>;
+    const assistantDoneEvents = events.filter((event) => event.type === 'assistant_done') as Array<
+      Extract<ChatEvent, { type: 'assistant_done' }>
+    >;
     expect(
       assistantDoneEvents.map((event) => ({
         text: event.payload.text,

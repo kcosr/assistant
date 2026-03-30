@@ -42,6 +42,19 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
         break;
       }
 
+      case 'user_audio': {
+        const text = event.payload.transcription.trim();
+        if (!text) {
+          break;
+        }
+
+        messages.push({
+          role: 'user',
+          content: text,
+        });
+        break;
+      }
+
       case 'assistant_done': {
         if (
           !isReplayableAssistantText(

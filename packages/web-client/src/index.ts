@@ -20,6 +20,12 @@ import { SettingsDropdownController } from './controllers/settingsDropdown';
 import { ConnectionManager } from './controllers/connectionManager';
 import { SessionManager, type CreateSessionOptions } from './controllers/sessionManager';
 import { ServerMessageHandler } from './controllers/serverMessageHandler';
+import {
+  AssistantNativeVoiceBridge,
+  type AssistantNativeVoiceRuntimeState,
+  type AssistantNativeVoiceSelection,
+} from './controllers/speechAudioController';
+import { resolveNativeVoiceSelectedSession } from './utils/nativeVoiceSelection';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
@@ -58,6 +64,7 @@ import {
 } from './controllers/sessionComposerController';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
+import { CHAT_PANEL_MANIFEST, createChatPanel } from './panels/chat';
 import { createInputRuntime, type InputRuntime } from './panels/input/runtime';
 import { EMPTY_PANEL_MANIFEST, createEmptyPanel } from './panels/empty';
 import { WORKSPACE_NAVIGATOR_PANEL_MANIFEST } from './panels/workspaceNavigator/manifest';
@@ -130,6 +137,7 @@ const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
+const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-adapter';
 const WINDOW_ID = getClientWindowId();
 let stopWindowSlotHeartbeat: (() => void) | null = null;
 const startHeartbeat = (): void => {
@@ -259,7 +267,7 @@ interface AgentSummary {
     | { mode: 'prompt'; roots: string[] };
 }
 
-import { apiFetch, getWebSocketUrl } from './utils/api';
+import { apiFetch, getApiBaseUrl, getWebSocketUrl } from './utils/api';
 import {
   configureStatusBar,
   isCapacitorAndroid,
@@ -382,6 +390,7 @@ async function main(): Promise<void> {
     status: statusEl,
     controlsToggleButton: controlsToggleButtonEl,
     audioResponsesCheckbox: audioResponsesCheckboxEl,
+    voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
@@ -457,6 +466,13 @@ async function main(): Promise<void> {
       },
     }),
   );
+  registerBuiltInPanel(
+    CHAT_PANEL_MANIFEST,
+    createChatPanel({
+      getRuntimeOptions: getChatRuntimeOptions,
+      onRuntimeReady: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
+    }),
+  );
   registerBuiltInPanel(WORKSPACE_NAVIGATOR_PANEL_MANIFEST, createWorkspaceNavigatorPanel());
   registerBuiltInPanel(EMPTY_PANEL_MANIFEST, createEmptyPanel());
 
@@ -480,6 +496,17 @@ async function main(): Promise<void> {
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
+  const VOICE_ADAPTER_BASE_URL_STORAGE_KEY = 'aiAssistantVoiceAdapterBaseUrl';
+  const nativeVoiceBridge = new AssistantNativeVoiceBridge();
+  const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
+  const normalizeVoiceAdapterBaseUrl = (value: string | null | undefined): string => {
+    if (typeof value !== 'string') {
+      return DEFAULT_VOICE_ADAPTER_BASE_URL;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : DEFAULT_VOICE_ADAPTER_BASE_URL;
+  };
 
   const initialPreferences = loadClientPreferences({
     audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
@@ -491,6 +518,13 @@ async function main(): Promise<void> {
   });
 
   const initialAudioResponsesEnabled = initialPreferences.audioResponsesEnabled;
+  let voiceAdapterBaseUrl = (() => {
+    try {
+      return normalizeVoiceAdapterBaseUrl(localStorage.getItem(VOICE_ADAPTER_BASE_URL_STORAGE_KEY));
+    } catch {
+      return DEFAULT_VOICE_ADAPTER_BASE_URL;
+    }
+  })();
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
@@ -498,6 +532,38 @@ async function main(): Promise<void> {
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
+  if (voiceAdapterBaseUrlInputEl) {
+    voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
+    voiceAdapterBaseUrlInputEl.value = voiceAdapterBaseUrl;
+  }
+  const applyVoiceAdapterBaseUrl = (
+    nextValue: string,
+    options?: { persist?: boolean; sync?: boolean },
+  ): void => {
+    const persist = options?.persist ?? true;
+    const sync = options?.sync ?? true;
+    const normalized = normalizeVoiceAdapterBaseUrl(nextValue);
+    voiceAdapterBaseUrl = normalized;
+    if (voiceAdapterBaseUrlInputEl && voiceAdapterBaseUrlInputEl.value !== normalized) {
+      voiceAdapterBaseUrlInputEl.value = normalized;
+    }
+    if (persist) {
+      try {
+        localStorage.setItem(VOICE_ADAPTER_BASE_URL_STORAGE_KEY, normalized);
+      } catch {
+        // Ignore localStorage errors.
+      }
+    }
+    if (sync) {
+      syncNativeVoiceAdapterBaseUrl();
+    }
+  };
+  voiceAdapterBaseUrlInputEl?.addEventListener('change', () => {
+    applyVoiceAdapterBaseUrl(voiceAdapterBaseUrlInputEl.value);
+  });
+  voiceAdapterBaseUrlInputEl?.addEventListener('blur', () => {
+    voiceAdapterBaseUrlInputEl.value = voiceAdapterBaseUrl;
+  });
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
     const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
@@ -668,6 +734,7 @@ async function main(): Promise<void> {
   };
 
   let inputSessionId: string | null = null;
+  let nativeVoiceRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
   let isSettingInputSession = false;
   let pendingInputSessionId: string | null | undefined = undefined;
   let panelHostController: PanelHostController | null = null;
@@ -746,6 +813,7 @@ async function main(): Promise<void> {
         inputSessionId = currentSessionId;
         syncSessionContext();
         updateSessionSubscriptions();
+        syncNativeVoiceBridgeState();
         if (pendingInputSessionId === undefined) {
           break;
         }
@@ -847,6 +915,131 @@ async function main(): Promise<void> {
       return null;
     }
     return chatPanelsById.get(active.panelId) ?? null;
+  }
+
+  let lastSyncedVoiceModeEnabled: boolean | null = null;
+  let lastSyncedSelectedSessionKey: string | null = null;
+  let lastSyncedVoiceAdapterBaseUrl: string | null = null;
+  let lastSyncedAssistantBaseUrl: string | null = null;
+
+  function getNativeVoiceSelectedSession(): AssistantNativeVoiceSelection | null {
+    if (!panelHostController) {
+      return null;
+    }
+    const active =
+      (panelHostController.getContext('panel.active') as {
+        panelId?: string;
+        panelType?: string;
+      } | null) ?? null;
+    if (active?.panelType === 'chat' && typeof active.panelId === 'string') {
+      const panelId = active.panelId.trim();
+      if (!panelId) {
+        return null;
+      }
+      const binding = panelHostController.getPanelBinding(panelId);
+      return resolveNativeVoiceSelectedSession({
+        activePanelId: panelId,
+        activePanelType: active.panelType,
+        fixedSessionId: binding?.mode === 'fixed' ? binding.sessionId : null,
+        inputSessionId,
+      });
+    }
+
+    const fallbackSessionId = normalizeSessionId(inputSessionId);
+    if (!fallbackSessionId) {
+      return null;
+    }
+    const fallbackEntry = getChatPanelEntryForSession(fallbackSessionId);
+    if (!fallbackEntry) {
+      return null;
+    }
+    return resolveNativeVoiceSelectedSession({
+      activePanelId: fallbackEntry.panelId,
+      activePanelType: 'chat',
+      fixedSessionId: fallbackEntry.bindingSessionId,
+      inputSessionId: fallbackSessionId,
+    });
+  }
+
+  function syncNativeVoiceModeEnabled(): void {
+    const enabled = getPrimaryChatInputRuntime()?.getAudioEnabled() ?? initialAudioResponsesEnabled;
+    if (lastSyncedVoiceModeEnabled === enabled) {
+      return;
+    }
+    lastSyncedVoiceModeEnabled = enabled;
+    nativeVoiceBridge.setVoiceModeEnabled(enabled);
+  }
+
+  function syncNativeSelectedSession(): void {
+    const selection = getNativeVoiceSelectedSession();
+    const nextKey = selection ? `${selection.panelId}:${selection.sessionId}` : '';
+    if (lastSyncedSelectedSessionKey === nextKey) {
+      return;
+    }
+    lastSyncedSelectedSessionKey = nextKey;
+    nativeVoiceBridge.setSelectedSession(selection);
+  }
+
+  function syncNativeVoiceAdapterBaseUrl(): void {
+    if (lastSyncedVoiceAdapterBaseUrl === voiceAdapterBaseUrl) {
+      return;
+    }
+    lastSyncedVoiceAdapterBaseUrl = voiceAdapterBaseUrl;
+    nativeVoiceBridge.setVoiceAdapterBaseUrl(voiceAdapterBaseUrl);
+  }
+
+  function syncNativeAssistantBaseUrl(): void {
+    if (!assistantBaseUrl || lastSyncedAssistantBaseUrl === assistantBaseUrl) {
+      return;
+    }
+    lastSyncedAssistantBaseUrl = assistantBaseUrl;
+    nativeVoiceBridge.setAssistantBaseUrl(assistantBaseUrl);
+  }
+
+  function syncNativeVoiceBridgeState(): void {
+    syncNativeAssistantBaseUrl();
+    syncNativeVoiceAdapterBaseUrl();
+    syncNativeVoiceModeEnabled();
+    syncNativeSelectedSession();
+  }
+
+  function normalizeNativeVoiceRuntimeState(
+    value: string | null | undefined,
+  ): AssistantNativeVoiceRuntimeState | null {
+    switch (value) {
+      case 'disabled':
+      case 'connecting':
+      case 'idle':
+      case 'speaking':
+      case 'listening':
+      case 'error':
+        return value;
+      default:
+        return null;
+    }
+  }
+
+  function applyNativeVoiceRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
+    nativeVoiceRuntimeState = state;
+    for (const entry of chatPanelsById.values()) {
+      entry.inputRuntime.speechAudioController?.setNativeRuntimeState(state);
+    }
+  }
+
+  if (useNativeVoiceRuntime) {
+    nativeVoiceBridge.addStateChangedListener((payload) => {
+      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload.state));
+    });
+    nativeVoiceBridge.addRuntimeErrorListener((payload) => {
+      const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+      if (!message) {
+        return;
+      }
+      setStatus(statusEl, `Voice error: ${message}`);
+    });
+    void nativeVoiceBridge.getState().then((payload) => {
+      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload?.state));
+    });
   }
 
   function openChatPanelSelect(selectEl: HTMLSelectElement | null): boolean {
@@ -1167,6 +1360,9 @@ async function main(): Promise<void> {
       initialAudioResponsesEnabled,
       audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
       continuousListeningLongPressMs: 500,
+      useNativeVoiceRuntime,
+      nativeVoiceBridge,
+      initialNativeVoiceRuntimeState: nativeVoiceRuntimeState,
     });
     const entry: ChatPanelEntry = {
       panelId,
@@ -1193,6 +1389,9 @@ async function main(): Promise<void> {
       },
     );
     chatPanelsById.set(panelId, entry);
+    entry.inputRuntime.speechAudioController?.setAudioResponsesChangeHandler(() => {
+      syncNativeVoiceModeEnabled();
+    });
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
     const openChatSessionPicker = () => {
@@ -1327,6 +1526,7 @@ async function main(): Promise<void> {
       if (!sessionId) {
         maybeAutoOpenSessionPicker();
       }
+      syncNativeSelectedSession();
     };
     updateBinding(host.getBinding());
     const unsubBinding = host.onBindingChange(updateBinding);
@@ -1737,6 +1937,7 @@ async function main(): Promise<void> {
   });
   panelHostControllerInstance.subscribeContext('panel.active', (value) => {
     if (!value || typeof value !== 'object') {
+      syncNativeSelectedSession();
       return;
     }
     const raw = value as { panelId?: unknown; panelType?: unknown; source?: unknown };
@@ -1744,6 +1945,7 @@ async function main(): Promise<void> {
     const panelType = typeof raw.panelType === 'string' ? raw.panelType.trim() : '';
     const focusSource = raw.source === 'chrome' ? 'chrome' : 'content';
     if (!panelId || !panelType) {
+      syncNativeSelectedSession();
       return;
     }
     if (panelType === 'chat') {
@@ -1779,8 +1981,10 @@ async function main(): Promise<void> {
           inputRuntime?.focusInput();
         }, 0);
       }
+      syncNativeVoiceBridgeState();
       return;
     }
+    syncNativeSelectedSession();
   });
   const syncPanelManifestContext = (): void => {
     panelHostController?.setContext('panel.manifests', panelRegistry.listManifests());
@@ -4251,6 +4455,7 @@ async function main(): Promise<void> {
   };
 
   void setupBackButtonHandler(handleAndroidBackButton);
+  syncNativeVoiceBridgeState();
 
   initShareTarget({
     getSelectedSessionId: () => inputSessionId,

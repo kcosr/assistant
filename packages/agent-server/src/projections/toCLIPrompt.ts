@@ -29,6 +29,12 @@ function buildTranscript(events: ChatEvent[]): string {
         continue;
       }
       lines.push(`User: ${text}`);
+    } else if (event.type === 'user_audio') {
+      const text = event.payload.transcription.trim();
+      if (!text) {
+        continue;
+      }
+      lines.push(`User: ${text}`);
     } else if (event.type === 'assistant_done') {
       if (
         !isPromptAssistantText(

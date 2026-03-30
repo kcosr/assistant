@@ -1,7 +1,25 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { SpeechAudioController } from './speechAudioController';
+vi.mock('../utils/audio', () => {
+  class MockTtsAudioPlayer {
+    setMuted = vi.fn();
+    setEnabled = vi.fn();
+    stop = vi.fn();
+    stopForBargeIn = vi.fn(() => 0);
+    handleIncomingFrame = vi.fn();
+    getRemainingPlaybackMs = vi.fn(() => 0);
+
+    constructor(_options: unknown) {}
+  }
+
+  return {
+    TtsAudioPlayer: MockTtsAudioPlayer,
+  };
+});
+
+import type { AssistantNativeVoiceBridgeTarget } from './speechAudioController';
+import { AssistantNativeVoiceBridge, SpeechAudioController } from './speechAudioController';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -24,6 +42,139 @@ function dispatchPointerEvent(
   Object.defineProperty(event, 'button', { value: options.button ?? 0 });
   target.dispatchEvent(event);
 }
+
+describe('AssistantNativeVoiceBridge', () => {
+  it('calls the direct AssistantNativeVoice bridge when available', () => {
+    const target = {
+      setVoiceModeEnabled: vi.fn(),
+      setSelectedSession: vi.fn(),
+      setVoiceAdapterBaseUrl: vi.fn(),
+      setAssistantBaseUrl: vi.fn(),
+    };
+
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: target,
+    }));
+
+    expect(bridge.setVoiceModeEnabled(true)).toBe(true);
+    expect(bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' })).toBe(true);
+    expect(bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter')).toBe(true);
+    expect(bridge.setAssistantBaseUrl('https://assistant')).toBe(true);
+    expect(target.setVoiceModeEnabled).toHaveBeenCalledWith({ enabled: true });
+    expect(target.setSelectedSession).toHaveBeenCalledWith({
+      selection: {
+        panelId: 'panel-1',
+        sessionId: 'session-1',
+      },
+    });
+    expect(target.setVoiceAdapterBaseUrl).toHaveBeenCalledWith({
+      url: 'https://assistant/agent-voice-adapter',
+    });
+    expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
+  });
+
+  it('passes null selected session through the direct bridge', () => {
+    const target = {
+      setSelectedSession: vi.fn(),
+    };
+
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: target,
+    }));
+
+    expect(bridge.setSelectedSession(null)).toBe(true);
+    expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
+  });
+
+  it('calls the Capacitor plugin bridge surface with the final contract methods', () => {
+    const target = {
+      setVoiceModeEnabled: vi.fn(),
+      setSelectedSession: vi.fn(),
+      setVoiceAdapterBaseUrl: vi.fn(),
+      setAssistantBaseUrl: vi.fn(),
+    };
+
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      Capacitor: {
+        Plugins: {
+          AssistantNativeVoice: target,
+        },
+      },
+    }));
+
+    expect(bridge.setVoiceModeEnabled(false)).toBe(true);
+    expect(bridge.setSelectedSession(null)).toBe(true);
+    expect(bridge.setVoiceAdapterBaseUrl('https://assistant/agent-voice-adapter')).toBe(true);
+    expect(bridge.setAssistantBaseUrl('https://assistant')).toBe(true);
+    expect(target.setVoiceModeEnabled).toHaveBeenCalledWith({ enabled: false });
+    expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
+    expect(target.setVoiceAdapterBaseUrl).toHaveBeenCalledWith({
+      url: 'https://assistant/agent-voice-adapter',
+    });
+    expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
+  });
+
+  it('does not support alternate plugin names', () => {
+    const legacyTarget = {
+      setVoiceModeEnabled: vi.fn(),
+    };
+
+    const plugins: { AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget } & Record<
+      string,
+      unknown
+    > = {};
+    plugins['AssistantVoice'] = legacyTarget;
+
+    const bridge = new AssistantNativeVoiceBridge(
+      () => ({
+        Capacitor: {
+          Plugins: plugins,
+        },
+      }),
+    );
+
+    expect(bridge.setVoiceModeEnabled(true)).toBe(false);
+    expect(legacyTarget.setVoiceModeEnabled).not.toHaveBeenCalled();
+  });
+
+  it('returns false when no native voice bridge is installed', () => {
+    const bridge = new AssistantNativeVoiceBridge(() => ({}));
+
+    expect(bridge.setVoiceModeEnabled(true)).toBe(false);
+    expect(bridge.setSelectedSession(null)).toBe(false);
+  });
+
+  it('supports native state queries, listeners, and control methods', async () => {
+    const remove = vi.fn();
+    const target = {
+      getState: vi.fn(async () => ({ state: 'listening' })),
+      stopCurrentInteraction: vi.fn(),
+      startManualListen: vi.fn(),
+      addListener: vi.fn((_eventName: string, _listener: (payload: unknown) => void) => ({
+        remove,
+      })),
+    };
+
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: target,
+    }));
+
+    const state = await bridge.getState();
+    const offState = bridge.addStateChangedListener(() => {});
+    const offError = bridge.addRuntimeErrorListener(() => {});
+
+    expect(state).toEqual({ state: 'listening' });
+    expect(bridge.stopCurrentInteraction()).toBe(true);
+    expect(bridge.startManualListen()).toBe(true);
+    expect(target.stopCurrentInteraction).toHaveBeenCalledTimes(1);
+    expect(target.startManualListen).toHaveBeenCalledTimes(1);
+    expect(target.addListener).toHaveBeenCalledTimes(2);
+
+    offState?.();
+    offError?.();
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('SpeechAudioController.cancelAllActiveOperations', () => {
   it('does not remove pending assistant bubble that already contains tool output', () => {
@@ -264,6 +415,91 @@ describe('SpeechAudioController.micButtonState', () => {
     expect(micButton.classList.contains('stopping')).toBe(false);
     expect(micButton.getAttribute('aria-label')).toBe('Voice input');
   });
+
+  it('notifies listeners when audio responses are enabled and disabled', () => {
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+    });
+    const handler = vi.fn();
+
+    controller.setAudioResponsesChangeHandler(handler);
+    controller.enableAudioResponses();
+    controller.disableAudioResponses();
+
+    expect(handler).toHaveBeenNthCalledWith(1, true);
+    expect(handler).toHaveBeenNthCalledWith(2, false);
+  });
+
+  it('uses native speaking and listening states for the mic button when native voice runtime is active', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen: vi.fn(),
+        stopCurrentInteraction: vi.fn(),
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => true,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: false,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+    });
+
+    controller.enableAudioResponses();
+    controller.setNativeRuntimeState('speaking');
+
+    expect(micButton.classList.contains('native-speaking')).toBe(true);
+    expect(micButton.classList.contains('stopping')).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice playback active');
+    expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('speaker');
+
+    controller.setNativeRuntimeState('listening');
+
+    expect(micButton.classList.contains('native-listening')).toBe(true);
+    expect(micButton.classList.contains('stopping')).toBe(true);
+    expect(micButton.getAttribute('aria-label')).toBe('Stop listening');
+    expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
+  });
 });
 
 describe('SpeechAudioController.longPress', () => {
@@ -322,6 +558,44 @@ describe('SpeechAudioController.longPress', () => {
 });
 
 describe('SpeechAudioController.startPushToTalk', () => {
+  it('delegates manual listen to the native voice runtime when enabled', async () => {
+    const startManualListen = vi.fn();
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen,
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      audioResponsesCheckboxEl: document.createElement('input'),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      audioResponsesStorageKey: 'test-audio-responses',
+      continuousListeningLongPressMs: 250,
+      initialAudioResponsesEnabled: true,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+    });
+
+    await controller.startPushToTalk();
+
+    expect(startManualListen).toHaveBeenCalledTimes(1);
+  });
+
   it('auto-submits final speech text on desktop', async () => {
     ensureWebSocketGlobal();
 

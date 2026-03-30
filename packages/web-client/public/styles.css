@@ -1433,6 +1433,7 @@ body.preload * {
   box-shadow: var(--shadow-lg);
   z-index: 1000;
   padding: var(--spacing-sm);
+  max-height: min(80vh, calc(100dvh - 32px));
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -1556,9 +1557,28 @@ button.settings-dropdown-item {
   width: 100%;
 }
 
+.settings-dropdown-item--stacked {
+  align-items: stretch;
+}
+
+.settings-dropdown-label--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .settings-dropdown-item label:has(select) {
   flex-direction: column;
   align-items: flex-start;
+}
+
+.settings-dropdown-label--stacked input[type='url'] {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-default);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font: inherit;
 }
 
 .settings-dropdown-item label:has(select) select {
@@ -5885,7 +5905,51 @@ textarea.interaction-input {
   width: 18px;
   height: 18px;
   fill: var(--color-text-primary);
+  stroke: var(--color-text-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   display: block;
+}
+
+.input-mic-button.native-speaking .mic-icon {
+  animation: native-voice-pulse 1.2s ease-in-out infinite;
+}
+
+.input-mic-button.native-speaking {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 193, 107, 0.95), rgba(255, 152, 0, 0.92) 38%, rgba(255, 85, 85, 0.96) 100%);
+  border-color: color-mix(in srgb, var(--theme-danger) 72%, transparent);
+  box-shadow:
+    0 0 0 0 rgba(255, 152, 0, 0.34),
+    0 0 0 0 rgba(255, 85, 85, 0.2);
+  animation: native-voice-button-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes native-voice-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.72;
+  }
+}
+
+@keyframes native-voice-button-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(255, 152, 0, 0.34),
+      0 0 0 0 rgba(255, 85, 85, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(255, 152, 0, 0.16),
+      0 0 24px 4px rgba(255, 85, 85, 0.24);
+  }
 }
 
 .input-clear-button {

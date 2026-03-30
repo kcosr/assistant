@@ -47,9 +47,7 @@ export type ControlAction = z.infer<typeof ControlActionSchema>;
 
 export const PanelDisplayModeSchema = z
   .enum(['browser', 'item', 'view', 'artifact'])
-  .transform((value): 'browser' | 'item' | 'view' =>
-    value === 'artifact' ? 'item' : value,
-  );
+  .transform((value): 'browser' | 'item' | 'view' => (value === 'artifact' ? 'item' : value));
 export type PanelDisplayMode = z.infer<typeof PanelDisplayModeSchema>;
 
 export const ProtocolVersionFieldSchema = z
@@ -294,8 +292,6 @@ export const SelectedViewItemSchema = z.object({
   itemId: z.string(),
 });
 
-
-
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   ClientHelloMessageSchema,
   ClientTextInputMessageSchema,
@@ -445,6 +441,13 @@ export const ServerUserMessageMessageSchema = z.object({
    * This is typically the responseId of the target agent run.
    */
   agentExchangeId: z.string().optional(),
+});
+
+export const ServerUserAudioMessageSchema = z.object({
+  type: z.literal('user_audio'),
+  sessionId: z.string(),
+  transcription: z.string(),
+  durationMs: z.number().int().nonnegative(),
 });
 
 export const ServerTranscriptDeltaMessageSchema = z.object({
@@ -684,6 +687,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerThinkingDeltaMessageSchema,
   ServerThinkingDoneMessageSchema,
   ServerUserMessageMessageSchema,
+  ServerUserAudioMessageSchema,
   ServerTranscriptDeltaMessageSchema,
   ServerTranscriptDoneMessageSchema,
   ServerToolCallMessageSchema,
@@ -716,6 +720,7 @@ export type ServerThinkingStartMessage = z.infer<typeof ServerThinkingStartMessa
 export type ServerThinkingDeltaMessage = z.infer<typeof ServerThinkingDeltaMessageSchema>;
 export type ServerThinkingDoneMessage = z.infer<typeof ServerThinkingDoneMessageSchema>;
 export type ServerUserMessageMessage = z.infer<typeof ServerUserMessageMessageSchema>;
+export type ServerUserAudioMessage = z.infer<typeof ServerUserAudioMessageSchema>;
 export type ServerTranscriptDeltaMessage = z.infer<typeof ServerTranscriptDeltaMessageSchema>;
 export type ServerTranscriptDoneMessage = z.infer<typeof ServerTranscriptDoneMessageSchema>;
 export type ServerToolCallMessage = z.infer<typeof ServerToolCallMessageSchema>;

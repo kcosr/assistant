@@ -87,3 +87,16 @@ if (!/android.permission.MODIFY_AUDIO_SETTINGS/.test(manifest)) {
 } else {
   console.log('[patch-android-security] MODIFY_AUDIO_SETTINGS permission already present');
 }
+
+// Add POST_NOTIFICATIONS permission for visible foreground-service notifications on Android 13+
+manifest = fs.readFileSync(manifestPath, 'utf8');
+if (!/android.permission.POST_NOTIFICATIONS/.test(manifest)) {
+  manifest = manifest.replace(
+    /(<manifest\b[^>]*>)/,
+    `$1\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />`,
+  );
+  fs.writeFileSync(manifestPath, manifest, 'utf8');
+  console.log('[patch-android-security] Added POST_NOTIFICATIONS permission');
+} else {
+  console.log('[patch-android-security] POST_NOTIFICATIONS permission already present');
+}

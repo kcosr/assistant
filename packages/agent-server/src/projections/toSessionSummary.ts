@@ -45,6 +45,13 @@ export function toSessionSummary(events: ChatEvent[]): {
       }
       lastMessage = text;
       messageCount += 1;
+    } else if (event.type === 'user_audio') {
+      const text = event.payload.transcription.trim();
+      if (!text) {
+        continue;
+      }
+      lastMessage = text;
+      messageCount += 1;
     } else if (event.type === 'assistant_done') {
       if (
         !isSummaryAssistantText(

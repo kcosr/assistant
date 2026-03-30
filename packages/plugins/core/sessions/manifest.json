@@ -36,8 +36,14 @@
             "description": "Optional session configuration constrained by the agent.",
             "properties": {
               "model": { "type": "string", "description": "Optional session model override." },
-              "thinking": { "type": "string", "description": "Optional session thinking override." },
-              "workingDir": { "type": "string", "description": "Optional absolute working directory." },
+              "thinking": {
+                "type": "string",
+                "description": "Optional session thinking override."
+              },
+              "workingDir": {
+                "type": "string",
+                "description": "Optional absolute working directory."
+              },
               "skills": {
                 "type": "array",
                 "items": { "type": "string" },
@@ -78,8 +84,14 @@
             "description": "Optional full session configuration replacement for editable fields.",
             "properties": {
               "model": { "type": "string", "description": "Optional session model override." },
-              "thinking": { "type": "string", "description": "Optional session thinking override." },
-              "workingDir": { "type": "string", "description": "Optional absolute working directory." },
+              "thinking": {
+                "type": "string",
+                "description": "Optional session thinking override."
+              },
+              "workingDir": {
+                "type": "string",
+                "description": "Optional absolute working directory."
+              },
               "skills": {
                 "type": "array",
                 "items": { "type": "string" },
@@ -157,6 +169,16 @@
             "enum": ["sync", "async"],
             "description": "Delivery mode (default: async)."
           },
+          "inputType": {
+            "type": "string",
+            "enum": ["text", "audio"],
+            "description": "Input origin hint. Use \"audio\" for spoken submits so the transcript records user_audio while the agent still receives the content as ordinary user text. Defaults to \"text\"."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Required when inputType is \"audio\". Recognition duration in milliseconds for the spoken submit."
+          },
           "timeout": {
             "type": "number",
             "description": "Timeout in seconds for sync mode."
@@ -166,7 +188,20 @@
             "description": "Webhook config for async mode."
           }
         },
-        "required": ["sessionId", "content"]
+        "required": ["sessionId", "content"],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "inputType": { "const": "audio" }
+              },
+              "required": ["inputType"]
+            },
+            "then": {
+              "required": ["durationMs"]
+            }
+          }
+        ]
       },
       "capabilities": ["sessions.write"]
     },

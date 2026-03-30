@@ -39,7 +39,7 @@ foregrounded to notice new voice prompts.
 
 Recommended v1 model:
 
-- native maintains a lightweight Assistant session observer for the currently selected session
+- native maintains a websocket subscription for the currently selected session
 - native only cares about:
   - `tool_call`
   - `tool_result`
@@ -135,10 +135,10 @@ Recommended minimum web-to-native API:
 
 ### Config setters
 
-- `setVoiceModeEnabled(enabled: boolean)`
-- `setSelectedSession({ panelId, sessionId } | null)`
-- `setVoiceAdapterBaseUrl(url: string)`
-- `setAssistantBaseUrl(url: string)`
+- `setVoiceModeEnabled({ enabled: boolean })`
+- `setSelectedSession({ selection: { panelId, sessionId } | null })`
+- `setVoiceAdapterBaseUrl({ url: string })`
+- `setAssistantBaseUrl({ url: string })`
 
 ### User actions
 
@@ -171,7 +171,7 @@ Recommended v1 direction:
 Practical touchpoints in the current repo:
 
 - `packages/mobile-web/android/app/src/main/AndroidManifest.xml`
-- `packages/mobile-web/android/app/src/main/java/com/assistant/work/MainActivity.java`
+- `packages/mobile-web/android/app/src/main/java/com/assistant/mobile/MainActivity.java`
 - `packages/mobile-web/android/variables.gradle`
 - `packages/mobile-web/scripts/*`
 
@@ -209,7 +209,7 @@ Minimum Android coverage:
 Safe Android write scope for one worker:
 
 - `packages/mobile-web/android/app/src/main/AndroidManifest.xml`
-- `packages/mobile-web/android/app/src/main/java/com/assistant/work/MainActivity.java`
+- `packages/mobile-web/android/app/src/main/java/com/assistant/mobile/MainActivity.java`
 - `packages/mobile-web/android/variables.gradle`
 - `packages/mobile-web/scripts/*`
 - any newly introduced committed native bridge/service files in `packages/mobile-web/android/app/src/main/java/...`

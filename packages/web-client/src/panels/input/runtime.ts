@@ -5,9 +5,14 @@ import {
   type ContextPreviewData,
 } from '../../controllers/contextPreviewController';
 import { PendingMessageListController } from '../../controllers/pendingMessageListController';
-import { SpeechAudioController } from '../../controllers/speechAudioController';
+import {
+  AssistantNativeVoiceBridge,
+  type AssistantNativeVoiceRuntimeState,
+  SpeechAudioController,
+} from '../../controllers/speechAudioController';
 import { TextInputController } from '../../controllers/textInputController';
 import { initializeAudioResponsesCheckbox } from '../../utils/clientPreferences';
+import { isCapacitorAndroid } from '../../utils/capacitor';
 import type { ChatRuntime } from '../chat/runtime';
 
 export interface InputRuntimeElements {
@@ -73,6 +78,9 @@ export interface InputRuntimeOptions {
   initialAudioResponsesEnabled: boolean;
   audioResponsesStorageKey: string;
   continuousListeningLongPressMs: number;
+  useNativeVoiceRuntime?: boolean | undefined;
+  nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
+  initialNativeVoiceRuntimeState?: AssistantNativeVoiceRuntimeState | null | undefined;
 }
 
 export interface InputRuntime {
@@ -265,6 +273,9 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   applyBriefModeState();
 
   const supportsAudioOutput = (): boolean => {
+    if (options.useNativeVoiceRuntime && isCapacitorAndroid()) {
+      return true;
+    }
     if (!options.speechFeaturesEnabled) {
       return false;
     }
@@ -290,7 +301,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     const audioEnabled = speechAudioController?.isAudioResponsesEnabled ?? audioResponsesEnabled;
     const message: ClientSetModesMessage = {
       type: 'set_modes',
-      outputMode: audioEnabled ? 'both' : 'text',
+      outputMode: audioEnabled && !options.useNativeVoiceRuntime ? 'both' : 'text',
     };
     socket.send(JSON.stringify(message));
   };
@@ -316,8 +327,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     audioResponsesStorageKey: options.audioResponsesStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
     initialAudioResponsesEnabled: audioResponsesEnabled,
+    useNativeVoiceRuntime: options.useNativeVoiceRuntime,
+    nativeVoiceBridge: options.nativeVoiceBridge,
   });
   speechAudioController.attach();
+  speechAudioController.setNativeRuntimeState(options.initialNativeVoiceRuntimeState ?? null);
 
   const pendingMessageListController = elements.pendingMessageListEl
     ? new PendingMessageListController({

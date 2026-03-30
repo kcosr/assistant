@@ -170,6 +170,151 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('renders voice_speak and voice_ask as speaker bubbles without generic tool chrome', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-voice',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-speak',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-speak',
+          toolName: 'voice_speak',
+          args: { text: 'Checking the porch camera now.' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-speak-result',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-speak',
+          result: { accepted: true },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-ask',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-ask',
+          toolName: 'voice_ask',
+          args: { text: 'Do you want me to open the garage too?' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-ask-result',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-ask',
+          result: { accepted: true },
+        },
+      }),
+    ]);
+
+    const bubbles = Array.from(
+      container.querySelectorAll<HTMLDivElement>('.voice-tool-bubble'),
+    );
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]?.dataset['toolName']).toBe('voice_speak');
+    expect(bubbles[0]?.textContent).toContain('Checking the porch camera now.');
+    expect(bubbles[0]?.textContent).not.toContain('accepted');
+    expect(bubbles[1]?.dataset['toolName']).toBe('voice_ask');
+    expect(bubbles[1]?.textContent).toContain('Do you want me to open the garage too?');
+    expect(bubbles[1]?.textContent).not.toContain('accepted');
+    expect(container.querySelector('[data-tool-name="voice_speak"].tool-output-block')).toBeNull();
+    expect(container.querySelector('[data-tool-name="voice_ask"].tool-output-block')).toBeNull();
+  });
+
+  it('renders voice tool failures inline on the speaker bubble', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-voice-error',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-ask',
+        turnId: 't-voice-error',
+        responseId: 'r-voice-error',
+        payload: {
+          toolCallId: 'tc-ask',
+          toolName: 'voice_ask',
+          args: { text: 'Say that again?' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-ask-result',
+        turnId: 't-voice-error',
+        responseId: 'r-voice-error',
+        payload: {
+          toolCallId: 'tc-ask',
+          result: { accepted: false },
+          error: {
+            code: 'invalid_args',
+            message: 'Prompt text is required.',
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.voice-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.classList.contains('error')).toBe(true);
+    expect(bubble?.querySelector('.voice-tool-error')?.textContent).toContain(
+      'Prompt text is required.',
+    );
+  });
+
+  it('renders user_audio as a user bubble with microphone styling', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio',
+        turnId: 't-audio',
+        responseId: undefined,
+        payload: {
+          transcription: 'Call Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.dataset['inputType']).toBe('audio');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+    expect(
+      bubble?.querySelector('.message-avatar.user-audio-avatar .voice-event-icon-microphone'),
+    ).not.toBeNull();
+  });
+
   it('renders a turn divider with the turn timestamp', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

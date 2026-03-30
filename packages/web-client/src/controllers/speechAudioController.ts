@@ -2,6 +2,224 @@ import type { ClientControlMessage } from '@assistant/shared';
 import { TtsAudioPlayer } from '../utils/audio';
 import type { SpeechInputController } from './speechInput';
 
+export interface AssistantNativeVoiceSelection {
+  panelId: string;
+  sessionId: string;
+}
+
+export interface AssistantNativeVoiceEnabledArgs {
+  enabled: boolean;
+}
+
+export interface AssistantNativeVoiceSelectionArgs {
+  selection: AssistantNativeVoiceSelection | null;
+}
+
+export interface AssistantNativeVoiceUrlArgs {
+  url: string;
+}
+
+export type AssistantNativeVoiceRuntimeState =
+  | 'disabled'
+  | 'connecting'
+  | 'idle'
+  | 'speaking'
+  | 'listening'
+  | 'error';
+
+export interface AssistantNativeVoiceStatePayload {
+  state?: string;
+  voiceModeEnabled?: boolean;
+  voiceAdapterBaseUrl?: string;
+  assistantBaseUrl?: string;
+  selectedSession?: AssistantNativeVoiceSelection | null;
+  lastError?: string;
+}
+
+export interface AssistantNativeVoiceRuntimeErrorPayload {
+  message?: string;
+}
+
+interface AssistantNativeVoiceListenerHandle {
+  remove?: () => void | Promise<void>;
+}
+
+export interface AssistantNativeVoiceBridgeTarget {
+  setVoiceModeEnabled?: (args: AssistantNativeVoiceEnabledArgs) => void | Promise<void>;
+  setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
+  setVoiceAdapterBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
+  setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
+  stopCurrentInteraction?: () => void | Promise<void>;
+  startManualListen?: () => void | Promise<void>;
+  getState?: () =>
+    | AssistantNativeVoiceStatePayload
+    | Promise<AssistantNativeVoiceStatePayload>;
+  addListener?: (
+    eventName: 'stateChanged' | 'runtimeError',
+    listener: (payload: unknown) => void,
+  ) =>
+    | AssistantNativeVoiceListenerHandle
+    | Promise<AssistantNativeVoiceListenerHandle>;
+}
+
+interface AssistantNativeVoiceBridgeHost {
+  AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+  Capacitor?: {
+    Plugins?: {
+      AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+    };
+  };
+}
+
+export class AssistantNativeVoiceBridge {
+  constructor(
+    private readonly getHost: () => AssistantNativeVoiceBridgeHost | null = () => {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window as unknown as AssistantNativeVoiceBridgeHost;
+    },
+  ) {}
+
+  setVoiceModeEnabled(enabled: boolean): boolean {
+    return this.invoke('setVoiceModeEnabled', { enabled });
+  }
+
+  setSelectedSession(selection: AssistantNativeVoiceSelection | null): boolean {
+    return this.invoke('setSelectedSession', { selection });
+  }
+
+  setVoiceAdapterBaseUrl(url: string): boolean {
+    return this.invoke('setVoiceAdapterBaseUrl', { url });
+  }
+
+  setAssistantBaseUrl(url: string): boolean {
+    return this.invoke('setAssistantBaseUrl', { url });
+  }
+
+  stopCurrentInteraction(): boolean {
+    return this.invoke('stopCurrentInteraction');
+  }
+
+  startManualListen(): boolean {
+    return this.invoke('startManualListen');
+  }
+
+  isAvailable(): boolean {
+    return this.getTarget() !== null;
+  }
+
+  async getState(): Promise<AssistantNativeVoiceStatePayload | null> {
+    const target = this.getTarget();
+    if (!target || typeof target.getState !== 'function') {
+      return null;
+    }
+    try {
+      const result = target.getState();
+      return (await Promise.resolve(result)) ?? null;
+    } catch (error) {
+      console.warn('[client] AssistantNativeVoice.getState failed', error);
+      return null;
+    }
+  }
+
+  addStateChangedListener(
+    listener: (payload: AssistantNativeVoiceStatePayload) => void,
+  ): (() => void) | null {
+    return this.addListener('stateChanged', (payload) => {
+      listener((payload as AssistantNativeVoiceStatePayload | null) ?? {});
+    });
+  }
+
+  addRuntimeErrorListener(
+    listener: (payload: AssistantNativeVoiceRuntimeErrorPayload) => void,
+  ): (() => void) | null {
+    return this.addListener('runtimeError', (payload) => {
+      listener((payload as AssistantNativeVoiceRuntimeErrorPayload | null) ?? {});
+    });
+  }
+
+  private getTarget(): AssistantNativeVoiceBridgeTarget | null {
+    const host = this.getHost();
+    if (!host) {
+      return null;
+    }
+    return host.AssistantNativeVoice ?? host.Capacitor?.Plugins?.AssistantNativeVoice ?? null;
+  }
+
+  private addListener(
+    eventName: 'stateChanged' | 'runtimeError',
+    listener: (payload: unknown) => void,
+  ): (() => void) | null {
+    const target = this.getTarget();
+    const method = target?.addListener;
+    if (typeof method !== 'function') {
+      return null;
+    }
+
+    let removed = false;
+    let handle: AssistantNativeVoiceListenerHandle | null = null;
+    const removeHandle = (): void => {
+      removed = true;
+      if (handle && typeof handle.remove === 'function') {
+        void Promise.resolve(handle.remove()).catch((error: unknown) => {
+          console.warn(`[client] AssistantNativeVoice.${eventName}.remove failed`, error);
+        });
+      }
+    };
+
+    try {
+      const result = method(eventName, listener);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result)
+          .then((resolved) => {
+            handle = (resolved as AssistantNativeVoiceListenerHandle | null) ?? null;
+            if (removed && handle && typeof handle.remove === 'function') {
+              void Promise.resolve(handle.remove()).catch((error: unknown) => {
+                console.warn(`[client] AssistantNativeVoice.${eventName}.remove failed`, error);
+              });
+            }
+          })
+          .catch((error: unknown) => {
+            console.warn(`[client] AssistantNativeVoice.${eventName} listener failed`, error);
+          });
+      } else {
+        handle = (result as AssistantNativeVoiceListenerHandle | null) ?? null;
+      }
+      return removeHandle;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${eventName} listener failed`, error);
+      return null;
+    }
+  }
+
+  private invoke<K extends keyof AssistantNativeVoiceBridgeTarget>(
+    methodName: K,
+    ...args: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>
+  ): boolean {
+    const target = this.getTarget();
+    const method = target?.[methodName] as
+      | ((...methodArgs: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>) => unknown)
+      | undefined;
+    if (typeof method !== 'function') {
+      return false;
+    }
+
+    try {
+      const result = method(...args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result).catch((error: unknown) => {
+          console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+        });
+      }
+      return true;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+      return false;
+    }
+  }
+}
+
 export interface SpeechAudioControllerOptions {
   speechFeaturesEnabled: boolean;
   speechInputController: SpeechInputController | null;
@@ -23,6 +241,8 @@ export interface SpeechAudioControllerOptions {
   audioResponsesStorageKey: string;
   continuousListeningLongPressMs: number;
   initialAudioResponsesEnabled: boolean;
+  useNativeVoiceRuntime?: boolean | undefined;
+  nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
 }
 
 export class SpeechAudioController {
@@ -43,9 +263,20 @@ export class SpeechAudioController {
   private chimeContext: AudioContext | null = null;
   private autoRearmTimer: ReturnType<typeof setTimeout> | null = null;
   private autoRearmToken = 0;
+  private audioResponsesChangeHandler: ((enabled: boolean) => void) | null = null;
+  private nativeRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
 
   constructor(private readonly options: SpeechAudioControllerOptions) {
     this.audioResponsesEnabled = options.initialAudioResponsesEnabled;
+  }
+
+  setAudioResponsesChangeHandler(handler: ((enabled: boolean) => void) | null): void {
+    this.audioResponsesChangeHandler = handler;
+  }
+
+  setNativeRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
+    this.nativeRuntimeState = state;
+    this.syncMicButtonState();
   }
 
   private logState(event: string, details: Record<string, unknown> = {}): void {
@@ -59,7 +290,7 @@ export class SpeechAudioController {
   }
 
   private attachMediaSessionHandlers(): void {
-    if (this.mediaSessionAttached || !this.hasSpeechInput) {
+    if (this.mediaSessionAttached || !this.hasSpeechInput || this.isUsingNativeVoiceRuntime()) {
       return;
     }
     if (typeof navigator === 'undefined' || !navigator.mediaSession) {
@@ -69,9 +300,13 @@ export class SpeechAudioController {
     const mediaSession = navigator.mediaSession;
     const handleToggle = (action: string) => {
       this.logState('media-session-action', { action });
-      if (this.isSpeechInputActive) {
+      if (this.isSpeechInputActive || this.isNativeInteractionActive()) {
         this.logState('media-session-step', { step: 'cancel-recording' });
-        this.cancelSpeechInput('media-session');
+        if (this.isUsingNativeVoiceRuntime()) {
+          this.options.nativeVoiceBridge?.stopCurrentInteraction();
+        } else {
+          this.cancelSpeechInput('media-session');
+        }
         this.syncMicButtonState();
         return;
       }
@@ -357,6 +592,9 @@ export class SpeechAudioController {
   }
 
   handleIncomingAudioFrame(raw: ArrayBuffer): void {
+    if (this.isUsingNativeVoiceRuntime()) {
+      return;
+    }
     if (!this.ttsPlayer || !this.audioResponsesEnabled) {
       return;
     }
@@ -434,11 +672,12 @@ export class SpeechAudioController {
   }
 
   enableAudioResponses(): void {
+    const wasEnabled = this.audioResponsesEnabled;
     if (!this.options.supportsAudioOutput()) {
       return;
     }
 
-    if (!this.ttsPlayer) {
+    if (!this.options.useNativeVoiceRuntime && !this.ttsPlayer) {
       this.ttsPlayer = new TtsAudioPlayer({
         jitterBufferMs: 200,
         onIdle: () => {
@@ -453,8 +692,8 @@ export class SpeechAudioController {
       });
     }
 
-    this.ttsPlayer.setMuted(false);
-    this.ttsPlayer.setEnabled(true);
+    this.ttsPlayer?.setMuted(false);
+    this.ttsPlayer?.setEnabled(true);
     this.audioResponsesEnabled = true;
     this.options.audioResponsesCheckboxEl.checked = true;
     this.updateMediaSessionPlaybackState();
@@ -464,9 +703,13 @@ export class SpeechAudioController {
       // Ignore localStorage errors
     }
     this.options.sendModesUpdate();
+    if (!wasEnabled) {
+      this.audioResponsesChangeHandler?.(true);
+    }
   }
 
   disableAudioResponses(): void {
+    const wasEnabled = this.audioResponsesEnabled;
     if (this.ttsPlayer) {
       this.ttsPlayer.stop();
     }
@@ -483,6 +726,9 @@ export class SpeechAudioController {
       // Ignore localStorage errors
     }
     this.options.sendModesUpdate();
+    if (wasEnabled) {
+      this.audioResponsesChangeHandler?.(false);
+    }
   }
 
   async startPushToTalk(): Promise<void> {
@@ -490,6 +736,15 @@ export class SpeechAudioController {
       socketState: this.options.getSocket()?.readyState,
     });
     this.logState('start-request');
+    if (this.isUsingNativeVoiceRuntime()) {
+      this.logState('start-native-listen');
+      const started = this.options.nativeVoiceBridge?.startManualListen() ?? false;
+      if (!started) {
+        this.logState('start-abort', { reason: 'native-start-unavailable' });
+      }
+      return;
+    }
+
     const socket = this.options.getSocket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       console.log('[client] startPushToTalk aborted: socket not open');
@@ -624,6 +879,11 @@ export class SpeechAudioController {
   stopPushToTalk(): void {
     const wasActive = this.isSpeechInputActive;
     this.logState('stop-request');
+    if (this.isUsingNativeVoiceRuntime() && this.isNativeInteractionActive()) {
+      this.options.nativeVoiceBridge?.stopCurrentInteraction();
+      this.logState('recording-stopped', { native: true });
+      return;
+    }
     if (!wasActive) {
       this.logState('stop-noop');
       return;
@@ -676,6 +936,15 @@ export class SpeechAudioController {
       this.logState('cancel-step', { step: 'speech-input' });
       this.cancelSpeechInput('cancel-all');
       cancelled = true;
+    }
+
+    if (this.isUsingNativeVoiceRuntime() && this.isNativeInteractionActive()) {
+      this.logState('cancel-step', { step: 'native-voice' });
+      this.options.nativeVoiceBridge?.stopCurrentInteraction();
+      this.options.setStatus('Connected');
+      this.syncMicButtonState();
+      this.logState('cancel-complete', { cancelled: true, native: true });
+      return true;
     }
 
     if (this.isTtsPlaying && this.ttsPlayer) {
@@ -766,16 +1035,35 @@ export class SpeechAudioController {
 
   syncMicButtonState(): void {
     const micButton = this.options.micButtonEl;
+    const isNativeSpeaking = this.isNativeSpeaking();
+    const isNativeListening = this.isNativeListening();
     const shouldShowStop =
-      !this.isSpeechInputActive && !this.isTtsPlaying && this.options.isOutputActive();
+      isNativeListening ||
+      (!this.isUsingNativeVoiceRuntime() &&
+        !this.isSpeechInputActive &&
+        !this.isTtsPlaying &&
+        this.options.isOutputActive());
     micButton.classList.toggle('stopping', shouldShowStop);
+    micButton.classList.toggle('native-speaking', isNativeSpeaking);
+    micButton.classList.toggle('native-listening', isNativeListening);
+    this.renderMicButtonIcon(
+      isNativeSpeaking || this.isTtsPlaying
+        ? 'speaker'
+        : this.isSpeechInputActive || shouldShowStop
+          ? 'stop'
+          : 'microphone',
+    );
 
     if (micButton.disabled) {
       return;
     }
 
     let label = 'Voice input';
-    if (this.isSpeechInputActive) {
+    if (isNativeSpeaking) {
+      label = 'Voice playback active';
+    } else if (isNativeListening) {
+      label = 'Stop listening';
+    } else if (this.isSpeechInputActive) {
       label = 'Stop recording';
     } else if (this.isTtsPlaying || this.options.isOutputActive()) {
       label = 'Stop output';
@@ -785,7 +1073,7 @@ export class SpeechAudioController {
   }
 
   private shouldInterruptOutput(): boolean {
-    return this.isTtsPlaying || this.options.isOutputActive();
+    return this.isTtsPlaying || this.options.isOutputActive() || this.isNativeInteractionActive();
   }
 
   private clearMicPressTimer(): void {
@@ -836,5 +1124,48 @@ export class SpeechAudioController {
     }
     clearTimeout(this.autoRearmTimer);
     this.autoRearmTimer = null;
+  }
+
+  private isUsingNativeVoiceRuntime(): boolean {
+    return Boolean(
+      this.options.useNativeVoiceRuntime &&
+        this.audioResponsesEnabled &&
+        this.options.nativeVoiceBridge?.isAvailable(),
+    );
+  }
+
+  private isNativeInteractionActive(): boolean {
+    return this.isNativeSpeaking() || this.isNativeListening();
+  }
+
+  private isNativeSpeaking(): boolean {
+    return this.isUsingNativeVoiceRuntime() && this.nativeRuntimeState === 'speaking';
+  }
+
+  private isNativeListening(): boolean {
+    return this.isUsingNativeVoiceRuntime() && this.nativeRuntimeState === 'listening';
+  }
+
+  private renderMicButtonIcon(mode: 'microphone' | 'speaker' | 'stop'): void {
+    const svg = this.options.micButtonEl.querySelector<SVGElement>('svg.mic-icon');
+    if (!svg || svg.dataset['mode'] === mode) {
+      return;
+    }
+    svg.dataset['mode'] = mode;
+    if (mode === 'stop') {
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.innerHTML =
+        '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"></rect>';
+      return;
+    }
+    if (mode === 'speaker') {
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.innerHTML =
+        '<path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path>';
+      return;
+    }
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.innerHTML =
+      '<rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z"></path><rect x="11" y="19" width="2" height="3"></rect><path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z"></path>';
   }
 }

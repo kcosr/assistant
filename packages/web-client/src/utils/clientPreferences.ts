@@ -1,4 +1,5 @@
 import type { ShortcutBindingOverrides } from './keyboardShortcuts';
+import { isCapacitorAndroid } from './capacitor';
 
 export interface ClientPreferencesState {
   audioResponsesEnabled: boolean;
@@ -17,7 +18,7 @@ export function loadClientPreferences(options: {
   autoScrollStorageKey: string;
   showContextStorageKey: string;
 }): ClientPreferencesState {
-  let audioResponsesEnabled = false;
+  let audioResponsesEnabled = isCapacitorAndroid();
   let keyboardShortcutsEnabled = true;
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
@@ -25,7 +26,12 @@ export function loadClientPreferences(options: {
   let showContextEnabled = false;
 
   try {
-    audioResponsesEnabled = localStorage.getItem(options.audioResponsesStorageKey) === 'true';
+    const audioResponsesStored = localStorage.getItem(options.audioResponsesStorageKey);
+    if (audioResponsesStored === 'true') {
+      audioResponsesEnabled = true;
+    } else if (audioResponsesStored === 'false') {
+      audioResponsesEnabled = false;
+    }
     const shortcutsStored = localStorage.getItem(options.keyboardShortcutsStorageKey);
     if (shortcutsStored === 'false') {
       keyboardShortcutsEnabled = false;

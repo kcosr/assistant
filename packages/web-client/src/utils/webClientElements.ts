@@ -2,6 +2,7 @@ export interface WebClientElements {
   status: HTMLElement;
   controlsToggleButton: HTMLButtonElement;
   audioResponsesCheckbox: HTMLInputElement;
+  voiceAdapterBaseUrlInput: HTMLInputElement | null;
   includeContextCheckbox: HTMLInputElement | null;
   showContextCheckbox: HTMLInputElement | null;
   listInsertAtTopCheckbox: HTMLInputElement | null;
@@ -55,6 +56,7 @@ export function getWebClientElements(): WebClientElements | null {
   const status = getElement<HTMLElement>('status');
   const controlsToggleButton = getElement<HTMLButtonElement>('controls-toggle-button');
   const audioResponsesCheckbox = getElement<HTMLInputElement>('audio-responses-checkbox');
+  const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
   const includeContextCheckbox = getElement<HTMLInputElement>('include-context-checkbox');
   const showContextCheckbox = getElement<HTMLInputElement>('show-context-checkbox');
   const listInsertAtTopCheckbox = getElement<HTMLInputElement>('list-insert-at-top-checkbox');
@@ -91,6 +93,7 @@ export function getWebClientElements(): WebClientElements | null {
     status,
     controlsToggleButton,
     audioResponsesCheckbox,
+    voiceAdapterBaseUrlInput,
     includeContextCheckbox,
     showContextCheckbox,
     listInsertAtTopCheckbox,
