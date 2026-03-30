@@ -3231,15 +3231,20 @@ async function main(): Promise<void> {
   });
   settingsDropdownController.attach();
   const closeVoiceSettingsModal = (): void => {
+    voiceSettingsModalEl.hidden = true;
+    voiceSettingsModalEl.style.display = 'none';
     voiceSettingsModalEl.classList.remove('open');
     dialogManager.releaseExternalDialog(voiceSettingsModalEl);
   };
   const openVoiceSettingsModal = (): void => {
     settingsDropdownController.close();
+    voiceSettingsModalEl.hidden = false;
+    voiceSettingsModalEl.style.display = 'flex';
     voiceSettingsModalEl.classList.add('open');
     dialogManager.registerExternalDialog(voiceSettingsModalEl, closeVoiceSettingsModal);
     audioModeSelectEl.focus();
   };
+  closeVoiceSettingsModal();
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
   });

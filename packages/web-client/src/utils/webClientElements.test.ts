@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
+import { JSDOM } from 'jsdom';
 
 import { getWebClientElements } from './webClientElements';
 
@@ -45,5 +49,19 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRecognitionEndSilenceInput.id).toBe(
       'voice-recognition-end-silence-input',
     );
+  });
+
+  it('keeps the voice settings modal hidden in the static document', () => {
+    const html = fs.readFileSync(
+      path.resolve(process.cwd(), 'packages/web-client/public/index.html'),
+      'utf8',
+    );
+    const dom = new JSDOM(html);
+    const modal = dom.window.document.getElementById('voice-settings-modal');
+
+    expect(modal).not.toBeNull();
+    expect(modal?.hidden).toBe(true);
+    expect((modal as HTMLElement | null)?.style.display).toBe('none');
+    expect(modal?.parentElement?.tagName).toBe('BODY');
   });
 });
