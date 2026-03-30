@@ -9,6 +9,11 @@ export interface AssistantNativeVoiceSelection {
   sessionId: string;
 }
 
+export interface AssistantNativeVoiceInputDevice {
+  id: string;
+  label: string;
+}
+
 export interface AssistantNativeVoiceSettingsArgs {
   settings: VoiceSettings;
 }
@@ -51,6 +56,10 @@ export interface AssistantNativeVoiceBridgeTarget {
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: () => void | Promise<void>;
+  listInputDevices?:
+    () =>
+      | AssistantNativeVoiceInputDevice[]
+      | Promise<AssistantNativeVoiceInputDevice[]>;
   getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
   addListener?: (
     eventName: 'stateChanged' | 'runtimeError',
@@ -87,6 +96,43 @@ export class AssistantNativeVoiceBridge {
 
   setAssistantBaseUrl(url: string): Promise<boolean> {
     return this.invokeAsync('setAssistantBaseUrl', { url });
+  }
+
+  async listInputDevices(): Promise<AssistantNativeVoiceInputDevice[]> {
+    const target = this.getTarget();
+    if (!target || typeof target.listInputDevices !== 'function') {
+      return [];
+    }
+    try {
+      const result = target.listInputDevices();
+      const resolved = await Promise.resolve(result);
+      const entries = Array.isArray(resolved)
+        ? resolved
+        : (
+            resolved &&
+            typeof resolved === 'object' &&
+            Array.isArray((resolved as { devices?: unknown }).devices)
+          )
+          ? (resolved as { devices: unknown[] }).devices
+          : [];
+      return entries
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return null;
+          }
+          const record = entry as Record<string, unknown>;
+          const id = typeof record['id'] === 'string' ? record['id'].trim() : '';
+          const label = typeof record['label'] === 'string' ? record['label'].trim() : '';
+          if (!id || !label) {
+            return null;
+          }
+          return { id, label };
+        })
+        .filter((entry): entry is AssistantNativeVoiceInputDevice => entry !== null);
+    } catch (error) {
+      console.warn('[client] AssistantNativeVoice.listInputDevices failed', error);
+      return [];
+    }
   }
 
   stopCurrentInteraction(): boolean {
@@ -241,6 +287,7 @@ export interface SpeechAudioControllerOptions {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
@@ -286,6 +333,7 @@ export class SpeechAudioController {
   private voiceSettingsChangeHandler: ((settings: VoiceSettings) => void) | null = null;
   private nativeRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
   private currentVoiceSettings: VoiceSettings;
+  private availableNativeInputDevices: AssistantNativeVoiceInputDevice[] = [];
 
   constructor(private readonly options: SpeechAudioControllerOptions) {
     this.currentVoiceSettings = normalizeVoiceSettings(options.initialVoiceSettings);
@@ -312,6 +360,18 @@ export class SpeechAudioController {
   setNativeRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
     this.nativeRuntimeState = state;
     this.syncMicButtonState();
+  }
+
+  async refreshNativeInputDevices(): Promise<void> {
+    if (!this.options.useNativeVoiceRuntime) {
+      this.availableNativeInputDevices = [];
+      this.syncNativeInputDeviceOptions();
+      return;
+    }
+    this.availableNativeInputDevices = await (
+      this.options.nativeVoiceBridge?.listInputDevices() ?? Promise.resolve([])
+    );
+    this.syncNativeInputDeviceOptions();
   }
 
   private logState(event: string, details: Record<string, unknown> = {}): void {
@@ -611,6 +671,12 @@ export class SpeechAudioController {
     this.options.voiceAdapterBaseUrlInputEl.addEventListener('change', () => {
       this.commitVoiceSettingsFromInputs();
     });
+    this.options.voiceMicInputSelectEl.addEventListener('change', () => {
+      this.setVoiceSettings({
+        ...this.currentVoiceSettings,
+        selectedMicDeviceId: this.options.voiceMicInputSelectEl.value,
+      });
+    });
     this.options.voiceRecognitionStartTimeoutInputEl.addEventListener('change', () => {
       this.commitVoiceSettingsFromInputs();
     });
@@ -634,6 +700,7 @@ export class SpeechAudioController {
     });
 
     this.applyVoiceSettings(this.currentVoiceSettings, { persist: false, notify: false });
+    void this.refreshNativeInputDevices();
 
     this.syncMicButtonState();
     this.attachMediaSessionHandlers();
@@ -763,6 +830,7 @@ export class SpeechAudioController {
         audioMode: this.options.audioModeSelectEl.value,
         autoListenEnabled: this.options.autoListenCheckboxEl.checked,
         voiceAdapterBaseUrl: this.options.voiceAdapterBaseUrlInputEl.value,
+        selectedMicDeviceId: this.options.voiceMicInputSelectEl.value,
         recognitionStartTimeoutMs: this.options.voiceRecognitionStartTimeoutInputEl.value,
         recognitionCompletionTimeoutMs: this.options.voiceRecognitionCompletionTimeoutInputEl.value,
         recognitionEndSilenceMs: this.options.voiceRecognitionEndSilenceInputEl.value,
@@ -861,6 +929,7 @@ export class SpeechAudioController {
         previousEnabled !== nextEnabled ||
         previousSettings.autoListenEnabled !== nextAutoListenEnabled ||
         previousSettings.voiceAdapterBaseUrl !== nextSettings.voiceAdapterBaseUrl ||
+        previousSettings.selectedMicDeviceId !== nextSettings.selectedMicDeviceId ||
         previousSettings.recognitionStartTimeoutMs !== nextSettings.recognitionStartTimeoutMs ||
         previousSettings.recognitionCompletionTimeoutMs !==
           nextSettings.recognitionCompletionTimeoutMs ||
@@ -875,6 +944,7 @@ export class SpeechAudioController {
     this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
     this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
+    this.syncNativeInputDeviceOptions();
     this.options.voiceRecognitionStartTimeoutInputEl.value = String(
       this.currentVoiceSettings.recognitionStartTimeoutMs,
     );
@@ -892,9 +962,47 @@ export class SpeechAudioController {
     this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
     this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
     this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceMicInputSelectEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
+  }
+
+  private syncNativeInputDeviceOptions(): void {
+    const selectEl = this.options.voiceMicInputSelectEl;
+    const selectedMicDeviceId = this.currentVoiceSettings.selectedMicDeviceId;
+    const devices = this.availableNativeInputDevices;
+    const existingValues = new Set<string>();
+    selectEl.replaceChildren();
+
+    const systemDefaultOption = document.createElement('option');
+    systemDefaultOption.value = '';
+    systemDefaultOption.textContent = 'System default';
+    selectEl.appendChild(systemDefaultOption);
+    existingValues.add('');
+
+    for (const device of devices) {
+      if (existingValues.has(device.id)) {
+        continue;
+      }
+      const option = document.createElement('option');
+      option.value = device.id;
+      option.textContent = device.label;
+      selectEl.appendChild(option);
+      existingValues.add(device.id);
+    }
+
+    if (selectedMicDeviceId && !existingValues.has(selectedMicDeviceId)) {
+      const unavailableOption = document.createElement('option');
+      unavailableOption.value = selectedMicDeviceId;
+      unavailableOption.textContent = `Unavailable device [id:${selectedMicDeviceId}]`;
+      selectEl.appendChild(unavailableOption);
+    }
+
+    selectEl.value = selectedMicDeviceId;
+    if (selectEl.value !== selectedMicDeviceId) {
+      selectEl.value = '';
+    }
   }
 
   async startPushToTalk(): Promise<void> {

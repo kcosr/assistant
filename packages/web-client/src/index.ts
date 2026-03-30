@@ -399,6 +399,7 @@ async function main(): Promise<void> {
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
+    voiceMicInputSelect: voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
@@ -884,6 +885,7 @@ async function main(): Promise<void> {
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&
     left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
+    left.selectedMicDeviceId === right.selectedMicDeviceId &&
     left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
     left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
     left.recognitionEndSilenceMs === right.recognitionEndSilenceMs;
@@ -1308,6 +1310,7 @@ async function main(): Promise<void> {
       audioModeSelectEl,
       autoListenCheckboxEl,
       voiceAdapterBaseUrlInputEl,
+      voiceMicInputSelectEl,
       voiceRecognitionStartTimeoutInputEl,
       voiceRecognitionCompletionTimeoutInputEl,
       voiceRecognitionEndSilenceInputEl,
@@ -3242,6 +3245,7 @@ async function main(): Promise<void> {
     voiceSettingsModalEl.style.display = 'flex';
     voiceSettingsModalEl.classList.add('open');
     dialogManager.registerExternalDialog(voiceSettingsModalEl, closeVoiceSettingsModal);
+    void getPrimaryChatInputRuntime()?.speechAudioController?.refreshNativeInputDevices();
     audioModeSelectEl.focus();
   };
   closeVoiceSettingsModal();

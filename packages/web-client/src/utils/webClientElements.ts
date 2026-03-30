@@ -7,6 +7,7 @@ export interface WebClientElements {
   audioModeSelect: HTMLSelectElement;
   autoListenCheckbox: HTMLInputElement;
   voiceAdapterBaseUrlInput: HTMLInputElement;
+  voiceMicInputSelect: HTMLSelectElement;
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
   voiceRecognitionEndSilenceInput: HTMLInputElement;
@@ -68,6 +69,7 @@ export function getWebClientElements(): WebClientElements | null {
   const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
+  const voiceMicInputSelect = getElement<HTMLSelectElement>('voice-mic-input-select');
   const voiceRecognitionStartTimeoutInput = getElement<HTMLInputElement>(
     'voice-recognition-start-timeout-input',
   );
@@ -105,6 +107,7 @@ export function getWebClientElements(): WebClientElements | null {
     !audioModeSelect ||
     !autoListenCheckbox ||
     !voiceAdapterBaseUrlInput ||
+    !voiceMicInputSelect ||
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
     !voiceRecognitionEndSilenceInput ||
@@ -126,6 +129,7 @@ export function getWebClientElements(): WebClientElements | null {
     audioModeSelect,
     autoListenCheckbox,
     voiceAdapterBaseUrlInput,
+    voiceMicInputSelect,
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,
     voiceRecognitionEndSilenceInput,

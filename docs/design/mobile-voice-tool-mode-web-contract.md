@@ -106,6 +106,7 @@ Current fields:
 - `audioMode`
 - `autoListenEnabled`
 - `voiceAdapterBaseUrl`
+- `selectedMicDeviceId`
 - `recognitionStartTimeoutMs`
 - `recognitionCompletionTimeoutMs`
 - `recognitionEndSilenceMs`
@@ -145,6 +146,17 @@ Rules:
 Initial default:
 
 - `https://assistant/agent-voice-adapter`
+
+### Microphone Input
+
+`selectedMicDeviceId` is owned and persisted by the web layer.
+
+Rules:
+
+- empty string means system default microphone routing
+- when native voice is available, web fetches the current Android input-device list from native
+- the `Voice settings` modal renders a selector using those native device labels
+- web pushes the selected device id back through `setVoiceSettings`
 
 ### Recognition Timing
 
@@ -195,6 +207,7 @@ Recommended setter shape:
     "audioMode": "tool",
     "autoListenEnabled": true,
     "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "selectedMicDeviceId": "",
     "recognitionStartTimeoutMs": 30000,
     "recognitionCompletionTimeoutMs": 60000,
     "recognitionEndSilenceMs": 1200

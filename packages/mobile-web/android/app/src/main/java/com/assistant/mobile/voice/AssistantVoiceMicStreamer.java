@@ -71,10 +71,15 @@ final class AssistantVoiceMicStreamer {
     private final Map<Long, CaptureResources> resourcesBySequence = new HashMap<>();
     private Long activeSequence = null;
     private long nextSequence = 1L;
+    private Integer preferredDeviceId = null;
 
     AssistantVoiceMicStreamer(Context context) {
         this.context = context.getApplicationContext();
         this.audioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
+    }
+
+    void setPreferredDeviceId(String deviceId) {
+        preferredDeviceId = parsePreferredDeviceId(deviceId);
     }
 
     boolean start(String requestId, Listener listener) {
@@ -96,7 +101,10 @@ final class AssistantVoiceMicStreamer {
         final int sampleRate = 16000;
         final int channelConfig = AudioFormat.CHANNEL_IN_MONO;
         final int encoding = AudioFormat.ENCODING_PCM_16BIT;
-        final boolean shouldUseCommunicationSource = shouldUseCommunicationSource();
+        final AudioDeviceInfo preferredDevice = preferredDeviceId == null
+            ? null
+            : AssistantVoiceAudioDeviceUtils.findInputDevice(context, preferredDeviceId);
+        final boolean shouldUseCommunicationSource = shouldUseCommunicationSource(preferredDevice);
         final int audioSource = shouldUseCommunicationSource
             ? MediaRecorder.AudioSource.VOICE_COMMUNICATION
             : MediaRecorder.AudioSource.VOICE_RECOGNITION;
@@ -128,6 +136,17 @@ final class AssistantVoiceMicStreamer {
                 stopScoRouting();
             }
             return false;
+        }
+
+        if (preferredDevice != null) {
+            try {
+                boolean assigned = record.setPreferredDevice(preferredDevice);
+                if (!assigned) {
+                    Log.w(TAG, "preferred mic device was not applied: " + preferredDevice.getId());
+                }
+            } catch (Exception error) {
+                Log.w(TAG, "failed to apply preferred mic device: " + preferredDevice.getId(), error);
+            }
         }
 
         final CaptureResources resources = new CaptureResources(
@@ -229,19 +248,42 @@ final class AssistantVoiceMicStreamer {
         }
     }
 
-    private boolean shouldUseCommunicationSource() {
+    private boolean shouldUseCommunicationSource(AudioDeviceInfo preferredDevice) {
         if (audioManager == null) {
             return false;
         }
+        if (preferredDevice != null) {
+            return isBluetoothInputDevice(preferredDevice);
+        }
         for (AudioDeviceInfo device : audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
-            if (
-                device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                device.getType() == AudioDeviceInfo.TYPE_BLE_HEADSET
-            ) {
+            if (isBluetoothInputDevice(device)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isBluetoothInputDevice(AudioDeviceInfo device) {
+        if (device == null) {
+            return false;
+        }
+        return device.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            || device.getType() == AudioDeviceInfo.TYPE_BLE_HEADSET;
+    }
+
+    private static Integer parsePreferredDeviceId(String deviceId) {
+        if (deviceId == null) {
+            return null;
+        }
+        String trimmed = deviceId.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private void startScoRouting() {

@@ -48,14 +48,21 @@ function createVoiceSettingsInputs(): {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
 } {
+  const voiceMicInputSelectEl = document.createElement('select');
+  const defaultOption = document.createElement('option');
+  defaultOption.value = '';
+  defaultOption.textContent = 'System default';
+  voiceMicInputSelectEl.appendChild(defaultOption);
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
     voiceAdapterBaseUrlInputEl: document.createElement('input'),
+    voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
     voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
     voiceRecognitionEndSilenceInputEl: document.createElement('input'),
@@ -67,6 +74,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     audioMode: 'off',
     autoListenEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+    selectedMicDeviceId: '',
     recognitionStartTimeoutMs: 30000,
     recognitionCompletionTimeoutMs: 60000,
     recognitionEndSilenceMs: 1200,
@@ -229,6 +237,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const remove = vi.fn();
     const target = {
       getState: vi.fn(async () => ({ state: 'listening' })),
+      listInputDevices: vi.fn(async () => [{ id: '7', label: 'USB mic [id:7]' }]),
       stopCurrentInteraction: vi.fn(),
       startManualListen: vi.fn(),
       addListener: vi.fn((_eventName: string, _listener: (payload: unknown) => void) => ({
@@ -241,10 +250,12 @@ describe('AssistantNativeVoiceBridge', () => {
     }));
 
     const state = await bridge.getState();
+    const inputDevices = await bridge.listInputDevices();
     const offState = bridge.addStateChangedListener(() => {});
     const offError = bridge.addRuntimeErrorListener(() => {});
 
     expect(state).toEqual({ state: 'listening' });
+    expect(inputDevices).toEqual([{ id: '7', label: 'USB mic [id:7]' }]);
     expect(bridge.stopCurrentInteraction()).toBe(true);
     expect(bridge.startManualListen()).toBe(true);
     expect(target.stopCurrentInteraction).toHaveBeenCalledTimes(1);
@@ -254,6 +265,57 @@ describe('AssistantNativeVoiceBridge', () => {
     offState?.();
     offError?.();
     expect(remove).toHaveBeenCalledTimes(2);
+  });
+
+  it('populates native mic input options and persists selection changes', async () => {
+    ensureWebSocketGlobal();
+
+    const nativeVoiceBridge = {
+      listInputDevices: vi.fn(async () => [
+        { id: '7', label: 'USB mic [id:7]' },
+        { id: '11', label: 'Bluetooth headset mic [id:11]' },
+      ]),
+    } as unknown as AssistantNativeVoiceBridge;
+
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge,
+    });
+
+    controller.attach();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(inputs.voiceMicInputSelectEl.options).toHaveLength(3);
+    expect(inputs.voiceMicInputSelectEl.options[1]?.value).toBe('7');
+    expect(inputs.voiceMicInputSelectEl.options[2]?.value).toBe('11');
+
+    inputs.voiceMicInputSelectEl.value = '11';
+    inputs.voiceMicInputSelectEl.dispatchEvent(new Event('change'));
+
+    expect(controller.voiceSettings.selectedMicDeviceId).toBe('11');
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      selectedMicDeviceId: '11',
+    });
   });
 });
 
@@ -543,6 +605,7 @@ describe('SpeechAudioController.micButtonState', () => {
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
+      voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),

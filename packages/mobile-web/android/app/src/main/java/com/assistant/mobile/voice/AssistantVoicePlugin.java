@@ -9,6 +9,7 @@ import android.os.Build;
 
 import androidx.core.content.ContextCompat;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -121,6 +122,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
             current.autoListenEnabled,
+            current.selectedMicDeviceId,
             current.recognitionStartTimeoutMs,
             current.recognitionCompletionTimeoutMs,
             current.recognitionEndSilenceMs,
@@ -143,6 +145,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
             current.autoListenEnabled,
+            current.selectedMicDeviceId,
             current.recognitionStartTimeoutMs,
             current.recognitionCompletionTimeoutMs,
             current.recognitionEndSilenceMs,
@@ -177,6 +180,20 @@ public final class AssistantVoicePlugin extends Plugin {
             AssistantVoiceRuntimeService.startManualListenIntent(getContext())
         );
         call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
+    public void listInputDevices(PluginCall call) {
+        JSArray devices = new JSArray();
+        for (AssistantVoiceAudioDeviceUtils.InputDeviceOption option : AssistantVoiceAudioDeviceUtils.listInputDevices(getContext())) {
+            JSObject entry = new JSObject();
+            entry.put("id", option.id);
+            entry.put("label", option.label);
+            devices.put(entry);
+        }
+        JSObject payload = new JSObject();
+        payload.put("devices", devices);
+        call.resolve(payload);
     }
 
     @PluginMethod
@@ -276,6 +293,7 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
         voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
+        voiceSettings.put("selectedMicDeviceId", current.selectedMicDeviceId);
         voiceSettings.put("recognitionStartTimeoutMs", current.recognitionStartTimeoutMs);
         voiceSettings.put("recognitionCompletionTimeoutMs", current.recognitionCompletionTimeoutMs);
         voiceSettings.put("recognitionEndSilenceMs", current.recognitionEndSilenceMs);
@@ -304,6 +322,7 @@ public final class AssistantVoicePlugin extends Plugin {
         return new AssistantVoiceConfig(
             settings.optString("audioMode", current.audioMode),
             settings.optBoolean("autoListenEnabled", current.autoListenEnabled),
+            settings.optString("selectedMicDeviceId", current.selectedMicDeviceId),
             settings.optInt(
                 "recognitionStartTimeoutMs",
                 current.recognitionStartTimeoutMs

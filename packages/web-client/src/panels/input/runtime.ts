@@ -73,6 +73,7 @@ export interface InputRuntimeOptions {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
@@ -317,6 +318,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
     voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
+    voiceMicInputSelectEl: options.voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInputEl: options.voiceRecognitionEndSilenceInputEl,

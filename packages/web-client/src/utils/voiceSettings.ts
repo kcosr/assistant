@@ -9,9 +9,17 @@ export interface VoiceSettings {
   audioMode: AudioMode;
   autoListenEnabled: boolean;
   voiceAdapterBaseUrl: string;
+  selectedMicDeviceId: string;
   recognitionStartTimeoutMs: number;
   recognitionCompletionTimeoutMs: number;
   recognitionEndSilenceMs: number;
+}
+
+function normalizeOptionalString(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim();
 }
 
 function normalizeUrl(value: unknown): string {
@@ -43,6 +51,7 @@ export function createDefaultVoiceSettings(options?: {
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
     voiceAdapterBaseUrl: DEFAULT_VOICE_ADAPTER_BASE_URL,
+    selectedMicDeviceId: '',
     recognitionStartTimeoutMs: DEFAULT_RECOGNITION_START_TIMEOUT_MS,
     recognitionCompletionTimeoutMs: DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
     recognitionEndSilenceMs: DEFAULT_RECOGNITION_END_SILENCE_MS,
@@ -68,6 +77,7 @@ export function normalizeVoiceSettings(
         ? record['autoListenEnabled']
         : defaults.autoListenEnabled,
     voiceAdapterBaseUrl: normalizeUrl(record['voiceAdapterBaseUrl']),
+    selectedMicDeviceId: normalizeOptionalString(record['selectedMicDeviceId']),
     recognitionStartTimeoutMs: normalizePositiveInt(
       record['recognitionStartTimeoutMs'],
       defaults.recognitionStartTimeoutMs,

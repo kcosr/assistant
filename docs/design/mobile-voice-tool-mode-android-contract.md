@@ -120,6 +120,7 @@ Current fields:
 - `audioMode`
 - `autoListenEnabled`
 - `voiceAdapterBaseUrl`
+- `selectedMicDeviceId`
 - `recognitionStartTimeoutMs`
 - `recognitionCompletionTimeoutMs`
 - `recognitionEndSilenceMs`
@@ -136,6 +137,13 @@ When the adapter URL changes while voice mode is enabled:
 - stop recognition
 - disconnect from the old adapter endpoint
 - reconnect to the new endpoint
+
+When the selected microphone device changes while voice mode is enabled:
+
+- persist the new device id in native config
+- use system-default routing when the id is empty
+- apply the preferred input device on the next capture session
+- if the chosen device is unavailable, native may fall back to system-default routing
 
 ## Foreground Service
 
@@ -162,6 +170,7 @@ Recommended minimum web-to-native API:
 
 - `stopCurrentInteraction()`
 - `startManualListen()`
+- `listInputDevices()`
 
 ### Native-to-web events
 
@@ -185,6 +194,7 @@ Recommended `setVoiceSettings` payload:
     "audioMode": "tool",
     "autoListenEnabled": true,
     "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "selectedMicDeviceId": "",
     "recognitionStartTimeoutMs": 30000,
     "recognitionCompletionTimeoutMs": 60000,
     "recognitionEndSilenceMs": 1200
