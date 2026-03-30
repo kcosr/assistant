@@ -2,6 +2,7 @@ import type {
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
 } from '@assistant/shared';
+import { stripContextLine } from '../utils/chatMessageRenderer';
 
 type PendingMessage = {
   messageId: string;
@@ -161,7 +162,7 @@ export class PendingMessageListController {
 
       const text = document.createElement('div');
       text.className = 'pending-message-text';
-      text.textContent = item.text;
+      text.textContent = stripContextLine(item.text);
 
       content.appendChild(meta);
       content.appendChild(text);

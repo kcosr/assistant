@@ -17,7 +17,7 @@
 - Fixed native voice interaction state sync, mic-button/typing behavior, and Android microphone selection so the mobile voice flow stays aligned between the web client, native runtime, and session rendering. ([#71](https://github.com/kcosr/assistant/pull/71))
 - Fixed visible chat panels to jump to the latest message when a new turn starts, so text and voice submissions reliably bring the transcript back to the bottom. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
 - Fixed chat context handling so disabling the input context toggle removes the preview immediately and native voice submits prepend the same `<context ... />` blob as normal text turns when context is enabled. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
-- Fixed rendered `user_audio` bubbles to hide the prepended `<context ... />` line the same way normal text user bubbles already do. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
+- Fixed live and replayed voice-submit UI to hide the prepended `<context ... />` line in both rendered `user_audio` bubbles and pending queued-message text. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
 
 ### Removed
 
