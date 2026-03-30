@@ -79,9 +79,17 @@ If the selected session changes during an active interaction:
 ### `voice_ask`
 
 - play prompt text through `agent-voice-adapter`
-- after natural playback completion, start recognition
-- if the user manually interrupts playback, start recognition immediately
+- after natural playback completion, start recognition only when `Auto-listen` is enabled
+- if the user manually interrupts playback, start recognition immediately only when
+  `Auto-listen` is enabled
 - while listening, manual stop cancels recognition
+
+### `assistant_response`
+
+- when `Audio Mode` is `Response`, play the final assistant response through `agent-voice-adapter`
+- after natural playback completion, start recognition only when `Auto-listen` is enabled
+- if the user manually interrupts playback, start recognition immediately only when
+  `Auto-listen` is enabled
 
 ## Spoken Submit Contract
 
@@ -136,6 +144,7 @@ Recommended minimum web-to-native API:
 ### Config setters
 
 - `setAudioMode({ mode: 'off' | 'tool' | 'response' })`
+- `setAutoListenEnabled({ enabled: boolean })`
 - `setSelectedSession({ selection: { panelId, sessionId } | null })`
 - `setVoiceAdapterBaseUrl({ url: string })`
 - `setAssistantBaseUrl({ url: string })`

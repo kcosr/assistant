@@ -13,6 +13,7 @@ import { loadClientPreferences } from './clientPreferences';
 
 const defaultOptions = {
   audioModeStorageKey: 'audio-mode',
+  autoListenStorageKey: 'auto-listen',
   keyboardShortcutsStorageKey: 'shortcuts',
   keyboardShortcutsBindingsStorageKey: 'shortcut-bindings',
   autoFocusChatStorageKey: 'autofocus',
@@ -31,6 +32,7 @@ describe('loadClientPreferences', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
     expect(preferences.audioMode).toBe('off');
+    expect(preferences.autoListenEnabled).toBe(false);
   });
 
   it('defaults tool audio mode on in Capacitor Android when unset', () => {
@@ -39,6 +41,7 @@ describe('loadClientPreferences', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
     expect(preferences.audioMode).toBe('tool');
+    expect(preferences.autoListenEnabled).toBe(true);
   });
 
   it('respects an explicit stored response mode on Capacitor Android', () => {
@@ -48,5 +51,14 @@ describe('loadClientPreferences', () => {
     const preferences = loadClientPreferences(defaultOptions);
 
     expect(preferences.audioMode).toBe('response');
+  });
+
+  it('respects an explicit stored false auto-listen value on Capacitor Android', () => {
+    isCapacitorAndroid.mockReturnValue(true);
+    localStorage.setItem(defaultOptions.autoListenStorageKey, 'false');
+
+    const preferences = loadClientPreferences(defaultOptions);
+
+    expect(preferences.autoListenEnabled).toBe(false);
   });
 });

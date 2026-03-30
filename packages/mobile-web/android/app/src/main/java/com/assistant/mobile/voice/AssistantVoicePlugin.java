@@ -117,6 +117,30 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setAutoListenEnabled(PluginCall call) {
+        Boolean enabled = call.getBoolean(AssistantVoiceConfig.EXTRA_AUTO_LISTEN_ENABLED, null);
+        if (enabled == null) {
+            enabled = call.getBoolean("enabled", null);
+        }
+        if (enabled == null) {
+            call.reject("enabled is required");
+            return;
+        }
+
+        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+        AssistantVoiceConfig updated = new AssistantVoiceConfig(
+            current.audioMode,
+            enabled,
+            current.selectedPanelId,
+            current.selectedSessionId,
+            current.voiceAdapterBaseUrl,
+            current.assistantBaseUrl
+        );
+        applyConfig(updated);
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void setSelectedSession(PluginCall call) {
         JSONObject selection = call.getData().optJSONObject("selection");
         String panelId = selection == null
@@ -129,6 +153,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
+            current.autoListenEnabled,
             panelId,
             sessionId,
             current.voiceAdapterBaseUrl,
@@ -147,6 +172,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
+            current.autoListenEnabled,
             current.selectedPanelId,
             current.selectedSessionId,
             url,
@@ -165,6 +191,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             current.audioMode,
+            current.autoListenEnabled,
             current.selectedPanelId,
             current.selectedSessionId,
             current.voiceAdapterBaseUrl,
@@ -266,6 +293,7 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = new AssistantVoiceConfig(
             mode,
+            current.autoListenEnabled,
             current.selectedPanelId,
             current.selectedSessionId,
             current.voiceAdapterBaseUrl,
@@ -306,6 +334,7 @@ public final class AssistantVoicePlugin extends Plugin {
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
         payload.put("audioMode", current.audioMode);
+        payload.put("autoListenEnabled", current.autoListenEnabled);
         payload.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);

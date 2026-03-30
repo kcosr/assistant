@@ -566,7 +566,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         String status = trim(message.optString("status"));
-        boolean startsListening = "voice_ask".equals(activePromptToolName);
+        boolean startsListening = AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback(
+            activePromptToolName,
+            config.autoListenEnabled
+        );
         activeTtsRequestId = "";
 
         if ("completed".equals(status)) {
@@ -596,7 +599,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         if (shouldStartListening) {
-            startRecognition(activePromptSessionId, "voice_ask_completion");
+            startRecognition(activePromptSessionId, "playback_completion");
             return;
         }
         clearActivePromptContext();
@@ -735,7 +738,11 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         if (transitionToRecognition && !speakingSessionId.isEmpty()) {
             boolean allowPromptFollowup = AssistantVoiceInteractionRules
-                .shouldStartRecognitionAfterManualStop(speakingToolName, "manual_listen".equals(reason));
+                .shouldStartRecognitionAfterManualStop(
+                    speakingToolName,
+                    "manual_listen".equals(reason),
+                    config.autoListenEnabled
+                );
             if (allowPromptFollowup) {
                 startRecognition(speakingSessionId, reason);
                 return;

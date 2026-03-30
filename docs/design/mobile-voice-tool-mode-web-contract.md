@@ -111,6 +111,19 @@ Existing touchpoints:
 - `packages/web-client/src/controllers/speechAudioController.ts`
 - `packages/web-client/src/utils/clientPreferences.ts`
 
+### Auto-listen
+
+The `Auto-listen` preference is the source of truth for whether playback automatically transitions
+into recognition.
+
+Rules:
+
+- applies only when `Audio Mode` is not `Off`
+- when disabled, `voice_ask` and `Response` playback stop after speaking instead of auto-starting
+  STT
+- when enabled, `voice_ask` and `Response` playback may transition directly into STT
+- manual long-press listen remains available regardless of this setting
+
 ### Adapter URL
 
 The web layer must own and persist the `agent-voice-adapter` base URL.
@@ -131,6 +144,7 @@ Requirements:
 The web layer must be able to push the following state into native:
 
 - audio mode
+- auto-listen enabled
 - selected panel/session
 - Assistant base URL if needed by native submit logic
 - `agent-voice-adapter` base URL

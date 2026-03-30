@@ -1,8 +1,10 @@
 import type { ShortcutBindingOverrides } from './keyboardShortcuts';
 import { normalizeAudioMode, type AudioMode } from './audioMode';
+import { isCapacitorAndroid } from './capacitor';
 
 export interface ClientPreferencesState {
   audioMode: AudioMode;
+  autoListenEnabled: boolean;
   keyboardShortcutsEnabled: boolean;
   keyboardShortcutBindings: ShortcutBindingOverrides | null;
   autoFocusChatOnSessionReady: boolean;
@@ -12,6 +14,7 @@ export interface ClientPreferencesState {
 
 export function loadClientPreferences(options: {
   audioModeStorageKey: string;
+  autoListenStorageKey: string;
   keyboardShortcutsStorageKey: string;
   keyboardShortcutsBindingsStorageKey: string;
   autoFocusChatStorageKey: string;
@@ -19,6 +22,7 @@ export function loadClientPreferences(options: {
   showContextStorageKey: string;
 }): ClientPreferencesState {
   let audioMode = normalizeAudioMode(null);
+  let autoListenEnabled = isCapacitorAndroid();
   let keyboardShortcutsEnabled = true;
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
@@ -27,6 +31,12 @@ export function loadClientPreferences(options: {
 
   try {
     audioMode = normalizeAudioMode(localStorage.getItem(options.audioModeStorageKey));
+    const autoListenStored = localStorage.getItem(options.autoListenStorageKey);
+    if (autoListenStored === 'true') {
+      autoListenEnabled = true;
+    } else if (autoListenStored === 'false') {
+      autoListenEnabled = false;
+    }
     const shortcutsStored = localStorage.getItem(options.keyboardShortcutsStorageKey);
     if (shortcutsStored === 'false') {
       keyboardShortcutsEnabled = false;
@@ -56,6 +66,7 @@ export function loadClientPreferences(options: {
 
   return {
     audioMode,
+    autoListenEnabled,
     keyboardShortcutsEnabled,
     keyboardShortcutBindings,
     autoFocusChatOnSessionReady,
@@ -77,6 +88,21 @@ export function initializeAudioModeSelect(options: {
 
   options.select.value = options.initialAudioMode;
   return options.initialAudioMode;
+}
+
+export function initializeAutoListenCheckbox(options: {
+  checkbox: HTMLInputElement;
+  initialAutoListenEnabled: boolean;
+  supportsAudioOutput: boolean;
+}): boolean {
+  if (!options.supportsAudioOutput) {
+    options.checkbox.disabled = true;
+    options.checkbox.checked = false;
+    return false;
+  }
+
+  options.checkbox.checked = options.initialAutoListenEnabled;
+  return options.initialAutoListenEnabled;
 }
 
 export function wirePreferencesCheckboxes(options: {

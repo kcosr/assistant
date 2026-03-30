@@ -16,6 +16,7 @@ final class AssistantVoiceConfig {
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
+    private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
@@ -24,12 +25,14 @@ final class AssistantVoiceConfig {
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
+    static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
     static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
 
     final String audioMode;
+    final boolean autoListenEnabled;
     final String selectedPanelId;
     final String selectedSessionId;
     final String voiceAdapterBaseUrl;
@@ -37,12 +40,14 @@ final class AssistantVoiceConfig {
 
     AssistantVoiceConfig(
         String audioMode,
+        boolean autoListenEnabled,
         String selectedPanelId,
         String selectedSessionId,
         String voiceAdapterBaseUrl,
         String assistantBaseUrl
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
+        this.autoListenEnabled = autoListenEnabled;
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
         this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
@@ -59,6 +64,7 @@ final class AssistantVoiceConfig {
         SharedPreferences prefs = prefs(context);
         return new AssistantVoiceConfig(
             prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
+            prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
@@ -70,6 +76,7 @@ final class AssistantVoiceConfig {
         prefs(context)
             .edit()
             .putString(KEY_AUDIO_MODE, config.audioMode)
+            .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
@@ -85,6 +92,7 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_AUDIO_MODE)
                 ? intent.getStringExtra(EXTRA_AUDIO_MODE)
                 : fallback.audioMode,
+            intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
             intent.hasExtra(EXTRA_SELECTED_PANEL_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_PANEL_ID)
                 : fallback.selectedPanelId,
@@ -102,6 +110,7 @@ final class AssistantVoiceConfig {
 
     Intent applyToIntent(Intent intent) {
         intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
+        intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
@@ -176,6 +185,7 @@ final class AssistantVoiceConfig {
         }
         AssistantVoiceConfig config = (AssistantVoiceConfig) other;
         return Objects.equals(audioMode, config.audioMode)
+            && autoListenEnabled == config.autoListenEnabled
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
@@ -186,6 +196,7 @@ final class AssistantVoiceConfig {
     public int hashCode() {
         return Objects.hash(
             audioMode,
+            autoListenEnabled,
             selectedPanelId,
             selectedSessionId,
             voiceAdapterBaseUrl,

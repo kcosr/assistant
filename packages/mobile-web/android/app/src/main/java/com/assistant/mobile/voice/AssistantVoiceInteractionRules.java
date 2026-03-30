@@ -31,7 +31,22 @@ final class AssistantVoiceInteractionRules {
     }
 
     static boolean shouldStartRecognitionAfterManualStop(String toolName, boolean manualListenRequested) {
-        return manualListenRequested || "voice_ask".equals(toolName);
+        return shouldStartRecognitionAfterManualStop(toolName, manualListenRequested, false);
+    }
+
+    static boolean shouldStartRecognitionAfterManualStop(
+        String toolName,
+        boolean manualListenRequested,
+        boolean autoListenEnabled
+    ) {
+        return manualListenRequested || shouldStartRecognitionAfterPlayback(toolName, autoListenEnabled);
+    }
+
+    static boolean shouldStartRecognitionAfterPlayback(String toolName, boolean autoListenEnabled) {
+        if (!autoListenEnabled) {
+            return false;
+        }
+        return "voice_ask".equals(toolName) || "assistant_response".equals(toolName);
     }
 
     static boolean shouldSendSttEndAfterMicStops(String activeRequestId, String stoppedRequestId) {

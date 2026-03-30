@@ -16,9 +16,10 @@ describe('createInputRuntime', () => {
       <button></button>
       <button><svg class="mic-icon"></svg></button>
       <select><option value="off">Off</option><option value="tool">Tool</option><option value="response">Response</option></select>
+      <input type="checkbox" />
     `;
 
-    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select] = Array.from(
+    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] = Array.from(
       document.body.children,
     ) as [
       HTMLFormElement,
@@ -27,6 +28,7 @@ describe('createInputRuntime', () => {
       HTMLButtonElement,
       HTMLButtonElement,
       HTMLSelectElement,
+      HTMLInputElement,
     ];
 
     const send = vi.fn();
@@ -70,11 +72,14 @@ describe('createInputRuntime', () => {
       getAgentDisplayName: () => 'Agent',
       cancelQueuedMessage: vi.fn(),
       audioModeSelectEl: select,
+      autoListenCheckboxEl: autoListenCheckbox,
       initialIncludePanelContext: true,
       initialBriefModeEnabled: false,
       speechFeaturesEnabled: false,
       initialAudioMode: 'tool',
+      initialAutoListenEnabled: true,
       audioModeStorageKey: 'test-audio-mode',
+      autoListenStorageKey: 'test-auto-listen',
       continuousListeningLongPressMs: 250,
       useNativeVoiceRuntime: true,
       nativeVoiceBridge,

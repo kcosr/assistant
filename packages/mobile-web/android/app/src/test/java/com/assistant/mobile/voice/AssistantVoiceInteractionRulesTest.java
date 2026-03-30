@@ -63,10 +63,43 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
-    public void onlyVoiceAskTransitionsToRecognitionAfterStopUnlessManualListenWasRequested() {
-        assertTrue(AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop("voice_ask", false));
-        assertFalse(AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop("voice_speak", false));
-        assertTrue(AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop("voice_speak", true));
+    public void autoListenControlsRecognitionAfterPlaybackAndManualStop() {
+        assertFalse(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback("voice_ask", false)
+        );
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback("voice_ask", true)
+        );
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback(
+                "assistant_response",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback("voice_speak", true)
+        );
+        assertFalse(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop(
+                "voice_ask",
+                false,
+                false
+            )
+        );
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop(
+                "voice_ask",
+                false,
+                true
+            )
+        );
+        assertTrue(
+            AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop(
+                "voice_speak",
+                true,
+                false
+            )
+        );
     }
 
     @Test

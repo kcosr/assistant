@@ -12,6 +12,7 @@ describe('getWebClientElements', () => {
     document.body.innerHTML = `
       <button id="controls-toggle-button"></button>
       <select id="audio-mode-select"></select>
+      <input id="auto-listen-checkbox" type="checkbox" />
       <input id="voice-adapter-base-url-input" type="url" />
       <input id="autofocus-chat-checkbox" type="checkbox" />
       <input id="keyboard-shortcuts-checkbox" type="checkbox" />
@@ -24,6 +25,7 @@ describe('getWebClientElements', () => {
 
     expect(elements).not.toBeNull();
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
+    expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
     expect(elements?.voiceAdapterBaseUrlInput?.id).toBe('voice-adapter-base-url-input');
   });
 });

@@ -11,7 +11,7 @@ import {
   SpeechAudioController,
 } from '../../controllers/speechAudioController';
 import { TextInputController } from '../../controllers/textInputController';
-import { initializeAudioModeSelect } from '../../utils/clientPreferences';
+import { initializeAudioModeSelect, initializeAutoListenCheckbox } from '../../utils/clientPreferences';
 import type { AudioMode } from '../../utils/audioMode';
 import { isCapacitorAndroid } from '../../utils/capacitor';
 import type { ChatRuntime } from '../chat/runtime';
@@ -71,13 +71,16 @@ export interface InputRuntimeOptions {
   getAgentDisplayName: (agentId: string) => string;
   cancelQueuedMessage: (messageId: string) => void;
   audioModeSelectEl: HTMLSelectElement;
+  autoListenCheckboxEl: HTMLInputElement;
   initialIncludePanelContext: boolean;
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
   onBriefModeChange?: (enabled: boolean) => void;
   speechFeaturesEnabled: boolean;
   initialAudioMode: AudioMode;
+  initialAutoListenEnabled: boolean;
   audioModeStorageKey: string;
+  autoListenStorageKey: string;
   continuousListeningLongPressMs: number;
   useNativeVoiceRuntime?: boolean | undefined;
   nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
@@ -102,6 +105,7 @@ export interface InputRuntime {
   getBriefModeEnabled: () => boolean;
   sendModesUpdate: () => void;
   getAudioMode: () => AudioMode;
+  getAutoListenEnabled: () => boolean;
   supportsAudioOutput: () => boolean;
 }
 
@@ -291,6 +295,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     initialAudioMode: options.initialAudioMode,
     supportsAudioOutput: supportsAudioOutput(),
   });
+  const autoListenEnabled = initializeAutoListenCheckbox({
+    checkbox: options.autoListenCheckboxEl,
+    initialAutoListenEnabled: options.initialAutoListenEnabled,
+    supportsAudioOutput: supportsAudioOutput(),
+  });
 
   const sendModesUpdate = (): void => {
     const socket = options.getSocket();
@@ -312,6 +321,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     speechInputController,
     micButtonEl: elements.micButtonEl,
     audioModeSelectEl: options.audioModeSelectEl,
+    autoListenCheckboxEl: options.autoListenCheckboxEl,
     inputEl: elements.inputEl,
     getSocket: options.getSocket,
     getSessionId: options.getSelectedSessionId,
@@ -326,8 +336,10 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       getActiveChatRuntime()?.chatScrollManager.updateScrollButtonVisibility();
     },
     audioModeStorageKey: options.audioModeStorageKey,
+    autoListenStorageKey: options.autoListenStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
     initialAudioMode: audioMode,
+    initialAutoListenEnabled: autoListenEnabled,
     useNativeVoiceRuntime: options.useNativeVoiceRuntime,
     nativeVoiceBridge: options.nativeVoiceBridge,
   });
@@ -397,6 +409,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getBriefModeEnabled: () => briefModeEnabled,
     sendModesUpdate,
     getAudioMode: () => speechAudioController?.audioMode ?? audioMode,
+    getAutoListenEnabled: () => speechAudioController?.autoListenEnabled ?? autoListenEnabled,
     supportsAudioOutput,
   };
 }
