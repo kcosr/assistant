@@ -5,10 +5,15 @@
 ### Breaking Changes
 
 ### Added
+- Added Android native voice playback and recognition support for assistant voice tool prompts and final response playback, including foreground-service runtime handling and committed mobile voice bridge integration. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
+- Added unified voice settings with `Audio Mode`, `Auto-listen`, adapter URL, microphone input selection, and per-request recognition timing controls in the web/mobile client. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
 
 ### Changed
+- Changed chat rendering so `voice_speak`, `voice_ask`, and `user_audio` render as dedicated voice bubbles instead of generic tool/output treatment. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
+- Changed backend session/audio handling so spoken submits publish `user_audio`, `sessions.message` advertises audio-submit metadata, and replay/projection paths treat spoken input consistently with normal user text. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
 
 ### Fixed
+- Fixed native voice interaction state sync, mic-button/typing behavior, and Android microphone selection so the mobile voice flow stays aligned between the web client, native runtime, and session rendering. ([#TODO](https://github.com/kcosr/assistant/pull/TODO))
 
 ### Removed
 
