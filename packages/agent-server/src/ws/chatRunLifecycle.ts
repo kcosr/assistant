@@ -29,10 +29,11 @@ import {
   resolveChatProvider,
   runChatCompletionCore,
 } from '../chatRunCore';
+import { finalizeChatTurn } from '../chatTurnFinalization';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { resolveVisibleAssistantText } from '../piAssistantText';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
-import { attachPiSdkMessageToLastAssistant, buildMessagesForPiSync } from '../history/piSessionSync';
+import { buildMessagesForPiSync } from '../history/piSessionSync';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -243,6 +244,7 @@ export async function handleTextInputWithChatCompletions(options: {
   const userMessage: ChatCompletionMessage = {
     role: 'user',
     content: text,
+    historyTimestampMs: Date.now(),
   };
   state.chatMessages.push(userMessage);
 
@@ -310,6 +312,27 @@ export async function handleTextInputWithChatCompletions(options: {
 
   let fullText = '';
   let thinkingText = '';
+  const buildInterruptedAssistantEvents = (): ChatEvent[] => {
+    const run = state.activeChatRun;
+    const partialText = run?.accumulatedText?.trim() ?? '';
+    if (!run?.turnId || !partialText) {
+      return [];
+    }
+    return [
+      {
+        ...createChatEventBase({
+          sessionId,
+          turnId: run.turnId,
+          ...(run.responseId ? { responseId: run.responseId } : {}),
+        }),
+        type: 'assistant_done',
+        payload: {
+          text: partialText,
+          interrupted: true,
+        },
+      },
+    ];
+  };
 
   try {
     const output = createBroadcastOutputAdapter(sessionHub, sessionId);
@@ -339,26 +362,6 @@ export async function handleTextInputWithChatCompletions(options: {
 
     const wasAborted = runResult.aborted || abortController.signal.aborted;
     if (wasAborted) {
-      const wasOutputCancelled = state.activeChatRun?.outputCancelled === true;
-      if (shouldEmitChatEvents && eventStore && turnId && !wasOutputCancelled) {
-        void appendAndBroadcastChatEvents(
-          {
-            eventStore,
-            sessionHub,
-            sessionId,
-          },
-          [
-            {
-              ...createChatEventBase({
-                sessionId,
-                ...(turnId ? { turnId } : {}),
-              }),
-              type: 'turn_end',
-              payload: {},
-            },
-          ],
-        );
-      }
       // If the run was aborted before any assistant message was added (e.g. cancel
       // during streaming before tool calls), the user message we pushed above is
       // left dangling.  Remove it so the next turn doesn't send two consecutive
@@ -368,41 +371,34 @@ export async function handleTextInputWithChatCompletions(options: {
         state.chatMessages.pop();
       }
 
-      if (piSessionWriter && runResult.provider === 'pi') {
-        try {
-          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
-          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
-          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
-          const messagesForPiSync = runResult.piReplayMessages ?? state.chatMessages;
-          const messages = attachPiSdkMessageToLastAssistant({
-            messages: messagesForPiSync,
-            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
-          });
-          const updatedSummary = await piSessionWriter.sync({
-            summary: state.summary,
-            messages,
-            ...(modelSpec ? { modelSpec } : {}),
-            ...(defaultProvider ? { defaultProvider } : {}),
-            ...(thinkingLevel ? { thinkingLevel } : {}),
-            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-          });
-          if (updatedSummary) {
-            state.summary = updatedSummary;
-          }
-          if (turnId) {
-            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
-              summary: state.summary,
-              turnId,
-              status: 'interrupted',
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-            if (updatedSummaryAfterTurnEnd) {
-              state.summary = updatedSummaryAfterTurnEnd;
+      const timedOut =
+        runResult.abortReason === 'timeout' || abortController.signal.reason === 'timeout';
+      await finalizeChatTurn({
+        sessionId,
+        state,
+        sessionHub,
+        run: state.activeChatRun,
+        log,
+        eventStore,
+        ...(timedOut
+          ? {
+              interruptReason: 'timeout' as const,
+              error: {
+                code: 'upstream_timeout',
+                message: 'Chat backend request timed out',
+              },
+              prependEvents: buildInterruptedAssistantEvents(),
             }
-          }
-        } catch (err) {
-          log('failed to sync Pi session history', err);
-        }
+          : {}),
+        ...(runResult.provider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
+      });
+      if (timedOut) {
+        sendError(
+          'upstream_timeout',
+          'Chat backend request timed out',
+          undefined,
+          { retryable: true },
+        );
       }
       return;
     }
@@ -480,9 +476,18 @@ export async function handleTextInputWithChatCompletions(options: {
           ? `${visibleAssistant.text.slice(0, 117)}…`
           : visibleAssistant.text,
       );
+      const assistantTimestampMs =
+        (runResult.piSdkMessage &&
+        runResult.piSdkMessage.role === 'assistant' &&
+        Number.isFinite(runResult.piSdkMessage.timestamp)
+          ? runResult.piSdkMessage.timestamp
+          : undefined) ??
+        (active?.textStartedAt ? Date.parse(active.textStartedAt) : undefined) ??
+        Date.now();
       state.chatMessages.push({
         role: 'assistant',
         content: visibleAssistant.text,
+        historyTimestampMs: assistantTimestampMs,
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 
@@ -494,6 +499,7 @@ export async function handleTextInputWithChatCompletions(options: {
           const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
             role: 'assistant',
             content: visibleAssistant.text,
+            historyTimestampMs: assistantTimestampMs,
             ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
           };
           const messagesForPiSync = buildMessagesForPiSync({
@@ -512,45 +518,55 @@ export async function handleTextInputWithChatCompletions(options: {
           if (updatedSummary) {
             state.summary = updatedSummary;
           }
-          if (turnId) {
-            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
-              summary: state.summary,
-              turnId,
-              status: 'completed',
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-            if (updatedSummaryAfterTurnEnd) {
-              state.summary = updatedSummaryAfterTurnEnd;
-            }
-          }
         } catch (err) {
           log('failed to sync Pi session history', err);
         }
       }
     }
 
-    // Always send turn_end when the run completes (not aborted) to hide typing indicators
-    if (!abortController.signal.aborted && shouldEmitChatEvents && eventStore && turnId) {
-      void appendAndBroadcastChatEvents(
-        {
-          eventStore,
-          sessionHub,
-          sessionId,
-        },
-        [
-          {
-            ...createChatEventBase({
-              sessionId,
-              ...(turnId ? { turnId } : {}),
-            }),
-            type: 'turn_end',
-            payload: {},
-          },
-        ],
-      );
-    }
+    await finalizeChatTurn({
+      sessionId,
+      state,
+      sessionHub,
+      run: state.activeChatRun,
+      log,
+      eventStore,
+      ...(chatProvider === 'pi' ? { piTurnEndStatus: 'completed' as const } : {}),
+    });
   } catch (err) {
-    if (abortController.signal.aborted) {
+    const timedOut = abortController.signal.reason === 'timeout';
+    if (state.activeChatRun?.outputCancelled === true) {
+      return;
+    }
+    await finalizeChatTurn({
+      sessionId,
+      state,
+      sessionHub,
+      run: state.activeChatRun,
+      log,
+      eventStore,
+      interruptReason: timedOut ? 'timeout' : 'error',
+      error: {
+        code: timedOut ? 'upstream_timeout' : isChatRunError(err) ? err.code : 'upstream_error',
+        message:
+          timedOut
+            ? 'Chat backend request timed out'
+            : isChatRunError(err)
+              ? err.message
+              : 'Chat backend error',
+      },
+      prependEvents: buildInterruptedAssistantEvents(),
+      ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
+    });
+    if (timedOut) {
+      sendError(
+        'upstream_timeout',
+        'Chat backend request timed out',
+        undefined,
+        {
+          retryable: true,
+        },
+      );
       return;
     }
     if (isChatRunError(err)) {

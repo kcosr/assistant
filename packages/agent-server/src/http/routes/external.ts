@@ -63,7 +63,7 @@ export const handleExternalRoutes: HttpRouteHandler = async (
 
     const state = context.sessionHub.getSessionState(sessionId);
     if (state) {
-      state.chatMessages.push({ role: 'assistant', content: text });
+      state.chatMessages.push({ role: 'assistant', content: text, historyTimestampMs: Date.now() });
     }
 
     const message: ServerTextDoneMessage = {

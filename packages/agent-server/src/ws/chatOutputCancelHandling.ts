@@ -3,7 +3,8 @@ import type { ChatEvent } from '@assistant/shared';
 
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { EventStore } from '../events';
-import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
+import { createChatEventBase } from '../events/chatEventUtils';
+import { finalizeChatTurn } from '../chatTurnFinalization';
 
 export interface ActiveChatRunState {
   sessionId: string;
@@ -62,12 +63,9 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   }
 
   const activeToolCalls = run.activeToolCalls;
-  const hadActiveToolCalls = !!(activeToolCalls && activeToolCalls.size > 0);
 
   const partialText = run.accumulatedText;
   const hasPartialText = partialText.trim().length > 0;
-  const hasOutputActivity =
-    Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || hasPartialText;
   const shouldEmitInterrupt = Boolean(run.turnId);
 
   const toolResultEvents: ChatEvent[] = [];
@@ -88,6 +86,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         role: 'tool',
         tool_call_id: call.callId,
         content: toolMessageContent,
+        historyTimestampMs: Date.now(),
       });
 
       const messagePayload: ServerToolResultMessage = {
@@ -118,100 +117,37 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     activeToolCalls.clear();
   }
 
-  // Best-effort: emit a unified interrupt event so ChatRenderer can render
-  // cancellation consistently with other chat events.
-  if (eventStore && shouldEmitInterrupt) {
-    const turnId = run.turnId;
-    const responseId = run.responseId;
-    const events: ChatEvent[] = [];
-    if (hasPartialText) {
-      events.push({
-        ...createChatEventBase({
-          sessionId,
-          ...(turnId ? { turnId } : {}),
-          ...(responseId ? { responseId } : {}),
-        }),
-        type: 'assistant_done',
-        payload: {
-          text: partialText,
-          interrupted: true,
-        },
-      });
-    }
-    events.push(...toolResultEvents);
-    events.push(
-      {
-        ...createChatEventBase({
-          sessionId,
-          ...(turnId ? { turnId } : {}),
-          ...(responseId ? { responseId } : {}),
-        }),
-        type: 'interrupt',
-        payload: { reason: 'user_cancel' },
-      },
-      {
-        ...createChatEventBase({
-          sessionId,
-          ...(turnId ? { turnId } : {}),
-        }),
-        type: 'turn_end',
-        payload: {},
-      },
-    );
-    void appendAndBroadcastChatEvents(
-      {
-        eventStore,
-        sessionHub,
+  const events: ChatEvent[] = [];
+  if (hasPartialText) {
+    events.push({
+      ...createChatEventBase({
         sessionId,
+        ...(run.turnId ? { turnId: run.turnId } : {}),
+        ...(run.responseId ? { responseId: run.responseId } : {}),
+      }),
+      type: 'assistant_done',
+      payload: {
+        text: partialText,
+        interrupted: true,
       },
-      events,
-    );
+    });
   }
+  events.push(...toolResultEvents);
 
-  const piSessionWriter = sessionHub.getPiSessionWriter?.();
-  if (piSessionWriter && run.turnId) {
-    const agentId = state.summary.agentId;
-    const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
-    if (agent?.chat?.provider === 'pi' || agent?.chat?.provider === 'pi-cli') {
-      void (async () => {
-        try {
-          if (!eventStore && hasPartialText) {
-            await piSessionWriter.appendAssistantEvent({
-              summary: state.summary,
-              eventType: 'assistant_done',
-              payload: {
-                text: partialText,
-                interrupted: true,
-              },
-              ...(run.turnId ? { turnId: run.turnId } : {}),
-              ...(run.responseId ? { responseId: run.responseId } : {}),
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-          }
-          if (!eventStore && shouldEmitInterrupt) {
-            await piSessionWriter.appendAssistantEvent({
-              summary: state.summary,
-              eventType: 'interrupt',
-              payload: { reason: 'user_cancel' },
-              ...(run.turnId ? { turnId: run.turnId } : {}),
-              ...(run.responseId ? { responseId: run.responseId } : {}),
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-          }
-          if (run.turnId) {
-            await piSessionWriter.appendTurnEnd({
-              summary: state.summary,
-              turnId: run.turnId,
-              status: 'interrupted',
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-          }
-        } catch (err) {
-          log('failed to persist interrupt into Pi session history', err);
-        }
-      })();
-    }
-  }
+  const agentId = state.summary.agentId;
+  const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
+  const shouldPersistPiTurnEnd = agent?.chat?.provider === 'pi' || agent?.chat?.provider === 'pi-cli';
+  void finalizeChatTurn({
+    sessionId,
+    state,
+    sessionHub,
+    run,
+    log,
+    ...(eventStore ? { eventStore } : {}),
+    ...(shouldEmitInterrupt ? { interruptReason: 'user_cancel' as const } : {}),
+    ...(events.length > 0 ? { prependEvents: events } : {}),
+    ...(shouldPersistPiTurnEnd ? { piTurnEndStatus: 'interrupted' as const } : {}),
+  });
 
   broadcastOutputCancelled(sessionId, run.responseId);
 }

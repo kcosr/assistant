@@ -564,4 +564,131 @@ describe('processUserMessage stream event emission', () => {
       { text: 'Final answer', phase: 'final_answer' },
     ]);
   });
+
+  it('persists timeout failure events and closes the turn', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async () => {
+      return {
+        text: '',
+        toolCalls: [],
+        aborted: true,
+        abortReason: 'timeout',
+        assistantMessage: {
+          role: 'assistant',
+          content: [],
+          api: 'openai-responses',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: 'aborted',
+          timestamp: Date.now(),
+        },
+      };
+    });
+
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const sessionHub: SessionHub = {
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await expect(
+      processUserMessage({
+        sessionId: 's1',
+        state,
+        text: 'hi',
+        sessionHub,
+        envConfig: {
+          apiKey: 'test-api-key',
+          port: 0,
+          toolsEnabled: false,
+          dataDir: '/tmp/assistant-tests',
+          audioInputMode: 'manual',
+          audioSampleRate: 24000,
+          audioTranscriptionEnabled: false,
+          audioOutputVoice: undefined,
+          audioOutputSpeed: undefined,
+          ttsModel: 'gpt-4o-mini-tts',
+          ttsVoice: undefined,
+          ttsFrameDurationMs: 250,
+          ttsBackend: 'openai',
+          elevenLabsApiKey: undefined,
+          elevenLabsVoiceId: undefined,
+          elevenLabsModelId: undefined,
+          elevenLabsBaseUrl: undefined,
+          maxMessagesPerMinute: 60,
+          maxAudioBytesPerMinute: 2_000_000,
+          maxToolCallsPerMinute: 30,
+          debugChatCompletions: false,
+          debugHttpRequests: false,
+        } as EnvConfig,
+        chatCompletionTools: [],
+        handleChatToolCalls: async () => undefined,
+        outputMode: 'text',
+        ttsBackendFactory: null,
+        eventStore,
+      }),
+    ).rejects.toMatchObject({
+      code: 'upstream_timeout',
+      message: 'Chat backend request timed out',
+    });
+
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['error', 'interrupt', 'turn_end']),
+    );
+    expect(events.find((event) => event.type === 'error')).toMatchObject({
+      payload: {
+        code: 'upstream_timeout',
+        message: 'Chat backend request timed out',
+      },
+    });
+    expect(events.find((event) => event.type === 'interrupt')).toMatchObject({
+      payload: { reason: 'timeout' },
+    });
+  });
 });

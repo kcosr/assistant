@@ -559,6 +559,7 @@ export async function handleChatToolCalls(options: {
         role: 'tool',
         tool_call_id: call.id,
         content: toolMessageContent,
+        historyTimestampMs: Date.now(),
       });
 
       sendError(
@@ -661,6 +662,7 @@ export async function handleChatToolCalls(options: {
       role: 'tool',
       tool_call_id: call.id,
       content: toolMessageContent,
+      historyTimestampMs: Date.now(),
     });
 
     if (runToolCalls) {

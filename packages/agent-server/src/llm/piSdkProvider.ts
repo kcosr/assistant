@@ -419,7 +419,7 @@ function createTimeoutSignal(options: {
   }
 
   const controller = new AbortController();
-  const abortHandler = () => controller.abort();
+  const abortHandler = () => controller.abort(signal.reason);
   signal.addEventListener('abort', abortHandler, { once: true });
   const timeoutId = setTimeout(() => controller.abort('timeout'), timeoutMs);
 
@@ -466,6 +466,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   text: string;
   toolCalls: ChatCompletionToolCallState[];
   aborted: boolean;
+  abortReason?: 'timeout' | 'aborted';
   assistantMessage: AssistantMessage;
 }> {
   const {
@@ -520,6 +521,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   const toolCalls: ChatCompletionToolCallState[] = [];
   const seenToolCallIds = new Set<string>();
   let aborted = false;
+  let abortReason: 'timeout' | 'aborted' | undefined;
 
   const { streamSimple } = await loadPiAiModule();
   const stream = streamSimple(resolvedModel, context, streamOptions);
@@ -590,6 +592,7 @@ export async function runPiSdkChatCompletionIteration(options: {
         case 'error': {
           if (event.reason === 'aborted') {
             aborted = true;
+            abortReason = signal.aborted && signal.reason === 'timeout' ? 'timeout' : 'aborted';
           }
           break;
         }
@@ -604,6 +607,7 @@ export async function runPiSdkChatCompletionIteration(options: {
   const finalMessage = await stream.result();
   if (finalMessage.stopReason === 'aborted') {
     aborted = true;
+    abortReason = signal.aborted && signal.reason === 'timeout' ? 'timeout' : 'aborted';
   }
   if (finalMessage.stopReason === 'error') {
     const errorMessage =
@@ -627,6 +631,7 @@ export async function runPiSdkChatCompletionIteration(options: {
     text: iterationText,
     toolCalls,
     aborted,
+    ...(abortReason ? { abortReason } : {}),
     assistantMessage: finalMessage,
   };
 }

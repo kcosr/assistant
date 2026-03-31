@@ -93,6 +93,29 @@ function extractMessageText(message: Record<string, unknown>): string {
   return extractTextValue(message['content']).trim();
 }
 
+function resolveTimestamp(
+  entry: Record<string, unknown>,
+  fallback?: Record<string, unknown>,
+): number | undefined {
+  const raw =
+    entry['timestamp'] ??
+    entry['createdAt'] ??
+    entry['time'] ??
+    fallback?.['timestamp'] ??
+    fallback?.['createdAt'] ??
+    fallback?.['time'];
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
 function resolvePiSessionInfo(summary: SessionSummary): PiSessionInfo | null {
   const providerInfo = getProviderAttributes(summary.attributes, 'pi', ['pi-cli']);
   if (!providerInfo) {
@@ -179,9 +202,11 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
       const meta = toUserMeta(entry);
+      const historyTimestampMs = resolveTimestamp(entry);
       messages.push({
         role: 'user',
         content: text,
+        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
         ...(meta ? { meta } : {}),
       });
       continue;
@@ -198,7 +223,12 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       if (!text) {
         continue;
       }
-      messages.push({ role: 'user', content: text });
+      const historyTimestampMs = resolveTimestamp(message, entry);
+      messages.push({
+        role: 'user',
+        content: text,
+        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
+      });
       continue;
     }
 
@@ -213,9 +243,11 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         (finalAnswerTexts.length > 0 ? finalAnswerTexts.join('\n\n') : undefined) ??
         blocks[blocks.length - 1]?.text ??
         extractMessageText(message);
+      const historyTimestampMs = resolveTimestamp(message, entry);
       messages.push({
         role: 'assistant',
         content: finalText,
+        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
         piSdkMessage,
       });
       continue;
@@ -230,10 +262,12 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       if (!text) {
         continue;
       }
+      const historyTimestampMs = resolveTimestamp(message, entry);
       messages.push({
         role: 'tool',
         tool_call_id: toolCallId,
         content: text,
+        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
       });
     }
   }

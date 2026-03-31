@@ -261,31 +261,45 @@ export async function startSessionMessage(options: {
 
   if (input.mode === 'sync') {
     const timeoutMs = input.timeoutSeconds * 1000;
-    const timeoutPromise = new Promise<'timeout'>((resolve) =>
-      setTimeout(() => resolve('timeout'), timeoutMs),
-    );
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort('timeout'), timeoutMs);
+    const timeoutPromise = new Promise<{ kind: 'timeout' }>((resolve) => {
+      if (timeoutController.signal.aborted) {
+        resolve({ kind: 'timeout' });
+        return;
+      }
+      timeoutController.signal.addEventListener('abort', () => resolve({ kind: 'timeout' }), {
+        once: true,
+      });
+    });
 
     try {
+      const processPromise = processUserMessage({
+        sessionId: input.sessionId,
+        state,
+        text: content,
+        sessionHub,
+        envConfig,
+        chatCompletionTools: chatTools,
+        ...(availableTools !== undefined ? { availableTools } : {}),
+        ...(availableSkills ? { availableSkills } : {}),
+        handleChatToolCalls,
+        outputMode: 'text',
+        ttsBackendFactory: null,
+        ...(spokenUserInput ? { userInput: spokenUserInput } : {}),
+        ...(eventStore ? { eventStore } : {}),
+        externalAbortSignal: timeoutController.signal,
+      });
       const winner = await Promise.race([
-        processUserMessage({
-          sessionId: input.sessionId,
-          state,
-          text: content,
-          sessionHub,
-          envConfig,
-          chatCompletionTools: chatTools,
-          ...(availableTools !== undefined ? { availableTools } : {}),
-          ...(availableSkills ? { availableSkills } : {}),
-          handleChatToolCalls,
-          outputMode: 'text',
-          ttsBackendFactory: null,
-          ...(spokenUserInput ? { userInput: spokenUserInput } : {}),
-          ...(eventStore ? { eventStore } : {}),
-        }),
+        processPromise.then(
+          (result) => ({ kind: 'result' as const, result }),
+          (err) => ({ kind: 'error' as const, err }),
+        ),
         timeoutPromise,
       ]);
 
-      if (winner === 'timeout') {
+      if (winner.kind === 'timeout') {
+        void processPromise.catch(() => undefined);
         return {
           response: {
             ...basePayload,
@@ -296,7 +310,11 @@ export async function startSessionMessage(options: {
         };
       }
 
-      const result = winner;
+      if (winner.kind === 'error') {
+        throw winner.err;
+      }
+
+      const result = winner.result;
 
       return {
         response: {
@@ -321,6 +339,8 @@ export async function startSessionMessage(options: {
           durationMs: 0,
         },
       };
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 

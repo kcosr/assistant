@@ -64,12 +64,14 @@ export function buildChatMessagesFromEvents(
   };
   const createAssistantMessage = (
     initialText: string,
+    timestamp: number,
     phase?: AssistantMessage['assistantTextPhase'],
     textSignature?: string,
   ): AssistantMessage => {
     const message: AssistantMessage = {
       role: 'assistant',
       content: initialText,
+      historyTimestampMs: timestamp,
       ...(phase ? { assistantTextPhase: phase } : {}),
       ...(textSignature ? { assistantTextSignature: textSignature } : {}),
     };
@@ -78,13 +80,14 @@ export function buildChatMessagesFromEvents(
   };
   const ensureOpenAssistantTextSegment = (
     responseId: string,
+    timestamp: number,
     phase?: AssistantMessage['assistantTextPhase'],
   ): AssistantMessage => {
     const existing = openAssistantTextSegments.get(responseId);
     if (existing && existing.phase === phase) {
       return existing.message;
     }
-    const message = createAssistantMessage('', phase);
+    const message = createAssistantMessage('', timestamp, phase);
     openAssistantTextSegments.set(responseId, { responseId, phase, message });
     return message;
   };
@@ -98,7 +101,7 @@ export function buildChatMessagesFromEvents(
         if (!text) {
           break;
         }
-        messages.push({ role: 'user', content: text });
+        messages.push({ role: 'user', content: text, historyTimestampMs: event.timestamp });
         break;
       }
       case 'agent_message': {
@@ -107,7 +110,7 @@ export function buildChatMessagesFromEvents(
         if (!text) {
           break;
         }
-        messages.push({ role: 'user', content: text });
+        messages.push({ role: 'user', content: text, historyTimestampMs: event.timestamp });
         break;
       }
       case 'agent_callback': {
@@ -116,7 +119,7 @@ export function buildChatMessagesFromEvents(
         if (!text) {
           break;
         }
-        messages.push({ role: 'user', content: text });
+        messages.push({ role: 'user', content: text, historyTimestampMs: event.timestamp });
         break;
       }
       case 'assistant_chunk': {
@@ -132,7 +135,11 @@ export function buildChatMessagesFromEvents(
         if (!delta) {
           break;
         }
-        const message = ensureOpenAssistantTextSegment(responseId, event.payload.phase);
+        const message = ensureOpenAssistantTextSegment(
+          responseId,
+          event.timestamp,
+          event.payload.phase,
+        );
         message.content = `${message.content}${delta}`;
         if (event.payload.phase) {
           message.assistantTextPhase = event.payload.phase;
@@ -170,7 +177,12 @@ export function buildChatMessagesFromEvents(
           closeAssistantTextSegment(responseId);
           break;
         }
-        createAssistantMessage(text, event.payload.phase, event.payload.textSignature);
+        createAssistantMessage(
+          text,
+          event.timestamp,
+          event.payload.phase,
+          event.payload.textSignature,
+        );
         break;
       }
       case 'thinking_chunk': {
@@ -216,6 +228,7 @@ export function buildChatMessagesFromEvents(
           const message: AssistantMessage = {
             role: 'assistant',
             content: '',
+            historyTimestampMs: event.timestamp,
             tool_calls: [toolCall],
           };
           messages.push(message);
@@ -238,6 +251,7 @@ export function buildChatMessagesFromEvents(
           role: 'tool',
           tool_call_id: event.payload.toolCallId,
           content,
+          historyTimestampMs: event.timestamp,
         });
         break;
       }

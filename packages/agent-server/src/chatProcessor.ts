@@ -27,15 +27,18 @@ import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chat
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
+  ChatRunError,
+  isChatRunError,
   logDebugChatEventRecord,
   previewDebugText,
   resolveChatProvider,
   runChatCompletionCore,
 } from './chatRunCore';
+import { finalizeChatTurn } from './chatTurnFinalization';
 import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
 import { resolveVisibleAssistantText } from './piAssistantText';
-import { attachPiSdkMessageToLastAssistant, buildMessagesForPiSync } from './history/piSessionSync';
+import { buildMessagesForPiSync } from './history/piSessionSync';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -129,6 +132,7 @@ export interface ChatProcessorOptions {
   };
   log?: (...args: unknown[]) => void;
   eventStore?: EventStore;
+  externalAbortSignal?: AbortSignal;
 }
 
 export interface ChatToolCallMetric {
@@ -171,6 +175,7 @@ export async function processUserMessage(
     userInput,
     log = () => undefined,
     eventStore,
+    externalAbortSignal,
   } = options;
 
   const trimmedText = text.trim();
@@ -405,6 +410,7 @@ export async function processUserMessage(
   const userMessage: ChatCompletionMessage = {
     role: 'user',
     content: trimmedText,
+    historyTimestampMs: Date.now(),
     ...(userMeta ? { meta: userMeta } : {}),
   };
   state.chatMessages.push(userMessage);
@@ -448,6 +454,14 @@ export async function processUserMessage(
 
   const abortController = new AbortController();
   const abortSignal = abortController.signal;
+  const onExternalAbort = () => abortController.abort(externalAbortSignal?.reason);
+  if (externalAbortSignal) {
+    if (externalAbortSignal.aborted) {
+      abortController.abort(externalAbortSignal.reason);
+    } else {
+      externalAbortSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
   const ttsAudioOut =
     typeof clientAudioCapabilities?.audioOut === 'boolean'
       ? { audioOut: clientAudioCapabilities.audioOut }
@@ -477,6 +491,28 @@ export async function processUserMessage(
 
   const toolCallMetrics: ChatToolCallMetric[] = [];
 
+  const buildInterruptedAssistantEvents = (): ChatEvent[] => {
+    const run = state.activeChatRun;
+    const partialText = run?.accumulatedText?.trim() ?? '';
+    if (!run?.turnId || !partialText) {
+      return [];
+    }
+    return [
+      {
+        ...createChatEventBase({
+          sessionId,
+          turnId: run.turnId,
+          ...(run.responseId ? { responseId: run.responseId } : {}),
+        }),
+        type: 'assistant_done',
+        payload: {
+          text: partialText,
+          interrupted: true,
+        },
+      },
+    ];
+  };
+
   try {
     const output = createBroadcastOutputAdapter(sessionHub, sessionId);
     const runResult = await runChatCompletionCore({
@@ -505,61 +541,37 @@ export async function processUserMessage(
 
     const wasAborted = runResult.aborted || abortSignal.aborted;
     if (wasAborted) {
-      const wasOutputCancelled = state.activeChatRun?.outputCancelled === true;
-      if (shouldEmitChatEvents && eventStore && turnId && !wasOutputCancelled) {
-        void appendAndBroadcastChatEvents(
-          {
-            eventStore,
-            sessionHub,
-            sessionId,
-          },
-          [
-            {
-              ...createChatEventBase({
-                sessionId,
-                ...(turnId ? { turnId } : {}),
-              }),
-              type: 'turn_end',
-              payload: {},
-            },
-          ],
-        );
+      const lastMsg = state.chatMessages[state.chatMessages.length - 1];
+      if (lastMsg && lastMsg.role === 'user' && lastMsg === userMessage) {
+        state.chatMessages.pop();
       }
-      if (piSessionWriter && runResult.provider === 'pi') {
-        try {
-          const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
-          const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
-          const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
-          const messagesForPiSync = runResult.piReplayMessages ?? state.chatMessages;
-          const messages = attachPiSdkMessageToLastAssistant({
-            messages: messagesForPiSync,
-            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
-          });
-          const updatedSummary = await piSessionWriter.sync({
-            summary: state.summary,
-            messages,
-            ...(modelSpec ? { modelSpec } : {}),
-            ...(defaultProvider ? { defaultProvider } : {}),
-            ...(thinkingLevel ? { thinkingLevel } : {}),
-            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-          });
-          if (updatedSummary) {
-            state.summary = updatedSummary;
-          }
-          if (turnId) {
-            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
-              summary: state.summary,
-              turnId,
-              status: 'interrupted',
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-            if (updatedSummaryAfterTurnEnd) {
-              state.summary = updatedSummaryAfterTurnEnd;
+      const timedOut =
+        runResult.abortReason === 'timeout' ||
+        abortSignal.reason === 'timeout' ||
+        externalAbortSignal?.reason === 'timeout';
+      await finalizeChatTurn({
+        sessionId,
+        state,
+        sessionHub,
+        run: state.activeChatRun,
+        log,
+        ...(eventStore ? { eventStore } : {}),
+        ...(timedOut
+          ? {
+              interruptReason: 'timeout' as const,
+              error: {
+                code: 'upstream_timeout',
+                message: 'Chat backend request timed out',
+              },
+              prependEvents: buildInterruptedAssistantEvents(),
             }
-          }
-        } catch (err) {
-          log('failed to sync Pi session history', err);
-        }
+          : {}),
+        ...(runResult.provider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
+      });
+      if (timedOut) {
+        throw new ChatRunError('upstream_timeout', 'Chat backend request timed out', {
+          retryable: true,
+        });
       }
     }
 
@@ -628,14 +640,6 @@ export async function processUserMessage(
         }
         const events: ChatEvent[] = [
           ...assistantDoneEvents,
-          {
-            ...createChatEventBase({
-              sessionId,
-              ...(turnId ? { turnId } : {}),
-            }),
-            type: 'turn_end',
-            payload: {},
-          },
         ];
         void appendAndBroadcastChatEvents(
           {
@@ -656,9 +660,18 @@ export async function processUserMessage(
           ? `${visibleAssistant.text.slice(0, 117)}…`
           : visibleAssistant.text,
       );
+      const assistantTimestampMs =
+        (runResult.piSdkMessage &&
+        runResult.piSdkMessage.role === 'assistant' &&
+        Number.isFinite(runResult.piSdkMessage.timestamp)
+          ? runResult.piSdkMessage.timestamp
+          : undefined) ??
+        (active?.textStartedAt ? Date.parse(active.textStartedAt) : undefined) ??
+        Date.now();
       state.chatMessages.push({
         role: 'assistant',
         content: visibleAssistant.text,
+        historyTimestampMs: assistantTimestampMs,
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
       });
 
@@ -670,6 +683,7 @@ export async function processUserMessage(
           const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
             role: 'assistant',
             content: visibleAssistant.text,
+            historyTimestampMs: assistantTimestampMs,
             ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
           };
           const messagesForPiSync = buildMessagesForPiSync({
@@ -688,22 +702,21 @@ export async function processUserMessage(
           if (updatedSummary) {
             state.summary = updatedSummary;
           }
-          if (turnId) {
-            const updatedSummaryAfterTurnEnd = await piSessionWriter.appendTurnEnd({
-              summary: state.summary,
-              turnId,
-              status: 'completed',
-              updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
-            });
-            if (updatedSummaryAfterTurnEnd) {
-              state.summary = updatedSummaryAfterTurnEnd;
-            }
-          }
         } catch (err) {
           log('failed to sync Pi session history', err);
         }
       }
     }
+
+    await finalizeChatTurn({
+      sessionId,
+      state,
+      sessionHub,
+      run: state.activeChatRun,
+      log,
+      ...(eventStore ? { eventStore } : {}),
+      ...(chatProvider === 'pi' ? { piTurnEndStatus: 'completed' as const } : {}),
+    });
 
     const durationMs = Date.now() - startTime;
 
@@ -740,7 +753,49 @@ export async function processUserMessage(
       durationMs,
       ...(thinkingText ? { thinkingText } : {}),
     };
+  } catch (err) {
+    const wasOutputCancelled = state.activeChatRun?.outputCancelled === true;
+    const timedOut = abortSignal.reason === 'timeout' || externalAbortSignal?.reason === 'timeout';
+
+    if (!wasOutputCancelled) {
+      await finalizeChatTurn({
+        sessionId,
+        state,
+        sessionHub,
+        run: state.activeChatRun,
+        log,
+        ...(eventStore ? { eventStore } : {}),
+        interruptReason: timedOut ? 'timeout' : 'error',
+        error: {
+          code: timedOut ? 'upstream_timeout' : isChatRunError(err) ? err.code : 'upstream_error',
+          message:
+            timedOut
+              ? 'Chat backend request timed out'
+              : isChatRunError(err)
+                ? err.message
+                : 'Chat backend error',
+        },
+        prependEvents: buildInterruptedAssistantEvents(),
+        ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
+      });
+    }
+
+    if (timedOut) {
+      throw new ChatRunError('upstream_timeout', 'Chat backend request timed out', {
+        retryable: true,
+      });
+    }
+    if (isChatRunError(err)) {
+      throw err;
+    }
+    throw new ChatRunError('upstream_error', 'Chat backend error', {
+      error: String(err),
+      retryable: true,
+    });
   } finally {
+    if (externalAbortSignal) {
+      externalAbortSignal.removeEventListener('abort', onExternalAbort);
+    }
     if (state.activeChatRun && state.activeChatRun.responseId === responseId) {
       state.activeChatRun = undefined;
     }

@@ -951,9 +951,6 @@ export class PiSessionWriter {
     });
 
     const toolCallNameMap = buildToolCallNameMap(persistableMessages);
-    const baseTimestamp = Date.now();
-    let messageTimestamp = baseTimestamp;
-    const nextMessageTimestamp = () => messageTimestamp++;
 
     let leafId = state.leafId;
     let messageCount = state.writtenMessageCount;
@@ -990,7 +987,10 @@ export class PiSessionWriter {
     }
 
     for (const message of newMessages) {
-      const messageTimestampValue = nextMessageTimestamp();
+      const messageTimestampValue =
+        typeof message.historyTimestampMs === 'number' && Number.isFinite(message.historyTimestampMs)
+          ? message.historyTimestampMs
+          : this.now().getTime();
       if (message.role === 'user') {
         const text = message.content ?? '';
         const meta = message.meta;

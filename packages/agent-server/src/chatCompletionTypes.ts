@@ -36,6 +36,7 @@ export type ChatCompletionMessage =
       role: 'user';
       content: string;
       meta?: ChatCompletionMessageMeta;
+      historyTimestampMs?: number;
     }
   | {
       role: 'assistant';
@@ -43,6 +44,7 @@ export type ChatCompletionMessage =
       tool_calls?: ChatCompletionToolCallMessageToolCall[];
       assistantTextPhase?: AssistantTextPhase;
       assistantTextSignature?: string;
+      historyTimestampMs?: number;
       /**
        * Optional Pi SDK message payload (includes thinking/toolcall signatures).
        * Used only by the Pi SDK provider to preserve reasoning items across turns.
@@ -53,4 +55,5 @@ export type ChatCompletionMessage =
       role: 'tool';
       tool_call_id: string;
       content: string;
+      historyTimestampMs?: number;
     };
