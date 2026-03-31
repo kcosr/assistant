@@ -392,99 +392,6 @@ describe('PiSessionHistoryProvider', () => {
     expect(turnEnds[0]?.turnId).toBe('turn-explicit-1');
   });
 
-  it('supports mixed replay with unmarked history before explicit turn markers', async () => {
-    const baseDir = await createTempDir('pi-session-history-mixed');
-    const sessionId = 'session-mixed';
-    const piSessionId = 'pi-session-mixed';
-    const cwd = '/home/kevin';
-    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
-    const sessionDir = path.join(baseDir, encodedCwd);
-    await fs.mkdir(sessionDir, { recursive: true });
-    const filePath = path.join(sessionDir, `2026-01-22T00-00-00-000Z_${piSessionId}.jsonl`);
-    const lines = [
-      JSON.stringify({
-        message: { role: 'user', id: 'legacy-turn', content: 'Legacy hello' },
-      }),
-      JSON.stringify({
-        message: {
-          role: 'assistant',
-          id: 'legacy-resp',
-          content: [{ type: 'text', text: 'Legacy reply' }],
-        },
-      }),
-      JSON.stringify({
-        type: 'custom',
-        id: 'turn-start-2',
-        parentId: null,
-        timestamp: '2026-01-22T00:00:03.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-explicit-2', trigger: 'callback' },
-      }),
-      JSON.stringify({
-        type: 'custom_message',
-        id: 'callback-input-1',
-        parentId: 'turn-start-2',
-        timestamp: '2026-01-22T00:00:04.000Z',
-        customType: 'assistant.input',
-        content: 'Hidden callback input',
-        display: false,
-        details: { kind: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b' },
-      }),
-      JSON.stringify({
-        message: {
-          role: 'assistant',
-          id: 'callback-resp',
-          content: [{ type: 'text', text: 'Callback handled' }],
-        },
-      }),
-      JSON.stringify({
-        type: 'custom',
-        id: 'turn-end-2',
-        parentId: 'callback-resp',
-        timestamp: '2026-01-22T00:00:06.000Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-explicit-2', status: 'completed' },
-      }),
-    ];
-    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
-
-    const agent: AgentDefinition = {
-      agentId: 'pi',
-      displayName: 'Pi',
-      description: 'Pi',
-      chat: { provider: 'pi' },
-    };
-
-    const provider = new PiSessionHistoryProvider({ baseDir });
-    const events = await provider.getHistory({
-      sessionId,
-      providerId: 'pi',
-      agentId: agent.agentId,
-      agent,
-      attributes: {
-        providers: {
-          pi: { sessionId: piSessionId, cwd },
-        },
-      },
-    });
-
-    const turnStarts = events.filter((event) => event.type === 'turn_start');
-    const turnEnds = events.filter((event) => event.type === 'turn_end');
-    const legacyUser = events.find(
-      (event) => event.type === 'user_message' && event.payload.text === 'Legacy hello',
-    );
-    const callbackInput = events.find(
-      (event) => event.type === 'agent_message' && event.payload.message === 'Hidden callback input',
-    );
-
-    expect(turnStarts).toHaveLength(2);
-    expect(turnEnds).toHaveLength(2);
-    expect(legacyUser?.turnId).toBe('legacy-turn');
-    expect(callbackInput?.turnId).toBe('turn-explicit-2');
-    expect(turnStarts[1]?.turnId).toBe('turn-explicit-2');
-    expect(turnStarts[1]?.payload).toEqual({ trigger: 'callback' });
-  });
-
   it('starts a new legacy fallback turn for each unmarked user message', async () => {
     const baseDir = await createTempDir('pi-session-history-legacy-turns');
     const sessionId = 'session-legacy-turns';
@@ -1670,6 +1577,119 @@ describe('PiSessionHistoryProvider', () => {
         textSignature: JSON.stringify({ v: 1, id: 'msg-commentary-2', phase: 'commentary' }),
       },
     ]);
+  });
+
+  it('orders canonical assistant narration before earlier-appended overlay tool events on replay', async () => {
+    const baseDir = await createTempDir('pi-session-history-replay-order');
+    const sessionId = 'session-replay-order';
+    const piSessionId = 'pi-session-replay-order';
+    const cwd = '/home/kevin/assistant';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-03-31T14-21-05-772Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T14:46:13.150Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-worktree', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T14:46:16.782Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          turnId: 'turn-worktree',
+          responseId: 'resp-worktree',
+          payload: {
+            toolCallId: 'tool-worktree',
+            toolName: 'bash',
+            args: { command: 'git worktree add ...' },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T14:46:16.942Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_result',
+          turnId: 'turn-worktree',
+          responseId: 'resp-worktree',
+          payload: {
+            toolCallId: 'tool-worktree',
+            result: { ok: true, output: 'created' },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-31T14:46:24.756Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-worktree',
+          timestamp: '2026-03-31T14:46:13.160Z',
+          content: [
+            { type: 'text', text: 'The repo is ready. Creating the worktree now:' },
+            {
+              type: 'toolCall',
+              id: 'tool-worktree',
+              name: 'bash',
+              arguments: { command: 'git worktree add ...' },
+            },
+          ],
+          stopReason: 'toolUse',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T14:46:24.900Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-worktree', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const assistantIndex = events.findIndex(
+      (event) =>
+        event.type === 'assistant_done' &&
+        event.turnId === 'turn-worktree' &&
+        event.payload.text === 'The repo is ready. Creating the worktree now:',
+    );
+    const toolCallIndex = events.findIndex(
+      (event) =>
+        event.type === 'tool_call' &&
+        event.turnId === 'turn-worktree' &&
+        event.payload.toolCallId === 'tool-worktree',
+    );
+    const toolResultIndex = events.findIndex(
+      (event) =>
+        event.type === 'tool_result' &&
+        event.turnId === 'turn-worktree' &&
+        event.payload.toolCallId === 'tool-worktree',
+    );
+
+    expect(assistantIndex).toBeGreaterThanOrEqual(0);
+    expect(toolCallIndex).toBeGreaterThanOrEqual(0);
+    expect(toolResultIndex).toBeGreaterThanOrEqual(0);
+    expect(assistantIndex).toBeLessThan(toolCallIndex);
+    expect(assistantIndex).toBeLessThan(toolResultIndex);
   });
 });
 

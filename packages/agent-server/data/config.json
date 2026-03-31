@@ -59,7 +59,10 @@
           "medium",
           "high",
           "xhigh"
-        ]
+        ],
+        "config": {
+          "timeoutMs": 300000
+        }
       }
     }
   ],

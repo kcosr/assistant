@@ -78,7 +78,7 @@ describe('PiSessionWriter', () => {
         },
       },
       stopReason: 'toolUse',
-      timestamp: 1769904000000,
+      timestamp: 1769904000010,
     };
 
     const messages: ChatCompletionMessage[] = [
@@ -1102,7 +1102,7 @@ describe('PiSessionWriter', () => {
           arguments: { query: 'now' },
         },
       ],
-      timestamp: 1769904000001,
+      timestamp: 1769904000030,
     };
 
     const finalAssistant: AssistantMessage = {
@@ -1126,16 +1126,26 @@ describe('PiSessionWriter', () => {
         },
       },
       stopReason: 'stop',
-      timestamp: 1769904000002,
+      timestamp: 1769904000050,
     };
 
     const initialMessages: ChatCompletionMessage[] = [
       { role: 'system', content: 'system' },
-      { role: 'user', content: 'first turn' },
+      { role: 'user', content: 'first turn', historyTimestampMs: 1769904000000 },
       { role: 'assistant', content: '', piSdkMessage: firstToolCall },
-      { role: 'tool', tool_call_id: 'call-1', content: JSON.stringify({ ok: true, result: [] }) },
+      {
+        role: 'tool',
+        tool_call_id: 'call-1',
+        content: JSON.stringify({ ok: true, result: [] }),
+        historyTimestampMs: 1769904000020,
+      },
       { role: 'assistant', content: '', piSdkMessage: secondToolCall },
-      { role: 'tool', tool_call_id: 'call-2', content: JSON.stringify({ ok: true, result: [] }) },
+      {
+        role: 'tool',
+        tool_call_id: 'call-2',
+        content: JSON.stringify({ ok: true, result: [] }),
+        historyTimestampMs: 1769904000040,
+      },
       { role: 'assistant', content: 'First turn complete.', piSdkMessage: finalAssistant },
     ];
 
@@ -1172,8 +1182,12 @@ describe('PiSessionWriter', () => {
       summary,
       messages: [
         ...rebuiltMessages,
-        { role: 'user', content: 'second turn' },
-        { role: 'assistant', content: 'Second turn complete.' },
+        { role: 'user', content: 'second turn', historyTimestampMs: 1769904000060 },
+        {
+          role: 'assistant',
+          content: 'Second turn complete.',
+          historyTimestampMs: 1769904000070,
+        },
       ],
       updateAttributes: async () => summary,
     });

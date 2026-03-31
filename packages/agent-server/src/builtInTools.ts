@@ -706,34 +706,48 @@ export async function handleAgentMessage(
   }
 
   const timeoutMs = parsed.timeoutSeconds * 1000;
-  const timeoutPromise = new Promise<'timeout'>((resolve) =>
-    setTimeout(() => resolve('timeout'), timeoutMs),
-  );
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort('timeout'), timeoutMs);
+  const timeoutPromise = new Promise<{ kind: 'timeout' }>((resolve) => {
+    if (timeoutController.signal.aborted) {
+      resolve({ kind: 'timeout' });
+      return;
+    }
+    timeoutController.signal.addEventListener('abort', () => resolve({ kind: 'timeout' }), {
+      once: true,
+    });
+  });
 
   try {
+    const processPromise = processUserMessage({
+      sessionId,
+      state: sessionState,
+      text: parsed.content,
+      sessionHub,
+      envConfig,
+      chatCompletionTools: chatTools,
+      ...(availableTools !== undefined ? { availableTools } : {}),
+      ...(availableSkills ? { availableSkills } : {}),
+      handleChatToolCalls,
+      outputMode: 'text',
+      ttsBackendFactory: null,
+      agentMessageContext: {
+        fromSessionId,
+        ...(fromAgentId ? { fromAgentId } : {}),
+      },
+      ...(eventStore ? { eventStore } : {}),
+      externalAbortSignal: timeoutController.signal,
+    });
     const winner = await Promise.race([
-      processUserMessage({
-        sessionId,
-        state: sessionState,
-        text: parsed.content,
-        sessionHub,
-        envConfig,
-        chatCompletionTools: chatTools,
-        ...(availableTools !== undefined ? { availableTools } : {}),
-        ...(availableSkills ? { availableSkills } : {}),
-        handleChatToolCalls,
-        outputMode: 'text',
-        ttsBackendFactory: null,
-        agentMessageContext: {
-          fromSessionId,
-          ...(fromAgentId ? { fromAgentId } : {}),
-        },
-        ...(eventStore ? { eventStore } : {}),
-      }),
+      processPromise.then(
+        (result) => ({ kind: 'result' as const, result }),
+        (err) => ({ kind: 'error' as const, err }),
+      ),
       timeoutPromise,
     ]);
 
-    if (winner === 'timeout') {
+    if (winner.kind === 'timeout') {
+      void processPromise.catch(() => undefined);
       return {
         ...basePayload,
         mode: 'sync' as const,
@@ -743,7 +757,11 @@ export async function handleAgentMessage(
       };
     }
 
-    const result = winner;
+    if (winner.kind === 'error') {
+      throw winner.err;
+    }
+
+    const result = winner.result;
 
     return {
       ...basePayload,
@@ -760,6 +778,8 @@ export async function handleAgentMessage(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw createToolError('agent_message_failed', message);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

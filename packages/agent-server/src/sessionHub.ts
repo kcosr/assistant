@@ -102,6 +102,11 @@ export interface LogicalSessionState {
          * interrupted.
          */
         outputCancelled?: boolean;
+        /**
+         * Prevents duplicate interrupt/error/turn_end persistence when
+         * multiple terminal paths race with each other.
+         */
+        terminalEventsFinalized?: boolean;
       }
     | undefined;
   deleted?: boolean;

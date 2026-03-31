@@ -125,23 +125,30 @@ describe('buildCanonicalPiReplayMessages', () => {
     const messages = buildCanonicalPiReplayMessages(content);
 
     expect(messages).toHaveLength(5);
-    expect(messages[0]).toEqual({ role: 'user', content: 'Earlier request' });
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content: 'Earlier request',
+      historyTimestampMs: 1,
+    });
     expect(messages[1]).toMatchObject({
       role: 'assistant',
       content: 'Working on it',
+      historyTimestampMs: 2,
       piSdkMessage: {
         role: 'assistant',
         stopReason: 'toolUse',
       },
     });
-    expect(messages[2]).toEqual({
+    expect(messages[2]).toMatchObject({
       role: 'tool',
       tool_call_id: 'call-1|fc_1',
       content: '{"ok":true,"result":[{"title":"Cline"}]}',
+      historyTimestampMs: 3,
     });
-    expect(messages[3]).toEqual({
+    expect(messages[3]).toMatchObject({
       role: 'user',
       content: 'Callback text',
+      historyTimestampMs: Date.parse('2026-03-26T00:00:04.000Z'),
       meta: {
         source: 'callback',
         fromAgentId: 'worker',
@@ -152,6 +159,7 @@ describe('buildCanonicalPiReplayMessages', () => {
     expect(messages[4]).toMatchObject({
       role: 'assistant',
       content: 'Final answer',
+      historyTimestampMs: 5,
       piSdkMessage: {
         role: 'assistant',
         stopReason: 'stop',
@@ -210,6 +218,7 @@ describe('buildCanonicalPiReplayMessages', () => {
     expect(messages[0]).toMatchObject({
       role: 'assistant',
       content: 'First final block\n\nSecond final block',
+      historyTimestampMs: 5,
     });
   });
 });

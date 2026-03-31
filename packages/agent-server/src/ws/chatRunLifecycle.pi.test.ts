@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from '../agents';
 import type { EnvConfig } from '../envConfig';
@@ -459,5 +459,123 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     expect(assistantMessages).toHaveLength(2);
     expect(assistantMessages[0]).toMatchObject({ content: '' });
     expect(assistantMessages[1]).toMatchObject({ content: 'done' });
+  });
+
+  it('surfaces PI timeouts as backend errors and closes the turn durably', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async () => ({
+      text: '',
+      toolCalls: [],
+      aborted: true,
+      abortReason: 'timeout',
+      assistantMessage: {
+        role: 'assistant',
+        content: [],
+        api: 'openai-responses',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'aborted',
+        timestamp: Date.now(),
+      } as never,
+    }));
+
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    const sendError = vi.fn();
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError,
+      log: () => undefined,
+      eventStore,
+    });
+
+    expect(sendError).toHaveBeenCalledWith(
+      'upstream_timeout',
+      'Chat backend request timed out',
+      undefined,
+      { retryable: true },
+    );
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['error', 'interrupt', 'turn_end']),
+    );
+    expect(events.find((event) => event.type === 'interrupt')).toMatchObject({
+      payload: { reason: 'timeout' },
+    });
   });
 });

@@ -620,6 +620,22 @@ function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEven
   return combined.map((item) => item.event);
 }
 
+function sortEventsByTimestamp(events: ChatEvent[]): ChatEvent[] {
+  return events
+    .map((event, index) => ({
+      event,
+      order: index,
+    }))
+    .sort((a, b) => {
+      const diff = a.event.timestamp - b.event.timestamp;
+      if (diff !== 0) {
+        return diff;
+      }
+      return a.order - b.order;
+    })
+    .map((item) => item.event);
+}
+
 function shouldCloseOpenTurnAtEof(events: ChatEvent[], currentTurnId: string | null): boolean {
   if (!currentTurnId) {
     return false;
@@ -637,6 +653,29 @@ function shouldCloseOpenTurnAtEof(events: ChatEvent[], currentTurnId: string | n
     );
   }
   return false;
+}
+
+function resolvePiMessageTimestamp(
+  messageEntry: Record<string, unknown>,
+  fallback?: Record<string, unknown>,
+): number {
+  const raw =
+    messageEntry['timestamp'] ??
+    messageEntry['createdAt'] ??
+    messageEntry['time'] ??
+    fallback?.['timestamp'] ??
+    fallback?.['createdAt'] ??
+    fallback?.['time'];
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw);
+    if (!Number.isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  return Date.now();
 }
 
 async function mergeOverlayEvents(
@@ -1271,7 +1310,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
     if (role === 'user') {
       const toolResults = extractClaudeToolResults(entry, messageEntry);
       const userText = extractClaudeUserText(messageEntry);
-      const timestamp = resolveTimestamp(messageEntry, entry);
+      const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
 
       if (toolResults.length > 0 && !userText) {
         for (const result of toolResults) {
@@ -1295,7 +1334,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
     }
 
     if (role === 'assistant') {
-      const timestamp = resolveTimestamp(messageEntry, entry);
+      const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
       if (!currentTurnId) {
         const turnId = getClaudeTurnId(entry, messageEntry);
         startTurn(turnId, 'system', timestamp);
@@ -1898,7 +1937,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (seenExplicitTurnMarkers && !currentTurnId) {
         continue;
       }
-      const timestamp = resolveTimestamp(messageEntry, entry);
+      const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
       const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
       const text = extractText(messageEntry);
       if (emittedUserInputs.has(getUserInputKey(turnId, text))) {
@@ -2140,7 +2179,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
     endTurn(finalTimestamp);
   }
-  return events;
+  return sortEventsByTimestamp(events);
 }
 
 function buildChatEventsFromCodexSession(content: string, sessionId: string): ChatEvent[] {

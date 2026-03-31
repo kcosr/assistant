@@ -103,6 +103,7 @@ export interface ChatRunCoreResult {
   thinkingText: string;
   provider: ChatProvider;
   aborted: boolean;
+  abortReason?: 'timeout' | 'aborted';
   piSdkMessage?: PiSdkMessage;
   piReplayMessages?: ChatCompletionMessage[];
 }
@@ -121,6 +122,8 @@ export class ChatRunError extends Error {
 export function isChatRunError(err: unknown): err is ChatRunError {
   return err instanceof ChatRunError;
 }
+
+const DEFAULT_PI_REQUEST_TIMEOUT_MS = 300_000;
 
 function isPiReasoningLevel(
   value: string,
@@ -597,6 +600,7 @@ export async function runChatCompletionCore(
 
   let fullText = '';
   let aborted = false;
+  let abortReason: 'timeout' | 'aborted' | undefined;
   let finalPiSdkMessage: PiSdkMessage | undefined;
   let lastPiSdkMessage: PiSdkMessage | undefined;
   let piReplayMessages: ChatCompletionMessage[] | undefined;
@@ -1005,7 +1009,13 @@ export async function runChatCompletionCore(
       toolInputOffsets.clear();
       const iterationIndex = iterations + 1;
 
-      const { text: iterationText, toolCalls, aborted: piAborted, assistantMessage } =
+      const {
+        text: iterationText,
+        toolCalls,
+        aborted: piAborted,
+        abortReason: piAbortReason,
+        assistantMessage,
+      } =
         await runPiSdkChatCompletionIteration({
           model: resolvedModel.model,
           messages: piStateForRun.chatMessages,
@@ -1050,7 +1060,7 @@ export async function runChatCompletionCore(
           ...(apiKey ? { apiKey } : {}),
           ...(baseUrl ? { baseUrl } : {}),
           ...(headers ? { headers } : {}),
-          ...(piConfig?.timeoutMs !== undefined ? { timeoutMs: piConfig.timeoutMs } : {}),
+          timeoutMs: piConfig?.timeoutMs ?? DEFAULT_PI_REQUEST_TIMEOUT_MS,
           ...(debugChatCompletions
             ? {
                 onPayload: (payload) => {
@@ -1134,6 +1144,7 @@ export async function runChatCompletionCore(
 
       if (piAborted) {
         aborted = true;
+        abortReason = piAbortReason;
         finalPiSdkMessage = assistantMessage;
         break;
       }
@@ -1146,6 +1157,9 @@ export async function runChatCompletionCore(
       const assistantToolCallMessage: ChatCompletionMessage = {
         role: 'assistant',
         content: iterationText,
+        historyTimestampMs: Number.isFinite(assistantMessage.timestamp)
+          ? assistantMessage.timestamp
+          : Date.now(),
         tool_calls: toolCalls.map<ChatCompletionToolCallMessageToolCall>((call) => ({
           id: call.id,
           type: 'function',
@@ -1213,6 +1227,7 @@ export async function runChatCompletionCore(
     thinkingText: streamHandlers.getThinkingText(),
     provider,
     aborted,
+    ...(abortReason ? { abortReason } : {}),
     ...(provider === 'pi' && resolvedPiSdkMessage
       ? { piSdkMessage: resolvedPiSdkMessage }
       : {}),

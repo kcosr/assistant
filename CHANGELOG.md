@@ -11,6 +11,7 @@
 
 ### Fixed
 - Fixed the scheduled sessions panel scrolling and refined it into a flatter compact collapsed-by-default layout. ([#76](https://github.com/kcosr/assistant/pull/76))
+- Fixed PI-backed chat runs so backend timeouts/errors close turns durably, sync wrapper timeouts abort the underlying run, and PI replay preserves assistant narration ordering after refresh.
 
 ### Removed
 
