@@ -30,6 +30,7 @@ import { getPanelContextKey, getPanelTitleContextKey } from '../utils/panelConte
 import { buildPanelLayoutPreset, type PanelLayoutPreset } from '../utils/layoutPresets';
 import type { DialogManager } from './dialogManager';
 import {
+  normalizePanelCustomTitle,
   resolvePanelDisplayTitle,
   resolvePanelFallbackTitle,
   validatePanelCustomTitle,
@@ -1097,7 +1098,6 @@ export class PanelWorkspaceController {
       delete panel.meta;
     }
     this.persistLayout();
-    this.syncResolvedPanelTitleContext(panelId);
     if (this.shouldRenderForMetadataChange(previousMeta, panel.meta ?? null)) {
       this.render();
       return;
@@ -1114,7 +1114,7 @@ export class PanelWorkspaceController {
     if (validationError) {
       return false;
     }
-    const nextTitle = title.trim();
+    const nextTitle = normalizePanelCustomTitle(title);
     if (!nextTitle) {
       return this.clearPanelCustomTitle(panelId);
     }
@@ -1123,7 +1123,6 @@ export class PanelWorkspaceController {
     }
     panel.customTitle = nextTitle;
     this.persistLayout();
-    this.syncResolvedPanelTitleContext(panelId);
     this.render();
     return true;
   }
@@ -1138,7 +1137,6 @@ export class PanelWorkspaceController {
     }
     delete panel.customTitle;
     this.persistLayout();
-    this.syncResolvedPanelTitleContext(panelId);
     this.render();
     return true;
   }

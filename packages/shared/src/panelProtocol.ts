@@ -78,7 +78,7 @@ export const PanelInstanceSchema: z.ZodType<PanelInstance, z.ZodTypeDef, PanelIn
     if (value.meta) {
       instance.meta = value.meta;
     }
-    if (value.customTitle) {
+    if (value.customTitle !== undefined) {
       instance.customTitle = value.customTitle;
     }
     return instance;
