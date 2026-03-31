@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.1] - 2026-03-31
 
 ### Breaking Changes
 
@@ -12,6 +12,7 @@
 - Fixed mobile session long-press actions so the session context menu no longer closes immediately after opening. ([#75](https://github.com/kcosr/assistant/pull/75))
 
 ### Removed
+
 
 ## [0.17.0] - 2026-03-31
 
