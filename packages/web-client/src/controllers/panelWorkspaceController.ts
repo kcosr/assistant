@@ -127,7 +127,7 @@ export class PanelWorkspaceController {
   private headerPopoverAnchor: HTMLElement | null = null;
   private openHeaderPanelId: string | null = null;
   private readonly panelContextSubscriptions = new Map<string, () => void>();
-  private readonly publishedPanelTitleIds = new Set<string>();
+  private readonly publishedPanelTitles = new Map<string, string>();
   private readonly modalPanelIds = new Set<string>();
   private modalOverlay: HTMLElement | null = null;
   private modalOverlayCleanup: (() => void) | null = null;
@@ -2823,12 +2823,12 @@ export class PanelWorkspaceController {
 
   private syncResolvedPanelTitleContexts(): void {
     const panelIds = new Set(Object.keys(this.layout.panels));
-    for (const panelId of this.publishedPanelTitleIds) {
+    for (const panelId of this.publishedPanelTitles.keys()) {
       if (panelIds.has(panelId)) {
         continue;
       }
       this.options.host.setContext(getPanelTitleContextKey(panelId), null);
-      this.publishedPanelTitleIds.delete(panelId);
+      this.publishedPanelTitles.delete(panelId);
     }
     for (const panelId of panelIds) {
       this.syncResolvedPanelTitleContext(panelId);
@@ -2838,14 +2838,19 @@ export class PanelWorkspaceController {
   private syncResolvedPanelTitleContext(panelId: string): void {
     const panel = this.layout.panels[panelId];
     if (!panel) {
-      this.options.host.setContext(getPanelTitleContextKey(panelId), null);
-      this.publishedPanelTitleIds.delete(panelId);
+      if (this.publishedPanelTitles.has(panelId)) {
+        this.options.host.setContext(getPanelTitleContextKey(panelId), null);
+        this.publishedPanelTitles.delete(panelId);
+      }
       return;
     }
 
     const title = this.getPanelTitle(panelId);
-    this.options.host.setContext(getPanelTitleContextKey(panelId), title);
-    this.publishedPanelTitleIds.add(panelId);
+    const previousTitle = this.publishedPanelTitles.get(panelId);
+    if (previousTitle !== title) {
+      this.options.host.setContext(getPanelTitleContextKey(panelId), title);
+      this.publishedPanelTitles.set(panelId, title);
+    }
 
     const container = this.panelElements.get(panelId);
     container?.setAttribute('aria-label', title);

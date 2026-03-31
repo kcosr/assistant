@@ -460,7 +460,7 @@ export class WorkspaceNavigatorController {
       return panelId;
     }
     const manifest = manifests.get(panel.panelType);
-    return resolvePanelDisplayTitle(panel, { manifestTitle: manifest?.title });
+    return resolvePanelDisplayTitle(panel, { manifestTitle: manifest?.title ?? null });
   }
 
   private formatBinding(

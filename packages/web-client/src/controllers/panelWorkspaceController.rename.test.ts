@@ -8,7 +8,16 @@ import { PanelChromeController } from './panelChromeController';
 import { PanelHostController } from './panelHostController';
 import { PanelRegistry, type PanelFactory } from './panelRegistry';
 import { PanelWorkspaceController } from './panelWorkspaceController';
-import { WorkspaceNavigatorController } from './workspaceNavigatorController';
+import {
+  WorkspaceNavigatorController,
+  type WorkspaceNavigatorHost,
+} from './workspaceNavigatorController';
+
+async function nextFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
 
 function createChromePanel(initialTitle: string): PanelFactory {
   return () => ({
@@ -109,7 +118,7 @@ describe('PanelWorkspaceController rename flow', () => {
 
     const navigator = new WorkspaceNavigatorController({
       container: navigatorRoot,
-      host,
+      host: host as unknown as WorkspaceNavigatorHost,
     });
     navigator.attach();
 
@@ -136,6 +145,7 @@ describe('PanelWorkspaceController rename flow', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     confirm.click();
     await Promise.resolve();
+    await nextFrame();
 
     expect(workspace.getLayout().panels['lists-1']?.customTitle).toBe('Work Tasks');
     expect(
