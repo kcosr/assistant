@@ -60,6 +60,10 @@ export interface SessionComposerControllerOptions {
   updateSession: (sessionId: string, options: UpdateSessionOptions) => Promise<boolean>;
   createScheduledSession: (input: CreateScheduledSessionInput) => Promise<void>;
   setStatus?: (text: string) => void;
+  dialogManager?: {
+    registerExternalDialog: (overlay: HTMLElement, close: () => void) => void;
+    releaseExternalDialog: (overlay: HTMLElement) => void;
+  };
 }
 
 type WorkingDirEntry = {
@@ -851,10 +855,12 @@ export class SessionComposerController {
     const release = (): void => {
       this.closeWorkingDirPicker();
       document.removeEventListener('keydown', handleKeyDown);
+      this.options.dialogManager?.releaseExternalDialog(overlay);
     };
 
     document.addEventListener('keydown', handleKeyDown);
     this.cleanup = release;
+    this.options.dialogManager?.registerExternalDialog(overlay, close);
 
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) {

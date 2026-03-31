@@ -25,6 +25,10 @@ describe('SessionComposerController', () => {
     const updateSession = vi.fn(async () => true);
     const createScheduledSession = vi.fn(async () => undefined);
     const setStatus = vi.fn();
+    const dialogManager = {
+      registerExternalDialog: vi.fn(),
+      releaseExternalDialog: vi.fn(),
+    };
     const controller = new SessionComposerController({
       getAgentSummaries: () => [
         {
@@ -55,6 +59,7 @@ describe('SessionComposerController', () => {
       updateSession,
       createScheduledSession,
       setStatus,
+      dialogManager,
     });
 
     return {
@@ -63,6 +68,7 @@ describe('SessionComposerController', () => {
       updateSession,
       createScheduledSession,
       setStatus,
+      dialogManager,
     };
   }
 
@@ -343,6 +349,20 @@ describe('SessionComposerController', () => {
 
     expect(controller.isOpen()).toBe(false);
     expect(document.querySelector('[data-role="overlay"]')).toBeNull();
+  });
+
+  it('registers with the dialog manager while open', () => {
+    const { controller, dialogManager } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+
+    expect(dialogManager.registerExternalDialog).toHaveBeenCalledTimes(1);
+    const [overlay] = dialogManager.registerExternalDialog.mock.calls[0] ?? [];
+    expect(overlay).toBeInstanceOf(HTMLElement);
+
+    controller.close();
+
+    expect(dialogManager.releaseExternalDialog).toHaveBeenCalledWith(overlay);
   });
 
   it('updates an existing session from edit mode', async () => {

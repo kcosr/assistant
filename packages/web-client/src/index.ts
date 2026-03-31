@@ -2787,6 +2787,7 @@ async function main(): Promise<void> {
         setStatus: (text) => {
           setStatus(statusEl, text);
         },
+        dialogManager,
       });
     }
     return sessionComposerController;
@@ -4570,10 +4571,6 @@ async function main(): Promise<void> {
   const handleAndroidBackButton = (_event: { canGoBack: boolean }): boolean => {
     if (isShareModalVisible()) {
       closeShareModal();
-      return true;
-    }
-    if (sessionComposerController?.isOpen()) {
-      sessionComposerController.close();
       return true;
     }
     if (document.querySelector('.confirm-dialog-overlay')) {
