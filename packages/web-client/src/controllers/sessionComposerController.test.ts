@@ -222,15 +222,7 @@ describe('SessionComposerController', () => {
 
     controller.open({ initialAgentId: 'assistant' });
     queryRole<HTMLButtonElement>('customize').click();
-
-    const skillInputs = Array.from(
-      document.querySelectorAll<HTMLInputElement>(
-        '.session-composer-skill-option input[type="checkbox"]',
-      ),
-    );
-    for (const input of skillInputs) {
-      input.click();
-    }
+    queryRole<HTMLButtonElement>('skills-select-none').click();
 
     queryRole<HTMLButtonElement>('confirm').click();
     await Promise.resolve();
@@ -239,6 +231,31 @@ describe('SessionComposerController', () => {
       sessionConfig: {
         workingDir: '/home/kevin/assistant',
         skills: [],
+      },
+    });
+  });
+
+  it('restores implicit all-skills default when select all is used', async () => {
+    const { controller, createSessionForAgent } = buildController();
+
+    controller.open({
+      initialAgentId: 'assistant',
+      createSessionOptions: {
+        sessionConfig: {
+          skills: ['worktrees'],
+        },
+      },
+    });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    queryRole<HTMLButtonElement>('skills-select-all').click();
+
+    queryRole<HTMLButtonElement>('confirm').click();
+    await Promise.resolve();
+
+    expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
+      sessionConfig: {
+        workingDir: '/home/kevin/assistant',
       },
     });
   });

@@ -3552,6 +3552,35 @@ body.panel-reordering {
   gap: var(--spacing-sm);
 }
 
+.session-composer-skills-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.session-composer-skill-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.session-composer-skill-action {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-composer-skill-action:hover {
+  background-color: var(--color-bg-hover);
+}
+
 .session-composer-skill-list {
   display: flex;
   flex-direction: column;

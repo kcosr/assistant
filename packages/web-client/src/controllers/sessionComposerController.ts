@@ -114,6 +114,7 @@ export class SessionComposerController {
     let selectedSkills: string[] | undefined = Array.isArray(initialConfig?.skills)
       ? [...initialConfig.skills]
       : undefined;
+    let skillsTouched = false;
     let selectedWorkingDir =
       typeof initialConfig?.workingDir === 'string' ? initialConfig.workingDir : '';
 
@@ -173,6 +174,22 @@ export class SessionComposerController {
     const getSelectedAgent = (): SessionComposerAgentSummary | null =>
       sortedAgents.find((agent) => agent.agentId === selectedAgentId) ?? null;
 
+    const getOrderedSelectedSkillIds = (
+      availableSkills: Array<{ id: string }>,
+      skillIds: string[] | undefined,
+    ): string[] =>
+      skillIds !== undefined
+        ? availableSkills.map((skill) => skill.id).filter((skillId) => skillIds.includes(skillId))
+        : availableSkills.map((skill) => skill.id);
+
+    const normalizeSelectedSkills = (
+      availableSkills: Array<{ id: string }>,
+      skillIds: string[] | undefined,
+    ): string[] | undefined => {
+      const ordered = getOrderedSelectedSkillIds(availableSkills, skillIds);
+      return ordered.length === availableSkills.length ? undefined : ordered;
+    };
+
     const deriveEffectiveWorkingDir = (): string | undefined => {
       const agent = getSelectedAgent();
       if (!agent?.sessionWorkingDir) {
@@ -209,10 +226,10 @@ export class SessionComposerController {
       }
 
       if (selectedSkills !== undefined) {
-        const availableSkills = new Set(
-          (agent.sessionConfigCapabilities?.availableSkills ?? []).map((skill) => skill.id),
+        selectedSkills = normalizeSelectedSkills(
+          agent.sessionConfigCapabilities?.availableSkills ?? [],
+          selectedSkills,
         );
-        selectedSkills = selectedSkills.filter((skillId) => availableSkills.has(skillId));
       }
 
       const workingDirConfig = agent.sessionWorkingDir;
@@ -417,13 +434,44 @@ export class SessionComposerController {
       const heading = document.createElement('div');
       heading.className = 'list-item-form-label-text';
       heading.textContent = 'Skills';
-      skillsSection.appendChild(heading);
+
+      const header = document.createElement('div');
+      header.className = 'session-composer-skills-header';
+      header.appendChild(heading);
+
+      const actions = document.createElement('div');
+      actions.className = 'session-composer-skill-actions';
+
+      const selectAllButton = document.createElement('button');
+      selectAllButton.type = 'button';
+      selectAllButton.className = 'session-composer-skill-action';
+      selectAllButton.dataset['role'] = 'skills-select-all';
+      selectAllButton.textContent = 'Select all';
+      selectAllButton.addEventListener('click', () => {
+        skillsTouched = true;
+        selectedSkills = undefined;
+        renderSkills();
+      });
+      actions.appendChild(selectAllButton);
+
+      const selectNoneButton = document.createElement('button');
+      selectNoneButton.type = 'button';
+      selectNoneButton.className = 'session-composer-skill-action';
+      selectNoneButton.dataset['role'] = 'skills-select-none';
+      selectNoneButton.textContent = 'Select none';
+      selectNoneButton.addEventListener('click', () => {
+        skillsTouched = true;
+        selectedSkills = [];
+        renderSkills();
+      });
+      actions.appendChild(selectNoneButton);
+
+      header.appendChild(actions);
+      skillsSection.appendChild(header);
 
       const list = document.createElement('div');
       list.className = 'session-composer-skill-list';
-      const selectedSkillSet = new Set(
-        selectedSkills ?? availableSkills.map((skill) => skill.id),
-      );
+      const selectedSkillSet = new Set(getOrderedSelectedSkillIds(availableSkills, selectedSkills));
       for (const skill of availableSkills) {
         const label = document.createElement('label');
         label.className = 'session-composer-skill-option';
@@ -431,6 +479,7 @@ export class SessionComposerController {
         input.type = 'checkbox';
         input.checked = selectedSkillSet.has(skill.id);
         input.addEventListener('change', () => {
+          skillsTouched = true;
           const nextSelected = new Set(
             selectedSkills ?? availableSkills.map((availableSkill) => availableSkill.id),
           );
@@ -439,9 +488,12 @@ export class SessionComposerController {
           } else {
             nextSelected.delete(skill.id);
           }
-          selectedSkills = availableSkills
-            .map((availableSkill) => availableSkill.id)
-            .filter((skillId) => nextSelected.has(skillId));
+          selectedSkills = normalizeSelectedSkills(
+            availableSkills,
+            availableSkills
+              .map((availableSkill) => availableSkill.id)
+              .filter((skillId) => nextSelected.has(skillId)),
+          );
         });
         const text = document.createElement('span');
         text.innerHTML = `<strong>${escapeHtml(skill.name)}</strong>${skill.description ? `<small>${escapeHtml(skill.description)}</small>` : ''}`;
@@ -666,17 +718,27 @@ export class SessionComposerController {
       }
       if (mode === 'session') {
         const baseOptions = openOptions.createSessionOptions ?? {};
+        const baseSessionConfig = { ...(baseOptions.sessionConfig ?? {}) };
         const mergedOptions: CreateSessionOptions = {
           ...baseOptions,
           ...(sessionConfig
             ? {
                 sessionConfig: {
-                  ...(baseOptions.sessionConfig ?? {}),
+                  ...baseSessionConfig,
                   ...sessionConfig,
                 },
               }
             : {}),
         };
+        if (skillsTouched && selectedSkills === undefined) {
+          const nextSessionConfig = { ...(mergedOptions.sessionConfig ?? baseSessionConfig) };
+          delete nextSessionConfig.skills;
+          if (Object.keys(nextSessionConfig).length > 0) {
+            mergedOptions.sessionConfig = nextSessionConfig;
+          } else {
+            delete mergedOptions.sessionConfig;
+          }
+        }
         const sessionId = await this.options.createSessionForAgent(selectedAgentId, mergedOptions);
         if (sessionId) {
           close();
