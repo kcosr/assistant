@@ -3359,9 +3359,11 @@ body.panel-reordering {
 }
 
 .session-composer-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(560px, calc(100vw - 32px));
   max-height: min(720px, calc(100vh - 32px));
-  overflow-y: auto;
+  overflow: hidden;
   padding: var(--spacing-lg);
   background-color: var(--color-bg-surface);
   border: 1px solid var(--color-border-default);
@@ -3369,7 +3371,20 @@ body.panel-reordering {
   box-shadow: var(--shadow-lg);
 }
 
+.session-composer-body,
 .session-composer-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-composer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.session-composer-form {
+  min-height: 0;
   gap: var(--spacing-md);
 }
 
@@ -3383,7 +3398,10 @@ body.panel-reordering {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
-  margin-top: var(--spacing-lg);
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
 }
 
 .session-composer-dialog .confirm-dialog-button {
@@ -3471,6 +3489,7 @@ body.panel-reordering {
 .session-composer-customize {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   background-color: var(--color-bg-base);
@@ -3552,23 +3571,55 @@ body.panel-reordering {
   gap: var(--spacing-sm);
 }
 
+.session-composer-skills-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.session-composer-skill-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.session-composer-skill-action {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  background-color: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session-composer-skill-action:hover {
+  background-color: var(--color-bg-hover);
+}
+
 .session-composer-skill-list {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  max-height: 220px;
+  max-height: min(280px, 36vh);
   overflow-y: auto;
   padding-right: 4px;
 }
 
 .session-composer-skill-option {
   display: flex;
-  align-items: flex-start;
-  gap: var(--spacing-sm);
+  flex-direction: column;
+  gap: var(--spacing-xs);
   padding: var(--spacing-sm);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   background-color: var(--color-bg-surface);
+}
+
+.session-composer-skill-option.is-expandable {
   cursor: pointer;
 }
 
@@ -3576,19 +3627,44 @@ body.panel-reordering {
   background-color: var(--color-bg-hover);
 }
 
-.session-composer-skill-option span {
+.session-composer-skill-option-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.session-composer-skill-control {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.session-composer-skill-checkbox {
+  margin: 2px 0 0;
+  flex-shrink: 0;
+}
+
+.session-composer-skill-meta {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  color: var(--color-text-primary);
-  font-size: var(--font-size-sm);
 }
 
-.session-composer-skill-option small {
+.session-composer-skill-name {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.session-composer-skill-description {
   color: var(--color-text-secondary);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-normal);
+  padding-left: calc(16px + var(--spacing-sm));
 }
 
 .session-composer-checkbox {
@@ -3607,15 +3683,25 @@ body.panel-reordering {
 
 @media (max-width: 768px) {
   .session-composer-overlay {
-    align-items: stretch;
-    padding: var(--spacing-sm);
+    align-items: flex-start;
+    padding: clamp(28px, 7dvh, 56px) var(--spacing-sm) var(--spacing-sm);
   }
 
   .session-composer-dialog {
     width: min(560px, calc(100vw - 16px));
-    height: min(88dvh, calc(100dvh - 16px));
-    max-height: calc(100dvh - 16px);
-    margin: auto;
+    max-height: calc(100dvh - clamp(40px, 8dvh, 72px));
+  }
+
+  .session-composer-dialog .confirm-dialog-buttons {
+    justify-content: stretch;
+  }
+
+  .session-composer-dialog .confirm-dialog-button {
+    flex: 1 1 0;
+  }
+
+  .session-composer-skill-list {
+    max-height: min(360px, 40dvh);
   }
 }
 

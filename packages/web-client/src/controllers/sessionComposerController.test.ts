@@ -25,6 +25,10 @@ describe('SessionComposerController', () => {
     const updateSession = vi.fn(async () => true);
     const createScheduledSession = vi.fn(async () => undefined);
     const setStatus = vi.fn();
+    const dialogManager = {
+      registerExternalDialog: vi.fn(),
+      releaseExternalDialog: vi.fn(),
+    };
     const controller = new SessionComposerController({
       getAgentSummaries: () => [
         {
@@ -55,6 +59,7 @@ describe('SessionComposerController', () => {
       updateSession,
       createScheduledSession,
       setStatus,
+      dialogManager,
     });
 
     return {
@@ -63,6 +68,7 @@ describe('SessionComposerController', () => {
       updateSession,
       createScheduledSession,
       setStatus,
+      dialogManager,
     };
   }
 
@@ -222,15 +228,7 @@ describe('SessionComposerController', () => {
 
     controller.open({ initialAgentId: 'assistant' });
     queryRole<HTMLButtonElement>('customize').click();
-
-    const skillInputs = Array.from(
-      document.querySelectorAll<HTMLInputElement>(
-        '.session-composer-skill-option input[type="checkbox"]',
-      ),
-    );
-    for (const input of skillInputs) {
-      input.click();
-    }
+    queryRole<HTMLButtonElement>('skills-select-none').click();
 
     queryRole<HTMLButtonElement>('confirm').click();
     await Promise.resolve();
@@ -241,6 +239,122 @@ describe('SessionComposerController', () => {
         skills: [],
       },
     });
+  });
+
+  it('restores implicit all-skills default when select all is used', async () => {
+    const { controller, createSessionForAgent } = buildController();
+
+    controller.open({
+      initialAgentId: 'assistant',
+      createSessionOptions: {
+        sessionConfig: {
+          skills: ['worktrees'],
+        },
+      },
+    });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    queryRole<HTMLButtonElement>('skills-select-all').click();
+
+    queryRole<HTMLButtonElement>('confirm').click();
+    await Promise.resolve();
+
+    expect(createSessionForAgent).toHaveBeenCalledWith('assistant', {
+      sessionConfig: {
+        workingDir: '/home/kevin/assistant',
+      },
+    });
+  });
+
+  it('keeps skill descriptions collapsed until expanded', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
+    const description = document.querySelector<HTMLElement>('.session-composer-skill-description');
+    expect(description?.hidden).toBe(true);
+
+    firstOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    const expandedDescription = document.querySelector<HTMLElement>('.session-composer-skill-description');
+    expect(expandedDescription?.hidden).toBe(false);
+    expect(expandedDescription?.textContent).toContain('Use git worktrees.');
+  });
+
+  it('expands descriptions from the row while keeping selection checkbox-only', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
+    const firstInput = firstOption?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const name = firstOption?.querySelector<HTMLElement>('.session-composer-skill-name');
+    const description = firstOption?.querySelector<HTMLElement>('.session-composer-skill-description');
+
+    expect(firstInput?.checked).toBe(true);
+    expect(description?.hidden).toBe(true);
+
+    name?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const afterRowInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    const expandedDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
+    );
+    expect(afterRowInput?.checked).toBe(true);
+    expect(expandedDescription?.hidden).toBe(false);
+
+    afterRowInput?.click();
+    const afterCheckboxInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    const afterCheckboxDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
+    );
+    expect(afterCheckboxInput?.checked).toBe(false);
+    expect(afterCheckboxDescription?.hidden).toBe(false);
+  });
+
+  it('supports keyboard expansion for skill rows', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
+    if (!firstOption) {
+      throw new Error('Expected first skill option');
+    }
+
+    firstOption.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    const expandedDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
+    );
+    expect(expandedDescription?.hidden).toBe(false);
+  });
+
+  it('preserves the skills list scroll position when toggling a checkbox', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const list = document.querySelector<HTMLDivElement>('.session-composer-skill-list');
+    const firstInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    if (!list || !firstInput) {
+      throw new Error('Expected skills list and checkbox');
+    }
+
+    list.scrollTop = 48;
+    firstInput.click();
+
+    expect(list.scrollTop).toBe(48);
   });
 
   it('closes immediately when cancel is pressed', () => {
@@ -254,6 +368,20 @@ describe('SessionComposerController', () => {
 
     expect(controller.isOpen()).toBe(false);
     expect(document.querySelector('[data-role="overlay"]')).toBeNull();
+  });
+
+  it('registers with the dialog manager while open', () => {
+    const { controller, dialogManager } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+
+    expect(dialogManager.registerExternalDialog).toHaveBeenCalledTimes(1);
+    const [overlay] = dialogManager.registerExternalDialog.mock.calls[0] ?? [];
+    expect(overlay).toBeInstanceOf(HTMLElement);
+
+    controller.close();
+
+    expect(dialogManager.releaseExternalDialog).toHaveBeenCalledWith(overlay);
   });
 
   it('updates an existing session from edit mode', async () => {

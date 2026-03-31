@@ -2787,6 +2787,7 @@ async function main(): Promise<void> {
         setStatus: (text) => {
           setStatus(statusEl, text);
         },
+        dialogManager,
       });
     }
     return sessionComposerController;
