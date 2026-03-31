@@ -4572,6 +4572,10 @@ async function main(): Promise<void> {
       closeShareModal();
       return true;
     }
+    if (sessionComposerController?.isOpen()) {
+      sessionComposerController.close();
+      return true;
+    }
     if (document.querySelector('.confirm-dialog-overlay')) {
       dialogManager.closeOpenDialog();
       return true;

@@ -439,6 +439,8 @@ export class SessionComposerController {
     const renderSkills = (): void => {
       const agent = getSelectedAgent();
       const availableSkills = agent?.sessionConfigCapabilities?.availableSkills ?? [];
+      const previousList = skillsSection.querySelector<HTMLDivElement>('.session-composer-skill-list');
+      const preservedScrollTop = previousList?.scrollTop ?? 0;
       skillsSection.innerHTML = '';
       if (availableSkills.length === 0) {
         skillsSection.hidden = true;
@@ -490,6 +492,11 @@ export class SessionComposerController {
       for (const skill of availableSkills) {
         const option = document.createElement('div');
         option.className = 'session-composer-skill-option';
+        const hasDescription = skill.description.trim().length > 0;
+        if (hasDescription) {
+          option.classList.add('is-expandable');
+          option.setAttribute('aria-expanded', String(expandedSkillDescriptions.has(skill.id)));
+        }
 
         const optionHeader = document.createElement('div');
         optionHeader.className = 'session-composer-skill-option-header';
@@ -535,25 +542,6 @@ export class SessionComposerController {
         control.append(input, meta);
         optionHeader.appendChild(control);
 
-        const hasDescription = skill.description.trim().length > 0;
-        if (hasDescription) {
-          const expanded = expandedSkillDescriptions.has(skill.id);
-          const detailsButton = document.createElement('button');
-          detailsButton.type = 'button';
-          detailsButton.className = 'session-composer-skill-details-toggle';
-          detailsButton.dataset['role'] = `skill-details-${skill.id}`;
-          detailsButton.textContent = expanded ? 'Hide details' : 'Details';
-          detailsButton.addEventListener('click', () => {
-            if (expandedSkillDescriptions.has(skill.id)) {
-              expandedSkillDescriptions.delete(skill.id);
-            } else {
-              expandedSkillDescriptions.add(skill.id);
-            }
-            renderSkills();
-          });
-          optionHeader.appendChild(detailsButton);
-        }
-
         option.addEventListener('click', (event) => {
           if (
             event.target instanceof Element &&
@@ -561,8 +549,14 @@ export class SessionComposerController {
           ) {
             return;
           }
-          input.checked = !input.checked;
-          updateSelectedSkills(input.checked);
+          if (!hasDescription) {
+            return;
+          }
+          if (expandedSkillDescriptions.has(skill.id)) {
+            expandedSkillDescriptions.delete(skill.id);
+          } else {
+            expandedSkillDescriptions.add(skill.id);
+          }
           renderSkills();
         });
 
@@ -579,6 +573,7 @@ export class SessionComposerController {
         list.appendChild(option);
       }
       skillsSection.appendChild(list);
+      list.scrollTop = preservedScrollTop;
     };
 
     const renderSelect = (

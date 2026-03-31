@@ -266,17 +266,18 @@ describe('SessionComposerController', () => {
     controller.open({ initialAgentId: 'assistant' });
     queryRole<HTMLButtonElement>('customize').click();
 
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
     const description = document.querySelector<HTMLElement>('.session-composer-skill-description');
     expect(description?.hidden).toBe(true);
 
-    queryRole<HTMLButtonElement>('skill-details-worktrees').click();
+    firstOption?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     const expandedDescription = document.querySelector<HTMLElement>('.session-composer-skill-description');
     expect(expandedDescription?.hidden).toBe(false);
     expect(expandedDescription?.textContent).toContain('Use git worktrees.');
   });
 
-  it('toggles skill selection from the row while keeping details separate', () => {
+  it('expands descriptions from the row while keeping selection checkbox-only', () => {
     const { controller } = buildController();
 
     controller.open({ initialAgentId: 'assistant' });
@@ -285,27 +286,50 @@ describe('SessionComposerController', () => {
     const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
     const firstInput = firstOption?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     const name = firstOption?.querySelector<HTMLElement>('.session-composer-skill-name');
-    const detailsButton = queryRole<HTMLButtonElement>('skill-details-worktrees');
+    const description = firstOption?.querySelector<HTMLElement>('.session-composer-skill-description');
 
     expect(firstInput?.checked).toBe(true);
+    expect(description?.hidden).toBe(true);
 
     name?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    const toggledInput = document.querySelector<HTMLInputElement>(
+    const afterRowInput = document.querySelector<HTMLInputElement>(
       '.session-composer-skill-option input[type="checkbox"]',
     );
-    expect(toggledInput?.checked).toBe(false);
-
-    detailsButton.click();
-    const afterDetailsInput = document.querySelector<HTMLInputElement>(
-      '.session-composer-skill-option input[type="checkbox"]',
+    const expandedDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
     );
-    expect(afterDetailsInput?.checked).toBe(false);
+    expect(afterRowInput?.checked).toBe(true);
+    expect(expandedDescription?.hidden).toBe(false);
 
-    afterDetailsInput?.click();
+    afterRowInput?.click();
     const afterCheckboxInput = document.querySelector<HTMLInputElement>(
       '.session-composer-skill-option input[type="checkbox"]',
     );
-    expect(afterCheckboxInput?.checked).toBe(true);
+    const afterCheckboxDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
+    );
+    expect(afterCheckboxInput?.checked).toBe(false);
+    expect(afterCheckboxDescription?.hidden).toBe(false);
+  });
+
+  it('preserves the skills list scroll position when toggling a checkbox', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const list = document.querySelector<HTMLDivElement>('.session-composer-skill-list');
+    const firstInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    if (!list || !firstInput) {
+      throw new Error('Expected skills list and checkbox');
+    }
+
+    list.scrollTop = 48;
+    firstInput.click();
+
+    expect(list.scrollTop).toBe(48);
   });
 
   it('closes immediately when cancel is pressed', () => {

@@ -3619,6 +3619,10 @@ body.panel-reordering {
   background-color: var(--color-bg-surface);
 }
 
+.session-composer-skill-option.is-expandable {
+  cursor: pointer;
+}
+
 .session-composer-skill-option:hover {
   background-color: var(--color-bg-hover);
 }
@@ -3654,21 +3658,6 @@ body.panel-reordering {
   color: var(--color-text-primary);
   font-size: var(--font-size-sm);
   font-weight: 600;
-}
-
-.session-composer-skill-details-toggle {
-  border: none;
-  background: none;
-  color: var(--color-accent-primary);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.session-composer-skill-details-toggle:hover {
-  color: var(--color-accent-primary-hover);
 }
 
 .session-composer-skill-description {
