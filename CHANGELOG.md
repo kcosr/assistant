@@ -7,6 +7,7 @@
 ### Added
 
 ### Changed
+- Changed the new session modal skills picker to add `Select all` and `Select none` bulk actions while preserving the implicit all-skills default when everything is selected. ([#78](https://github.com/kcosr/assistant/pull/78))
 
 ### Fixed
 
