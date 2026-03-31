@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed mobile session long-press actions so the session context menu no longer closes immediately after opening. ([#75](https://github.com/kcosr/assistant/pull/75))
 
 ### Removed
 
