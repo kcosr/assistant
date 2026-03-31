@@ -481,6 +481,7 @@ export class AgentSidebarController {
       clearLongPressTimer();
       if (suppressContextMenu) {
         suppressContextMenu = false;
+        event.stopPropagation();
         return;
       }
       this.options.showSessionMenu(event.clientX, event.clientY, sessionId);
