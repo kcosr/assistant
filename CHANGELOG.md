@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.16.1] - 2026-03-31
 
 ### Breaking Changes
 
@@ -13,6 +13,7 @@
 - Fixed voice settings so the adapter URL field no longer resets to the previous value when it loses focus. ([#72](https://github.com/kcosr/assistant/pull/72))
 
 ### Removed
+
 
 ## [0.16.0] - 2026-03-31
 
