@@ -7,7 +7,7 @@ import type {
 } from '../chatCompletionTypes';
 
 function isReplayableAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
-  return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
+  return event.payload.phase !== 'commentary';
 }
 
 export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {

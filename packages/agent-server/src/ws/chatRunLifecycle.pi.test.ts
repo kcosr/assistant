@@ -304,6 +304,144 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('does not dedupe a new Pi user turn solely because the text matches the last replayed user message', async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-replay-repeat-'));
+    const baseDir = path.join(os.homedir(), '.pi', 'agent', 'sessions', encodePiCwd(cwd));
+    await fs.mkdir(baseDir, { recursive: true });
+    const piSessionId = 'pi-session-repeat';
+    const sessionPath = path.join(baseDir, `2026-03-26T00-00-00-000Z_${piSessionId}.jsonl`);
+    const rawPiSession = [
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: piSessionId,
+        timestamp: '2026-03-26T00:00:00.000Z',
+        cwd,
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'u1',
+        parentId: null,
+        timestamp: '2026-03-26T00:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'repeat request' }],
+          timestamp: 1,
+        },
+      }),
+    ].join('\n');
+    await fs.writeFile(sessionPath, rawPiSession, 'utf8');
+
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {
+          providers: {
+            pi: {
+              sessionId: piSessionId,
+              cwd,
+            },
+          },
+        },
+      },
+      chatMessages: [{ role: 'system', content: 'System prompt' }],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    let replayMessagesAtCall:
+      | Array<{
+          role: string;
+          content?: string;
+          historyTimestampMs?: number;
+        }>
+      | undefined;
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      replayMessagesAtCall = options.messages.map((message) => structuredClone(message));
+      return {
+        text: 'ack',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'ack' }],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        } as never,
+      };
+    });
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'repeat request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(replayMessagesAtCall).toMatchObject([
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: 'repeat request' },
+      { role: 'user', content: 'repeat request' },
+    ]);
+  });
+
   it('does not duplicate the final assistant in Pi sync when replay messages alias state', async () => {
     const agentRegistry = new AgentRegistry([
       {
@@ -577,5 +715,11 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     expect(events.find((event) => event.type === 'interrupt')).toMatchObject({
       payload: { reason: 'timeout' },
     });
+    expect(state.chatMessages).toMatchObject([
+      {
+        role: 'user',
+        content: 'Current request',
+      },
+    ]);
   });
 });

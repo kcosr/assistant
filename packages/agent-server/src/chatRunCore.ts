@@ -943,7 +943,9 @@ export async function runChatCompletionCore(
         currentUserMessage?.role === 'user' &&
         !(
           lastCanonical?.role === 'user' &&
-          lastCanonical.content === currentUserMessage.content
+          lastCanonical.content === currentUserMessage.content &&
+          lastCanonical.historyTimestampMs !== undefined &&
+          lastCanonical.historyTimestampMs === currentUserMessage.historyTimestampMs
         );
       piReplayMessages = [
         ...(systemMessage ? [systemMessage] : []),

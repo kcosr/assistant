@@ -155,10 +155,7 @@ export function buildChatMessagesFromEvents(
         if (!responseId) {
           break;
         }
-        if (event.payload.interrupted === true) {
-          break;
-        }
-        if (interruptedResponseIds.has(responseId)) {
+        if (interruptedResponseIds.has(responseId) && event.payload.interrupted !== true) {
           break;
         }
         const text = event.payload.text.trim();

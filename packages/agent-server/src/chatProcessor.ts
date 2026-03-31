@@ -541,10 +541,6 @@ export async function processUserMessage(
 
     const wasAborted = runResult.aborted || abortSignal.aborted;
     if (wasAborted) {
-      const lastMsg = state.chatMessages[state.chatMessages.length - 1];
-      if (lastMsg && lastMsg.role === 'user' && lastMsg === userMessage) {
-        state.chatMessages.pop();
-      }
       const timedOut =
         runResult.abortReason === 'timeout' ||
         abortSignal.reason === 'timeout' ||

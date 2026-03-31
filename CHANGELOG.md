@@ -7,8 +7,10 @@
 ### Added
 
 ### Changed
+- Changed PI replay and history reconstruction to keep interrupted visible user turns, preserve interrupted assistant text when it was shown to the user, and align replay sequencing more closely with upstream PI session behavior.
 
 ### Fixed
+- Fixed interrupted PI tool turns so replay no longer drops remembered requests, duplicates completed tool activity, or sends orphaned tool results on the next provider request.
 
 ### Removed
 
