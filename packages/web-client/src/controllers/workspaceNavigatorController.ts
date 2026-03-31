@@ -9,6 +9,7 @@ import { containsPanelId } from '../utils/layoutTree';
 import { formatSessionLabel } from '../utils/sessionLabel';
 import { PanelChromeController } from './panelChromeController';
 import { resolvePanelDisplayTitle } from '../utils/panelTitle';
+import { getPanelTitleContextKey } from '../utils/panelContext';
 
 type PanelActiveContext = {
   panelId: string;
@@ -455,6 +456,10 @@ export class WorkspaceNavigatorController {
     manifests: Map<string, PanelTypeManifest>,
     _panelTypeCounts: Map<string, number>,
   ): string {
+    const resolvedTitle = this.options.host.getContext(getPanelTitleContextKey(panelId));
+    if (typeof resolvedTitle === 'string' && resolvedTitle.trim().length > 0) {
+      return resolvedTitle.trim();
+    }
     const panel = this.layout?.panels[panelId];
     if (!panel) {
       return panelId;

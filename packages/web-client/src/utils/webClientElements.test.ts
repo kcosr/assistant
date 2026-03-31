@@ -28,6 +28,7 @@ describe('getWebClientElements', () => {
       <input id="autofocus-chat-checkbox" type="checkbox" />
       <input id="keyboard-shortcuts-checkbox" type="checkbox" />
       <input id="auto-scroll-checkbox" type="checkbox" />
+      <input id="synthesized-panel-titles-checkbox" type="checkbox" />
       <div id="status"></div>
       <div id="panel-workspace"></div>
     `;

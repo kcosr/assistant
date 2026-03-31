@@ -25,6 +25,7 @@ export function validatePanelCustomTitle(value: string): string | null {
 export function resolvePanelDisplayTitle(
   panel: Pick<PanelInstance, 'panelType' | 'meta' | 'customTitle'> | null | undefined,
   options?: {
+    synthesizedTitle?: string | null;
     manifestTitle?: string | null;
     fallbackTitle?: string;
   },
@@ -36,6 +37,11 @@ export function resolvePanelDisplayTitle(
   const customTitle = normalizeTitlePart(panel.customTitle);
   if (customTitle) {
     return customTitle;
+  }
+
+  const synthesizedTitle = normalizeTitlePart(options?.synthesizedTitle);
+  if (synthesizedTitle) {
+    return synthesizedTitle;
   }
 
   const metaTitle = normalizeTitlePart(panel.meta?.title);
@@ -54,12 +60,18 @@ export function resolvePanelDisplayTitle(
 export function resolvePanelFallbackTitle(
   panel: Pick<PanelInstance, 'panelType' | 'meta'> | null | undefined,
   options?: {
+    synthesizedTitle?: string | null;
     manifestTitle?: string | null;
     fallbackTitle?: string;
   },
 ): string {
   if (!panel) {
     return options?.fallbackTitle ?? 'Panel';
+  }
+
+  const synthesizedTitle = normalizeTitlePart(options?.synthesizedTitle);
+  if (synthesizedTitle) {
+    return synthesizedTitle;
   }
 
   const metaTitle = normalizeTitlePart(panel.meta?.title);
@@ -73,4 +85,38 @@ export function resolvePanelFallbackTitle(
   }
 
   return panel.panelType;
+}
+
+function endsWithTitleKind(title: string, kind: 'Chat' | 'List' | 'Note'): boolean {
+  const normalized = title.trim().toLowerCase();
+  if (kind === 'Chat') {
+    return /\bchat$/.test(normalized);
+  }
+  if (kind === 'List') {
+    return /\blists?$/.test(normalized);
+  }
+  return /\bnotes?$/.test(normalized);
+}
+
+function formatSynthesizedInstanceSuffix(instanceLabel: string | null | undefined): string {
+  const normalized = normalizeTitlePart(instanceLabel);
+  if (!normalized || normalized.toLowerCase() === 'default') {
+    return '';
+  }
+  return ` (${normalized})`;
+}
+
+export function synthesizePanelEntityTitle(options: {
+  entityTitle: string | null | undefined;
+  kind: 'Chat' | 'List' | 'Note';
+  instanceLabel?: string | null;
+}): string | null {
+  const entityTitle = normalizeTitlePart(options.entityTitle);
+  if (!entityTitle) {
+    return null;
+  }
+  const baseTitle = endsWithTitleKind(entityTitle, options.kind)
+    ? entityTitle
+    : `${entityTitle} ${options.kind}`;
+  return `${baseTitle}${formatSynthesizedInstanceSuffix(options.instanceLabel)}`;
 }

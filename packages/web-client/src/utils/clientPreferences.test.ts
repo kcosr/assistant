@@ -18,6 +18,7 @@ const defaultOptions = {
   autoFocusChatStorageKey: 'autofocus',
   autoScrollStorageKey: 'autoscroll',
   showContextStorageKey: 'show-context',
+  synthesizedPanelTitlesStorageKey: 'synthesized-panel-titles',
 };
 
 describe('loadClientPreferences', () => {
@@ -36,6 +37,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionStartTimeoutMs).toBe(30000);
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(60000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(1200);
+    expect(preferences.synthesizedPanelTitlesEnabled).toBe(false);
   });
 
   it('defaults tool audio mode on in Capacitor Android when unset', () => {
@@ -93,5 +95,13 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(15000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(900);
     expect(preferences.voice.selectedMicDeviceId).toBe('11');
+  });
+
+  it('loads synthesized panel title preference when enabled', () => {
+    localStorage.setItem(defaultOptions.synthesizedPanelTitlesStorageKey, 'true');
+
+    const preferences = loadClientPreferences(defaultOptions);
+
+    expect(preferences.synthesizedPanelTitlesEnabled).toBe(true);
   });
 });

@@ -1788,6 +1788,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const updatePanelContext = (): void => {
         const contextInstanceId = activeListInstanceId ?? activeInstanceId;
+        const contextInstanceLabel = getInstanceLabel(contextInstanceId);
         const contextAttributes: Record<string, string> = {
           'instance-id': contextInstanceId,
           'instance-ids': selectedInstanceIds.join(','),
@@ -1795,6 +1796,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         if (!activeListSummary || !activeListInstanceId) {
           host.setContext(contextKey, {
             instance_id: contextInstanceId,
+            instance_label: contextInstanceLabel,
             instance_ids: selectedInstanceIds,
             contextAttributes,
           });
@@ -1816,6 +1818,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           id: activeListSummary.id,
           name: activeListSummary.name,
           instance_id: activeListInstanceId,
+          instance_label: contextInstanceLabel,
           instance_ids: selectedInstanceIds,
           description: activeListSummary.description ?? activeListData?.description ?? '',
           tags: activeListSummary.tags ?? [],

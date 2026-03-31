@@ -5,8 +5,11 @@
 ### Breaking Changes
 
 ### Added
+- Added per-panel custom rename support with persisted `customTitle` overrides and a panel-menu rename action.
+- Added an opt-in `Auto-title chats, lists, and notes` client preference that synthesizes entity-aware panel titles such as `Test Chat` and `Todo List (Scratch)`.
 
 ### Changed
+- Changed panel title resolution so tabs, panel headers, navigator labels, panel inventory/context, and pinned-panel labels share the same resolved display title.
 
 ### Fixed
 

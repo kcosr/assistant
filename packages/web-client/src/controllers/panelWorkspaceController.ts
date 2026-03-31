@@ -33,6 +33,7 @@ import {
   normalizePanelCustomTitle,
   resolvePanelDisplayTitle,
   resolvePanelFallbackTitle,
+  synthesizePanelEntityTitle,
   validatePanelCustomTitle,
 } from '../utils/panelTitle';
 
@@ -95,6 +96,7 @@ export interface PanelWorkspaceControllerOptions {
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;
   dialogManager?: DialogManager;
   headerDockRoot?: HTMLElement | null;
+  getSynthesizedPanelTitlesEnabled?: () => boolean;
   hasChatPanelActiveOutput?: (panelId: string) => boolean;
   windowId?: string;
 }
@@ -158,6 +160,10 @@ export class PanelWorkspaceController {
   }
 
   attach(): void {
+    this.render();
+  }
+
+  refreshPanelTitles(): void {
     this.render();
   }
 
@@ -1600,6 +1606,12 @@ export class PanelWorkspaceController {
       }
       const key = getPanelContextKey(panelId);
       const unsubscribe = this.options.host.subscribeContext(key, () => {
+        const previousTitle = this.publishedPanelTitles.get(panelId) ?? null;
+        this.syncResolvedPanelTitleContext(panelId);
+        if ((this.publishedPanelTitles.get(panelId) ?? null) !== previousTitle) {
+          this.render();
+          return;
+        }
         this.sendPanelInventory();
       });
       this.panelContextSubscriptions.set(panelId, unsubscribe);
@@ -2805,12 +2817,70 @@ export class PanelWorkspaceController {
     return false;
   }
 
+  private getSynthesizedPanelTitle(panelId: string): string | null {
+    if (!this.options.getSynthesizedPanelTitlesEnabled?.()) {
+      return null;
+    }
+    const panel = this.layout.panels[panelId];
+    if (!panel) {
+      return null;
+    }
+    if (panel.panelType === 'chat') {
+      const binding = this.resolvePanelBinding(
+        panelId,
+        panel,
+        this.options.registry.getManifest(panel.panelType),
+      );
+      if (binding?.mode !== 'fixed') {
+        return null;
+      }
+      return synthesizePanelEntityTitle({
+        entityTitle: this.getSessionLabel(binding.sessionId),
+        kind: 'Chat',
+      });
+    }
+
+    const rawContext = this.options.host.getContext(getPanelContextKey(panelId));
+    if (!rawContext || typeof rawContext !== 'object' || Array.isArray(rawContext)) {
+      return null;
+    }
+    const context = rawContext as Record<string, unknown>;
+    const instanceLabel =
+      typeof context['instance_label'] === 'string' ? context['instance_label'] : null;
+
+    if (panel.panelType === 'lists' && context['type'] === 'list') {
+      return synthesizePanelEntityTitle({
+        entityTitle: typeof context['name'] === 'string' ? context['name'] : null,
+        kind: 'List',
+        instanceLabel,
+      });
+    }
+
+    if (panel.panelType === 'notes' && context['type'] === 'note') {
+      return synthesizePanelEntityTitle({
+        entityTitle:
+          typeof context['title'] === 'string'
+            ? context['title']
+            : typeof context['id'] === 'string'
+              ? context['id']
+              : null,
+        kind: 'Note',
+        instanceLabel,
+      });
+    }
+
+    return null;
+  }
+
   private getPanelTitle(panelId: string): string {
     const panel = this.layout.panels[panelId];
     const manifestTitle = panel
       ? this.options.registry.getManifest(panel.panelType)?.title ?? null
       : null;
-    return resolvePanelDisplayTitle(panel, { manifestTitle });
+    return resolvePanelDisplayTitle(panel, {
+      synthesizedTitle: this.getSynthesizedPanelTitle(panelId),
+      manifestTitle,
+    });
   }
 
   private getPanelFallbackTitle(panelId: string): string {
@@ -2818,7 +2888,10 @@ export class PanelWorkspaceController {
     const manifestTitle = panel
       ? this.options.registry.getManifest(panel.panelType)?.title ?? null
       : null;
-    return resolvePanelFallbackTitle(panel, { manifestTitle });
+    return resolvePanelFallbackTitle(panel, {
+      synthesizedTitle: this.getSynthesizedPanelTitle(panelId),
+      manifestTitle,
+    });
   }
 
   private syncResolvedPanelTitleContexts(): void {

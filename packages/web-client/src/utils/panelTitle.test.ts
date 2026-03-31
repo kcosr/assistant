@@ -4,6 +4,7 @@ import {
   MAX_PANEL_CUSTOM_TITLE_LENGTH,
   resolvePanelDisplayTitle,
   resolvePanelFallbackTitle,
+  synthesizePanelEntityTitle,
   validatePanelCustomTitle,
 } from './panelTitle';
 
@@ -21,7 +22,19 @@ describe('resolvePanelDisplayTitle', () => {
     ).toBe('Work Tasks');
   });
 
-  it('prefers metadata title over manifest title when no customTitle exists', () => {
+  it('prefers synthesized title over metadata title when no customTitle exists', () => {
+    expect(
+      resolvePanelDisplayTitle(
+        {
+          panelType: 'lists',
+          meta: { title: 'Lists (team)' },
+        },
+        { synthesizedTitle: 'Work Tasks List (Scratch)', manifestTitle: 'Lists' },
+      ),
+    ).toBe('Work Tasks List (Scratch)');
+  });
+
+  it('prefers metadata title over manifest title when no customTitle or synthesized title exists', () => {
     expect(
       resolvePanelDisplayTitle(
         {
@@ -49,9 +62,51 @@ describe('resolvePanelFallbackTitle', () => {
           panelType: 'lists',
           meta: { title: 'Lists (team)' },
         },
+        { synthesizedTitle: 'Work Tasks List (Scratch)', manifestTitle: 'Lists' },
+      ),
+    ).toBe('Work Tasks List (Scratch)');
+
+    expect(
+      resolvePanelFallbackTitle(
+        {
+          panelType: 'lists',
+          meta: { title: 'Lists (team)' },
+        },
         { manifestTitle: 'Lists' },
       ),
     ).toBe('Lists (team)');
+  });
+});
+
+describe('synthesizePanelEntityTitle', () => {
+  it('adds panel kinds and non-default instance labels', () => {
+    expect(synthesizePanelEntityTitle({ entityTitle: 'Test', kind: 'Chat' })).toBe('Test Chat');
+    expect(
+      synthesizePanelEntityTitle({
+        entityTitle: 'Todo',
+        kind: 'List',
+        instanceLabel: 'Scratch',
+      }),
+    ).toBe('Todo List (Scratch)');
+    expect(
+      synthesizePanelEntityTitle({
+        entityTitle: 'Ideas',
+        kind: 'Note',
+        instanceLabel: 'Default',
+      }),
+    ).toBe('Ideas Note');
+  });
+
+  it('avoids duplicating panel kinds already present in the entity title', () => {
+    expect(synthesizePanelEntityTitle({ entityTitle: 'Reading List', kind: 'List' })).toBe(
+      'Reading List',
+    );
+    expect(synthesizePanelEntityTitle({ entityTitle: 'Meeting Notes', kind: 'Note' })).toBe(
+      'Meeting Notes',
+    );
+    expect(synthesizePanelEntityTitle({ entityTitle: 'Support Chat', kind: 'Chat' })).toBe(
+      'Support Chat',
+    );
   });
 });
 

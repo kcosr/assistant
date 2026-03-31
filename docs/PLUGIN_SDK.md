@@ -848,6 +848,12 @@ interface PanelMetadata {
 User-driven panel renames are stored separately on the panel instance and take precedence over
 `meta.title` when present.
 
+When the client preference for synthesized panel titles is enabled, the host may also derive a
+display title for certain entity-backed panels (currently chat, lists, and notes) before falling
+back to `meta.title`. The effective display precedence is:
+
+`customTitle -> synthesized title -> meta.title -> manifest.title -> panelType`
+
 Example:
 
 ```ts

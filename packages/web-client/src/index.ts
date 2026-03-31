@@ -427,6 +427,7 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
+    synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
     interactionModeCheckbox: interactionModeCheckboxEl,
     panelWorkspace: panelWorkspaceRoot,
     windowDropdownButton,
@@ -512,6 +513,7 @@ async function main(): Promise<void> {
   const AUTO_SCROLL_STORAGE_KEY = 'aiAssistantAutoScrollEnabled';
   const INTERACTION_MODE_STORAGE_KEY = 'aiAssistantInteractiveModeEnabled';
   const SHOW_CONTEXT_STORAGE_KEY = 'aiAssistantShowContextEnabled';
+  const SYNTHESIZED_PANEL_TITLES_STORAGE_KEY = 'aiAssistantSynthesizedPanelTitlesEnabled';
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
@@ -531,6 +533,7 @@ async function main(): Promise<void> {
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
+    synthesizedPanelTitlesStorageKey: SYNTHESIZED_PANEL_TITLES_STORAGE_KEY,
   });
 
   const initialVoiceSettings = initialPreferences.voice;
@@ -539,6 +542,7 @@ async function main(): Promise<void> {
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
   let autoScrollEnabled = initialPreferences.autoScrollEnabled;
   let showContextEnabled = initialPreferences.showContextEnabled;
+  let synthesizedPanelTitlesEnabled = initialPreferences.synthesizedPanelTitlesEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
   voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
@@ -2246,6 +2250,7 @@ async function main(): Promise<void> {
       openPanelLauncher,
       openSessionPicker,
       dialogManager,
+      getSynthesizedPanelTitlesEnabled: () => synthesizedPanelTitlesEnabled,
       hasChatPanelActiveOutput,
       windowId: WINDOW_ID,
       onLayoutChange: (layout) => {
@@ -3079,12 +3084,15 @@ async function main(): Promise<void> {
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
     autoScrollCheckbox: autoScrollCheckboxEl,
+    synthesizedPanelTitlesCheckbox: synthesizedPanelTitlesCheckboxEl,
     initialAutoFocusChatOnSessionReady: autoFocusChatOnSessionReady,
     initialKeyboardShortcutsEnabled: keyboardShortcutsEnabled,
     initialAutoScrollEnabled: autoScrollEnabled,
+    initialSynthesizedPanelTitlesEnabled: synthesizedPanelTitlesEnabled,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     autoScrollStorageKey: AUTO_SCROLL_STORAGE_KEY,
+    synthesizedPanelTitlesStorageKey: SYNTHESIZED_PANEL_TITLES_STORAGE_KEY,
     setAutoFocusChatOnSessionReady: (enabled) => {
       autoFocusChatOnSessionReady = enabled;
     },
@@ -3096,6 +3104,10 @@ async function main(): Promise<void> {
       for (const entry of chatPanelsById.values()) {
         entry.runtime.chatScrollManager.setAutoScrollEnabled(enabled);
       }
+    },
+    setSynthesizedPanelTitlesEnabled: (enabled) => {
+      synthesizedPanelTitlesEnabled = enabled;
+      panelWorkspace?.refreshPanelTitles();
     },
   });
 

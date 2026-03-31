@@ -8,6 +8,7 @@ import { PanelChromeController } from './panelChromeController';
 import { PanelHostController } from './panelHostController';
 import { PanelRegistry, type PanelFactory } from './panelRegistry';
 import { PanelWorkspaceController } from './panelWorkspaceController';
+import { getPanelContextKey } from '../utils/panelContext';
 import {
   WorkspaceNavigatorController,
   type WorkspaceNavigatorHost,
@@ -310,5 +311,109 @@ describe('PanelWorkspaceController rename flow', () => {
         '.panel-frame[data-panel-id="lists-1"] [data-role="chrome-title"]',
       )?.textContent,
     ).toBe('Notes');
+  });
+
+  it('uses synthesized list titles across surfaces when the preference is enabled', async () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'lists', title: 'Lists' }, createChromePanel('Lists'));
+    registry.register({ type: 'notes', title: 'Notes' }, createChromePanel('Notes'));
+
+    const panelEvents: unknown[] = [];
+    const host = new PanelHostController({
+      registry,
+      sendPanelEvent: (event) => {
+        panelEvents.push(event);
+      },
+    });
+    const root = document.createElement('div');
+    const navigatorRoot = document.createElement('div');
+    document.body.append(root, navigatorRoot);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      getSynthesizedPanelTitlesEnabled: () => true,
+      loadLayout: () => ({
+        ...createTabbedLayout(),
+        panels: {
+          'lists-1': {
+            panelId: 'lists-1',
+            panelType: 'lists',
+            meta: {
+              title: 'Lists (Scratch)',
+            },
+          },
+          'notes-1': {
+            panelId: 'notes-1',
+            panelType: 'notes',
+          },
+        },
+      }),
+      onLayoutChange: (layout) => {
+        host.setContext('panel.layout', layout);
+      },
+    });
+    host.setPanelWorkspace(workspace);
+    host.setContext('panel.manifests', registry.listManifests());
+    workspace.attach();
+
+    const navigator = new WorkspaceNavigatorController({
+      container: navigatorRoot,
+      host: host as unknown as WorkspaceNavigatorHost,
+    });
+    navigator.attach();
+
+    host.setContext(getPanelContextKey('lists-1'), {
+      type: 'list',
+      id: 'list-1',
+      name: 'Test',
+      instance_id: 'scratch',
+      instance_label: 'Scratch',
+      instance_ids: ['scratch'],
+      contextAttributes: {
+        'instance-id': 'scratch',
+        'instance-ids': 'scratch',
+      },
+    });
+    await nextFrame();
+
+    expect(
+      root.querySelector<HTMLElement>(
+        '.panel-frame[data-panel-id="lists-1"] [data-role="chrome-title"]',
+      )?.textContent,
+    ).toBe('Test List (Scratch)');
+    expect(
+      root.querySelector<HTMLButtonElement>('.panel-tab-button[data-panel-id="lists-1"]')
+        ?.textContent,
+    ).toBe('Test List (Scratch)');
+
+    const navigatorLabels = Array.from(
+      navigatorRoot.querySelectorAll<HTMLElement>('.workspace-navigator-label'),
+    ).map((element) => element.textContent);
+    expect(navigatorLabels).toContain('Test List (Scratch)');
+
+    expect(
+      (
+        host.getContext('panel.context') as {
+          panels: Array<{ panelId: string; panelTitle: string }>;
+        } | null
+      )?.panels.find((panel) => panel.panelId === 'lists-1')?.panelTitle,
+    ).toBe('Test List (Scratch)');
+
+    const inventoryPayload = panelEvents
+      .map((event) => (event as { payload?: unknown }).payload)
+      .filter(
+        (payload): payload is { type: string; panels: Array<{ panelId: string; panelTitle?: string }> } =>
+          !!payload &&
+          typeof payload === 'object' &&
+          (payload as { type?: string }).type === 'panel_inventory',
+      )
+      .at(-1);
+    expect(inventoryPayload?.panels.find((panel) => panel.panelId === 'lists-1')?.panelTitle).toBe(
+      'Test List (Scratch)',
+    );
+
+    navigator.detach();
   });
 });
