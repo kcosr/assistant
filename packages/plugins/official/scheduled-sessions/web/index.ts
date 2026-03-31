@@ -52,6 +52,16 @@ const SCHEDULED_SESSIONS_TEMPLATE = `
       </div>
     </div>
     <div class="scheduled-sessions-status" data-role="status"></div>
+    <div class="scheduled-sessions-searchbar">
+      <input
+        type="search"
+        class="scheduled-sessions-search"
+        data-role="search"
+        placeholder="Filter by title or agent..."
+        aria-label="Filter schedules by title or agent"
+        autocomplete="off"
+      />
+    </div>
     <div class="scheduled-sessions-body" data-role="body"></div>
   </aside>
 `;
@@ -226,6 +236,10 @@ function sortSchedules(schedules: ScheduleInfo[]): ScheduleInfo[] {
   });
 }
 
+function getScheduleTitle(schedule: ScheduleInfo): string {
+  return schedule.sessionTitle?.trim() || schedule.scheduleId;
+}
+
 function resolveServices(host: PanelHost): PanelCoreServices | null {
   const raw = host.getContext(CORE_PANEL_SERVICES_CONTEXT_KEY);
   return raw && typeof raw === 'object' ? (raw as PanelCoreServices) : null;
@@ -299,11 +313,12 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const summaryEl = root.querySelector<HTMLElement>('[data-role="summary"]');
       const statusEl = root.querySelector<HTMLElement>('[data-role="status"]');
+      const searchEl = root.querySelector<HTMLInputElement>('[data-role="search"]');
       const bodyEl = root.querySelector<HTMLElement>('[data-role="body"]');
       const createButton = root.querySelector<HTMLButtonElement>('[data-role="create"]');
       const refreshButton = root.querySelector<HTMLButtonElement>('[data-role="refresh"]');
 
-      if (!summaryEl || !statusEl || !bodyEl || !refreshButton || !createButton) {
+      if (!summaryEl || !statusEl || !searchEl || !bodyEl || !refreshButton || !createButton) {
         throw new Error('Scheduled sessions panel failed to locate required elements');
       }
 
@@ -316,6 +331,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let schedules = new Map<string, ScheduleInfo>();
       let loading = false;
       let message = '';
+      let searchQuery = '';
 
       const expandedSchedules = new Set<string>();
 
@@ -408,15 +424,29 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const render = (): void => {
         const allSchedules = Array.from(schedules.values());
-        const orderedSchedules = sortSchedules(allSchedules);
-        const runningCount = allSchedules.filter((schedule) => schedule.status === 'running').length;
-        const disabledCount = allSchedules.filter((schedule) => schedule.status === 'disabled').length;
-        summaryEl.textContent = `${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`;
+        const normalizedQuery = searchQuery.trim().toLowerCase();
+        const orderedSchedules = sortSchedules(allSchedules).filter((schedule) => {
+          if (!normalizedQuery) {
+            return true;
+          }
+          const title = getScheduleTitle(schedule).toLowerCase();
+          const agent = schedule.agentId.toLowerCase();
+          return title.includes(normalizedQuery) || agent.includes(normalizedQuery);
+        });
+        const runningCount = orderedSchedules.filter((schedule) => schedule.status === 'running').length;
+        const disabledCount = orderedSchedules.filter((schedule) => schedule.status === 'disabled').length;
+        summaryEl.textContent = normalizedQuery
+          ? `${orderedSchedules.length} of ${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`
+          : `${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`;
         statusEl.textContent = message;
         chromeController?.scheduleLayoutCheck();
 
         if (allSchedules.length === 0 && !loading) {
           bodyEl.innerHTML = '<div class="scheduled-sessions-empty">No schedules configured.</div>';
+          return;
+        }
+        if (orderedSchedules.length === 0 && !loading) {
+          bodyEl.innerHTML = `<div class="scheduled-sessions-empty">No schedules match "${escapeHtml(searchQuery.trim())}".</div>`;
           return;
         }
 
@@ -431,7 +461,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
               : schedule.status === 'disabled'
                 ? 'Disabled'
                 : 'Idle';
-          const rowTitle = schedule.sessionTitle?.trim() || schedule.scheduleId;
+          const rowTitle = getScheduleTitle(schedule);
           const runningDetail =
             schedule.status === 'running' && schedule.runningStartedAt
               ? `Running for ${formatDuration(Date.now() - new Date(schedule.runningStartedAt).getTime())}`
@@ -579,6 +609,11 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       refreshButton.addEventListener('click', () => {
         void refresh();
+      });
+
+      searchEl.addEventListener('input', () => {
+        searchQuery = searchEl.value;
+        render();
       });
 
       createButton.addEventListener('click', () => {

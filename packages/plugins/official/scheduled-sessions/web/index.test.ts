@@ -271,4 +271,39 @@ describe('scheduled sessions panel', () => {
       handle.unmount();
     }
   });
+
+  it('filters rows live by title and agent name only', async () => {
+    const { container, handle } = await mountPanel();
+
+    try {
+      const search = container.querySelector<HTMLInputElement>('[data-role="search"]');
+      expect(search).not.toBeNull();
+
+      search!.value = 'agent-b';
+      search!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(1);
+      expect(
+        container.querySelector<HTMLElement>('.scheduled-sessions-row-title')?.textContent?.trim(),
+      ).toBe('schedule-2');
+      expect(
+        container.querySelector<HTMLElement>('[data-role="summary"]')?.textContent?.trim(),
+      ).toBe('1 of 2 schedules | 0 running | 1 disabled');
+
+      search!.value = 'morning';
+      search!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(1);
+      expect(
+        container.querySelector<HTMLElement>('.scheduled-sessions-row-title')?.textContent?.trim(),
+      ).toBe('Morning Seed');
+
+      search!.value = '0 6';
+      search!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(container.querySelectorAll('.scheduled-sessions-item')).toHaveLength(0);
+      expect(container.querySelector('.scheduled-sessions-empty')?.textContent).toContain(
+        'No schedules match',
+      );
+    } finally {
+      handle.unmount();
+    }
+  });
 });

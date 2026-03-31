@@ -27,6 +27,29 @@
   color: var(--color-text-secondary);
 }
 
+.scheduled-sessions-searchbar {
+  padding: 0 var(--spacing-md) var(--spacing-sm);
+}
+
+.scheduled-sessions-search {
+  width: 100%;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-input);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  padding: 8px 10px;
+}
+
+.scheduled-sessions-search::placeholder {
+  color: var(--color-text-muted);
+}
+
+.scheduled-sessions-search:focus {
+  outline: none;
+  border-color: var(--color-border-default);
+}
+
 .scheduled-sessions-body {
   flex: 1;
   min-height: 0;
