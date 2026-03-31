@@ -5,10 +5,12 @@
 ### Breaking Changes
 
 ### Added
+- Added a live title/agent filter to the scheduled sessions panel. ([#76](https://github.com/kcosr/assistant/pull/76))
 
 ### Changed
 
 ### Fixed
+- Fixed the scheduled sessions panel scrolling and refined it into a flatter compact collapsed-by-default layout. ([#76](https://github.com/kcosr/assistant/pull/76))
 
 ### Removed
 
