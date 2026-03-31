@@ -229,6 +229,7 @@ Client ────── WebSocket ────── Server
 - Clients can show activity indicators for background sessions
 - `text_input` targets a specific session via `sessionId`
 - Omitted mask fields mean “all matching values for that dimension”
+- Global broadcasts such as `session_created` / `session_deleted` bypass per-session masks so clients can keep shared session lists in sync
 
 ### SessionHub
 

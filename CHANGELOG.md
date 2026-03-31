@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Changed the websocket protocol to require protocol version `3` with structured `hello.subscriptions`; legacy v1/v2 hello flows are no longer accepted.
 
 ### Added
 - Added masked websocket session subscriptions plus preferred-session native voice targeting so Android voice can watch many sessions with filtered event traffic while notification `Speak` targets a persisted voice session.

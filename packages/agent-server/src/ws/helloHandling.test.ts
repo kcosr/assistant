@@ -149,4 +149,48 @@ describe('handleHello', () => {
     expect(code).toBe('unsupported_protocol_version');
     expect(close).toHaveBeenCalledTimes(1);
   });
+
+  it('accepts an empty v3 subscription list without sending errors', async () => {
+    const sessionsFile = createTempFile('hello-handling-empty-v3-sessions');
+
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
+
+    const connection: SessionConnection = {
+      sendServerMessageFromHub: () => {},
+      sendErrorFromHub: () => {},
+    };
+
+    const sendMessage = vi.fn();
+    const sendError = vi.fn();
+    const close = vi.fn();
+
+    const message: ClientHelloMessage = {
+      type: 'hello',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      subscriptions: [],
+    };
+
+    await handleHello({
+      message,
+      clientHelloReceived: false,
+      setClientHelloReceived: () => {},
+      setClientAudioCapabilities: () => {},
+      connection,
+      sessionHub,
+      sendMessage,
+      sendError,
+      close,
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(sendError).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(Array.from(sessionHub.getConnectionSubscriptions(connection))).toEqual([]);
+  });
 });

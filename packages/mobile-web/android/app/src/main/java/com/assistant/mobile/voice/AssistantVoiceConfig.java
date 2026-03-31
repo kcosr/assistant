@@ -450,17 +450,17 @@ final class AssistantVoiceConfig {
         if (values == null || values.isEmpty()) {
             return Collections.emptyList();
         }
-        ArrayList<String> normalized = new ArrayList<>();
+        java.util.LinkedHashSet<String> normalized = new java.util.LinkedHashSet<>();
         for (String value : values) {
             String sessionId = normalizeOptional(value);
-            if (!sessionId.isEmpty() && !normalized.contains(sessionId)) {
+            if (!sessionId.isEmpty()) {
                 normalized.add(sessionId);
             }
         }
         if (normalized.isEmpty()) {
             return Collections.emptyList();
         }
-        return Collections.unmodifiableList(normalized);
+        return Collections.unmodifiableList(new ArrayList<>(normalized));
     }
 
     private static List<String> parseSessionIdList(String raw) {
@@ -470,14 +470,17 @@ final class AssistantVoiceConfig {
         }
         try {
             JSONArray entries = new JSONArray(normalized);
-            ArrayList<String> sessionIds = new ArrayList<>();
+            java.util.LinkedHashSet<String> sessionIds = new java.util.LinkedHashSet<>();
             for (int index = 0; index < entries.length(); index += 1) {
                 String sessionId = normalizeOptional(entries.optString(index, ""));
-                if (!sessionId.isEmpty() && !sessionIds.contains(sessionId)) {
+                if (!sessionId.isEmpty()) {
                     sessionIds.add(sessionId);
                 }
             }
-            return normalizeSessionIdList(sessionIds);
+            if (sessionIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return Collections.unmodifiableList(new ArrayList<>(sessionIds));
         } catch (Exception ignored) {
             return Collections.emptyList();
         }
@@ -488,7 +491,7 @@ final class AssistantVoiceConfig {
             return null;
         }
         JSONArray entries = new JSONArray();
-        for (String value : normalizeSessionIdList(values)) {
+        for (String value : values) {
             entries.put(value);
         }
         return entries.length() == 0 ? null : entries.toString();

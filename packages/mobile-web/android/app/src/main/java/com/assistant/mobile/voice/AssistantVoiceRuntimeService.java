@@ -90,6 +90,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private final Set<String> assistantSubscribedSessionIds = new LinkedHashSet<>();
     private String runtimeState = STATE_DISABLED;
 
+    // The session currently owning native playback/listen/submit. This is set
+    // both for prompt-driven playback and for manual notification/foreground listen.
     private String activeVoiceSessionId = "";
     private String activePromptToolName = "";
     private String activeTtsRequestId = "";
@@ -97,6 +99,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean pendingPlaybackDrainStartsListening = false;
     private String activeSttRequestId = "";
     private String adapterStoppedSttRequestId = "";
+    private boolean watchedSessionRefreshInFlight = false;
+    private boolean watchedSessionRefreshPending = false;
     private boolean destroyed = false;
 
     public static Intent applyConfigIntent(Context context, AssistantVoiceConfig config) {
@@ -522,6 +526,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             messageType = trim(new JSONObject(rawText).optString("type"));
         } catch (Exception ignored) {
         }
+        // These lifecycle messages are global broadcasts from the assistant
+        // server, so they still arrive even when per-session subscriptions are masked.
         if ("session_created".equals(messageType) || "session_deleted".equals(messageType)) {
             refreshWatchedSessionsAsync();
         }
@@ -529,6 +535,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoicePromptEvent prompt =
             AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(rawText);
         if (prompt == null) {
+            return;
+        }
+        if (!isWatchedSessionId(prompt.sessionId)) {
             return;
         }
         if (
@@ -574,13 +583,37 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void refreshWatchedSessionsAsync() {
+        mainHandler.post(() -> scheduleWatchedSessionsRefresh());
+    }
+
+    private void scheduleWatchedSessionsRefresh() {
         if (!config.isEnabled() || destroyed) {
             return;
         }
+        if (watchedSessionRefreshInFlight) {
+            watchedSessionRefreshPending = true;
+            return;
+        }
+        watchedSessionRefreshInFlight = true;
         networkExecutor.execute(() -> {
             List<String> sessionIds = fetchWatchedSessionIds();
-            mainHandler.post(() -> applyWatchedSessionIds(sessionIds));
+            mainHandler.post(() -> {
+                try {
+                    applyWatchedSessionIds(sessionIds);
+                } finally {
+                    finishWatchedSessionsRefresh();
+                }
+            });
         });
+    }
+
+    private void finishWatchedSessionsRefresh() {
+        watchedSessionRefreshInFlight = false;
+        if (!watchedSessionRefreshPending) {
+            return;
+        }
+        watchedSessionRefreshPending = false;
+        scheduleWatchedSessionsRefresh();
     }
 
     private List<String> fetchWatchedSessionIds() {
@@ -674,6 +707,19 @@ public final class AssistantVoiceRuntimeService extends Service {
             }
         }
         return normalized;
+    }
+
+    private boolean isWatchedSessionId(String sessionId) {
+        String expected = trim(sessionId);
+        if (expected.isEmpty()) {
+            return false;
+        }
+        for (String watchedSessionId : config.watchedSessionIds) {
+            if (expected.equals(trim(watchedSessionId))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void sendAdapterClientState() {

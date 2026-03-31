@@ -216,6 +216,28 @@ describe('SessionConnectionRegistry', () => {
     expect(sendServerMessageFromHub).not.toHaveBeenCalled();
   });
 
+  it('lets non-tool messages pass through when only toolNames filtering is present', () => {
+    const registry = new SessionConnectionRegistry();
+    const { connection, sendServerMessageFromHub } = createTestConnection();
+
+    registry.subscribe('session-a', connection, {
+      toolNames: ['voice_speak'],
+    });
+
+    registry.broadcastToSession('session-a', {
+      type: 'session_history_changed',
+      sessionId: 'session-a',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    });
+
+    expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'session_history_changed',
+      sessionId: 'session-a',
+      updatedAt: '2026-03-31T00:00:00.000Z',
+    });
+  });
+
   it('filters top-level assistant text messages by phase', () => {
     const registry = new SessionConnectionRegistry();
     const { connection, sendServerMessageFromHub } = createTestConnection();
@@ -287,5 +309,94 @@ describe('SessionConnectionRegistry', () => {
 
     expect(sendExcluded).not.toHaveBeenCalled();
     expect(sendFiltered).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the previous mask when subscribing to the same session again', () => {
+    const registry = new SessionConnectionRegistry();
+    const { connection, sendServerMessageFromHub } = createTestConnection();
+
+    registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['chat_event'],
+      chatEventTypes: ['tool_call'],
+      toolNames: ['voice_speak'],
+    });
+    registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['chat_event'],
+      chatEventTypes: ['tool_call'],
+      toolNames: ['voice_ask'],
+    });
+
+    registry.broadcastToSession('session-a', {
+      type: 'chat_event',
+      sessionId: 'session-a',
+      event: {
+        id: 'evt-1',
+        timestamp: 1,
+        sessionId: 'session-a',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-1',
+          toolName: 'voice_speak',
+          args: { text: 'hello' },
+        },
+      },
+    });
+
+    registry.broadcastToSession('session-a', {
+      type: 'chat_event',
+      sessionId: 'session-a',
+      event: {
+        id: 'evt-2',
+        timestamp: 2,
+        sessionId: 'session-a',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-2',
+          toolName: 'voice_ask',
+          args: { text: 'question' },
+        },
+      },
+    });
+
+    expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'chat_event',
+      sessionId: 'session-a',
+      event: {
+        id: 'evt-2',
+        timestamp: 2,
+        sessionId: 'session-a',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-2',
+          toolName: 'voice_ask',
+          args: { text: 'question' },
+        },
+      },
+    });
+  });
+
+  it('broadcastToAll bypasses per-session masks', () => {
+    const registry = new SessionConnectionRegistry();
+    const { connection, sendServerMessageFromHub } = createTestConnection();
+
+    registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['chat_event'],
+      chatEventTypes: ['tool_call'],
+      toolNames: ['voice_speak'],
+    });
+
+    registry.broadcastToAll({
+      type: 'session_created',
+      sessionId: 'session-b',
+      createdAt: '2026-03-31T00:00:00.000Z',
+    });
+
+    expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'session_created',
+      sessionId: 'session-b',
+      createdAt: '2026-03-31T00:00:00.000Z',
+    });
   });
 });
