@@ -2907,7 +2907,7 @@ async function main(): Promise<void> {
         : action === 'trim_after'
           ? {
               title: 'Delete After',
-              message: 'Remove all turns after this one? This turn will be kept.',
+              message: 'Remove this turn and all turns after it?',
               confirmText: 'Delete',
             }
           : {

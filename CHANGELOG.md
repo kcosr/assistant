@@ -13,6 +13,7 @@
 
 ### Changed
 - Changed panel title resolution so tabs, panel headers, navigator labels, panel inventory/context, and pinned-panel labels share the same resolved display title. ([#73](https://github.com/kcosr/assistant/pull/73))
+- Changed turn-history `Delete after` to remove the clicked turn as well as the later turns, matching the chat divider semantics more intuitively. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Fixed
 
