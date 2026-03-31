@@ -26,8 +26,16 @@ import { createDefaultPanelLayout } from '../utils/panelDefaultLayout';
 import { resolvePanelAvailability } from '../utils/panelAvailability';
 import { ICONS } from '../utils/icons';
 import { formatSessionLabel, type AgentLabelSummary } from '../utils/sessionLabel';
-import { getPanelContextKey } from '../utils/panelContext';
+import { getPanelContextKey, getPanelTitleContextKey } from '../utils/panelContext';
 import { buildPanelLayoutPreset, type PanelLayoutPreset } from '../utils/layoutPresets';
+import type { DialogManager } from './dialogManager';
+import {
+  normalizePanelCustomTitle,
+  resolvePanelDisplayTitle,
+  resolvePanelFallbackTitle,
+  synthesizePanelEntityTitle,
+  validatePanelCustomTitle,
+} from '../utils/panelTitle';
 
 type PanelSessionScope = 'required' | 'optional' | 'global';
 type PanelFocusSource = 'content' | 'chrome' | 'program';
@@ -86,7 +94,9 @@ export interface PanelWorkspaceControllerOptions {
     replacePanelId?: string | null;
   }) => void;
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;
+  dialogManager?: DialogManager;
   headerDockRoot?: HTMLElement | null;
+  getSynthesizedPanelTitlesEnabled?: () => boolean;
   hasChatPanelActiveOutput?: (panelId: string) => boolean;
   windowId?: string;
 }
@@ -119,6 +129,7 @@ export class PanelWorkspaceController {
   private headerPopoverAnchor: HTMLElement | null = null;
   private openHeaderPanelId: string | null = null;
   private readonly panelContextSubscriptions = new Map<string, () => void>();
+  private readonly publishedPanelTitles = new Map<string, string>();
   private readonly modalPanelIds = new Set<string>();
   private modalOverlay: HTMLElement | null = null;
   private modalOverlayCleanup: (() => void) | null = null;
@@ -149,6 +160,10 @@ export class PanelWorkspaceController {
   }
 
   attach(): void {
+    this.render();
+  }
+
+  refreshPanelTitles(): void {
     this.render();
   }
 
@@ -643,6 +658,7 @@ export class PanelWorkspaceController {
     overlay.classList.add('open');
     overlay.setAttribute('aria-hidden', 'false');
 
+    this.syncResolvedPanelTitleContext(panelId);
     this.mountPanels();
     this.updateVisibility();
     this.observePanels();
@@ -704,10 +720,7 @@ export class PanelWorkspaceController {
     }
 
     this.remountPanel(panelId);
-    this.updateVisibility();
-    this.refreshActivePanelFrames();
-    this.renderHeaderDock();
-    this.updatePanelContextSummary();
+    this.render();
     return true;
   }
 
@@ -1096,6 +1109,42 @@ export class PanelWorkspaceController {
       return;
     }
     this.updatePanelContextSummary();
+  }
+
+  setPanelCustomTitle(panelId: string, title: string): boolean {
+    const panel = this.layout.panels[panelId];
+    if (!panel) {
+      return false;
+    }
+    const validationError = validatePanelCustomTitle(title);
+    if (validationError) {
+      return false;
+    }
+    const nextTitle = normalizePanelCustomTitle(title);
+    if (!nextTitle) {
+      return this.clearPanelCustomTitle(panelId);
+    }
+    if (panel.customTitle === nextTitle) {
+      return true;
+    }
+    panel.customTitle = nextTitle;
+    this.persistLayout();
+    this.render();
+    return true;
+  }
+
+  clearPanelCustomTitle(panelId: string): boolean {
+    const panel = this.layout.panels[panelId];
+    if (!panel) {
+      return false;
+    }
+    if (!panel.customTitle) {
+      return true;
+    }
+    delete panel.customTitle;
+    this.persistLayout();
+    this.render();
+    return true;
   }
 
   updatePanelState(panelId: string, state: PanelInstance['state']): void {
@@ -1525,6 +1574,7 @@ export class PanelWorkspaceController {
     const scrollPositions = this.captureScrollPositions();
     const rootNode = this.renderNode(this.layout.layout);
     this.options.root.replaceChildren(rootNode);
+    this.syncResolvedPanelTitleContexts();
     this.mountPanels();
     this.restoreScrollPositions(scrollPositions);
     if (options.forceRemount) {
@@ -1556,6 +1606,12 @@ export class PanelWorkspaceController {
       }
       const key = getPanelContextKey(panelId);
       const unsubscribe = this.options.host.subscribeContext(key, () => {
+        const previousTitle = this.publishedPanelTitles.get(panelId) ?? null;
+        this.syncResolvedPanelTitleContext(panelId);
+        if ((this.publishedPanelTitles.get(panelId) ?? null) !== previousTitle) {
+          this.render();
+          return;
+        }
         this.sendPanelInventory();
       });
       this.panelContextSubscriptions.set(panelId, unsubscribe);
@@ -2761,17 +2817,121 @@ export class PanelWorkspaceController {
     return false;
   }
 
-  private getPanelTitle(panelId: string): string {
+  private getSynthesizedPanelTitle(panelId: string): string | null {
+    if (!this.options.getSynthesizedPanelTitlesEnabled?.()) {
+      return null;
+    }
     const panel = this.layout.panels[panelId];
     if (!panel) {
-      return 'Panel';
+      return null;
     }
-    const override = panel.meta?.title;
-    if (override) {
-      return override;
+    if (panel.panelType === 'chat') {
+      const binding = this.resolvePanelBinding(
+        panelId,
+        panel,
+        this.options.registry.getManifest(panel.panelType),
+      );
+      if (binding?.mode !== 'fixed') {
+        return null;
+      }
+      return synthesizePanelEntityTitle({
+        entityTitle: this.getSessionLabel(binding.sessionId),
+        kind: 'Chat',
+      });
     }
-    const manifest = this.options.registry.getManifest(panel.panelType);
-    return manifest?.title ?? panel.panelType;
+
+    const rawContext = this.options.host.getContext(getPanelContextKey(panelId));
+    if (!rawContext || typeof rawContext !== 'object' || Array.isArray(rawContext)) {
+      return null;
+    }
+    const context = rawContext as Record<string, unknown>;
+    const instanceLabel =
+      typeof context['instance_label'] === 'string' ? context['instance_label'] : null;
+
+    if (panel.panelType === 'lists' && context['type'] === 'list') {
+      return synthesizePanelEntityTitle({
+        entityTitle: typeof context['name'] === 'string' ? context['name'] : null,
+        kind: 'List',
+        instanceLabel,
+      });
+    }
+
+    if (panel.panelType === 'notes' && context['type'] === 'note') {
+      return synthesizePanelEntityTitle({
+        entityTitle:
+          typeof context['title'] === 'string'
+            ? context['title']
+            : typeof context['id'] === 'string'
+              ? context['id']
+              : null,
+        kind: 'Note',
+        instanceLabel,
+      });
+    }
+
+    return null;
+  }
+
+  private getPanelTitle(panelId: string): string {
+    const panel = this.layout.panels[panelId];
+    const manifestTitle = panel
+      ? this.options.registry.getManifest(panel.panelType)?.title ?? null
+      : null;
+    return resolvePanelDisplayTitle(panel, {
+      synthesizedTitle: this.getSynthesizedPanelTitle(panelId),
+      manifestTitle,
+    });
+  }
+
+  private getPanelFallbackTitle(panelId: string): string {
+    const panel = this.layout.panels[panelId];
+    const manifestTitle = panel
+      ? this.options.registry.getManifest(panel.panelType)?.title ?? null
+      : null;
+    return resolvePanelFallbackTitle(panel, {
+      synthesizedTitle: this.getSynthesizedPanelTitle(panelId),
+      manifestTitle,
+    });
+  }
+
+  private syncResolvedPanelTitleContexts(): void {
+    const panelIds = new Set(Object.keys(this.layout.panels));
+    for (const panelId of this.publishedPanelTitles.keys()) {
+      if (panelIds.has(panelId)) {
+        continue;
+      }
+      this.options.host.setContext(getPanelTitleContextKey(panelId), null);
+      this.publishedPanelTitles.delete(panelId);
+    }
+    for (const panelId of panelIds) {
+      this.syncResolvedPanelTitleContext(panelId);
+    }
+  }
+
+  private syncResolvedPanelTitleContext(panelId: string): void {
+    const panel = this.layout.panels[panelId];
+    if (!panel) {
+      if (this.publishedPanelTitles.has(panelId)) {
+        this.options.host.setContext(getPanelTitleContextKey(panelId), null);
+        this.publishedPanelTitles.delete(panelId);
+      }
+      return;
+    }
+
+    const title = this.getPanelTitle(panelId);
+    const previousTitle = this.publishedPanelTitles.get(panelId);
+    if (previousTitle !== title) {
+      this.options.host.setContext(getPanelTitleContextKey(panelId), title);
+      this.publishedPanelTitles.set(panelId, title);
+    }
+
+    const container = this.panelElements.get(panelId);
+    container?.setAttribute('aria-label', title);
+
+    const modal = this.modalOverlay?.querySelector<HTMLElement>(
+      `.panel-frame[data-panel-id="${panelId}"]`,
+    )?.parentElement;
+    modal?.setAttribute('aria-label', title);
   }
 
   private mountPanels(): void {
@@ -3228,6 +3388,12 @@ export class PanelWorkspaceController {
       addItem('Select panel', () => this.focusPanel(panelId));
     }
 
+    if (panel && this.options.dialogManager) {
+      addItem('Rename panel...', () => {
+        void this.promptRenamePanel(panelId);
+      });
+    }
+
     if (
       panel &&
       isSessionBoundPanelType(panel.panelType) &&
@@ -3345,6 +3511,32 @@ export class PanelWorkspaceController {
       window.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
+  }
+
+  private async promptRenamePanel(panelId: string): Promise<void> {
+    const panel = this.layout.panels[panelId];
+    const dialogManager = this.options.dialogManager;
+    if (!panel || !dialogManager) {
+      return;
+    }
+
+    const value = await dialogManager.showTextInputDialog({
+      title: 'Rename panel',
+      message: '',
+      labelText: 'Panel name',
+      confirmText: 'Save',
+      initialValue: panel.customTitle ?? '',
+      placeholder: this.getPanelFallbackTitle(panelId),
+      validate: validatePanelCustomTitle,
+    });
+    if (value === null) {
+      return;
+    }
+    if (value.length === 0) {
+      this.clearPanelCustomTitle(panelId);
+      return;
+    }
+    this.setPanelCustomTitle(panelId, value);
   }
 
   private openPanelMenuSplitOptions(panelId: string, anchor: HTMLElement): void {

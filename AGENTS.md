@@ -54,3 +54,7 @@ Notes:
 - Requires the `gh` CLI and an authenticated GitHub session.
 - Script expects a clean working tree, bumps `VERSION`, updates `CHANGELOG.md`, tags `vX.Y.Z`, pushes, and creates a prerelease.
 - `scripts/bump-version.mjs` keeps `VERSION`, all `package.json` versions, and `package-lock.json` in sync.
+
+## Deployment
+
+See the `assistant-deploy` skill in `~/.agents/skills` for environment-specific deployment, systemd restart, and Android build instructions.

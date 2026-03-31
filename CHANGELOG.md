@@ -8,8 +8,11 @@
 ### Added
 - Added masked websocket session subscriptions so clients can subscribe per session with server-side event filtering instead of always receiving the full session stream.
 - Added native voice preferred-session routing so Android can watch multiple sessions, persist a `Voice notification session`, and route notification `Speak` to that preferred session while foreground mic input still targets the current chat.
+- Added per-panel custom rename support with persisted `customTitle` overrides and a panel-menu rename action.
+- Added an opt-in `Auto-title chats, lists, and notes` client preference that synthesizes entity-aware panel titles such as `Test Chat` and `Todo List (Scratch)`.
 
 ### Changed
+- Changed panel title resolution so tabs, panel headers, navigator labels, panel inventory/context, and pinned-panel labels share the same resolved display title.
 
 ### Fixed
 

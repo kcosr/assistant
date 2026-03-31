@@ -22,6 +22,7 @@ export interface WebClientElements {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  synthesizedPanelTitlesCheckbox: HTMLInputElement;
   interactionModeCheckbox: HTMLInputElement | null;
   panelWorkspace: HTMLElement | null;
   windowDropdownButton: HTMLButtonElement | null;
@@ -97,6 +98,9 @@ export function getWebClientElements(): WebClientElements | null {
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
+  const synthesizedPanelTitlesCheckbox = getElement<HTMLInputElement>(
+    'synthesized-panel-titles-checkbox',
+  );
   const interactionModeCheckbox = getElement<HTMLInputElement>('interaction-mode-checkbox');
   const panelWorkspace = getElement<HTMLElement>('panel-workspace');
 
@@ -117,6 +121,7 @@ export function getWebClientElements(): WebClientElements | null {
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
+    !synthesizedPanelTitlesCheckbox ||
     !panelWorkspace
   ) {
     console.error('Core UI elements not found');
@@ -147,6 +152,7 @@ export function getWebClientElements(): WebClientElements | null {
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,
+    synthesizedPanelTitlesCheckbox,
     interactionModeCheckbox,
     panelWorkspace,
     windowDropdownButton: getElement<HTMLButtonElement>('window-dropdown-button'),

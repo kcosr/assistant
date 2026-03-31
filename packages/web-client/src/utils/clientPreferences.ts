@@ -13,6 +13,7 @@ export interface ClientPreferencesState {
   autoFocusChatOnSessionReady: boolean;
   autoScrollEnabled: boolean;
   showContextEnabled: boolean;
+  synthesizedPanelTitlesEnabled: boolean;
 }
 
 export function loadClientPreferences(options: {
@@ -22,6 +23,7 @@ export function loadClientPreferences(options: {
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   showContextStorageKey: string;
+  synthesizedPanelTitlesStorageKey: string;
 }): ClientPreferencesState {
   let voice = createDefaultVoiceSettings({
     isCapacitorAndroid: isCapacitorAndroid(),
@@ -31,6 +33,7 @@ export function loadClientPreferences(options: {
   let autoFocusChatOnSessionReady = true;
   let autoScrollEnabled = true;
   let showContextEnabled = false;
+  let synthesizedPanelTitlesEnabled = false;
 
   try {
     const voiceStored = localStorage.getItem(options.voiceStorageKey);
@@ -62,6 +65,12 @@ export function loadClientPreferences(options: {
     if (showContextStored === 'true') {
       showContextEnabled = true;
     }
+    const synthesizedPanelTitlesStored = localStorage.getItem(
+      options.synthesizedPanelTitlesStorageKey,
+    );
+    if (synthesizedPanelTitlesStored === 'true') {
+      synthesizedPanelTitlesEnabled = true;
+    }
   } catch {
     // Ignore localStorage errors
   }
@@ -73,6 +82,7 @@ export function loadClientPreferences(options: {
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
     showContextEnabled,
+    synthesizedPanelTitlesEnabled,
   };
 }
 
@@ -80,15 +90,19 @@ export function wirePreferencesCheckboxes(options: {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  synthesizedPanelTitlesCheckbox: HTMLInputElement;
   initialAutoFocusChatOnSessionReady: boolean;
   initialKeyboardShortcutsEnabled: boolean;
   initialAutoScrollEnabled: boolean;
+  initialSynthesizedPanelTitlesEnabled: boolean;
   autoFocusChatStorageKey: string;
   keyboardShortcutsStorageKey: string;
   autoScrollStorageKey: string;
+  synthesizedPanelTitlesStorageKey: string;
   setAutoFocusChatOnSessionReady: (enabled: boolean) => void;
   setKeyboardShortcutsEnabled: (enabled: boolean) => void;
   setAutoScrollEnabled: (enabled: boolean) => void;
+  setSynthesizedPanelTitlesEnabled: (enabled: boolean) => void;
 }): void {
   options.autoFocusChatCheckbox.checked = options.initialAutoFocusChatOnSessionReady;
   options.autoFocusChatCheckbox.addEventListener('change', () => {
@@ -118,6 +132,17 @@ export function wirePreferencesCheckboxes(options: {
     options.setAutoScrollEnabled(enabled);
     try {
       localStorage.setItem(options.autoScrollStorageKey, enabled ? 'true' : 'false');
+    } catch {
+      // Ignore localStorage errors
+    }
+  });
+
+  options.synthesizedPanelTitlesCheckbox.checked = options.initialSynthesizedPanelTitlesEnabled;
+  options.synthesizedPanelTitlesCheckbox.addEventListener('change', () => {
+    const enabled = options.synthesizedPanelTitlesCheckbox.checked;
+    options.setSynthesizedPanelTitlesEnabled(enabled);
+    try {
+      localStorage.setItem(options.synthesizedPanelTitlesStorageKey, enabled ? 'true' : 'false');
     } catch {
       // Ignore localStorage errors
     }
