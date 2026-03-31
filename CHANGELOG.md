@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.3] - 2026-03-31
 
 ### Breaking Changes
 
@@ -12,6 +12,7 @@
 ### Fixed
 
 ### Removed
+
 
 ## [0.17.2] - 2026-03-31
 
