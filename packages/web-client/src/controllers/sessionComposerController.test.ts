@@ -318,6 +318,25 @@ describe('SessionComposerController', () => {
     expect(afterCheckboxDescription?.hidden).toBe(false);
   });
 
+  it('supports keyboard expansion for skill rows', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
+    if (!firstOption) {
+      throw new Error('Expected first skill option');
+    }
+
+    firstOption.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    const expandedDescription = document.querySelector<HTMLElement>(
+      '.session-composer-skill-option .session-composer-skill-description',
+    );
+    expect(expandedDescription?.hidden).toBe(false);
+  });
+
   it('preserves the skills list scroll position when toggling a checkbox', () => {
     const { controller } = buildController();
 

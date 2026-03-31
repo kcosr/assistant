@@ -497,8 +497,21 @@ export class SessionComposerController {
         const option = document.createElement('div');
         option.className = 'session-composer-skill-option';
         const hasDescription = skill.description.trim().length > 0;
+        const toggleDescription = (): void => {
+          if (!hasDescription) {
+            return;
+          }
+          if (expandedSkillDescriptions.has(skill.id)) {
+            expandedSkillDescriptions.delete(skill.id);
+          } else {
+            expandedSkillDescriptions.add(skill.id);
+          }
+          renderSkills();
+        };
         if (hasDescription) {
           option.classList.add('is-expandable');
+          option.setAttribute('role', 'button');
+          option.tabIndex = 0;
           option.setAttribute('aria-expanded', String(expandedSkillDescriptions.has(skill.id)));
         }
 
@@ -553,15 +566,21 @@ export class SessionComposerController {
           ) {
             return;
           }
-          if (!hasDescription) {
+          toggleDescription();
+        });
+
+        option.addEventListener('keydown', (event) => {
+          if (!hasDescription || (event.key !== 'Enter' && event.key !== ' ')) {
             return;
           }
-          if (expandedSkillDescriptions.has(skill.id)) {
-            expandedSkillDescriptions.delete(skill.id);
-          } else {
-            expandedSkillDescriptions.add(skill.id);
+          if (
+            event.target instanceof Element &&
+            event.target.closest('button, input, a, select, textarea, label')
+          ) {
+            return;
           }
-          renderSkills();
+          event.preventDefault();
+          toggleDescription();
         });
 
         option.appendChild(optionHeader);
