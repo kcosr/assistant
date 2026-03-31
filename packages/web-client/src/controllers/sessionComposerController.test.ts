@@ -276,7 +276,7 @@ describe('SessionComposerController', () => {
     expect(expandedDescription?.textContent).toContain('Use git worktrees.');
   });
 
-  it('only toggles skill selection from the checkbox itself', () => {
+  it('toggles skill selection from the row while keeping details separate', () => {
     const { controller } = buildController();
 
     controller.open({ initialAgentId: 'assistant' });
@@ -285,14 +285,27 @@ describe('SessionComposerController', () => {
     const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
     const firstInput = firstOption?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     const name = firstOption?.querySelector<HTMLElement>('.session-composer-skill-name');
+    const detailsButton = queryRole<HTMLButtonElement>('skill-details-worktrees');
 
     expect(firstInput?.checked).toBe(true);
 
     name?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(firstInput?.checked).toBe(true);
+    const toggledInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    expect(toggledInput?.checked).toBe(false);
 
-    firstInput?.click();
-    expect(firstInput?.checked).toBe(false);
+    detailsButton.click();
+    const afterDetailsInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    expect(afterDetailsInput?.checked).toBe(false);
+
+    afterDetailsInput?.click();
+    const afterCheckboxInput = document.querySelector<HTMLInputElement>(
+      '.session-composer-skill-option input[type="checkbox"]',
+    );
+    expect(afterCheckboxInput?.checked).toBe(true);
   });
 
   it('closes immediately when cancel is pressed', () => {

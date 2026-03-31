@@ -497,17 +497,12 @@ export class SessionComposerController {
         const control = document.createElement('div');
         control.className = 'session-composer-skill-control';
 
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.className = 'session-composer-skill-checkbox';
-        input.checked = selectedSkillSet.has(skill.id);
-        input.setAttribute('aria-label', `Enable skill ${skill.name}`);
-        input.addEventListener('change', () => {
+        const updateSelectedSkills = (checked: boolean): void => {
           skillsTouched = true;
           const nextSelected = new Set(
             selectedSkills ?? availableSkills.map((availableSkill) => availableSkill.id),
           );
-          if (input.checked) {
+          if (checked) {
             nextSelected.add(skill.id);
           } else {
             nextSelected.delete(skill.id);
@@ -518,6 +513,15 @@ export class SessionComposerController {
               .map((availableSkill) => availableSkill.id)
               .filter((skillId) => nextSelected.has(skillId)),
           );
+        };
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'session-composer-skill-checkbox';
+        input.checked = selectedSkillSet.has(skill.id);
+        input.setAttribute('aria-label', `Enable skill ${skill.name}`);
+        input.addEventListener('change', () => {
+          updateSelectedSkills(input.checked);
         });
 
         const meta = document.createElement('div');
@@ -549,6 +553,18 @@ export class SessionComposerController {
           });
           optionHeader.appendChild(detailsButton);
         }
+
+        option.addEventListener('click', (event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest('button, input, a, select, textarea, label')
+          ) {
+            return;
+          }
+          input.checked = !input.checked;
+          updateSelectedSkills(input.checked);
+          renderSkills();
+        });
 
         option.appendChild(optionHeader);
 
