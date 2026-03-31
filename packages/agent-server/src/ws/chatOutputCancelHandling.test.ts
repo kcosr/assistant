@@ -122,6 +122,8 @@ describe('handleChatOutputCancel', () => {
 
     const interruptEvent = events.find((event) => event.type === 'interrupt');
     expect(interruptEvent).toBeDefined();
+    const turnEndEvent = events.find((event) => event.type === 'turn_end');
+    expect(turnEndEvent).toBeDefined();
   });
 
   it('persists interrupted partial assistant text even when no tools are running', async () => {
@@ -197,6 +199,8 @@ describe('handleChatOutputCancel', () => {
     expect(broadcastMessages.find((m) => m.type === 'tool_result')).toBeUndefined();
     const interruptEvent = events.find((event) => event.type === 'interrupt');
     expect(interruptEvent).toBeDefined();
+    const turnEndEvent = events.find((event) => event.type === 'turn_end');
+    expect(turnEndEvent).toBeDefined();
   });
 
   it('still records an interrupt when cancelling before output has started', async () => {
@@ -262,6 +266,7 @@ describe('handleChatOutputCancel', () => {
     expect(abortController.signal.aborted).toBe(true);
     expect(events.some((event) => event.type === 'interrupt')).toBe(true);
     expect(events.some((event) => event.type === 'assistant_done')).toBe(false);
+    expect(events.some((event) => event.type === 'turn_end')).toBe(true);
     expect(recordSessionActivity).not.toHaveBeenCalled();
   });
 

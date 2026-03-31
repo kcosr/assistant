@@ -16,6 +16,7 @@
 - Changed turn-history `Delete after` to remove the clicked turn as well as the later turns, matching the chat divider semantics more intuitively. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Fixed
+- Fixed Codex/CLI session replay so completed turns are not duplicated on reload and aborted or cancelled turns close cleanly instead of leaving replayed typing state stuck. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Removed
 

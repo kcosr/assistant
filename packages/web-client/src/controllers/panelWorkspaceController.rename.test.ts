@@ -84,7 +84,7 @@ describe('PanelWorkspaceController rename flow', () => {
     document.body.innerHTML = '';
   });
 
-  it('renames a panel from the menu and updates tabs, chrome title, navigator, context, and inventory', async () => {
+  it('renames a panel from the menu and updates tabs, navigator, context, and inventory while keeping chrome titles static', async () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'lists', title: 'Lists' }, createChromePanel('Lists'));
     registry.register({ type: 'notes', title: 'Notes' }, createChromePanel('Notes'));
@@ -156,7 +156,7 @@ describe('PanelWorkspaceController rename flow', () => {
       root.querySelector<HTMLElement>(
         '.panel-frame[data-panel-id="lists-1"] [data-role="chrome-title"]',
       )?.textContent,
-    ).toBe('Work Tasks');
+    ).toBe('Lists');
 
     const navigatorLabels = Array.from(
       navigatorRoot.querySelectorAll<HTMLElement>('.workspace-navigator-label'),
@@ -187,7 +187,7 @@ describe('PanelWorkspaceController rename flow', () => {
     navigator.detach();
   });
 
-  it('clears a custom title on empty submission and falls back to metadata title', async () => {
+  it('clears a custom title on empty submission and keeps the chrome title on the panel default', async () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'lists', title: 'Lists' }, createChromePanel('Lists'));
 
@@ -248,7 +248,7 @@ describe('PanelWorkspaceController rename flow', () => {
       root.querySelector<HTMLElement>(
         '.panel-frame[data-panel-id="lists-1"] [data-role="chrome-title"]',
       )?.textContent,
-    ).toBe('Lists (Team)');
+    ).toBe('Lists');
   });
 
   it('uses the resolved title for pinned header labels and clears customTitle on replace', () => {
@@ -301,7 +301,7 @@ describe('PanelWorkspaceController rename flow', () => {
       document.querySelector<HTMLElement>(
         '.panel-frame[data-panel-id="notes-1"] [data-role="chrome-title"]',
       )?.textContent,
-    ).toBe('Pinned Notes');
+    ).toBe('Notes');
 
     expect(workspace.setPanelCustomTitle('lists-1', 'Work Tasks')).toBe(true);
     expect(workspace.replacePanel('lists-1', 'notes')).toBe(true);
@@ -313,7 +313,7 @@ describe('PanelWorkspaceController rename flow', () => {
     ).toBe('Notes');
   });
 
-  it('uses synthesized list titles across surfaces when the preference is enabled', async () => {
+  it('uses synthesized list titles across non-chrome surfaces when the preference is enabled', async () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'lists', title: 'Lists' }, createChromePanel('Lists'));
     registry.register({ type: 'notes', title: 'Notes' }, createChromePanel('Notes'));
@@ -382,16 +382,16 @@ describe('PanelWorkspaceController rename flow', () => {
       root.querySelector<HTMLElement>(
         '.panel-frame[data-panel-id="lists-1"] [data-role="chrome-title"]',
       )?.textContent,
-    ).toBe('Test List (Scratch)');
+    ).toBe('Lists');
     expect(
       root.querySelector<HTMLButtonElement>('.panel-tab-button[data-panel-id="lists-1"]')
         ?.textContent,
-    ).toBe('Test List (Scratch)');
+    ).toBe('Test (Scratch)');
 
     const navigatorLabels = Array.from(
       navigatorRoot.querySelectorAll<HTMLElement>('.workspace-navigator-label'),
     ).map((element) => element.textContent);
-    expect(navigatorLabels).toContain('Test List (Scratch)');
+    expect(navigatorLabels).toContain('Test (Scratch)');
 
     expect(
       (
@@ -399,7 +399,7 @@ describe('PanelWorkspaceController rename flow', () => {
           panels: Array<{ panelId: string; panelTitle: string }>;
         } | null
       )?.panels.find((panel) => panel.panelId === 'lists-1')?.panelTitle,
-    ).toBe('Test List (Scratch)');
+    ).toBe('Test (Scratch)');
 
     const inventoryPayload = panelEvents
       .map((event) => (event as { payload?: unknown }).payload)
@@ -411,7 +411,7 @@ describe('PanelWorkspaceController rename flow', () => {
       )
       .at(-1);
     expect(inventoryPayload?.panels.find((panel) => panel.panelId === 'lists-1')?.panelTitle).toBe(
-      'Test List (Scratch)',
+      'Test (Scratch)',
     );
 
     navigator.detach();

@@ -4,7 +4,6 @@ import {
   type InstanceOption,
 } from './instanceDropdownController';
 import { getPanelHeaderActionsKey } from '../utils/panelHeaderActions';
-import { getPanelTitleContextKey } from '../utils/panelContext';
 
 type PanelChromeElements = {
   row: HTMLElement;
@@ -28,10 +27,7 @@ export type PanelChromeControllerOptions = {
 
 type PanelChromeHost = Pick<PanelHost, 'setContext'> &
   Partial<
-    Pick<
-      PanelHost,
-      'panelId' | 'subscribeContext' | 'closePanel' | 'openPanelMenu' | 'startPanelDrag' | 'startPanelReorder'
-    >
+    Pick<PanelHost, 'panelId' | 'closePanel' | 'openPanelMenu' | 'startPanelDrag' | 'startPanelReorder'>
   >;
 
 const DEFAULT_BUFFER = 40;
@@ -84,22 +80,6 @@ export class PanelChromeController {
 
     if (options.title && this.elements.title) {
       this.elements.title.textContent = options.title;
-    }
-
-    const panelId = this.getPanelId();
-    const subscribeContext = (this.host as Partial<PanelHost>).subscribeContext;
-    if (panelId && typeof subscribeContext === 'function') {
-      const titleContextKey = getPanelTitleContextKey(panelId);
-      const unsubscribeTitle = subscribeContext.call(this.host, titleContextKey, (value) => {
-        if (typeof value === 'string' && value.trim().length > 0) {
-          this.setTitle(value);
-          return;
-        }
-        if (options.title) {
-          this.setTitle(options.title);
-        }
-      });
-      this.cleanupFns.push(unsubscribeTitle);
     }
 
     if (this.elements.instanceDropdownRoot && options.onInstanceChange) {

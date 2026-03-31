@@ -87,17 +87,6 @@ export function resolvePanelFallbackTitle(
   return panel.panelType;
 }
 
-function endsWithTitleKind(title: string, kind: 'Chat' | 'List' | 'Note'): boolean {
-  const normalized = title.trim().toLowerCase();
-  if (kind === 'Chat') {
-    return /\bchat$/.test(normalized);
-  }
-  if (kind === 'List') {
-    return /\blists?$/.test(normalized);
-  }
-  return /\bnotes?$/.test(normalized);
-}
-
 function formatSynthesizedInstanceSuffix(instanceLabel: string | null | undefined): string {
   const normalized = normalizeTitlePart(instanceLabel);
   if (!normalized || normalized.toLowerCase() === 'default') {
@@ -108,15 +97,11 @@ function formatSynthesizedInstanceSuffix(instanceLabel: string | null | undefine
 
 export function synthesizePanelEntityTitle(options: {
   entityTitle: string | null | undefined;
-  kind: 'Chat' | 'List' | 'Note';
   instanceLabel?: string | null;
 }): string | null {
   const entityTitle = normalizeTitlePart(options.entityTitle);
   if (!entityTitle) {
     return null;
   }
-  const baseTitle = endsWithTitleKind(entityTitle, options.kind)
-    ? entityTitle
-    : `${entityTitle} ${options.kind}`;
-  return `${baseTitle}${formatSynthesizedInstanceSuffix(options.instanceLabel)}`;
+  return `${entityTitle}${formatSynthesizedInstanceSuffix(options.instanceLabel)}`;
 }

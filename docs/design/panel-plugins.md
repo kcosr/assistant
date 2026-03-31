@@ -754,6 +754,10 @@ for supported entity-backed panels before falling back to `meta.title`. The reso
 
 `customTitle -> synthesized title -> meta.title -> manifest.title -> panelType`
 
+These resolved titles are intended for panel-selection and navigation surfaces such as tabs,
+navigator labels, inventories, and pinned-panel labels. Panel chrome can continue to show the base
+panel title.
+
 Panel types can opt out of multiple instances (`multiInstance: false`); the host should focus the existing instance instead of creating duplicates.
 
 ### Layout Persistence

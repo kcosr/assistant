@@ -2836,7 +2836,6 @@ export class PanelWorkspaceController {
       }
       return synthesizePanelEntityTitle({
         entityTitle: this.getSessionLabel(binding.sessionId),
-        kind: 'Chat',
       });
     }
 
@@ -2851,7 +2850,6 @@ export class PanelWorkspaceController {
     if (panel.panelType === 'lists' && context['type'] === 'list') {
       return synthesizePanelEntityTitle({
         entityTitle: typeof context['name'] === 'string' ? context['name'] : null,
-        kind: 'List',
         instanceLabel,
       });
     }
@@ -2864,7 +2862,6 @@ export class PanelWorkspaceController {
             : typeof context['id'] === 'string'
               ? context['id']
               : null,
-        kind: 'Note',
         instanceLabel,
       });
     }
