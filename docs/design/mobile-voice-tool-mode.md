@@ -6,6 +6,7 @@ Companion implementation artifacts:
 - [mobile-voice-tool-mode-web-contract.md](/home/kevin/worktrees/assistant/docs/design/mobile-voice-tool-mode-web-contract.md)
 - [mobile-voice-tool-mode-android-contract.md](/home/kevin/worktrees/assistant/docs/design/mobile-voice-tool-mode-android-contract.md)
 - [mobile-voice-tool-mode-parallel-implementation-plan.md](/home/kevin/worktrees/assistant/docs/design/mobile-voice-tool-mode-parallel-implementation-plan.md)
+- [mobile-voice-filtered-session-subscriptions.md](/home/kevin/worktrees/assistant/docs/design/mobile-voice-filtered-session-subscriptions.md)
 
 ## Overview
 

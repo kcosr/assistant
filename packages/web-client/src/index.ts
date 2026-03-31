@@ -101,6 +101,7 @@ import {
 } from './utils/voiceSettings';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
+import { bindVoiceSettingsBlurResetHandlers } from './utils/voiceSettingsBlurReset';
 import {
   appendExternalSentIndicator,
   appendMessage,
@@ -285,6 +286,7 @@ import {
   setupAndroidAppLifecycleHandlers,
   setupBackButtonHandler,
 } from './utils/capacitor';
+import { configureNativeLaunchBackend } from './utils/nativeLaunchBackend';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
@@ -315,6 +317,11 @@ const thinkingPreferencesClient = new ThinkingPreferencesClient();
 const pluginSettingsClient = new PluginSettingsClient();
 
 async function main(): Promise<void> {
+  const launchBackendReady = await configureNativeLaunchBackend();
+  if (!launchBackendReady) {
+    return;
+  }
+
   // Configure Tauri backend URL (no-op if not in Tauri) - must run before WebSocket setup
   await configureTauri();
   if (isTauri()) {
@@ -3345,10 +3352,12 @@ async function main(): Promise<void> {
     voiceRecognitionCompletionTimeoutInputEl.value = String(settings.recognitionCompletionTimeoutMs);
     voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
   };
-  voiceAdapterBaseUrlInputEl.addEventListener('blur', resetVoiceSettingsInputs);
-  voiceRecognitionStartTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
-  voiceRecognitionCompletionTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
-  voiceRecognitionEndSilenceInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  bindVoiceSettingsBlurResetHandlers({
+    voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInputEl,
+    resetVoiceSettingsInputs,
+  });
   voiceSettingsCloseButtonEl.addEventListener('click', () => {
     closeVoiceSettingsModal();
   });

@@ -5,10 +5,12 @@
 ### Breaking Changes
 
 ### Added
+- Added an Android native cold-start backend chooser with persisted saved backends, last-used selection, and pre-bootstrap backend handoff to the web client. ([#72](https://github.com/kcosr/assistant/pull/72))
 
 ### Changed
 
 ### Fixed
+- Fixed voice settings so the adapter URL field no longer resets to the previous value when it loses focus. ([#72](https://github.com/kcosr/assistant/pull/72))
 
 ### Removed
 

@@ -1,5 +1,19 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="assistant_backend_choose_title">Choose backend</string>
+    <string name="assistant_backend_choose_subtitle">Select a backend for this app session</string>
+    <string name="assistant_backend_choose_footer">Pick a backend to continue this launch.</string>
+    <string name="assistant_backend_add_button">Add backend</string>
+    <string name="assistant_backend_add_dialog_title">Add backend</string>
+    <string name="assistant_backend_add_confirm_button">Add</string>
+    <string name="assistant_backend_label_hint">Label</string>
+    <string name="assistant_backend_url_hint">URL</string>
+    <string name="assistant_backend_url_error">Enter a full http:// or https:// URL</string>
+    <string name="assistant_backend_last_used_badge">Last used</string>
+    <string name="assistant_backend_delete_button">Delete backend</string>
+    <string name="assistant_backend_delete_confirm_title">Delete backend</string>
+    <string name="assistant_backend_delete_confirm_message">Remove %1$s from saved backends?</string>
+    <string name="assistant_backend_delete_confirm_button">Delete</string>
     <string name="assistant_voice_notification_title">Assistant voice mode</string>
     <string name="assistant_voice_notification_text">Voice runtime active (%1$s)</string>
     <string name="assistant_voice_notification_channel_name">Assistant voice mode</string>
