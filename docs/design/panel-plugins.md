@@ -742,8 +742,12 @@ interface PanelInstance {
   binding?: PanelBinding;
   state?: unknown;
   meta?: PanelMetadata;
+  customTitle?: string;
 }
 ```
+
+`meta.title` is plugin/runtime-owned metadata. User panel renames should use `customTitle` so
+runtime metadata updates do not overwrite the user-visible title override.
 
 Panel types can opt out of multiple instances (`multiInstance: false`); the host should focus the existing instance instead of creating duplicates.
 

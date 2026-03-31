@@ -4,6 +4,7 @@ import {
   type InstanceOption,
 } from './instanceDropdownController';
 import { getPanelHeaderActionsKey } from '../utils/panelHeaderActions';
+import { getPanelTitleContextKey } from '../utils/panelContext';
 
 type PanelChromeElements = {
   row: HTMLElement;
@@ -76,6 +77,18 @@ export class PanelChromeController {
     if (options.title && this.elements.title) {
       this.elements.title.textContent = options.title;
     }
+
+    const titleContextKey = getPanelTitleContextKey(this.host.panelId());
+    const unsubscribeTitle = this.host.subscribeContext(titleContextKey, (value) => {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        this.setTitle(value);
+        return;
+      }
+      if (options.title) {
+        this.setTitle(options.title);
+      }
+    });
+    this.cleanupFns.push(unsubscribeTitle);
 
     if (this.elements.instanceDropdownRoot && options.onInstanceChange) {
       this.instanceDropdown = new InstanceDropdownController({

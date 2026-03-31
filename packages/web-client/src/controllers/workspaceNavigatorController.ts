@@ -8,6 +8,7 @@ import type { PanelHost } from './panelRegistry';
 import { containsPanelId } from '../utils/layoutTree';
 import { formatSessionLabel } from '../utils/sessionLabel';
 import { PanelChromeController } from './panelChromeController';
+import { resolvePanelDisplayTitle } from '../utils/panelTitle';
 
 type PanelActiveContext = {
   panelId: string;
@@ -452,20 +453,14 @@ export class WorkspaceNavigatorController {
   private buildPanelLabel(
     panelId: string,
     manifests: Map<string, PanelTypeManifest>,
-    panelTypeCounts: Map<string, number>,
+    _panelTypeCounts: Map<string, number>,
   ): string {
     const panel = this.layout?.panels[panelId];
     if (!panel) {
       return panelId;
     }
-    const overrideTitle = panel.meta?.title;
     const manifest = manifests.get(panel.panelType);
-    const baseTitle = overrideTitle || manifest?.title || panel.panelType;
-    const count = panelTypeCounts.get(panel.panelType) ?? 0;
-    if (count <= 1) {
-      return baseTitle;
-    }
-    return `${baseTitle} · ${shortPanelId(panelId)}`;
+    return resolvePanelDisplayTitle(panel, { manifestTitle: manifest?.title });
   }
 
   private formatBinding(
@@ -613,11 +608,4 @@ function resolveDefaultBinding(manifest: PanelTypeManifest | null): PanelBinding
     return { mode: 'global' };
   }
   return null;
-}
-
-function shortPanelId(panelId: string): string {
-  if (panelId.length <= 6) {
-    return panelId;
-  }
-  return panelId.slice(-6);
 }

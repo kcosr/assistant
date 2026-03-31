@@ -838,12 +838,15 @@ The `meta` object supports:
 
 ```ts
 interface PanelMetadata {
-  title?: string;   // Override panel title
+  title?: string;   // Plugin/runtime-owned title shown when no user customTitle is set
   icon?: string;    // Override panel icon
   badge?: string;   // Show a badge (e.g., unread count)
   status?: 'idle' | 'busy' | 'error';  // Status indicator
 }
 ```
+
+User-driven panel renames are stored separately on the panel instance and take precedence over
+`meta.title` when present.
 
 Example:
 

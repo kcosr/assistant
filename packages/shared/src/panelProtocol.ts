@@ -48,6 +48,7 @@ export interface PanelInstance {
   binding?: PanelBinding;
   state?: unknown;
   meta?: PanelMetadata;
+  customTitle?: string;
 }
 
 const PanelInstanceSchemaBase = z.object({
@@ -56,6 +57,7 @@ const PanelInstanceSchemaBase = z.object({
   binding: PanelBindingSchema.optional(),
   state: z.unknown().optional(),
   meta: PanelMetadataSchema.optional(),
+  customTitle: z.string().optional(),
 });
 
 type PanelInstanceInput = z.input<typeof PanelInstanceSchemaBase>;
@@ -75,6 +77,9 @@ export const PanelInstanceSchema: z.ZodType<PanelInstance, z.ZodTypeDef, PanelIn
     }
     if (value.meta) {
       instance.meta = value.meta;
+    }
+    if (value.customTitle) {
+      instance.customTitle = value.customTitle;
     }
     return instance;
   });

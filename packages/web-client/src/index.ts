@@ -2245,6 +2245,7 @@ async function main(): Promise<void> {
       getAvailablePanelTypes,
       openPanelLauncher,
       openSessionPicker,
+      dialogManager,
       hasChatPanelActiveOutput,
       windowId: WINDOW_ID,
       onLayoutChange: (layout) => {

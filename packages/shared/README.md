@@ -106,7 +106,14 @@ type LayoutNode =
   | { kind: 'panel'; panelId: string };
 // split nodes can include viewMode: 'split' | 'tabs' and activeId for tab view.
 interface LayoutPersistence { layout: LayoutNode; panels: Record<string, PanelInstance>; }
-interface PanelInstance { panelId: string; panelType: string; binding?: PanelBinding; }
+interface PanelInstance {
+  panelId: string;
+  panelType: string;
+  binding?: PanelBinding;
+  state?: unknown;
+  meta?: PanelMetadata;
+  customTitle?: string;
+}
 interface CombinedPluginManifest { id: string; version: string; panels?: PanelTypeManifest[]; ... }
 ```
 
