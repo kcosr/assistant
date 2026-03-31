@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.2] - 2026-03-31
 
 ### Breaking Changes
 
@@ -14,6 +14,7 @@
 - Fixed PI-backed chat runs so backend timeouts/errors close turns durably, sync wrapper timeouts abort the underlying run, and PI replay preserves assistant narration and thinking ordering after refresh. ([#77](https://github.com/kcosr/assistant/pull/77))
 
 ### Removed
+
 
 ## [0.17.1] - 2026-03-31
 
