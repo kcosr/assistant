@@ -201,7 +201,7 @@ Each flavor specifies:
 
 - **appId** – Android package name / iOS bundle ID (must differ for side-by-side installs)
 - **appName** – Display name shown on the home screen
-- **apiHost** – Value written to `ASSISTANT_API_HOST` in the built `config.js`
+- **apiHost** – Build-time fallback written to `ASSISTANT_API_HOST` in the packaged web assets
 
 ### Applying a flavor
 
@@ -288,6 +288,15 @@ Mobile build commands patch the generated Capacitor asset copies (for example,
 `android/app/src/main/assets/public/config.js` and `ios/App/App/public/config.js`) after sync.
 They do not modify `packages/web-client/public/config.js`.
 Set `ASSISTANT_API_HOST` to override the default `assistant` value.
+
+On Android, the native app now shows a backend chooser on every cold start before the web client
+connects. The chooser seeds one saved backend on first run:
+
+- `Assistant` → `https://assistant`
+
+The chooser selection wins for that launch and is persisted as the last used backend. The packaged
+`ASSISTANT_API_HOST` value remains the fallback for non-Android builds and as a safety net if the
+native launch bridge is unavailable.
 
 Examples:
 

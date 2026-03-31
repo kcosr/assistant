@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added an Android native cold-start backend chooser with persisted saved backends, last-used selection, and pre-bootstrap backend handoff to the web client. ([#TBD](<pr-url>))
 
 ### Changed
 
