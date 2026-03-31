@@ -260,6 +260,41 @@ describe('SessionComposerController', () => {
     });
   });
 
+  it('keeps skill descriptions collapsed until expanded', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const description = document.querySelector<HTMLElement>('.session-composer-skill-description');
+    expect(description?.hidden).toBe(true);
+
+    queryRole<HTMLButtonElement>('skill-details-worktrees').click();
+
+    const expandedDescription = document.querySelector<HTMLElement>('.session-composer-skill-description');
+    expect(expandedDescription?.hidden).toBe(false);
+    expect(expandedDescription?.textContent).toContain('Use git worktrees.');
+  });
+
+  it('only toggles skill selection from the checkbox itself', () => {
+    const { controller } = buildController();
+
+    controller.open({ initialAgentId: 'assistant' });
+    queryRole<HTMLButtonElement>('customize').click();
+
+    const firstOption = document.querySelector<HTMLElement>('.session-composer-skill-option');
+    const firstInput = firstOption?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const name = firstOption?.querySelector<HTMLElement>('.session-composer-skill-name');
+
+    expect(firstInput?.checked).toBe(true);
+
+    name?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(firstInput?.checked).toBe(true);
+
+    firstInput?.click();
+    expect(firstInput?.checked).toBe(false);
+  });
+
   it('closes immediately when cancel is pressed', () => {
     const { controller } = buildController();
     controller.open({ initialAgentId: 'assistant' });

@@ -115,6 +115,7 @@ export class SessionComposerController {
       ? [...initialConfig.skills]
       : undefined;
     let skillsTouched = false;
+    let expandedSkillDescriptions = new Set<string>();
     let selectedWorkingDir =
       typeof initialConfig?.workingDir === 'string' ? initialConfig.workingDir : '';
 
@@ -127,19 +128,23 @@ export class SessionComposerController {
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
 
+    const body = document.createElement('div');
+    body.className = 'session-composer-body';
+    dialog.appendChild(body);
+
     const titleEl = document.createElement('h3');
     titleEl.className = 'confirm-dialog-title';
     titleEl.textContent = editSession ? 'Edit Session' : 'Create Session';
-    dialog.appendChild(titleEl);
+    body.appendChild(titleEl);
 
     const form = document.createElement('div');
     form.className = 'list-item-form session-composer-form';
-    dialog.appendChild(form);
+    body.appendChild(form);
 
     const errorEl = document.createElement('p');
     errorEl.className = 'list-metadata-error';
     errorEl.style.display = 'none';
-    dialog.appendChild(errorEl);
+    body.appendChild(errorEl);
 
     const buttons = document.createElement('div');
     buttons.className = 'confirm-dialog-buttons';
@@ -190,6 +195,15 @@ export class SessionComposerController {
       return ordered.length === availableSkills.length ? undefined : ordered;
     };
 
+    const normalizeExpandedSkillDescriptions = (
+      availableSkills: Array<{ id: string }>,
+    ): void => {
+      const availableSkillIds = new Set(availableSkills.map((skill) => skill.id));
+      expandedSkillDescriptions = new Set(
+        [...expandedSkillDescriptions].filter((skillId) => availableSkillIds.has(skillId)),
+      );
+    };
+
     const deriveEffectiveWorkingDir = (): string | undefined => {
       const agent = getSelectedAgent();
       if (!agent?.sessionWorkingDir) {
@@ -231,6 +245,7 @@ export class SessionComposerController {
           selectedSkills,
         );
       }
+      normalizeExpandedSkillDescriptions(agent.sessionConfigCapabilities?.availableSkills ?? []);
 
       const workingDirConfig = agent.sessionWorkingDir;
       if (!workingDirConfig || workingDirConfig.mode === 'none') {
@@ -473,11 +488,20 @@ export class SessionComposerController {
       list.className = 'session-composer-skill-list';
       const selectedSkillSet = new Set(getOrderedSelectedSkillIds(availableSkills, selectedSkills));
       for (const skill of availableSkills) {
-        const label = document.createElement('label');
-        label.className = 'session-composer-skill-option';
+        const option = document.createElement('div');
+        option.className = 'session-composer-skill-option';
+
+        const optionHeader = document.createElement('div');
+        optionHeader.className = 'session-composer-skill-option-header';
+
+        const control = document.createElement('div');
+        control.className = 'session-composer-skill-control';
+
         const input = document.createElement('input');
         input.type = 'checkbox';
+        input.className = 'session-composer-skill-checkbox';
         input.checked = selectedSkillSet.has(skill.id);
+        input.setAttribute('aria-label', `Enable skill ${skill.name}`);
         input.addEventListener('change', () => {
           skillsTouched = true;
           const nextSelected = new Set(
@@ -495,10 +519,48 @@ export class SessionComposerController {
               .filter((skillId) => nextSelected.has(skillId)),
           );
         });
-        const text = document.createElement('span');
-        text.innerHTML = `<strong>${escapeHtml(skill.name)}</strong>${skill.description ? `<small>${escapeHtml(skill.description)}</small>` : ''}`;
-        label.append(input, text);
-        list.appendChild(label);
+
+        const meta = document.createElement('div');
+        meta.className = 'session-composer-skill-meta';
+
+        const name = document.createElement('div');
+        name.className = 'session-composer-skill-name';
+        name.textContent = skill.name;
+        meta.appendChild(name);
+
+        control.append(input, meta);
+        optionHeader.appendChild(control);
+
+        const hasDescription = skill.description.trim().length > 0;
+        if (hasDescription) {
+          const expanded = expandedSkillDescriptions.has(skill.id);
+          const detailsButton = document.createElement('button');
+          detailsButton.type = 'button';
+          detailsButton.className = 'session-composer-skill-details-toggle';
+          detailsButton.dataset['role'] = `skill-details-${skill.id}`;
+          detailsButton.textContent = expanded ? 'Hide details' : 'Details';
+          detailsButton.addEventListener('click', () => {
+            if (expandedSkillDescriptions.has(skill.id)) {
+              expandedSkillDescriptions.delete(skill.id);
+            } else {
+              expandedSkillDescriptions.add(skill.id);
+            }
+            renderSkills();
+          });
+          optionHeader.appendChild(detailsButton);
+        }
+
+        option.appendChild(optionHeader);
+
+        if (hasDescription) {
+          const description = document.createElement('div');
+          description.className = 'session-composer-skill-description';
+          description.hidden = !expandedSkillDescriptions.has(skill.id);
+          description.textContent = skill.description;
+          option.appendChild(description);
+        }
+
+        list.appendChild(option);
       }
       skillsSection.appendChild(list);
     };
@@ -1134,13 +1196,4 @@ export class SessionComposerController {
     entry.onSelect();
     return true;
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
