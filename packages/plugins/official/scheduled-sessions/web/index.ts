@@ -106,8 +106,7 @@ type ScheduleDeletedEvent = {
 };
 
 type PanelState = {
-  collapsedAgents: string[];
-  collapsedSchedules: string[];
+  expandedSchedules: string[];
 };
 
 const registry = window.ASSISTANT_PANEL_REGISTRY;
@@ -181,18 +180,50 @@ function formatLastRun(lastRun: LastRunInfo | null): { label: string; detail: st
   return { label: `${base} (skipped)`, detail: reason };
 }
 
-function groupByAgent(schedules: ScheduleInfo[]): Map<string, ScheduleInfo[]> {
-  const grouped = new Map<string, ScheduleInfo[]>();
-  for (const schedule of schedules) {
-    if (!grouped.has(schedule.agentId)) {
-      grouped.set(schedule.agentId, []);
+function sortSchedules(schedules: ScheduleInfo[]): ScheduleInfo[] {
+  return [...schedules].sort((a, b) => {
+    if (a.status !== b.status) {
+      if (a.status === 'running') {
+        return -1;
+      }
+      if (b.status === 'running') {
+        return 1;
+      }
+      if (a.status === 'idle') {
+        return -1;
+      }
+      if (b.status === 'idle') {
+        return 1;
+      }
     }
-    grouped.get(schedule.agentId)?.push(schedule);
-  }
-  for (const list of grouped.values()) {
-    list.sort((a, b) => a.scheduleId.localeCompare(b.scheduleId));
-  }
-  return new Map([...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+
+    const parseTime = (value: string | null): number => {
+      if (!value) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const time = new Date(value).getTime();
+      return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+    };
+    const aTime = parseTime(a.nextRun);
+    const bTime = parseTime(b.nextRun);
+    if (aTime !== bTime) {
+      return aTime - bTime;
+    }
+
+    const aLabel = a.sessionTitle?.trim() || a.scheduleId;
+    const bLabel = b.sessionTitle?.trim() || b.scheduleId;
+    const labelCompare = aLabel.localeCompare(bLabel);
+    if (labelCompare !== 0) {
+      return labelCompare;
+    }
+
+    const agentCompare = a.agentId.localeCompare(b.agentId);
+    if (agentCompare !== 0) {
+      return agentCompare;
+    }
+
+    return a.scheduleId.localeCompare(b.scheduleId);
+  });
 }
 
 function resolveServices(host: PanelHost): PanelCoreServices | null {
@@ -286,8 +317,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       let loading = false;
       let message = '';
 
-      const collapsedAgents = new Set<string>();
-      const collapsedSchedules = new Set<string>();
+      const expandedSchedules = new Set<string>();
 
       const loadPanelState = (): void => {
         const saved = host.loadPanelState();
@@ -295,17 +325,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           return;
         }
         const raw = saved as Partial<PanelState>;
-        if (Array.isArray(raw.collapsedAgents)) {
-          for (const entry of raw.collapsedAgents) {
+        if (Array.isArray(raw.expandedSchedules)) {
+          for (const entry of raw.expandedSchedules) {
             if (typeof entry === 'string') {
-              collapsedAgents.add(entry);
-            }
-          }
-        }
-        if (Array.isArray(raw.collapsedSchedules)) {
-          for (const entry of raw.collapsedSchedules) {
-            if (typeof entry === 'string') {
-              collapsedSchedules.add(entry);
+              expandedSchedules.add(entry);
             }
           }
         }
@@ -313,8 +336,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const persistPanelState = (): void => {
         const state: PanelState = {
-          collapsedAgents: Array.from(collapsedAgents),
-          collapsedSchedules: Array.from(collapsedSchedules),
+          expandedSchedules: Array.from(expandedSchedules),
         };
         host.persistPanelState(state);
       };
@@ -327,9 +349,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
       };
 
       const updateSchedules = (nextSchedules: ScheduleInfo[]): void => {
-        schedules = new Map(
+        const nextMap = new Map(
           nextSchedules.map((schedule) => [`${schedule.agentId}:${schedule.scheduleId}`, schedule]),
         );
+        for (const key of Array.from(expandedSchedules)) {
+          if (!nextMap.has(key)) {
+            expandedSchedules.delete(key);
+          }
+        }
+        schedules = nextMap;
         render();
       };
 
@@ -361,7 +389,9 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           if (!deleted?.agentId || !deleted?.scheduleId) {
             return;
           }
-          schedules.delete(`${deleted.agentId}:${deleted.scheduleId}`);
+          const key = `${deleted.agentId}:${deleted.scheduleId}`;
+          schedules.delete(key);
+          expandedSchedules.delete(key);
           render();
           return;
         }
@@ -378,7 +408,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
       const render = (): void => {
         const allSchedules = Array.from(schedules.values());
-        const grouped = groupByAgent(allSchedules);
+        const orderedSchedules = sortSchedules(allSchedules);
         const runningCount = allSchedules.filter((schedule) => schedule.status === 'running').length;
         const disabledCount = allSchedules.filter((schedule) => schedule.status === 'disabled').length;
         summaryEl.textContent = `${allSchedules.length} schedules | ${runningCount} running | ${disabledCount} disabled`;
@@ -391,88 +421,88 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         }
 
         let html = '';
-        for (const [agentId, agentSchedules] of grouped.entries()) {
-          const agentCollapsed = collapsedAgents.has(agentId);
+        html += '<div class="scheduled-sessions-list">';
+        for (const schedule of orderedSchedules) {
+          const scheduleKey = `${schedule.agentId}:${schedule.scheduleId}`;
+          const scheduleExpanded = expandedSchedules.has(scheduleKey);
+          const statusLabel =
+            schedule.status === 'running'
+              ? 'Running'
+              : schedule.status === 'disabled'
+                ? 'Disabled'
+                : 'Idle';
+          const rowTitle = schedule.sessionTitle?.trim() || schedule.scheduleId;
+          const runningDetail =
+            schedule.status === 'running' && schedule.runningStartedAt
+              ? `Running for ${formatDuration(Date.now() - new Date(schedule.runningStartedAt).getTime())}`
+              : '';
+          const lastRun = formatLastRun(schedule.lastRun);
+          const runDisabled = schedule.runningCount >= schedule.maxConcurrent;
+          const enableLabel = schedule.enabled ? 'Disable' : 'Enable';
+
           html += `
-            <section class="scheduled-sessions-group" data-agent-id="${escapeHtml(agentId)}">
-              <button type="button" class="scheduled-sessions-group-header" data-action="toggle-agent" data-agent-id="${escapeHtml(agentId)}">
-                <span class="scheduled-sessions-group-title">${escapeHtml(agentId)}</span>
-                <span class="scheduled-sessions-group-meta">${agentSchedules.length} schedule${agentSchedules.length === 1 ? '' : 's'}</span>
-              </button>
-              <div class="scheduled-sessions-group-body${agentCollapsed ? ' is-collapsed' : ''}">
-          `;
-
-          for (const schedule of agentSchedules) {
-            const scheduleKey = `${schedule.agentId}:${schedule.scheduleId}`;
-            const scheduleCollapsed = collapsedSchedules.has(scheduleKey);
-            const statusLabel = schedule.status === 'running' ? 'Running' : schedule.status === 'disabled' ? 'Disabled' : 'Idle';
-            const rowTitle = schedule.sessionTitle?.trim() || schedule.scheduleId;
-            const runningDetail =
-              schedule.status === 'running' && schedule.runningStartedAt
-                ? `Running for ${formatDuration(Date.now() - new Date(schedule.runningStartedAt).getTime())}`
-                : '';
-            const lastRun = formatLastRun(schedule.lastRun);
-            const runDisabled = schedule.runningCount >= schedule.maxConcurrent;
-            const enableLabel = schedule.enabled ? 'Disable' : 'Enable';
-
-            html += `
-              <div class="scheduled-sessions-item">
-                <div class="scheduled-sessions-row" data-action="toggle-schedule" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">
-                  <span class="status-dot status-dot--${escapeHtml(schedule.status)}"></span>
-                  <div class="scheduled-sessions-row-main">
+            <section class="scheduled-sessions-item${scheduleExpanded ? ' is-expanded' : ''}" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">
+              <div class="scheduled-sessions-row" data-action="toggle-schedule" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">
+                <span class="status-dot status-dot--${escapeHtml(schedule.status)}"></span>
+                <div class="scheduled-sessions-row-main">
+                  <div class="scheduled-sessions-row-title-line">
                     <div class="scheduled-sessions-row-title">${escapeHtml(rowTitle)}</div>
-                    <div class="scheduled-sessions-row-sub">${escapeHtml(schedule.scheduleId)} | ${escapeHtml(schedule.cron)} | ${escapeHtml(schedule.cronDescription)}</div>
+                    <span class="scheduled-sessions-agent">${escapeHtml(schedule.agentId)}</span>
                   </div>
-                  <div class="scheduled-sessions-row-meta">
-                    <div class="scheduled-sessions-row-next">${formatRelative(schedule.nextRun)}</div>
-                    <div class="scheduled-sessions-row-status">${escapeHtml(statusLabel)}</div>
-                  </div>
-                  <div class="scheduled-sessions-row-actions">
-                    <button type="button" class="scheduled-sessions-button" data-action="run" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}" ${runDisabled ? 'disabled' : ''}>Run</button>
-                    <button type="button" class="scheduled-sessions-button" data-action="toggle-enabled" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">${escapeHtml(enableLabel)}</button>
-                  </div>
+                  <div class="scheduled-sessions-row-sub">${escapeHtml(schedule.scheduleId)} | ${escapeHtml(schedule.cron)}</div>
                 </div>
-                <div class="scheduled-sessions-details${scheduleCollapsed ? ' is-collapsed' : ''}">
-                  <div class="scheduled-sessions-detail-grid">
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Next run</div>
-                      <div class="scheduled-sessions-detail-value">${escapeHtml(formatTimestamp(schedule.nextRun))} (${escapeHtml(formatRelative(schedule.nextRun))})</div>
-                    </div>
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Status</div>
-                      <div class="scheduled-sessions-detail-value">${escapeHtml(statusLabel)}${runningDetail ? ` | ${escapeHtml(runningDetail)}` : ''}</div>
-                    </div>
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Last run</div>
-                      <div class="scheduled-sessions-detail-value">${escapeHtml(lastRun.label)}</div>
-                      ${lastRun.detail ? `<div class="scheduled-sessions-detail-note">${escapeHtml(lastRun.detail)}</div>` : ''}
-                    </div>
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Session mode</div>
-                      <div class="scheduled-sessions-detail-value">${schedule.reuseSession ? 'Reuse session' : 'New session per run'}</div>
-                    </div>
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Concurrency</div>
-                      <div class="scheduled-sessions-detail-value">${schedule.runningCount}/${schedule.maxConcurrent}</div>
-                    </div>
+                <div class="scheduled-sessions-row-meta">
+                  <div class="scheduled-sessions-row-next">${escapeHtml(formatRelative(schedule.nextRun))}</div>
+                  <div class="scheduled-sessions-row-status">${escapeHtml(statusLabel)}</div>
+                </div>
+                <span class="scheduled-sessions-expand-indicator" aria-hidden="true"></span>
+                <div class="scheduled-sessions-row-actions">
+                  <button type="button" class="scheduled-sessions-button" data-action="run" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}" ${runDisabled ? 'disabled' : ''}>Run</button>
+                  <button type="button" class="scheduled-sessions-button" data-action="toggle-enabled" data-agent-id="${escapeHtml(schedule.agentId)}" data-schedule-id="${escapeHtml(schedule.scheduleId)}">${escapeHtml(enableLabel)}</button>
+                </div>
+              </div>
+              <div class="scheduled-sessions-details${scheduleExpanded ? '' : ' is-collapsed'}">
+                <div class="scheduled-sessions-detail-grid">
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Next run</div>
+                    <div class="scheduled-sessions-detail-value">${escapeHtml(formatTimestamp(schedule.nextRun))} (${escapeHtml(formatRelative(schedule.nextRun))})</div>
                   </div>
-                  <div class="scheduled-sessions-detail-grid">
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Prompt</div>
-                      <div class="scheduled-sessions-detail-value">${schedule.prompt ? escapeHtml(schedule.prompt) : '-'}</div>
-                    </div>
-                    <div class="scheduled-sessions-detail">
-                      <div class="scheduled-sessions-detail-label">Pre-check</div>
-                      <div class="scheduled-sessions-detail-value">${schedule.preCheck ? escapeHtml(schedule.preCheck) : '-'}</div>
-                    </div>
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Status</div>
+                    <div class="scheduled-sessions-detail-value">${escapeHtml(statusLabel)}${runningDetail ? ` | ${escapeHtml(runningDetail)}` : ''}</div>
+                  </div>
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Last run</div>
+                    <div class="scheduled-sessions-detail-value">${escapeHtml(lastRun.label)}</div>
+                    ${lastRun.detail ? `<div class="scheduled-sessions-detail-note">${escapeHtml(lastRun.detail)}</div>` : ''}
+                  </div>
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Schedule</div>
+                    <div class="scheduled-sessions-detail-value">${escapeHtml(schedule.cronDescription)}</div>
+                    <div class="scheduled-sessions-detail-note">${escapeHtml(schedule.scheduleId)}</div>
+                  </div>
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Session mode</div>
+                    <div class="scheduled-sessions-detail-value">${schedule.reuseSession ? 'Reuse session' : 'New session per run'}</div>
+                  </div>
+                  <div class="scheduled-sessions-detail">
+                    <div class="scheduled-sessions-detail-label">Concurrency</div>
+                    <div class="scheduled-sessions-detail-value">${schedule.runningCount}/${schedule.maxConcurrent}</div>
+                  </div>
+                  <div class="scheduled-sessions-detail scheduled-sessions-detail-wide">
+                    <div class="scheduled-sessions-detail-label">Prompt</div>
+                    <div class="scheduled-sessions-detail-value">${schedule.prompt ? escapeHtml(schedule.prompt) : '-'}</div>
+                  </div>
+                  <div class="scheduled-sessions-detail scheduled-sessions-detail-wide">
+                    <div class="scheduled-sessions-detail-label">Pre-check</div>
+                    <div class="scheduled-sessions-detail-value">${schedule.preCheck ? escapeHtml(schedule.preCheck) : '-'}</div>
                   </div>
                 </div>
               </div>
-            `;
-          }
-
-          html += '</div></section>';
+            </section>
+          `;
         }
+        html += '</div>';
 
         bodyEl.innerHTML = html;
       };
@@ -490,29 +520,15 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const agentId = actionEl.dataset.agentId ?? '';
         const scheduleId = actionEl.dataset.scheduleId ?? '';
 
-        if (action === 'toggle-agent') {
-          if (!agentId) {
-            return;
-          }
-          if (collapsedAgents.has(agentId)) {
-            collapsedAgents.delete(agentId);
-          } else {
-            collapsedAgents.add(agentId);
-          }
-          persistPanelState();
-          render();
-          return;
-        }
-
         if (action === 'toggle-schedule') {
           if (!agentId || !scheduleId) {
             return;
           }
           const key = `${agentId}:${scheduleId}`;
-          if (collapsedSchedules.has(key)) {
-            collapsedSchedules.delete(key);
+          if (expandedSchedules.has(key)) {
+            expandedSchedules.delete(key);
           } else {
-            collapsedSchedules.add(key);
+            expandedSchedules.add(key);
           }
           persistPanelState();
           render();

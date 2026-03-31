@@ -48,7 +48,7 @@ session is created up front and reconciled from the schedule on later runs after
 ## Panel
 
 - Panel type: `scheduled-sessions` (multi-instance, global scope).
-- Shows schedule status by agent with enable/disable and run controls.
+- Shows schedules in a flat compact list with collapsed-by-default details, plus enable/disable and run controls.
 - Live updates via WebSocket events from the server.
 
 ## Tools
