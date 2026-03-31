@@ -23,6 +23,10 @@ import com.assistant.mobile.R;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +54,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
+    static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
     static final String BROADCAST_RUNTIME_ERROR = "com.assistant.mobile.voice.RUNTIME_ERROR";
@@ -82,10 +87,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean adapterSocketConnected = false;
     private boolean assistantSocketConnected = false;
     private String adapterClientId = "";
-    private String assistantSubscribedSessionId = "";
+    private final Set<String> assistantSubscribedSessionIds = new LinkedHashSet<>();
     private String runtimeState = STATE_DISABLED;
 
-    private String activePromptSessionId = "";
+    private String activeVoiceSessionId = "";
     private String activePromptToolName = "";
     private String activeTtsRequestId = "";
     private String pendingPlaybackDrainRequestId = "";
@@ -109,9 +114,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             .setAction(ACTION_STOP_CURRENT_INTERACTION);
     }
 
-    public static Intent startManualListenIntent(Context context) {
+    public static Intent startManualListenIntent(Context context, String sessionId) {
         return new Intent(context, AssistantVoiceRuntimeService.class)
-            .setAction(ACTION_START_MANUAL_LISTEN);
+            .setAction(ACTION_START_MANUAL_LISTEN)
+            .putExtra(EXTRA_MANUAL_LISTEN_SESSION_ID, trim(sessionId));
     }
 
     @Override
@@ -130,6 +136,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         updateState(STATE_CONNECTING, null);
         connectAdapterSocketIfNeeded();
+        refreshWatchedSessionsAsync();
         connectAssistantSocketIfNeeded();
     }
 
@@ -150,7 +157,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
-            startManualListen();
+            startManualListen(intent.getStringExtra(EXTRA_MANUAL_LISTEN_SESSION_ID));
             return START_STICKY;
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
@@ -195,8 +202,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             micStreamer.setPreferredDeviceId(updated.selectedMicDeviceId);
         }
 
-        boolean sessionChanged = !previous.selectedSessionId.equals(updated.selectedSessionId)
-            || !previous.selectedPanelId.equals(updated.selectedPanelId);
+        boolean preferredSessionChanged =
+            !previous.preferredVoiceSessionId.equals(updated.preferredVoiceSessionId);
+        boolean audioModeChanged = !previous.audioMode.equals(updated.audioMode);
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
 
@@ -211,8 +219,8 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         startInForeground();
 
-        if (sessionChanged || adapterUrlChanged || assistantUrlChanged) {
-            stopCurrentInteraction(false, sessionChanged ? "session_changed" : "config_changed");
+        if (adapterUrlChanged || assistantUrlChanged) {
+            stopCurrentInteraction(false, "config_changed");
         }
 
         if (adapterUrlChanged) {
@@ -221,8 +229,8 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         if (assistantUrlChanged) {
             disconnectAssistantSocket();
-        } else if (sessionChanged) {
-            syncAssistantSessionSubscription(previous.selectedSessionId, updated.selectedSessionId);
+        } else if (audioModeChanged) {
+            syncAssistantSessionSubscriptions(previous.watchedSessionIds, updated.watchedSessionIds, true);
         }
 
         if (!adapterSocketConnected) {
@@ -233,6 +241,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!assistantSocketConnected) {
             updateState(STATE_CONNECTING, null);
             connectAssistantSocketIfNeeded();
+            refreshWatchedSessionsAsync();
+        } else if (preferredSessionChanged) {
+            refreshNotification();
         } else if (!hasActiveInteraction()) {
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
         }
@@ -264,7 +275,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent startListenPendingIntent = PendingIntent.getService(
             this,
             1,
-            startManualListenIntent(this),
+            startManualListenIntent(this, null),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
         PendingIntent stopInteractionPendingIntent = PendingIntent.getService(
@@ -283,7 +294,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         int compactActionCount = 0;
         if (AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
             config.isEnabled(),
-            config.selectedSessionId,
+            config.preferredVoiceSessionId,
             isPromptPlaybackActive(),
             !activeSttRequestId.isEmpty(),
             isRuntimeConnected()
@@ -423,10 +434,14 @@ public final class AssistantVoiceRuntimeService extends Service {
                         return;
                     }
                     assistantSocketConnected = true;
-                    assistantSubscribedSessionId = "";
+                    assistantSubscribedSessionIds.clear();
                     webSocket.send(
-                        AssistantVoiceSessionSocketProtocol.buildHelloMessage(config.selectedSessionId)
+                        AssistantVoiceSessionSocketProtocol.buildHelloMessage(
+                            config.watchedSessionIds,
+                            config.audioMode
+                        )
                     );
+                    refreshWatchedSessionsAsync();
                     if (!hasActiveInteraction() && isRuntimeConnected()) {
                         updateState(STATE_IDLE, null);
                     }
@@ -458,7 +473,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         WebSocket socket = assistantSocket;
         assistantSocket = null;
         assistantSocketConnected = false;
-        assistantSubscribedSessionId = "";
+        assistantSubscribedSessionIds.clear();
         if (socket != null) {
             socket.close(1000, "config update");
         }
@@ -470,7 +485,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         assistantSocket = null;
         assistantSocketConnected = false;
-        assistantSubscribedSessionId = "";
+        assistantSubscribedSessionIds.clear();
         if (config.isEnabled() && !destroyed) {
             if (!hasActiveInteraction()) {
                 updateState(STATE_CONNECTING, reason);
@@ -488,7 +503,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         String subscribedSessionId =
             AssistantVoiceSessionSocketProtocol.parseSubscriptionSessionId(rawText, "subscribed");
         if (!subscribedSessionId.isEmpty()) {
-            assistantSubscribedSessionId = subscribedSessionId;
+            assistantSubscribedSessionIds.add(subscribedSessionId);
             if (!hasActiveInteraction() && isRuntimeConnected()) {
                 updateState(STATE_IDLE, null);
             }
@@ -497,20 +512,28 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         String unsubscribedSessionId =
             AssistantVoiceSessionSocketProtocol.parseSubscriptionSessionId(rawText, "unsubscribed");
-        if (!unsubscribedSessionId.isEmpty() && unsubscribedSessionId.equals(assistantSubscribedSessionId)) {
-            assistantSubscribedSessionId = "";
+        if (!unsubscribedSessionId.isEmpty()) {
+            assistantSubscribedSessionIds.remove(unsubscribedSessionId);
             return;
         }
 
+        String messageType = "";
+        try {
+            messageType = trim(new JSONObject(rawText).optString("type"));
+        } catch (Exception ignored) {
+        }
+        if ("session_created".equals(messageType) || "session_deleted".equals(messageType)) {
+            refreshWatchedSessionsAsync();
+        }
+
         AssistantVoicePromptEvent prompt =
-            AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(rawText, config.selectedSessionId);
+            AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(rawText);
         if (prompt == null) {
             return;
         }
         if (
             AssistantVoiceInteractionRules.shouldAutoplayEvent(
                 config.audioMode,
-                config.selectedSessionId,
                 prompt,
                 !hasActiveInteraction()
             )
@@ -519,26 +542,138 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private void syncAssistantSessionSubscription(String previousSessionId, String nextSessionId) {
+    private void syncAssistantSessionSubscriptions(
+        List<String> previousSessionIds,
+        List<String> nextSessionIds,
+        boolean replaceExistingMasks
+    ) {
         if (!assistantSocketConnected || assistantSocket == null) {
-            assistantSubscribedSessionId = "";
+            assistantSubscribedSessionIds.clear();
             return;
         }
 
-        String previous = trim(previousSessionId);
-        String next = trim(nextSessionId);
-        if (previous.equals(next)) {
+        LinkedHashSet<String> previous = normalizeSessionIdSet(previousSessionIds);
+        LinkedHashSet<String> next = normalizeSessionIdSet(nextSessionIds);
+
+        for (String sessionId : previous) {
+            if (next.contains(sessionId)) {
+                continue;
+            }
+            assistantSocket.send(AssistantVoiceSessionSocketProtocol.buildUnsubscribeMessage(sessionId));
+            assistantSubscribedSessionIds.remove(sessionId);
+        }
+
+        for (String sessionId : next) {
+            if (!replaceExistingMasks && previous.contains(sessionId) && assistantSubscribedSessionIds.contains(sessionId)) {
+                continue;
+            }
+            assistantSocket.send(
+                AssistantVoiceSessionSocketProtocol.buildSubscribeMessage(sessionId, config.audioMode)
+            );
+        }
+    }
+
+    private void refreshWatchedSessionsAsync() {
+        if (!config.isEnabled() || destroyed) {
             return;
         }
-        if (!previous.isEmpty()) {
-            assistantSocket.send(AssistantVoiceSessionSocketProtocol.buildUnsubscribeMessage(previous));
-            if (previous.equals(assistantSubscribedSessionId)) {
-                assistantSubscribedSessionId = "";
+        networkExecutor.execute(() -> {
+            List<String> sessionIds = fetchWatchedSessionIds();
+            mainHandler.post(() -> applyWatchedSessionIds(sessionIds));
+        });
+    }
+
+    private List<String> fetchWatchedSessionIds() {
+        try {
+            JSONObject body = new JSONObject();
+            String response = postJson(
+                AssistantVoiceUrlUtils.assistantSessionListUrl(config.assistantBaseUrl),
+                body
+            );
+            return parseWatchedSessionIds(response);
+        } catch (Exception error) {
+            Log.w(TAG, "Failed to refresh watched sessions", error);
+            return config.watchedSessionIds;
+        }
+    }
+
+    private List<String> parseWatchedSessionIds(String rawJson) {
+        LinkedHashSet<String> sessionIds = new LinkedHashSet<>();
+        try {
+            JSONObject payload = new JSONObject(rawJson);
+            JSONObject result =
+                payload.has("result") && payload.optJSONObject("result") != null
+                    ? payload.optJSONObject("result")
+                    : payload;
+            if (result == null) {
+                return new ArrayList<>(sessionIds);
+            }
+            org.json.JSONArray sessions = result.optJSONArray("sessions");
+            if (sessions == null) {
+                return new ArrayList<>(sessionIds);
+            }
+            for (int index = 0; index < sessions.length(); index += 1) {
+                JSONObject session = sessions.optJSONObject(index);
+                if (session == null) {
+                    continue;
+                }
+                String sessionId = trim(session.optString("sessionId"));
+                if (!sessionId.isEmpty()) {
+                    sessionIds.add(sessionId);
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Failed to parse watched session ids", error);
+            return config.watchedSessionIds;
+        }
+        return new ArrayList<>(sessionIds);
+    }
+
+    private void applyWatchedSessionIds(List<String> sessionIds) {
+        if (destroyed) {
+            return;
+        }
+        LinkedHashSet<String> nextSessionIds = normalizeSessionIdSet(sessionIds);
+        LinkedHashSet<String> previousSessionIds = normalizeSessionIdSet(config.watchedSessionIds);
+        if (
+            config.preferredVoiceSessionId.isEmpty()
+            || nextSessionIds.contains(config.preferredVoiceSessionId)
+        ) {
+            if (previousSessionIds.equals(nextSessionIds)) {
+                return;
+            }
+            config = config.withWatchedSessionIds(new ArrayList<>(nextSessionIds));
+            AssistantVoiceConfig.save(this, config);
+            syncAssistantSessionSubscriptions(
+                new ArrayList<>(previousSessionIds),
+                config.watchedSessionIds,
+                false
+            );
+            return;
+        }
+
+        AssistantVoiceConfig updated = config
+            .withWatchedSessionIds(new ArrayList<>(nextSessionIds))
+            .withPreferredVoiceSessionId("");
+        List<String> previous = config.watchedSessionIds;
+        config = updated;
+        AssistantVoiceConfig.save(this, updated);
+        syncAssistantSessionSubscriptions(previous, updated.watchedSessionIds, false);
+        refreshNotification();
+    }
+
+    private LinkedHashSet<String> normalizeSessionIdSet(List<String> sessionIds) {
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (sessionIds == null) {
+            return normalized;
+        }
+        for (String sessionId : sessionIds) {
+            String trimmed = trim(sessionId);
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed);
             }
         }
-        if (!next.isEmpty()) {
-            assistantSocket.send(AssistantVoiceSessionSocketProtocol.buildSubscribeMessage(next));
-        }
+        return normalized;
     }
 
     private void sendAdapterClientState() {
@@ -649,7 +784,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         if (shouldStartListening) {
-            startRecognition(activePromptSessionId, "playback_completion");
+            startRecognition(activeVoiceSessionId, "playback_completion");
             return;
         }
         clearActivePromptContext();
@@ -665,7 +800,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
-        String sessionId = activePromptSessionId;
+        String sessionId = activeVoiceSessionId;
         activeSttRequestId = "";
         if (micStreamer != null) {
             adapterStoppedSttRequestId = requestId;
@@ -725,15 +860,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled() || prompt == null || hasActiveInteraction()) {
             return;
         }
-        if (!prompt.sessionId.equals(config.selectedSessionId)) {
-            return;
-        }
         if (!adapterSocketConnected || adapterClientId.isEmpty()) {
             return;
         }
 
         String requestId = UUID.randomUUID().toString();
-        activePromptSessionId = prompt.sessionId;
+        activeVoiceSessionId = prompt.sessionId;
         activePromptToolName = prompt.toolName;
         activeTtsRequestId = requestId;
         pendingPlaybackDrainRequestId = "";
@@ -766,7 +898,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private void stopCurrentInteraction(boolean transitionToRecognition, String reason) {
         String ttsRequestId = activeTtsRequestId;
         String listeningRequestId = activeSttRequestId;
-        String speakingSessionId = activePromptSessionId;
+        String speakingSessionId = activeVoiceSessionId;
         String speakingToolName = activePromptToolName;
 
         activeTtsRequestId = "";
@@ -805,8 +937,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private void startManualListen() {
-        if (!config.isEnabled() || config.selectedSessionId.isEmpty()) {
+    private void startManualListen(String requestedSessionId) {
+        String targetSessionId = trim(requestedSessionId);
+        if (targetSessionId.isEmpty()) {
+            targetSessionId = config.preferredVoiceSessionId;
+        }
+        if (!config.isEnabled() || targetSessionId.isEmpty()) {
             return;
         }
         if (isPromptPlaybackActive()) {
@@ -816,7 +952,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!activeSttRequestId.isEmpty()) {
             return;
         }
-        startRecognition(config.selectedSessionId, "manual_listen");
+        startRecognition(targetSessionId, "manual_listen");
     }
 
     private void startRecognition(String sessionId, String reason) {
@@ -832,10 +968,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         String requestId = UUID.randomUUID().toString();
-        activePromptSessionId = sessionId.trim();
+        activeVoiceSessionId = sessionId.trim();
         activePromptToolName = "manual_listen".equals(reason) ? "voice_manual" : activePromptToolName;
         activeSttRequestId = requestId;
-        Log.d(TAG, "startRecognition requestId=" + requestId + " sessionId=" + activePromptSessionId + " reason=" + reason);
+        Log.d(TAG, "startRecognition requestId=" + requestId + " sessionId=" + activeVoiceSessionId + " reason=" + reason);
         updateState(STATE_LISTENING, null);
 
         if (micStreamer == null) {
@@ -982,7 +1118,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void clearActivePromptContext() {
-        activePromptSessionId = "";
+        activeVoiceSessionId = "";
         activePromptToolName = "";
     }
 
@@ -996,6 +1132,13 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private boolean isPromptPlaybackActive() {
         return !activeTtsRequestId.isEmpty() || !pendingPlaybackDrainRequestId.isEmpty();
+    }
+
+    private void refreshNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification(runtimeState));
+        }
     }
 
     private void updateState(String nextState, String maybeErrorMessage) {
@@ -1013,10 +1156,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             normalizedState,
             normalizedError.isEmpty() ? null : normalizedError
         );
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.notify(NOTIFICATION_ID, buildNotification(normalizedState));
-        }
+        refreshNotification();
         Intent stateIntent = new Intent(BROADCAST_STATE_CHANGED);
         stateIntent.setPackage(getPackageName());
         stateIntent.putExtra(EXTRA_STATE, normalizedState);

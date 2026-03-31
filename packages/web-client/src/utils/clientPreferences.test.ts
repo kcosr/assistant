@@ -32,6 +32,7 @@ describe('loadClientPreferences', () => {
 
     expect(preferences.voice.audioMode).toBe('off');
     expect(preferences.voice.autoListenEnabled).toBe(false);
+    expect(preferences.voice.preferredVoiceSessionId).toBe('');
     expect(preferences.voice.selectedMicDeviceId).toBe('');
     expect(preferences.voice.recognitionStartTimeoutMs).toBe(30000);
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(60000);
@@ -80,6 +81,7 @@ describe('loadClientPreferences', () => {
     localStorage.setItem(
       defaultOptions.voiceStorageKey,
       JSON.stringify({
+        preferredVoiceSessionId: 'session-9',
         recognitionStartTimeoutMs: '4500',
         recognitionCompletionTimeoutMs: 15000,
         recognitionEndSilenceMs: '900',
@@ -89,6 +91,7 @@ describe('loadClientPreferences', () => {
 
     const preferences = loadClientPreferences(defaultOptions);
 
+    expect(preferences.voice.preferredVoiceSessionId).toBe('session-9');
     expect(preferences.voice.recognitionStartTimeoutMs).toBe(4500);
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(15000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(900);

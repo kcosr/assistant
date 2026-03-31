@@ -4,7 +4,11 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class AssistantVoiceConfig {
@@ -27,6 +31,8 @@ final class AssistantVoiceConfig {
     private static final String KEY_SELECTED_MIC_DEVICE_ID = "selected_mic_device_id";
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
+    private static final String KEY_PREFERRED_VOICE_SESSION_ID = "preferred_voice_session_id";
+    private static final String KEY_WATCHED_SESSION_IDS = "watched_session_ids";
     private static final String KEY_INPUT_CONTEXT_ENABLED = "input_context_enabled";
     private static final String KEY_INPUT_CONTEXT_LINE = "input_context_line";
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
@@ -42,6 +48,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_RECOGNITION_END_SILENCE_MS = "recognitionEndSilenceMs";
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
+    static final String EXTRA_PREFERRED_VOICE_SESSION_ID = "preferredVoiceSessionId";
     static final String EXTRA_INPUT_CONTEXT_ENABLED = "inputContextEnabled";
     static final String EXTRA_INPUT_CONTEXT_LINE = "inputContextLine";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
@@ -55,6 +62,8 @@ final class AssistantVoiceConfig {
     final int recognitionEndSilenceMs;
     final String selectedPanelId;
     final String selectedSessionId;
+    final String preferredVoiceSessionId;
+    final List<String> watchedSessionIds;
     final boolean inputContextEnabled;
     final String inputContextLine;
     final String voiceAdapterBaseUrl;
@@ -69,6 +78,8 @@ final class AssistantVoiceConfig {
         int recognitionEndSilenceMs,
         String selectedPanelId,
         String selectedSessionId,
+        String preferredVoiceSessionId,
+        List<String> watchedSessionIds,
         boolean inputContextEnabled,
         String inputContextLine,
         String voiceAdapterBaseUrl,
@@ -91,6 +102,8 @@ final class AssistantVoiceConfig {
         );
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
+        this.preferredVoiceSessionId = normalizeOptional(preferredVoiceSessionId);
+        this.watchedSessionIds = normalizeSessionIdList(watchedSessionIds);
         this.inputContextEnabled = inputContextEnabled;
         this.inputContextLine = normalizeOptional(inputContextLine);
         this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
@@ -117,6 +130,8 @@ final class AssistantVoiceConfig {
             prefs.getInt(KEY_RECOGNITION_END_SILENCE_MS, DEFAULT_RECOGNITION_END_SILENCE_MS),
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
+            prefs.getString(KEY_PREFERRED_VOICE_SESSION_ID, null),
+            parseSessionIdList(prefs.getString(KEY_WATCHED_SESSION_IDS, null)),
             prefs.getBoolean(KEY_INPUT_CONTEXT_ENABLED, false),
             prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
@@ -135,6 +150,8 @@ final class AssistantVoiceConfig {
             .putInt(KEY_RECOGNITION_END_SILENCE_MS, config.recognitionEndSilenceMs)
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
+            .putString(KEY_PREFERRED_VOICE_SESSION_ID, emptyToNull(config.preferredVoiceSessionId))
+            .putString(KEY_WATCHED_SESSION_IDS, serializeSessionIdList(config.watchedSessionIds))
             .putBoolean(KEY_INPUT_CONTEXT_ENABLED, config.inputContextEnabled)
             .putString(KEY_INPUT_CONTEXT_LINE, emptyToNull(config.inputContextLine))
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
@@ -172,6 +189,10 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_SELECTED_SESSION_ID)
                 ? intent.getStringExtra(EXTRA_SELECTED_SESSION_ID)
                 : fallback.selectedSessionId,
+            intent.hasExtra(EXTRA_PREFERRED_VOICE_SESSION_ID)
+                ? intent.getStringExtra(EXTRA_PREFERRED_VOICE_SESSION_ID)
+                : fallback.preferredVoiceSessionId,
+            fallback.watchedSessionIds,
             intent.getBooleanExtra(EXTRA_INPUT_CONTEXT_ENABLED, fallback.inputContextEnabled),
             intent.hasExtra(EXTRA_INPUT_CONTEXT_LINE)
                 ? intent.getStringExtra(EXTRA_INPUT_CONTEXT_LINE)
@@ -194,6 +215,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_RECOGNITION_END_SILENCE_MS, recognitionEndSilenceMs);
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
+        intent.putExtra(EXTRA_PREFERRED_VOICE_SESSION_ID, emptyToNull(preferredVoiceSessionId));
         intent.putExtra(EXTRA_INPUT_CONTEXT_ENABLED, inputContextEnabled);
         intent.putExtra(EXTRA_INPUT_CONTEXT_LINE, emptyToNull(inputContextLine));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
@@ -272,6 +294,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             panelId,
             sessionId,
+            preferredVoiceSessionId,
+            watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
             voiceAdapterBaseUrl,
@@ -289,6 +313,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
+            preferredVoiceSessionId,
+            watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
             voiceAdapterBaseUrl,
@@ -313,6 +339,8 @@ final class AssistantVoiceConfig {
             && recognitionEndSilenceMs == config.recognitionEndSilenceMs
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
+            && Objects.equals(preferredVoiceSessionId, config.preferredVoiceSessionId)
+            && Objects.equals(watchedSessionIds, config.watchedSessionIds)
             && inputContextEnabled == config.inputContextEnabled
             && Objects.equals(inputContextLine, config.inputContextLine)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
@@ -330,6 +358,8 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
+            preferredVoiceSessionId,
+            watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
             voiceAdapterBaseUrl,
@@ -350,6 +380,8 @@ final class AssistantVoiceConfig {
             settings.optInt("recognitionEndSilenceMs", recognitionEndSilenceMs),
             selectedPanelId,
             selectedSessionId,
+            settings.optString("preferredVoiceSessionId", preferredVoiceSessionId),
+            watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
             settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
@@ -367,10 +399,98 @@ final class AssistantVoiceConfig {
             recognitionEndSilenceMs,
             selectedPanelId,
             selectedSessionId,
+            preferredVoiceSessionId,
+            watchedSessionIds,
             enabled,
             contextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl
         );
+    }
+
+    AssistantVoiceConfig withWatchedSessionIds(List<String> sessionIds) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withPreferredVoiceSessionId(String sessionId) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            sessionId,
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    private static List<String> normalizeSessionIdList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyList();
+        }
+        ArrayList<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            String sessionId = normalizeOptional(value);
+            if (!sessionId.isEmpty() && !normalized.contains(sessionId)) {
+                normalized.add(sessionId);
+            }
+        }
+        if (normalized.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(normalized);
+    }
+
+    private static List<String> parseSessionIdList(String raw) {
+        String normalized = normalizeOptional(raw);
+        if (normalized.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            JSONArray entries = new JSONArray(normalized);
+            ArrayList<String> sessionIds = new ArrayList<>();
+            for (int index = 0; index < entries.length(); index += 1) {
+                String sessionId = normalizeOptional(entries.optString(index, ""));
+                if (!sessionId.isEmpty() && !sessionIds.contains(sessionId)) {
+                    sessionIds.add(sessionId);
+                }
+            }
+            return normalizeSessionIdList(sessionIds);
+        } catch (Exception ignored) {
+            return Collections.emptyList();
+        }
+    }
+
+    private static String serializeSessionIdList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        JSONArray entries = new JSONArray();
+        for (String value : normalizeSessionIdList(values)) {
+            entries.put(value);
+        }
+        return entries.length() == 0 ? null : entries.toString();
     }
 }

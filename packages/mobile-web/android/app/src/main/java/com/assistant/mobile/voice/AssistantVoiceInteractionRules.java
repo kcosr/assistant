@@ -9,16 +9,10 @@ final class AssistantVoiceInteractionRules {
 
     static boolean shouldAutoplayEvent(
         String audioMode,
-        String selectedSessionId,
         AssistantVoicePromptEvent prompt,
         boolean idle
     ) {
         if (prompt == null || !idle) {
-            return false;
-        }
-        String selected = selectedSessionId == null ? "" : selectedSessionId.trim();
-        String promptSessionId = prompt.sessionId == null ? "" : prompt.sessionId.trim();
-        if (selected.isEmpty() || !selected.equals(promptSessionId)) {
             return false;
         }
         if (AssistantVoiceConfig.AUDIO_MODE_TOOL.equals(audioMode)) {
@@ -64,12 +58,12 @@ final class AssistantVoiceInteractionRules {
 
     static boolean shouldShowNotificationSpeakAction(
         boolean voiceEnabled,
-        String selectedSessionId,
+        String preferredVoiceSessionId,
         boolean promptPlaybackActive,
         boolean listeningActive,
         boolean runtimeConnected
     ) {
-        String sessionId = selectedSessionId == null ? "" : selectedSessionId.trim();
+        String sessionId = preferredVoiceSessionId == null ? "" : preferredVoiceSessionId.trim();
         return voiceEnabled
             && !sessionId.isEmpty()
             && !promptPlaybackActive

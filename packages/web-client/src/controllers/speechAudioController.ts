@@ -39,6 +39,10 @@ export interface AssistantNativeVoiceUrlArgs {
   url: string;
 }
 
+export interface AssistantNativeVoiceStartListenArgs {
+  sessionId?: string | null;
+}
+
 export type AssistantNativeVoiceRuntimeState =
   | 'disabled'
   | 'connecting'
@@ -70,7 +74,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
-  startManualListen?: () => void | Promise<void>;
+  startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
   listInputDevices?:
     () =>
       | AssistantNativeVoiceInputDevice[]
@@ -165,8 +169,8 @@ export class AssistantNativeVoiceBridge {
     return this.invoke('stopCurrentInteraction');
   }
 
-  startManualListen(): boolean {
-    return this.invoke('startManualListen');
+  startManualListen(sessionId?: string | null): boolean {
+    return this.invoke('startManualListen', { sessionId: sessionId ?? null });
   }
 
   isAvailable(): boolean {
@@ -1000,7 +1004,8 @@ export class SpeechAudioController {
     this.logState('start-request');
     if (this.isUsingNativeVoiceRuntime()) {
       this.logState('start-native-listen');
-      const started = this.options.nativeVoiceBridge?.startManualListen() ?? false;
+      const started =
+        this.options.nativeVoiceBridge?.startManualListen(this.options.getSessionId()) ?? false;
       if (!started) {
         this.logState('start-abort', { reason: 'native-start-unavailable' });
       }
