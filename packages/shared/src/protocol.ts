@@ -103,8 +103,8 @@ export const SessionSubscriptionMaskSchema = z.object({
   serverMessageTypes: z.array(ServerMessageTypeSchema).nonempty().optional(),
   /**
    * Chat-event subtypes for `chat_event` server messages. When present,
-   * non-`chat_event` messages do not match. A single mask therefore cannot
-   * both constrain chat-event subtypes and also pass non-`chat_event` traffic.
+   * only `chat_event` payloads are checked against this list. Non-`chat_event`
+   * messages are still matched by the other applicable mask fields.
    */
   chatEventTypes: z.array(ChatEventTypeSchema).nonempty().optional(),
   /**

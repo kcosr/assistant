@@ -98,7 +98,9 @@ describe('ConnectionManager', () => {
       manager.connect();
 
       const socket = MockWebSocket.instances[0];
-      expect(socket).toBeDefined();
+      if (!socket) {
+        throw new Error('Expected ConnectionManager to create a socket');
+      }
       socket.dispatch('open');
 
       expect(socket.sent).toHaveLength(1);

@@ -222,11 +222,8 @@ export class SessionConnectionRegistry {
     }
 
     if (message.type !== 'chat_event') {
-      // chatEventTypes is only meaningful for chat_event payloads. When present,
-      // it also implies that non-chat_event server messages should be dropped.
-      if (mask.chatEventTypes) {
-        return false;
-      }
+      // chatEventTypes only constrains chat_event payloads. Non-chat-event
+      // messages are filtered solely by the dimensions that apply to them.
       const topLevelToolName = this.getTopLevelToolName(message);
       if (topLevelToolName && mask.toolNames && !mask.toolNames.includes(topLevelToolName)) {
         return false;

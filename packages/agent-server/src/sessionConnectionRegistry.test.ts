@@ -199,11 +199,12 @@ describe('SessionConnectionRegistry', () => {
     });
   });
 
-  it('drops non-chat-event messages when chatEventTypes filtering is present', () => {
+  it('drops non-chat-event messages when top-level filtering excludes them', () => {
     const registry = new SessionConnectionRegistry();
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['chat_event'],
       chatEventTypes: ['tool_call'],
     });
 
@@ -214,6 +215,30 @@ describe('SessionConnectionRegistry', () => {
     });
 
     expect(sendServerMessageFromHub).not.toHaveBeenCalled();
+  });
+
+  it('allows explicitly selected non-chat-event messages alongside chatEventTypes filtering', () => {
+    const registry = new SessionConnectionRegistry();
+    const { connection, sendServerMessageFromHub } = createTestConnection();
+
+    registry.subscribe('session-a', connection, {
+      serverMessageTypes: ['chat_event', 'output_cancelled'],
+      chatEventTypes: ['tool_call'],
+      toolNames: ['voice_speak'],
+    });
+
+    registry.broadcastToSession('session-a', {
+      type: 'output_cancelled',
+      sessionId: 'session-a',
+      responseId: 'resp-1',
+    });
+
+    expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
+      type: 'output_cancelled',
+      sessionId: 'session-a',
+      responseId: 'resp-1',
+    });
   });
 
   it('lets non-tool messages pass through when only toolNames filtering is present', () => {
