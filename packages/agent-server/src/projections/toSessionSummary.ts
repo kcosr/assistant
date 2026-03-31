@@ -1,19 +1,5 @@
 import type { ChatEvent } from '@assistant/shared';
-
-function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }): string | null {
-  const result = event.payload.result.trim();
-  if (!result) {
-    return null;
-  }
-
-  const fromAgentIdRaw = event.payload.fromAgentId;
-  const fromAgentId =
-    typeof fromAgentIdRaw === 'string' && fromAgentIdRaw.trim().length > 0
-      ? fromAgentIdRaw.trim()
-      : 'agent';
-
-  return `[Callback from ${fromAgentId}]: ${result}`;
-}
+import { getAgentCallbackText, getUserVisibleUserText } from '../chatEventText';
 
 function isSummaryAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
   return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
@@ -38,8 +24,8 @@ export function toSessionSummary(events: ChatEvent[]): {
   let messageCount = 0;
 
   for (const event of events) {
-    if (event.type === 'user_message') {
-      const text = event.payload.text.trim();
+    if (event.type === 'user_message' || event.type === 'user_audio') {
+      const text = getUserVisibleUserText(event);
       if (!text) {
         continue;
       }
@@ -62,7 +48,7 @@ export function toSessionSummary(events: ChatEvent[]): {
       lastMessage = text;
       messageCount += 1;
     } else if (event.type === 'agent_callback') {
-      const text = formatAgentCallbackText(
+      const text = getAgentCallbackText(
         event as ChatEvent & {
           type: 'agent_callback';
         },

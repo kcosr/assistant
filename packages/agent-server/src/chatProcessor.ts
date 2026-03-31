@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
-import type { ServerTextDoneMessage, ServerUserMessageMessage } from '@assistant/shared';
+import type {
+  ServerTextDoneMessage,
+  ServerUserAudioMessage,
+  ServerUserMessageMessage,
+} from '@assistant/shared';
 import type { ChatEvent, TurnStartTrigger } from '@assistant/shared';
 
 import type {
@@ -119,6 +123,10 @@ export interface ChatProcessorOptions {
      */
     logType?: 'agent_message' | 'none' | 'callback';
   };
+  userInput?: {
+    type: 'audio';
+    durationMs: number;
+  };
   log?: (...args: unknown[]) => void;
   eventStore?: EventStore;
 }
@@ -160,6 +168,7 @@ export async function processUserMessage(
     clientAudioCapabilities,
     excludeConnection,
     agentMessageContext,
+    userInput,
     log = () => undefined,
     eventStore,
   } = options;
@@ -225,10 +234,7 @@ export async function processUserMessage(
       if (updatedSummary) {
         state.summary = updatedSummary;
       }
-      if (
-        agentMessageContext?.logType === 'callback' &&
-        agentMessageContext.callbackEvent
-      ) {
+      if (agentMessageContext?.logType === 'callback' && agentMessageContext.callbackEvent) {
         const updatedSummaryFromEvent = await piSessionWriter.appendAssistantEvent({
           summary: state.summary,
           eventType: 'agent_callback',
@@ -287,9 +293,6 @@ export async function processUserMessage(
     // Skip user_message for 'callback' (internal callback text shouldn't be shown)
     const skipUserMessage = logType === 'callback';
     if (!skipUserMessage) {
-      const userPayload: { text: string; fromAgentId?: string; fromSessionId?: string } = {
-        text: trimmedText,
-      };
       const fromAgentId =
         typeof agentMessageContext?.fromAgentId === 'string'
           ? agentMessageContext.fromAgentId.trim()
@@ -298,20 +301,35 @@ export async function processUserMessage(
         typeof agentMessageContext?.fromSessionId === 'string'
           ? agentMessageContext.fromSessionId.trim()
           : '';
-      if (fromAgentId) {
-        userPayload.fromAgentId = fromAgentId;
-      }
-      if (fromSessionId) {
-        userPayload.fromSessionId = fromSessionId;
-      }
-      events.push({
-        ...createChatEventBase({
-          sessionId,
-          ...(turnId ? { turnId } : {}),
-        }),
-        type: 'user_message',
-        payload: userPayload,
+      const userEventBase = createChatEventBase({
+        sessionId,
+        ...(turnId ? { turnId } : {}),
       });
+      if (!agentMessageContext && userInput?.type === 'audio') {
+        events.push({
+          ...userEventBase,
+          type: 'user_audio',
+          payload: {
+            transcription: trimmedText,
+            durationMs: userInput.durationMs,
+          },
+        });
+      } else {
+        const userPayload: { text: string; fromAgentId?: string; fromSessionId?: string } = {
+          text: trimmedText,
+        };
+        if (fromAgentId) {
+          userPayload.fromAgentId = fromAgentId;
+        }
+        if (fromSessionId) {
+          userPayload.fromSessionId = fromSessionId;
+        }
+        events.push({
+          ...userEventBase,
+          type: 'user_message',
+          payload: userPayload,
+        });
+      }
     }
 
     void appendAndBroadcastChatEvents(
@@ -328,22 +346,29 @@ export async function processUserMessage(
     trimmedText.length > 120 ? `${trimmedText.slice(0, 117)}…` : trimmedText,
   );
 
-  const userBroadcast: ServerUserMessageMessage = {
-    type: 'user_message',
-    sessionId,
-    text: trimmedText,
-    ...(agentMessageContext
+  const userBroadcast: ServerUserMessageMessage | ServerUserAudioMessage =
+    !agentMessageContext && userInput?.type === 'audio'
       ? {
-          fromSessionId: agentMessageContext.fromSessionId,
-          ...(agentMessageContext.fromAgentId
-            ? { fromAgentId: agentMessageContext.fromAgentId }
-            : {}),
-          agentMessageType:
-            logType === 'callback' ? 'agent_callback' : 'agent_message',
-          ...(agentExchangeId ? { agentExchangeId } : {}),
+          type: 'user_audio',
+          sessionId,
+          transcription: trimmedText,
+          durationMs: userInput.durationMs,
         }
-      : {}),
-  };
+      : {
+          type: 'user_message',
+          sessionId,
+          text: trimmedText,
+          ...(agentMessageContext
+            ? {
+                fromSessionId: agentMessageContext.fromSessionId,
+                ...(agentMessageContext.fromAgentId
+                  ? { fromAgentId: agentMessageContext.fromAgentId }
+                  : {}),
+                agentMessageType: logType === 'callback' ? 'agent_callback' : 'agent_message',
+                ...(agentExchangeId ? { agentExchangeId } : {}),
+              }
+            : {}),
+        };
   if (excludeConnection) {
     sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, excludeConnection);
   } else {
@@ -541,7 +566,9 @@ export async function processUserMessage(
         responseId,
         text: visibleAssistant.text,
         ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
-        ...(visibleAssistant.textSignature ? { textSignature: visibleAssistant.textSignature } : {}),
+        ...(visibleAssistant.textSignature
+          ? { textSignature: visibleAssistant.textSignature }
+          : {}),
         ...(agentExchangeId ? { agentExchangeId } : {}),
       };
       console.log('[chatProcessor] broadcasting text_done', {

@@ -260,6 +260,16 @@ describe('server message validation', () => {
     };
     expect(validateServerMessage(message)).toEqual(message);
   });
+
+  it('accepts a user_audio broadcast', () => {
+    const message: ServerMessage = {
+      type: 'user_audio',
+      sessionId: 'session-4',
+      transcription: 'hello from speech',
+      durationMs: 2400,
+    };
+    expect(validateServerMessage(message)).toEqual(message);
+  });
 });
 
 describe('panel display mode validation', () => {

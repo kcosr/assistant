@@ -1,7 +1,13 @@
 import type { ShortcutBindingOverrides } from './keyboardShortcuts';
+import { isCapacitorAndroid } from './capacitor';
+import {
+  createDefaultVoiceSettings,
+  normalizeVoiceSettings,
+  type VoiceSettings,
+} from './voiceSettings';
 
 export interface ClientPreferencesState {
-  audioResponsesEnabled: boolean;
+  voice: VoiceSettings;
   keyboardShortcutsEnabled: boolean;
   keyboardShortcutBindings: ShortcutBindingOverrides | null;
   autoFocusChatOnSessionReady: boolean;
@@ -10,14 +16,16 @@ export interface ClientPreferencesState {
 }
 
 export function loadClientPreferences(options: {
-  audioResponsesStorageKey: string;
+  voiceStorageKey: string;
   keyboardShortcutsStorageKey: string;
   keyboardShortcutsBindingsStorageKey: string;
   autoFocusChatStorageKey: string;
   autoScrollStorageKey: string;
   showContextStorageKey: string;
 }): ClientPreferencesState {
-  let audioResponsesEnabled = false;
+  let voice = createDefaultVoiceSettings({
+    isCapacitorAndroid: isCapacitorAndroid(),
+  });
   let keyboardShortcutsEnabled = true;
   let keyboardShortcutBindings: ShortcutBindingOverrides | null = null;
   let autoFocusChatOnSessionReady = true;
@@ -25,7 +33,12 @@ export function loadClientPreferences(options: {
   let showContextEnabled = false;
 
   try {
-    audioResponsesEnabled = localStorage.getItem(options.audioResponsesStorageKey) === 'true';
+    const voiceStored = localStorage.getItem(options.voiceStorageKey);
+    if (voiceStored) {
+      voice = normalizeVoiceSettings(JSON.parse(voiceStored), {
+        isCapacitorAndroid: isCapacitorAndroid(),
+      });
+    }
     const shortcutsStored = localStorage.getItem(options.keyboardShortcutsStorageKey);
     if (shortcutsStored === 'false') {
       keyboardShortcutsEnabled = false;
@@ -54,28 +67,13 @@ export function loadClientPreferences(options: {
   }
 
   return {
-    audioResponsesEnabled,
+    voice,
     keyboardShortcutsEnabled,
     keyboardShortcutBindings,
     autoFocusChatOnSessionReady,
     autoScrollEnabled,
     showContextEnabled,
   };
-}
-
-export function initializeAudioResponsesCheckbox(options: {
-  checkbox: HTMLInputElement;
-  initialAudioResponsesEnabled: boolean;
-  supportsAudioOutput: boolean;
-}): boolean {
-  if (!options.supportsAudioOutput) {
-    options.checkbox.disabled = true;
-    options.checkbox.checked = false;
-    return false;
-  }
-
-  options.checkbox.checked = options.initialAudioResponsesEnabled;
-  return options.initialAudioResponsesEnabled;
 }
 
 export function wirePreferencesCheckboxes(options: {

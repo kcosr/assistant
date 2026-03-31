@@ -25,6 +25,10 @@ interface AgentMessageArgs {
   timeoutSeconds: number;
 }
 
+type VoicePromptArgs = {
+  text: string;
+};
+
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw createToolError('invalid_arguments', 'Tool arguments must be an object');
@@ -36,6 +40,19 @@ function createToolError(code: string, message: string): Error {
   const error = new Error(message) as Error & { code?: string };
   error.code = code;
   return error;
+}
+
+function parseVoicePromptArgs(raw: unknown): VoicePromptArgs {
+  const obj = asObject(raw);
+  const textRaw = obj['text'];
+  if (typeof textRaw !== 'string') {
+    throw createToolError('invalid_arguments', 'text is required and must be a string');
+  }
+  const text = textRaw.trim();
+  if (!text) {
+    throw createToolError('invalid_arguments', 'text must not be empty');
+  }
+  return { text };
 }
 
 async function getCurrentAgentIdFromContext(
@@ -750,5 +767,39 @@ export function registerBuiltInSessionTools(options: {
   host: { registerTool(definition: BuiltInToolDefinition): void };
   sessionHub: SessionHub;
 }): void {
-  void options;
+  void options.sessionHub;
+
+  const voicePromptParameters = {
+    type: 'object',
+    properties: {
+      text: {
+        type: 'string',
+        description: 'The exact words the user should hear.',
+      },
+    },
+    required: ['text'],
+    additionalProperties: false,
+  };
+
+  options.host.registerTool({
+    name: 'voice_speak',
+    description:
+      'Speak a one-way update to the user. Use for spoken progress updates, notifications, or confirmations when no spoken reply is expected. Only use this when the user has initiated or requested voice-style interaction.',
+    parameters: voicePromptParameters,
+    handler: async (args) => {
+      parseVoicePromptArgs(args);
+      return { accepted: true };
+    },
+  });
+
+  options.host.registerTool({
+    name: 'voice_ask',
+    description:
+      'Speak a prompt to the user and expect a spoken reply in a later turn. Use this when a spoken reply is expected, and only when the user has initiated or requested voice-style interaction.',
+    parameters: voicePromptParameters,
+    handler: async (args) => {
+      parseVoicePromptArgs(args);
+      return { accepted: true };
+    },
+  });
 }

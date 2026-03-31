@@ -18,7 +18,7 @@ This package contains the Capacitor scaffolding to build the AI Assistant web cl
 ## Layout
 
 - `mobile-web/` – Capacitor project root
-- `mobile-web/android/` – Generated Android native project (not committed)
+- `mobile-web/android/` – Generated Android project scaffold with committed Assistant-specific bridge/service files layered on top
 - `mobile-web/ios/` – Generated iOS native project (not committed)
 - `mobile-web/resources/` – Mobile icon sources for Capacitor asset generation
 
@@ -63,7 +63,7 @@ npm install
 ### Android
 
 ```bash
-npm run android:add   # generates android/ (one-time)
+npm run android:add   # bootstraps the generated android/ scaffold (one-time)
 ```
 
 ### iOS
@@ -143,6 +143,18 @@ The following patches are applied automatically on `android:add` and `android:sy
 - Copies `google-services.json` to `android/app/` for Firebase Cloud Messaging (FCM)
 - Required for push notifications
 
+### Native Voice Runtime
+
+- The Android app includes a committed local Capacitor plugin, `AssistantNativeVoice`, and a foreground
+  service, `AssistantVoiceRuntimeService`.
+- The native runtime receives voice-mode config from the web layer, subscribes to the selected
+  Assistant session over the main Assistant websocket for live `chat_event` updates, plays
+  `voice_speak` / `voice_ask` tool calls through `agent-voice-adapter`, and submits successful
+  spoken replies back through the existing sessions message route.
+- Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
+  listening pass immediately; later prompts that arrive while a pass is active are rendered only
+  and are not queued for delayed autoplay.
+
 **Configuration:**
 
 Set the `WEBVIEW_TEXT_ZOOM` environment variable to customize the zoom level (default: 100):
@@ -197,24 +209,23 @@ Each flavor specifies:
 # See available flavors
 npm run flavor
 
-# Apply the "work" flavor
-npm run flavor work
+# Apply the default flavor
+npm run flavor default
 ```
 
 This updates `capacitor.config.json` with the flavor's `appId` and `appName`.
-Since the `appId` determines the Android Java package structure, **you must
-regenerate the native project** whenever the `appId` changes:
+The committed Android sources stay on a shared namespace (`com.assistant.mobile`).
+Flavor builds vary the installed application ID, display name, and API host at build time:
 
 ```bash
-npm run flavor work
-rm -rf android/
-ASSISTANT_API_HOST='https://assistant/assistant-work' npm run android:add
+npm run flavor default
+ASSISTANT_API_HOST='https://assistant' ASSISTANT_APP_ID='com.assistant.app' ASSISTANT_APP_NAME='Assistant' npm run android:build
 ```
 
 For subsequent builds after the project already exists:
 
 ```bash
-ASSISTANT_API_HOST='https://assistant/assistant-work' npm run android:build
+ASSISTANT_API_HOST='https://assistant/assistant-work' ASSISTANT_APP_ID='com.assistant.work' ASSISTANT_APP_NAME='Assistant Work' npm run android:build
 ```
 
 ### One-command deploy to all connected devices
@@ -228,7 +239,6 @@ This command:
 
 - builds `@assistant/web-client`
 - applies each flavor (`default`, `work`)
-- regenerates Android (`android:add`) per flavor to keep package IDs correct
 - builds debug APK
 - installs on all connected `adb` devices
 - launches each flavor app after install
@@ -238,6 +248,9 @@ Optional:
 
 ```bash
 # Deploy one flavor
+npm run android:deploy:default
+
+# Deploy the work flavor
 npm run android:deploy:work
 
 # Skip web rebuild if unchanged
@@ -253,8 +266,10 @@ matching Firebase app registration.
 ## Notes
 
 - Web assets are pulled from `../web-client/public` as configured in `capacitor.config.json`
-- The generated `android/`, `ios/`, and `node_modules/` directories are gitignored
-- If `android/` or `ios/` is missing, run the corresponding `:add` command first
+- `ios/` and `node_modules/` are gitignored
+- `android/` uses a hybrid model: generated Capacitor scaffold/build output stays ignored, while Assistant-owned native bridge/service files are committed
+- If `android/` is missing, run `ASSISTANT_APP_ID='com.assistant.app' ASSISTANT_APP_NAME='Assistant' npm run android:add`; the shared native namespace remains `com.assistant.mobile`
+- If `ios/` is missing, run `npm run ios:add`
 - Android back button closes overlays/modals first (command palette, panel launcher, session picker, header popovers, settings/layout dropdowns, context menus, modal panels, mobile sidebar, navigation modes). When nothing is open, it falls back to history back or exits the app.
 
 ## Security Considerations
@@ -294,6 +309,6 @@ The `google-services.json` file is required for push notifications but is **not 
 To set up push notifications:
 
 1. Create a project at [Firebase Console](https://console.firebase.google.com)
-2. Add an Android app with package name `com.assistant.app`
+2. Add an Android app for each installed flavor package you intend to use, such as `com.assistant.app` and `com.assistant.work`
 3. Download `google-services.json` and place it in this directory (`packages/mobile-web/`)
 4. Generate a service account key for the push CLI (see `packages/push-cli/README.md`)

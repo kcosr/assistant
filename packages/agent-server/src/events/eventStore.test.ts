@@ -262,9 +262,9 @@ describe('SessionScopedEventStore', () => {
 
     const store = new SessionScopedEventStore(baseStore, sessionHub);
 
-    const piEvent = createEvent({ id: 'e-pi', sessionId: 'pi-session' });
+    const piEvent = createEvent({ id: 'e-pi', sessionId: 'pi-session', turnId: 'turn-pi' });
     await store.append('pi-session', piEvent);
-    expect(baseStore.append).not.toHaveBeenCalled();
+    expect(baseStore.append).toHaveBeenCalledWith('pi-session', piEvent);
 
     const piInteraction: ChatEvent = {
       id: 'i-1',

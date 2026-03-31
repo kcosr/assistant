@@ -11,6 +11,14 @@ function shouldHideContext(): boolean {
   return globalAny.__ASSISTANT_HIDE_CONTEXT__ !== false;
 }
 
+function stripLeadingContextLine(text: string): string {
+  const match = text.match(/^\s*(<context(?:\s[^>]*?)?\s*\/>)(?:\r?\n)?/);
+  if (match) {
+    return text.slice(match[0].length);
+  }
+  return text;
+}
+
 /**
  * Build the context line to prepend to user messages.
  * Format:
@@ -156,18 +164,15 @@ export function stripContextLine(text: string): string {
   if (!shouldHideContext()) {
     return text;
   }
-  if (
-    text.startsWith('<context ') ||
-    text.startsWith('<context/>') ||
-    text.startsWith('<context />')
-  ) {
-    const newlineIndex = text.indexOf('\n');
-    if (newlineIndex !== -1) {
-      return text.slice(newlineIndex + 1);
-    }
-    return '';
-  }
-  return text;
+  return stripLeadingContextLine(text);
+}
+
+/**
+ * Strip the context line from the start of a message for user-visible bubbles.
+ * Unlike stripContextLine(), this always removes the machine context prefix.
+ */
+export function stripContextLineForDisplay(text: string): string {
+  return stripLeadingContextLine(text);
 }
 
 export function appendMessage(

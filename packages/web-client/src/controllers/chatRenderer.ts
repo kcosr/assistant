@@ -30,9 +30,7 @@ import {
   parseQuestionnaireCallbackText,
   type QuestionnaireCallbackPayload,
 } from '@assistant/shared';
-import {
-  applyMarkdownToElement,
-} from '../utils/markdown';
+import { applyMarkdownToElement } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
@@ -92,12 +90,15 @@ export interface ChatRendererOptions {
   }) => void;
 }
 
+const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
+
 export class ChatRenderer {
   private readonly container: HTMLElement;
   private readonly options: ChatRendererOptions;
   private typingIndicator: HTMLDivElement | null = null;
   private _isStreaming = false;
   private _isReplaying = false;
+  private readonly activeTurnIds = new Set<string>();
 
   private readonly turnElements = new Map<string, HTMLDivElement>();
   private readonly responseElements = new Map<string, HTMLDivElement>();
@@ -137,7 +138,6 @@ export class ChatRenderer {
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
   private debugEnabled: boolean | null = null;
-  private suppressTypingIndicator = false;
   private focusInputHandler: (() => void) | null = null;
   private turnDividerActionHandler:
     | ((options: {
@@ -197,6 +197,10 @@ export class ChatRenderer {
   }
 
   hasActiveOutput(): boolean {
+    if (this.activeTurnIds.size > 0) {
+      return true;
+    }
+
     if (this._isStreaming) {
       return true;
     }
@@ -227,10 +231,17 @@ export class ChatRenderer {
   }
 
   showTypingIndicator(): void {
-    if (this.suppressTypingIndicator) {
+    this.setTypingIndicatorVisible(true);
+  }
+
+  private setTypingIndicatorVisible(visible: boolean): void {
+    this._isStreaming = visible;
+    if (!visible) {
+      if (this.typingIndicator) {
+        this.typingIndicator.classList.remove('visible');
+      }
       return;
     }
-    this._isStreaming = true;
     if (!this.typingIndicator) {
       this.typingIndicator = document.createElement('div');
       this.typingIndicator.className = 'chat-typing-indicator';
@@ -243,10 +254,11 @@ export class ChatRenderer {
   }
 
   hideTypingIndicator(): void {
-    this._isStreaming = false;
-    if (this.typingIndicator) {
-      this.typingIndicator.classList.remove('visible');
-    }
+    this.setTypingIndicatorVisible(false);
+  }
+
+  private syncTypingIndicatorFromTurnState(): void {
+    this.setTypingIndicatorVisible(this.activeTurnIds.size > 0);
   }
 
   renderEvent(event: ChatEvent): void {
@@ -263,7 +275,7 @@ export class ChatRenderer {
           event.type === 'questionnaire_request') &&
         event.payload &&
         typeof event.payload === 'object'
-          ? (event.payload as { toolCallId?: string }).toolCallId ?? null
+          ? ((event.payload as { toolCallId?: string }).toolCallId ?? null)
           : null;
       this.debugLog('event', {
         type: event.type,
@@ -372,6 +384,7 @@ export class ChatRenderer {
       this.renderEvent(event);
     }
     this._isReplaying = false;
+    this.syncTypingIndicatorFromTurnState();
   }
 
   handleNewEvent(event: ChatEvent): void {
@@ -408,7 +421,7 @@ export class ChatRenderer {
     this.questionnaireResponses.clear();
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
-    this.suppressTypingIndicator = false;
+    this.activeTurnIds.clear();
   }
 
   setFocusInputHandler(handler: (() => void) | null): void {
@@ -471,6 +484,10 @@ export class ChatRenderer {
   private handleTurnStart(event: TurnStartEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     this.getOrCreateTurnContainer(turnId, event.timestamp);
+    this.activeTurnIds.add(turnId);
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
   }
 
   private handleTurnEnd(event: TurnEndEvent): void {
@@ -479,13 +496,17 @@ export class ChatRenderer {
     if (turnEl) {
       turnEl.classList.add('turn-complete');
     }
+    this.activeTurnIds.delete(turnId);
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
   }
 
   private handleUserMessage(event: UserMessageEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
-    const text = stripContextLine(event.payload.text);
+    const text = this.getRenderableUserText(event);
     const bubble = appendMessage(turnEl, 'user', text);
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
@@ -501,21 +522,31 @@ export class ChatRenderer {
       decorateUserMessageAsAgent(bubble, displayName || fromAgentId);
     }
 
-    // Show typing indicator immediately after user message is rendered (live events only)
-    if (!this._isReplaying) {
-      this.showTypingIndicator();
-    }
   }
 
   private handleUserAudio(event: UserAudioEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
-    const transcription = event.payload.transcription;
+    const transcription = this.getRenderableUserText(event);
     const bubble = appendMessage(turnEl, 'user', transcription);
     bubble.classList.add('user-audio');
+    bubble.dataset['inputType'] = 'audio';
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
+    const avatar = bubble.querySelector<HTMLDivElement>('.message-avatar');
+    if (avatar) {
+      avatar.classList.add('user-audio-avatar');
+      avatar.replaceChildren(this.createVoiceEventIcon('microphone'));
+      avatar.setAttribute('aria-hidden', 'true');
+      avatar.title = 'Spoken message';
+    }
+    bubble.setAttribute('aria-label', 'Spoken user message');
+  }
+
+  private getRenderableUserText(event: UserMessageEvent | UserAudioEvent): string {
+    const rawText = event.type === 'user_audio' ? event.payload.transcription : event.payload.text;
+    return stripContextLine(rawText);
   }
 
   private handleAssistantChunk(event: AssistantChunkEvent): void {
@@ -534,7 +565,11 @@ export class ChatRenderer {
       responseId,
       event.timestamp,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
+    const textEl = this.getOrCreateAssistantTextElement(
+      responseId,
+      responseEl,
+      event.payload.phase,
+    );
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -621,7 +656,11 @@ export class ChatRenderer {
       responseId,
       event.timestamp,
     );
-    const textEl = this.getOrCreateAssistantTextElement(responseId, responseEl, event.payload.phase);
+    const textEl = this.getOrCreateAssistantTextElement(
+      responseId,
+      responseEl,
+      event.payload.phase,
+    );
 
     // Use segment-aware buffer key
     const segmentIdx = this.textSegmentIndex.get(responseId) ?? 0;
@@ -789,6 +828,36 @@ export class ChatRenderer {
           agentId.charAt(0).toUpperCase() + agentId.slice(1).toLowerCase() + ' Agent')
         : '';
 
+    if (this.isVoiceToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createVoiceToolBubble(callId, toolName);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+
+      this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
+      this.toolInputBuffers.delete(callId);
+      this.toolInputOffsets.delete(callId);
+      return;
+    }
+
     // Check if block was already created by tool_input_chunk streaming
     let block = this.toolCallElements.get(callId);
     const existingBlock = !!block;
@@ -936,6 +1005,37 @@ export class ChatRenderer {
     const newBuffer = currentBuffer + chunk;
     this.toolInputBuffers.set(callId, newBuffer);
 
+    if (this.isVoiceToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseId = this.getResponseId(event.responseId);
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createVoiceToolBubble(callId, toolName);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+      const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
+      if (parsedText !== null) {
+        this.updateVoiceToolBubble(bubble, toolName, parsedText);
+      }
+      return;
+    }
+
     // Get or create the tool block
     let block = this.toolCallElements.get(callId);
     if (!block) {
@@ -1005,6 +1105,9 @@ export class ChatRenderer {
       // Tool block not yet created - buffer will be used when it arrives
       return;
     }
+    if (this.isVoiceToolName(block.dataset['toolName'] ?? '')) {
+      return;
+    }
 
     const displayToolName = this.getDisplayToolNameForOutput(block, eventToolName);
 
@@ -1028,6 +1131,17 @@ export class ChatRenderer {
 
     // Prefer existing tool-call element; if missing, create a minimal one.
     let block = this.toolCallElements.get(callId) ?? null;
+    const existingToolName = block?.dataset['toolName'] ?? '';
+    if (block && this.isVoiceToolName(existingToolName)) {
+      if (event.payload.error) {
+        const message = event.payload.error.message;
+        this.updateVoiceToolBubbleError(block, message);
+        this.finalizeInteractionForFailedToolCall(callId, message);
+      } else {
+        this.finalizeVoiceToolBubble(block);
+      }
+      return;
+    }
     if (!block) {
       if (this.questionnaireToolCalls.has(callId)) {
         return;
@@ -1048,7 +1162,12 @@ export class ChatRenderer {
       block.dataset['toolCallId'] = callId;
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
-      this.appendToolCallBlock(responseEl, responseId ?? undefined, block, block.dataset['toolName'] ?? '');
+      this.appendToolCallBlock(
+        responseEl,
+        responseId ?? undefined,
+        block,
+        block.dataset['toolName'] ?? '',
+      );
       this.toolCallElements.set(callId, block);
 
       if (responseId) {
@@ -1265,13 +1384,6 @@ export class ChatRenderer {
     } else {
       this.pendingInteractionToolCalls.delete(payload.toolCallId);
     }
-    this.updateTypingSuppression();
-    if (payload.pending) {
-      return;
-    }
-    if (this.pendingInteractionToolCalls.size === 0) {
-      this.showTypingIndicator();
-    }
   }
 
   private handleQuestionnaireRequest(event: QuestionnaireRequestEvent): void {
@@ -1391,17 +1503,6 @@ export class ChatRenderer {
       this.questionnaireRequests.delete(questionnaireRequestId);
       this.questionnaireReprompts.delete(questionnaireRequestId);
       this.questionnaireResponses.delete(questionnaireRequestId);
-    }
-  }
-
-  private updateTypingSuppression(): void {
-    const shouldSuppress = this.pendingInteractionToolCalls.size > 0;
-    if (this.suppressTypingIndicator === shouldSuppress) {
-      return;
-    }
-    this.suppressTypingIndicator = shouldSuppress;
-    if (shouldSuppress) {
-      this.hideTypingIndicator();
     }
   }
 
@@ -1532,22 +1633,21 @@ export class ChatRenderer {
       }
     } else {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
-      const container =
-        responseId
-          ? this.getOrCreateAssistantResponseContainer(
-              event.turnId,
-              event.id,
-              responseId,
-              event.timestamp,
-            )
-          : fallbackContainer ??
-            this.getOrCreateToolCallContainer(
-              event.id,
-              event.turnId,
-              payload.toolCallId,
-              responseId,
-              event.timestamp,
-            );
+      const container = responseId
+        ? this.getOrCreateAssistantResponseContainer(
+            event.turnId,
+            event.id,
+            responseId,
+            event.timestamp,
+          )
+        : (fallbackContainer ??
+          this.getOrCreateToolCallContainer(
+            event.id,
+            event.turnId,
+            payload.toolCallId,
+            responseId,
+            event.timestamp,
+          ));
       container.appendChild(element);
     }
     this.interactionElements.set(payload.interactionId, element);
@@ -1640,22 +1740,16 @@ export class ChatRenderer {
       }
     } else {
       const fallbackContainer = toolBlock?.closest<HTMLDivElement>('.assistant-response');
-      const container =
-        responseId
-          ? this.getOrCreateAssistantResponseContainer(
-              turnId,
-              eventId,
-              responseId ?? null,
-              timestamp,
-            )
-          : fallbackContainer ??
-            this.getOrCreateToolCallContainer(
-              eventId,
-              turnId,
-              request.toolCallId,
-              responseId ?? null,
-              timestamp,
-            );
+      const container = responseId
+        ? this.getOrCreateAssistantResponseContainer(turnId, eventId, responseId ?? null, timestamp)
+        : (fallbackContainer ??
+          this.getOrCreateToolCallContainer(
+            eventId,
+            turnId,
+            request.toolCallId,
+            responseId ?? null,
+            timestamp,
+          ));
       container.appendChild(element);
     }
     this.interactionElements.set(questionnaireRequestId, element);
@@ -1823,12 +1917,7 @@ export class ChatRenderer {
     this.pendingInteractionRequests.delete(toolCallId);
 
     if (this.pendingInteractionToolCalls.delete(toolCallId)) {
-      if (!this._isReplaying) {
-        this.updateTypingSuppression();
-        if (this.pendingInteractionToolCalls.size === 0) {
-          this.showTypingIndicator();
-        }
-      }
+      // No typing state change here; turn lifecycle is the source of truth.
     }
   }
 
@@ -1989,14 +2078,19 @@ export class ChatRenderer {
     }
     turnEl.appendChild(indicator);
 
-    if (!this._isReplaying) {
-      this.showTypingIndicator();
-    }
   }
 
   // Interrupts and errors are rendered as indicators on the current turn.
 
   private handleInterrupt(event: InterruptEvent): void {
+    if (event.turnId) {
+      this.activeTurnIds.delete(event.turnId);
+    } else {
+      this.activeTurnIds.clear();
+    }
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
     // Mark any pending tool blocks as interrupted
     const hasInterruptedToolBlock = this.interruptPendingToolBlocks();
 
@@ -2015,6 +2109,14 @@ export class ChatRenderer {
   }
 
   private handleError(event: ErrorEvent): void {
+    if (event.turnId) {
+      this.activeTurnIds.delete(event.turnId);
+    } else {
+      this.activeTurnIds.clear();
+    }
+    if (!this._isReplaying) {
+      this.syncTypingIndicatorFromTurnState();
+    }
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
@@ -2345,7 +2447,130 @@ export class ChatRenderer {
   }
 
   private isGroupableToolCall(toolName: string): boolean {
-    return toolName !== 'agents_message';
+    return toolName !== 'agents_message' && !this.isVoiceToolName(toolName);
+  }
+
+  private isVoiceToolName(toolName: string): toolName is 'voice_speak' | 'voice_ask' {
+    return VOICE_TOOL_NAMES.has(toolName);
+  }
+
+  private getVoiceToolText(args: Record<string, unknown>): string {
+    const text = args['text'];
+    return typeof text === 'string' ? text : '';
+  }
+
+  private getVoiceToolTextFromArgsJson(argsJson: string): string | null {
+    try {
+      const parsed = JSON.parse(argsJson) as Record<string, unknown>;
+      return this.getVoiceToolText(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  private createVoiceToolBubble(
+    callId: string,
+    toolName: 'voice_speak' | 'voice_ask',
+  ): HTMLDivElement {
+    const bubble = document.createElement('div');
+    bubble.className = `message assistant voice-tool-bubble ${toolName === 'voice_ask' ? 'voice-tool-ask' : 'voice-tool-speak'}`;
+    bubble.dataset['toolCallId'] = callId;
+    bubble.dataset['toolName'] = toolName;
+    bubble.dataset['status'] = 'pending';
+    bubble.style.display = 'flex';
+    bubble.style.flexDirection = 'column';
+    bubble.style.gap = '8px';
+    bubble.style.padding = '12px 14px';
+    bubble.style.borderRadius = '14px';
+    bubble.style.border = '1px solid var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.style.maxWidth = '680px';
+
+    const header = document.createElement('div');
+    header.className = 'voice-tool-header';
+    header.style.display = 'inline-flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+    header.style.color = 'var(--color-text-secondary)';
+    header.style.fontSize = '0.78em';
+    header.style.fontWeight = '600';
+    header.style.letterSpacing = '0.04em';
+    header.style.textTransform = 'uppercase';
+    header.appendChild(this.createVoiceEventIcon('speaker'));
+
+    const label = document.createElement('span');
+    label.className = 'voice-tool-label';
+    header.appendChild(label);
+
+    const body = document.createElement('div');
+    body.className = 'voice-tool-body markdown-content';
+    body.style.color = 'var(--color-message-assistant-text)';
+    body.style.lineHeight = 'var(--line-height-relaxed)';
+
+    bubble.append(header, body);
+    return bubble;
+  }
+
+  private updateVoiceToolBubble(
+    bubble: HTMLDivElement,
+    toolName: 'voice_speak' | 'voice_ask',
+    text: string,
+  ): void {
+    bubble.dataset['toolName'] = toolName;
+    bubble.dataset['status'] = 'pending';
+    bubble.classList.toggle('voice-tool-ask', toolName === 'voice_ask');
+    bubble.classList.toggle('voice-tool-speak', toolName === 'voice_speak');
+    const label = bubble.querySelector<HTMLElement>('.voice-tool-label');
+    if (label) {
+      label.textContent = toolName === 'voice_ask' ? 'Ask' : 'Speak';
+    }
+    const body = bubble.querySelector<HTMLDivElement>('.voice-tool-body');
+    if (body) {
+      applyMarkdownToElement(body, text);
+    }
+    bubble.querySelector('.voice-tool-error')?.remove();
+    bubble.classList.remove('error');
+    bubble.style.borderColor = 'var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+  }
+
+  private finalizeVoiceToolBubble(bubble: HTMLDivElement): void {
+    bubble.dataset['status'] = 'complete';
+    bubble.querySelector('.voice-tool-error')?.remove();
+    bubble.classList.remove('pending', 'error');
+  }
+
+  private updateVoiceToolBubbleError(bubble: HTMLDivElement, message: string): void {
+    this.finalizeVoiceToolBubble(bubble);
+    bubble.dataset['status'] = 'error';
+    bubble.classList.add('error');
+    bubble.style.borderColor = 'var(--color-error-border)';
+    bubble.style.background = 'var(--color-error-soft)';
+    let errorEl = bubble.querySelector<HTMLDivElement>('.voice-tool-error');
+    if (!errorEl) {
+      errorEl = document.createElement('div');
+      errorEl.className = 'voice-tool-error';
+      errorEl.style.fontSize = '0.9em';
+      errorEl.style.color = 'var(--color-message-error-text)';
+      bubble.appendChild(errorEl);
+    }
+    errorEl.textContent = message;
+  }
+
+  private createVoiceEventIcon(kind: 'speaker' | 'microphone'): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = `voice-event-icon voice-event-icon-${kind}`;
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.display = 'inline-flex';
+    icon.style.alignItems = 'center';
+    icon.style.justifyContent = 'center';
+    icon.style.width = '18px';
+    icon.style.height = '18px';
+    icon.innerHTML =
+      kind === 'microphone'
+        ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"></rect><path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z" fill="currentColor"></path><rect x="11" y="19" width="2" height="3" fill="currentColor"></rect><path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z" fill="currentColor"></path></svg>'
+        : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    return icon;
   }
 
   private appendToolCallBlock(

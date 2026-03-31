@@ -5,6 +5,8 @@ import {
   buildContextLine,
   clearExternalSentIndicators,
   decorateUserMessageAsAgent,
+  stripContextLine,
+  stripContextLineForDisplay,
 } from './chatMessageRenderer';
 
 describe('buildContextLine', () => {
@@ -127,6 +129,24 @@ describe('buildContextLine', () => {
     expect(line).toContain('instance-id="default"');
     expect(line).toContain('task-id="task-123"');
     expect(line).toContain('task-name="Project X"');
+  });
+});
+
+describe('stripContextLine', () => {
+  it('removes a leading context line', () => {
+    expect(stripContextLine('<context panel-id="panel-1" />\nHello')).toBe('Hello');
+  });
+
+  it('removes a leading context line with leading whitespace', () => {
+    expect(stripContextLine(' \n<context panel-id="panel-1" />\r\nHello')).toBe('Hello');
+  });
+});
+
+describe('stripContextLineForDisplay', () => {
+  it('always removes a leading context line even when global context display is enabled', () => {
+    (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__ = false;
+    expect(stripContextLineForDisplay('<context panel-id="panel-1" />\nHello')).toBe('Hello');
+    delete (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__;
   });
 });
 

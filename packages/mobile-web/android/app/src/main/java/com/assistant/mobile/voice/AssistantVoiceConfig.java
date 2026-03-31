@@ -1,0 +1,376 @@
+package com.assistant.mobile.voice;
+
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+
+import java.util.Objects;
+import org.json.JSONObject;
+
+final class AssistantVoiceConfig {
+    static final String DEFAULT_VOICE_ADAPTER_BASE_URL = "https://assistant/agent-voice-adapter";
+    static final String DEFAULT_ASSISTANT_BASE_URL = "https://assistant";
+    static final String AUDIO_MODE_OFF = "off";
+    static final String AUDIO_MODE_TOOL = "tool";
+    static final String AUDIO_MODE_RESPONSE = "response";
+    static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
+    static final int DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30000;
+    static final int DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60000;
+    static final int DEFAULT_RECOGNITION_END_SILENCE_MS = 1200;
+
+    private static final String PREFS_NAME = "assistant_voice_runtime";
+    private static final String KEY_AUDIO_MODE = "audio_mode";
+    private static final String KEY_AUTO_LISTEN_ENABLED = "auto_listen_enabled";
+    private static final String KEY_RECOGNITION_START_TIMEOUT_MS = "recognition_start_timeout_ms";
+    private static final String KEY_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognition_completion_timeout_ms";
+    private static final String KEY_RECOGNITION_END_SILENCE_MS = "recognition_end_silence_ms";
+    private static final String KEY_SELECTED_MIC_DEVICE_ID = "selected_mic_device_id";
+    private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
+    private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
+    private static final String KEY_INPUT_CONTEXT_ENABLED = "input_context_enabled";
+    private static final String KEY_INPUT_CONTEXT_LINE = "input_context_line";
+    private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
+    private static final String KEY_ASSISTANT_BASE_URL = "assistant_base_url";
+    private static final String KEY_RUNTIME_STATE = "runtime_state";
+    private static final String KEY_RUNTIME_ERROR = "runtime_error";
+
+    static final String EXTRA_AUDIO_MODE = "audioMode";
+    static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
+    static final String EXTRA_SELECTED_MIC_DEVICE_ID = "selectedMicDeviceId";
+    static final String EXTRA_RECOGNITION_START_TIMEOUT_MS = "recognitionStartTimeoutMs";
+    static final String EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS = "recognitionCompletionTimeoutMs";
+    static final String EXTRA_RECOGNITION_END_SILENCE_MS = "recognitionEndSilenceMs";
+    static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
+    static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
+    static final String EXTRA_INPUT_CONTEXT_ENABLED = "inputContextEnabled";
+    static final String EXTRA_INPUT_CONTEXT_LINE = "inputContextLine";
+    static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
+    static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
+
+    final String audioMode;
+    final boolean autoListenEnabled;
+    final String selectedMicDeviceId;
+    final int recognitionStartTimeoutMs;
+    final int recognitionCompletionTimeoutMs;
+    final int recognitionEndSilenceMs;
+    final String selectedPanelId;
+    final String selectedSessionId;
+    final boolean inputContextEnabled;
+    final String inputContextLine;
+    final String voiceAdapterBaseUrl;
+    final String assistantBaseUrl;
+
+    AssistantVoiceConfig(
+        String audioMode,
+        boolean autoListenEnabled,
+        String selectedMicDeviceId,
+        int recognitionStartTimeoutMs,
+        int recognitionCompletionTimeoutMs,
+        int recognitionEndSilenceMs,
+        String selectedPanelId,
+        String selectedSessionId,
+        boolean inputContextEnabled,
+        String inputContextLine,
+        String voiceAdapterBaseUrl,
+        String assistantBaseUrl
+    ) {
+        this.audioMode = normalizeAudioMode(audioMode);
+        this.autoListenEnabled = autoListenEnabled;
+        this.selectedMicDeviceId = normalizeOptional(selectedMicDeviceId);
+        this.recognitionStartTimeoutMs = normalizePositiveInt(
+            recognitionStartTimeoutMs,
+            DEFAULT_RECOGNITION_START_TIMEOUT_MS
+        );
+        this.recognitionCompletionTimeoutMs = normalizePositiveInt(
+            recognitionCompletionTimeoutMs,
+            DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS
+        );
+        this.recognitionEndSilenceMs = normalizePositiveInt(
+            recognitionEndSilenceMs,
+            DEFAULT_RECOGNITION_END_SILENCE_MS
+        );
+        this.selectedPanelId = normalizeOptional(selectedPanelId);
+        this.selectedSessionId = normalizeOptional(selectedSessionId);
+        this.inputContextEnabled = inputContextEnabled;
+        this.inputContextLine = normalizeOptional(inputContextLine);
+        this.voiceAdapterBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
+            voiceAdapterBaseUrl,
+            DEFAULT_VOICE_ADAPTER_BASE_URL
+        );
+        this.assistantBaseUrl = AssistantVoiceUrlUtils.normalizeBaseUrl(
+            assistantBaseUrl,
+            DEFAULT_ASSISTANT_BASE_URL
+        );
+    }
+
+    static AssistantVoiceConfig load(Context context) {
+        SharedPreferences prefs = prefs(context);
+        return new AssistantVoiceConfig(
+            prefs.getString(KEY_AUDIO_MODE, DEFAULT_AUDIO_MODE),
+            prefs.getBoolean(KEY_AUTO_LISTEN_ENABLED, true),
+            prefs.getString(KEY_SELECTED_MIC_DEVICE_ID, null),
+            prefs.getInt(KEY_RECOGNITION_START_TIMEOUT_MS, DEFAULT_RECOGNITION_START_TIMEOUT_MS),
+            prefs.getInt(
+                KEY_RECOGNITION_COMPLETION_TIMEOUT_MS,
+                DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS
+            ),
+            prefs.getInt(KEY_RECOGNITION_END_SILENCE_MS, DEFAULT_RECOGNITION_END_SILENCE_MS),
+            prefs.getString(KEY_SELECTED_PANEL_ID, null),
+            prefs.getString(KEY_SELECTED_SESSION_ID, null),
+            prefs.getBoolean(KEY_INPUT_CONTEXT_ENABLED, false),
+            prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
+            prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
+            prefs.getString(KEY_ASSISTANT_BASE_URL, DEFAULT_ASSISTANT_BASE_URL)
+        );
+    }
+
+    static void save(Context context, AssistantVoiceConfig config) {
+        prefs(context)
+            .edit()
+            .putString(KEY_AUDIO_MODE, config.audioMode)
+            .putBoolean(KEY_AUTO_LISTEN_ENABLED, config.autoListenEnabled)
+            .putString(KEY_SELECTED_MIC_DEVICE_ID, emptyToNull(config.selectedMicDeviceId))
+            .putInt(KEY_RECOGNITION_START_TIMEOUT_MS, config.recognitionStartTimeoutMs)
+            .putInt(KEY_RECOGNITION_COMPLETION_TIMEOUT_MS, config.recognitionCompletionTimeoutMs)
+            .putInt(KEY_RECOGNITION_END_SILENCE_MS, config.recognitionEndSilenceMs)
+            .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
+            .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
+            .putBoolean(KEY_INPUT_CONTEXT_ENABLED, config.inputContextEnabled)
+            .putString(KEY_INPUT_CONTEXT_LINE, emptyToNull(config.inputContextLine))
+            .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
+            .putString(KEY_ASSISTANT_BASE_URL, config.assistantBaseUrl)
+            .apply();
+    }
+
+    static AssistantVoiceConfig fromIntent(Intent intent, AssistantVoiceConfig fallback) {
+        if (intent == null) {
+            return fallback;
+        }
+        return new AssistantVoiceConfig(
+            intent.hasExtra(EXTRA_AUDIO_MODE)
+                ? intent.getStringExtra(EXTRA_AUDIO_MODE)
+                : fallback.audioMode,
+            intent.getBooleanExtra(EXTRA_AUTO_LISTEN_ENABLED, fallback.autoListenEnabled),
+            intent.hasExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
+                ? intent.getStringExtra(EXTRA_SELECTED_MIC_DEVICE_ID)
+                : fallback.selectedMicDeviceId,
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_START_TIMEOUT_MS,
+                fallback.recognitionStartTimeoutMs
+            ),
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS,
+                fallback.recognitionCompletionTimeoutMs
+            ),
+            intent.getIntExtra(
+                EXTRA_RECOGNITION_END_SILENCE_MS,
+                fallback.recognitionEndSilenceMs
+            ),
+            intent.hasExtra(EXTRA_SELECTED_PANEL_ID)
+                ? intent.getStringExtra(EXTRA_SELECTED_PANEL_ID)
+                : fallback.selectedPanelId,
+            intent.hasExtra(EXTRA_SELECTED_SESSION_ID)
+                ? intent.getStringExtra(EXTRA_SELECTED_SESSION_ID)
+                : fallback.selectedSessionId,
+            intent.getBooleanExtra(EXTRA_INPUT_CONTEXT_ENABLED, fallback.inputContextEnabled),
+            intent.hasExtra(EXTRA_INPUT_CONTEXT_LINE)
+                ? intent.getStringExtra(EXTRA_INPUT_CONTEXT_LINE)
+                : fallback.inputContextLine,
+            intent.hasExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
+                ? intent.getStringExtra(EXTRA_VOICE_ADAPTER_BASE_URL)
+                : fallback.voiceAdapterBaseUrl,
+            intent.hasExtra(EXTRA_ASSISTANT_BASE_URL)
+                ? intent.getStringExtra(EXTRA_ASSISTANT_BASE_URL)
+                : fallback.assistantBaseUrl
+        );
+    }
+
+    Intent applyToIntent(Intent intent) {
+        intent.putExtra(EXTRA_AUDIO_MODE, audioMode);
+        intent.putExtra(EXTRA_AUTO_LISTEN_ENABLED, autoListenEnabled);
+        intent.putExtra(EXTRA_SELECTED_MIC_DEVICE_ID, emptyToNull(selectedMicDeviceId));
+        intent.putExtra(EXTRA_RECOGNITION_START_TIMEOUT_MS, recognitionStartTimeoutMs);
+        intent.putExtra(EXTRA_RECOGNITION_COMPLETION_TIMEOUT_MS, recognitionCompletionTimeoutMs);
+        intent.putExtra(EXTRA_RECOGNITION_END_SILENCE_MS, recognitionEndSilenceMs);
+        intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
+        intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
+        intent.putExtra(EXTRA_INPUT_CONTEXT_ENABLED, inputContextEnabled);
+        intent.putExtra(EXTRA_INPUT_CONTEXT_LINE, emptyToNull(inputContextLine));
+        intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
+        intent.putExtra(EXTRA_ASSISTANT_BASE_URL, assistantBaseUrl);
+        return intent;
+    }
+
+    static void saveRuntimeSnapshot(Context context, String state, String errorMessage) {
+        prefs(context)
+            .edit()
+            .putString(KEY_RUNTIME_STATE, normalizeOptional(state))
+            .putString(KEY_RUNTIME_ERROR, emptyToNull(errorMessage))
+            .apply();
+    }
+
+    static String loadRuntimeState(Context context) {
+        return normalizeOptional(prefs(context).getString(KEY_RUNTIME_STATE, AssistantVoiceRuntimeService.STATE_DISABLED));
+    }
+
+    static String loadRuntimeError(Context context) {
+        return normalizeOptional(prefs(context).getString(KEY_RUNTIME_ERROR, null));
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    private static String normalizeOptional(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
+    }
+
+    private static String emptyToNull(String value) {
+        String normalized = normalizeOptional(value);
+        return normalized.isEmpty() ? null : normalized;
+    }
+
+    private static int normalizePositiveInt(int value, int fallback) {
+        return value > 0 ? value : fallback;
+    }
+
+    private static String normalizeAudioMode(String value) {
+        String normalized = normalizeOptional(value);
+        switch (normalized) {
+            case AUDIO_MODE_OFF:
+            case AUDIO_MODE_TOOL:
+            case AUDIO_MODE_RESPONSE:
+                return normalized;
+            default:
+                return DEFAULT_AUDIO_MODE;
+        }
+    }
+
+    boolean isEnabled() {
+        return !AUDIO_MODE_OFF.equals(audioMode);
+    }
+
+    boolean isToolMode() {
+        return AUDIO_MODE_TOOL.equals(audioMode);
+    }
+
+    boolean isResponseMode() {
+        return AUDIO_MODE_RESPONSE.equals(audioMode);
+    }
+
+    AssistantVoiceConfig withSelection(String panelId, String sessionId) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            panelId,
+            sessionId,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withAssistantBaseUrl(String url) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            url
+        );
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof AssistantVoiceConfig)) {
+            return false;
+        }
+        AssistantVoiceConfig config = (AssistantVoiceConfig) other;
+        return Objects.equals(audioMode, config.audioMode)
+            && autoListenEnabled == config.autoListenEnabled
+            && Objects.equals(selectedMicDeviceId, config.selectedMicDeviceId)
+            && recognitionStartTimeoutMs == config.recognitionStartTimeoutMs
+            && recognitionCompletionTimeoutMs == config.recognitionCompletionTimeoutMs
+            && recognitionEndSilenceMs == config.recognitionEndSilenceMs
+            && Objects.equals(selectedPanelId, config.selectedPanelId)
+            && Objects.equals(selectedSessionId, config.selectedSessionId)
+            && inputContextEnabled == config.inputContextEnabled
+            && Objects.equals(inputContextLine, config.inputContextLine)
+            && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
+            && Objects.equals(assistantBaseUrl, config.assistantBaseUrl);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withVoiceSettings(JSONObject settings) {
+        if (settings == null) {
+            return this;
+        }
+        return new AssistantVoiceConfig(
+            settings.optString("audioMode", audioMode),
+            settings.optBoolean("autoListenEnabled", autoListenEnabled),
+            settings.optString("selectedMicDeviceId", selectedMicDeviceId),
+            settings.optInt("recognitionStartTimeoutMs", recognitionStartTimeoutMs),
+            settings.optInt("recognitionCompletionTimeoutMs", recognitionCompletionTimeoutMs),
+            settings.optInt("recognitionEndSilenceMs", recognitionEndSilenceMs),
+            selectedPanelId,
+            selectedSessionId,
+            inputContextEnabled,
+            inputContextLine,
+            settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
+            assistantBaseUrl
+        );
+    }
+
+    AssistantVoiceConfig withInputContext(boolean enabled, String contextLine) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            enabled,
+            contextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+}

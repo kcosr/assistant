@@ -1,7 +1,16 @@
 export interface WebClientElements {
   status: HTMLElement;
   controlsToggleButton: HTMLButtonElement;
-  audioResponsesCheckbox: HTMLInputElement;
+  voiceSettingsButton: HTMLButtonElement;
+  voiceSettingsModal: HTMLElement;
+  voiceSettingsCloseButton: HTMLButtonElement;
+  audioModeSelect: HTMLSelectElement;
+  autoListenCheckbox: HTMLInputElement;
+  voiceAdapterBaseUrlInput: HTMLInputElement;
+  voiceMicInputSelect: HTMLSelectElement;
+  voiceRecognitionStartTimeoutInput: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
+  voiceRecognitionEndSilenceInput: HTMLInputElement;
   includeContextCheckbox: HTMLInputElement | null;
   showContextCheckbox: HTMLInputElement | null;
   listInsertAtTopCheckbox: HTMLInputElement | null;
@@ -54,7 +63,22 @@ function getElement<T extends HTMLElement>(id: string): T | null {
 export function getWebClientElements(): WebClientElements | null {
   const status = getElement<HTMLElement>('status');
   const controlsToggleButton = getElement<HTMLButtonElement>('controls-toggle-button');
-  const audioResponsesCheckbox = getElement<HTMLInputElement>('audio-responses-checkbox');
+  const voiceSettingsButton = getElement<HTMLButtonElement>('voice-settings-button');
+  const voiceSettingsModal = getElement<HTMLElement>('voice-settings-modal');
+  const voiceSettingsCloseButton = getElement<HTMLButtonElement>('voice-settings-close-button');
+  const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
+  const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
+  const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
+  const voiceMicInputSelect = getElement<HTMLSelectElement>('voice-mic-input-select');
+  const voiceRecognitionStartTimeoutInput = getElement<HTMLInputElement>(
+    'voice-recognition-start-timeout-input',
+  );
+  const voiceRecognitionCompletionTimeoutInput = getElement<HTMLInputElement>(
+    'voice-recognition-completion-timeout-input',
+  );
+  const voiceRecognitionEndSilenceInput = getElement<HTMLInputElement>(
+    'voice-recognition-end-silence-input',
+  );
   const includeContextCheckbox = getElement<HTMLInputElement>('include-context-checkbox');
   const showContextCheckbox = getElement<HTMLInputElement>('show-context-checkbox');
   const listInsertAtTopCheckbox = getElement<HTMLInputElement>('list-insert-at-top-checkbox');
@@ -77,7 +101,16 @@ export function getWebClientElements(): WebClientElements | null {
   if (
     !status ||
     !controlsToggleButton ||
-    !audioResponsesCheckbox ||
+    !voiceSettingsButton ||
+    !voiceSettingsModal ||
+    !voiceSettingsCloseButton ||
+    !audioModeSelect ||
+    !autoListenCheckbox ||
+    !voiceAdapterBaseUrlInput ||
+    !voiceMicInputSelect ||
+    !voiceRecognitionStartTimeoutInput ||
+    !voiceRecognitionCompletionTimeoutInput ||
+    !voiceRecognitionEndSilenceInput ||
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
@@ -90,7 +123,16 @@ export function getWebClientElements(): WebClientElements | null {
   return {
     status,
     controlsToggleButton,
-    audioResponsesCheckbox,
+    voiceSettingsButton,
+    voiceSettingsModal,
+    voiceSettingsCloseButton,
+    audioModeSelect,
+    autoListenCheckbox,
+    voiceAdapterBaseUrlInput,
+    voiceMicInputSelect,
+    voiceRecognitionStartTimeoutInput,
+    voiceRecognitionCompletionTimeoutInput,
+    voiceRecognitionEndSilenceInput,
     includeContextCheckbox,
     showContextCheckbox,
     listInsertAtTopCheckbox,

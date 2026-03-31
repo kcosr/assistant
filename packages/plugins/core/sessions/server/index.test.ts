@@ -11,6 +11,7 @@ import type { SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { PiSessionWriter } from '../../../../agent-server/src/history/piSessionWriter';
 import { SessionHub } from '../../../../agent-server/src/sessionHub';
 import { SessionIndex } from '../../../../agent-server/src/sessionIndex';
+import * as sessionMessagesModule from '../../../../agent-server/src/sessionMessages';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import manifestJson from '../manifest.json';
 import { createPlugin } from './index';
@@ -27,6 +28,41 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
 }
 
 describe('sessions plugin operations', () => {
+  it('advertises audio submit fields in the message operation schema', () => {
+    const operations = (manifestJson as CombinedPluginManifest).operations ?? [];
+    const messageOperation = operations.find((operation) => operation.id === 'message') as
+      | { inputSchema?: Record<string, unknown> }
+      | undefined;
+    const inputSchema = messageOperation?.inputSchema as
+      | {
+          properties?: Record<string, unknown>;
+          allOf?: unknown[];
+        }
+      | undefined;
+    const properties = inputSchema?.properties ?? {};
+
+    expect(properties['inputType']).toEqual(
+      expect.objectContaining({
+        enum: ['text', 'audio'],
+      }),
+    );
+    expect(properties['durationMs']).toEqual(
+      expect.objectContaining({
+        type: 'integer',
+        minimum: 0,
+      }),
+    );
+    expect(inputSchema?.allOf).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          then: expect.objectContaining({
+            required: ['durationMs'],
+          }),
+        }),
+      ]),
+    );
+  });
+
   it('broadcasts session_created when creating a new session', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin'));
     const agentRegistry = new AgentRegistry([
@@ -303,7 +339,10 @@ describe('sessions plugin operations', () => {
 
     await piSessionWriter.sync({
       summary: seeded!,
-      messages: [{ role: 'system', content: 'system' }, { role: 'assistant', content: 'Hello' }],
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'assistant', content: 'Hello' },
+      ],
       updateAttributes: (patch) => sessionHub.updateSessionAttributes(created.sessionId, patch),
     });
 
@@ -412,6 +451,89 @@ describe('sessions plugin operations', () => {
       turnId: 'turn-2',
       changed: true,
       updatedAt: expect.any(String),
+    });
+  });
+
+  it('passes spoken input metadata through the message route', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-message-audio'));
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const startSessionMessageSpy = vi
+      .spyOn(sessionMessagesModule, 'startSessionMessage')
+      .mockResolvedValue({
+        response: {
+          sessionId: 'session-1',
+          sessionName: 'Session 1',
+          agentId: null,
+          created: false,
+          status: 'started',
+          responseId: 'response-1',
+        },
+      });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+      envConfig: {} as never,
+      baseToolHost: {} as never,
+    };
+
+    await plugin.operations?.message(
+      {
+        sessionId: 'session-1',
+        content: 'recognized speech',
+        mode: 'async',
+        inputType: 'audio',
+        durationMs: 4200,
+      },
+      ctx,
+    );
+
+    expect(startSessionMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          sessionId: 'session-1',
+          content: 'recognized speech',
+          mode: 'async',
+          inputType: 'audio',
+          durationMs: 4200,
+        }),
+      }),
+    );
+  });
+
+  it('rejects audio submits without duration metadata', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-message-audio-error'));
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+      envConfig: {} as never,
+      baseToolHost: {} as never,
+    };
+
+    await expect(
+      plugin.operations?.message(
+        {
+          sessionId: 'session-1',
+          content: 'recognized speech',
+          inputType: 'audio',
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'durationMs is required when inputType is "audio"',
     });
   });
 });

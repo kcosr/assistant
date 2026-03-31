@@ -1,24 +1,10 @@
 import type { ChatEvent } from '@assistant/shared';
 
+import { getAgentCallbackText, getUserVisibleUserText } from '../chatEventText';
 import type {
   ChatCompletionMessage,
   ChatCompletionToolCallMessageToolCall,
 } from '../chatCompletionTypes';
-
-function formatAgentCallbackText(event: ChatEvent & { type: 'agent_callback' }): string | null {
-  const result = event.payload.result.trim();
-  if (!result) {
-    return null;
-  }
-
-  const fromAgentIdRaw = event.payload.fromAgentId;
-  const fromAgentId =
-    typeof fromAgentIdRaw === 'string' && fromAgentIdRaw.trim().length > 0
-      ? fromAgentIdRaw.trim()
-      : 'agent';
-
-  return `[Callback from ${fromAgentId}]: ${result}`;
-}
 
 function isReplayableAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
   return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
@@ -29,8 +15,9 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
 
   for (const event of events) {
     switch (event.type) {
-      case 'user_message': {
-        const text = event.payload.text.trim();
+      case 'user_message':
+      case 'user_audio': {
+        const text = getUserVisibleUserText(event);
         if (!text) {
           break;
         }
@@ -110,7 +97,7 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
       }
 
       case 'agent_callback': {
-        const text = formatAgentCallbackText(
+        const text = getAgentCallbackText(
           event as ChatEvent & {
             type: 'agent_callback';
           },

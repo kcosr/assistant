@@ -1,19 +1,5 @@
 import type { ChatEvent } from '@assistant/shared';
-
-function formatAgentCallbackLine(event: ChatEvent & { type: 'agent_callback' }): string | null {
-  const result = event.payload.result.trim();
-  if (!result) {
-    return null;
-  }
-
-  const fromAgentIdRaw = event.payload.fromAgentId;
-  const fromAgentId =
-    typeof fromAgentIdRaw === 'string' && fromAgentIdRaw.trim().length > 0
-      ? fromAgentIdRaw.trim()
-      : 'agent';
-
-  return `[Callback from ${fromAgentId}]: ${result}`;
-}
+import { getAgentCallbackText, getUserVisibleUserText } from '../chatEventText';
 
 function isPromptAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
   return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
@@ -23,8 +9,8 @@ function buildTranscript(events: ChatEvent[]): string {
   const lines: string[] = [];
 
   for (const event of events) {
-    if (event.type === 'user_message') {
-      const text = event.payload.text.trim();
+    if (event.type === 'user_message' || event.type === 'user_audio') {
+      const text = getUserVisibleUserText(event);
       if (!text) {
         continue;
       }
@@ -45,7 +31,7 @@ function buildTranscript(events: ChatEvent[]): string {
       }
       lines.push(`Assistant: ${text}`);
     } else if (event.type === 'agent_callback') {
-      const line = formatAgentCallbackLine(
+      const line = getAgentCallbackText(
         event as ChatEvent & {
           type: 'agent_callback';
         },

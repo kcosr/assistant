@@ -20,11 +20,15 @@ export type SessionMessageWebhook = {
   headers?: Record<string, string>;
 };
 
+export type SessionMessageInputType = 'text' | 'audio';
+
 export type SessionMessageInput = {
   sessionId: string;
   content: string;
   mode: 'sync' | 'async';
   timeoutSeconds: number;
+  inputType?: SessionMessageInputType;
+  durationMs?: number;
   webhook?: SessionMessageWebhook;
 };
 
@@ -169,6 +173,33 @@ export async function startSessionMessage(options: {
     throw new ToolError('invalid_arguments', 'content must be a non-empty string');
   }
 
+  const inputType = input.inputType ?? 'text';
+  if (inputType !== 'text' && inputType !== 'audio') {
+    throw new ToolError('invalid_arguments', 'inputType must be "text" or "audio"');
+  }
+
+  if (inputType === 'audio') {
+    if (
+      typeof input.durationMs !== 'number' ||
+      !Number.isInteger(input.durationMs) ||
+      input.durationMs < 0
+    ) {
+      throw new ToolError(
+        'invalid_arguments',
+        'durationMs is required and must be a non-negative integer when inputType is "audio"',
+      );
+    }
+  } else if (input.durationMs !== undefined) {
+    throw new ToolError(
+      'invalid_arguments',
+      'durationMs is only allowed when inputType is "audio"',
+    );
+  }
+  const spokenUserInput =
+    inputType === 'audio'
+      ? { type: 'audio' as const, durationMs: input.durationMs as number }
+      : undefined;
+
   const agentRegistry = options.agentRegistry ?? sessionHub.getAgentRegistry();
 
   const { summary, state, scopedToolHost, chatTools, availableTools, availableSkills } =
@@ -248,6 +279,7 @@ export async function startSessionMessage(options: {
           handleChatToolCalls,
           outputMode: 'text',
           ttsBackendFactory: null,
+          ...(spokenUserInput ? { userInput: spokenUserInput } : {}),
           ...(eventStore ? { eventStore } : {}),
         }),
         timeoutPromise,
@@ -314,6 +346,7 @@ export async function startSessionMessage(options: {
         handleChatToolCalls,
         outputMode: 'text',
         ttsBackendFactory: null,
+        ...(spokenUserInput ? { userInput: spokenUserInput } : {}),
         ...(eventStore ? { eventStore } : {}),
       });
 

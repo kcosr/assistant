@@ -23,6 +23,27 @@ function readJSON(p) {
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
+function findMainActivityPath(searchRoot) {
+  if (!fs.existsSync(searchRoot)) {
+    return null;
+  }
+  const entries = fs.readdirSync(searchRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(searchRoot, entry.name);
+    if (entry.isDirectory()) {
+      const nested = findMainActivityPath(entryPath);
+      if (nested) {
+        return nested;
+      }
+      continue;
+    }
+    if (entry.isFile() && entry.name === 'MainActivity.java') {
+      return entryPath;
+    }
+  }
+  return null;
+}
+
 const mobileDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
 const capConfigPath = path.join(mobileDir, 'capacitor.config.json');
@@ -50,14 +71,18 @@ const mainActivityPath = path.join(
   'MainActivity.java',
 );
 
-if (!fs.existsSync(mainActivityPath)) {
+const resolvedMainActivityPath = fs.existsSync(mainActivityPath)
+  ? mainActivityPath
+  : findMainActivityPath(path.join(mobileDir, 'android', 'app', 'src', 'main', 'java'));
+
+if (!resolvedMainActivityPath) {
   console.log(
     '[patch-android-fontscale] MainActivity.java not found. Generate Android project first (npm run android:add).',
   );
   process.exit(0);
 }
 
-let src = fs.readFileSync(mainActivityPath, 'utf8');
+let src = fs.readFileSync(resolvedMainActivityPath, 'utf8');
 
 // Ensure required imports
 if (!/import\s+android\.os\.Bundle;/.test(src)) {
@@ -98,5 +123,7 @@ if (!/void\s+onCreate\s*\(\s*Bundle\s+savedInstanceState\s*\)/.test(src)) {
   );
 }
 
-fs.writeFileSync(mainActivityPath, src, 'utf8');
-console.log(`[patch-android-fontscale] Set WebView text zoom to ${textZoom}% in MainActivity.java`);
+fs.writeFileSync(resolvedMainActivityPath, src, 'utf8');
+console.log(
+  `[patch-android-fontscale] Set WebView text zoom to ${textZoom}% in ${path.relative(process.cwd(), resolvedMainActivityPath)}`,
+);

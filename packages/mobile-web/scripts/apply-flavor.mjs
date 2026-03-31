@@ -66,17 +66,14 @@ console.log(`  appId:   ${flavor.appId}`);
 console.log(`  appName: ${flavor.appName}`);
 console.log(`  apiHost: ${flavor.apiHost}`);
 
-if (prevAppId !== flavor.appId) {
-  console.log('');
-  console.log(`  [WARN] appId changed from "${prevAppId}" to "${flavor.appId}".`);
-  console.log(
-    '  You must regenerate the android project: remove android/ and run android:add.',
-  );
-}
-
 console.log('');
 console.log('Next steps:');
-console.log(`  ASSISTANT_API_HOST='${flavor.apiHost}' npm run android:sync`);
-console.log('  or, for a fresh project:');
-console.log(`  rm -rf android/`);
-console.log(`  ASSISTANT_API_HOST='${flavor.apiHost}' npm run android:add`);
+console.log(
+  `  ASSISTANT_API_HOST='${flavor.apiHost}' ASSISTANT_APP_ID='${flavor.appId}' ASSISTANT_APP_NAME='${flavor.appName}' npm run android:build`,
+);
+if (prevAppId !== flavor.appId) {
+  console.log('');
+  console.log(
+    `  Android native sources stay on the shared namespace; only the built applicationId changes from "${prevAppId}" to "${flavor.appId}".`,
+  );
+}

@@ -1,12 +1,322 @@
 import type { ClientControlMessage } from '@assistant/shared';
 import { TtsAudioPlayer } from '../utils/audio';
+import type { AudioMode } from '../utils/audioMode';
+import {
+  areVoiceSettingsEqual,
+  normalizeVoiceSettings,
+  type VoiceSettings,
+} from '../utils/voiceSettings';
 import type { SpeechInputController } from './speechInput';
+
+export interface AssistantNativeVoiceSelection {
+  panelId: string;
+  sessionId: string;
+}
+
+export interface AssistantNativeVoiceInputDevice {
+  id: string;
+  label: string;
+}
+
+export interface AssistantNativeVoiceSettingsArgs {
+  settings: VoiceSettings;
+}
+
+export interface AssistantNativeVoiceInputContext {
+  enabled: boolean;
+  contextLine: string;
+}
+
+export interface AssistantNativeVoiceInputContextArgs {
+  inputContext: AssistantNativeVoiceInputContext;
+}
+
+export interface AssistantNativeVoiceSelectionArgs {
+  selection: AssistantNativeVoiceSelection | null;
+}
+
+export interface AssistantNativeVoiceUrlArgs {
+  url: string;
+}
+
+export type AssistantNativeVoiceRuntimeState =
+  | 'disabled'
+  | 'connecting'
+  | 'idle'
+  | 'speaking'
+  | 'listening'
+  | 'error';
+
+export interface AssistantNativeVoiceStatePayload {
+  state?: string;
+  voiceSettings?: VoiceSettings;
+  inputContext?: AssistantNativeVoiceInputContext;
+  assistantBaseUrl?: string;
+  selectedSession?: AssistantNativeVoiceSelection | null;
+  lastError?: string;
+}
+
+export interface AssistantNativeVoiceRuntimeErrorPayload {
+  message?: string;
+}
+
+interface AssistantNativeVoiceListenerHandle {
+  remove?: () => void | Promise<void>;
+}
+
+export interface AssistantNativeVoiceBridgeTarget {
+  setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
+  setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
+  setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
+  setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
+  stopCurrentInteraction?: () => void | Promise<void>;
+  startManualListen?: () => void | Promise<void>;
+  listInputDevices?:
+    () =>
+      | AssistantNativeVoiceInputDevice[]
+      | Promise<AssistantNativeVoiceInputDevice[]>;
+  getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
+  addListener?: (
+    eventName: 'stateChanged' | 'runtimeError',
+    listener: (payload: unknown) => void,
+  ) => AssistantNativeVoiceListenerHandle | Promise<AssistantNativeVoiceListenerHandle>;
+}
+
+interface AssistantNativeVoiceBridgeHost {
+  AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+  Capacitor?: {
+    Plugins?: {
+      AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+    };
+  };
+}
+
+export class AssistantNativeVoiceBridge {
+  constructor(
+    private readonly getHost: () => AssistantNativeVoiceBridgeHost | null = () => {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+      return window as unknown as AssistantNativeVoiceBridgeHost;
+    },
+  ) {}
+
+  setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
+    return this.invokeAsync('setSelectedSession', { selection });
+  }
+
+  setVoiceSettings(settings: VoiceSettings): Promise<boolean> {
+    return this.invokeAsync('setVoiceSettings', { settings });
+  }
+
+  setInputContext(inputContext: AssistantNativeVoiceInputContext): Promise<boolean> {
+    return this.invokeAsync('setInputContext', { inputContext });
+  }
+
+  setAssistantBaseUrl(url: string): Promise<boolean> {
+    return this.invokeAsync('setAssistantBaseUrl', { url });
+  }
+
+  async listInputDevices(): Promise<AssistantNativeVoiceInputDevice[]> {
+    const target = this.getTarget();
+    if (!target || typeof target.listInputDevices !== 'function') {
+      const targetKeys = target ? Object.keys(target) : [];
+      console.warn(
+        `[client] AssistantNativeVoice.listInputDevices unavailable ${JSON.stringify({
+          hasTarget: Boolean(target),
+          targetKeys,
+        })}`,
+      );
+      return [];
+    }
+    try {
+      const result = target.listInputDevices();
+      const resolved = await Promise.resolve(result);
+      const entries = Array.isArray(resolved)
+        ? resolved
+        : (
+            resolved &&
+            typeof resolved === 'object' &&
+            Array.isArray((resolved as { devices?: unknown }).devices)
+          )
+          ? (resolved as { devices: unknown[] }).devices
+          : [];
+      return entries
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return null;
+          }
+          const record = entry as Record<string, unknown>;
+          const id = typeof record['id'] === 'string' ? record['id'].trim() : '';
+          const label = typeof record['label'] === 'string' ? record['label'].trim() : '';
+          if (!id || !label) {
+            return null;
+          }
+          return { id, label };
+        })
+        .filter((entry): entry is AssistantNativeVoiceInputDevice => entry !== null);
+    } catch (error) {
+      console.warn('[client] AssistantNativeVoice.listInputDevices failed', error);
+      return [];
+    }
+  }
+
+  stopCurrentInteraction(): boolean {
+    return this.invoke('stopCurrentInteraction');
+  }
+
+  startManualListen(): boolean {
+    return this.invoke('startManualListen');
+  }
+
+  isAvailable(): boolean {
+    return this.getTarget() !== null;
+  }
+
+  async getState(): Promise<AssistantNativeVoiceStatePayload | null> {
+    const target = this.getTarget();
+    if (!target || typeof target.getState !== 'function') {
+      return null;
+    }
+    try {
+      const result = target.getState();
+      return (await Promise.resolve(result)) ?? null;
+    } catch (error) {
+      console.warn('[client] AssistantNativeVoice.getState failed', error);
+      return null;
+    }
+  }
+
+  addStateChangedListener(
+    listener: (payload: AssistantNativeVoiceStatePayload) => void,
+  ): (() => void) | null {
+    return this.addListener('stateChanged', (payload) => {
+      listener((payload as AssistantNativeVoiceStatePayload | null) ?? {});
+    });
+  }
+
+  addRuntimeErrorListener(
+    listener: (payload: AssistantNativeVoiceRuntimeErrorPayload) => void,
+  ): (() => void) | null {
+    return this.addListener('runtimeError', (payload) => {
+      listener((payload as AssistantNativeVoiceRuntimeErrorPayload | null) ?? {});
+    });
+  }
+
+  private getTarget(): AssistantNativeVoiceBridgeTarget | null {
+    const host = this.getHost();
+    if (!host) {
+      return null;
+    }
+    return host.AssistantNativeVoice ?? host.Capacitor?.Plugins?.AssistantNativeVoice ?? null;
+  }
+
+  private addListener(
+    eventName: 'stateChanged' | 'runtimeError',
+    listener: (payload: unknown) => void,
+  ): (() => void) | null {
+    const target = this.getTarget();
+    const method = target?.addListener;
+    if (typeof method !== 'function') {
+      return null;
+    }
+
+    let removed = false;
+    let handle: AssistantNativeVoiceListenerHandle | null = null;
+    const removeHandle = (): void => {
+      removed = true;
+      if (handle && typeof handle.remove === 'function') {
+        void Promise.resolve(handle.remove()).catch((error: unknown) => {
+          console.warn(`[client] AssistantNativeVoice.${eventName}.remove failed`, error);
+        });
+      }
+    };
+
+    try {
+      const result = method(eventName, listener);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result)
+          .then((resolved) => {
+            handle = (resolved as AssistantNativeVoiceListenerHandle | null) ?? null;
+            if (removed && handle && typeof handle.remove === 'function') {
+              void Promise.resolve(handle.remove()).catch((error: unknown) => {
+                console.warn(`[client] AssistantNativeVoice.${eventName}.remove failed`, error);
+              });
+            }
+          })
+          .catch((error: unknown) => {
+            console.warn(`[client] AssistantNativeVoice.${eventName} listener failed`, error);
+          });
+      } else {
+        handle = (result as AssistantNativeVoiceListenerHandle | null) ?? null;
+      }
+      return removeHandle;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${eventName} listener failed`, error);
+      return null;
+    }
+  }
+
+  private invoke<K extends keyof AssistantNativeVoiceBridgeTarget>(
+    methodName: K,
+    ...args: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>
+  ): boolean {
+    const target = this.getTarget();
+    const method = target?.[methodName] as
+      | ((...methodArgs: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>) => unknown)
+      | undefined;
+    if (typeof method !== 'function') {
+      return false;
+    }
+
+    try {
+      const result = method(...args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result).catch((error: unknown) => {
+          console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+        });
+      }
+      return true;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+      return false;
+    }
+  }
+
+  private async invokeAsync<K extends keyof AssistantNativeVoiceBridgeTarget>(
+    methodName: K,
+    ...args: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>
+  ): Promise<boolean> {
+    const target = this.getTarget();
+    const method = target?.[methodName] as
+      | ((...methodArgs: Parameters<NonNullable<AssistantNativeVoiceBridgeTarget[K]>>) => unknown)
+      | undefined;
+    if (typeof method !== 'function') {
+      return false;
+    }
+
+    try {
+      const result = method(...args);
+      await Promise.resolve(result);
+      return true;
+    } catch (error) {
+      console.warn(`[client] AssistantNativeVoice.${String(methodName)} failed`, error);
+      return false;
+    }
+  }
+}
 
 export interface SpeechAudioControllerOptions {
   speechFeaturesEnabled: boolean;
   speechInputController: SpeechInputController | null;
   micButtonEl: HTMLButtonElement;
-  audioResponsesCheckboxEl: HTMLInputElement;
+  audioModeSelectEl: HTMLSelectElement;
+  autoListenCheckboxEl: HTMLInputElement;
+  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceMicInputSelectEl: HTMLSelectElement;
+  voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionEndSilenceInputEl: HTMLInputElement;
   inputEl: HTMLInputElement;
   getSocket: () => WebSocket | null;
   getSessionId: () => string | null;
@@ -20,9 +330,11 @@ export interface SpeechAudioControllerOptions {
   updateScrollButtonVisibility: () => void;
   getPendingAssistantBubble?: () => HTMLDivElement | null;
   setPendingAssistantBubble?: (bubble: HTMLDivElement | null) => void;
-  audioResponsesStorageKey: string;
+  voiceSettingsStorageKey: string;
   continuousListeningLongPressMs: number;
-  initialAudioResponsesEnabled: boolean;
+  initialVoiceSettings: VoiceSettings;
+  useNativeVoiceRuntime?: boolean | undefined;
+  nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
 }
 
 export class SpeechAudioController {
@@ -30,7 +342,8 @@ export class SpeechAudioController {
   private isSpeechInputActive = false;
   private speechInputDisabledReason: string | null = null;
   private speechStartToken = 0;
-  private audioResponsesEnabled: boolean;
+  private currentAudioMode: AudioMode;
+  private currentAutoListenEnabled: boolean;
   private continuousListeningMode = false;
   private micPressStartTime: number | null = null;
   private micPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -43,9 +356,60 @@ export class SpeechAudioController {
   private chimeContext: AudioContext | null = null;
   private autoRearmTimer: ReturnType<typeof setTimeout> | null = null;
   private autoRearmToken = 0;
+  private voiceSettingsChangeHandler: ((settings: VoiceSettings) => void) | null = null;
+  private nativeRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
+  private currentVoiceSettings: VoiceSettings;
+  private availableNativeInputDevices: AssistantNativeVoiceInputDevice[] = [];
 
   constructor(private readonly options: SpeechAudioControllerOptions) {
-    this.audioResponsesEnabled = options.initialAudioResponsesEnabled;
+    this.currentVoiceSettings = normalizeVoiceSettings(options.initialVoiceSettings);
+    this.currentAudioMode = this.currentVoiceSettings.audioMode;
+    this.currentAutoListenEnabled = this.currentVoiceSettings.autoListenEnabled;
+  }
+
+  get voiceSettings(): VoiceSettings {
+    return { ...this.currentVoiceSettings };
+  }
+
+  get audioMode(): AudioMode {
+    return this.currentAudioMode;
+  }
+
+  get autoListenEnabled(): boolean {
+    return this.currentAutoListenEnabled;
+  }
+
+  setVoiceSettingsChangeHandler(handler: ((settings: VoiceSettings) => void) | null): void {
+    this.voiceSettingsChangeHandler = handler;
+  }
+
+  setNativeRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
+    this.nativeRuntimeState = state;
+    this.syncMicButtonState();
+  }
+
+  async refreshNativeInputDevices(): Promise<void> {
+    if (!this.options.useNativeVoiceRuntime) {
+      if (this.availableNativeInputDevices.length > 0) {
+        this.availableNativeInputDevices = [];
+        this.syncNativeInputDeviceOptions();
+      }
+      return;
+    }
+    const devices = await (
+      this.options.nativeVoiceBridge?.listInputDevices() ?? Promise.resolve([])
+    );
+    if (this.areNativeInputDevicesEqual(this.availableNativeInputDevices, devices)) {
+      return;
+    }
+    this.availableNativeInputDevices = devices;
+    console.log(
+      `[client] SpeechAudio native input devices refreshed ${JSON.stringify({
+        count: this.availableNativeInputDevices.length,
+        devices: this.availableNativeInputDevices,
+      })}`,
+    );
+    this.syncNativeInputDeviceOptions();
   }
 
   private logState(event: string, details: Record<string, unknown> = {}): void {
@@ -59,7 +423,7 @@ export class SpeechAudioController {
   }
 
   private attachMediaSessionHandlers(): void {
-    if (this.mediaSessionAttached || !this.hasSpeechInput) {
+    if (this.mediaSessionAttached || !this.hasSpeechInput || this.isUsingNativeVoiceRuntime()) {
       return;
     }
     if (typeof navigator === 'undefined' || !navigator.mediaSession) {
@@ -69,9 +433,13 @@ export class SpeechAudioController {
     const mediaSession = navigator.mediaSession;
     const handleToggle = (action: string) => {
       this.logState('media-session-action', { action });
-      if (this.isSpeechInputActive) {
+      if (this.isSpeechInputActive || this.isNativeInteractionActive()) {
         this.logState('media-session-step', { step: 'cancel-recording' });
-        this.cancelSpeechInput('media-session');
+        if (this.isUsingNativeVoiceRuntime()) {
+          this.options.nativeVoiceBridge?.stopCurrentInteraction();
+        } else {
+          this.cancelSpeechInput('media-session');
+        }
         this.syncMicButtonState();
         return;
       }
@@ -189,8 +557,12 @@ export class SpeechAudioController {
     return this.isSpeechInputActive;
   }
 
-  get isAudioResponsesEnabled(): boolean {
-    return this.audioResponsesEnabled;
+  get isAudioEnabled(): boolean {
+    return this.currentAudioMode !== 'off';
+  }
+
+  get isResponseMode(): boolean {
+    return this.currentAudioMode === 'response';
   }
 
   setContinuousListeningMode(enabled: boolean): void {
@@ -202,7 +574,7 @@ export class SpeechAudioController {
   }
 
   attach(): void {
-    const { micButtonEl, audioResponsesCheckboxEl } = this.options;
+    const { micButtonEl } = this.options;
 
     if (!this.hasSpeechInput) {
       micButtonEl.disabled = true;
@@ -321,17 +693,7 @@ export class SpeechAudioController {
       }
     });
 
-    audioResponsesCheckboxEl.addEventListener('change', () => {
-      if (audioResponsesCheckboxEl.checked) {
-        this.enableAudioResponses();
-      } else {
-        this.disableAudioResponses();
-      }
-    });
-
-    if (this.options.supportsAudioOutput() && this.audioResponsesEnabled) {
-      this.enableAudioResponses();
-    }
+    this.applyVoiceSettings(this.currentVoiceSettings, { persist: false, notify: false });
 
     this.syncMicButtonState();
     this.attachMediaSessionHandlers();
@@ -357,7 +719,10 @@ export class SpeechAudioController {
   }
 
   handleIncomingAudioFrame(raw: ArrayBuffer): void {
-    if (!this.ttsPlayer || !this.audioResponsesEnabled) {
+    if (this.isUsingNativeVoiceRuntime()) {
+      return;
+    }
+    if (!this.ttsPlayer || this.currentAudioMode !== 'response') {
       return;
     }
 
@@ -381,7 +746,7 @@ export class SpeechAudioController {
   resetForSessionSwitch(): void {
     if (this.ttsPlayer) {
       this.ttsPlayer.stop();
-      if (this.audioResponsesEnabled) {
+      if (this.currentAudioMode === 'response') {
         this.ttsPlayer.setEnabled(true);
       }
     }
@@ -399,7 +764,7 @@ export class SpeechAudioController {
       this.ttsPlayer.stopForBargeIn();
     }
     this.clearAutoRearmTimer();
-    if (this.audioResponsesEnabled) {
+    if (this.currentAudioMode !== 'off') {
       this.options.setTtsStatus('Cancelled');
     }
     this.options.micButtonEl.classList.remove('interrupting');
@@ -419,26 +784,66 @@ export class SpeechAudioController {
     if (this.isSpeechInputActive) {
       return;
     }
-    if (!this.audioResponsesEnabled) {
+    if (this.currentAudioMode !== 'response') {
       return;
     }
     const socket = this.options.getSocket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    if (!this.continuousListeningMode) {
+    if (!this.shouldAutoListenAfterPlayback()) {
       return;
     }
 
     this.scheduleAutoRearmAfterTts();
   }
 
-  enableAudioResponses(): void {
+  setAudioMode(mode: AudioMode): void {
+    this.setVoiceSettings({
+      ...this.currentVoiceSettings,
+      audioMode: mode,
+    });
+  }
+
+  setAutoListenEnabled(enabled: boolean): void {
+    this.setVoiceSettings({
+      ...this.currentVoiceSettings,
+      autoListenEnabled: enabled,
+    });
+  }
+
+  setVoiceSettings(settings: VoiceSettings): void {
+    this.applyVoiceSettings(settings, { persist: true, notify: true });
+  }
+
+  setVoiceSettingsFromExternal(settings: VoiceSettings): void {
+    this.applyVoiceSettings(settings, { persist: false, notify: false });
+  }
+
+  private applyVoiceSettings(
+    settings: VoiceSettings,
+    options: { persist: boolean; notify: boolean },
+  ): void {
+    let nextSettings = normalizeVoiceSettings(settings);
     if (!this.options.supportsAudioOutput()) {
-      return;
+      nextSettings = {
+        ...nextSettings,
+        audioMode: 'off',
+        autoListenEnabled: false,
+      };
     }
 
-    if (!this.ttsPlayer) {
+    const nextMode: AudioMode =
+      nextSettings.audioMode === 'response' && this.options.useNativeVoiceRuntime
+        ? 'response'
+        : nextSettings.audioMode;
+    const nextAutoListenEnabled = Boolean(nextSettings.autoListenEnabled);
+    const previousSettings = this.currentVoiceSettings;
+    const previousMode = previousSettings.audioMode;
+    const previousEnabled = previousMode !== 'off';
+    const nextEnabled = nextMode !== 'off';
+
+    if (nextMode === 'response' && !this.options.useNativeVoiceRuntime && !this.ttsPlayer) {
       this.ttsPlayer = new TtsAudioPlayer({
         jitterBufferMs: 200,
         onIdle: () => {
@@ -453,36 +858,139 @@ export class SpeechAudioController {
       });
     }
 
-    this.ttsPlayer.setMuted(false);
-    this.ttsPlayer.setEnabled(true);
-    this.audioResponsesEnabled = true;
-    this.options.audioResponsesCheckboxEl.checked = true;
-    this.updateMediaSessionPlaybackState();
-    try {
-      localStorage.setItem(this.options.audioResponsesStorageKey, 'true');
-    } catch {
-      // Ignore localStorage errors
-    }
-    this.options.sendModesUpdate();
-  }
-
-  disableAudioResponses(): void {
     if (this.ttsPlayer) {
-      this.ttsPlayer.stop();
+      this.ttsPlayer.setMuted(false);
+      this.ttsPlayer.setEnabled(nextMode === 'response');
+      if (nextMode !== 'response') {
+        this.ttsPlayer.stop();
+        this.clearAutoRearmTimer();
+        this.isTtsPlaying = false;
+        this.options.micButtonEl.classList.remove('interrupting');
+        this.options.setTtsStatus('');
+      }
     }
-    this.clearAutoRearmTimer();
-    this.isTtsPlaying = false;
-    this.audioResponsesEnabled = false;
-    this.options.audioResponsesCheckboxEl.checked = false;
-    this.options.setTtsStatus('');
+
+    if (!nextEnabled) {
+      this.clearAutoRearmTimer();
+      this.isTtsPlaying = false;
+      this.options.setTtsStatus('');
+    }
+    if (!nextAutoListenEnabled) {
+      this.clearAutoRearmTimer();
+    }
+
+    nextSettings = {
+      ...nextSettings,
+      audioMode: nextMode,
+      autoListenEnabled: nextAutoListenEnabled,
+    };
+    this.currentVoiceSettings = nextSettings;
+    this.currentAudioMode = nextMode;
+    this.currentAutoListenEnabled = nextAutoListenEnabled;
+    this.syncVoiceSettingsInputs();
+    this.syncVoiceSettingsControlState();
     this.updateMediaSessionPlaybackState();
     this.syncMicButtonState();
-    try {
-      localStorage.setItem(this.options.audioResponsesStorageKey, 'false');
-    } catch {
-      // Ignore localStorage errors
+
+    if (options.persist) {
+      try {
+        localStorage.setItem(
+          this.options.voiceSettingsStorageKey,
+          JSON.stringify(this.currentVoiceSettings),
+        );
+      } catch {
+        // Ignore localStorage errors
+      }
     }
     this.options.sendModesUpdate();
+    if (options.notify && !areVoiceSettingsEqual(previousSettings, nextSettings)) {
+      this.voiceSettingsChangeHandler?.({ ...this.currentVoiceSettings });
+    }
+  }
+
+  private syncVoiceSettingsInputs(): void {
+    this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
+    this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
+    this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
+    this.syncNativeInputDeviceOptions();
+    this.options.voiceRecognitionStartTimeoutInputEl.value = String(
+      this.currentVoiceSettings.recognitionStartTimeoutMs,
+    );
+    this.options.voiceRecognitionCompletionTimeoutInputEl.value = String(
+      this.currentVoiceSettings.recognitionCompletionTimeoutMs,
+    );
+    this.options.voiceRecognitionEndSilenceInputEl.value = String(
+      this.currentVoiceSettings.recognitionEndSilenceMs,
+    );
+  }
+
+  private syncVoiceSettingsControlState(): void {
+    const supportsAudioOutput = this.options.supportsAudioOutput();
+    const supportsNativeVoiceSettings = Boolean(this.options.useNativeVoiceRuntime);
+    this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
+    this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
+    this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceMicInputSelectEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
+  }
+
+  private syncNativeInputDeviceOptions(): void {
+    const selectEl = this.options.voiceMicInputSelectEl;
+    const selectedMicDeviceId = this.currentVoiceSettings.selectedMicDeviceId;
+    const devices = this.availableNativeInputDevices;
+    const existingValues = new Set<string>();
+    selectEl.replaceChildren();
+
+    const systemDefaultOption = document.createElement('option');
+    systemDefaultOption.value = '';
+    systemDefaultOption.textContent = 'System default';
+    selectEl.appendChild(systemDefaultOption);
+    existingValues.add('');
+
+    for (const device of devices) {
+      if (existingValues.has(device.id)) {
+        continue;
+      }
+      const option = document.createElement('option');
+      option.value = device.id;
+      option.textContent = device.label;
+      selectEl.appendChild(option);
+      existingValues.add(device.id);
+    }
+
+    if (selectedMicDeviceId && !existingValues.has(selectedMicDeviceId)) {
+      const unavailableOption = document.createElement('option');
+      unavailableOption.value = selectedMicDeviceId;
+      unavailableOption.textContent = `Unavailable device [id:${selectedMicDeviceId}]`;
+      selectEl.appendChild(unavailableOption);
+    }
+
+    selectEl.value = selectedMicDeviceId;
+    if (selectEl.value !== selectedMicDeviceId) {
+      selectEl.value = '';
+    }
+  }
+
+  private areNativeInputDevicesEqual(
+    previous: readonly AssistantNativeVoiceInputDevice[],
+    next: readonly AssistantNativeVoiceInputDevice[],
+  ): boolean {
+    if (previous.length !== next.length) {
+      return false;
+    }
+    for (let index = 0; index < previous.length; index += 1) {
+      const previousDevice = previous[index];
+      const nextDevice = next[index];
+      if (!previousDevice || !nextDevice) {
+        return false;
+      }
+      if (previousDevice.id !== nextDevice.id || previousDevice.label !== nextDevice.label) {
+        return false;
+      }
+    }
+    return true;
   }
 
   async startPushToTalk(): Promise<void> {
@@ -490,6 +998,15 @@ export class SpeechAudioController {
       socketState: this.options.getSocket()?.readyState,
     });
     this.logState('start-request');
+    if (this.isUsingNativeVoiceRuntime()) {
+      this.logState('start-native-listen');
+      const started = this.options.nativeVoiceBridge?.startManualListen() ?? false;
+      if (!started) {
+        this.logState('start-abort', { reason: 'native-start-unavailable' });
+      }
+      return;
+    }
+
     const socket = this.options.getSocket();
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       console.log('[client] startPushToTalk aborted: socket not open');
@@ -624,6 +1141,11 @@ export class SpeechAudioController {
   stopPushToTalk(): void {
     const wasActive = this.isSpeechInputActive;
     this.logState('stop-request');
+    if (this.isUsingNativeVoiceRuntime() && this.isNativeInteractionActive()) {
+      this.options.nativeVoiceBridge?.stopCurrentInteraction();
+      this.logState('recording-stopped', { native: true });
+      return;
+    }
     if (!wasActive) {
       this.logState('stop-noop');
       return;
@@ -676,6 +1198,15 @@ export class SpeechAudioController {
       this.logState('cancel-step', { step: 'speech-input' });
       this.cancelSpeechInput('cancel-all');
       cancelled = true;
+    }
+
+    if (this.isUsingNativeVoiceRuntime() && this.isNativeInteractionActive()) {
+      this.logState('cancel-step', { step: 'native-voice' });
+      this.options.nativeVoiceBridge?.stopCurrentInteraction();
+      this.options.setStatus('Connected');
+      this.syncMicButtonState();
+      this.logState('cancel-complete', { cancelled: true, native: true });
+      return true;
     }
 
     if (this.isTtsPlaying && this.ttsPlayer) {
@@ -766,16 +1297,35 @@ export class SpeechAudioController {
 
   syncMicButtonState(): void {
     const micButton = this.options.micButtonEl;
+    const isNativeSpeaking = this.isNativeSpeaking();
+    const isNativeListening = this.isNativeListening();
     const shouldShowStop =
-      !this.isSpeechInputActive && !this.isTtsPlaying && this.options.isOutputActive();
+      isNativeListening ||
+      (!this.isUsingNativeVoiceRuntime() &&
+        !this.isSpeechInputActive &&
+        !this.isTtsPlaying &&
+        this.options.isOutputActive());
     micButton.classList.toggle('stopping', shouldShowStop);
+    micButton.classList.toggle('native-speaking', isNativeSpeaking);
+    micButton.classList.toggle('native-listening', isNativeListening);
+    this.renderMicButtonIcon(
+      this.isSpeechInputActive || shouldShowStop
+        ? 'stop'
+        : isNativeSpeaking || this.isTtsPlaying
+          ? 'speaker'
+          : 'microphone',
+    );
 
     if (micButton.disabled) {
       return;
     }
 
     let label = 'Voice input';
-    if (this.isSpeechInputActive) {
+    if (isNativeSpeaking) {
+      label = 'Voice playback active';
+    } else if (isNativeListening) {
+      label = 'Stop listening';
+    } else if (this.isSpeechInputActive) {
       label = 'Stop recording';
     } else if (this.isTtsPlaying || this.options.isOutputActive()) {
       label = 'Stop output';
@@ -785,7 +1335,7 @@ export class SpeechAudioController {
   }
 
   private shouldInterruptOutput(): boolean {
-    return this.isTtsPlaying || this.options.isOutputActive();
+    return this.isTtsPlaying || this.options.isOutputActive() || this.isNativeInteractionActive();
   }
 
   private clearMicPressTimer(): void {
@@ -798,7 +1348,7 @@ export class SpeechAudioController {
 
   private scheduleAutoRearmAfterTts(): void {
     this.clearAutoRearmTimer();
-    if (!this.continuousListeningMode || !this.audioResponsesEnabled) {
+    if (!this.shouldAutoListenAfterPlayback() || this.currentAudioMode !== 'response') {
       return;
     }
     const player = this.ttsPlayer;
@@ -816,7 +1366,7 @@ export class SpeechAudioController {
       }
       this.autoRearmTimer = null;
 
-      if (!this.continuousListeningMode || !this.audioResponsesEnabled) {
+      if (!this.shouldAutoListenAfterPlayback() || this.currentAudioMode !== 'response') {
         return;
       }
 
@@ -836,5 +1386,51 @@ export class SpeechAudioController {
     }
     clearTimeout(this.autoRearmTimer);
     this.autoRearmTimer = null;
+  }
+
+  private isUsingNativeVoiceRuntime(): boolean {
+    return Boolean(
+      this.options.useNativeVoiceRuntime &&
+      this.currentAudioMode !== 'off' &&
+      this.options.nativeVoiceBridge?.isAvailable(),
+    );
+  }
+
+  private shouldAutoListenAfterPlayback(): boolean {
+    return this.continuousListeningMode || this.currentAutoListenEnabled;
+  }
+
+  private isNativeInteractionActive(): boolean {
+    return this.isNativeSpeaking() || this.isNativeListening();
+  }
+
+  private isNativeSpeaking(): boolean {
+    return this.isUsingNativeVoiceRuntime() && this.nativeRuntimeState === 'speaking';
+  }
+
+  private isNativeListening(): boolean {
+    return this.isUsingNativeVoiceRuntime() && this.nativeRuntimeState === 'listening';
+  }
+
+  private renderMicButtonIcon(mode: 'microphone' | 'speaker' | 'stop'): void {
+    const svg = this.options.micButtonEl.querySelector<SVGElement>('svg.mic-icon');
+    if (!svg || svg.dataset['mode'] === mode) {
+      return;
+    }
+    svg.dataset['mode'] = mode;
+    if (mode === 'stop') {
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.innerHTML = '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"></rect>';
+      return;
+    }
+    if (mode === 'speaker') {
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.innerHTML =
+        '<path d="M11 5 6 9H3v6h3l5 4V5Z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path>';
+      return;
+    }
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.innerHTML =
+      '<rect x="9" y="3" width="6" height="12" rx="3"></rect><path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z"></path><rect x="11" y="19" width="2" height="3"></rect><path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z"></path>';
   }
 }

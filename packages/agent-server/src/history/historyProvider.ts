@@ -9,7 +9,11 @@ import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
-import { isOverlayChatEvent, isOverlayChatEventType } from '../events/overlayEventTypes';
+import {
+  isOverlayChatEvent,
+  isOverlayChatEventType,
+  isTransientReplayChatEvent,
+} from '../events/overlayEventTypes';
 import { parseAssistantTextSignature } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
 
@@ -616,6 +620,25 @@ function mergeEventsByTimestamp(baseEvents: ChatEvent[], overlayEvents: ChatEven
   return combined.map((item) => item.event);
 }
 
+function shouldCloseOpenTurnAtEof(events: ChatEvent[], currentTurnId: string | null): boolean {
+  if (!currentTurnId) {
+    return false;
+  }
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.turnId !== currentTurnId) {
+      continue;
+    }
+    return (
+      event.type === 'assistant_done' ||
+      event.type === 'summary_message' ||
+      event.type === 'custom_message' ||
+      event.type === 'agent_callback'
+    );
+  }
+  return false;
+}
+
 async function mergeOverlayEvents(
   baseEvents: ChatEvent[],
   sessionId: string,
@@ -625,14 +648,75 @@ async function mergeOverlayEvents(
     return baseEvents;
   }
   const overlayEvents = (await eventStore.getEvents(sessionId)).filter(isOverlayChatEvent);
-  const alignedOverlayEvents = alignOverlayEvents(baseEvents, overlayEvents);
+  const retainedOverlayEvents = filterRedundantOverlayEvents(baseEvents, overlayEvents);
+  const alignedOverlayEvents = alignOverlayEvents(baseEvents, retainedOverlayEvents);
   historyDebug('merge overlay events', {
     sessionId,
     baseCount: baseEvents.length,
     overlayCount: overlayEvents.length,
+    retainedCount: retainedOverlayEvents.length,
     alignedCount: alignedOverlayEvents.length,
   });
   return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
+}
+
+function filterRedundantOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
+  if (overlayEvents.length === 0) {
+    return overlayEvents;
+  }
+
+  const completedTurnIds = new Set(
+    baseEvents
+      .filter((event) => event.type === 'turn_end' && typeof event.turnId === 'string')
+      .map((event) => event.turnId as string),
+  );
+  const baseEventKeys = new Set(baseEvents.map(getOverlayComparableKey));
+
+  return overlayEvents.filter((event) => {
+    if (!isTransientReplayChatEvent(event)) {
+      return true;
+    }
+    if (event.turnId && completedTurnIds.has(event.turnId)) {
+      return false;
+    }
+    return !baseEventKeys.has(getOverlayComparableKey(event));
+  });
+}
+
+function getOverlayComparableKey(event: ChatEvent): string {
+  return [
+    event.type,
+    event.turnId ?? '',
+    event.responseId ?? '',
+    stableSerialize(event.payload),
+  ].join('|');
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null) {
+    return 'null';
+  }
+  if (value === undefined) {
+    return 'undefined';
+  }
+  if (typeof value === 'string') {
+    return JSON.stringify(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+    return `{${entries
+      .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableSerialize(entryValue)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function alignOverlayEvents(baseEvents: ChatEvent[], overlayEvents: ChatEvent[]): ChatEvent[] {
@@ -1143,17 +1227,39 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 
 function buildChatEventsFromPiSession(content: string, sessionId: string): ChatEvent[] {
   const entries = parseJsonLines(content);
   const events: ChatEvent[] = [];
+  const explicitTurnEndIds = new Set<string>();
+
+  for (const entry of entries) {
+    if (getString(entry['type']) !== 'custom') {
+      continue;
+    }
+    if (getString(entry['customType']) !== 'assistant.turn_end') {
+      continue;
+    }
+    const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+    const turnId = data ? getString(data['turnId']) : '';
+    if (turnId) {
+      explicitTurnEndIds.add(turnId);
+    }
+  }
 
   const emittedToolCalls = new Set<string>();
   const emittedToolResults = new Set<string>();
   const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+  const emittedTurnStarts = new Set<string>();
+  const emittedUserInputs = new Set<string>();
+  const emittedAssistantDone = new Set<string>();
+  const emittedThinkingDone = new Set<string>();
+  let seenExplicitTurnMarkers = false;
 
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
@@ -1186,6 +1292,12 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     timestamp: number,
     explicit = false,
   ): void => {
+    if (emittedTurnStarts.has(turnId)) {
+      currentTurnId = turnId;
+      currentResponseId = null;
+      currentTurnExplicit = explicit;
+      return;
+    }
     currentTurnId = turnId;
     currentResponseId = null;
     currentTurnExplicit = explicit;
@@ -1197,6 +1309,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       type: 'turn_start',
       payload: { trigger },
     });
+    emittedTurnStarts.add(turnId);
   };
 
   const ensureTurn = (entry: Record<string, unknown>, timestamp: number): string | null => {
@@ -1227,6 +1340,16 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
     return { toolName: mergedName, args: mergedArgs };
   };
+
+  const getUserInputKey = (turnId: string, text: string): string => `${turnId}|${text}`;
+  const getAssistantDoneKey = (
+    turnId: string,
+    text: string,
+    phase?: 'commentary' | 'final_answer',
+    textSignature?: string,
+  ): string =>
+    `${turnId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
+  const getThinkingDoneKey = (turnId: string, text: string): string => `${turnId}|${text.trimEnd()}`;
 
   const emitToolCall = (
     entry: Record<string, unknown>,
@@ -1310,6 +1433,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
+        seenExplicitTurnMarkers = true;
         endTurn(timestamp);
         startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
         continue;
@@ -1320,6 +1444,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
+        seenExplicitTurnMarkers = true;
         if (currentTurnId === turnIdFromEntry) {
           endTurn(timestamp);
         } else {
@@ -1341,6 +1466,40 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
       const turnIdFromEntry = data ? getString(data['turnId']) : '';
       const responseIdFromEntry = data ? getString(data['responseId']) : '';
+
+      if (chatEventType === 'turn_start') {
+        if (!turnIdFromEntry || emittedTurnStarts.has(turnIdFromEntry)) {
+          continue;
+        }
+        startTurn(
+          turnIdFromEntry,
+          normalizeTrigger(payload?.['trigger']),
+          timestamp,
+          false,
+        );
+        continue;
+      }
+      if (chatEventType === 'turn_end') {
+        if (!turnIdFromEntry) {
+          continue;
+        }
+        if (explicitTurnEndIds.has(turnIdFromEntry)) {
+          continue;
+        }
+        if (currentTurnId === turnIdFromEntry) {
+          endTurn(timestamp);
+        } else {
+          events.push({
+            id: randomUUID(),
+            timestamp,
+            sessionId,
+            turnId: turnIdFromEntry,
+            type: 'turn_end',
+            payload: {},
+          });
+        }
+        continue;
+      }
 
       if (chatEventType === 'agent_callback' && payload) {
         const messageId = getString(payload['messageId']) || randomUUID();
@@ -1371,6 +1530,48 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       if (chatEventType && isOverlayChatEventType(chatEventType) && payload) {
         const turnId = turnIdFromEntry || currentTurnId || '';
         const responseId = responseIdFromEntry || '';
+        if ((chatEventType === 'user_message' || chatEventType === 'user_audio') && turnId) {
+          const text =
+            typeof payload['text'] === 'string'
+              ? payload['text']
+              : typeof payload['transcription'] === 'string'
+                ? payload['transcription']
+                : '';
+          if (text) {
+            emittedUserInputs.add(getUserInputKey(turnId, text));
+          }
+        }
+        if (chatEventType === 'assistant_done' && turnId) {
+          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+          if (text) {
+            const phase =
+              payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
+                ? payload['phase']
+                : undefined;
+            const textSignature =
+              typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
+            emittedAssistantDone.add(getAssistantDoneKey(turnId, text, phase, textSignature));
+          }
+        }
+        if (chatEventType === 'thinking_done' && turnId) {
+          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+          emittedThinkingDone.add(getThinkingDoneKey(turnId, text));
+        }
+        if (chatEventType === 'tool_call') {
+          const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+          const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
+          const args = isRecord(payload['args']) ? (payload['args'] as Record<string, unknown>) : {};
+          if (toolCallId) {
+            emittedToolCalls.add(toolCallId);
+            resolveToolMeta(toolCallId, toolName, args);
+          }
+        }
+        if (chatEventType === 'tool_result') {
+          const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+          if (toolCallId) {
+            emittedToolResults.add(toolCallId);
+          }
+        }
         events.push({
           id: randomUUID(),
           timestamp,
@@ -1578,24 +1779,35 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     const messageEntry = resolveMessageEntry(entry);
     const role = getString(messageEntry['role']);
     if (role === 'user') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
+      const text = extractText(messageEntry);
+      if (emittedUserInputs.has(getUserInputKey(turnId, text))) {
+        continue;
+      }
       if (!currentTurnId || !currentTurnExplicit) {
         endTurn(timestamp);
         startTurn(turnId, 'user', timestamp);
       }
+      emittedUserInputs.add(getUserInputKey(turnId, text));
       events.push({
         id: randomUUID(),
         timestamp,
         sessionId,
         turnId,
         type: 'user_message',
-        payload: { text: extractText(messageEntry) },
+        payload: { text },
       });
       continue;
     }
 
     if (role === 'assistant') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const stopReason = getString(messageEntry['stopReason']);
       if (stopReason === 'aborted' || stopReason === 'error') {
@@ -1623,6 +1835,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           if (!thinkingBuffer) {
             return;
           }
+          const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingBuffer);
+          if (emittedThinkingDone.has(thinkingDoneKey)) {
+            thinkingBuffer = '';
+            return;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1632,11 +1849,24 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'thinking_done',
             payload: { text: thinkingBuffer },
           });
+          emittedThinkingDone.add(thinkingDoneKey);
           thinkingBuffer = '';
         };
 
         const flushText = (): void => {
           if (!textBuffer) {
+            return;
+          }
+          const assistantDoneKey = getAssistantDoneKey(
+            turnId,
+            textBuffer,
+            textPhase,
+            textSignature,
+          );
+          if (emittedAssistantDone.has(assistantDoneKey)) {
+            textBuffer = '';
+            textPhase = undefined;
+            textSignature = undefined;
             return;
           }
           events.push({
@@ -1652,6 +1882,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
               ...(textSignature ? { textSignature } : {}),
             },
           });
+          emittedAssistantDone.add(assistantDoneKey);
           textBuffer = '';
           textPhase = undefined;
           textSignature = undefined;
@@ -1726,6 +1957,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       } else {
         const thinkingText = extractThinking(messageEntry);
         if (thinkingText) {
+          const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingText);
+          if (emittedThinkingDone.has(thinkingDoneKey)) {
+            continue;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1735,6 +1970,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'thinking_done',
             payload: { text: thinkingText },
           });
+          emittedThinkingDone.add(thinkingDoneKey);
         }
 
         const toolCalls = extractToolCalls(messageEntry);
@@ -1744,6 +1980,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
         const assistantText = extractText(messageEntry);
         if (assistantText) {
+          const assistantDoneKey = getAssistantDoneKey(turnId, assistantText);
+          if (emittedAssistantDone.has(assistantDoneKey)) {
+            continue;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1753,6 +1993,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'assistant_done',
             payload: { text: assistantText },
           });
+          emittedAssistantDone.add(assistantDoneKey);
         }
       }
 
@@ -1760,6 +2001,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
 
     if (role === 'toolResult' || role === 'tool_result' || entryType === 'tool_result') {
+      if (seenExplicitTurnMarkers && !currentTurnId) {
+        continue;
+      }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const toolCallId = getToolCallId(messageEntry);
       const toolResult = extractToolResult(messageEntry);
@@ -1777,7 +2021,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 
@@ -2130,7 +2376,9 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
   }
 
   const finalTimestamp = Date.now();
-  endTurn(finalTimestamp);
+  if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
+    endTurn(finalTimestamp);
+  }
   return events;
 }
 

@@ -210,10 +210,9 @@
           </button>
           <div id="settings-dropdown" class="settings-dropdown">
             <div class="settings-dropdown-item">
-              <label for="audio-responses-checkbox">
-                <input type="checkbox" id="audio-responses-checkbox" />
-                Audio responses
-              </label>
+              <button type="button" id="voice-settings-button" class="text-button">
+                Voice settings
+              </button>
             </div>
             <div class="settings-dropdown-item">
               <label for="autofocus-chat-checkbox">
@@ -329,6 +328,81 @@
         </div>
       </div>
     </header>
+    <div id="voice-settings-modal" class="voice-settings-overlay" style="display: none" hidden>
+      <div class="confirm-dialog voice-settings-dialog" role="dialog" aria-modal="true">
+        <div class="voice-settings-dialog-header">
+          <h3 class="confirm-dialog-title">Voice Settings</h3>
+          <button
+            type="button"
+            id="voice-settings-close-button"
+            class="voice-settings-close-button"
+            aria-label="Close voice settings"
+          >
+            ×
+          </button>
+        </div>
+        <div class="voice-settings-grid">
+          <label class="list-item-form-label" for="audio-mode-select">
+            <span class="list-item-form-label-text">Audio Mode</span>
+            <select id="audio-mode-select" class="list-item-form-input">
+              <option value="off">Off</option>
+              <option value="tool">Tool</option>
+              <option value="response">Response</option>
+            </select>
+          </label>
+          <label class="settings-dropdown-item" for="auto-listen-checkbox">
+            <input type="checkbox" id="auto-listen-checkbox" />
+            Auto-listen
+          </label>
+          <label class="list-item-form-label" for="voice-adapter-base-url-input">
+            <span class="list-item-form-label-text">Voice adapter URL</span>
+            <input
+              type="url"
+              id="voice-adapter-base-url-input"
+              class="list-item-form-input"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <label class="list-item-form-label" for="voice-mic-input-select">
+            <span class="list-item-form-label-text">Microphone input</span>
+            <select id="voice-mic-input-select" class="list-item-form-input">
+              <option value="">System default</option>
+            </select>
+          </label>
+          <label class="list-item-form-label" for="voice-recognition-start-timeout-input">
+            <span class="list-item-form-label-text">Recognition start timeout (ms)</span>
+            <input
+              type="number"
+              id="voice-recognition-start-timeout-input"
+              class="list-item-form-input"
+              min="1"
+              step="1"
+            />
+          </label>
+          <label class="list-item-form-label" for="voice-recognition-completion-timeout-input">
+            <span class="list-item-form-label-text">Recognition completion timeout (ms)</span>
+            <input
+              type="number"
+              id="voice-recognition-completion-timeout-input"
+              class="list-item-form-input"
+              min="1"
+              step="1"
+            />
+          </label>
+          <label class="list-item-form-label" for="voice-recognition-end-silence-input">
+            <span class="list-item-form-label-text">Recognition end silence (ms)</span>
+            <input
+              type="number"
+              id="voice-recognition-end-silence-input"
+              class="list-item-form-input"
+              min="1"
+              step="1"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
 
     <!-- Main App Layout -->
     <div class="app-layout">

@@ -40,6 +40,40 @@ describe('toOpenAIMessages', () => {
     expect(second.content).toBe('Hi, how can I help?');
   });
 
+  it('projects spoken user audio as ordinary user content', () => {
+    const events: ChatEvent[] = [
+      {
+        ...baseEvent('user_audio'),
+        type: 'user_audio',
+        payload: { transcription: 'Spoken hello', durationMs: 1200 },
+      },
+      {
+        ...baseEvent('assistant_done'),
+        type: 'assistant_done',
+        payload: { text: 'Hi from replay' },
+      },
+    ];
+
+    const messages = toOpenAIMessages(events);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content: 'Spoken hello',
+    });
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Hi from replay',
+    });
+
+    const summary = toSessionSummary(events);
+    expect(summary.lastMessage).toBe('Hi from replay');
+    expect(summary.messageCount).toBe(2);
+
+    expect(toClaudeCLIPrompt(events)).toContain('User: Spoken hello');
+    expect(toCodexCLIPrompt(events)).toContain('User: Spoken hello');
+  });
+
   it('groups tool calls into assistant messages and emits tool results', () => {
     const events: ChatEvent[] = [
       {

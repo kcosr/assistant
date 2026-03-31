@@ -20,6 +20,15 @@ import { SettingsDropdownController } from './controllers/settingsDropdown';
 import { ConnectionManager } from './controllers/connectionManager';
 import { SessionManager, type CreateSessionOptions } from './controllers/sessionManager';
 import { ServerMessageHandler } from './controllers/serverMessageHandler';
+import {
+  AssistantNativeVoiceBridge,
+  type AssistantNativeVoiceInputContext,
+  type AssistantNativeVoiceRuntimeState,
+  type AssistantNativeVoiceSelection,
+} from './controllers/speechAudioController';
+import { resolveNativeVoiceSelectedSession } from './utils/nativeVoiceSelection';
+import { resolveInputContext } from './utils/inputContext';
+import { AsyncValueSync } from './utils/asyncValueSync';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
 import { SessionDataController } from './controllers/sessionDataController';
 import { TagColorManagerDialog } from './controllers/tagColorManagerDialog';
@@ -58,6 +67,7 @@ import {
 } from './controllers/sessionComposerController';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
+import { CHAT_PANEL_MANIFEST, createChatPanel } from './panels/chat';
 import { createInputRuntime, type InputRuntime } from './panels/input/runtime';
 import { EMPTY_PANEL_MANIFEST, createEmptyPanel } from './panels/empty';
 import { WORKSPACE_NAVIGATOR_PANEL_MANIFEST } from './panels/workspaceNavigator/manifest';
@@ -70,10 +80,7 @@ import {
   type SessionsRuntimeOptions,
 } from './panels/sessions';
 import { getWebClientElements } from './utils/webClientElements';
-import {
-  KeyboardShortcutRegistry,
-  createShortcutService,
-} from './utils/keyboardShortcuts';
+import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
@@ -86,6 +93,12 @@ import {
   UI_FONT_OPTIONS,
   watchSystemThemeChanges,
 } from './utils/themeManager';
+import {
+  areVoiceSettingsEqual,
+  DEFAULT_VOICE_ADAPTER_BASE_URL,
+  normalizeVoiceSettings,
+  type VoiceSettings,
+} from './utils/voiceSettings';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
 import {
@@ -108,10 +121,7 @@ import { ICONS } from './utils/icons';
 import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
 import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
-import {
-  getPanelHeaderActionsKey,
-  type PanelHeaderActions,
-} from './utils/panelHeaderActions';
+import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 import {
   createWindowSlot,
@@ -188,9 +198,13 @@ const logWsMessage = (message: ServerMessage): void => {
     return;
   }
   if (type === 'chat_event') {
-    const event = anyMessage['event'] as
-      | { type?: unknown; id?: unknown; turnId?: unknown; responseId?: unknown; payload?: unknown }
-      | null;
+    const event = anyMessage['event'] as {
+      type?: unknown;
+      id?: unknown;
+      turnId?: unknown;
+      responseId?: unknown;
+      payload?: unknown;
+    } | null;
     const eventType = typeof event?.type === 'string' ? event.type : null;
     const payload = event?.payload as Record<string, unknown> | null | undefined;
     console.log('[ws] chat_event', {
@@ -204,7 +218,12 @@ const logWsMessage = (message: ServerMessage): void => {
     });
     return;
   }
-  if (type === 'text_delta' || type === 'text_done' || type === 'thinking_delta' || type === 'thinking_done') {
+  if (
+    type === 'text_delta' ||
+    type === 'text_done' ||
+    type === 'thinking_delta' ||
+    type === 'thinking_done'
+  ) {
     console.log(`[ws] ${type}`, {
       sessionId: anyMessage['sessionId'] ?? null,
       responseId: typeof anyMessage['responseId'] === 'string' ? anyMessage['responseId'] : null,
@@ -259,7 +278,7 @@ interface AgentSummary {
     | { mode: 'prompt'; roots: string[] };
 }
 
-import { apiFetch, getWebSocketUrl } from './utils/api';
+import { apiFetch, getApiBaseUrl, getWebSocketUrl } from './utils/api';
 import {
   configureStatusBar,
   isCapacitorAndroid,
@@ -381,7 +400,16 @@ async function main(): Promise<void> {
   const {
     status: statusEl,
     controlsToggleButton: controlsToggleButtonEl,
-    audioResponsesCheckbox: audioResponsesCheckboxEl,
+    voiceSettingsButton: voiceSettingsButtonEl,
+    voiceSettingsModal: voiceSettingsModalEl,
+    voiceSettingsCloseButton: voiceSettingsCloseButtonEl,
+    audioModeSelect: audioModeSelectEl,
+    autoListenCheckbox: autoListenCheckboxEl,
+    voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
+    voiceMicInputSelect: voiceMicInputSelectEl,
+    voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
@@ -457,13 +485,20 @@ async function main(): Promise<void> {
       },
     }),
   );
+  registerBuiltInPanel(
+    CHAT_PANEL_MANIFEST,
+    createChatPanel({
+      getRuntimeOptions: getChatRuntimeOptions,
+      onRuntimeReady: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
+    }),
+  );
   registerBuiltInPanel(WORKSPACE_NAVIGATOR_PANEL_MANIFEST, createWorkspaceNavigatorPanel());
   registerBuiltInPanel(EMPTY_PANEL_MANIFEST, createEmptyPanel());
 
   let socket: WebSocket | null = null;
 
   const speechFeaturesEnabled = isSpeechFeatureEnabled();
-  const AUDIO_RESPONSES_STORAGE_KEY = 'aiAssistantAudioResponsesEnabled';
+  const VOICE_SETTINGS_STORAGE_KEY = 'aiAssistantVoiceSettings';
   const KEYBOARD_SHORTCUTS_STORAGE_KEY = 'aiAssistantKeyboardShortcutsEnabled';
   const KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY = 'aiAssistantKeyboardShortcutBindings';
   const AUTO_FOCUS_CHAT_STORAGE_KEY = 'aiAssistantAutoFocusChatOnSessionReady';
@@ -473,16 +508,17 @@ async function main(): Promise<void> {
   const INCLUDE_PANEL_CONTEXT_STORAGE_KEY = 'aiAssistantIncludePanelContext';
   const BRIEF_MODE_STORAGE_KEY = 'aiAssistantBriefModeEnabled';
   const LIST_INSERT_AT_TOP_STORAGE_KEY = 'aiAssistantListInsertAtTop';
-  const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY =
-    'aiAssistantListSingleClickSelectionEnabled';
-  const GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY =
-    'aiAssistantGlobalAqlTagChipClickBehavior';
+  const LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY = 'aiAssistantListSingleClickSelectionEnabled';
+  const GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY = 'aiAssistantGlobalAqlTagChipClickBehavior';
   const LIST_INLINE_CUSTOM_FIELD_EDITING_STORAGE_KEY =
     'aiAssistantListInlineCustomFieldEditingEnabled';
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
+  const nativeVoiceBridge = new AssistantNativeVoiceBridge();
+  const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
 
   const initialPreferences = loadClientPreferences({
-    audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
+    voiceStorageKey: VOICE_SETTINGS_STORAGE_KEY,
     keyboardShortcutsStorageKey: KEYBOARD_SHORTCUTS_STORAGE_KEY,
     keyboardShortcutsBindingsStorageKey: KEYBOARD_SHORTCUT_BINDINGS_STORAGE_KEY,
     autoFocusChatStorageKey: AUTO_FOCUS_CHAT_STORAGE_KEY,
@@ -490,7 +526,7 @@ async function main(): Promise<void> {
     showContextStorageKey: SHOW_CONTEXT_STORAGE_KEY,
   });
 
-  const initialAudioResponsesEnabled = initialPreferences.audioResponsesEnabled;
+  const initialVoiceSettings = initialPreferences.voice;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
@@ -498,6 +534,7 @@ async function main(): Promise<void> {
   let showContextEnabled = initialPreferences.showContextEnabled;
   let includePanelContext = true;
   let interactionEnabled = true;
+  voiceAdapterBaseUrlInputEl.placeholder = DEFAULT_VOICE_ADAPTER_BASE_URL;
 
   const updateInteractionElementsEnabled = (enabled: boolean): void => {
     const blocks = document.querySelectorAll<HTMLElement>('.interaction-block');
@@ -511,7 +548,9 @@ async function main(): Promise<void> {
       for (const control of controls) {
         control.disabled = !enabled;
       }
-      const actions = block.querySelectorAll<HTMLElement>('.interaction-actions, .interaction-form');
+      const actions = block.querySelectorAll<HTMLElement>(
+        '.interaction-actions, .interaction-form',
+      );
       for (const action of actions) {
         action.classList.toggle('disabled', !enabled);
       }
@@ -607,9 +646,7 @@ async function main(): Promise<void> {
     const storedSingleClickBehavior = localStorage.getItem(
       LIST_ITEM_SINGLE_CLICK_BEHAVIOR_STORAGE_KEY,
     );
-    listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(
-      storedSingleClickBehavior,
-    );
+    listItemSingleClickBehavior = normalizeListItemSingleClickBehavior(storedSingleClickBehavior);
     const storedTagChipClickBehavior = localStorage.getItem(
       GLOBAL_AQL_TAG_CHIP_CLICK_BEHAVIOR_STORAGE_KEY,
     );
@@ -653,6 +690,7 @@ async function main(): Promise<void> {
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.setIncludePanelContext(enabled);
     }
+    syncNativeInputContext();
   };
 
   const applyBriefModeEnabled = (enabled: boolean): void => {
@@ -665,9 +703,11 @@ async function main(): Promise<void> {
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.setBriefModeEnabled(enabled);
     }
+    syncNativeInputContext();
   };
 
   let inputSessionId: string | null = null;
+  let nativeVoiceRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
   let isSettingInputSession = false;
   let pendingInputSessionId: string | null | undefined = undefined;
   let panelHostController: PanelHostController | null = null;
@@ -746,6 +786,7 @@ async function main(): Promise<void> {
         inputSessionId = currentSessionId;
         syncSessionContext();
         updateSessionSubscriptions();
+        syncNativeVoiceBridgeState();
         if (pendingInputSessionId === undefined) {
           break;
         }
@@ -849,6 +890,159 @@ async function main(): Promise<void> {
     return chatPanelsById.get(active.panelId) ?? null;
   }
 
+  const nativeVoiceSettingsSync = new AsyncValueSync<VoiceSettings>(
+    (settings) => nativeVoiceBridge.setVoiceSettings(settings),
+    areVoiceSettingsEqual,
+  );
+  const nativeInputContextSync = new AsyncValueSync<AssistantNativeVoiceInputContext>(
+    (inputContext) => nativeVoiceBridge.setInputContext(inputContext),
+    (left, right) => left.enabled === right.enabled && left.contextLine === right.contextLine,
+  );
+  const nativeSelectedSessionSync = new AsyncValueSync<AssistantNativeVoiceSelection | null>(
+    (selection) => nativeVoiceBridge.setSelectedSession(selection),
+    (left, right) => left?.panelId === right?.panelId && left?.sessionId === right?.sessionId,
+  );
+  const nativeAssistantBaseUrlSync = new AsyncValueSync<string>((url) =>
+    nativeVoiceBridge.setAssistantBaseUrl(url),
+  );
+
+  function getNativeVoiceSelectedSession(): AssistantNativeVoiceSelection | null {
+    if (!panelHostController) {
+      return null;
+    }
+    const active =
+      (panelHostController.getContext('panel.active') as {
+        panelId?: string;
+        panelType?: string;
+      } | null) ?? null;
+    if (active?.panelType === 'chat' && typeof active.panelId === 'string') {
+      const panelId = active.panelId.trim();
+      if (!panelId) {
+        return null;
+      }
+      const binding = panelHostController.getPanelBinding(panelId);
+      return resolveNativeVoiceSelectedSession({
+        activePanelId: panelId,
+        activePanelType: active.panelType,
+        fixedSessionId: binding?.mode === 'fixed' ? binding.sessionId : null,
+        inputSessionId,
+      });
+    }
+
+    const fallbackSessionId = normalizeSessionId(inputSessionId);
+    if (!fallbackSessionId) {
+      return null;
+    }
+    const fallbackEntry = getChatPanelEntryForSession(fallbackSessionId);
+    if (!fallbackEntry) {
+      return null;
+    }
+    return resolveNativeVoiceSelectedSession({
+      activePanelId: fallbackEntry.panelId,
+      activePanelType: 'chat',
+      fixedSessionId: fallbackEntry.bindingSessionId,
+      inputSessionId: fallbackSessionId,
+    });
+  }
+
+  function syncNativeSelectedSession(): void {
+    const selection = getNativeVoiceSelectedSession();
+    nativeSelectedSessionSync.request(selection);
+  }
+
+  function getNativeVoiceInputContext(): AssistantNativeVoiceInputContext {
+    return resolveInputContext({
+      includePanelContext,
+      briefModeEnabled,
+      activePanel: getActivePanelContext(),
+      activeContextItem: getActiveContextItem(),
+      activeContextItemName: getActiveContextItemName(),
+      activeContextItemDescription: getActiveContextItemDescription(),
+      selectedItemIds: getSelectedItemIds(),
+      selectedItemTitles: getSelectedItemTitles(),
+      contextAttributes: getActivePanelContextAttributes(),
+      buildContextLine,
+    });
+  }
+
+  function syncNativeInputContext(): void {
+    nativeInputContextSync.request(getNativeVoiceInputContext());
+  }
+
+  function syncNativeVoiceSettings(): void {
+    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    nativeVoiceSettingsSync.request(settings);
+  }
+
+  function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
+    const primary = getPrimaryChatInputRuntime();
+    if (primary) {
+      primary.setVoiceSettings(settings);
+    }
+    for (const entry of chatPanelsById.values()) {
+      if (entry.inputRuntime === primary) {
+        continue;
+      }
+      entry.inputRuntime.setVoiceSettingsFromExternal(settings);
+    }
+  }
+
+  function syncNativeAssistantBaseUrl(): void {
+    if (!assistantBaseUrl) {
+      return;
+    }
+    nativeAssistantBaseUrlSync.request(assistantBaseUrl);
+  }
+
+  function syncNativeVoiceBridgeState(): void {
+    syncNativeAssistantBaseUrl();
+    syncNativeVoiceSettings();
+    syncNativeInputContext();
+    syncNativeSelectedSession();
+  }
+
+  function normalizeNativeVoiceRuntimeState(
+    value: string | null | undefined,
+  ): AssistantNativeVoiceRuntimeState | null {
+    switch (value) {
+      case 'disabled':
+      case 'connecting':
+      case 'idle':
+      case 'speaking':
+      case 'listening':
+      case 'error':
+        return value;
+      default:
+        return null;
+    }
+  }
+
+  function applyNativeVoiceRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
+    if (nativeVoiceRuntimeState === state) {
+      return;
+    }
+    nativeVoiceRuntimeState = state;
+    for (const entry of chatPanelsById.values()) {
+      entry.inputRuntime.speechAudioController?.setNativeRuntimeState(state);
+    }
+  }
+
+  if (useNativeVoiceRuntime) {
+    nativeVoiceBridge.addStateChangedListener((payload) => {
+      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload.state));
+    });
+    nativeVoiceBridge.addRuntimeErrorListener((payload) => {
+      const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+      if (!message) {
+        return;
+      }
+      setStatus(statusEl, `Voice error: ${message}`);
+    });
+    void nativeVoiceBridge.getState().then((payload) => {
+      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload?.state));
+    });
+  }
+
   function openChatPanelSelect(selectEl: HTMLSelectElement | null): boolean {
     if (!selectEl || selectEl.disabled || selectEl.classList.contains('hidden')) {
       return false;
@@ -933,7 +1127,7 @@ async function main(): Promise<void> {
       const summary =
         sessionId === null
           ? null
-          : sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null;
+          : (sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null);
       applyContextUsageBadge(entry.dom.sessionContextUsageEl, summary?.contextUsage);
     }
     entry.dom.chromeController?.scheduleLayoutCheck();
@@ -1047,103 +1241,11 @@ async function main(): Promise<void> {
       setAssistantBubbleTyping,
       scrollMessageIntoView,
       buildContextLine,
-      getActiveContextItem: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const typeValue = panelContext['type'];
-        const idValue = panelContext['id'];
-        const type = typeof typeValue === 'string' ? typeValue.trim() : '';
-        const id = typeof idValue === 'string' ? idValue.trim() : '';
-        if (!type || !id) {
-          return null;
-        }
-        return { type, id };
-      },
-      getActiveContextItemName: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const nameValue = panelContext['name'] ?? panelContext['title'];
-        const name = typeof nameValue === 'string' ? nameValue.trim() : '';
-        if (name) {
-          return name;
-        }
-        const idValue = panelContext['id'];
-        const id = typeof idValue === 'string' ? idValue.trim() : '';
-        return id || null;
-      },
-      getActiveContextItemDescription: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return null;
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return null;
-        }
-        const descriptionValue = panelContext['description'];
-        const description = typeof descriptionValue === 'string' ? descriptionValue.trim() : '';
-        return description.length > 0 ? description : null;
-      },
-      getSelectedItemIds: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return [];
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        const rawSelected = panelContext ? panelContext['selectedItemIds'] : null;
-        if (!Array.isArray(rawSelected)) {
-          return [];
-        }
-        const selected = rawSelected
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map((entry) => entry.trim());
-        return Array.from(new Set(selected));
-      },
-      getSelectedItemTitles: () => {
-        const activePanel = getActivePanelContext();
-        if (!activePanel) {
-          return [];
-        }
-        const panelContext = getActivePanelContextValue(activePanel.panelId);
-        if (!panelContext) {
-          return [];
-        }
-        const rawItems = panelContext['selectedItems'];
-        if (Array.isArray(rawItems)) {
-          const titles = rawItems
-            .map((entry) => {
-              if (!entry || typeof entry !== 'object') {
-                return '';
-              }
-              const obj = entry as Record<string, unknown>;
-              const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
-              return title;
-            })
-            .filter((title) => title.length > 0);
-          if (titles.length > 0) {
-            return titles;
-          }
-        }
-        const rawTitles = panelContext['selectedItemTitles'];
-        if (!Array.isArray(rawTitles)) {
-          return [];
-        }
-        return rawTitles
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map((entry) => entry.trim());
-      },
+      getActiveContextItem,
+      getActiveContextItemName,
+      getActiveContextItemDescription,
+      getSelectedItemIds,
+      getSelectedItemTitles,
       getActivePanelContext,
       getActivePanelContextAttributes,
       getContextPreviewData,
@@ -1154,7 +1256,13 @@ async function main(): Promise<void> {
       getIsSessionExternal: (sessionId: string | null) => isSessionExternal(sessionId),
       getAgentDisplayName,
       cancelQueuedMessage,
-      audioResponsesCheckboxEl,
+      audioModeSelectEl,
+      autoListenCheckboxEl,
+      voiceAdapterBaseUrlInputEl,
+      voiceMicInputSelectEl,
+      voiceRecognitionStartTimeoutInputEl,
+      voiceRecognitionCompletionTimeoutInputEl,
+      voiceRecognitionEndSilenceInputEl,
       initialIncludePanelContext: includePanelContext,
       initialBriefModeEnabled: briefModeEnabled,
       onIncludePanelContextChange: (enabled) => {
@@ -1164,9 +1272,12 @@ async function main(): Promise<void> {
         applyBriefModeEnabled(enabled);
       },
       speechFeaturesEnabled,
-      initialAudioResponsesEnabled,
-      audioResponsesStorageKey: AUDIO_RESPONSES_STORAGE_KEY,
+      initialVoiceSettings,
+      voiceSettingsStorageKey: VOICE_SETTINGS_STORAGE_KEY,
       continuousListeningLongPressMs: 500,
+      useNativeVoiceRuntime,
+      nativeVoiceBridge,
+      initialNativeVoiceRuntimeState: nativeVoiceRuntimeState,
     });
     const entry: ChatPanelEntry = {
       panelId,
@@ -1193,6 +1304,9 @@ async function main(): Promise<void> {
       },
     );
     chatPanelsById.set(panelId, entry);
+    entry.inputRuntime.speechAudioController?.setVoiceSettingsChangeHandler(() => {
+      syncNativeVoiceSettings();
+    });
     let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
     const openChatSessionPicker = () => {
@@ -1327,6 +1441,7 @@ async function main(): Promise<void> {
       if (!sessionId) {
         maybeAutoOpenSessionPicker();
       }
+      syncNativeSelectedSession();
     };
     updateBinding(host.getBinding());
     const unsubBinding = host.onBindingChange(updateBinding);
@@ -1578,9 +1693,7 @@ async function main(): Promise<void> {
       callId: options.callId,
       interactionId: options.interactionId,
       action: options.response.action,
-      ...(options.response.approvalScope
-        ? { approvalScope: options.response.approvalScope }
-        : {}),
+      ...(options.response.approvalScope ? { approvalScope: options.response.approvalScope } : {}),
       ...(options.response.input ? { input: options.response.input } : {}),
       ...(options.response.reason ? { reason: options.response.reason } : {}),
     };
@@ -1731,12 +1844,11 @@ async function main(): Promise<void> {
       }
       return { panelId: active.panelId, panelType: active.panelType };
     },
-    ...(keyboardShortcutBindings
-      ? { bindingOverrides: keyboardShortcutBindings }
-      : {}),
+    ...(keyboardShortcutBindings ? { bindingOverrides: keyboardShortcutBindings } : {}),
   });
   panelHostControllerInstance.subscribeContext('panel.active', (value) => {
     if (!value || typeof value !== 'object') {
+      syncNativeSelectedSession();
       return;
     }
     const raw = value as { panelId?: unknown; panelType?: unknown; source?: unknown };
@@ -1744,6 +1856,7 @@ async function main(): Promise<void> {
     const panelType = typeof raw.panelType === 'string' ? raw.panelType.trim() : '';
     const focusSource = raw.source === 'chrome' ? 'chrome' : 'content';
     if (!panelId || !panelType) {
+      syncNativeSelectedSession();
       return;
     }
     if (panelType === 'chat') {
@@ -1779,8 +1892,10 @@ async function main(): Promise<void> {
           inputRuntime?.focusInput();
         }, 0);
       }
+      syncNativeVoiceBridgeState();
       return;
     }
+    syncNativeSelectedSession();
   });
   const syncPanelManifestContext = (): void => {
     panelHostController?.setContext('panel.manifests', panelRegistry.listManifests());
@@ -1949,9 +2064,7 @@ async function main(): Promise<void> {
     return Array.isArray(data?.scopes) ? data.scopes : [];
   };
 
-  const fetchSearchResults = async (
-    options: GlobalSearchOptions,
-  ): Promise<SearchApiResponse> => {
+  const fetchSearchResults = async (options: GlobalSearchOptions): Promise<SearchApiResponse> => {
     const params = new URLSearchParams({ q: options.query });
     if (options.profiles && options.profiles.length > 0) {
       params.set('profiles', options.profiles.join(','));
@@ -2050,7 +2163,8 @@ async function main(): Promise<void> {
         'result' in json &&
         typeof (json as { result?: unknown }).result === 'object'
       ) {
-        const message = ((json as { result?: { error?: unknown } }).result?.error ?? null) as unknown;
+        const message = ((json as { result?: { error?: unknown } }).result?.error ??
+          null) as unknown;
         if (typeof message === 'string' && message.trim()) {
           return message.trim();
         }
@@ -2094,6 +2208,7 @@ async function main(): Promise<void> {
       for (const entry of chatPanelsById.values()) {
         entry.inputRuntime.updateContextAvailability();
       }
+      syncNativeInputContext();
     },
     openCommandPalette: () => {
       commandPaletteController?.open();
@@ -2325,6 +2440,108 @@ async function main(): Promise<void> {
       ...(hasSelectedText ? { selectedText } : {}),
       ...(hasSelectedItems ? { selectedItemCount, selectedItemTitles } : {}),
     };
+  }
+
+  function getActiveContextItem() {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const typeValue = panelContext['type'];
+    const idValue = panelContext['id'];
+    const type = typeof typeValue === 'string' ? typeValue.trim() : '';
+    const id = typeof idValue === 'string' ? idValue.trim() : '';
+    if (!type || !id) {
+      return null;
+    }
+    return { type, id };
+  }
+
+  function getActiveContextItemName(): string | null {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const nameValue = panelContext['name'] ?? panelContext['title'];
+    const name = typeof nameValue === 'string' ? nameValue.trim() : '';
+    if (name) {
+      return name;
+    }
+    const idValue = panelContext['id'];
+    const id = typeof idValue === 'string' ? idValue.trim() : '';
+    return id || null;
+  }
+
+  function getActiveContextItemDescription(): string | null {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return null;
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return null;
+    }
+    const descriptionValue = panelContext['description'];
+    const description = typeof descriptionValue === 'string' ? descriptionValue.trim() : '';
+    return description.length > 0 ? description : null;
+  }
+
+  function getSelectedItemIds(): string[] {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return [];
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    const rawSelected = panelContext ? panelContext['selectedItemIds'] : null;
+    if (!Array.isArray(rawSelected)) {
+      return [];
+    }
+    const selected = rawSelected
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+    return Array.from(new Set(selected));
+  }
+
+  function getSelectedItemTitles(): string[] {
+    const activePanel = getActivePanelContext();
+    if (!activePanel) {
+      return [];
+    }
+    const panelContext = getActivePanelContextValue(activePanel.panelId);
+    if (!panelContext) {
+      return [];
+    }
+    const rawItems = panelContext['selectedItems'];
+    if (Array.isArray(rawItems)) {
+      const titles = rawItems
+        .map((entry) => {
+          if (!entry || typeof entry !== 'object') {
+            return '';
+          }
+          const obj = entry as Record<string, unknown>;
+          const title = typeof obj['title'] === 'string' ? obj['title'].trim() : '';
+          return title;
+        })
+        .filter((title) => title.length > 0);
+      if (titles.length > 0) {
+        return titles;
+      }
+    }
+    const rawTitles = panelContext['selectedItemTitles'];
+    if (!Array.isArray(rawTitles)) {
+      return [];
+    }
+    return rawTitles
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim());
   }
 
   function getChatRuntimeOptions(_host?: PanelHost) {
@@ -3042,9 +3259,7 @@ async function main(): Promise<void> {
       } catch {
         // Ignore localStorage errors.
       }
-      document.dispatchEvent(
-        new CustomEvent('assistant:list-inline-custom-field-editing-updated'),
-      );
+      document.dispatchEvent(new CustomEvent('assistant:list-inline-custom-field-editing-updated'));
     });
   }
   if (listItemEditorModeSelectEl) {
@@ -3070,6 +3285,85 @@ async function main(): Promise<void> {
     toggleButton: controlsToggleButtonEl,
   });
   settingsDropdownController.attach();
+  const closeVoiceSettingsModal = (): void => {
+    voiceSettingsModalEl.hidden = true;
+    voiceSettingsModalEl.style.display = 'none';
+    voiceSettingsModalEl.classList.remove('open');
+    dialogManager.releaseExternalDialog(voiceSettingsModalEl);
+  };
+  const openVoiceSettingsModal = (): void => {
+    settingsDropdownController.close();
+    resetVoiceSettingsInputs();
+    voiceSettingsModalEl.hidden = false;
+    voiceSettingsModalEl.style.display = 'flex';
+    voiceSettingsModalEl.classList.add('open');
+    dialogManager.registerExternalDialog(voiceSettingsModalEl, closeVoiceSettingsModal);
+    void getPrimaryChatInputRuntime()?.speechAudioController?.refreshNativeInputDevices();
+    audioModeSelectEl.focus();
+  };
+  const syncVoiceSettingsFromInputs = (): void => {
+    const currentSettings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const nextSettings = normalizeVoiceSettings({
+      ...currentSettings,
+      audioMode: audioModeSelectEl.value,
+      autoListenEnabled: autoListenCheckboxEl.checked,
+      voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
+      selectedMicDeviceId: voiceMicInputSelectEl.value,
+      recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
+      recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
+      recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
+    });
+    if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
+      return;
+    }
+    applyVoiceSettingsToChatInputs(nextSettings);
+  };
+  closeVoiceSettingsModal();
+  voiceSettingsButtonEl.addEventListener('click', () => {
+    openVoiceSettingsModal();
+  });
+  audioModeSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceMicInputSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionCompletionTimeoutInputEl.addEventListener(
+    'change',
+    syncVoiceSettingsFromInputs,
+  );
+  voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  const resetVoiceSettingsInputs = (): void => {
+    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    audioModeSelectEl.value = settings.audioMode;
+    autoListenCheckboxEl.checked = settings.autoListenEnabled;
+    voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
+    voiceMicInputSelectEl.value = settings.selectedMicDeviceId;
+    if (voiceMicInputSelectEl.value !== settings.selectedMicDeviceId) {
+      voiceMicInputSelectEl.value = '';
+    }
+    voiceRecognitionStartTimeoutInputEl.value = String(settings.recognitionStartTimeoutMs);
+    voiceRecognitionCompletionTimeoutInputEl.value = String(settings.recognitionCompletionTimeoutMs);
+    voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
+  };
+  voiceAdapterBaseUrlInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionStartTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionCompletionTimeoutInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceRecognitionEndSilenceInputEl.addEventListener('blur', resetVoiceSettingsInputs);
+  voiceSettingsCloseButtonEl.addEventListener('click', () => {
+    closeVoiceSettingsModal();
+  });
+  voiceSettingsModalEl.addEventListener('click', (event) => {
+    if (event.target === voiceSettingsModalEl) {
+      closeVoiceSettingsModal();
+    }
+  });
+  voiceSettingsModalEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    closeVoiceSettingsModal();
+  });
   const layoutDropdownController =
     layoutDropdownButton && layoutDropdown
       ? new SettingsDropdownController({
@@ -3680,11 +3974,12 @@ async function main(): Promise<void> {
       ensureEmptySessionHint(chatLogEl);
       loadedChatTranscripts.delete(trimmed);
     }
-    // Show typing indicator if session is currently busy
-    if (sessionsWithActiveTyping.has(trimmed)) {
-      chatRenderer.showTypingIndicator();
+    const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
+    if (shouldShowTyping) {
+      showSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'busy');
     } else {
+      hideSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'idle');
     }
     getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
@@ -3927,15 +4222,12 @@ async function main(): Promise<void> {
     getSessionSummaries: () => sessionSummaries,
     getSpeechAudioControllerForSession: (sessionId) =>
       getChatInputRuntimeForSession(sessionId)?.speechAudioController ?? null,
-    getAudioEnabled: () => getPrimaryChatInputRuntime()?.getAudioEnabled() ?? false,
+    getAudioMode: () => getPrimaryChatInputRuntime()?.getAudioMode() ?? 'off',
     getAgentDisplayName,
     sendModesUpdate: () => {
       getPrimaryChatInputRuntime()?.sendModesUpdate();
     },
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
-    enableAudioResponses: () => {
-      getPrimaryChatInputRuntime()?.enableAudioResponses();
-    },
     refreshSessions,
     loadSessionTranscript,
     renderAgentSidebar,
@@ -3999,8 +4291,7 @@ async function main(): Promise<void> {
     cancelQueuedMessage,
     editQueuedMessage,
     handlePanelEvent: (event) => {
-      const eventWindowId =
-        typeof event.windowId === 'string' ? event.windowId.trim() : '';
+      const eventWindowId = typeof event.windowId === 'string' ? event.windowId.trim() : '';
       if (eventWindowId && eventWindowId !== WINDOW_ID) {
         return;
       }
@@ -4251,6 +4542,7 @@ async function main(): Promise<void> {
   };
 
   void setupBackButtonHandler(handleAndroidBackButton);
+  syncNativeVoiceBridgeState();
 
   initShareTarget({
     getSelectedSessionId: () => inputSessionId,

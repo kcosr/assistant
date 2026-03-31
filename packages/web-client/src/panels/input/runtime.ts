@@ -5,9 +5,15 @@ import {
   type ContextPreviewData,
 } from '../../controllers/contextPreviewController';
 import { PendingMessageListController } from '../../controllers/pendingMessageListController';
-import { SpeechAudioController } from '../../controllers/speechAudioController';
+import {
+  AssistantNativeVoiceBridge,
+  type AssistantNativeVoiceRuntimeState,
+  SpeechAudioController,
+} from '../../controllers/speechAudioController';
 import { TextInputController } from '../../controllers/textInputController';
-import { initializeAudioResponsesCheckbox } from '../../utils/clientPreferences';
+import type { AudioMode } from '../../utils/audioMode';
+import { isCapacitorAndroid } from '../../utils/capacitor';
+import type { VoiceSettings } from '../../utils/voiceSettings';
 import type { ChatRuntime } from '../chat/runtime';
 
 export interface InputRuntimeElements {
@@ -64,15 +70,24 @@ export interface InputRuntimeOptions {
   getIsSessionExternal: (sessionId: string | null) => boolean;
   getAgentDisplayName: (agentId: string) => string;
   cancelQueuedMessage: (messageId: string) => void;
-  audioResponsesCheckboxEl: HTMLInputElement;
+  audioModeSelectEl: HTMLSelectElement;
+  autoListenCheckboxEl: HTMLInputElement;
+  voiceAdapterBaseUrlInputEl: HTMLInputElement;
+  voiceMicInputSelectEl: HTMLSelectElement;
+  voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
+  voiceRecognitionEndSilenceInputEl: HTMLInputElement;
   initialIncludePanelContext: boolean;
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
   onBriefModeChange?: (enabled: boolean) => void;
   speechFeaturesEnabled: boolean;
-  initialAudioResponsesEnabled: boolean;
-  audioResponsesStorageKey: string;
+  initialVoiceSettings: VoiceSettings;
+  voiceSettingsStorageKey: string;
   continuousListeningLongPressMs: number;
+  useNativeVoiceRuntime?: boolean | undefined;
+  nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
+  initialNativeVoiceRuntimeState?: AssistantNativeVoiceRuntimeState | null | undefined;
 }
 
 export interface InputRuntime {
@@ -92,8 +107,11 @@ export interface InputRuntime {
   getIncludePanelContext: () => boolean;
   getBriefModeEnabled: () => boolean;
   sendModesUpdate: () => void;
-  getAudioEnabled: () => boolean;
-  enableAudioResponses: () => void;
+  setVoiceSettings: (settings: VoiceSettings) => void;
+  setVoiceSettingsFromExternal: (settings: VoiceSettings) => void;
+  getVoiceSettings: () => VoiceSettings;
+  getAudioMode: () => AudioMode;
+  getAutoListenEnabled: () => boolean;
   supportsAudioOutput: () => boolean;
 }
 
@@ -138,6 +156,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   const setIncludePanelContext = (enabled: boolean, notify = false): void => {
     includePanelContext = enabled;
     applyIncludePanelContextState();
+    updateContextPreview();
     if (notify) {
       options.onIncludePanelContextChange?.(enabled);
     }
@@ -265,6 +284,9 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   applyBriefModeState();
 
   const supportsAudioOutput = (): boolean => {
+    if (options.useNativeVoiceRuntime && isCapacitorAndroid()) {
+      return true;
+    }
     if (!options.speechFeaturesEnabled) {
       return false;
     }
@@ -275,11 +297,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     );
   };
 
-  const audioResponsesEnabled = initializeAudioResponsesCheckbox({
-    checkbox: options.audioResponsesCheckboxEl,
-    initialAudioResponsesEnabled: options.initialAudioResponsesEnabled,
-    supportsAudioOutput: supportsAudioOutput(),
-  });
+  const initialVoiceSettings = options.initialVoiceSettings;
 
   const sendModesUpdate = (): void => {
     const socket = options.getSocket();
@@ -287,10 +305,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
       return;
     }
 
-    const audioEnabled = speechAudioController?.isAudioResponsesEnabled ?? audioResponsesEnabled;
+    const currentAudioMode = speechAudioController?.audioMode ?? initialVoiceSettings.audioMode;
     const message: ClientSetModesMessage = {
       type: 'set_modes',
-      outputMode: audioEnabled ? 'both' : 'text',
+      outputMode:
+        currentAudioMode === 'response' && !options.useNativeVoiceRuntime ? 'both' : 'text',
     };
     socket.send(JSON.stringify(message));
   };
@@ -299,7 +318,13 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     speechFeaturesEnabled: options.speechFeaturesEnabled,
     speechInputController,
     micButtonEl: elements.micButtonEl,
-    audioResponsesCheckboxEl: options.audioResponsesCheckboxEl,
+    audioModeSelectEl: options.audioModeSelectEl,
+    autoListenCheckboxEl: options.autoListenCheckboxEl,
+    voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
+    voiceMicInputSelectEl: options.voiceMicInputSelectEl,
+    voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInputEl: options.voiceRecognitionEndSilenceInputEl,
     inputEl: elements.inputEl,
     getSocket: options.getSocket,
     getSessionId: options.getSelectedSessionId,
@@ -313,11 +338,14 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     updateScrollButtonVisibility: () => {
       getActiveChatRuntime()?.chatScrollManager.updateScrollButtonVisibility();
     },
-    audioResponsesStorageKey: options.audioResponsesStorageKey,
+    voiceSettingsStorageKey: options.voiceSettingsStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
-    initialAudioResponsesEnabled: audioResponsesEnabled,
+    initialVoiceSettings,
+    useNativeVoiceRuntime: options.useNativeVoiceRuntime,
+    nativeVoiceBridge: options.nativeVoiceBridge,
   });
   speechAudioController.attach();
+  speechAudioController.setNativeRuntimeState(options.initialNativeVoiceRuntimeState ?? null);
 
   const pendingMessageListController = elements.pendingMessageListEl
     ? new PendingMessageListController({
@@ -381,10 +409,16 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getIncludePanelContext: () => includePanelContext,
     getBriefModeEnabled: () => briefModeEnabled,
     sendModesUpdate,
-    getAudioEnabled: () => speechAudioController?.isAudioResponsesEnabled ?? audioResponsesEnabled,
-    enableAudioResponses: () => {
-      speechAudioController?.enableAudioResponses();
+    setVoiceSettings: (settings: VoiceSettings) => {
+      speechAudioController?.setVoiceSettings(settings);
     },
+    setVoiceSettingsFromExternal: (settings: VoiceSettings) => {
+      speechAudioController?.setVoiceSettingsFromExternal(settings);
+    },
+    getVoiceSettings: () => speechAudioController?.voiceSettings ?? initialVoiceSettings,
+    getAudioMode: () => speechAudioController?.audioMode ?? initialVoiceSettings.audioMode,
+    getAutoListenEnabled: () =>
+      speechAudioController?.autoListenEnabled ?? initialVoiceSettings.autoListenEnabled,
     supportsAudioOutput,
   };
 }

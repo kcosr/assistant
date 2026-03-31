@@ -480,6 +480,44 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           }
         }
 
+        let inputType: 'text' | 'audio' = 'text';
+        const inputTypeRaw = parsed['inputType'];
+        if (inputTypeRaw !== undefined) {
+          if (inputTypeRaw === 'text' || inputTypeRaw === 'audio') {
+            inputType = inputTypeRaw;
+          } else {
+            throw new ToolError('invalid_arguments', 'inputType must be "text" or "audio"');
+          }
+        }
+
+        let durationMs: number | undefined;
+        const durationMsRaw = parsed['durationMs'];
+        if (durationMsRaw !== undefined) {
+          if (
+            typeof durationMsRaw === 'number' &&
+            Number.isInteger(durationMsRaw) &&
+            durationMsRaw >= 0
+          ) {
+            durationMs = durationMsRaw;
+          } else {
+            throw new ToolError('invalid_arguments', 'durationMs must be a non-negative integer');
+          }
+        }
+
+        if (inputType === 'audio' && durationMs === undefined) {
+          throw new ToolError(
+            'invalid_arguments',
+            'durationMs is required when inputType is "audio"',
+          );
+        }
+
+        if (inputType === 'text' && durationMs !== undefined) {
+          throw new ToolError(
+            'invalid_arguments',
+            'durationMs is only allowed when inputType is "audio"',
+          );
+        }
+
         let webhook:
           | {
               url: string;
@@ -523,6 +561,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             content,
             mode,
             timeoutSeconds,
+            inputType,
+            ...(durationMs !== undefined ? { durationMs } : {}),
             ...(webhook ? { webhook } : {}),
           },
           sessionIndex,
@@ -535,7 +575,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ? { scheduledSessionService: ctx.scheduledSessionService }
             : {}),
         });
-
         if (asyncTask) {
           void asyncTask;
         }
@@ -604,8 +643,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             updatedAt: summary.updatedAt,
           };
         } catch (err) {
-          const message =
-            err instanceof Error ? err.message : 'Failed to edit session history';
+          const message = err instanceof Error ? err.message : 'Failed to edit session history';
           throw new ToolError('invalid_arguments', message);
         }
       },

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -123,18 +123,22 @@ try {
 
     run('node', ['scripts/apply-flavor.mjs', flavorName], { cwd: mobileDir });
 
-    if (existsSync(androidDir)) {
-      rmSync(androidDir, { recursive: true, force: true });
-    }
+    const flavorEnv = {
+      ASSISTANT_API_HOST: flavor.apiHost,
+      ASSISTANT_APP_ID: flavor.appId,
+      ASSISTANT_APP_NAME: flavor.appName,
+    };
 
-    run('npm', ['run', 'android:add'], {
-      cwd: mobileDir,
-      env: { ASSISTANT_API_HOST: flavor.apiHost },
-    });
+    if (!existsSync(androidDir)) {
+      run('npm', ['run', 'android:add'], {
+        cwd: mobileDir,
+        env: flavorEnv,
+      });
+    }
 
     run('npm', ['run', 'android:build'], {
       cwd: mobileDir,
-      env: { ASSISTANT_API_HOST: flavor.apiHost },
+      env: flavorEnv,
     });
 
     if (!existsSync(debugApkPath)) {

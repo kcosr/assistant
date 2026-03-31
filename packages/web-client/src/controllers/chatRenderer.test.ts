@@ -170,6 +170,252 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('renders voice_speak and voice_ask as speaker bubbles without generic tool chrome', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-voice',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-speak',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-speak',
+          toolName: 'voice_speak',
+          args: { text: 'Checking the porch camera now.' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-speak-result',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-speak',
+          result: { accepted: true },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-ask',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-ask',
+          toolName: 'voice_ask',
+          args: { text: 'Do you want me to open the garage too?' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-ask-result',
+        turnId: 't-voice',
+        responseId: 'r-voice',
+        payload: {
+          toolCallId: 'tc-ask',
+          result: { accepted: true },
+        },
+      }),
+    ]);
+
+    const bubbles = Array.from(container.querySelectorAll<HTMLDivElement>('.voice-tool-bubble'));
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]?.dataset['toolName']).toBe('voice_speak');
+    expect(bubbles[0]?.textContent).toContain('Checking the porch camera now.');
+    expect(bubbles[0]?.querySelector('.voice-tool-label')?.textContent).toBe('Speak');
+    expect(bubbles[0]?.textContent).not.toContain('Voice Speak');
+    expect(bubbles[0]?.textContent).not.toContain('accepted');
+    expect(bubbles[1]?.dataset['toolName']).toBe('voice_ask');
+    expect(bubbles[1]?.textContent).toContain('Do you want me to open the garage too?');
+    expect(bubbles[1]?.querySelector('.voice-tool-label')?.textContent).toBe('Ask');
+    expect(bubbles[1]?.textContent).not.toContain('Voice Ask');
+    expect(bubbles[1]?.textContent).not.toContain('accepted');
+    expect(container.querySelector('[data-tool-name="voice_speak"].tool-output-block')).toBeNull();
+    expect(container.querySelector('[data-tool-name="voice_ask"].tool-output-block')).toBeNull();
+  });
+
+  it('renders voice tool failures inline on the speaker bubble', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-voice-error',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-ask',
+        turnId: 't-voice-error',
+        responseId: 'r-voice-error',
+        payload: {
+          toolCallId: 'tc-ask',
+          toolName: 'voice_ask',
+          args: { text: 'Say that again?' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-ask-result',
+        turnId: 't-voice-error',
+        responseId: 'r-voice-error',
+        payload: {
+          toolCallId: 'tc-ask',
+          result: { accepted: false },
+          error: {
+            code: 'invalid_args',
+            message: 'Prompt text is required.',
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.voice-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.classList.contains('error')).toBe(true);
+    expect(bubble?.querySelector('.voice-tool-error')?.textContent).toContain(
+      'Prompt text is required.',
+    );
+  });
+
+  it('renders user_audio as a user bubble with microphone styling', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-audio-turn-start',
+        turnId: 't-audio',
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio',
+        turnId: 't-audio',
+        responseId: undefined,
+        payload: {
+          transcription: 'Call Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.dataset['inputType']).toBe('audio');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+    expect(
+      bubble?.querySelector('.message-avatar.user-audio-avatar .voice-event-icon-microphone'),
+    ).not.toBeNull();
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
+  it('strips the context line from rendered user_audio bubbles', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio-context',
+        turnId: 't-audio-context',
+        responseId: undefined,
+        payload: {
+          transcription: '<context panel-id="panel-1" />\nCall Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+    expect(bubble?.textContent).not.toContain('<context');
+  });
+
+  it('shows the context line in rendered user_audio bubbles when debug context display is enabled', () => {
+    (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__ = false;
+
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('user_audio', {
+        id: 'e-audio-context-visible',
+        turnId: 't-audio-context-visible',
+        responseId: undefined,
+        payload: {
+          transcription: '<context panel-id="panel-1" />\nCall Sam when I get home.',
+          durationMs: 2400,
+        },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>('.message.user.user-audio');
+    expect(bubble?.textContent).toContain('<context panel-id="panel-1" />');
+    expect(bubble?.textContent).toContain('Call Sam when I get home.');
+
+    delete (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__;
+  });
+
+  it('shows the typing indicator for live voice tool bubbles', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'e-voice-live-turn-start',
+        turnId: 't-voice-live',
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderer.renderEvent(
+      createBaseEvent('tool_call', {
+        id: 'e-voice-live',
+        turnId: 't-voice-live',
+        responseId: 'r-voice-live',
+        payload: {
+          toolCallId: 'tc-voice-live',
+          toolName: 'voice_ask',
+          args: { text: 'Are you still there?' },
+        },
+      }),
+    );
+
+    expect(container.querySelector('.voice-tool-bubble')?.textContent).toContain(
+      'Are you still there?',
+    );
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
   it('renders a turn divider with the turn timestamp', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
@@ -506,42 +752,120 @@ describe('ChatRenderer', () => {
     expect(container.querySelector('.chat-typing-indicator.visible')).toBeNull();
   });
 
-  it('suppresses typing indicator while interaction is pending', () => {
+  it('shows the typing indicator immediately on turn_start and clears it on turn_end', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
-    renderer.showTypingIndicator();
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'turn-1',
+        turnId: 'turn-1',
+        payload: { trigger: 'user' },
+      }),
+    );
+
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       true,
     );
 
     renderer.renderEvent(
-      createBaseEvent('interaction_pending', {
-        id: 'e1',
-        responseId: undefined,
-        payload: {
-          toolCallId: 'tc1',
-          toolName: 'questions_ask',
-          pending: true,
-          presentation: 'questionnaire',
-        },
+      createBaseEvent('turn_end', {
+        id: 'turn-1-end',
+        turnId: 'turn-1',
+        payload: {},
       }),
     );
 
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       false,
     );
+  });
+
+  it('restores typing indicator after replay when the latest turn is still active', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'turn-replay',
+        turnId: 'turn-replay',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('user_audio', {
+        id: 'turn-replay-audio',
+        turnId: 'turn-replay',
+        responseId: undefined,
+        payload: {
+          transcription: 'Testing live replay state.',
+          durationMs: 1200,
+        },
+      }),
+    ]);
+
+    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
+      true,
+    );
+  });
+
+  it('reports active output after replay when the latest turn is still active', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'turn-replay',
+        turnId: 'turn-replay',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('user_message', {
+        id: 'turn-replay-message',
+        turnId: 'turn-replay',
+        payload: { text: 'sleep 10' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'turn-replay-tool',
+        turnId: 'turn-replay',
+        responseId: 'resp-replay',
+        payload: {
+          toolCallId: 'call-replay',
+          toolName: 'shell_command',
+          args: { command: 'sleep 10' },
+        },
+      }),
+    ]);
+
+    expect(renderer.hasActiveOutput()).toBe(true);
+  });
+
+  it('keeps typing indicator active while interaction is pending within an active turn', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderEvent(
+      createBaseEvent('turn_start', {
+        id: 'turn-pending',
+        turnId: 'turn-pending',
+        payload: { trigger: 'user' },
+      }),
+    );
 
     renderer.renderEvent(
       createBaseEvent('interaction_pending', {
-        id: 'e2',
+        id: 'pending-1',
+        turnId: 'turn-pending',
         responseId: undefined,
         payload: {
           toolCallId: 'tc1',
           toolName: 'questions_ask',
-          pending: false,
+          pending: true,
           presentation: 'questionnaire',
         },
       }),
@@ -1503,7 +1827,11 @@ describe('ChatRenderer', () => {
         responseId: string,
       ) => HTMLDivElement;
     };
-    const responseEl = rendererWithInternals.getOrCreateAssistantResponseContainer('t1', 'e1', 'r1');
+    const responseEl = rendererWithInternals.getOrCreateAssistantResponseContainer(
+      't1',
+      'e1',
+      'r1',
+    );
 
     const text0 = document.createElement('div');
     text0.className = 'assistant-text';
@@ -2049,7 +2377,9 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-bash-input"]');
+    const toolBlock = container.querySelector<HTMLDivElement>(
+      '[data-tool-call-id="tc-bash-input"]',
+    );
     expect(toolBlock).not.toBeNull();
     if (!toolBlock) return;
 
@@ -2453,142 +2783,142 @@ describe('ChatRenderer', () => {
   });
 });
 
-  it('renders multiple questionnaires in the same response without removing earlier ones', () => {
-    const container = document.createElement('div');
-    container.className = 'chat-log';
-    document.body.appendChild(container);
+it('renders multiple questionnaires in the same response without removing earlier ones', () => {
+  const container = document.createElement('div');
+  container.className = 'chat-log';
+  document.body.appendChild(container);
 
-    const renderer = new ChatRenderer(container);
+  const renderer = new ChatRenderer(container);
 
-    const events: ChatEvent[] = [
-      createBaseEvent('interaction_request', {
-        id: 'e1',
-        turnId: 'turn1',
-        responseId: 'resp1',
-        payload: {
-          toolCallId: 'tc1',
-          toolName: 'questions_ask',
-          interactionId: 'i1',
-          interactionType: 'input',
-          presentation: 'questionnaire',
-          inputSchema: {
-            title: 'First questionnaire',
-            fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
-          },
+  const events: ChatEvent[] = [
+    createBaseEvent('interaction_request', {
+      id: 'e1',
+      turnId: 'turn1',
+      responseId: 'resp1',
+      payload: {
+        toolCallId: 'tc1',
+        toolName: 'questions_ask',
+        interactionId: 'i1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'First questionnaire',
+          fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
         },
-      }),
-      createBaseEvent('interaction_response', {
-        id: 'e2',
-        payload: {
-          toolCallId: 'tc1',
-          interactionId: 'i1',
-          action: 'submit',
-          input: { answer1: 'response1' },
+      },
+    }),
+    createBaseEvent('interaction_response', {
+      id: 'e2',
+      payload: {
+        toolCallId: 'tc1',
+        interactionId: 'i1',
+        action: 'submit',
+        input: { answer1: 'response1' },
+      },
+    }),
+    // Second questionnaire with different toolCallId
+    createBaseEvent('interaction_request', {
+      id: 'e3',
+      turnId: 'turn1',
+      responseId: 'resp1',
+      payload: {
+        toolCallId: 'tc2',
+        toolName: 'questions_ask',
+        interactionId: 'i2',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Second questionnaire',
+          fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
         },
-      }),
-      // Second questionnaire with different toolCallId
-      createBaseEvent('interaction_request', {
-        id: 'e3',
-        turnId: 'turn1',
-        responseId: 'resp1',
-        payload: {
-          toolCallId: 'tc2',
-          toolName: 'questions_ask',
-          interactionId: 'i2',
-          interactionType: 'input',
-          presentation: 'questionnaire',
-          inputSchema: {
-            title: 'Second questionnaire',
-            fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
-          },
+      },
+    }),
+  ];
+
+  renderer.replayEvents(events);
+
+  const questionnaires = container.querySelectorAll('.interaction-questionnaire');
+  expect(questionnaires.length).toBe(2);
+
+  const first = questionnaires[0];
+  const second = questionnaires[1];
+
+  expect(first?.classList.contains('interaction-complete')).toBe(true);
+  expect(first?.textContent).toContain('First questionnaire');
+
+  expect(second?.classList.contains('interaction-complete')).toBe(false);
+  expect(second?.textContent).toContain('Second questionnaire');
+});
+
+it('renders multiple questionnaires via handleNewEvent without removing earlier ones', () => {
+  const container = document.createElement('div');
+  container.className = 'chat-log';
+  document.body.appendChild(container);
+
+  const renderer = new ChatRenderer(container);
+
+  // First questionnaire
+  renderer.handleNewEvent(
+    createBaseEvent('interaction_request', {
+      id: 'e1',
+      turnId: 'turn1',
+      responseId: 'resp1',
+      payload: {
+        toolCallId: 'tc1',
+        toolName: 'questions_ask',
+        interactionId: 'i1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'First questionnaire',
+          fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
         },
-      }),
-    ];
+      },
+    }),
+  );
 
-    renderer.replayEvents(events);
+  // Response to first
+  renderer.handleNewEvent(
+    createBaseEvent('interaction_response', {
+      id: 'e2',
+      payload: {
+        toolCallId: 'tc1',
+        interactionId: 'i1',
+        action: 'submit',
+        input: { answer1: 'response1' },
+      },
+    }),
+  );
 
-    const questionnaires = container.querySelectorAll('.interaction-questionnaire');
-    expect(questionnaires.length).toBe(2);
-
-    const first = questionnaires[0];
-    const second = questionnaires[1];
-
-    expect(first?.classList.contains('interaction-complete')).toBe(true);
-    expect(first?.textContent).toContain('First questionnaire');
-
-    expect(second?.classList.contains('interaction-complete')).toBe(false);
-    expect(second?.textContent).toContain('Second questionnaire');
-  });
-
-  it('renders multiple questionnaires via handleNewEvent without removing earlier ones', () => {
-    const container = document.createElement('div');
-    container.className = 'chat-log';
-    document.body.appendChild(container);
-
-    const renderer = new ChatRenderer(container);
-
-    // First questionnaire
-    renderer.handleNewEvent(
-      createBaseEvent('interaction_request', {
-        id: 'e1',
-        turnId: 'turn1',
-        responseId: 'resp1',
-        payload: {
-          toolCallId: 'tc1',
-          toolName: 'questions_ask',
-          interactionId: 'i1',
-          interactionType: 'input',
-          presentation: 'questionnaire',
-          inputSchema: {
-            title: 'First questionnaire',
-            fields: [{ id: 'answer1', type: 'text', label: 'Answer 1', required: true }],
-          },
+  // Second questionnaire
+  renderer.handleNewEvent(
+    createBaseEvent('interaction_request', {
+      id: 'e3',
+      turnId: 'turn1',
+      responseId: 'resp1',
+      payload: {
+        toolCallId: 'tc2',
+        toolName: 'questions_ask',
+        interactionId: 'i2',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Second questionnaire',
+          fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
         },
-      }),
-    );
+      },
+    }),
+  );
 
-    // Response to first
-    renderer.handleNewEvent(
-      createBaseEvent('interaction_response', {
-        id: 'e2',
-        payload: {
-          toolCallId: 'tc1',
-          interactionId: 'i1',
-          action: 'submit',
-          input: { answer1: 'response1' },
-        },
-      }),
-    );
+  const questionnaires = container.querySelectorAll('.interaction-questionnaire');
+  expect(questionnaires.length).toBe(2);
 
-    // Second questionnaire
-    renderer.handleNewEvent(
-      createBaseEvent('interaction_request', {
-        id: 'e3',
-        turnId: 'turn1',
-        responseId: 'resp1',
-        payload: {
-          toolCallId: 'tc2',
-          toolName: 'questions_ask',
-          interactionId: 'i2',
-          interactionType: 'input',
-          presentation: 'questionnaire',
-          inputSchema: {
-            title: 'Second questionnaire',
-            fields: [{ id: 'answer2', type: 'text', label: 'Answer 2', required: true }],
-          },
-        },
-      }),
-    );
+  const first = questionnaires[0];
+  const second = questionnaires[1];
 
-    const questionnaires = container.querySelectorAll('.interaction-questionnaire');
-    expect(questionnaires.length).toBe(2);
+  expect(first?.classList.contains('interaction-complete')).toBe(true);
+  expect(first?.textContent).toContain('First questionnaire');
 
-    const first = questionnaires[0];
-    const second = questionnaires[1];
-
-    expect(first?.classList.contains('interaction-complete')).toBe(true);
-    expect(first?.textContent).toContain('First questionnaire');
-
-    expect(second?.classList.contains('interaction-complete')).toBe(false);
-    expect(second?.textContent).toContain('Second questionnaire');
-  });
+  expect(second?.classList.contains('interaction-complete')).toBe(false);
+  expect(second?.textContent).toContain('Second questionnaire');
+});

@@ -11,8 +11,9 @@ vi.mock('dompurify', () => {
 
 import { ServerMessageHandler, type ServerMessageHandlerOptions } from './serverMessageHandler';
 import type { SpeechAudioController } from './speechAudioController';
+import type { ChatRuntime } from '../panels/chat/runtime';
 
-function makeHandler() {
+function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const typingIndicators = new Set<string>();
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
@@ -26,11 +27,10 @@ function makeHandler() {
     isChatPanelVisible: () => true,
     getSessionSummaries: () => [],
     getSpeechAudioControllerForSession: () => null as SpeechAudioController | null,
-    getAudioEnabled: () => false,
+    getAudioMode: () => 'off',
     getAgentDisplayName: () => 'Agent',
     sendModesUpdate: () => {},
     supportsAudioOutput: () => false,
-    enableAudioResponses: () => {},
     refreshSessions,
     loadSessionTranscript,
     renderAgentSidebar: () => {},
@@ -55,6 +55,7 @@ function makeHandler() {
     cancelQueuedMessage: () => {},
     editQueuedMessage: () => {},
     getPendingMessageListControllerForSession: () => null,
+    ...overrides,
   };
 
   const handler = new ServerMessageHandler(options);
@@ -62,41 +63,21 @@ function makeHandler() {
   return { handler, typingIndicators, refreshSessions, loadSessionTranscript };
 }
 
-describe('ServerMessageHandler agent_callback_result typing indicator', () => {
-  it('clears typing indicator after agent_callback_result for selected session', async () => {
-    const { handler, typingIndicators } = makeHandler();
-
-    // Simulate typing shown earlier in the session
-    typingIndicators.add('s-1');
-
-    await handler.handle({
-      type: 'agent_callback_result',
-      sessionId: 's-1',
-      responseId: 'resp-1',
-      result: 'callback text',
-    });
-
-    expect(typingIndicators.size).toBe(0);
-  });
-
-  it('resets pending interaction state on reconnect cleanup', async () => {
+describe('ServerMessageHandler typing indicator', () => {
+  it('resets active turn state on reconnect cleanup', async () => {
     const { handler, typingIndicators } = makeHandler();
 
     await handler.handle({
       type: 'chat_event',
       sessionId: 's-1',
       event: {
-        id: 'e-pending',
-        type: 'interaction_pending',
+        id: 'e-turn-start',
+        type: 'turn_start',
         timestamp: Date.now(),
         sessionId: 's-1',
         turnId: 't-1',
-        responseId: 'r-1',
         payload: {
-          toolCallId: 'tool-1',
-          pending: true,
-          toolName: 'agents_message',
-          presentation: 'tool',
+          trigger: 'user',
         },
       },
     });
@@ -107,19 +88,16 @@ describe('ServerMessageHandler agent_callback_result typing indicator', () => {
       type: 'chat_event',
       sessionId: 's-1',
       event: {
-        id: 'e-chunk',
-        type: 'assistant_chunk',
+        id: 'e-turn-end',
+        type: 'turn_end',
         timestamp: Date.now(),
         sessionId: 's-1',
         turnId: 't-1',
-        responseId: 'r-1',
-        payload: {
-          text: 'Done.',
-        },
+        payload: {},
       },
     });
 
-    expect(typingIndicators.has('s-1')).toBe(true);
+    expect(typingIndicators.has('s-1')).toBe(false);
   });
 
   it('forces transcript reload when session history changes', async () => {
@@ -133,5 +111,94 @@ describe('ServerMessageHandler agent_callback_result typing indicator', () => {
 
     expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
+  });
+
+  it('scrolls visible chat panels to bottom on turn_start', async () => {
+    const scrollToBottom = vi.fn();
+    const autoScrollIfEnabled = vi.fn();
+    const handleNewEvent = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom,
+        autoScrollIfEnabled,
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const { handler } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+    });
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'turn-1',
+        type: 'turn_start',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 'turn-1',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(handleNewEvent).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(autoScrollIfEnabled).not.toHaveBeenCalled();
+  });
+
+  it('marks sessions busy on turn_start and idle on turn_end before assistant output arrives', async () => {
+    const statuses: Array<{ sessionId: string; status: string }> = [];
+    const { handler, typingIndicators } = makeHandler({
+      setChatPanelStatusForSession: (sessionId, status) => {
+        statuses.push({ sessionId, status });
+      },
+    });
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'turn-start',
+        type: 'turn_start',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 'turn-1',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(true);
+    expect(statuses.at(-1)).toEqual({ sessionId: 's-1', status: 'busy' });
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event: {
+        id: 'turn-end',
+        type: 'turn_end',
+        timestamp: Date.now(),
+        sessionId: 's-1',
+        turnId: 'turn-1',
+        payload: {},
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(false);
+    expect(statuses.at(-1)).toEqual({ sessionId: 's-1', status: 'idle' });
   });
 });
