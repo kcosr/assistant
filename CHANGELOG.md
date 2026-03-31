@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] - 2026-03-31
 
 ### Breaking Changes
 - Changed the websocket protocol to require protocol version `3` with structured `hello.subscriptions` and optional per-session subscription masks; legacy v1/v2 hello flows are no longer accepted. ([#73](https://github.com/kcosr/assistant/pull/73))
@@ -19,6 +19,7 @@
 - Fixed Codex/CLI session replay so completed turns are not duplicated on reload and aborted or cancelled turns close cleanly instead of leaving replayed typing state stuck. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Removed
+
 
 ## [0.16.1] - 2026-03-31
 
