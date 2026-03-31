@@ -1387,6 +1387,205 @@ describe('PiSessionHistoryProvider', () => {
     expect(events.filter((event) => event.type === 'turn_end' && event.turnId === 'turn-voice')).toHaveLength(1);
   });
 
+  it('dedupes Pi explicit thinking_done against later finalized assistant toolUse messages', async () => {
+    const baseDir = await createTempDir('pi-session-history-thinking-dedupe');
+    const sessionId = 'session-thinking-dedupe';
+    const piSessionId = 'pi-session-thinking-dedupe';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const thinkingText =
+      '**Obtaining current date**\n\nI need to find out the current date using `date`.\n\n';
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-thinking', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.001Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_start',
+          payload: { trigger: 'user' },
+          turnId: 'turn-thinking',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.002Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_message',
+          payload: { text: "what's the date?" },
+          turnId: 'turn-thinking',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'thinking_done',
+          payload: { text: thinkingText },
+          turnId: 'turn-thinking',
+          responseId: 'resp-thinking-event',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:01.100Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          payload: {
+            toolCallId: 'tool-thinking',
+            toolName: 'bash',
+            args: { command: "date '+%A, %B %-d, %Y'" },
+          },
+          turnId: 'turn-thinking',
+          responseId: 'resp-thinking-event',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:02.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_result',
+          payload: {
+            toolCallId: 'tool-thinking',
+            result: { ok: true, output: 'Monday, March 30, 2026\n', exitCode: 0 },
+          },
+          turnId: 'turn-thinking',
+          responseId: 'resp-thinking-event',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:03.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'assistant_done',
+          payload: { text: 'Today is Monday, March 30, 2026.' },
+          turnId: 'turn-thinking',
+          responseId: 'resp-thinking-event',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:03.001Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: "what's the date?" }],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:03.002Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-thinking-message',
+          content: [
+            { type: 'thinking', thinking: thinkingText.trimEnd() },
+            {
+              type: 'toolCall',
+              id: 'tool-thinking',
+              name: 'bash',
+              arguments: { command: "date '+%A, %B %-d, %Y'" },
+            },
+          ],
+          stopReason: 'toolUse',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:03.003Z',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'tool-thinking',
+          toolName: 'bash',
+          content: [
+            {
+              type: 'text',
+              text: '{"ok":true,"result":{"ok":true,"output":"Monday, March 30, 2026\\n","exitCode":0}}',
+            },
+          ],
+          isError: false,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:03.004Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-thinking-final',
+          content: [{ type: 'text', text: 'Today is Monday, March 30, 2026.' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:03.005Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-thinking', status: 'completed' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:03.006Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_end',
+          payload: {},
+          turnId: 'turn-thinking',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'thinking_done' &&
+          event.turnId === 'turn-thinking' &&
+          event.payload.text.includes('Obtaining current date'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.turnId === 'turn-thinking' &&
+          event.payload.toolCallId === 'tool-thinking',
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'assistant_done' &&
+          event.turnId === 'turn-thinking' &&
+          event.payload.text === 'Today is Monday, March 30, 2026.',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('preserves commentary-phase assistant text with phase metadata', async () => {
     const baseDir = await createTempDir('pi-session-history-phase');
     const sessionId = 'session-phase';

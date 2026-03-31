@@ -199,7 +199,7 @@ describe('handleChatOutputCancel', () => {
     expect(interruptEvent).toBeDefined();
   });
 
-  it('skips interrupt logging when no output has started', async () => {
+  it('still records an interrupt when cancelling before output has started', async () => {
     const sessionId = 'session-3';
     const responseId = 'resp-3';
 
@@ -260,7 +260,7 @@ describe('handleChatOutputCancel', () => {
     });
 
     expect(abortController.signal.aborted).toBe(true);
-    expect(events.some((event) => event.type === 'interrupt')).toBe(false);
+    expect(events.some((event) => event.type === 'interrupt')).toBe(true);
     expect(events.some((event) => event.type === 'assistant_done')).toBe(false);
     expect(recordSessionActivity).not.toHaveBeenCalled();
   });
@@ -317,7 +317,15 @@ describe('handleChatOutputCancel', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(appendAssistantEvent).not.toHaveBeenCalled();
+    expect(appendAssistantEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: state.summary,
+        eventType: 'interrupt',
+        payload: { reason: 'user_cancel' },
+        turnId: 'turn-4',
+        responseId: 'resp-4',
+      }),
+    );
     expect(appendTurnEnd).toHaveBeenCalledWith(
       expect.objectContaining({
         summary: state.summary,

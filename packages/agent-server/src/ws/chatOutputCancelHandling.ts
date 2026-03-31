@@ -68,6 +68,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   const hasPartialText = partialText.trim().length > 0;
   const hasOutputActivity =
     Boolean(run.outputStarted || run.textStartedAt) || hadActiveToolCalls || hasPartialText;
+  const shouldEmitInterrupt = Boolean(run.turnId);
 
   const toolResultEvents: ChatEvent[] = [];
   if (activeToolCalls && activeToolCalls.size > 0) {
@@ -119,7 +120,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
 
   // Best-effort: emit a unified interrupt event so ChatRenderer can render
   // cancellation consistently with other chat events.
-  if (eventStore && hasOutputActivity) {
+  if (eventStore && shouldEmitInterrupt) {
     const turnId = run.turnId;
     const responseId = run.responseId;
     const events: ChatEvent[] = [];
@@ -179,7 +180,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
               updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
             });
           }
-          if (!eventStore && hasOutputActivity) {
+          if (!eventStore && shouldEmitInterrupt) {
             await piSessionWriter.appendAssistantEvent({
               summary: state.summary,
               eventType: 'interrupt',

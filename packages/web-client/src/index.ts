@@ -3960,21 +3960,9 @@ async function main(): Promise<void> {
         eventsResponse,
       );
       const events = Array.isArray(data?.events) ? data.events : [];
-      console.warn('[replay] transcript loaded', {
-        sessionId: trimmed,
-        force: options?.force === true,
-        eventCount: events.length,
-        firstTypes: events.slice(0, 5).map((event) => event.type),
-        lastTypes: events.slice(-5).map((event) => event.type),
-      });
 
       if (events.length > 0) {
         chatRenderer.replayEvents(events);
-        console.warn('[replay] transcript rendered', {
-          sessionId: trimmed,
-          eventCount: events.length,
-          hasActiveOutput: chatRenderer.hasActiveOutput(),
-        });
         chatScrollManager.scrollToBottom();
       } else {
         chatRenderer.clear();

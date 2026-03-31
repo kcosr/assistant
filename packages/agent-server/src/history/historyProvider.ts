@@ -1258,6 +1258,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   const emittedTurnStarts = new Set<string>();
   const emittedUserInputs = new Set<string>();
   const emittedAssistantDone = new Set<string>();
+  const emittedThinkingDone = new Set<string>();
   let seenExplicitTurnMarkers = false;
 
   let currentTurnId: string | null = null;
@@ -1348,6 +1349,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     textSignature?: string,
   ): string =>
     `${turnId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
+  const getThinkingDoneKey = (turnId: string, text: string): string => `${turnId}|${text.trimEnd()}`;
 
   const emitToolCall = (
     entry: Record<string, unknown>,
@@ -1550,6 +1552,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
               typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
             emittedAssistantDone.add(getAssistantDoneKey(turnId, text, phase, textSignature));
           }
+        }
+        if (chatEventType === 'thinking_done' && turnId) {
+          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+          emittedThinkingDone.add(getThinkingDoneKey(turnId, text));
         }
         if (chatEventType === 'tool_call') {
           const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
@@ -1829,6 +1835,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           if (!thinkingBuffer) {
             return;
           }
+          const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingBuffer);
+          if (emittedThinkingDone.has(thinkingDoneKey)) {
+            thinkingBuffer = '';
+            return;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1838,6 +1849,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'thinking_done',
             payload: { text: thinkingBuffer },
           });
+          emittedThinkingDone.add(thinkingDoneKey);
           thinkingBuffer = '';
         };
 
@@ -1945,6 +1957,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       } else {
         const thinkingText = extractThinking(messageEntry);
         if (thinkingText) {
+          const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingText);
+          if (emittedThinkingDone.has(thinkingDoneKey)) {
+            continue;
+          }
           events.push({
             id: randomUUID(),
             timestamp,
@@ -1954,6 +1970,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'thinking_done',
             payload: { text: thinkingText },
           });
+          emittedThinkingDone.add(thinkingDoneKey);
         }
 
         const toolCalls = extractToolCalls(messageEntry);

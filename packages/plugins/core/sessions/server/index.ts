@@ -428,16 +428,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(after ? { after } : {}),
             ...(force ? { force } : {}),
           });
-          console.log('[sessions.events]', {
-            sessionId,
-            agentId: agentId ?? null,
-            providerId,
-            after: after ?? null,
-            force,
-            count: events.length,
-            firstTypes: events.slice(0, 5).map((event) => event.type),
-            lastTypes: events.slice(-5).map((event) => event.type),
-          });
           return { sessionId, events };
         }
 
