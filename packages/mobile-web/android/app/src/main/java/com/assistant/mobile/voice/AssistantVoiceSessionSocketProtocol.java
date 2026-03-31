@@ -7,14 +7,17 @@ final class AssistantVoiceSessionSocketProtocol {
         String trimmedSessionId = trim(sessionId);
         String subscriptions = trimmedSessionId.isEmpty()
             ? "[]"
-            : "[\"" + escapeJsonString(trimmedSessionId) + "\"]";
-        return "{\"type\":\"hello\",\"protocolVersion\":2,\"subscriptions\":" + subscriptions + "}";
+            : "[" + buildSubscriptionJson(trimmedSessionId) + "]";
+        return "{\"type\":\"hello\",\"protocolVersion\":3,\"subscriptions\":" + subscriptions + "}";
     }
 
     static String buildSubscribeMessage(String sessionId) {
+        String trimmedSessionId = trim(sessionId);
         return "{\"type\":\"subscribe\",\"sessionId\":\""
-            + escapeJsonString(trim(sessionId))
-            + "\"}";
+            + escapeJsonString(trimmedSessionId)
+            + "\",\"mask\":"
+            + buildVoiceSubscriptionMaskJson()
+            + "}";
     }
 
     static String buildUnsubscribeMessage(String sessionId) {
@@ -55,6 +58,23 @@ final class AssistantVoiceSessionSocketProtocol {
             return "";
         }
         return trim(findStringField(rawMessage, "sessionId", 0));
+    }
+
+    private static String buildSubscriptionJson(String sessionId) {
+        return "{\"sessionId\":\""
+            + escapeJsonString(sessionId)
+            + "\",\"mask\":"
+            + buildVoiceSubscriptionMaskJson()
+            + "}";
+    }
+
+    private static String buildVoiceSubscriptionMaskJson() {
+        return "{"
+            + "\"serverMessageTypes\":[\"chat_event\"],"
+            + "\"chatEventTypes\":[\"tool_call\",\"assistant_done\"],"
+            + "\"toolNames\":[\"voice_speak\",\"voice_ask\"],"
+            + "\"messagePhases\":[\"final_answer\"]"
+            + "}";
     }
 
     private static String extractObjectField(String json, String key, int fromIndex) {

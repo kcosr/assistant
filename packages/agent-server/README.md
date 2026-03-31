@@ -183,7 +183,7 @@ Panel layout management operations:
 
 ### Session & Multiplexed Connections
 
-The WebSocket server supports **multiplexed connections** (protocol v2), allowing a single WebSocket to subscribe to multiple sessions simultaneously.
+The WebSocket server supports **multiplexed connections** (protocol v3), allowing a single WebSocket to subscribe to multiple sessions simultaneously with optional per-session event masks.
 
 **Connection model:**
 
@@ -195,19 +195,30 @@ Client ────── WebSocket ────── Server
                 └── Session C (not subscribed)
 ```
 
-**Protocol v2 hello:**
+**Protocol v3 hello:**
 
 ```typescript
 {
   type: 'hello',
-  protocolVersion: 2,
-  subscriptions: ['session-a', 'session-b'],  // Sessions to subscribe to
+  protocolVersion: 3,
+  subscriptions: [
+    { sessionId: 'session-a' },
+    {
+      sessionId: 'session-b',
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak', 'voice_ask'],
+      },
+    },
+  ],
 }
 ```
 
 **Subscription and control messages:**
 
 - `subscribe` – Subscribe to a session's messages
+- `subscribe` may include an optional mask to filter the session event stream
 - `unsubscribe` – Stop receiving messages from a session
 - `set_session_model` – Update the selected model for a session (sessionId required)
 
@@ -217,8 +228,7 @@ Client ────── WebSocket ────── Server
 - All session-specific server messages include `sessionId` field
 - Clients can show activity indicators for background sessions
 - `text_input` targets a specific session via `sessionId`
-
-**Backward compatibility:** Protocol v1 clients (single session per connection) continue to work.
+- Omitted mask fields mean “all matching values for that dimension”
 
 ### SessionHub
 

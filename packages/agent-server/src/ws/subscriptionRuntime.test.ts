@@ -187,6 +187,11 @@ describe('SessionRuntime subscription message handlers', () => {
     const message: ClientSubscribeMessage = {
       type: 'subscribe',
       sessionId: summary.sessionId,
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak'],
+      },
     };
 
     // @ts-expect-error accessing private method for test
@@ -197,6 +202,11 @@ describe('SessionRuntime subscription message handlers', () => {
     expect(subscribed).toMatchObject({
       type: 'subscribed',
       sessionId: summary.sessionId,
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak'],
+      },
     });
   });
 

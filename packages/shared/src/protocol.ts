@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AssistantTextPhaseSchema, ChatEventSchema } from './chatEvents';
+import { AssistantTextPhaseSchema, ChatEventSchema, ChatEventTypeSchema } from './chatEvents';
 import { PanelEventEnvelopeSchema } from './panelProtocol';
 
 export const TokenUsageBreakdownSchema = z.object({
@@ -16,8 +16,45 @@ export const SessionContextUsageSchema = z.object({
   usage: TokenUsageBreakdownSchema,
 });
 
-export const CURRENT_PROTOCOL_VERSION = 2 as const;
+export const CURRENT_PROTOCOL_VERSION = 3 as const;
 export type ProtocolVersion = typeof CURRENT_PROTOCOL_VERSION;
+
+const SERVER_MESSAGE_TYPE_VALUES = [
+  'session_ready',
+  'text_delta',
+  'text_done',
+  'thinking_start',
+  'thinking_delta',
+  'thinking_done',
+  'user_message',
+  'user_audio',
+  'transcript_delta',
+  'transcript_done',
+  'tool_call',
+  'tool_call_start',
+  'tool_output_delta',
+  'tool_result',
+  'chat_event',
+  'agent_callback_result',
+  'modes_updated',
+  'pong',
+  'error',
+  'message_queued',
+  'message_dequeued',
+  'output_cancelled',
+  'open_url',
+  'subscribed',
+  'unsubscribed',
+  'panel_event',
+  'session_cleared',
+  'session_created',
+  'session_deleted',
+  'session_updated',
+  'session_history_changed',
+] as const;
+
+export const ServerMessageTypeSchema = z.enum(SERVER_MESSAGE_TYPE_VALUES);
+export type ServerMessageType = z.infer<typeof ServerMessageTypeSchema>;
 
 export const InputModeSchema = z.enum(['text', 'speech', 'both']);
 export type InputMode = z.infer<typeof InputModeSchema>;
@@ -56,11 +93,43 @@ export const ProtocolVersionFieldSchema = z
   .positive()
   .default(CURRENT_PROTOCOL_VERSION);
 
+const NonEmptyStringArraySchema = z.array(z.string().min(1)).nonempty();
+
+export const SessionSubscriptionMaskSchema = z.object({
+  /**
+   * Top-level websocket server message types. This dimension is ANDed
+   * with the other mask fields. Omitted means "all message types".
+   */
+  serverMessageTypes: z.array(ServerMessageTypeSchema).nonempty().optional(),
+  /**
+   * Chat-event subtypes for `chat_event` server messages. When present,
+   * non-`chat_event` messages do not match unless they are separately
+   * allowed by omitting this field.
+   */
+  chatEventTypes: z.array(ChatEventTypeSchema).nonempty().optional(),
+  /**
+   * Tool-name allowlist for tool-bearing messages/events. This applies only
+   * when the message/event actually includes a tool name.
+   */
+  toolNames: NonEmptyStringArraySchema.optional(),
+  /**
+   * Assistant text phase allowlist for assistant text messages/events.
+   * This applies only when the message/event actually includes a phase.
+   */
+  messagePhases: z.array(AssistantTextPhaseSchema).nonempty().optional(),
+});
+export type SessionSubscriptionMask = z.infer<typeof SessionSubscriptionMaskSchema>;
+
+export const SessionSubscriptionSchema = z.object({
+  sessionId: z.string(),
+  mask: SessionSubscriptionMaskSchema.optional(),
+});
+export type SessionSubscription = z.infer<typeof SessionSubscriptionSchema>;
+
 export const ClientHelloMessageSchema = z.object({
   type: z.literal('hello'),
   protocolVersion: ProtocolVersionFieldSchema,
-  sessionId: z.string().optional(),
-  subscriptions: z.array(z.string()).optional(),
+  subscriptions: z.array(SessionSubscriptionSchema).optional(),
   userAgent: z.string().optional(),
   audio: ClientAudioCapabilitiesSchema.optional(),
   interaction: z
@@ -112,6 +181,7 @@ export const ClientCancelQueuedMessageSchema = z.object({
 export const ClientSubscribeMessageSchema = z.object({
   type: z.literal('subscribe'),
   sessionId: z.string(),
+  mask: SessionSubscriptionMaskSchema.optional(),
 });
 
 export const ClientUnsubscribeMessageSchema = z.object({
@@ -628,6 +698,7 @@ export const ServerOpenUrlMessageSchema = z.object({
 export const ServerSubscribedMessageSchema = z.object({
   type: z.literal('subscribed'),
   sessionId: z.string(),
+  mask: SessionSubscriptionMaskSchema.optional(),
 });
 
 export const ServerUnsubscribedMessageSchema = z.object({

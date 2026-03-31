@@ -156,7 +156,7 @@ Note: Currently only `outputMode` affects behavior. When `'both'` or `'speech'`,
 ## Protocol Version
 
 ```typescript
-const CURRENT_PROTOCOL_VERSION = 2;
+const CURRENT_PROTOCOL_VERSION = 3;
 ```
 
 Clients should send this in the `hello` message. Servers reject unsupported versions.

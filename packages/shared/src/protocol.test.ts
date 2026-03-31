@@ -15,7 +15,7 @@ describe('client message validation', () => {
     const message: ClientMessage = {
       type: 'hello',
       protocolVersion: CURRENT_PROTOCOL_VERSION,
-      sessionId: 'session-1',
+      subscriptions: [{ sessionId: 'session-1' }],
       interaction: { supported: true, enabled: true },
     };
     const parsed = validateClientMessage(message);
@@ -32,17 +32,57 @@ describe('client message validation', () => {
   it('safe validation returns success result for valid message', () => {
     const raw = {
       type: 'hello',
-      sessionId: 'session-2',
+      subscriptions: [{ sessionId: 'session-2' }],
     };
     const result = safeValidateClientMessage(raw);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data).toEqual({
         type: 'hello',
-        sessionId: 'session-2',
+        subscriptions: [{ sessionId: 'session-2' }],
         protocolVersion: CURRENT_PROTOCOL_VERSION,
       });
     }
+  });
+
+  it('accepts masked hello and subscribe messages', () => {
+    const hello: ClientMessage = {
+      type: 'hello',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      subscriptions: [
+        {
+          sessionId: 'session-1',
+          mask: {
+            serverMessageTypes: ['chat_event', 'output_cancelled'],
+            chatEventTypes: ['tool_call', 'assistant_done'],
+            toolNames: ['voice_speak', 'voice_ask'],
+            messagePhases: ['final_answer'],
+          },
+        },
+      ],
+    };
+    const subscribe: ClientMessage = {
+      type: 'subscribe',
+      sessionId: 'session-1',
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak'],
+      },
+    };
+
+    expect(validateClientMessage(hello)).toEqual(hello);
+    expect(validateClientMessage(subscribe)).toEqual(subscribe);
+  });
+
+  it('rejects empty subscription mask arrays', () => {
+    expect(() =>
+      validateClientMessage({
+        type: 'subscribe',
+        sessionId: 'session-1',
+        mask: { toolNames: [] },
+      }),
+    ).toThrow();
   });
 
   it('safe validation returns failure result for invalid message', () => {
@@ -267,6 +307,19 @@ describe('server message validation', () => {
       sessionId: 'session-4',
       transcription: 'hello from speech',
       durationMs: 2400,
+    };
+    expect(validateServerMessage(message)).toEqual(message);
+  });
+
+  it('accepts a subscribed acknowledgement with an echoed mask', () => {
+    const message: ServerMessage = {
+      type: 'subscribed',
+      sessionId: 'session-4',
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak', 'voice_ask'],
+      },
     };
     expect(validateServerMessage(message)).toEqual(message);
   });

@@ -14,6 +14,7 @@ import type {
   ServerSessionUpdatedMessage,
   SessionAttributesPatch,
   SessionContextUsage,
+  SessionSubscriptionMask,
 } from '@assistant/shared';
 
 import { AgentRegistry } from './agents';
@@ -265,10 +266,11 @@ export class SessionHub {
   async subscribeConnection(
     connection: SessionConnection,
     sessionId: string,
+    mask?: SessionSubscriptionMask,
   ): Promise<LogicalSessionState> {
     this.connections.registerConnection(connection);
     const state = await this.ensureSessionState(sessionId);
-    this.connections.subscribe(sessionId, connection);
+    this.connections.subscribe(sessionId, connection, mask);
     if (typeof connection.subscribe === 'function') {
       connection.subscribe(sessionId);
     }

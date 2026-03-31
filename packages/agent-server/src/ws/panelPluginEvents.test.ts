@@ -164,7 +164,7 @@ describe('panel plugin websocket handlers', () => {
     const hello = {
       type: 'hello',
       protocolVersion: CURRENT_PROTOCOL_VERSION,
-      sessionId: sessionSummary.sessionId,
+      subscriptions: [{ sessionId: sessionSummary.sessionId }],
     } as const;
 
     ws.emit('message', JSON.stringify(hello), false);

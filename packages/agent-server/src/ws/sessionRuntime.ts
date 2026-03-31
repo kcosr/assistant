@@ -804,10 +804,11 @@ export class SessionRuntime {
     }
 
     try {
-      const state = await this.sessionHub.subscribeConnection(this.connection, trimmed);
+      const state = await this.sessionHub.subscribeConnection(this.connection, trimmed, message.mask);
       const subscribedMessage: ServerSubscribedMessage = {
         type: 'subscribed',
         sessionId: state.summary.sessionId,
+        ...(message.mask ? { mask: message.mask } : {}),
       };
       this.sendToClient(subscribedMessage);
       this.sendSessionReadyMessage(state);

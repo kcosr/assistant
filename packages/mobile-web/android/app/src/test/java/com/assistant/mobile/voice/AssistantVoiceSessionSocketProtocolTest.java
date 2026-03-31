@@ -12,8 +12,32 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         String payload = AssistantVoiceSessionSocketProtocol.buildHelloMessage("session-123");
 
         assertTrue(payload.contains("\"type\":\"hello\""));
-        assertTrue(payload.contains("\"protocolVersion\":2"));
-        assertTrue(payload.contains("\"subscriptions\":[\"session-123\"]"));
+        assertTrue(payload.contains("\"protocolVersion\":3"));
+        assertTrue(payload.contains("\"subscriptions\":[{\"sessionId\":\"session-123\""));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"chat_event\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
+        assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
+    }
+
+    @Test
+    public void buildSubscribeMessageIncludesVoiceMask() {
+        String payload = AssistantVoiceSessionSocketProtocol.buildSubscribeMessage("session-123");
+
+        assertTrue(payload.contains("\"type\":\"subscribe\""));
+        assertTrue(payload.contains("\"sessionId\":\"session-123\""));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"chat_event\"]"));
+        assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\",\"assistant_done\"]"));
+        assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
+        assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
+    }
+
+    @Test
+    public void buildUnsubscribeMessageIncludesSessionId() {
+        String payload = AssistantVoiceSessionSocketProtocol.buildUnsubscribeMessage("session-123");
+
+        assertTrue(payload.contains("\"type\":\"unsubscribe\""));
+        assertTrue(payload.contains("\"sessionId\":\"session-123\""));
     }
 
     @Test

@@ -64,7 +64,7 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
 
   const protocolVersion = message.protocolVersion;
 
-  if (protocolVersion !== 1 && protocolVersion !== CURRENT_PROTOCOL_VERSION) {
+  if (protocolVersion !== CURRENT_PROTOCOL_VERSION) {
     sendError('unsupported_protocol_version', `Unsupported protocol version: ${protocolVersion}`);
     close();
     return;
@@ -72,63 +72,29 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
 
   sessionHub.registerConnection(connection);
 
-  const isV2Hello =
-    protocolVersion === CURRENT_PROTOCOL_VERSION && Array.isArray(message.subscriptions);
-
-  if (!isV2Hello) {
-    try {
-      const state = await sessionHub.attachConnection(connection, message.sessionId);
-      onSessionSubscribed?.(state);
-    } catch (err) {
-      sendError(
-        'internal_error',
-        'Failed to initialise session',
-        { error: String(err) },
-        { retryable: true },
-      );
-      close();
-      return;
-    }
-  } else {
-    const rawSubscriptions = message.subscriptions ?? [];
-    const trimmedSubscriptions = rawSubscriptions
-      .map((id) => (typeof id === 'string' ? id.trim() : ''))
-      .filter((id) => id.length > 0);
-
-    const fallbackSessionId =
-      typeof message.sessionId === 'string' && message.sessionId.trim().length > 0
-        ? message.sessionId.trim()
-        : undefined;
-
-    const initialSubscriptions: string[] = [];
-
-    if (trimmedSubscriptions.length > 0) {
-      initialSubscriptions.push(...trimmedSubscriptions);
-    }
-
-    if (fallbackSessionId && !initialSubscriptions.includes(fallbackSessionId)) {
-      initialSubscriptions.unshift(fallbackSessionId);
-    }
-
-    try {
-      for (const requestedId of initialSubscriptions) {
-        const state = await sessionHub.subscribeConnection(connection, requestedId);
-        const subscribedMessage: ServerSubscribedMessage = {
-          type: 'subscribed',
-          sessionId: state.summary.sessionId,
-        };
-        sendMessage(subscribedMessage);
-        onSessionSubscribed?.(state);
+  try {
+    for (const subscription of message.subscriptions ?? []) {
+      const requestedId = subscription.sessionId.trim();
+      if (!requestedId) {
+        continue;
       }
-    } catch (err) {
-      sendError(
-        'internal_error',
-        'Failed to initialise subscriptions for protocol v2 hello',
-        { error: String(err) },
-        { retryable: true },
-      );
-      close();
-      return;
+      const state = await sessionHub.subscribeConnection(connection, requestedId, subscription.mask);
+      const subscribedMessage: ServerSubscribedMessage = {
+        type: 'subscribed',
+        sessionId: state.summary.sessionId,
+        ...(subscription.mask ? { mask: subscription.mask } : {}),
+      };
+      sendMessage(subscribedMessage);
+      onSessionSubscribed?.(state);
     }
+  } catch (err) {
+    sendError(
+      'internal_error',
+      'Failed to initialise subscriptions for protocol v3 hello',
+      { error: String(err) },
+      { retryable: true },
+    );
+    close();
+    return;
   }
 }
