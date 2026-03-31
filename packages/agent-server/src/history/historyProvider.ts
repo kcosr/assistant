@@ -636,6 +636,34 @@ function sortEventsByTimestamp(events: ChatEvent[]): ChatEvent[] {
     .map((item) => item.event);
 }
 
+function dedupeSortedPiReplayEvents(events: ChatEvent[]): ChatEvent[] {
+  const emittedAssistantDone = new Set<string>();
+  const emittedThinkingDone = new Set<string>();
+  const deduped: ChatEvent[] = [];
+
+  for (const event of events) {
+    if (event.type === 'assistant_done' && event.turnId) {
+      const key = `${event.turnId}|${event.payload.text}|${event.payload.phase ?? ''}|${event.payload.textSignature ?? ''}`;
+      if (emittedAssistantDone.has(key)) {
+        continue;
+      }
+      emittedAssistantDone.add(key);
+    }
+
+    if (event.type === 'thinking_done' && event.turnId) {
+      const key = `${event.turnId}|${event.payload.text.trimEnd()}`;
+      if (emittedThinkingDone.has(key)) {
+        continue;
+      }
+      emittedThinkingDone.add(key);
+    }
+
+    deduped.push(event);
+  }
+
+  return deduped;
+}
+
 function shouldCloseOpenTurnAtEof(events: ChatEvent[], currentTurnId: string | null): boolean {
   if (!currentTurnId) {
     return false;
@@ -1696,22 +1724,6 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             emittedUserInputs.add(getUserInputKey(turnId, text));
           }
         }
-        if (chatEventType === 'assistant_done' && turnId) {
-          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-          if (text) {
-            const phase =
-              payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
-                ? payload['phase']
-                : undefined;
-            const textSignature =
-              typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
-            emittedAssistantDone.add(getAssistantDoneKey(turnId, text, phase, textSignature));
-          }
-        }
-        if (chatEventType === 'thinking_done' && turnId) {
-          const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-          emittedThinkingDone.add(getThinkingDoneKey(turnId, text));
-        }
         if (chatEventType === 'tool_call') {
           const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
           const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
@@ -2179,7 +2191,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   if (shouldCloseOpenTurnAtEof(events, currentTurnId)) {
     endTurn(finalTimestamp);
   }
-  return sortEventsByTimestamp(events);
+  return dedupeSortedPiReplayEvents(sortEventsByTimestamp(events));
 }
 
 function buildChatEventsFromCodexSession(content: string, sessionId: string): ChatEvent[] {

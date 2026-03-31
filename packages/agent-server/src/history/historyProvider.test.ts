@@ -1691,6 +1691,136 @@ describe('PiSessionHistoryProvider', () => {
     expect(assistantIndex).toBeLessThan(toolCallIndex);
     expect(assistantIndex).toBeLessThan(toolResultIndex);
   });
+
+  it('orders canonical thinking before later overlay tool events on replay', async () => {
+    const baseDir = await createTempDir('pi-session-history-thinking-order');
+    const sessionId = 'session-thinking-order';
+    const piSessionId = 'pi-session-thinking-order';
+    const cwd = '/home/kevin/assistant';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-03-31T16-40-52-138Z_${piSessionId}.jsonl`);
+    const thinkingText =
+      '**Inspecting worktrees skill**\n\nI should read the worktrees skill before responding.';
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T16:41:34.478Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-thinking', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T16:41:34.482Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_message',
+          payload: {
+            text: 'review the worktrees skill and tell me when you are ready',
+          },
+          turnId: 'turn-thinking',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T16:41:40.029Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'thinking_done',
+          payload: { text: `${thinkingText}\n\n` },
+          turnId: 'turn-thinking',
+          responseId: 'resp-overlay-thinking',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T16:41:40.118Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          payload: {
+            toolCallId: 'tool-thinking',
+            toolName: 'read',
+            args: { path: '/home/kevin/.agents/skills/worktrees/SKILL.md' },
+          },
+          turnId: 'turn-thinking',
+          responseId: 'resp-overlay-thinking',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-03-31T16:41:44.683Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-canonical-thinking',
+          timestamp: '2026-03-31T16:41:34.487Z',
+          content: [
+            {
+              type: 'thinking',
+              thinking: thinkingText,
+            },
+            {
+              type: 'toolCall',
+              id: 'tool-thinking',
+              name: 'read',
+              arguments: { path: '/home/kevin/.agents/skills/worktrees/SKILL.md' },
+            },
+          ],
+          stopReason: 'toolUse',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-03-31T16:41:44.685Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'turn_end',
+          payload: {},
+          turnId: 'turn-thinking',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    const thinkingEvents = events.filter(
+      (event) =>
+        event.type === 'thinking_done' &&
+        event.turnId === 'turn-thinking' &&
+        event.payload.text.trimEnd() === thinkingText,
+    );
+    const thinkingIndex = events.findIndex(
+      (event) =>
+        event.type === 'thinking_done' &&
+        event.turnId === 'turn-thinking' &&
+        event.payload.text.trimEnd() === thinkingText,
+    );
+    const toolCallIndex = events.findIndex(
+      (event) =>
+        event.type === 'tool_call' &&
+        event.turnId === 'turn-thinking' &&
+        event.payload.toolCallId === 'tool-thinking',
+    );
+
+    expect(thinkingEvents).toHaveLength(1);
+    expect(thinkingIndex).toBeGreaterThanOrEqual(0);
+    expect(toolCallIndex).toBeGreaterThanOrEqual(0);
+    expect(thinkingIndex).toBeLessThan(toolCallIndex);
+  });
 });
 
 describe('ClaudeSessionHistoryProvider', () => {
