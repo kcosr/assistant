@@ -21,6 +21,7 @@ describe('getWebClientElements', () => {
       <select id="audio-mode-select"></select>
       <input id="auto-listen-checkbox" type="checkbox" />
       <input id="voice-adapter-base-url-input" type="url" />
+      <select id="voice-preferred-session-select"></select>
       <select id="voice-mic-input-select"></select>
       <input id="voice-recognition-start-timeout-input" type="number" />
       <input id="voice-recognition-completion-timeout-input" type="number" />
@@ -28,6 +29,7 @@ describe('getWebClientElements', () => {
       <input id="autofocus-chat-checkbox" type="checkbox" />
       <input id="keyboard-shortcuts-checkbox" type="checkbox" />
       <input id="auto-scroll-checkbox" type="checkbox" />
+      <input id="synthesized-panel-titles-checkbox" type="checkbox" />
       <div id="status"></div>
       <div id="panel-workspace"></div>
     `;
@@ -41,6 +43,7 @@ describe('getWebClientElements', () => {
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
     expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
+    expect(elements?.voicePreferredSessionSelect.id).toBe('voice-preferred-session-select');
     expect(elements?.voiceMicInputSelect.id).toBe('voice-mic-input-select');
     expect(elements?.voiceRecognitionStartTimeoutInput.id).toBe(
       'voice-recognition-start-timeout-input',

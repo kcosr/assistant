@@ -7,6 +7,7 @@ export interface WebClientElements {
   audioModeSelect: HTMLSelectElement;
   autoListenCheckbox: HTMLInputElement;
   voiceAdapterBaseUrlInput: HTMLInputElement;
+  voicePreferredSessionSelect: HTMLSelectElement;
   voiceMicInputSelect: HTMLSelectElement;
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
@@ -21,6 +22,7 @@ export interface WebClientElements {
   autoFocusChatCheckbox: HTMLInputElement;
   keyboardShortcutsCheckbox: HTMLInputElement;
   autoScrollCheckbox: HTMLInputElement;
+  synthesizedPanelTitlesCheckbox: HTMLInputElement;
   interactionModeCheckbox: HTMLInputElement | null;
   panelWorkspace: HTMLElement | null;
   windowDropdownButton: HTMLButtonElement | null;
@@ -69,6 +71,7 @@ export function getWebClientElements(): WebClientElements | null {
   const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
+  const voicePreferredSessionSelect = getElement<HTMLSelectElement>('voice-preferred-session-select');
   const voiceMicInputSelect = getElement<HTMLSelectElement>('voice-mic-input-select');
   const voiceRecognitionStartTimeoutInput = getElement<HTMLInputElement>(
     'voice-recognition-start-timeout-input',
@@ -95,6 +98,9 @@ export function getWebClientElements(): WebClientElements | null {
   const autoFocusChatCheckbox = getElement<HTMLInputElement>('autofocus-chat-checkbox');
   const keyboardShortcutsCheckbox = getElement<HTMLInputElement>('keyboard-shortcuts-checkbox');
   const autoScrollCheckbox = getElement<HTMLInputElement>('auto-scroll-checkbox');
+  const synthesizedPanelTitlesCheckbox = getElement<HTMLInputElement>(
+    'synthesized-panel-titles-checkbox',
+  );
   const interactionModeCheckbox = getElement<HTMLInputElement>('interaction-mode-checkbox');
   const panelWorkspace = getElement<HTMLElement>('panel-workspace');
 
@@ -107,6 +113,7 @@ export function getWebClientElements(): WebClientElements | null {
     !audioModeSelect ||
     !autoListenCheckbox ||
     !voiceAdapterBaseUrlInput ||
+    !voicePreferredSessionSelect ||
     !voiceMicInputSelect ||
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
@@ -114,6 +121,7 @@ export function getWebClientElements(): WebClientElements | null {
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
+    !synthesizedPanelTitlesCheckbox ||
     !panelWorkspace
   ) {
     console.error('Core UI elements not found');
@@ -129,6 +137,7 @@ export function getWebClientElements(): WebClientElements | null {
     audioModeSelect,
     autoListenCheckbox,
     voiceAdapterBaseUrlInput,
+    voicePreferredSessionSelect,
     voiceMicInputSelect,
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,
@@ -143,6 +152,7 @@ export function getWebClientElements(): WebClientElements | null {
     autoFocusChatCheckbox,
     keyboardShortcutsCheckbox,
     autoScrollCheckbox,
+    synthesizedPanelTitlesCheckbox,
     interactionModeCheckbox,
     panelWorkspace,
     windowDropdownButton: getElement<HTMLButtonElement>('window-dropdown-button'),

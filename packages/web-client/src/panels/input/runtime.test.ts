@@ -86,6 +86,7 @@ describe('createInputRuntime', () => {
         audioMode: 'tool',
         autoListenEnabled: true,
         voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+        preferredVoiceSessionId: '',
         selectedMicDeviceId: '',
         recognitionStartTimeoutMs: 30000,
         recognitionCompletionTimeoutMs: 60000,

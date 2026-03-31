@@ -832,18 +832,27 @@ The panel host provided to `mount` exposes these methods:
 
 | Method | Description |
 |--------|-------------|
-| `setPanelMetadata(meta)` | Update panel display metadata (shown in header/tabs). |
+| `setPanelMetadata(meta)` | Update panel display metadata used by panel navigation and other metadata-driven surfaces. |
 
 The `meta` object supports:
 
 ```ts
 interface PanelMetadata {
-  title?: string;   // Override panel title
+  title?: string;   // Plugin/runtime-owned display title used when no user customTitle or synthesized title is set
   icon?: string;    // Override panel icon
   badge?: string;   // Show a badge (e.g., unread count)
   status?: 'idle' | 'busy' | 'error';  // Status indicator
 }
 ```
+
+User-driven panel renames are stored separately on the panel instance and take precedence over
+`meta.title` on resolved title surfaces when present.
+
+When the client preference for synthesized panel titles is enabled, the host may also derive a
+display title for certain entity-backed panels (currently chat, lists, and notes) before falling
+back to `meta.title`. The effective display precedence is:
+
+`customTitle -> synthesized title -> meta.title -> manifest.title -> panelType`
 
 Example:
 

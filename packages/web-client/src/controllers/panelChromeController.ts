@@ -17,13 +17,18 @@ type PanelChromeElements = {
 
 export type PanelChromeControllerOptions = {
   root: HTMLElement;
-  host: PanelHost;
+  host: PanelChromeHost;
   title?: string;
   onInstanceChange?: (instanceIds: string[]) => void;
   instanceSelectionMode?: 'single' | 'multi';
   buffer?: number;
   hysteresis?: number;
 };
+
+type PanelChromeHost = Pick<PanelHost, 'setContext'> &
+  Partial<
+    Pick<PanelHost, 'panelId' | 'closePanel' | 'openPanelMenu' | 'startPanelDrag' | 'startPanelReorder'>
+  >;
 
 const DEFAULT_BUFFER = 40;
 const DEFAULT_HYSTERESIS = 16;
@@ -57,7 +62,7 @@ const resolveElements = (root: HTMLElement): PanelChromeElements => {
 };
 
 export class PanelChromeController {
-  private readonly host: PanelHost;
+  private readonly host: PanelChromeHost;
   private readonly elements: PanelChromeElements;
   private readonly buffer: number;
   private readonly hysteresis: number;
@@ -99,6 +104,9 @@ export class PanelChromeController {
 
   setTitle(title: string): void {
     if (!this.elements.title) {
+      return;
+    }
+    if (this.elements.title.textContent === title) {
       return;
     }
     this.elements.title.textContent = title;
@@ -265,8 +273,16 @@ export class PanelChromeController {
     }
   }
 
+  private getPanelId(): string | null {
+    const candidate = this.host.panelId;
+    return typeof candidate === 'function' ? candidate.call(this.host) : null;
+  }
+
   private registerHeaderActions(): void {
-    const panelId = this.host.panelId();
+    const panelId = this.getPanelId();
+    if (!panelId) {
+      return;
+    }
     const key = getPanelHeaderActionsKey(panelId);
     this.host.setContext(key, {
       openInstancePicker: () => this.openInstancePicker(),
@@ -299,13 +315,19 @@ export class PanelChromeController {
       if (action === 'close') {
         event.preventDefault();
         event.stopPropagation();
-        this.host.closePanel(this.host.panelId());
+        const panelId = this.getPanelId();
+        if (panelId && typeof this.host.closePanel === 'function') {
+          this.host.closePanel(panelId);
+        }
         return;
       }
       if (action === 'menu') {
         event.preventDefault();
         event.stopPropagation();
-        this.host.openPanelMenu?.(this.host.panelId(), button);
+        const panelId = this.getPanelId();
+        if (panelId) {
+          this.host.openPanelMenu?.(panelId, button);
+        }
       }
     };
 
@@ -322,13 +344,19 @@ export class PanelChromeController {
       if (action === 'move') {
         event.preventDefault();
         event.stopPropagation();
-        this.host.startPanelDrag?.(this.host.panelId(), event);
+        const panelId = this.getPanelId();
+        if (panelId) {
+          this.host.startPanelDrag?.(panelId, event);
+        }
         return;
       }
       if (action === 'reorder') {
         event.preventDefault();
         event.stopPropagation();
-        this.host.startPanelReorder?.(this.host.panelId(), event);
+        const panelId = this.getPanelId();
+        if (panelId) {
+          this.host.startPanelReorder?.(panelId, event);
+        }
       }
     };
 

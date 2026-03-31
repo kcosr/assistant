@@ -1,10 +1,20 @@
-import type { ServerMessage } from '@assistant/shared';
+import type {
+  AssistantTextPhase,
+  ChatEvent,
+  ChatEventType,
+  ServerMessage,
+  SessionSubscriptionMask,
+  ServerMessageType,
+} from '@assistant/shared';
 
 import type { SessionConnection } from './ws/sessionConnection';
 
 export class SessionConnectionRegistry {
   private readonly connectionsBySessionId = new Map<string, Set<SessionConnection>>();
-  private readonly sessionIdsByConnection = new Map<SessionConnection, Set<string>>();
+  private readonly subscriptionsByConnection = new Map<
+    SessionConnection,
+    Map<string, SessionSubscriptionMask | null>
+  >();
   private readonly allConnections = new Set<SessionConnection>();
   private readonly connectionsById = new Map<string, SessionConnection>();
   private readonly interactionStateByConnection = new Map<
@@ -48,6 +58,7 @@ export class SessionConnectionRegistry {
   unregisterConnection(connection: SessionConnection): void {
     this.allConnections.delete(connection);
     this.interactionStateByConnection.delete(connection);
+    this.subscriptionsByConnection.delete(connection);
     const connectionId = typeof connection.id === 'string' ? connection.id.trim() : '';
     if (connectionId && this.connectionsById.get(connectionId) === connection) {
       this.connectionsById.delete(connectionId);
@@ -58,7 +69,11 @@ export class SessionConnectionRegistry {
     this.unsubscribe(sessionId, connection);
   }
 
-  subscribe(sessionId: string, connection: SessionConnection): void {
+  subscribe(
+    sessionId: string,
+    connection: SessionConnection,
+    mask?: SessionSubscriptionMask,
+  ): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
       return;
@@ -73,12 +88,12 @@ export class SessionConnectionRegistry {
     }
     connections.add(connection);
 
-    let sessionIds = this.sessionIdsByConnection.get(connection);
-    if (!sessionIds) {
-      sessionIds = new Set();
-      this.sessionIdsByConnection.set(connection, sessionIds);
+    let subscriptions = this.subscriptionsByConnection.get(connection);
+    if (!subscriptions) {
+      subscriptions = new Map();
+      this.subscriptionsByConnection.set(connection, subscriptions);
     }
-    sessionIds.add(trimmed);
+    subscriptions.set(trimmed, mask ?? null);
   }
 
   unsubscribe(sessionId: string, connection: SessionConnection): void {
@@ -95,22 +110,22 @@ export class SessionConnectionRegistry {
       }
     }
 
-    const sessionIds = this.sessionIdsByConnection.get(connection);
-    if (sessionIds) {
-      sessionIds.delete(trimmed);
-      if (sessionIds.size === 0) {
-        this.sessionIdsByConnection.delete(connection);
+    const subscriptions = this.subscriptionsByConnection.get(connection);
+    if (subscriptions) {
+      subscriptions.delete(trimmed);
+      if (subscriptions.size === 0) {
+        this.subscriptionsByConnection.delete(connection);
       }
     }
   }
 
   unsubscribeAll(connection: SessionConnection): void {
-    const sessionIds = this.sessionIdsByConnection.get(connection);
-    if (!sessionIds) {
+    const subscriptions = this.subscriptionsByConnection.get(connection);
+    if (!subscriptions) {
       return;
     }
 
-    for (const sessionId of sessionIds) {
+    for (const sessionId of subscriptions.keys()) {
       const connections = this.connectionsBySessionId.get(sessionId);
       if (connections) {
         connections.delete(connection);
@@ -120,7 +135,7 @@ export class SessionConnectionRegistry {
       }
     }
 
-    this.sessionIdsByConnection.delete(connection);
+    this.subscriptionsByConnection.delete(connection);
   }
 
   setInteractionState(
@@ -160,8 +175,15 @@ export class SessionConnectionRegistry {
   }
 
   getSubscriptions(connection: SessionConnection): ReadonlySet<string> {
-    const ids = this.sessionIdsByConnection.get(connection);
-    return ids ? new Set(ids) : new Set();
+    const subscriptions = this.subscriptionsByConnection.get(connection);
+    return subscriptions ? new Set(subscriptions.keys()) : new Set();
+  }
+
+  getSubscriptionMask(
+    connection: SessionConnection,
+    sessionId: string,
+  ): SessionSubscriptionMask | null | undefined {
+    return this.subscriptionsByConnection.get(connection)?.get(sessionId.trim());
   }
 
   hasConnections(sessionId: string): boolean {
@@ -187,9 +209,100 @@ export class SessionConnectionRegistry {
     }
   }
 
+  private matchesSubscriptionMask(
+    message: ServerMessage,
+    mask: SessionSubscriptionMask | null | undefined,
+  ): boolean {
+    if (!mask) {
+      return true;
+    }
+
+    if (mask.serverMessageTypes && !mask.serverMessageTypes.includes(message.type as ServerMessageType)) {
+      return false;
+    }
+
+    if (message.type !== 'chat_event') {
+      // chatEventTypes only constrains chat_event payloads. Non-chat-event
+      // messages are filtered solely by the dimensions that apply to them.
+      const topLevelToolName = this.getTopLevelToolName(message);
+      if (topLevelToolName && mask.toolNames && !mask.toolNames.includes(topLevelToolName)) {
+        return false;
+      }
+      const topLevelPhase = this.getTopLevelAssistantPhase(message);
+      if (topLevelPhase && mask.messagePhases && !mask.messagePhases.includes(topLevelPhase)) {
+        return false;
+      }
+      return true;
+    }
+
+    const event = message.event;
+    if (mask.chatEventTypes && !mask.chatEventTypes.includes(event.type as ChatEventType)) {
+      return false;
+    }
+
+    const eventToolName = this.getChatEventToolName(event);
+    if (eventToolName && mask.toolNames && !mask.toolNames.includes(eventToolName)) {
+      return false;
+    }
+
+    const eventPhase = this.getChatEventAssistantPhase(event);
+    if (eventPhase && mask.messagePhases && !mask.messagePhases.includes(eventPhase)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private getTopLevelToolName(message: ServerMessage): string | null {
+    switch (message.type) {
+      case 'tool_call':
+      case 'tool_call_start':
+      case 'tool_output_delta':
+      case 'tool_result':
+        return message.toolName;
+      default:
+        return null;
+    }
+  }
+
+  private getTopLevelAssistantPhase(message: ServerMessage): AssistantTextPhase | null {
+    switch (message.type) {
+      case 'text_delta':
+      case 'text_done':
+        return message.phase ?? null;
+      default:
+        return null;
+    }
+  }
+
+  private getChatEventToolName(event: ChatEvent): string | null {
+    switch (event.type) {
+      case 'tool_call':
+      case 'tool_input_chunk':
+      case 'tool_output_chunk':
+        return event.payload.toolName;
+      default:
+        return null;
+    }
+  }
+
+  private getChatEventAssistantPhase(event: ChatEvent): AssistantTextPhase | null {
+    switch (event.type) {
+      case 'assistant_chunk':
+      case 'assistant_done':
+        return event.payload.phase ?? null;
+      default:
+        return null;
+    }
+  }
+
   broadcastToSession(sessionId: string, message: ServerMessage): void {
     const messageWithSessionId = this.withSessionId(message, sessionId);
     this.forEachInSession(sessionId, (connection) => {
+      const mask = this.getSubscriptionMask(connection, sessionId);
+      if (!this.matchesSubscriptionMask(messageWithSessionId, mask)) {
+        return;
+      }
       connection.sendServerMessageFromHub(messageWithSessionId);
     });
   }
@@ -204,11 +317,17 @@ export class SessionConnectionRegistry {
       if (connection === excludeConnection) {
         return;
       }
+      const mask = this.getSubscriptionMask(connection, sessionId);
+      if (!this.matchesSubscriptionMask(messageWithSessionId, mask)) {
+        return;
+      }
       connection.sendServerMessageFromHub(messageWithSessionId);
     });
   }
 
   broadcastToAll(message: ServerMessage): void {
+    // Global broadcasts are not scoped through per-session subscriptions and
+    // therefore intentionally bypass session masks.
     for (const connection of this.allConnections) {
       connection.sendServerMessageFromHub(message);
     }

@@ -770,7 +770,7 @@ function selectDroppedTurnRanges(options: {
     case 'trim_before':
       return spans.slice(0, anchorIndex);
     case 'trim_after':
-      return spans.slice(anchorIndex + 1);
+      return spans.slice(anchorIndex);
     case 'delete_turn':
       return [spans[anchorIndex]!];
     default:

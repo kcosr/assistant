@@ -14,7 +14,7 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
-    public void autoplaysOnlyMatchingEventKindsForSelectedSessionWhileIdle() {
+    public void autoplaysOnlyMatchingEventKindsWhileIdle() {
         AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
             "event-1",
             "session-1",
@@ -32,31 +32,21 @@ public final class AssistantVoiceInteractionRulesTest {
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayEvent(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
-            "session-1",
             toolPrompt,
             true
         ));
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
-            "session-1",
             assistantResponse,
             true
         ));
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayEvent(
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
-            "session-1",
             assistantResponse,
             true
         ));
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
-            "session-2",
-            assistantResponse,
-            true
-        ));
-        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
-            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
-            "session-1",
             assistantResponse,
             false
         ));

@@ -2165,6 +2165,114 @@ describe('CodexSessionHistoryProvider', () => {
     expect(interaction.responseId).toBe(toolCall.responseId);
   });
 
+  it('dedupes completed overlay turns against Codex provider replay even when turn ids differ', async () => {
+    const baseDir = await createTempDir('codex-session-overlay-dedupe');
+    const sessionId = 'session-overlay-dedupe';
+    const codexSessionId = 'codex-session-overlay-dedupe';
+    const sessionDir = path.join(baseDir, '2026', '01', '25');
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(
+      sessionDir,
+      `rollout-2026-01-25T00-00-00-000Z-${codexSessionId}.jsonl`,
+    );
+    const lines = [
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'provider-turn-1' },
+        timestamp: '2026-01-25T00:00:01.000Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'hi' }],
+        },
+        timestamp: '2026-01-25T00:00:01.100Z',
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'hi' }],
+          phase: 'final_answer',
+        },
+        timestamp: '2026-01-25T00:00:02.000Z',
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'task_complete', turn_id: 'provider-turn-1', last_agent_message: 'hi' },
+        timestamp: '2026-01-25T00:00:02.100Z',
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const overlayEvents: ChatEvent[] = [
+      {
+        id: 'overlay-turn-start',
+        timestamp: 1000,
+        sessionId,
+        turnId: 'overlay-turn-1',
+        type: 'turn_start',
+        payload: { trigger: 'user' },
+      },
+      {
+        id: 'overlay-user',
+        timestamp: 1001,
+        sessionId,
+        turnId: 'overlay-turn-1',
+        type: 'user_message',
+        payload: { text: 'hi' },
+      },
+      {
+        id: 'overlay-assistant',
+        timestamp: 1002,
+        sessionId,
+        turnId: 'overlay-turn-1',
+        responseId: 'overlay-response-1',
+        type: 'assistant_done',
+        payload: { text: 'hi\n\n' },
+      },
+      {
+        id: 'overlay-turn-end',
+        timestamp: 1003,
+        sessionId,
+        turnId: 'overlay-turn-1',
+        type: 'turn_end',
+        payload: {},
+      },
+    ];
+
+    const eventStore: EventStore = {
+      append: async () => undefined,
+      appendBatch: async () => undefined,
+      getEvents: async () => overlayEvents,
+      getEventsSince: async () => overlayEvents,
+      subscribe: () => () => undefined,
+      clearSession: async () => undefined,
+      deleteSession: async () => undefined,
+    };
+
+    const provider = new CodexSessionHistoryProvider({ baseDir, eventStore });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'codex-cli',
+      attributes: {
+        providers: {
+          'codex-cli': {
+            sessionId: codexSessionId,
+          },
+        },
+      },
+    });
+
+    expect(events.filter((event) => event.type === 'user_message')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'assistant_done')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'turn_start')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'turn_end')).toHaveLength(1);
+  });
+
   it('treats sessions with provider metadata as external history', async () => {
     const provider = new CodexSessionHistoryProvider({});
 

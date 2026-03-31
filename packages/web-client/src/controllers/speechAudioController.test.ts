@@ -74,6 +74,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     audioMode: 'off',
     autoListenEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
+    preferredVoiceSessionId: '',
     selectedMicDeviceId: '',
     recognitionStartTimeoutMs: 30000,
     recognitionCompletionTimeoutMs: 60000,
@@ -257,9 +258,9 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(state).toEqual({ state: 'listening' });
     expect(inputDevices).toEqual([{ id: '7', label: 'USB mic [id:7]' }]);
     expect(bridge.stopCurrentInteraction()).toBe(true);
-    expect(bridge.startManualListen()).toBe(true);
+    expect(bridge.startManualListen('session-a')).toBe(true);
     expect(target.stopCurrentInteraction).toHaveBeenCalledTimes(1);
-    expect(target.startManualListen).toHaveBeenCalledTimes(1);
+    expect(target.startManualListen).toHaveBeenCalledWith({ sessionId: 'session-a' });
     expect(target.addListener).toHaveBeenCalledTimes(2);
 
     offState?.();
@@ -881,6 +882,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
     await controller.startPushToTalk();
 
     expect(startManualListen).toHaveBeenCalledTimes(1);
+    expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-a' });
   });
 
   it('auto-submits final speech text on desktop', async () => {

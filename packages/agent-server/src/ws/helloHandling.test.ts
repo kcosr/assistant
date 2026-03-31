@@ -30,54 +30,8 @@ function createTestEventStore(): EventStore {
 }
 
 describe('handleHello', () => {
-  it('supports v1 hello with protocolVersion 1', async () => {
-    const sessionsFile = createTempFile('hello-handling-v1-sessions');
-
-    const sessionIndex = new SessionIndex(sessionsFile);
-    const agentRegistry = new AgentRegistry([]);
-    const sessionHub = new SessionHub({
-      sessionIndex,
-      agentRegistry,
-      eventStore: createTestEventStore(),
-    });
-
-    const summary = await sessionIndex.createSession({ agentId: 'general' });
-
-    const connection: SessionConnection = {
-      sendServerMessageFromHub: () => {},
-      sendErrorFromHub: () => {},
-    };
-
-    const sendMessage = vi.fn();
-    const sendError = vi.fn();
-    const close = vi.fn();
-
-    const message: ClientHelloMessage = {
-      type: 'hello',
-      protocolVersion: 1,
-      sessionId: summary.sessionId,
-    };
-
-    await handleHello({
-      message,
-      clientHelloReceived: false,
-      setClientHelloReceived: () => {},
-      setClientAudioCapabilities: () => {},
-      connection,
-      sessionHub,
-      sendMessage,
-      sendError,
-      close,
-    });
-
-    expect(sendError).not.toHaveBeenCalled();
-    expect(close).not.toHaveBeenCalled();
-    const subs = Array.from(sessionHub.getConnectionSubscriptions(connection));
-    expect(subs).toContain(summary.sessionId);
-  });
-
-  it('subscribes to all sessions for v2 hello', async () => {
-    const sessionsFile = createTempFile('hello-handling-v2-sessions');
+  it('subscribes to all structured hello subscriptions and echoes masks', async () => {
+    const sessionsFile = createTempFile('hello-handling-v3-sessions');
 
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([]);
@@ -105,7 +59,17 @@ describe('handleHello', () => {
     const message: ClientHelloMessage = {
       type: 'hello',
       protocolVersion: CURRENT_PROTOCOL_VERSION,
-      subscriptions: [sessionA.sessionId, sessionB.sessionId],
+      subscriptions: [
+        {
+          sessionId: sessionA.sessionId,
+          mask: {
+            serverMessageTypes: ['chat_event'],
+            chatEventTypes: ['tool_call'],
+            toolNames: ['voice_speak', 'voice_ask'],
+          },
+        },
+        { sessionId: sessionB.sessionId },
+      ],
     };
 
     await handleHello({
@@ -128,12 +92,19 @@ describe('handleHello', () => {
 
     const subscribedMessages = sentMessages.filter((m) => m.type === 'subscribed');
     expect(subscribedMessages.length).toBe(2);
-    const subscribedSessionIds = subscribedMessages.map(
-      (m) => (m as { sessionId?: string }).sessionId,
-    );
+    const subscribedSessionIds = subscribedMessages.map((m) => m.sessionId);
     expect(subscribedSessionIds).toEqual(
       expect.arrayContaining([sessionA.sessionId, sessionB.sessionId]),
     );
+    expect(subscribedMessages[0]).toMatchObject({
+      type: 'subscribed',
+      sessionId: sessionA.sessionId,
+      mask: {
+        serverMessageTypes: ['chat_event'],
+        chatEventTypes: ['tool_call'],
+        toolNames: ['voice_speak', 'voice_ask'],
+      },
+    });
   });
 
   it('rejects unsupported protocol versions', async () => {
@@ -157,9 +128,8 @@ describe('handleHello', () => {
 
     const message: ClientHelloMessage = {
       type: 'hello',
-      // Use a protocol version that is neither 1 nor CURRENT_PROTOCOL_VERSION
       protocolVersion: CURRENT_PROTOCOL_VERSION + 10,
-      sessionId: 'test-session',
+      subscriptions: [],
     };
 
     await handleHello({
@@ -178,5 +148,49 @@ describe('handleHello', () => {
     const [code] = sendError.mock.calls[0] ?? [];
     expect(code).toBe('unsupported_protocol_version');
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an empty v3 subscription list without sending errors', async () => {
+    const sessionsFile = createTempFile('hello-handling-empty-v3-sessions');
+
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
+
+    const connection: SessionConnection = {
+      sendServerMessageFromHub: () => {},
+      sendErrorFromHub: () => {},
+    };
+
+    const sendMessage = vi.fn();
+    const sendError = vi.fn();
+    const close = vi.fn();
+
+    const message: ClientHelloMessage = {
+      type: 'hello',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      subscriptions: [],
+    };
+
+    await handleHello({
+      message,
+      clientHelloReceived: false,
+      setClientHelloReceived: () => {},
+      setClientAudioCapabilities: () => {},
+      connection,
+      sessionHub,
+      sendMessage,
+      sendError,
+      close,
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(sendError).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+    expect(Array.from(sessionHub.getConnectionSubscriptions(connection))).toEqual([]);
   });
 });

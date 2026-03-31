@@ -742,8 +742,21 @@ interface PanelInstance {
   binding?: PanelBinding;
   state?: unknown;
   meta?: PanelMetadata;
+  customTitle?: string;
 }
 ```
+
+`meta.title` is plugin/runtime-owned metadata. User panel renames should use `customTitle` so
+runtime metadata updates do not overwrite the user-visible title override.
+
+When synthesized panel titles are enabled in the client, the workspace can derive a display title
+for supported entity-backed panels before falling back to `meta.title`. The resolver precedence is:
+
+`customTitle -> synthesized title -> meta.title -> manifest.title -> panelType`
+
+These resolved titles are intended for panel-selection and navigation surfaces such as tabs,
+navigator labels, inventories, and pinned-panel labels. Panel chrome can continue to show the base
+panel title.
 
 Panel types can opt out of multiple instances (`multiInstance: false`); the host should focus the existing instance instead of creating duplicates.
 

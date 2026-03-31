@@ -1,20 +1,22 @@
 package com.assistant.mobile.voice;
 
+import java.util.List;
+
 final class AssistantVoiceSessionSocketProtocol {
     private AssistantVoiceSessionSocketProtocol() {}
 
-    static String buildHelloMessage(String sessionId) {
-        String trimmedSessionId = trim(sessionId);
-        String subscriptions = trimmedSessionId.isEmpty()
-            ? "[]"
-            : "[\"" + escapeJsonString(trimmedSessionId) + "\"]";
-        return "{\"type\":\"hello\",\"protocolVersion\":2,\"subscriptions\":" + subscriptions + "}";
+    static String buildHelloMessage(List<String> sessionIds, String audioMode) {
+        String subscriptions = buildSubscriptionsJson(sessionIds, audioMode);
+        return "{\"type\":\"hello\",\"protocolVersion\":3,\"subscriptions\":" + subscriptions + "}";
     }
 
-    static String buildSubscribeMessage(String sessionId) {
+    static String buildSubscribeMessage(String sessionId, String audioMode) {
+        String trimmedSessionId = trim(sessionId);
         return "{\"type\":\"subscribe\",\"sessionId\":\""
-            + escapeJsonString(trim(sessionId))
-            + "\"}";
+            + escapeJsonString(trimmedSessionId)
+            + "\",\"mask\":"
+            + buildVoiceSubscriptionMaskJson(audioMode)
+            + "}";
     }
 
     static String buildUnsubscribeMessage(String sessionId) {
@@ -23,9 +25,8 @@ final class AssistantVoiceSessionSocketProtocol {
             + "\"}";
     }
 
-    static AssistantVoicePromptEvent parsePlaybackMessage(String rawMessage, String selectedSessionId) {
-        String expectedSessionId = trim(selectedSessionId);
-        if (rawMessage == null || rawMessage.trim().isEmpty() || expectedSessionId.isEmpty()) {
+    static AssistantVoicePromptEvent parsePlaybackMessage(String rawMessage) {
+        if (rawMessage == null || rawMessage.trim().isEmpty()) {
             return null;
         }
 
@@ -35,7 +36,7 @@ final class AssistantVoiceSessionSocketProtocol {
         }
 
         String messageSessionId = trim(findStringField(rawMessage, "sessionId", 0));
-        if (!expectedSessionId.equals(messageSessionId)) {
+        if (messageSessionId.isEmpty()) {
             return null;
         }
 
@@ -55,6 +56,51 @@ final class AssistantVoiceSessionSocketProtocol {
             return "";
         }
         return trim(findStringField(rawMessage, "sessionId", 0));
+    }
+
+    private static String buildSubscriptionsJson(List<String> sessionIds, String audioMode) {
+        if (sessionIds == null || sessionIds.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder subscriptions = new StringBuilder("[");
+        boolean appended = false;
+        for (String sessionId : sessionIds) {
+            String trimmedSessionId = trim(sessionId);
+            if (trimmedSessionId.isEmpty()) {
+                continue;
+            }
+            if (appended) {
+                subscriptions.append(',');
+            }
+            subscriptions.append(buildSubscriptionJson(trimmedSessionId, audioMode));
+            appended = true;
+        }
+        subscriptions.append(']');
+        return appended ? subscriptions.toString() : "[]";
+    }
+
+    private static String buildSubscriptionJson(String sessionId, String audioMode) {
+        return "{\"sessionId\":\""
+            + escapeJsonString(sessionId)
+            + "\",\"mask\":"
+            + buildVoiceSubscriptionMaskJson(audioMode)
+            + "}";
+    }
+
+    private static String buildVoiceSubscriptionMaskJson(String audioMode) {
+        String normalizedAudioMode = trim(audioMode);
+        if (AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(normalizedAudioMode)) {
+            return "{"
+                + "\"serverMessageTypes\":[\"chat_event\"],"
+                + "\"chatEventTypes\":[\"assistant_done\"],"
+                + "\"messagePhases\":[\"final_answer\"]"
+                + "}";
+        }
+        return "{"
+            + "\"serverMessageTypes\":[\"chat_event\"],"
+            + "\"chatEventTypes\":[\"tool_call\"],"
+            + "\"toolNames\":[\"voice_speak\",\"voice_ask\"]"
+            + "}";
     }
 
     private static String extractObjectField(String json, String key, int fromIndex) {

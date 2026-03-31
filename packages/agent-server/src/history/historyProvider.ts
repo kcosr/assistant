@@ -665,6 +665,7 @@ function filterRedundantOverlayEvents(baseEvents: ChatEvent[], overlayEvents: Ch
     return overlayEvents;
   }
 
+  const duplicateOverlayTurnIds = collectDuplicateCompletedOverlayTurnIds(baseEvents, overlayEvents);
   const completedTurnIds = new Set(
     baseEvents
       .filter((event) => event.type === 'turn_end' && typeof event.turnId === 'string')
@@ -676,11 +677,126 @@ function filterRedundantOverlayEvents(baseEvents: ChatEvent[], overlayEvents: Ch
     if (!isTransientReplayChatEvent(event)) {
       return true;
     }
+    if (event.turnId && duplicateOverlayTurnIds.has(event.turnId)) {
+      return false;
+    }
     if (event.turnId && completedTurnIds.has(event.turnId)) {
       return false;
     }
     return !baseEventKeys.has(getOverlayComparableKey(event));
   });
+}
+
+function collectDuplicateCompletedOverlayTurnIds(
+  baseEvents: ChatEvent[],
+  overlayEvents: ChatEvent[],
+): Set<string> {
+  const duplicateTurnIds = new Set<string>();
+  const baseCompletedTurnCounts = countCompletedTurnSignatures(baseEvents);
+  if (baseCompletedTurnCounts.size === 0) {
+    return duplicateTurnIds;
+  }
+
+  const overlayCompletedTurns = collectCompletedTurnSignatures(overlayEvents);
+  const matchedCounts = new Map<string, number>();
+  for (const [turnId, signature] of overlayCompletedTurns) {
+    const available = baseCompletedTurnCounts.get(signature) ?? 0;
+    const matched = matchedCounts.get(signature) ?? 0;
+    if (available <= matched) {
+      continue;
+    }
+    duplicateTurnIds.add(turnId);
+    matchedCounts.set(signature, matched + 1);
+  }
+  return duplicateTurnIds;
+}
+
+function countCompletedTurnSignatures(events: ChatEvent[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const signature of collectCompletedTurnSignatures(events).values()) {
+    counts.set(signature, (counts.get(signature) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function collectCompletedTurnSignatures(events: ChatEvent[]): Map<string, string> {
+  const turns = new Map<string, ChatEvent[]>();
+  const completedTurnIds = new Set<string>();
+  for (const event of events) {
+    const turnId = typeof event.turnId === 'string' ? event.turnId : '';
+    if (!turnId || !isTransientReplayChatEvent(event)) {
+      continue;
+    }
+    const turnEvents = turns.get(turnId) ?? [];
+    turnEvents.push(event);
+    turns.set(turnId, turnEvents);
+    if (event.type === 'turn_end') {
+      completedTurnIds.add(turnId);
+    }
+  }
+
+  const signatures = new Map<string, string>();
+  for (const turnId of completedTurnIds) {
+    const turnEvents = turns.get(turnId) ?? [];
+    signatures.set(turnId, getCompletedTurnSignature(turnEvents));
+  }
+  return signatures;
+}
+
+function getCompletedTurnSignature(events: ChatEvent[]): string {
+  return events
+    .map((event) =>
+      stableSerialize({
+        type: event.type,
+        payload: normalizeTurnComparablePayload(event),
+      }),
+    )
+    .join('|');
+}
+
+function normalizeTurnComparablePayload(event: ChatEvent): unknown {
+  if (event.type === 'user_message') {
+    return { text: event.payload.text.trimEnd() };
+  }
+  if (event.type === 'user_audio') {
+    return {
+      transcription: event.payload.transcription.trimEnd(),
+      durationMs: event.payload.durationMs,
+    };
+  }
+  if (event.type === 'assistant_done') {
+    return {
+      text: event.payload.text.trimEnd(),
+      ...(event.payload.phase ? { phase: event.payload.phase } : {}),
+      ...(event.payload.interrupted === true ? { interrupted: true } : {}),
+      ...(event.payload.textSignature ? { textSignature: event.payload.textSignature } : {}),
+    };
+  }
+  if (event.type === 'thinking_done') {
+    return { text: event.payload.text.trimEnd() };
+  }
+  if (event.type === 'tool_call') {
+    return {
+      toolName: event.payload.toolName,
+      args: event.payload.args,
+    };
+  }
+  if (event.type === 'tool_result') {
+    return {
+      result: event.payload.result,
+      error: event.payload.error,
+    };
+  }
+  if (event.type === 'interrupt') {
+    return { reason: event.payload.reason };
+  }
+  if (event.type === 'error') {
+    return { message: event.payload.message, code: event.payload.code };
+  }
+  if (event.type === 'turn_start') {
+    return { trigger: event.payload.trigger };
+  }
+  return event.payload;
 }
 
 function getOverlayComparableKey(event: ChatEvent): string {

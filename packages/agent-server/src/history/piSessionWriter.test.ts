@@ -700,7 +700,7 @@ describe('PiSessionWriter', () => {
     expect(content).toContain('"turnId":"turn-2"');
   });
 
-  it('rewrites Pi history when trimming turns after an anchor', async () => {
+  it('rewrites Pi history when trimming turns after an anchor inclusively', async () => {
     const baseDir = await createTempDir('pi-session-writer-turn-trim-after');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -784,11 +784,13 @@ describe('PiSessionWriter', () => {
     const content = await fs.readFile(filePath, 'utf8');
     const entries = parseJsonLines(content);
 
-    expect(JSON.stringify(entries)).toContain('turn-1');
+    expect(JSON.stringify(entries)).not.toContain('turn-1');
     expect(JSON.stringify(entries)).not.toContain('turn-2');
-    expect(JSON.stringify(entries)).toContain('first turn');
+    expect(JSON.stringify(entries)).not.toContain('first turn');
     expect(JSON.stringify(entries)).not.toContain('second turn');
-    expect(entries[1]?.['parentId']).toBeNull();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.['type']).toBe('session');
+    expect(entries[0]).not.toHaveProperty('parentId');
   });
 
   it('rejects history rewrites when explicit turn markers are missing', async () => {

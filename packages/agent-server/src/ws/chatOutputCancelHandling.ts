@@ -149,6 +149,14 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         type: 'interrupt',
         payload: { reason: 'user_cancel' },
       },
+      {
+        ...createChatEventBase({
+          sessionId,
+          ...(turnId ? { turnId } : {}),
+        }),
+        type: 'turn_end',
+        payload: {},
+      },
     );
     void appendAndBroadcastChatEvents(
       {

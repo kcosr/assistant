@@ -3,12 +3,20 @@
 ## [Unreleased]
 
 ### Breaking Changes
+- Changed the websocket protocol to require protocol version `3` with structured `hello.subscriptions` and optional per-session subscription masks; legacy v1/v2 hello flows are no longer accepted. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Added
+- Added masked websocket session subscriptions so clients can subscribe per session with server-side event filtering instead of always receiving the full session stream. ([#73](https://github.com/kcosr/assistant/pull/73))
+- Added native voice preferred-session routing so Android can watch multiple sessions, persist a `Voice notification session`, and route notification `Speak` to that preferred session while foreground mic input still targets the current chat. ([#73](https://github.com/kcosr/assistant/pull/73))
+- Added per-panel custom rename support with persisted `customTitle` overrides and a panel-menu rename action. ([#73](https://github.com/kcosr/assistant/pull/73))
+- Added an opt-in `Auto-title chats, lists, and notes` client preference that synthesizes entity-aware panel titles such as `Test Chat` and `Todo List (Scratch)`. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Changed
+- Changed panel title resolution so tabs, panel headers, navigator labels, panel inventory/context, and pinned-panel labels share the same resolved display title. ([#73](https://github.com/kcosr/assistant/pull/73))
+- Changed turn-history `Delete after` to remove the clicked turn as well as the later turns, matching the chat divider semantics more intuitively. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Fixed
+- Fixed Codex/CLI session replay so completed turns are not duplicated on reload and aborted or cancelled turns close cleanly instead of leaving replayed typing state stuck. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Removed
 

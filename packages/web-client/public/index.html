@@ -233,6 +233,12 @@
               </label>
             </div>
             <div class="settings-dropdown-item">
+              <label for="synthesized-panel-titles-checkbox">
+                <input type="checkbox" id="synthesized-panel-titles-checkbox" />
+                Auto-title chats, lists, and notes
+              </label>
+            </div>
+            <div class="settings-dropdown-item">
               <label for="interaction-mode-checkbox">
                 <input type="checkbox" id="interaction-mode-checkbox" />
                 Enable interactive tool prompts
@@ -363,6 +369,12 @@
               autocomplete="off"
               spellcheck="false"
             />
+          </label>
+          <label class="list-item-form-label" for="voice-preferred-session-select">
+            <span class="list-item-form-label-text">Voice notification session</span>
+            <select id="voice-preferred-session-select" class="list-item-form-input">
+              <option value="">None</option>
+            </select>
           </label>
           <label class="list-item-form-label" for="voice-mic-input-select">
             <span class="list-item-form-label-text">Microphone input</span>

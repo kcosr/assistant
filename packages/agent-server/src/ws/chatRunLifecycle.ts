@@ -339,6 +339,26 @@ export async function handleTextInputWithChatCompletions(options: {
 
     const wasAborted = runResult.aborted || abortController.signal.aborted;
     if (wasAborted) {
+      const wasOutputCancelled = state.activeChatRun?.outputCancelled === true;
+      if (shouldEmitChatEvents && eventStore && turnId && !wasOutputCancelled) {
+        void appendAndBroadcastChatEvents(
+          {
+            eventStore,
+            sessionHub,
+            sessionId,
+          },
+          [
+            {
+              ...createChatEventBase({
+                sessionId,
+                ...(turnId ? { turnId } : {}),
+              }),
+              type: 'turn_end',
+              payload: {},
+            },
+          ],
+        );
+      }
       // If the run was aborted before any assistant message was added (e.g. cancel
       // during streaming before tool calls), the user message we pushed above is
       // left dangling.  Remove it so the next turn doesn't send two consecutive

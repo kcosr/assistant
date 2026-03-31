@@ -2,6 +2,46 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ConnectionManager } from './connectionManager';
 
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  readonly sent: string[] = [];
+  readonly listeners = new Map<string, Array<(event?: Event) => void>>();
+  readyState = 0;
+  binaryType = '';
+
+  constructor(public readonly url: string) {
+    MockWebSocket.instances.push(this);
+  }
+
+  send(data: string): void {
+    this.sent.push(data);
+  }
+
+  close(): void {
+    this.readyState = WebSocket.OPEN;
+  }
+
+  addEventListener(type: string, listener: (event?: Event) => void): void {
+    const existing = this.listeners.get(type) ?? [];
+    existing.push(listener);
+    this.listeners.set(type, existing);
+  }
+
+  dispatch(type: string): void {
+    if (type === 'open') {
+      this.readyState = WebSocket.OPEN;
+    }
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener();
+    }
+  }
+
+  static reset(): void {
+    MockWebSocket.instances = [];
+  }
+}
+
 function ensureWebSocketGlobal(): void {
   const globalWithWindow = globalThis as typeof globalThis & {
     window?: Window & typeof globalThis;
@@ -27,6 +67,54 @@ function ensureWebSocketGlobal(): void {
 }
 
 describe('ConnectionManager', () => {
+  it('sends protocol v3 hello with structured subscriptions on open', () => {
+    ensureWebSocketGlobal();
+    MockWebSocket.reset();
+
+    const originalWebSocket = globalThis.WebSocket;
+    (globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket =
+      MockWebSocket as unknown as typeof WebSocket;
+
+    let activeSocket: WebSocket | null = null;
+    const manager = new ConnectionManager({
+      createWebSocketUrl: () => 'ws://localhost',
+      setStatus: () => undefined,
+      protocolVersion: 3,
+      supportsAudioOutput: () => false,
+      onMessage: () => undefined,
+      getInteractionEnabled: () => true,
+      getSocket: () => activeSocket,
+      setSocket: (socket) => {
+        activeSocket = socket;
+      },
+      onConnectionLostCleanup: () => undefined,
+      reconnectDelayMs: 1000,
+      maxReconnectDelayMs: 2000,
+    });
+
+    try {
+      manager.subscribe('session-a');
+      manager.subscribe('session-b');
+      manager.connect();
+
+      const socket = MockWebSocket.instances[0];
+      if (!socket) {
+        throw new Error('Expected ConnectionManager to create a socket');
+      }
+      socket.dispatch('open');
+
+      expect(socket.sent).toHaveLength(1);
+      expect(JSON.parse(socket.sent[0] ?? '{}')).toMatchObject({
+        type: 'hello',
+        protocolVersion: 3,
+        interaction: { supported: true, enabled: true },
+        subscriptions: [{ sessionId: 'session-a' }, { sessionId: 'session-b' }],
+      });
+    } finally {
+      (globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket = originalWebSocket;
+    }
+  });
+
   it('sends interaction mode updates when connected', () => {
     ensureWebSocketGlobal();
     const send = vi.fn();
@@ -35,7 +123,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 2,
+      protocolVersion: 3,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => socket,
@@ -59,7 +147,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 2,
+      protocolVersion: 3,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => socket,
@@ -81,7 +169,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 2,
+      protocolVersion: 3,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => null,

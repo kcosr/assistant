@@ -169,7 +169,7 @@ Recommended minimum web-to-native API:
 ### User actions
 
 - `stopCurrentInteraction()`
-- `startManualListen()`
+- `startManualListen({ sessionId?: string | null })`
 - `listInputDevices()`
 
 ### Native-to-web events
@@ -194,6 +194,7 @@ Recommended `setVoiceSettings` payload:
     "audioMode": "tool",
     "autoListenEnabled": true,
     "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "preferredVoiceSessionId": "session-123",
     "selectedMicDeviceId": "",
     "recognitionStartTimeoutMs": 30000,
     "recognitionCompletionTimeoutMs": 60000,
@@ -201,6 +202,13 @@ Recommended `setVoiceSettings` payload:
   }
 }
 ```
+
+`startManualListen` semantics:
+
+- when `sessionId` is provided, native should start manual listen for that explicit session
+- when `sessionId` is omitted or empty, native should fall back to the persisted
+  `preferredVoiceSessionId`
+- notification `Speak` should use the fallback form
 
 ## Packaging Recommendation
 

@@ -92,14 +92,13 @@ export class ConnectionManager {
         : undefined;
       const interactionEnabled = this.options.getInteractionEnabled?.() ?? true;
       const subscriptions = Array.from(this.subscribedSessions);
-      const useV2Hello = this.options.protocolVersion >= 2;
       const hello: ClientHelloMessage = {
         type: 'hello',
         protocolVersion: this.options.protocolVersion,
         userAgent: window.navigator.userAgent,
         audio: audioCapabilities,
         interaction: { supported: true, enabled: interactionEnabled },
-        ...(useV2Hello ? { subscriptions } : {}),
+        subscriptions: subscriptions.map((sessionId) => ({ sessionId })),
       };
       newSocket.send(JSON.stringify(hello));
       this.options.onOpen?.();

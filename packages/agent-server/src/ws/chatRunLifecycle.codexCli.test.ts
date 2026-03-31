@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ServerMessage } from '@assistant/shared';
 
 import { AgentRegistry } from '../agents';
 import type { EnvConfig } from '../envConfig';
@@ -245,5 +245,77 @@ describe('handleTextInputWithChatCompletions (codex-cli)', () => {
     });
 
     expect(sendError).not.toHaveBeenCalled();
+  });
+
+  it('closes the turn when a codex-cli run aborts without explicit cancel output events', async () => {
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'codex',
+        displayName: 'Codex',
+        description: 'Codex CLI',
+        chat: { provider: 'codex-cli' },
+      },
+    ]);
+
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordCliToolCall: () => undefined,
+      recordSessionActivity: () => undefined,
+      updateSessionAttributes: async () => state.summary,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: { sessionId: 's2', title: 't', createdAt: '', updatedAt: '', deleted: false },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    (state.summary as unknown as { agentId?: string }).agentId = 'codex';
+
+    vi.mocked(runCodexCliChat).mockImplementationOnce(async () => {
+      return { text: '', aborted: true, codexSessionId: 'thread-abort' };
+    });
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'run cmd', sessionId: 's2' },
+      state,
+      sessionId: 's2',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: vi.fn(),
+      log: () => undefined,
+      eventStore,
+    });
+
+    expect(events.some((event) => event.type === 'turn_start')).toBe(true);
+    expect(events.some((event) => event.type === 'turn_end')).toBe(true);
   });
 });

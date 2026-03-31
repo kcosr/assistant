@@ -66,6 +66,10 @@ final class AssistantVoiceUrlUtils {
         return joinApiPath(baseUrl, "api/plugins/sessions/operations/events");
     }
 
+    static String assistantSessionListUrl(String baseUrl) {
+        return joinApiPath(baseUrl, "api/plugins/sessions/operations/list");
+    }
+
     static String assistantSessionMessageUrl(String baseUrl) {
         return joinApiPath(baseUrl, "api/plugins/sessions/operations/message");
     }

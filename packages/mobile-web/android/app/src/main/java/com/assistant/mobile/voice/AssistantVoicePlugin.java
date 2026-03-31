@@ -171,9 +171,10 @@ public final class AssistantVoicePlugin extends Plugin {
             requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
             return;
         }
+        String sessionId = call.getString("sessionId");
         ContextCompat.startForegroundService(
             getContext(),
-            AssistantVoiceRuntimeService.startManualListenIntent(getContext())
+            AssistantVoiceRuntimeService.startManualListenIntent(getContext(), sessionId)
         );
         call.resolve(buildStatePayload());
     }
@@ -246,9 +247,10 @@ public final class AssistantVoicePlugin extends Plugin {
         if (PENDING_ACTION_SET_VOICE_SETTINGS.equals(pendingPermissionAction) && pendingVoiceSettings != null) {
             applyConfig(pendingVoiceSettings);
         } else if (PENDING_ACTION_START_LISTEN.equals(pendingPermissionAction)) {
+            String sessionId = savedCall.getString("sessionId");
             ContextCompat.startForegroundService(
                 getContext(),
-                AssistantVoiceRuntimeService.startManualListenIntent(getContext())
+                AssistantVoiceRuntimeService.startManualListenIntent(getContext(), sessionId)
             );
         }
 
@@ -294,6 +296,7 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("audioMode", current.audioMode);
         voiceSettings.put("autoListenEnabled", current.autoListenEnabled);
         voiceSettings.put("voiceAdapterBaseUrl", current.voiceAdapterBaseUrl);
+        voiceSettings.put("preferredVoiceSessionId", current.preferredVoiceSessionId);
         voiceSettings.put("selectedMicDeviceId", current.selectedMicDeviceId);
         voiceSettings.put("recognitionStartTimeoutMs", current.recognitionStartTimeoutMs);
         voiceSettings.put("recognitionCompletionTimeoutMs", current.recognitionCompletionTimeoutMs);

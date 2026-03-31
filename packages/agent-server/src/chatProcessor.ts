@@ -505,6 +505,26 @@ export async function processUserMessage(
 
     const wasAborted = runResult.aborted || abortSignal.aborted;
     if (wasAborted) {
+      const wasOutputCancelled = state.activeChatRun?.outputCancelled === true;
+      if (shouldEmitChatEvents && eventStore && turnId && !wasOutputCancelled) {
+        void appendAndBroadcastChatEvents(
+          {
+            eventStore,
+            sessionHub,
+            sessionId,
+          },
+          [
+            {
+              ...createChatEventBase({
+                sessionId,
+                ...(turnId ? { turnId } : {}),
+              }),
+              type: 'turn_end',
+              payload: {},
+            },
+          ],
+        );
+      }
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });

@@ -158,6 +158,17 @@ Rules:
 - the `Voice settings` modal renders a selector using those native device labels
 - web pushes the selected device id back through `setVoiceSettings`
 
+### Voice Notification Session
+
+`preferredVoiceSessionId` is owned and persisted by the web layer.
+
+Rules:
+
+- empty string means there is no notification speech target
+- the `Voice settings` modal renders a session selector for this value
+- the web layer clears it when the session list no longer contains that session
+- web pushes the preferred session id through `setVoiceSettings`
+
 ### Recognition Timing
 
 The web layer also owns the recognition timing preferences used by native STT requests.
@@ -207,6 +218,7 @@ Recommended setter shape:
     "audioMode": "tool",
     "autoListenEnabled": true,
     "voiceAdapterBaseUrl": "https://assistant/agent-voice-adapter",
+    "preferredVoiceSessionId": "session-123",
     "selectedMicDeviceId": "",
     "recognitionStartTimeoutMs": 30000,
     "recognitionCompletionTimeoutMs": 60000,

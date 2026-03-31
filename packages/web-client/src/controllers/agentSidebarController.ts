@@ -52,6 +52,8 @@ function appendContextUsageBadge(
 export type SidebarViewMode = 'by-agent' | 'all-sessions';
 
 const SIDEBAR_VIEW_MODE_STORAGE_KEY = 'sidebarViewMode';
+const SESSION_ITEM_LONG_PRESS_MS = 450;
+const SESSION_ITEM_LONG_PRESS_MOVE_PX = 12;
 
 export interface AgentSidebarControllerOptions {
   agentSidebar: HTMLElement | null;
@@ -339,7 +341,7 @@ export class AgentSidebarController {
         item.classList.add('active');
       }
 
-      item.addEventListener('click', () => {
+      this.bindSessionItemInteractions(item, session.sessionId, () => {
         // On mobile, close the sidebar and return early
         if (this.options.isMobileViewport()) {
           this.options.onSessionSelectedOnMobile();
@@ -365,11 +367,6 @@ export class AgentSidebarController {
             this.options.focusInput();
           }, 0);
         }
-      });
-
-      item.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        this.options.showSessionMenu(e.clientX, e.clientY, session.sessionId);
       });
 
       const row = document.createElement('div');
@@ -444,6 +441,86 @@ export class AgentSidebarController {
         itemToFocus.classList.add('focused');
       }
     }
+  }
+
+  private bindSessionItemInteractions(
+    item: HTMLElement,
+    sessionId: string,
+    onActivate: () => void,
+  ): void {
+    let longPressTimer: number | null = null;
+    let longPressTriggered = false;
+    let suppressContextMenu = false;
+    let startX = 0;
+    let startY = 0;
+
+    const clearLongPressTimer = (): void => {
+      if (longPressTimer !== null) {
+        window.clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    const openSessionMenuForItem = (): void => {
+      const rect = item.getBoundingClientRect();
+      this.options.showSessionMenu(rect.left + rect.width / 2, rect.bottom - 8, sessionId);
+    };
+
+    item.addEventListener('click', (event) => {
+      if (longPressTriggered) {
+        event.preventDefault();
+        event.stopPropagation();
+        longPressTriggered = false;
+        return;
+      }
+      onActivate();
+    });
+
+    item.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      clearLongPressTimer();
+      if (suppressContextMenu) {
+        suppressContextMenu = false;
+        return;
+      }
+      this.options.showSessionMenu(event.clientX, event.clientY, sessionId);
+    });
+
+    item.addEventListener('pointerdown', (event: PointerEvent) => {
+      if (event.pointerType !== 'touch' || event.button !== 0 || !this.options.isMobileViewport()) {
+        return;
+      }
+      clearLongPressTimer();
+      longPressTriggered = false;
+      suppressContextMenu = false;
+      startX = event.clientX;
+      startY = event.clientY;
+      longPressTimer = window.setTimeout(() => {
+        longPressTimer = null;
+        longPressTriggered = true;
+        suppressContextMenu = true;
+        openSessionMenuForItem();
+      }, SESSION_ITEM_LONG_PRESS_MS);
+    });
+
+    item.addEventListener('pointermove', (event: PointerEvent) => {
+      if (longPressTimer === null || event.pointerType !== 'touch') {
+        return;
+      }
+      const movedX = Math.abs(event.clientX - startX);
+      const movedY = Math.abs(event.clientY - startY);
+      if (movedX > SESSION_ITEM_LONG_PRESS_MOVE_PX || movedY > SESSION_ITEM_LONG_PRESS_MOVE_PX) {
+        clearLongPressTimer();
+      }
+    });
+
+    const cancelLongPress = (): void => {
+      clearLongPressTimer();
+    };
+
+    item.addEventListener('pointerup', cancelLongPress);
+    item.addEventListener('pointercancel', cancelLongPress);
+    item.addEventListener('pointerleave', cancelLongPress);
   }
 
   render(): void {
@@ -571,7 +648,7 @@ export class AgentSidebarController {
           item.classList.add('active');
         }
 
-        item.addEventListener('click', () => {
+        this.bindSessionItemInteractions(item, session.sessionId, () => {
           // On mobile, close the sidebar and return early
           if (this.options.isMobileViewport()) {
             this.options.onSessionSelectedOnMobile();
@@ -597,11 +674,6 @@ export class AgentSidebarController {
               this.options.focusInput();
             }, 0);
           }
-        });
-
-        item.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          this.options.showSessionMenu(e.clientX, e.clientY, session.sessionId);
         });
 
         const row = document.createElement('div');
