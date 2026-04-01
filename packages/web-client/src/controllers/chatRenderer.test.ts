@@ -357,11 +357,13 @@ describe('ChatRenderer', () => {
 
     const downloadButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
     expect(downloadButton?.textContent).toBe('Download');
+    expect(downloadButton?.className).toBe('attachment-tool-action-button');
     downloadButton?.click();
     expect(downloadSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1?download=1', 'report.html');
 
     const openButton = bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button')[1];
     expect(openButton?.textContent).toBe('Open');
+    expect(openButton?.className).toBe('attachment-tool-action-button');
     openButton?.click();
     expect(openSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1');
   });

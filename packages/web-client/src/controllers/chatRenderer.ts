@@ -2779,6 +2779,27 @@ export class ChatRenderer {
     return bubble;
   }
 
+  private createAttachmentActionButton(label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.className = 'attachment-tool-action-button';
+    button.style.padding = '0';
+    button.style.border = 'none';
+    button.style.background = 'transparent';
+    button.style.color = 'var(--color-text-secondary)';
+    button.style.font = 'inherit';
+    button.style.fontWeight = '600';
+    button.style.fontSize = '0.9em';
+    button.style.lineHeight = '1.2';
+    button.style.cursor = 'pointer';
+    button.style.textAlign = 'left';
+    button.style.textDecoration = 'none';
+    button.style.appearance = 'none';
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
   private updatePendingAttachmentToolBubble(
     bubble: HTMLDivElement,
     summary: { fileName?: string; title?: string },
@@ -2873,11 +2894,7 @@ export class ChatRenderer {
     if (actionsEl) {
       actionsEl.replaceChildren();
 
-      const downloadButton = document.createElement('button');
-      downloadButton.type = 'button';
-      downloadButton.textContent = 'Download';
-      downloadButton.className = 'text-button';
-      downloadButton.addEventListener('click', () => {
+      const downloadButton = this.createAttachmentActionButton('Download', () => {
         void downloadAttachment(attachment.downloadUrl, attachment.fileName).catch((error) => {
           console.error('[attachments] Failed to download attachment', error);
         });
@@ -2885,11 +2902,7 @@ export class ChatRenderer {
       actionsEl.appendChild(downloadButton);
 
       if (attachment.openUrl && attachment.openMode === 'browser_blob') {
-        const openButton = document.createElement('button');
-        openButton.type = 'button';
-        openButton.textContent = 'Open';
-        openButton.className = 'text-button';
-        openButton.addEventListener('click', () => {
+        const openButton = this.createAttachmentActionButton('Open', () => {
           void openHtmlAttachmentInBrowser(attachment.openUrl!).catch((error) => {
             console.error('[attachments] Failed to open HTML attachment', error);
           });
