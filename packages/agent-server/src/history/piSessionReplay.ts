@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
+import { getAgentCallbackText } from '../chatEventText';
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
@@ -214,6 +215,7 @@ type CanonicalReplayCoverage = {
     text: string;
     historyTimestampMs?: number;
   }>;
+  callbackInputTexts: Set<string>;
   toolCallIds: Set<string>;
   toolResultIds: Set<string>;
 };
@@ -255,10 +257,23 @@ function collectCanonicalReplayCoverage(
   entries: Array<Record<string, unknown>>,
 ): CanonicalReplayCoverage {
   const users: CanonicalReplayCoverage['users'] = [];
+  const callbackInputTexts = new Set<string>();
   const toolCallIds = new Set<string>();
   const toolResultIds = new Set<string>();
 
   for (const entry of entries) {
+    if (
+      entry['type'] === 'custom_message' &&
+      getString(entry['customType']) === 'assistant.input'
+    ) {
+      const text = extractTextValue(entry['content']).trim();
+      const meta = toUserMeta(entry);
+      if (text && meta?.source === 'callback') {
+        callbackInputTexts.add(text);
+      }
+      continue;
+    }
+
     const message = entry['type'] === 'message' && isRecord(entry['message']) ? entry['message'] : null;
     if (!message) {
       continue;
@@ -295,6 +310,7 @@ function collectCanonicalReplayCoverage(
 
   return {
     users,
+    callbackInputTexts,
     toolCallIds,
     toolResultIds,
   };
@@ -443,17 +459,59 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
       const turnId = getString(data['turnId']).trim();
-      if (!turnId || !interruptedTurnIds.has(turnId)) {
-        continue;
-      }
       const chatEventType = getString(data['chatEventType']);
       const payload = isRecord(data['payload']) ? data['payload'] : null;
       const responseId = getString(data['responseId']).trim() || undefined;
-      const historyTimestampMs = resolveTimestamp(entry);
 
       if (!payload) {
         continue;
       }
+
+      if (chatEventType === 'agent_callback') {
+        closeOpenAssistantToolCalls();
+        const historyTimestampMs = resolveTimestamp(entry);
+        const text =
+          getAgentCallbackText({
+            type: 'agent_callback',
+            payload: {
+              result: getString(payload['result']),
+              ...(isNonEmptyString(payload['fromAgentId'])
+                ? { fromAgentId: getString(payload['fromAgentId']).trim() }
+                : {}),
+            },
+          } as Parameters<typeof getAgentCallbackText>[0]) ?? '';
+        if (!text) {
+          continue;
+        }
+        if (canonicalCoverage.callbackInputTexts.has(text)) {
+          continue;
+        }
+        if (hasMatchingCanonicalUserMessage(canonicalCoverage, text, historyTimestampMs)) {
+          continue;
+        }
+        messages.push({
+          role: 'user',
+          content: text,
+          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
+          meta: {
+            source: 'callback',
+            ...(isNonEmptyString(payload['fromAgentId'])
+              ? { fromAgentId: getString(payload['fromAgentId']).trim() }
+              : {}),
+            ...(isNonEmptyString(payload['fromSessionId'])
+              ? { fromSessionId: getString(payload['fromSessionId']).trim() }
+              : {}),
+            visibility: 'visible',
+          },
+        });
+        continue;
+      }
+
+      if (!turnId || !interruptedTurnIds.has(turnId)) {
+        continue;
+      }
+
+      const historyTimestampMs = resolveTimestamp(entry);
 
       if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
         closeOpenAssistantToolCalls();
