@@ -2903,7 +2903,7 @@ export class ChatRenderer {
 
       if (attachment.openUrl && attachment.openMode === 'browser_blob') {
         const openButton = this.createAttachmentActionButton('Open', () => {
-          void openHtmlAttachmentInBrowser(attachment.openUrl!).catch((error) => {
+          void openHtmlAttachmentInBrowser(attachment.openUrl!, attachment.fileName).catch((error) => {
             console.error('[attachments] Failed to open HTML attachment', error);
           });
         });

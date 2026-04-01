@@ -17,6 +17,12 @@ describe('attachmentActions', () => {
     setLocationPathname('/assistant/');
     document.body.innerHTML = '';
     delete (window as { ASSISTANT_API_HOST?: string }).ASSISTANT_API_HOST;
+    delete (window as Window & { __TAURI__?: object }).__TAURI__;
+    delete (
+      window as Window & {
+        Capacitor?: object;
+      }
+    ).Capacitor;
   });
 
   afterEach(() => {
@@ -78,6 +84,40 @@ describe('attachmentActions', () => {
       path: 'http://localhost/assistant/api/attachments/s1/a1',
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('opens HTML attachments via the Android Capacitor attachment bridge', async () => {
+    const bridgeOpen = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<html><body>Hello</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      }),
+    );
+    (
+      window as Window & {
+        Capacitor?: {
+          getPlatform?: () => string;
+          Plugins?: { AssistantAttachmentOpen?: { openHtmlAttachment?: typeof bridgeOpen } };
+        };
+      }
+    ).Capacitor = {
+      getPlatform: () => 'android',
+      Plugins: {
+        AssistantAttachmentOpen: {
+          openHtmlAttachment: bridgeOpen,
+        },
+      },
+    };
+
+    await openHtmlAttachmentInBrowser('/api/attachments/s1/a1', 'report.html');
+
+    expect(fetchSpy).toHaveBeenCalledWith('/assistant/api/attachments/s1/a1', { method: 'GET' });
+    expect(bridgeOpen).toHaveBeenCalledWith({
+      fileName: 'report.html',
+      contentType: 'text/html; charset=utf-8',
+      contentBase64: 'PGh0bWw+PGJvZHk+SGVsbG88L2JvZHk+PC9odG1sPg==',
+    });
   });
 
   it('downloads attachments via Tauri save dialog and native write', async () => {

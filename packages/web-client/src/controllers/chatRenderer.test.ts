@@ -365,7 +365,7 @@ describe('ChatRenderer', () => {
     expect(openButton?.textContent).toBe('Open');
     expect(openButton?.className).toBe('attachment-tool-action-button');
     openButton?.click();
-    expect(openSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1');
+    expect(openSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1', 'report.html');
   });
 
   it('renders attachment_send preview text and attachment errors inline', () => {

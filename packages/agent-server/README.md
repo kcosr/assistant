@@ -263,7 +263,7 @@ Two TTS backends are supported:
 Built-in session tools include:
 
 - `voice_speak` and `voice_ask` for structured voice prompt transcript bubbles
-- `attachment_send` for persistent session-owned attachment bubbles with replayable metadata plus download routes, and client-side HTML open via fetched blob URLs
+- `attachment_send` for persistent session-owned attachment bubbles with replayable metadata plus download routes, and platform-specific HTML open handling (blob URLs on web, native exported-file open on Android)
 
 The server supports two types of tools:
 

@@ -1,11 +1,32 @@
 import { apiFetch, getApiBaseUrl } from './api';
+import { isCapacitorAndroid } from './capacitor';
 import { isTauri } from './tauri';
 
 type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+type AssistantAttachmentOpenArgs = {
+  fileName: string;
+  contentType: string;
+  contentBase64: string;
+};
+type AssistantAttachmentOpenTarget = {
+  openHtmlAttachment?: (args: AssistantAttachmentOpenArgs) => Promise<unknown> | unknown;
+};
 
 function getTauriInvoke(): TauriInvoke | null {
   const win = window as { __TAURI__?: { core?: { invoke?: TauriInvoke } } };
   return win.__TAURI__?.core?.invoke ?? null;
+}
+
+function getAssistantAttachmentOpenTarget(): AssistantAttachmentOpenTarget | null {
+  const win = window as {
+    AssistantAttachmentOpen?: AssistantAttachmentOpenTarget;
+    Capacitor?: {
+      Plugins?: {
+        AssistantAttachmentOpen?: AssistantAttachmentOpenTarget;
+      };
+    };
+  };
+  return win.AssistantAttachmentOpen ?? win.Capacitor?.Plugins?.AssistantAttachmentOpen ?? null;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -95,9 +116,34 @@ export async function downloadAttachment(url: string, fileName: string): Promise
   anchor.remove();
 }
 
-export async function openHtmlAttachmentInBrowser(url: string): Promise<void> {
+export async function openHtmlAttachmentInBrowser(
+  url: string,
+  fileName = 'attachment.html',
+): Promise<void> {
   const resolvedUrl = resolveAttachmentUrl(url);
   if (!resolvedUrl) {
+    return;
+  }
+
+  if (isCapacitorAndroid()) {
+    const bridge = getAssistantAttachmentOpenTarget();
+    if (!bridge || typeof bridge.openHtmlAttachment !== 'function') {
+      throw new Error('Android attachment bridge unavailable');
+    }
+
+    const response = await apiFetch(url, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`Failed to open attachment (${response.status})`);
+    }
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('Content-Type')?.trim() ?? '';
+    await Promise.resolve(
+      bridge.openHtmlAttachment({
+        fileName,
+        contentType,
+        contentBase64: arrayBufferToBase64(buffer),
+      }),
+    );
     return;
   }
 
