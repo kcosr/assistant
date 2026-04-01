@@ -115,7 +115,7 @@ describe('attachmentActions', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/assistant/api/attachments/s1/a1', { method: 'GET' });
     expect(bridgeOpen).toHaveBeenCalledWith({
       fileName: 'report.html',
-      contentType: 'text/html; charset=utf-8',
+      contentType: 'text/html',
       contentBase64: 'PGh0bWw+PGJvZHk+SGVsbG88L2JvZHk+PC9odG1sPg==',
     });
   });

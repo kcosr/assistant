@@ -29,6 +29,14 @@ function getAssistantAttachmentOpenTarget(): AssistantAttachmentOpenTarget | nul
   return win.AssistantAttachmentOpen ?? win.Capacitor?.Plugins?.AssistantAttachmentOpen ?? null;
 }
 
+function normalizeHtmlContentType(contentType: string | null): string {
+  const trimmed = typeof contentType === 'string' ? contentType.trim() : '';
+  if (!trimmed) {
+    return 'text/html';
+  }
+  return trimmed.split(';', 1)[0]?.trim().toLowerCase() || 'text/html';
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -136,7 +144,7 @@ export async function openHtmlAttachmentInBrowser(
       throw new Error(`Failed to open attachment (${response.status})`);
     }
     const buffer = await response.arrayBuffer();
-    const contentType = response.headers.get('Content-Type')?.trim() ?? '';
+    const contentType = normalizeHtmlContentType(response.headers.get('Content-Type'));
     await Promise.resolve(
       bridge.openHtmlAttachment({
         fileName,

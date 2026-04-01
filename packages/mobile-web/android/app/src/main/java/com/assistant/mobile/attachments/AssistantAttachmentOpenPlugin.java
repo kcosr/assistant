@@ -1,6 +1,7 @@
 package com.assistant.mobile.attachments;
 
 import android.content.ActivityNotFoundException;
+import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
 import android.net.Uri;
@@ -40,9 +41,7 @@ public final class AssistantAttachmentOpenPlugin extends Plugin {
         if (fileName == null || fileName.trim().isEmpty()) {
             fileName = "attachment.html";
         }
-        if (contentType == null || contentType.trim().isEmpty()) {
-            contentType = "text/html";
-        }
+        contentType = AssistantHtmlAttachmentExportStore.normalizeContentType(contentType);
 
         File exportedFile;
         try {
@@ -70,16 +69,17 @@ public final class AssistantAttachmentOpenPlugin extends Plugin {
         }
 
         Intent openIntent = new Intent(Intent.ACTION_VIEW);
-        openIntent.setDataAndType(uri, "text/html");
+        openIntent.setDataAndType(uri, contentType);
         openIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         openIntent.setClipData(ClipData.newUri(getContext().getContentResolver(), "attachment", uri));
-        if (getActivity() == null) {
+        Activity activity = getActivity();
+        if (activity == null) {
             openIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
 
         try {
-            if (getActivity() != null) {
-                getActivity().startActivity(openIntent);
+            if (activity != null) {
+                activity.startActivity(openIntent);
             } else {
                 getContext().startActivity(openIntent);
             }

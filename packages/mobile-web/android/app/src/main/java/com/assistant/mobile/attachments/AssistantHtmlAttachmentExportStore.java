@@ -6,11 +6,17 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 final class AssistantHtmlAttachmentExportStore {
     private static final String EXPORT_DIR = "attachment_exports";
+    static final int MAX_EXPORTED_FILES = 32;
 
     private AssistantHtmlAttachmentExportStore() {}
 
@@ -24,20 +30,22 @@ final class AssistantHtmlAttachmentExportStore {
         if (!dir.exists() && !dir.mkdirs()) {
             throw new IOException("Failed to create attachment export directory");
         }
+        String normalizedContentType = normalizeContentType(contentType);
 
         File exportFile = new File(
             dir,
-            buildExportFileName(fileName, attachmentBytes, contentType)
+            buildExportFileName(fileName, attachmentBytes, normalizedContentType)
         );
-        if (!exportFile.exists()) {
-            try (FileOutputStream output = new FileOutputStream(exportFile)) {
-                output.write(attachmentBytes);
-            }
+        if (!exportFile.exists() || exportFile.length() != attachmentBytes.length) {
+            writeFileAtomically(exportFile, attachmentBytes);
         }
+        // Touch the file so frequently-opened attachments survive pruning.
+        exportFile.setLastModified(System.currentTimeMillis());
+        pruneExportDirectory(dir, exportFile);
         return exportFile;
     }
 
-    private static String buildExportFileName(
+    static String buildExportFileName(
         String fileName,
         byte[] attachmentBytes,
         String contentType
@@ -89,7 +97,7 @@ final class AssistantHtmlAttachmentExportStore {
         return slug.substring(start, end);
     }
 
-    private static String resolveExtension(String fileName, String contentType) {
+    static String resolveExtension(String fileName, String contentType) {
         int dotIndex = fileName.lastIndexOf('.');
         if (dotIndex >= 0 && dotIndex + 1 < fileName.length()) {
             StringBuilder extension = new StringBuilder();
@@ -103,16 +111,85 @@ final class AssistantHtmlAttachmentExportStore {
                 return extension.toString();
             }
         }
+        return "html";
+    }
 
+    static String normalizeContentType(String contentType) {
         String mimeType = contentType == null ? "" : contentType.trim().toLowerCase();
         int semicolonIndex = mimeType.indexOf(';');
         if (semicolonIndex >= 0) {
             mimeType = mimeType.substring(0, semicolonIndex).trim();
         }
-        if ("text/html".equals(mimeType)) {
-            return "html";
+        return mimeType.isEmpty() ? "text/html" : mimeType;
+    }
+
+    private static void writeFileAtomically(File exportFile, byte[] attachmentBytes) throws IOException {
+        File dir = exportFile.getParentFile();
+        if (dir == null) {
+            throw new IOException("Attachment export directory unavailable");
         }
-        return "html";
+        File tempFile = File.createTempFile(exportFile.getName() + "-", ".tmp", dir);
+        boolean moved = false;
+        try {
+            try (FileOutputStream output = new FileOutputStream(tempFile)) {
+                output.write(attachmentBytes);
+                output.getFD().sync();
+            }
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    exportFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                );
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(
+                    tempFile.toPath(),
+                    exportFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                );
+            }
+            moved = true;
+        } finally {
+            if (!moved && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+    }
+
+    private static void pruneExportDirectory(File dir, File preserveFile) {
+        File[] files = dir.listFiles();
+        if (files == null || files.length == 0) {
+            return;
+        }
+
+        for (File file : files) {
+            if (file.isFile() && file.getName().endsWith(".tmp")) {
+                file.delete();
+            }
+        }
+
+        File[] exportFiles = Arrays.stream(files)
+            .filter(File::isFile)
+            .filter(file -> !file.getName().endsWith(".tmp"))
+            .toArray(File[]::new);
+
+        if (exportFiles.length <= MAX_EXPORTED_FILES) {
+            return;
+        }
+
+        Arrays.sort(
+            exportFiles,
+            Comparator.comparingLong(File::lastModified).reversed()
+        );
+
+        for (int i = MAX_EXPORTED_FILES; i < exportFiles.length; i += 1) {
+            File file = exportFiles[i];
+            if (file.equals(preserveFile)) {
+                continue;
+            }
+            file.delete();
+        }
     }
 
     private static String sha256Hex(String fileName, String contentType, byte[] attachmentBytes) {

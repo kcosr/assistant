@@ -2800,6 +2800,22 @@ export class ChatRenderer {
     return button;
   }
 
+  private clearAttachmentToolActionError(bubble: HTMLDivElement): void {
+    bubble.querySelector('.attachment-tool-action-error')?.remove();
+  }
+
+  private showAttachmentToolActionError(bubble: HTMLDivElement, message: string): void {
+    let errorEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-action-error');
+    if (!errorEl) {
+      errorEl = document.createElement('div');
+      errorEl.className = 'attachment-tool-action-error';
+      errorEl.style.fontSize = '0.9em';
+      errorEl.style.color = 'var(--color-message-error-text)';
+      bubble.appendChild(errorEl);
+    }
+    errorEl.textContent = message;
+  }
+
   private updatePendingAttachmentToolBubble(
     bubble: HTMLDivElement,
     summary: { fileName?: string; title?: string },
@@ -2814,6 +2830,7 @@ export class ChatRenderer {
     bubble.style.borderColor = 'var(--color-border-subtle)';
     bubble.style.background = 'var(--color-bg-elevated)';
     bubble.querySelector('.attachment-tool-error')?.remove();
+    this.clearAttachmentToolActionError(bubble);
 
     const titleEl = bubble.querySelector<HTMLElement>('.attachment-tool-title');
     if (titleEl) {
@@ -2848,6 +2865,7 @@ export class ChatRenderer {
     bubble.style.borderColor = 'var(--color-border-subtle)';
     bubble.style.background = 'var(--color-bg-elevated)';
     bubble.querySelector('.attachment-tool-error')?.remove();
+    this.clearAttachmentToolActionError(bubble);
 
     const titleEl = bubble.querySelector<HTMLElement>('.attachment-tool-title');
     if (titleEl) {
@@ -2895,16 +2913,20 @@ export class ChatRenderer {
       actionsEl.replaceChildren();
 
       const downloadButton = this.createAttachmentActionButton('Download', () => {
+        this.clearAttachmentToolActionError(bubble);
         void downloadAttachment(attachment.downloadUrl, attachment.fileName).catch((error) => {
           console.error('[attachments] Failed to download attachment', error);
+          this.showAttachmentToolActionError(bubble, 'Failed to download attachment.');
         });
       });
       actionsEl.appendChild(downloadButton);
 
       if (attachment.openUrl && attachment.openMode === 'browser_blob') {
         const openButton = this.createAttachmentActionButton('Open', () => {
+          this.clearAttachmentToolActionError(bubble);
           void openHtmlAttachmentInBrowser(attachment.openUrl!, attachment.fileName).catch((error) => {
             console.error('[attachments] Failed to open HTML attachment', error);
+            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
           });
         });
         actionsEl.appendChild(openButton);

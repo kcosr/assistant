@@ -453,6 +453,78 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('shows attachment action failures inline without dropping the attachment bubble', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+    vi.spyOn(attachmentActions, 'openHtmlAttachmentInBrowser').mockRejectedValue(
+      new Error('boom'),
+    );
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-open-fail',
+        turnId: 't-open-fail',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-open-fail',
+        turnId: 't-open-fail',
+        responseId: 'r-open-fail',
+        payload: {
+          toolCallId: 'tc-open-fail',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'report.html',
+            title: 'Weekly Report',
+            text: '<html><body>Hello</body></html>',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-open-fail',
+        turnId: 't-open-fail',
+        responseId: 'r-open-fail',
+        payload: {
+          toolCallId: 'tc-open-fail',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-open-fail',
+              fileName: 'report.html',
+              title: 'Weekly Report',
+              contentType: 'text/html',
+              size: 128,
+              downloadUrl: '/api/attachments/session-1/att-open-fail?download=1',
+              openUrl: '/api/attachments/session-1/att-open-fail',
+              openMode: 'browser_blob',
+              previewType: 'none',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    const openButton = bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button')[1];
+    openButton?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bubble?.querySelector('.attachment-tool-action-error')?.textContent).toContain(
+      'Failed to open attachment.',
+    );
+    expect(bubble?.querySelector('.attachment-tool-title')?.textContent).toContain('Weekly Report');
+    expect(bubble?.querySelectorAll('.attachment-tool-actions button').length).toBe(2);
+  });
+
   it('replays wrapped attachment tool results from persisted history', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
