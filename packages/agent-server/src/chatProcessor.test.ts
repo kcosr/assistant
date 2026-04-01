@@ -690,5 +690,11 @@ describe('processUserMessage stream event emission', () => {
     expect(events.find((event) => event.type === 'interrupt')).toMatchObject({
       payload: { reason: 'timeout' },
     });
+    expect(state.chatMessages).toMatchObject([
+      {
+        role: 'user',
+        content: 'hi',
+      },
+    ]);
   });
 });

@@ -2,7 +2,7 @@ import type { ChatEvent } from '@assistant/shared';
 import { getAgentCallbackText, getUserVisibleUserText } from '../chatEventText';
 
 function isSummaryAssistantText(event: ChatEvent & { type: 'assistant_done' }): boolean {
-  return event.payload.phase !== 'commentary' && event.payload.interrupted !== true;
+  return event.payload.phase !== 'commentary';
 }
 
 function truncate(text: string, maxLength: number): string {

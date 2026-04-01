@@ -462,7 +462,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(assistantMessages[1]?.turnId).toBe('legacy-turn-2');
   });
 
-  it('skips aborted assistant messages when mapping Pi history', async () => {
+  it('maps aborted assistant messages with visible text as interrupted assistant events', async () => {
     const baseDir = await createTempDir('pi-session-history-aborted');
     const sessionId = 'session-aborted';
     const piSessionId = 'pi-session-aborted';
@@ -517,7 +517,13 @@ describe('PiSessionHistoryProvider', () => {
     });
 
     const assistantEvents = events.filter((event) => event.type === 'assistant_done');
-    expect(assistantEvents).toHaveLength(0);
+    expect(assistantEvents).toHaveLength(1);
+    expect(assistantEvents[0]).toMatchObject({
+      payload: {
+        text: 'Partial that should be dropped',
+        interrupted: true,
+      },
+    });
     const userEvents = events.filter((event) => event.type === 'user_message');
     expect(userEvents).toHaveLength(1);
   });

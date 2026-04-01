@@ -1977,9 +1977,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       }
       const timestamp = resolveTimestamp(messageEntry, entry);
       const stopReason = getString(messageEntry['stopReason']);
-      if (stopReason === 'aborted' || stopReason === 'error') {
+      if (stopReason === 'error') {
         continue;
       }
+      const interrupted = stopReason === 'aborted';
       if (!currentTurnId) {
         const turnId = getTurnId(messageEntry);
         startTurn(turnId, 'system', timestamp);
@@ -2045,6 +2046,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'assistant_done',
             payload: {
               text: textBuffer,
+              ...(interrupted ? { interrupted: true } : {}),
               ...(textPhase ? { phase: textPhase } : {}),
               ...(textSignature ? { textSignature } : {}),
             },
@@ -2158,7 +2160,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             turnId,
             responseId,
             type: 'assistant_done',
-            payload: { text: assistantText },
+            payload: {
+              text: assistantText,
+              ...(interrupted ? { interrupted: true } : {}),
+            },
           });
           emittedAssistantDone.add(assistantDoneKey);
         }

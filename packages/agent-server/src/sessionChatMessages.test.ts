@@ -58,7 +58,7 @@ describe('buildChatMessagesFromEvents', () => {
     );
   });
 
-  it('skips interrupted assistant output when rebuilding prompt messages', () => {
+  it('preserves visible interrupted assistant output when rebuilding prompt messages', () => {
     const registry = new AgentRegistry([]);
     const events: ChatEvent[] = [
       {
@@ -74,7 +74,7 @@ describe('buildChatMessagesFromEvents', () => {
         sessionId: 'session-1',
         responseId: 'resp-1',
         type: 'assistant_done',
-        payload: { text: 'Partial answer' },
+        payload: { text: 'Partial answer', interrupted: true },
       },
       {
         id: 'evt-interrupt',
@@ -88,10 +88,14 @@ describe('buildChatMessagesFromEvents', () => {
 
     const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
 
-    expect(messages.length).toBe(2);
+    expect(messages.length).toBe(3);
     expect(messages[0]?.role).toBe('system');
     expect(messages[1]?.role).toBe('user');
     expect(messages[1]?.content).toBe('Hello');
+    expect(messages[2]).toMatchObject({
+      role: 'assistant',
+      content: 'Partial answer',
+    });
   });
 
   it('appends project directory to the system message when provided', () => {
