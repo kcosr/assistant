@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.4] - 2026-04-01
 
 ### Breaking Changes
 
@@ -13,6 +13,7 @@
 - Fixed interrupted PI tool turns so replay no longer drops remembered requests, duplicates completed tool activity, or sends orphaned tool results on the next provider request.
 
 ### Removed
+
 
 ## [0.17.3] - 2026-03-31
 
