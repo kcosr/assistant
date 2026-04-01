@@ -367,6 +367,114 @@ describe('PiSessionWriter', () => {
     expect(second).toBe(first);
   });
 
+  it('realigns resumed writes when replay omits an earlier assistant.input entry', async () => {
+    const baseDir = await createTempDir('pi-session-writer-realign');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-3b',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        {
+          role: 'user',
+          content: '[Callback from agent]: <questionnaire-response />',
+          meta: { source: 'callback', fromSessionId: 'sess-a', visibility: 'visible' },
+        },
+        {
+          role: 'user',
+          content: '<questionnaire-response />',
+          meta: { source: 'callback', fromSessionId: 'sess-a', visibility: 'hidden' },
+        },
+        { role: 'assistant', content: 'Earlier assistant reply' },
+      ],
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const writer2 = new PiSessionWriter({ baseDir, now });
+    await writer2.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        {
+          role: 'user',
+          content: '[Callback from agent]: <questionnaire-response />',
+          meta: { source: 'callback', fromSessionId: 'sess-a', visibility: 'visible' },
+        },
+        { role: 'assistant', content: 'Earlier assistant reply' },
+        { role: 'user', content: 'follow-up one' },
+        { role: 'user', content: 'follow-up two' },
+        { role: 'assistant', content: 'New assistant reply' },
+      ],
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const entries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+
+    const customEntries = entries.filter(
+      (entry) => entry['type'] === 'custom_message' && entry['customType'] === 'assistant.input',
+    );
+    expect(customEntries).toHaveLength(2);
+
+    const assistantTexts = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+      .filter(
+        (message): message is Record<string, unknown> =>
+          message !== undefined && message['role'] === 'assistant',
+      )
+      .map((message) => {
+        const contentBlocks = Array.isArray(message['content']) ? message['content'] : [];
+        return contentBlocks
+          .filter((block): block is Record<string, unknown> => !!block && typeof block === 'object')
+          .filter((block) => block['type'] === 'text')
+          .map((block) => block['text'])
+          .filter((text): text is string => typeof text === 'string')
+          .join('\n');
+      });
+
+    expect(assistantTexts.filter((text) => text === 'Earlier assistant reply')).toHaveLength(1);
+    expect(assistantTexts).toContain('New assistant reply');
+
+    const userTexts = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+      .filter(
+        (message): message is Record<string, unknown> =>
+          message !== undefined && message['role'] === 'user',
+      )
+      .flatMap((message) => {
+        const contentBlocks = Array.isArray(message['content']) ? message['content'] : [];
+        return contentBlocks
+          .filter((block): block is Record<string, unknown> => !!block && typeof block === 'object')
+          .map((block) => block['text'])
+          .filter((text): text is string => typeof text === 'string');
+      });
+
+    expect(userTexts).toContain('follow-up one');
+    expect(userTexts).toContain('follow-up two');
+  });
+
   it('appends assistant.event custom entries without affecting message sync', async () => {
     const baseDir = await createTempDir('pi-session-writer-custom');
     const now = () => new Date('2026-02-01T00:00:00.000Z');

@@ -7,7 +7,7 @@ import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
 import type { SessionHub } from '../sessionHub';
 import type { SessionSummary } from '../sessionIndex';
-import { isOverlayChatEvent } from './overlayEventTypes';
+import { isOverlayChatEvent, isTransientReplayChatEvent } from './overlayEventTypes';
 
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
@@ -301,6 +301,10 @@ export class SessionScopedEventStore implements EventStore {
     }
   }
 
+  private shouldAlsoPersistPiOverlayEvent(event: ChatEvent): boolean {
+    return isTransientReplayChatEvent(event);
+  }
+
   async append(sessionId: string, event: ChatEvent): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
 
@@ -314,6 +318,9 @@ export class SessionScopedEventStore implements EventStore {
       }
       this.assertEventSessionMatches(trimmed, event);
       if (this.resolveSessionProvider(activeSummary) === 'pi') {
+        if (this.shouldAlsoPersistPiOverlayEvent(event)) {
+          await this.base.append(trimmed, event);
+        }
         await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
         return;
       }
@@ -329,6 +336,9 @@ export class SessionScopedEventStore implements EventStore {
     }
     this.assertEventSessionMatches(trimmed, event);
     if (this.resolveSessionProvider(summary) === 'pi') {
+      if (this.shouldAlsoPersistPiOverlayEvent(event)) {
+        await this.base.append(trimmed, event);
+      }
       await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
       return;
     }
@@ -354,6 +364,12 @@ export class SessionScopedEventStore implements EventStore {
         this.assertEventSessionMatches(trimmed, event);
       }
       if (this.resolveSessionProvider(activeSummary) === 'pi') {
+        const transientReplayEvents = overlayEvents.filter((event) =>
+          this.shouldAlsoPersistPiOverlayEvent(event),
+        );
+        if (transientReplayEvents.length > 0) {
+          await this.base.appendBatch(trimmed, transientReplayEvents);
+        }
         for (const event of overlayEvents) {
           await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
         }
@@ -375,6 +391,12 @@ export class SessionScopedEventStore implements EventStore {
       this.assertEventSessionMatches(trimmed, event);
     }
     if (this.resolveSessionProvider(summary) === 'pi') {
+      const transientReplayEvents = overlayEvents.filter((event) =>
+        this.shouldAlsoPersistPiOverlayEvent(event),
+      );
+      if (transientReplayEvents.length > 0) {
+        await this.base.appendBatch(trimmed, transientReplayEvents);
+      }
       for (const event of overlayEvents) {
         await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
       }

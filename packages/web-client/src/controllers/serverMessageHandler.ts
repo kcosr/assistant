@@ -49,6 +49,8 @@ export interface ServerMessageHandlerOptions {
   supportsAudioOutput: () => boolean;
   refreshSessions: (preferredSessionId?: string | null) => Promise<void>;
   loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
+  shouldBufferChatEvent?: (sessionId: string) => boolean;
+  bufferChatEvent?: (sessionId: string, event: ChatEvent) => void;
   renderAgentSidebar: () => void;
   appendMessage: (
     container: HTMLElement,
@@ -208,6 +210,11 @@ export class ServerMessageHandler {
 
         this.syncSessionTurnActivity(sessionId);
 
+        if (this.options.shouldBufferChatEvent?.(sessionId)) {
+          this.options.bufferChatEvent?.(sessionId, event);
+          break;
+        }
+
         const runtime = this.options.getChatRuntimeForSession(sessionId);
         if (!runtime) {
           break;
@@ -332,7 +339,6 @@ export class ServerMessageHandler {
         break;
       }
       case 'session_ready': {
-        console.log('[client] session_ready received', { sessionId: message.sessionId });
         const selectedSessionId = this.options.getSelectedSessionId();
         if (!selectedSessionId) {
           this.options.setSelectedSessionId(message.sessionId);
@@ -392,7 +398,7 @@ export class ServerMessageHandler {
         }
 
         void this.options.refreshSessions(message.sessionId);
-        void this.options.loadSessionTranscript(message.sessionId);
+        void this.options.loadSessionTranscript(message.sessionId, { force: true });
 
         if (
           this.options.getAutoFocusChatOnSessionReady() &&
@@ -400,7 +406,6 @@ export class ServerMessageHandler {
           !this.options.isSidebarFocused() &&
           (!selectedSessionId || selectedSessionId === message.sessionId)
         ) {
-          console.log('[client] session_ready: focusing input');
           this.options.focusInputForSession(message.sessionId);
         }
         break;

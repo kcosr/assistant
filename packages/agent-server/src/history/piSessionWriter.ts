@@ -94,6 +94,7 @@ type PiSessionWriterState = {
   header: PiSessionHeader;
   leafId: string | null;
   writtenMessageCount: number;
+  messageSignatures: string[];
   hasAssistant: boolean;
   toolCallIds: Set<string>;
   lastModel?: ModelInfo;
@@ -140,6 +141,12 @@ type PiSessionEntryRecord = Record<string, unknown> & {
 type PiSessionFileRecords = {
   header: PiSessionHeaderRecord;
   entries: PiSessionEntryRecord[];
+};
+
+type MessageSyncAlignment = {
+  startIndex: number;
+  matchedCount: number;
+  mode: 'prefix' | 'suffix' | 'none';
 };
 
 type PiTurnSpan = {
@@ -352,6 +359,269 @@ function collectToolCallIdsFromAssistantMessage(message: ChatCompletionMessage &
   return ids;
 }
 
+function stableNormalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stableNormalizeJson(item));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  const normalized: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    const next = stableNormalizeJson(value[key]);
+    if (next !== undefined) {
+      normalized[key] = next;
+    }
+  }
+  return normalized;
+}
+
+function stableSerialize(value: unknown): string {
+  return JSON.stringify(stableNormalizeJson(value));
+}
+
+function normalizePiContentBlockForSignature(block: unknown): unknown {
+  if (!isRecord(block)) {
+    return block;
+  }
+  const type = typeof block['type'] === 'string' ? block['type'] : '';
+  switch (type) {
+    case 'text':
+      return {
+        type,
+        text: typeof block['text'] === 'string' ? block['text'] : '',
+        ...(typeof block['textSignature'] === 'string'
+          ? { textSignature: block['textSignature'] }
+          : {}),
+      };
+    case 'toolCall':
+      return {
+        type,
+        id: typeof block['id'] === 'string' ? block['id'] : '',
+        name: typeof block['name'] === 'string' ? block['name'] : '',
+        arguments: stableNormalizeJson(block['arguments'] ?? {}),
+      };
+    case 'thinking':
+      return {
+        type,
+        thinking: typeof block['thinking'] === 'string' ? block['thinking'] : '',
+        ...(typeof block['thinkingSignature'] === 'string'
+          ? { thinkingSignature: block['thinkingSignature'] }
+          : {}),
+        ...(block['summary'] !== undefined ? { summary: stableNormalizeJson(block['summary']) } : {}),
+      };
+    default:
+      return stableNormalizeJson(block);
+  }
+}
+
+function normalizePiMessageForSignature(message: unknown): unknown {
+  if (!isRecord(message)) {
+    return message;
+  }
+  const role = typeof message['role'] === 'string' ? message['role'] : '';
+  const content = Array.isArray(message['content'])
+    ? message['content'].map((block) => normalizePiContentBlockForSignature(block))
+    : [];
+  if (role === 'toolResult') {
+    return {
+      role,
+      toolCallId: typeof message['toolCallId'] === 'string' ? message['toolCallId'] : '',
+      toolName: typeof message['toolName'] === 'string' ? message['toolName'] : '',
+      content,
+      isError: message['isError'] === true,
+    };
+  }
+  if (role === 'assistant' || role === 'user') {
+    return { role, content };
+  }
+  return stableNormalizeJson(message);
+}
+
+function signatureFromPiMessage(message: unknown): string {
+  return stableSerialize({
+    type: 'message',
+    message: normalizePiMessageForSignature(message),
+  });
+}
+
+function normalizeCountedCustomMessageForSignature(entry: {
+  customType: string;
+  content: string | unknown[];
+  details?: unknown;
+  display: boolean;
+}): unknown {
+  return {
+    type: 'custom_message',
+    customType: entry.customType,
+    content: stableNormalizeJson(entry.content),
+    details: stableNormalizeJson(entry.details ?? null),
+    display: entry.display,
+  };
+}
+
+function signatureFromCustomMessageEntry(entry: {
+  customType: string;
+  content: string | unknown[];
+  details?: unknown;
+  display: boolean;
+}): string {
+  return stableSerialize(normalizeCountedCustomMessageForSignature(entry));
+}
+
+function signatureFromChatCompletionMessage(
+  message: ChatCompletionMessage,
+  toolCallNameMap: Map<string, string>,
+): string {
+  switch (message.role) {
+    case 'user': {
+      const meta = message.meta;
+      if (meta?.source === 'agent') {
+        return signatureFromCustomMessageEntry({
+          customType: 'assistant.input',
+          content: message.content ?? '',
+          details: {
+            kind: 'agent',
+            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+          },
+          display: true,
+        });
+      }
+      if (meta?.source === 'callback') {
+        return signatureFromCustomMessageEntry({
+          customType: 'assistant.input',
+          content: message.content ?? '',
+          details: {
+            kind: 'callback',
+            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+          },
+          display: meta.visibility === 'visible',
+        });
+      }
+      return signatureFromPiMessage(buildUserMessage(message.content ?? '', 0));
+    }
+    case 'assistant': {
+      if (message.piSdkMessage) {
+        return signatureFromPiMessage(message.piSdkMessage);
+      }
+      const blocks: Array<Record<string, unknown>> = [];
+      if (message.content) {
+        const textSignature =
+          message.assistantTextSignature ??
+          (message.assistantTextPhase
+            ? encodeAssistantTextSignature({ phase: message.assistantTextPhase })
+            : undefined);
+        blocks.push({
+          type: 'text',
+          text: message.content,
+          ...(textSignature ? { textSignature } : {}),
+        });
+      }
+      if (Array.isArray(message.tool_calls)) {
+        for (const call of message.tool_calls) {
+          const id = call.id ?? '';
+          const name = call.function?.name ?? '';
+          if (!id || !name) {
+            continue;
+          }
+          blocks.push({
+            type: 'toolCall',
+            id,
+            name,
+            arguments: parseToolArguments(call.function?.arguments ?? ''),
+          });
+        }
+      }
+      return signatureFromPiMessage({
+        role: 'assistant',
+        content: blocks,
+      });
+    }
+    case 'tool': {
+      const toolCallId = message.tool_call_id;
+      if (!toolCallNameMap.has(toolCallId)) {
+        return signatureFromCustomMessageEntry({
+          customType: ORPHAN_TOOL_RESULT_CUSTOM_TYPE,
+          content: '',
+          details: {
+            toolCallId,
+            toolName: toolCallNameMap.get(toolCallId) ?? 'tool',
+            note: 'Tool result dropped because matching toolCall was not found in session log.',
+          },
+          display: false,
+        });
+      }
+      return signatureFromPiMessage({
+        role: 'toolResult',
+        toolCallId,
+        toolName: toolCallNameMap.get(toolCallId) ?? 'tool',
+        content: [{ type: 'text', text: message.content }],
+        isError: parseToolResultIsError(message.content),
+      });
+    }
+    default:
+      return stableSerialize({ role: message.role });
+  }
+}
+
+function signaturesEqual(
+  left: string[],
+  leftStart: number,
+  right: string[],
+  rightStart: number,
+  count: number,
+): boolean {
+  for (let index = 0; index < count; index += 1) {
+    if (left[leftStart + index] !== right[rightStart + index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function resolveMessageSyncAlignment(options: {
+  persistedSignatures: string[];
+  currentSignatures: string[];
+}): MessageSyncAlignment {
+  const { persistedSignatures, currentSignatures } = options;
+  if (persistedSignatures.length === 0) {
+    return { startIndex: 0, matchedCount: 0, mode: 'prefix' };
+  }
+
+  if (
+    currentSignatures.length >= persistedSignatures.length &&
+    signaturesEqual(persistedSignatures, 0, currentSignatures, 0, persistedSignatures.length)
+  ) {
+    return {
+      startIndex: persistedSignatures.length,
+      matchedCount: persistedSignatures.length,
+      mode: 'prefix',
+    };
+  }
+
+  const maxOverlap = Math.min(persistedSignatures.length, currentSignatures.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    const persistedStart = persistedSignatures.length - overlap;
+    for (let currentStart = currentSignatures.length - overlap; currentStart >= 0; currentStart -= 1) {
+      if (signaturesEqual(persistedSignatures, persistedStart, currentSignatures, currentStart, overlap)) {
+        return {
+          startIndex: currentStart + overlap,
+          matchedCount: overlap,
+          mode: 'suffix',
+        };
+      }
+    }
+  }
+
+  return {
+    startIndex: currentSignatures.length,
+    matchedCount: 0,
+    mode: 'none',
+  };
+}
+
 function resolveModelInfo(options: {
   messages: ChatCompletionMessage[];
   modelSpec?: string;
@@ -478,6 +748,7 @@ async function loadExistingPiSessionState(
 ): Promise<{
   leafId: string | null;
   messageCount: number;
+  messageSignatures: string[];
   hasAssistant: boolean;
   toolCallIds: Set<string>;
   lastModel?: ModelInfo;
@@ -498,6 +769,7 @@ async function loadExistingPiSessionState(
     return {
       leafId: null,
       messageCount: 0,
+      messageSignatures: [],
       hasAssistant: false,
       toolCallIds: new Set<string>(),
       openTurnId: null,
@@ -511,6 +783,7 @@ async function loadExistingPiSessionState(
 
   let leafId: string | null = null;
   let messageCount = 0;
+  const messageSignatures: string[] = [];
   let hasAssistant = false;
   const toolCallIds = new Set<string>();
   let lastModel: ModelInfo | undefined;
@@ -533,6 +806,7 @@ async function loadExistingPiSessionState(
     const entryType = entry['type'];
     if (entryType === 'message') {
       messageCount += 1;
+      messageSignatures.push(signatureFromPiMessage(entry['message']));
       const message = entry['message'] as Record<string, unknown> | undefined;
       if (message && message['role'] === 'assistant') {
         hasAssistant = true;
@@ -563,6 +837,17 @@ async function loadExistingPiSessionState(
       const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
       if (customType === 'assistant.input' || customType === ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
         messageCount += 1;
+        messageSignatures.push(
+          signatureFromCustomMessageEntry({
+            customType,
+            content:
+              typeof entry['content'] === 'string' || Array.isArray(entry['content'])
+                ? (entry['content'] as string | unknown[])
+                : '',
+            details: entry['details'],
+            display: entry['display'] === true,
+          }),
+        );
       }
     }
     if (entryType === 'custom') {
@@ -604,6 +889,7 @@ async function loadExistingPiSessionState(
   return {
     leafId,
     messageCount,
+    messageSignatures,
     hasAssistant,
     toolCallIds,
     openTurnId,
@@ -933,14 +1219,39 @@ export class PiSessionWriter {
     const state = stateInfo.state;
 
     const persistableMessages = messages.filter((message) => message.role !== 'system');
-    if (persistableMessages.length < state.writtenMessageCount) {
-      this.sessions.delete(summary.sessionId);
-      return this.sync(options);
+    const toolCallNameMap = buildToolCallNameMap(persistableMessages);
+    const currentSignatures = persistableMessages.map((message) =>
+      signatureFromChatCompletionMessage(message, toolCallNameMap),
+    );
+    const alignment = resolveMessageSyncAlignment({
+      persistedSignatures: state.messageSignatures,
+      currentSignatures,
+    });
+
+    if (alignment.mode === 'none' && state.messageSignatures.length > 0 && currentSignatures.length > 0) {
+      this.log('Pi session sync skipped due to unreconcilable message alignment', {
+        sessionId: summary.sessionId,
+        piSessionId: state.piSessionId,
+        persistedMessageCount: state.messageSignatures.length,
+        currentMessageCount: currentSignatures.length,
+      });
+      return currentSummary === summary ? undefined : currentSummary;
     }
 
-    const newMessages = persistableMessages.slice(state.writtenMessageCount);
+    const newMessages = persistableMessages.slice(alignment.startIndex);
+    const newMessageSignatures = currentSignatures.slice(alignment.startIndex);
     if (newMessages.length === 0) {
       return currentSummary === summary ? undefined : currentSummary;
+    }
+
+    if (alignment.mode === 'suffix') {
+      this.log('Pi session sync realigned after replay drift', {
+        sessionId: summary.sessionId,
+        piSessionId: state.piSessionId,
+        matchedCount: alignment.matchedCount,
+        persistedMessageCount: state.messageSignatures.length,
+        currentMessageCount: currentSignatures.length,
+      });
     }
 
     const normalizedThinking = normalizeThinkingLevel(thinkingLevel);
@@ -949,8 +1260,6 @@ export class PiSessionWriter {
       ...(modelSpec ? { modelSpec } : {}),
       ...(defaultProvider ? { defaultProvider } : {}),
     });
-
-    const toolCallNameMap = buildToolCallNameMap(persistableMessages);
 
     let leafId = state.leafId;
     let messageCount = state.writtenMessageCount;
@@ -1137,6 +1446,7 @@ export class PiSessionWriter {
 
     state.leafId = leafId;
     state.writtenMessageCount = messageCount;
+    state.messageSignatures.push(...newMessageSignatures);
     state.hasAssistant = hasAssistant;
     state.toolCallIds = knownToolCallIds;
 
@@ -1441,6 +1751,7 @@ export class PiSessionWriter {
 
     let leafId: string | null = null;
     let messageCount = 0;
+    let messageSignatures: string[] = [];
     let hasAssistant = false;
     let toolCallIds = new Set<string>();
     let lastModel: ModelInfo | undefined;
@@ -1455,6 +1766,7 @@ export class PiSessionWriter {
           const existingState = await loadExistingPiSessionState(sessionFile);
           leafId = existingState.leafId;
           messageCount = existingState.messageCount;
+          messageSignatures = existingState.messageSignatures;
           hasAssistant = existingState.hasAssistant;
           toolCallIds = existingState.toolCallIds;
           lastModel = existingState.lastModel;
@@ -1487,6 +1799,7 @@ export class PiSessionWriter {
       header,
       leafId,
       writtenMessageCount: messageCount,
+      messageSignatures,
       hasAssistant,
       toolCallIds,
       ...(lastModel ? { lastModel } : {}),

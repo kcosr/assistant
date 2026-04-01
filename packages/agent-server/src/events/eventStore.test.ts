@@ -392,4 +392,124 @@ describe('SessionScopedEventStore', () => {
       }),
     );
   });
+
+  it('persists transient replay overlays for Pi sessions while still mirroring them', async () => {
+    const nowIso = new Date().toISOString();
+    const summaries = new Map<string, SessionSummary>([
+      [
+        'pi-sdk-session',
+        {
+          sessionId: 'pi-sdk-session',
+          agentId: 'pi',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          attributes: {
+            providers: {
+              pi: {
+                sessionId: 'pi-session-id',
+                cwd: '/home/pi',
+              },
+            },
+          },
+        },
+      ],
+    ]);
+
+    const appendAssistantEvent = vi.fn(async () => undefined);
+
+    const sessionHub = {
+      getSessionState: () => undefined,
+      getSessionIndex: () => ({
+        getSession: async (sessionId: string) => summaries.get(sessionId),
+      }),
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi SDK',
+            chat: { provider: 'pi' },
+          },
+        ]),
+      shouldPersistSessionEvents: () => false,
+      getPiSessionWriter: () =>
+        ({
+          appendAssistantEvent,
+        }) as unknown as { appendAssistantEvent: typeof appendAssistantEvent },
+      updateSessionAttributes: vi.fn(async () => summaries.get('pi-sdk-session')),
+    } as unknown as SessionHub;
+
+    const baseStore: EventStore = {
+      append: vi.fn(async () => undefined),
+      appendBatch: vi.fn(async () => undefined),
+      getEvents: vi.fn(async () => []),
+      getEventsSince: vi.fn(async () => []),
+      subscribe: vi.fn(() => () => undefined),
+      clearSession: vi.fn(async () => undefined),
+      deleteSession: vi.fn(async () => undefined),
+    };
+
+    const store = new SessionScopedEventStore(baseStore, sessionHub);
+
+    const turnStart: ChatEvent = {
+      id: 'turn-start-1',
+      timestamp: Date.now(),
+      sessionId: 'pi-sdk-session',
+      turnId: 'turn-1',
+      type: 'turn_start',
+      payload: { trigger: 'user' },
+    };
+    const userMessage: ChatEvent = {
+      id: 'user-1',
+      timestamp: Date.now() + 1,
+      sessionId: 'pi-sdk-session',
+      turnId: 'turn-1',
+      type: 'user_message',
+      payload: { text: 'hello' },
+    };
+    const interaction: ChatEvent = {
+      id: 'interaction-1',
+      timestamp: Date.now() + 2,
+      sessionId: 'pi-sdk-session',
+      type: 'interaction_request',
+      payload: {
+        toolCallId: 'call-1',
+        toolName: 'questions_ask',
+        interactionId: 'interaction-1',
+        interactionType: 'input',
+        presentation: 'questionnaire',
+        inputSchema: {
+          title: 'Quick question',
+          fields: [{ id: 'answer', type: 'text', label: 'Answer' }],
+        },
+      },
+    };
+
+    await store.appendBatch('pi-sdk-session', [turnStart, userMessage, interaction]);
+
+    expect(baseStore.appendBatch).toHaveBeenCalledTimes(1);
+    expect(baseStore.appendBatch).toHaveBeenCalledWith('pi-sdk-session', [turnStart, userMessage]);
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(3);
+    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        summary: summaries.get('pi-sdk-session'),
+        eventType: 'turn_start',
+      }),
+    );
+    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        summary: summaries.get('pi-sdk-session'),
+        eventType: 'user_message',
+      }),
+    );
+    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        summary: summaries.get('pi-sdk-session'),
+        eventType: 'interaction_request',
+      }),
+    );
+  });
 });
