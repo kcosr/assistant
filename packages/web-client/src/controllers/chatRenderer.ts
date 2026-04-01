@@ -1,5 +1,6 @@
 import type {
   AttachmentDescriptor,
+  AttachmentToolResult,
   AgentCallbackEvent,
   AgentMessageEvent,
   AssistantChunkEvent,
@@ -99,6 +100,52 @@ export interface ChatRendererOptions {
 
 const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
 const ATTACHMENT_TOOL_NAME = 'attachment_send';
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function getAttachmentToolResult(value: unknown): AttachmentToolResult | null {
+  if (isAttachmentToolResult(value)) {
+    return value;
+  }
+
+  let record: Record<string, unknown> | null =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+
+  if (!record && typeof value === 'string') {
+    record = parseJsonRecord(value);
+  }
+  if (!record) {
+    return null;
+  }
+
+  const nestedResult = record['result'];
+  if (isAttachmentToolResult(nestedResult)) {
+    return nestedResult;
+  }
+  if (typeof nestedResult === 'string') {
+    const parsedNested = parseJsonRecord(nestedResult);
+    if (isAttachmentToolResult(parsedNested)) {
+      return parsedNested;
+    }
+  }
+
+  return null;
+}
 
 export class ChatRenderer {
   private readonly container: HTMLElement;
@@ -1187,10 +1234,13 @@ export class ChatRenderer {
     if (block && this.isAttachmentToolName(existingToolName)) {
       if (event.payload.error) {
         this.updateAttachmentToolBubbleError(block, event.payload.error.message);
-      } else if (isAttachmentToolResult(event.payload.result)) {
-        this.renderAttachmentToolBubble(block, event.payload.result.attachment);
       } else {
-        this.updateAttachmentToolBubbleError(block, 'Attachment result payload was invalid.');
+        const attachmentResult = getAttachmentToolResult(event.payload.result);
+        if (attachmentResult) {
+          this.renderAttachmentToolBubble(block, attachmentResult.attachment);
+        } else {
+          this.updateAttachmentToolBubbleError(block, 'Attachment result payload was invalid.');
+        }
       }
       return;
     }
@@ -1198,7 +1248,8 @@ export class ChatRenderer {
       if (this.questionnaireToolCalls.has(callId)) {
         return;
       }
-      if (isAttachmentToolResult(event.payload.result)) {
+      const attachmentResult = getAttachmentToolResult(event.payload.result);
+      if (attachmentResult) {
         block = this.getOrCreateAttachmentToolBubble({
           eventId: event.id,
           turnId: event.turnId,
@@ -1206,7 +1257,7 @@ export class ChatRenderer {
           responseId,
           timestamp: event.timestamp,
         });
-        this.renderAttachmentToolBubble(block, event.payload.result.attachment);
+        this.renderAttachmentToolBubble(block, attachmentResult.attachment);
         return;
       }
       const responseEl = this.getOrCreateToolCallContainer(
