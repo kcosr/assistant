@@ -298,6 +298,7 @@ describe('ChatRenderer', () => {
     const openSpy = vi
       .spyOn(attachmentActions, 'openHtmlAttachmentInBrowser')
       .mockResolvedValue(undefined);
+    const downloadSpy = vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
 
     const renderer = new ChatRenderer(container, {
       getExpandToolOutput: () => true,
@@ -354,10 +355,12 @@ describe('ChatRenderer', () => {
     expect(bubble?.textContent).toContain('text/html');
     expect(bubble?.querySelector('.tool-output-block')).toBeNull();
 
-    const downloadLink = bubble?.querySelector<HTMLAnchorElement>('.attachment-tool-actions a');
-    expect(downloadLink?.href).toContain('/api/attachments/session-1/att-1?download=1');
+    const downloadButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expect(downloadButton?.textContent).toBe('Download');
+    downloadButton?.click();
+    expect(downloadSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1?download=1', 'report.html');
 
-    const openButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    const openButton = bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button')[1];
     expect(openButton?.textContent).toBe('Open');
     openButton?.click();
     expect(openSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1');

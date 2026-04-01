@@ -1,4 +1,6 @@
 import { apiFetch, getApiBaseUrl } from './api';
+import { openExternalUrl } from './capacitor';
+import { isTauri } from './tauri';
 
 function clickObjectUrlAnchor(
   objectUrl: string,
@@ -28,6 +30,28 @@ export function resolveAttachmentUrl(url: string): string {
     return trimmed;
   }
   return `${getApiBaseUrl().replace(/\/+$/, '')}${trimmed}`;
+}
+
+export async function downloadAttachment(url: string, fileName: string): Promise<void> {
+  const resolvedUrl = resolveAttachmentUrl(url);
+  if (!resolvedUrl) {
+    return;
+  }
+  if (isTauri()) {
+    await openExternalUrl(resolvedUrl);
+    return;
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = resolvedUrl;
+  anchor.rel = 'noopener noreferrer';
+  if (fileName.trim()) {
+    anchor.download = fileName;
+  }
+  anchor.style.display = 'none';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 export async function openHtmlAttachmentInBrowser(url: string): Promise<void> {

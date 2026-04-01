@@ -34,6 +34,7 @@ import {
   type QuestionnaireCallbackPayload,
 } from '@assistant/shared';
 import {
+  downloadAttachment,
   openHtmlAttachmentInBrowser,
   resolveAttachmentUrl,
 } from '../utils/attachmentActions';
@@ -2872,14 +2873,16 @@ export class ChatRenderer {
     if (actionsEl) {
       actionsEl.replaceChildren();
 
-      const downloadLink = document.createElement('a');
-      downloadLink.href = resolveAttachmentUrl(attachment.downloadUrl);
-      downloadLink.textContent = 'Download';
-      downloadLink.rel = 'noopener noreferrer';
-      downloadLink.download = attachment.fileName;
-      downloadLink.style.color = 'var(--color-link)';
-      downloadLink.style.textDecoration = 'none';
-      actionsEl.appendChild(downloadLink);
+      const downloadButton = document.createElement('button');
+      downloadButton.type = 'button';
+      downloadButton.textContent = 'Download';
+      downloadButton.className = 'text-button';
+      downloadButton.addEventListener('click', () => {
+        void downloadAttachment(attachment.downloadUrl, attachment.fileName).catch((error) => {
+          console.error('[attachments] Failed to download attachment', error);
+        });
+      });
+      actionsEl.appendChild(downloadButton);
 
       if (attachment.openUrl && attachment.openMode === 'browser_blob') {
         const openButton = document.createElement('button');

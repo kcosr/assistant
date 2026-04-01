@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { openHtmlAttachmentInBrowser, resolveAttachmentUrl } from './attachmentActions';
+import * as capacitor from './capacitor';
+import { downloadAttachment, openHtmlAttachmentInBrowser, resolveAttachmentUrl } from './attachmentActions';
 
 function setLocationPathname(pathname: string): void {
   Object.defineProperty(window, 'location', {
@@ -62,5 +63,18 @@ describe('attachmentActions', () => {
 
     vi.runOnlyPendingTimers();
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:https://example.com/test');
+  });
+
+  it('opens downloads externally in Tauri instead of relying on anchor download', async () => {
+    const openSpy = vi.spyOn(capacitor, 'openExternalUrl').mockResolvedValue(undefined);
+    (window as Window & { __TAURI__?: object }).__TAURI__ = {
+      core: { invoke: vi.fn() },
+      event: { listen: vi.fn() },
+    };
+
+    await downloadAttachment('/api/attachments/s1/a1?download=1', 'report.html');
+
+    expect(openSpy).toHaveBeenCalledWith('http://localhost/assistant/api/attachments/s1/a1?download=1');
+    expect(document.body.querySelector('a')).toBeNull();
   });
 });
