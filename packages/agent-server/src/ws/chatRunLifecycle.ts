@@ -11,7 +11,7 @@ import type {
 } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
-import type { PiSdkChatConfig } from '../agents';
+import type { AgentDefinition, PiSdkChatConfig } from '../agents';
 import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { TtsBackendFactory } from '../tts/types';
@@ -74,6 +74,72 @@ function buildAssistantDoneEvents(options: {
       payload: { text: fullText },
     },
   ];
+}
+
+async function persistInterruptedPiAssistantMessage(options: {
+  sessionId: string;
+  state: LogicalSessionState;
+  sessionHub: SessionHub;
+  agent: AgentDefinition | undefined;
+  piSessionWriter: NonNullable<ReturnType<SessionHub['getPiSessionWriter']>>;
+  runResult: {
+    provider: string;
+    fullText: string;
+    piSdkMessage?: PiSdkMessage;
+    piReplayMessages?: ChatCompletionMessage[];
+  };
+  log: (...args: unknown[]) => void;
+}): Promise<void> {
+  const { sessionId, state, sessionHub, agent, piSessionWriter, runResult, log } = options;
+  if (runResult.provider !== 'pi' || !runResult.piSdkMessage) {
+    return;
+  }
+
+  try {
+    const active = state.activeChatRun;
+    const visibleAssistant = resolveVisibleAssistantText({
+      fullText: runResult.fullText,
+      piSdkMessage: runResult.piSdkMessage,
+    });
+    const assistantTimestampMs =
+      (runResult.piSdkMessage.role === 'assistant' &&
+      Number.isFinite(runResult.piSdkMessage.timestamp)
+        ? runResult.piSdkMessage.timestamp
+        : undefined) ??
+      (active?.textStartedAt ? Date.parse(active.textStartedAt) : undefined) ??
+      Date.now();
+    const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
+    const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
+    const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
+    const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
+      role: 'assistant',
+      content: visibleAssistant.text,
+      historyTimestampMs: assistantTimestampMs,
+      piSdkMessage: runResult.piSdkMessage,
+    };
+    const replayMessages = runResult.piReplayMessages;
+    const messagesForPiSync =
+      replayMessages && replayMessages !== state.chatMessages
+        ? buildMessagesForPiSync({
+            stateMessages: state.chatMessages,
+            replayMessages,
+            finalAssistantMessage,
+          })
+        : [...state.chatMessages, finalAssistantMessage];
+    const updatedSummary = await piSessionWriter.sync({
+      summary: state.summary,
+      messages: messagesForPiSync,
+      ...(modelSpec ? { modelSpec } : {}),
+      ...(defaultProvider ? { defaultProvider } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+    });
+    if (updatedSummary) {
+      state.summary = updatedSummary;
+    }
+  } catch (err) {
+    log('failed to sync interrupted Pi session history', err);
+  }
 }
 
 export async function handleTextInputWithChatCompletions(options: {
@@ -364,6 +430,17 @@ export async function handleTextInputWithChatCompletions(options: {
     if (wasAborted) {
       const timedOut =
         runResult.abortReason === 'timeout' || abortController.signal.reason === 'timeout';
+      if (piSessionWriter && runResult.provider === 'pi') {
+        await persistInterruptedPiAssistantMessage({
+          sessionId,
+          state,
+          sessionHub,
+          agent,
+          piSessionWriter,
+          runResult,
+          log,
+        });
+      }
       await finalizeChatTurn({
         sessionId,
         state,

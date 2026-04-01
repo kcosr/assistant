@@ -722,4 +722,128 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       },
     ]);
   });
+
+  it('syncs the aborted Pi assistant message before closing an interrupted turn', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    const abortedMessageTimestamp = Date.now();
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      await options.onDeltaText?.('Interrupted answer', 'Interrupted answer');
+      return {
+        text: 'Interrupted answer',
+        toolCalls: [],
+        aborted: true,
+        abortReason: 'aborted',
+        assistantMessage: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Interrupted answer' }],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'aborted',
+          timestamp: abortedMessageTimestamp,
+        } as never,
+      };
+    });
+
+    const sync = vi.fn(async () => undefined);
+    const piSessionWriter = {
+      appendTurnStart: vi.fn(async () => undefined),
+      appendTurnEnd: vi.fn(async () => undefined),
+      sync,
+    };
+
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => piSessionWriter as never,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    const syncPayload = ((sync.mock.calls as unknown) as Array<[unknown]>)[0]?.[0];
+    expect(syncPayload).toBeDefined();
+    expect(syncPayload).toMatchObject({
+      summary: state.summary,
+      messages: [
+        { role: 'user', content: 'Current request' },
+        {
+          role: 'assistant',
+          content: 'Interrupted answer',
+          historyTimestampMs: abortedMessageTimestamp,
+          piSdkMessage: expect.objectContaining({
+            stopReason: 'aborted',
+            content: [{ type: 'text', text: 'Interrupted answer' }],
+          }),
+        },
+      ],
+    });
+    expect(piSessionWriter.appendTurnEnd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: state.summary,
+        status: 'interrupted',
+      }),
+    );
+  });
 });

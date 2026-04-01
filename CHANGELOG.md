@@ -11,6 +11,8 @@
 ### Fixed
 - Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
+- Fixed Pi replay so late raw provider messages already mirrored into explicit app turns no longer get reassigned onto a newer turn during reload.
+- Fixed interrupted Pi turns so visible aborted assistant output is synced into the Pi session file before turn close, preserving interrupted reload replay for assistant text, thinking, and tool-call content.
 
 ### Removed
 

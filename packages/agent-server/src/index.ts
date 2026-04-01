@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
-import { FileEventStore, SessionScopedEventStore } from './events';
+import { FileEventStore, InMemoryOverlayEventBuffer, SessionScopedEventStore } from './events';
 import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstanceDataDir } from './plugins/instances';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
@@ -66,11 +66,12 @@ export async function startServer(
 ): Promise<void> {
   const sessionIndex = new SessionIndex(path.join(config.dataDir, 'sessions.jsonl'));
   const eventStore = new FileEventStore(config.dataDir);
+  const piOverlayBuffer = new InMemoryOverlayEventBuffer();
   const registry = agentRegistry ?? new AgentRegistry([]);
   const historyProvider = new HistoryProviderRegistry([
     new ClaudeSessionHistoryProvider({ eventStore }),
     new CodexSessionHistoryProvider({ eventStore, dataDir: config.dataDir }),
-    new PiSessionHistoryProvider({ eventStore }),
+    new PiSessionHistoryProvider({ eventStore, overlayBuffer: piOverlayBuffer }),
     new EventStoreHistoryProvider(eventStore),
   ]);
   const mirrorPiSessionHistory = appConfig?.sessions?.mirrorPiSessionHistory ?? true;
@@ -93,7 +94,7 @@ export async function startServer(
     eventStore,
     ...(piSessionWriter ? { piSessionWriter } : {}),
   });
-  const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub);
+  const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub, piOverlayBuffer);
 
   const baseToolHost = createToolHost(
     {

@@ -5,7 +5,12 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
-import { FileEventStore, SessionScopedEventStore, type EventStore } from './eventStore';
+import {
+  FileEventStore,
+  InMemoryOverlayEventBuffer,
+  SessionScopedEventStore,
+  type EventStore,
+} from './eventStore';
 import type { SessionSummary } from '../sessionIndex';
 import type { SessionHub } from '../sessionHub';
 import { AgentRegistry } from '../agents';
@@ -393,7 +398,7 @@ describe('SessionScopedEventStore', () => {
     );
   });
 
-  it('persists transient replay overlays for Pi sessions while still mirroring them', async () => {
+  it('keeps Pi transient replay overlays only in memory while mirroring UI-only events', async () => {
     const nowIso = new Date().toISOString();
     const summaries = new Map<string, SessionSummary>([
       [
@@ -449,7 +454,8 @@ describe('SessionScopedEventStore', () => {
       deleteSession: vi.fn(async () => undefined),
     };
 
-    const store = new SessionScopedEventStore(baseStore, sessionHub);
+    const overlayBuffer = new InMemoryOverlayEventBuffer();
+    const store = new SessionScopedEventStore(baseStore, sessionHub, overlayBuffer);
 
     const turnStart: ChatEvent = {
       id: 'turn-start-1',
@@ -487,25 +493,11 @@ describe('SessionScopedEventStore', () => {
 
     await store.appendBatch('pi-sdk-session', [turnStart, userMessage, interaction]);
 
-    expect(baseStore.appendBatch).toHaveBeenCalledTimes(1);
-    expect(baseStore.appendBatch).toHaveBeenCalledWith('pi-sdk-session', [turnStart, userMessage]);
-    expect(appendAssistantEvent).toHaveBeenCalledTimes(3);
+    expect(baseStore.appendBatch).not.toHaveBeenCalled();
+    expect(await overlayBuffer.getEvents('pi-sdk-session')).toEqual([turnStart, userMessage, interaction]);
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
     expect(appendAssistantEvent).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({
-        summary: summaries.get('pi-sdk-session'),
-        eventType: 'turn_start',
-      }),
-    );
-    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        summary: summaries.get('pi-sdk-session'),
-        eventType: 'user_message',
-      }),
-    );
-    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
-      3,
       expect.objectContaining({
         summary: summaries.get('pi-sdk-session'),
         eventType: 'interaction_request',

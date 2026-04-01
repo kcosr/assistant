@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent, ServerMessage } from '@assistant/shared';
 
+import { AgentRegistry } from './agents';
 import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { EventStore } from './events';
@@ -696,5 +697,158 @@ describe('processUserMessage stream event emission', () => {
         content: 'hi',
       },
     ]);
+  });
+
+  it('syncs the aborted Pi assistant message before closing an interrupted turn', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai' } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    const abortedMessageTimestamp = Date.now();
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      await options.onDeltaText?.('Partial answer', 'Partial answer');
+      return {
+        text: 'Partial answer',
+        toolCalls: [],
+        aborted: true,
+        abortReason: 'aborted',
+        assistantMessage: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Partial answer' }],
+          api: 'openai-responses',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: 'aborted',
+          timestamp: abortedMessageTimestamp,
+        },
+      };
+    });
+
+    const events: ChatEvent[] = [];
+    const eventStore: EventStore = {
+      append: async (_sessionId, event) => {
+        events.push(event);
+      },
+      appendBatch: async (_sessionId, batch) => {
+        events.push(...batch);
+      },
+      getEvents: async () => events,
+      getEventsSince: async () => events,
+      subscribe: () => () => {},
+      clearSession: async () => {},
+      deleteSession: async () => {},
+    };
+
+    const sync = vi.fn(async () => undefined);
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai/gpt-4o-mini'] },
+          },
+        ]),
+      getPiSessionWriter: () =>
+        ({
+          sync,
+          appendTurnStart: vi.fn(async () => undefined),
+          appendTurnEnd: vi.fn(async () => undefined),
+        }) as never,
+      updateSessionAttributes: vi.fn(async () => undefined),
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        agentId: 'pi',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await expect(
+      processUserMessage({
+        sessionId: 's1',
+        state,
+        text: 'hi',
+        sessionHub,
+        envConfig: {
+          apiKey: 'test-api-key',
+          port: 0,
+          toolsEnabled: false,
+          dataDir: '/tmp/assistant-tests',
+          audioInputMode: 'manual',
+          audioSampleRate: 24000,
+          audioTranscriptionEnabled: false,
+          audioOutputVoice: undefined,
+          audioOutputSpeed: undefined,
+          ttsModel: 'gpt-4o-mini-tts',
+          ttsVoice: undefined,
+          ttsFrameDurationMs: 250,
+          ttsBackend: 'openai',
+          elevenLabsApiKey: undefined,
+          elevenLabsVoiceId: undefined,
+          elevenLabsModelId: undefined,
+          elevenLabsBaseUrl: undefined,
+          maxMessagesPerMinute: 60,
+          maxAudioBytesPerMinute: 2_000_000,
+          maxToolCallsPerMinute: 30,
+          debugChatCompletions: false,
+          debugHttpRequests: false,
+        } as EnvConfig,
+        chatCompletionTools: [],
+        handleChatToolCalls: async () => undefined,
+        outputMode: 'text',
+        ttsBackendFactory: null,
+        eventStore,
+      }),
+    ).rejects.toMatchObject({
+      code: 'upstream_error',
+      message: 'Chat backend error',
+    });
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    const syncPayload = ((sync.mock.calls as unknown) as Array<[unknown]>)[0]?.[0];
+    expect(syncPayload).toBeDefined();
+    expect(syncPayload).toMatchObject({
+      summary: state.summary,
+      messages: [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: 'Partial answer',
+          historyTimestampMs: abortedMessageTimestamp,
+          piSdkMessage: expect.objectContaining({
+            stopReason: 'aborted',
+            content: [{ type: 'text', text: 'Partial answer' }],
+          }),
+        },
+      ],
+    });
   });
 });

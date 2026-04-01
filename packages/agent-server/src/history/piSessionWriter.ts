@@ -1431,14 +1431,8 @@ export class PiSessionWriter {
     }
 
     await this.queueWrite(state, async () => {
-      if (!state.flushed && !hasAssistant) {
-        state.pendingEntries.push(...entries);
-        return;
-      }
-
       if (!state.flushed) {
-        await this.flushPending(state, entries, hasAssistant);
-        return;
+        await this.ensureSessionFile(state);
       }
 
       await this.appendEntries(state, entries);
@@ -1491,14 +1485,8 @@ export class PiSessionWriter {
 
     const nextLeafId = entry.id;
     await this.queueWrite(state, async () => {
-      if (!state.flushed && !state.hasAssistant) {
-        state.pendingEntries.push(entry);
-        return;
-      }
-
       if (!state.flushed) {
-        await this.flushPending(state, [entry], state.hasAssistant);
-        return;
+        await this.ensureSessionFile(state);
       }
 
       await this.appendEntries(state, [entry]);
@@ -1556,13 +1544,8 @@ export class PiSessionWriter {
 
     const nextLeafId = entries[entries.length - 1]?.id ?? state.leafId;
     await this.queueWrite(state, async () => {
-      if (!state.flushed && !state.hasAssistant) {
-        state.pendingEntries.push(...entries);
-        return;
-      }
       if (!state.flushed) {
-        await this.flushPending(state, entries, state.hasAssistant);
-        return;
+        await this.ensureSessionFile(state);
       }
       await this.appendEntries(state, entries);
     });
@@ -1606,13 +1589,8 @@ export class PiSessionWriter {
     });
 
     await this.queueWrite(state, async () => {
-      if (!state.flushed && !state.hasAssistant) {
-        state.pendingEntries.push(entry);
-        return;
-      }
       if (!state.flushed) {
-        await this.flushPending(state, [entry], state.hasAssistant);
-        return;
+        await this.ensureSessionFile(state);
       }
       await this.appendEntries(state, [entry]);
     });
@@ -1661,26 +1639,13 @@ export class PiSessionWriter {
 
     const nextLeafId = entry.id;
     await this.queueWrite(state, async () => {
-      if (!state.flushed && !state.hasAssistant) {
-        state.pendingEntries.push(entry);
-        this.log('appendSessionInfo queued (pending until assistant output)', {
-          sessionId: summary.sessionId,
-          piSessionId: state.piSessionId,
-          pendingCount: state.pendingEntries.length,
-          sessionFile: state.sessionFile,
-        });
-        return;
-      }
-
       if (!state.flushed) {
-        this.log('appendSessionInfo flushing pending entries', {
+        this.log('appendSessionInfo initializing session file', {
           sessionId: summary.sessionId,
           piSessionId: state.piSessionId,
-          pendingCount: state.pendingEntries.length,
           sessionFile: state.sessionFile,
         });
-        await this.flushPending(state, [entry], state.hasAssistant);
-        return;
+        await this.ensureSessionFile(state);
       }
 
       this.log('appendSessionInfo appending entry', {
@@ -1811,6 +1776,11 @@ export class PiSessionWriter {
     };
 
     this.sessions.set(summary.sessionId, state);
+    if (!state.flushed) {
+      await this.queueWrite(state, async () => {
+        await this.ensureSessionFile(state);
+      });
+    }
     return { summary: currentSummary, state };
   }
 
@@ -1824,20 +1794,12 @@ export class PiSessionWriter {
     await state.writeQueue;
   }
 
-  private async flushPending(
-    state: PiSessionWriterState,
-    entries: PiSessionEntry[],
-    hasAssistant: boolean,
-  ): Promise<void> {
-    if (!hasAssistant) {
-      state.pendingEntries.push(...entries);
+  private async ensureSessionFile(state: PiSessionWriterState): Promise<void> {
+    if (state.flushed) {
       return;
     }
     await fs.mkdir(state.sessionDir, { recursive: true });
-    const payload = [state.header, ...state.pendingEntries, ...entries]
-      .map((entry) => JSON.stringify(entry))
-      .join('\n');
-    await fs.writeFile(state.sessionFile, `${payload}\n`, 'utf8');
+    await fs.writeFile(state.sessionFile, `${JSON.stringify(state.header)}\n`, 'utf8');
     state.pendingEntries = [];
     state.flushed = true;
   }
