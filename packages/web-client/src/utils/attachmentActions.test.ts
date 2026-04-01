@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as capacitor from './capacitor';
 import { downloadAttachment, openHtmlAttachmentInBrowser, resolveAttachmentUrl } from './attachmentActions';
 
 function setLocationPathname(pathname: string): void {
@@ -65,16 +64,49 @@ describe('attachmentActions', () => {
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:https://example.com/test');
   });
 
-  it('opens downloads externally in Tauri instead of relying on anchor download', async () => {
-    const openSpy = vi.spyOn(capacitor, 'openExternalUrl').mockResolvedValue(undefined);
+  it('opens HTML attachments via Tauri shell when running on desktop', async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
     (window as Window & { __TAURI__?: object }).__TAURI__ = {
-      core: { invoke: vi.fn() },
+      core: { invoke },
+      event: { listen: vi.fn() },
+    };
+
+    await openHtmlAttachmentInBrowser('/api/attachments/s1/a1');
+
+    expect(invoke).toHaveBeenCalledWith('plugin:shell|open', {
+      path: 'http://localhost/assistant/api/attachments/s1/a1',
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('downloads attachments via Tauri save dialog and native write', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce('/tmp/report.html')
+      .mockResolvedValueOnce(undefined);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('hello', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+    );
+    (window as Window & { __TAURI__?: object }).__TAURI__ = {
+      core: { invoke },
       event: { listen: vi.fn() },
     };
 
     await downloadAttachment('/api/attachments/s1/a1?download=1', 'report.html');
 
-    expect(openSpy).toHaveBeenCalledWith('http://localhost/assistant/api/attachments/s1/a1?download=1');
-    expect(document.body.querySelector('a')).toBeNull();
+    expect(invoke).toHaveBeenNthCalledWith(1, 'plugin:dialog|save', {
+      options: {
+        defaultPath: 'report.html',
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith('http://localhost/assistant/api/attachments/s1/a1?download=1');
+    expect(invoke).toHaveBeenNthCalledWith(2, 'save_artifact_file', {
+      path: '/tmp/report.html',
+      content_base64: 'aGVsbG8=',
+    });
   });
 });

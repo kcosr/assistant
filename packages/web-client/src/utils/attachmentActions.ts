@@ -1,6 +1,22 @@
 import { apiFetch, getApiBaseUrl } from './api';
-import { openExternalUrl } from './capacitor';
 import { isTauri } from './tauri';
+
+type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+
+function getTauriInvoke(): TauriInvoke | null {
+  const win = window as { __TAURI__?: { core?: { invoke?: TauriInvoke } } };
+  return win.__TAURI__?.core?.invoke ?? null;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
 
 function clickObjectUrlAnchor(
   objectUrl: string,
@@ -38,7 +54,32 @@ export async function downloadAttachment(url: string, fileName: string): Promise
     return;
   }
   if (isTauri()) {
-    await openExternalUrl(resolvedUrl);
+    const invoke = getTauriInvoke();
+    if (invoke) {
+      const savePath = await invoke<string | string[] | null>('plugin:dialog|save', {
+        options: {
+          defaultPath: fileName,
+        },
+      });
+      const resolvedPath = Array.isArray(savePath) ? savePath[0] : savePath;
+      if (!resolvedPath) {
+        return;
+      }
+
+      const response = await fetch(resolvedUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch attachment: ${response.status}`);
+      }
+      const buffer = await response.arrayBuffer();
+      const base64 = arrayBufferToBase64(buffer);
+
+      await invoke('save_artifact_file', {
+        path: resolvedPath,
+        content_base64: base64,
+      });
+      return;
+    }
+
     return;
   }
 
@@ -55,6 +96,19 @@ export async function downloadAttachment(url: string, fileName: string): Promise
 }
 
 export async function openHtmlAttachmentInBrowser(url: string): Promise<void> {
+  const resolvedUrl = resolveAttachmentUrl(url);
+  if (!resolvedUrl) {
+    return;
+  }
+
+  if (isTauri()) {
+    const invoke = getTauriInvoke();
+    if (invoke) {
+      await invoke('plugin:shell|open', { path: resolvedUrl });
+      return;
+    }
+  }
+
   const response = await apiFetch(url, { method: 'GET' });
   if (!response.ok) {
     throw new Error(`Failed to open attachment (${response.status})`);
