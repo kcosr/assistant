@@ -7,7 +7,10 @@ import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 
 import type { SessionHub } from '../sessionHub';
 import type { SessionSummary } from '../sessionIndex';
-import { isOverlayChatEvent, isTransientReplayChatEvent } from './overlayEventTypes';
+import {
+  PERSISTENT_OVERLAY_CHAT_EVENT_TYPES,
+  isOverlayChatEvent,
+} from './overlayEventTypes';
 
 export interface EventStore {
   append(sessionId: string, event: ChatEvent): Promise<void>;
@@ -17,6 +20,90 @@ export interface EventStore {
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void;
   clearSession(sessionId: string): Promise<void>;
   deleteSession(sessionId: string): Promise<void>;
+  clearTransientSession?(sessionId: string): Promise<void>;
+}
+
+export class InMemoryOverlayEventBuffer {
+  private readonly eventsBySession = new Map<string, ChatEvent[]>();
+
+  async append(sessionId: string, event: ChatEvent): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    const validated = this.validateEventForSession(trimmed, event);
+    const events = this.eventsBySession.get(trimmed) ?? [];
+    events.push(validated);
+    this.eventsBySession.set(trimmed, events);
+  }
+
+  async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (events.length === 0) {
+      return;
+    }
+    const validated = events.map((event) => this.validateEventForSession(trimmed, event));
+    const existing = this.eventsBySession.get(trimmed) ?? [];
+    existing.push(...validated);
+    this.eventsBySession.set(trimmed, existing);
+  }
+
+  async getEvents(sessionId: string): Promise<ChatEvent[]> {
+    return [...(this.eventsBySession.get(this.normaliseSessionId(sessionId)) ?? [])];
+  }
+
+  async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
+    const events = await this.getEvents(sessionId);
+    if (!afterEventId) {
+      return events;
+    }
+
+    let index = -1;
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      if (events[i]?.id === afterEventId) {
+        index = i;
+        break;
+      }
+    }
+
+    if (index === -1) {
+      return events;
+    }
+    return events.slice(index + 1);
+  }
+
+  async replaceEvents(sessionId: string, events: ChatEvent[]): Promise<void> {
+    const trimmed = this.normaliseSessionId(sessionId);
+    if (events.length === 0) {
+      this.eventsBySession.delete(trimmed);
+      return;
+    }
+    const validated = events.map((event) => this.validateEventForSession(trimmed, event));
+    this.eventsBySession.set(trimmed, [...validated]);
+  }
+
+  async clearSession(sessionId: string): Promise<void> {
+    this.eventsBySession.delete(this.normaliseSessionId(sessionId));
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.eventsBySession.delete(this.normaliseSessionId(sessionId));
+  }
+
+  private normaliseSessionId(sessionId: string): string {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      throw new Error('sessionId must not be empty');
+    }
+    return trimmed;
+  }
+
+  private validateEventForSession(sessionId: string, event: ChatEvent): ChatEvent {
+    const validated = validateChatEvent(event);
+    if (validated.sessionId.trim() !== sessionId) {
+      throw new Error(
+        `ChatEvent.sessionId "${validated.sessionId}" does not match target session "${sessionId}"`,
+      );
+    }
+    return validated;
+  }
 }
 
 type WriteTask = () => Promise<void>;
@@ -260,9 +347,21 @@ export class FileEventStore implements EventStore {
 }
 
 export class SessionScopedEventStore implements EventStore {
+  private readonly piCustomMirroredEventTypes = new Set<string>([
+    ...PERSISTENT_OVERLAY_CHAT_EVENT_TYPES,
+    'agent_message',
+    'agent_callback',
+    'agent_switch',
+    'interrupt',
+    'error',
+    'custom_message',
+    'summary_message',
+  ]);
+
   constructor(
     private readonly base: EventStore,
     private readonly sessionHub: SessionHub,
+    private readonly overlayBuffer?: InMemoryOverlayEventBuffer,
   ) {}
 
   private resolveSessionProvider(summary: SessionSummary | undefined): string | null {
@@ -293,16 +392,16 @@ export class SessionScopedEventStore implements EventStore {
     });
   }
 
+  private shouldMirrorPiEventToCustomLog(event: ChatEvent): boolean {
+    return this.piCustomMirroredEventTypes.has(event.type);
+  }
+
   private assertEventSessionMatches(sessionId: string, event: ChatEvent): void {
     if (event.sessionId.trim() !== sessionId) {
       throw new Error(
         `ChatEvent.sessionId "${event.sessionId}" does not match target session "${sessionId}"`,
       );
     }
-  }
-
-  private shouldAlsoPersistPiOverlayEvent(event: ChatEvent): boolean {
-    return isTransientReplayChatEvent(event);
   }
 
   async append(sessionId: string, event: ChatEvent): Promise<void> {
@@ -318,10 +417,12 @@ export class SessionScopedEventStore implements EventStore {
       }
       this.assertEventSessionMatches(trimmed, event);
       if (this.resolveSessionProvider(activeSummary) === 'pi') {
-        if (this.shouldAlsoPersistPiOverlayEvent(event)) {
-          await this.base.append(trimmed, event);
+        if (this.overlayBuffer) {
+          await this.overlayBuffer.append(trimmed, event);
         }
-        await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+        if (this.shouldMirrorPiEventToCustomLog(event)) {
+          await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+        }
         return;
       }
       return this.base.append(trimmed, event);
@@ -336,10 +437,12 @@ export class SessionScopedEventStore implements EventStore {
     }
     this.assertEventSessionMatches(trimmed, event);
     if (this.resolveSessionProvider(summary) === 'pi') {
-      if (this.shouldAlsoPersistPiOverlayEvent(event)) {
-        await this.base.append(trimmed, event);
+      if (this.overlayBuffer) {
+        await this.overlayBuffer.append(trimmed, event);
       }
-      await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+      if (this.shouldMirrorPiEventToCustomLog(event)) {
+        await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+      }
       return;
     }
     return this.base.append(trimmed, event);
@@ -364,14 +467,13 @@ export class SessionScopedEventStore implements EventStore {
         this.assertEventSessionMatches(trimmed, event);
       }
       if (this.resolveSessionProvider(activeSummary) === 'pi') {
-        const transientReplayEvents = overlayEvents.filter((event) =>
-          this.shouldAlsoPersistPiOverlayEvent(event),
-        );
-        if (transientReplayEvents.length > 0) {
-          await this.base.appendBatch(trimmed, transientReplayEvents);
+        if (this.overlayBuffer) {
+          await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
         }
         for (const event of overlayEvents) {
-          await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+          if (this.shouldMirrorPiEventToCustomLog(event)) {
+            await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
+          }
         }
         return;
       }
@@ -391,14 +493,13 @@ export class SessionScopedEventStore implements EventStore {
       this.assertEventSessionMatches(trimmed, event);
     }
     if (this.resolveSessionProvider(summary) === 'pi') {
-      const transientReplayEvents = overlayEvents.filter((event) =>
-        this.shouldAlsoPersistPiOverlayEvent(event),
-      );
-      if (transientReplayEvents.length > 0) {
-        await this.base.appendBatch(trimmed, transientReplayEvents);
+      if (this.overlayBuffer) {
+        await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
       }
       for (const event of overlayEvents) {
-        await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+        if (this.shouldMirrorPiEventToCustomLog(event)) {
+          await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
+        }
       }
       return;
     }
@@ -410,6 +511,11 @@ export class SessionScopedEventStore implements EventStore {
     if (await this.shouldPersist(trimmed)) {
       return this.base.getEvents(trimmed);
     }
+    const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
+    const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
+    if (summary && this.resolveSessionProvider(summary) === 'pi') {
+      return this.overlayBuffer?.getEvents(trimmed) ?? [];
+    }
     const events = await this.base.getEvents(trimmed);
     return events.filter(isOverlayChatEvent);
   }
@@ -418,6 +524,11 @@ export class SessionScopedEventStore implements EventStore {
     const trimmed = this.normaliseSessionId(sessionId);
     if (await this.shouldPersist(trimmed)) {
       return this.base.getEventsSince(trimmed, afterEventId);
+    }
+    const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
+    const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
+    if (summary && this.resolveSessionProvider(summary) === 'pi') {
+      return this.overlayBuffer?.getEventsSince(trimmed, afterEventId) ?? [];
     }
     const events = await this.base.getEventsSince(trimmed, afterEventId);
     return events.filter(isOverlayChatEvent);
@@ -435,6 +546,7 @@ export class SessionScopedEventStore implements EventStore {
   async clearSession(sessionId: string): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
     if (!(await this.shouldPersist(trimmed))) {
+      await this.overlayBuffer?.clearSession(trimmed);
       return;
     }
     await this.base.clearSession(trimmed);
@@ -443,9 +555,14 @@ export class SessionScopedEventStore implements EventStore {
   async deleteSession(sessionId: string): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
     if (!(await this.shouldPersist(trimmed))) {
+      await this.overlayBuffer?.deleteSession(trimmed);
       return;
     }
     await this.base.deleteSession(trimmed);
+  }
+
+  async clearTransientSession(sessionId: string): Promise<void> {
+    await this.overlayBuffer?.clearSession(this.normaliseSessionId(sessionId));
   }
 
   private async shouldPersist(sessionId: string): Promise<boolean> {

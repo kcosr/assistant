@@ -577,6 +577,52 @@ describe('PiSessionWriter', () => {
     expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe('completed');
   });
 
+  it('creates the Pi session file immediately on turn start before assistant output exists', async () => {
+    const baseDir = await createTempDir('pi-session-writer-eager-file');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-turn-eager',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-eager',
+      trigger: 'user',
+      updateAttributes: async (patch) => {
+        summary.attributes = {
+          ...(summary.attributes ?? {}),
+          ...(patch as Record<string, unknown>),
+        } as NonNullable<SessionSummary['attributes']>;
+        return summary;
+      },
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files).toHaveLength(1);
+
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    expect(entries[0]?.['type']).toBe('session');
+    const turnStart = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_start',
+    ) as Record<string, unknown> | undefined;
+    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe(
+      'turn-eager',
+    );
+  });
+
   it('repairs an unterminated persisted turn before starting the next one', async () => {
     const baseDir = await createTempDir('pi-session-writer-turn-repair');
     const now = () => new Date('2026-02-01T00:00:00.000Z');

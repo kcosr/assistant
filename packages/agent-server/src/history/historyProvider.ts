@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
-import type { EventStore } from '../events';
+import type { EventStore, InMemoryOverlayEventBuffer } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
 import {
   isOverlayChatEvent,
@@ -95,6 +95,7 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
     private readonly options: {
       baseDir?: string;
       eventStore?: EventStore;
+      overlayBuffer?: InMemoryOverlayEventBuffer;
     },
   ) {}
 
@@ -179,6 +180,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
     private readonly options: {
       baseDir?: string;
       eventStore?: EventStore;
+      overlayBuffer?: InMemoryOverlayEventBuffer;
     },
   ) {}
 
@@ -187,6 +189,9 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 
   shouldPersist(request: HistoryRequest): boolean {
+    if (request.providerId === 'pi') {
+      return false;
+    }
     // Persist events until we have enough metadata to resolve the Pi session JSONL.
     // This avoids a "blank transcript" gap before the Pi session file exists.
     const sessionInfo = resolvePiSessionInfo(request.attributes);
@@ -194,7 +199,8 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 
   async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
-    const { sessionId, force, after } = request;
+    const { sessionId, force, after, providerId } = request;
+    const overlayBuffer = this.options.overlayBuffer;
     const fallbackToEventStore = async (): Promise<ChatEvent[]> => {
       if (!this.options.eventStore) {
         return [];
@@ -204,6 +210,88 @@ export class PiSessionHistoryProvider implements HistoryProvider {
       }
       return this.options.eventStore.getEvents(sessionId);
     };
+
+    const loadPiOverlayEvents = async (): Promise<ChatEvent[]> => {
+      if (!overlayBuffer) {
+        return [];
+      }
+      if (after) {
+        return overlayBuffer.getEventsSince(sessionId, after);
+      }
+      return overlayBuffer.getEvents(sessionId);
+    };
+
+    const mergePiOverlayEvents = async (baseEvents: ChatEvent[]): Promise<ChatEvent[]> => {
+      const overlayEvents = await loadPiOverlayEvents();
+      if (overlayEvents.length === 0) {
+        return baseEvents;
+      }
+      const retainedOverlayEvents = filterRedundantOverlayEvents(baseEvents, overlayEvents);
+      if (overlayBuffer && retainedOverlayEvents.length !== overlayEvents.length) {
+        await overlayBuffer.replaceEvents(sessionId, retainedOverlayEvents);
+      }
+      const alignedOverlayEvents = alignOverlayEvents(baseEvents, retainedOverlayEvents);
+      return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
+    };
+
+    if (providerId === 'pi') {
+      const sessionInfo = resolvePiSessionInfo(request.attributes);
+      if (!sessionInfo) {
+        return loadPiOverlayEvents();
+      }
+      const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
+      const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
+      if (!sessionPath) {
+        return loadPiOverlayEvents();
+      }
+
+      let stats: { mtimeMs: number } | null = null;
+      try {
+        const stat = await fs.stat(sessionPath);
+        if (stat.isFile()) {
+          stats = { mtimeMs: stat.mtimeMs };
+        }
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        if (error.code !== 'ENOENT') {
+          console.error('[history] Failed to stat Pi session file', {
+            sessionId: sessionInfo.sessionId,
+            path: sessionPath,
+            error: error.message,
+          });
+        }
+        this.cache.delete(sessionPath);
+        return loadPiOverlayEvents();
+      }
+
+      if (!stats) {
+        this.cache.delete(sessionPath);
+        return loadPiOverlayEvents();
+      }
+
+      const cached = this.cache.get(sessionPath);
+      if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
+        return mergePiOverlayEvents(cached.events);
+      }
+
+      let content: string;
+      try {
+        content = await fs.readFile(sessionPath, 'utf8');
+      } catch (err) {
+        const error = err as NodeJS.ErrnoException;
+        console.error('[history] Failed to read Pi session file', {
+          sessionId: sessionInfo.sessionId,
+          path: sessionPath,
+          error: error.message,
+        });
+        this.cache.delete(sessionPath);
+        return loadPiOverlayEvents();
+      }
+
+      const events = buildChatEventsFromPiSession(content, sessionId);
+      this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
+      return mergePiOverlayEvents(events);
+    }
 
     const sessionInfo = resolvePiSessionInfo(request.attributes);
     if (!sessionInfo) {
@@ -866,6 +954,14 @@ function normalizeTurnComparablePayload(event: ChatEvent): unknown {
   return event.payload;
 }
 
+function getTimestampedTextCoverageKey(timestamp: number, text: string): string {
+  return `${timestamp}|${text.trimEnd()}`;
+}
+
+function normalizeCoverageText(text: string): string {
+  return text.trimEnd();
+}
+
 function getOverlayComparableKey(event: ChatEvent): string {
   return [
     event.type,
@@ -1420,18 +1516,63 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   const entries = parseJsonLines(content);
   const events: ChatEvent[] = [];
   const explicitTurnEndIds = new Set<string>();
+  const mirroredUserInputs = new Set<string>();
+  const mirroredUserInputTexts = new Set<string>();
+  const mirroredAssistantDone = new Set<string>();
+  const mirroredAssistantTexts = new Set<string>();
+  const mirroredThinkingDone = new Set<string>();
+  const mirroredThinkingTexts = new Set<string>();
 
   for (const entry of entries) {
     if (getString(entry['type']) !== 'custom') {
       continue;
     }
-    if (getString(entry['customType']) !== 'assistant.turn_end') {
+    const customType = getString(entry['customType']);
+    if (customType === 'assistant.turn_end') {
+      const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+      const turnId = data ? getString(data['turnId']) : '';
+      if (turnId) {
+        explicitTurnEndIds.add(turnId);
+      }
+      continue;
+    }
+    if (customType !== 'assistant.event') {
       continue;
     }
     const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-    const turnId = data ? getString(data['turnId']) : '';
-    if (turnId) {
-      explicitTurnEndIds.add(turnId);
+    const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
+    if (!payload) {
+      continue;
+    }
+    const chatEventType = getString(data?.['chatEventType']);
+    const timestamp = resolveTimestamp(entry);
+    if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+      const text =
+        typeof payload['text'] === 'string'
+          ? payload['text']
+          : typeof payload['transcription'] === 'string'
+            ? payload['transcription']
+            : '';
+      if (text) {
+        mirroredUserInputs.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredUserInputTexts.add(normalizeCoverageText(text));
+      }
+      continue;
+    }
+    if (chatEventType === 'thinking_done') {
+      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+      if (text) {
+        mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredThinkingTexts.add(normalizeCoverageText(text));
+      }
+      continue;
+    }
+    if (chatEventType === 'assistant_done') {
+      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+      if (text) {
+        mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredAssistantTexts.add(normalizeCoverageText(text));
+      }
     }
   }
 
@@ -1447,6 +1588,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   let currentTurnId: string | null = null;
   let currentResponseId: string | null = null;
   let currentTurnExplicit = false;
+  let currentTurnStartedAt: number | null = null;
 
   const normalizeTrigger = (value: unknown): 'user' | 'system' | 'callback' => {
     return value === 'callback' ? 'callback' : value === 'user' ? 'user' : 'system';
@@ -1467,6 +1609,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     currentTurnId = null;
     currentResponseId = null;
     currentTurnExplicit = false;
+    currentTurnStartedAt = null;
   };
 
   const startTurn = (
@@ -1479,11 +1622,13 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       currentTurnId = turnId;
       currentResponseId = null;
       currentTurnExplicit = explicit;
+      currentTurnStartedAt = timestamp;
       return;
     }
     currentTurnId = turnId;
     currentResponseId = null;
     currentTurnExplicit = explicit;
+    currentTurnStartedAt = timestamp;
     events.push({
       id: randomUUID(),
       timestamp,
@@ -1533,6 +1678,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   ): string =>
     `${turnId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
   const getThinkingDoneKey = (turnId: string, text: string): string => `${turnId}|${text.trimEnd()}`;
+  const isOutOfOrderForExplicitTurn = (timestamp: number): boolean =>
+    currentTurnExplicit && currentTurnStartedAt !== null && timestamp < currentTurnStartedAt;
 
   const emitToolCall = (
     entry: Record<string, unknown>,
@@ -1952,6 +2099,12 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
       const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
       const text = extractText(messageEntry);
+      if (
+        mirroredUserInputs.has(getTimestampedTextCoverageKey(timestamp, text)) ||
+        (isOutOfOrderForExplicitTurn(timestamp) && mirroredUserInputTexts.has(normalizeCoverageText(text)))
+      ) {
+        continue;
+      }
       if (emittedUserInputs.has(getUserInputKey(turnId, text))) {
         continue;
       }
@@ -2003,6 +2156,14 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           if (!thinkingBuffer) {
             return;
           }
+          if (
+            mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingBuffer)) ||
+            (isOutOfOrderForExplicitTurn(timestamp) &&
+              mirroredThinkingTexts.has(normalizeCoverageText(thinkingBuffer)))
+          ) {
+            thinkingBuffer = '';
+            return;
+          }
           const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingBuffer);
           if (emittedThinkingDone.has(thinkingDoneKey)) {
             thinkingBuffer = '';
@@ -2023,6 +2184,16 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
         const flushText = (): void => {
           if (!textBuffer) {
+            return;
+          }
+          if (
+            mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, textBuffer)) ||
+            (isOutOfOrderForExplicitTurn(timestamp) &&
+              mirroredAssistantTexts.has(normalizeCoverageText(textBuffer)))
+          ) {
+            textBuffer = '';
+            textPhase = undefined;
+            textSignature = undefined;
             return;
           }
           const assistantDoneKey = getAssistantDoneKey(
@@ -2126,20 +2297,25 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       } else {
         const thinkingText = extractThinking(messageEntry);
         if (thinkingText) {
-          const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingText);
-          if (emittedThinkingDone.has(thinkingDoneKey)) {
-            continue;
+          if (
+            !mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingText)) &&
+            !(isOutOfOrderForExplicitTurn(timestamp) &&
+              mirroredThinkingTexts.has(normalizeCoverageText(thinkingText)))
+          ) {
+            const thinkingDoneKey = getThinkingDoneKey(turnId, thinkingText);
+            if (!emittedThinkingDone.has(thinkingDoneKey)) {
+              events.push({
+                id: randomUUID(),
+                timestamp,
+                sessionId,
+                turnId,
+                responseId,
+                type: 'thinking_done',
+                payload: { text: thinkingText },
+              });
+              emittedThinkingDone.add(thinkingDoneKey);
+            }
           }
-          events.push({
-            id: randomUUID(),
-            timestamp,
-            sessionId,
-            turnId,
-            responseId,
-            type: 'thinking_done',
-            payload: { text: thinkingText },
-          });
-          emittedThinkingDone.add(thinkingDoneKey);
         }
 
         const toolCalls = extractToolCalls(messageEntry);
@@ -2149,23 +2325,28 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
         const assistantText = extractText(messageEntry);
         if (assistantText) {
-          const assistantDoneKey = getAssistantDoneKey(turnId, assistantText);
-          if (emittedAssistantDone.has(assistantDoneKey)) {
-            continue;
+          if (
+            !mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, assistantText)) &&
+            !(isOutOfOrderForExplicitTurn(timestamp) &&
+              mirroredAssistantTexts.has(normalizeCoverageText(assistantText)))
+          ) {
+            const assistantDoneKey = getAssistantDoneKey(turnId, assistantText);
+            if (!emittedAssistantDone.has(assistantDoneKey)) {
+              events.push({
+                id: randomUUID(),
+                timestamp,
+                sessionId,
+                turnId,
+                responseId,
+                type: 'assistant_done',
+                payload: {
+                  text: assistantText,
+                  ...(interrupted ? { interrupted: true } : {}),
+                },
+              });
+              emittedAssistantDone.add(assistantDoneKey);
+            }
           }
-          events.push({
-            id: randomUUID(),
-            timestamp,
-            sessionId,
-            turnId,
-            responseId,
-            type: 'assistant_done',
-            payload: {
-              text: assistantText,
-              ...(interrupted ? { interrupted: true } : {}),
-            },
-          });
-          emittedAssistantDone.add(assistantDoneKey);
         }
       }
 

@@ -12,6 +12,7 @@ import {
   PiSessionHistoryProvider,
 } from './historyProvider';
 import type { AgentDefinition } from '../agents';
+import { InMemoryOverlayEventBuffer } from '../events';
 import type { EventStore } from '../events';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -850,7 +851,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(fallback).toBe(true);
   });
 
-  it('keeps verbose persistence for providerId="pi" until Pi session metadata exists', async () => {
+  it('disables sidecar persistence for providerId="pi" immediately', async () => {
     const provider = new PiSessionHistoryProvider({});
 
     const before = provider.shouldPersist?.({
@@ -858,7 +859,7 @@ describe('PiSessionHistoryProvider', () => {
       providerId: 'pi',
       attributes: {},
     });
-    expect(before).toBe(true);
+    expect(before).toBe(false);
 
     const after = provider.shouldPersist?.({
       sessionId: 'session-2',
@@ -875,7 +876,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(after).toBe(false);
   });
 
-  it('falls back to the event store when Pi session metadata is missing', async () => {
+  it('replays the in-memory Pi overlay when Pi session metadata is missing', async () => {
     const sessionId = 'session-fallback';
     const userEvent: ChatEvent = {
       id: 'event-1',
@@ -885,18 +886,9 @@ describe('PiSessionHistoryProvider', () => {
       type: 'user_message',
       payload: { text: 'Hello' },
     };
-
-    const eventStore: EventStore = {
-      append: async () => undefined,
-      appendBatch: async () => undefined,
-      getEvents: async () => [userEvent],
-      getEventsSince: async () => [userEvent],
-      subscribe: () => () => undefined,
-      clearSession: async () => undefined,
-      deleteSession: async () => undefined,
-    };
-
-    const provider = new PiSessionHistoryProvider({ eventStore });
+    const overlayBuffer = new InMemoryOverlayEventBuffer();
+    await overlayBuffer.append(sessionId, userEvent);
+    const provider = new PiSessionHistoryProvider({ overlayBuffer });
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -1497,6 +1489,172 @@ describe('PiSessionHistoryProvider', () => {
           event.payload.text === 'Today is Monday, March 30, 2026.',
       ),
     ).toHaveLength(1);
+  });
+
+  it('ignores late raw provider messages already covered by mirrored explicit turn events', async () => {
+    const baseDir = await createTempDir('pi-session-history-late-raw-dedupe');
+    const sessionId = 'session-late-raw-dedupe';
+    const piSessionId = 'pi-session-late-raw-dedupe';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const firstPrompt = 'kick off the triage workflow';
+    const firstThinking = '**Reviewing workspace and docs**';
+    const firstCommentary = 'Reviewing chat/tool plumbing and preparing an isolated worktree.';
+    const secondPrompt = 'change of plans just create a work tree called missing replay';
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.001Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_message',
+          payload: { text: firstPrompt },
+          turnId: 'turn-1',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.002Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'thinking_done',
+          payload: { text: firstThinking },
+          turnId: 'turn-1',
+          responseId: 'resp-1',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.003Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'assistant_done',
+          payload: { text: firstCommentary, phase: 'commentary' },
+          turnId: 'turn-1',
+          responseId: 'resp-1',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:00.004Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-1', status: 'interrupted' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:10.000Z',
+        customType: 'assistant.turn_start',
+        data: { v: 1, turnId: 'turn-2', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:10.001Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_audio',
+          payload: { transcription: secondPrompt, durationMs: 250 },
+          turnId: 'turn-2',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:11.000Z',
+        message: {
+          role: 'user',
+          timestamp: Date.parse('2026-01-18T00:00:00.001Z'),
+          content: [{ type: 'text', text: firstPrompt }],
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-01-18T00:00:11.001Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-1-raw',
+          timestamp: Date.parse('2026-01-18T00:00:00.002Z'),
+          content: [
+            { type: 'thinking', thinking: firstThinking },
+            { type: 'text', text: firstCommentary },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-01-18T00:00:10.002Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-2', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const provider = new PiSessionHistoryProvider({ baseDir });
+    const events = await provider.getHistory({
+      sessionId,
+      providerId: 'pi-cli',
+      attributes: {
+        providers: {
+          'pi-cli': {
+            sessionId: piSessionId,
+            cwd,
+          },
+        },
+      },
+    });
+
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'user_message' &&
+          event.payload.text === firstPrompt,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'user_message' &&
+          event.payload.text === firstPrompt &&
+          event.turnId === 'turn-2',
+      ),
+    ).toHaveLength(0);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'thinking_done' &&
+          event.payload.text === firstThinking,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'thinking_done' &&
+          event.payload.text === firstThinking &&
+          event.turnId === 'turn-2',
+      ),
+    ).toHaveLength(0);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'assistant_done' &&
+          event.payload.text === firstCommentary,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === 'assistant_done' &&
+          event.payload.text === firstCommentary &&
+          event.turnId === 'turn-2',
+      ),
+    ).toHaveLength(0);
   });
 
   it('preserves commentary-phase assistant text with phase metadata', async () => {

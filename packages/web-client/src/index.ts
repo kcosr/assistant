@@ -111,6 +111,7 @@ import {
   setStatus,
   stripContextLine,
 } from './utils/chatMessageRenderer';
+import { filterBufferedReplayEvents } from './utils/chatEventReplayDedup';
 import { ensureEmptySessionHint } from './utils/emptySessionHint';
 import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
@@ -416,7 +417,7 @@ async function main(): Promise<void> {
     sessionId: string,
     chatRenderer: ChatRuntime['chatRenderer'],
     chatScrollManager: ChatRuntime['chatScrollManager'],
-    replayedEventIds?: Set<string>,
+    replayedEvents?: ChatEvent[],
   ): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -424,9 +425,7 @@ async function main(): Promise<void> {
     }
     const pendingEvents = bufferedChatEvents.get(trimmed) ?? [];
     bufferedChatEvents.delete(trimmed);
-    const eventsToApply = replayedEventIds
-      ? pendingEvents.filter((event) => !replayedEventIds.has(event.id))
-      : pendingEvents;
+    const eventsToApply = filterBufferedReplayEvents(pendingEvents, replayedEvents);
     if (eventsToApply.length === 0) {
       return;
     }
@@ -4097,8 +4096,7 @@ async function main(): Promise<void> {
         ensureEmptySessionHint(chatLogEl);
       }
 
-      const replayedEventIds = new Set(events.map((event) => event.id));
-      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager, replayedEventIds);
+      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager, events);
     } catch (error) {
       console.error('Failed to fetch session events', sessionId, error);
       chatRenderer.clear();
