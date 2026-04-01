@@ -1066,7 +1066,7 @@ function selectDroppedTurnRanges(options: {
 
 function filterEntriesByDroppedRanges(
   entries: PiSessionEntryRecord[],
-  droppedRanges: Array<{ startIndex: number; endIndex: number }>,
+  droppedRanges: Array<Pick<PiTurnSpan, 'startIndex' | 'endIndex'>>,
 ): PiSessionEntryRecord[] {
   if (droppedRanges.length === 0) {
     return entries.map((entry) => cloneJson(entry));

@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { MAX_ATTACHMENT_SIZE_BYTES } from './constants';
 import { AttachmentStore } from './store';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -76,6 +77,44 @@ describe('AttachmentStore', () => {
     });
 
     await store.deleteSession('session-1');
+
+    await expect(fs.stat(path.join(baseDir, 'session-1'))).rejects.toThrow();
+  });
+
+  it('deletes a single attachment by id', async () => {
+    const baseDir = await createTempDir('attachment-store-delete-one');
+    const store = new AttachmentStore(baseDir);
+
+    const created = await store.createAttachment({
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+      fileName: 'note.txt',
+      contentType: 'text/plain',
+      bytes: Buffer.from('note', 'utf8'),
+    });
+
+    await expect(store.deleteAttachment('session-1', created.attachmentId)).resolves.toBe(true);
+    await expect(store.getAttachment('session-1', created.attachmentId)).resolves.toBeNull();
+    await expect(
+      fs.stat(path.join(baseDir, 'session-1', 'files', created.storageFileName)),
+    ).rejects.toThrow();
+  });
+
+  it('rejects oversized attachments before writing them', async () => {
+    const baseDir = await createTempDir('attachment-store-too-large');
+    const store = new AttachmentStore(baseDir);
+
+    await expect(
+      store.createAttachment({
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        toolCallId: 'tool-1',
+        fileName: 'big.txt',
+        contentType: 'text/plain',
+        bytes: Buffer.alloc(MAX_ATTACHMENT_SIZE_BYTES + 1, 0x61),
+      }),
+    ).rejects.toThrow('Attachment exceeds the 4 MB limit');
 
     await expect(fs.stat(path.join(baseDir, 'session-1'))).rejects.toThrow();
   });

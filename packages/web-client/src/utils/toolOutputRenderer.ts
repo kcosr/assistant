@@ -897,7 +897,7 @@ export function updateToolOutputBlockContent(
   syncToolOutputBlockContent(block);
 }
 
-function formatByteSize(bytes: number): string {
+export function formatByteSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return `${bytes}B`;
   }

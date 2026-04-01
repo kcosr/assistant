@@ -47,6 +47,7 @@ import {
   createToolCallGroup,
   createToolOutputBlock,
   extractToolCallLabel,
+  formatByteSize,
   getToolCallGroupState,
   getToolCallSummary,
   setToolOutputBlockInput,
@@ -866,28 +867,13 @@ export class ChatRenderer {
     }
 
     if (this.isAttachmentToolName(toolName)) {
-      let bubble = this.toolCallElements.get(callId) ?? null;
-      if (!bubble) {
-        const responseEl = this.getOrCreateToolCallContainer(
-          event.id,
-          event.turnId,
-          callId,
-          responseId,
-          event.timestamp,
-        );
-        bubble = this.createAttachmentToolBubble(callId);
-        bubble.dataset['eventId'] = event.id;
-        bubble.dataset['renderer'] = 'unified';
-        const toolCallsContainer = this.getOrCreateToolCallsContainer(
-          responseEl,
-          responseId ?? undefined,
-        );
-        toolCallsContainer.appendChild(bubble);
-        this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
-      }
+      const bubble = this.getOrCreateAttachmentToolBubble({
+        eventId: event.id,
+        turnId: event.turnId,
+        callId,
+        responseId,
+        timestamp: event.timestamp,
+      });
 
       this.updatePendingAttachmentToolBubble(bubble, this.getPendingAttachmentSummary(args));
       this.toolInputBuffers.delete(callId);
@@ -1074,29 +1060,14 @@ export class ChatRenderer {
     }
 
     if (this.isAttachmentToolName(toolName)) {
-      let bubble = this.toolCallElements.get(callId) ?? null;
-      if (!bubble) {
-        const responseId = this.getResponseId(event.responseId);
-        const responseEl = this.getOrCreateToolCallContainer(
-          event.id,
-          event.turnId,
-          callId,
-          responseId,
-          event.timestamp,
-        );
-        bubble = this.createAttachmentToolBubble(callId);
-        bubble.dataset['eventId'] = event.id;
-        bubble.dataset['renderer'] = 'unified';
-        const toolCallsContainer = this.getOrCreateToolCallsContainer(
-          responseEl,
-          responseId ?? undefined,
-        );
-        toolCallsContainer.appendChild(bubble);
-        this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
-      }
+      const responseId = this.getResponseId(event.responseId);
+      const bubble = this.getOrCreateAttachmentToolBubble({
+        eventId: event.id,
+        turnId: event.turnId,
+        callId,
+        responseId,
+        timestamp: event.timestamp,
+      });
       const pendingSummary = this.getPendingAttachmentSummaryFromArgsJson(newBuffer);
       if (pendingSummary) {
         this.updatePendingAttachmentToolBubble(bubble, pendingSummary);
@@ -1228,26 +1199,14 @@ export class ChatRenderer {
         return;
       }
       if (isAttachmentToolResult(event.payload.result)) {
-        const responseEl = this.getOrCreateToolCallContainer(
-          event.id,
-          event.turnId,
+        block = this.getOrCreateAttachmentToolBubble({
+          eventId: event.id,
+          turnId: event.turnId,
           callId,
           responseId,
-          event.timestamp,
-        );
-        block = this.createAttachmentToolBubble(callId);
-        block.dataset['eventId'] = event.id;
-        block.dataset['renderer'] = 'unified';
-        const toolCallsContainer = this.getOrCreateToolCallsContainer(
-          responseEl,
-          responseId ?? undefined,
-        );
-        toolCallsContainer.appendChild(block);
-        this.toolCallElements.set(callId, block);
+          timestamp: event.timestamp,
+        });
         this.renderAttachmentToolBubble(block, event.payload.result.attachment);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
         return;
       }
       const responseEl = this.getOrCreateToolCallContainer(
@@ -2693,16 +2652,6 @@ export class ChatRenderer {
     }
   }
 
-  private formatAttachmentSize(size: number): string {
-    if (!Number.isFinite(size) || size < 1024) {
-      return `${Math.max(0, Math.round(size))} B`;
-    }
-    if (size < 1024 * 1024) {
-      return `${(size / 1024).toFixed(1)} KB`;
-    }
-    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
   private createAttachmentToolBubble(callId: string): HTMLDivElement {
     const bubble = document.createElement('div');
     bubble.className = 'message assistant attachment-tool-bubble';
@@ -2768,6 +2717,11 @@ export class ChatRenderer {
     bubble: HTMLDivElement,
     summary: { fileName?: string; title?: string },
   ): void {
+    const summaryKey = `${summary.title ?? ''}\n${summary.fileName ?? ''}`;
+    if (bubble.dataset['pendingSummaryKey'] === summaryKey) {
+      return;
+    }
+    bubble.dataset['pendingSummaryKey'] = summaryKey;
     bubble.dataset['status'] = 'pending';
     bubble.classList.remove('error');
     bubble.style.borderColor = 'var(--color-border-subtle)';
@@ -2801,6 +2755,7 @@ export class ChatRenderer {
     bubble: HTMLDivElement,
     attachment: AttachmentDescriptor,
   ): void {
+    delete bubble.dataset['pendingSummaryKey'];
     bubble.dataset['status'] = 'complete';
     bubble.classList.remove('error');
     bubble.style.borderColor = 'var(--color-border-subtle)';
@@ -2817,7 +2772,7 @@ export class ChatRenderer {
       const parts = [
         ...(attachment.title ? [attachment.fileName] : []),
         attachment.contentType,
-        this.formatAttachmentSize(attachment.size),
+        formatByteSize(attachment.size),
       ];
       metaEl.textContent = parts.join(' • ');
     }
@@ -2877,6 +2832,7 @@ export class ChatRenderer {
   }
 
   private updateAttachmentToolBubbleError(bubble: HTMLDivElement, message: string): void {
+    delete bubble.dataset['pendingSummaryKey'];
     bubble.dataset['status'] = 'error';
     bubble.classList.add('error');
     bubble.style.borderColor = 'var(--color-error-border)';
@@ -2927,6 +2883,40 @@ export class ChatRenderer {
     icon.innerHTML =
       '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 12.5 14.5 6a3.5 3.5 0 1 1 5 5l-8.5 8.5a5 5 0 0 1-7-7L12.5 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     return icon;
+  }
+
+  private getOrCreateAttachmentToolBubble(options: {
+    eventId: string;
+    turnId: string | undefined;
+    callId: string;
+    responseId: string | null;
+    timestamp: number;
+  }): HTMLDivElement {
+    const existing = this.toolCallElements.get(options.callId);
+    if (existing) {
+      return existing;
+    }
+
+    const responseEl = this.getOrCreateToolCallContainer(
+      options.eventId,
+      options.turnId,
+      options.callId,
+      options.responseId,
+      options.timestamp,
+    );
+    const bubble = this.createAttachmentToolBubble(options.callId);
+    bubble.dataset['eventId'] = options.eventId;
+    bubble.dataset['renderer'] = 'unified';
+    const toolCallsContainer = this.getOrCreateToolCallsContainer(
+      responseEl,
+      options.responseId ?? undefined,
+    );
+    toolCallsContainer.appendChild(bubble);
+    this.toolCallElements.set(options.callId, bubble);
+    if (options.responseId) {
+      this.markTextSegmentBreak(options.responseId);
+    }
+    return bubble;
   }
 
   private appendToolCallBlock(

@@ -24,6 +24,10 @@ import {
   resolveAttachmentPreviewType,
   supportsAttachmentOpenInBrowser,
 } from './attachments/contentType';
+import {
+  MAX_ATTACHMENT_SIZE_BYTES,
+  formatAttachmentTooLargeMessage,
+} from './attachments/constants';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -57,7 +61,6 @@ type AttachmentSendArgs =
       path: string;
     };
 
-const MAX_ATTACHMENT_SIZE_BYTES = 4 * 1024 * 1024;
 const MAX_ATTACHMENT_PREVIEW_CHARS = 4000;
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -164,10 +167,7 @@ function decodeAttachmentBase64(dataBase64: string): Buffer {
 
 function ensureAttachmentSize(size: number): void {
   if (size > MAX_ATTACHMENT_SIZE_BYTES) {
-    throw createToolError(
-      'attachment_too_large',
-      `Attachment exceeds the 4 MB limit (${size} bytes)`,
-    );
+    throw createToolError('attachment_too_large', formatAttachmentTooLargeMessage(size));
   }
 }
 
@@ -1077,7 +1077,7 @@ export function registerBuiltInSessionTools(options: {
   options.host.registerTool({
     name: 'attachment_send',
     description:
-      'Send a persistent attachment bubble to the user. Stores one attachment owned by this tool call and returns replayable metadata plus download/open paths.',
+      'Send a persistent attachment bubble to the user. Stores one attachment owned by this tool call and returns replayable metadata plus download/open paths. Provide exactly one content source: text for UTF-8 text, dataBase64 for arbitrary bytes, or path for an existing readable local file.',
     parameters: {
       type: 'object',
       properties: {
@@ -1095,15 +1095,18 @@ export function registerBuiltInSessionTools(options: {
         },
         text: {
           type: 'string',
-          description: 'Inline text content to persist as UTF-8 bytes.',
+          description:
+            'Set this only when sending inline text content. It is encoded as UTF-8 bytes. Do not provide dataBase64 or path when text is set.',
         },
         dataBase64: {
           type: 'string',
-          description: 'Inline base64-encoded file bytes.',
+          description:
+            'Set this only when sending inline binary/file bytes directly. The value must be base64. Do not provide text or path when dataBase64 is set.',
         },
         path: {
           type: 'string',
-          description: 'Absolute local file path readable by the server.',
+          description:
+            'Set this only when sending an existing local file. Must be an absolute path readable by the server. Do not provide text or dataBase64 when path is set.',
         },
       },
       required: ['fileName'],

@@ -1,7 +1,13 @@
+import { stripAttachmentCharset } from '../../attachments/contentType';
 import type { HttpRouteHandler } from '../types';
 
-function normalizeContentType(contentType: string): string {
-  return contentType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+function decodeSegment(segment: string | undefined): string | null {
+  try {
+    const decoded = decodeURIComponent(segment ?? '').trim();
+    return decoded.length > 0 ? decoded : null;
+  } catch {
+    return null;
+  }
 }
 
 function encodeDispositionFilename(fileName: string): string {
@@ -24,8 +30,8 @@ export const handleAttachmentRoutes: HttpRouteHandler = async (
     return false;
   }
 
-  const sessionId = decodeURIComponent(segments[2] ?? '');
-  const attachmentId = decodeURIComponent(segments[3] ?? '');
+  const sessionId = decodeSegment(segments[2]);
+  const attachmentId = decodeSegment(segments[3]);
   if (!sessionId || !attachmentId) {
     res.statusCode = 404;
     res.end('Not found');
@@ -48,7 +54,7 @@ export const handleAttachmentRoutes: HttpRouteHandler = async (
 
   const forceDownload = url.searchParams.get('download') === '1';
   const contentType = file.attachment.contentType;
-  const normalizedContentType = normalizeContentType(contentType);
+  const normalizedContentType = stripAttachmentCharset(contentType);
   const disposition =
     forceDownload || normalizedContentType === 'text/html' ? 'attachment' : 'inline';
   res.statusCode = 200;

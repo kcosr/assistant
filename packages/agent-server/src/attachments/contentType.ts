@@ -2,6 +2,9 @@ import path from 'node:path';
 
 export function inferAttachmentContentType(filePathOrName: string): string {
   const extension = path.extname(filePathOrName).toLowerCase();
+  if (!extension) {
+    return 'text/plain';
+  }
   switch (extension) {
     case '.md':
     case '.markdown':
@@ -72,7 +75,7 @@ export function inferAttachmentContentType(filePathOrName: string): string {
     case '.svg':
       return 'image/svg+xml';
     default:
-      return 'text/plain';
+      return 'application/octet-stream';
   }
 }
 

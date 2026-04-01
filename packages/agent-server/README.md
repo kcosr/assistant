@@ -2,6 +2,8 @@
 
 Node.js backend for the AI Assistant. Handles WebSocket connections, Pi SDK chat integration, TTS, and tool hosting.
 
+The built-in `attachment_send` tool persists assistant-owned attachments up to 4 MB each and stores up to 4000 characters of replayable text/markdown preview inline with the tool result.
+
 ## Table of Contents
 
 - [Running](#running)

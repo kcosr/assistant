@@ -36,10 +36,12 @@ export async function openHtmlAttachmentInBrowser(url: string): Promise<void> {
     throw new Error(`Failed to open attachment (${response.status})`);
   }
 
-  const contentType = response.headers.get('content-type')?.trim() || 'text/html;charset=utf-8';
-  const bytes = await response.arrayBuffer();
-  const blob = new Blob([bytes], { type: contentType });
-  const objectUrl = URL.createObjectURL(blob);
+  const blob = await response.blob();
+  const normalizedBlob =
+    blob.type && blob.type.trim().length > 0
+      ? blob
+      : new Blob([blob], { type: 'text/html;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(normalizedBlob);
   clickObjectUrlAnchor(objectUrl, (anchor) => {
     anchor.target = '_blank';
     anchor.rel = 'noopener noreferrer';

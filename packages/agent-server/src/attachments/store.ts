@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { MAX_ATTACHMENT_SIZE_BYTES, formatAttachmentTooLargeMessage } from './constants';
+
 export interface StoredAttachmentRecord {
   attachmentId: string;
   sessionId: string;
@@ -41,6 +43,9 @@ export class AttachmentStore {
     const toolCallId = normalizeRequired(options.toolCallId, 'toolCallId');
     const fileName = normalizeRequired(options.fileName, 'fileName');
     const contentType = normalizeRequired(options.contentType, 'contentType');
+    if (options.bytes.byteLength > MAX_ATTACHMENT_SIZE_BYTES) {
+      throw new Error(formatAttachmentTooLargeMessage(options.bytes.byteLength));
+    }
     const createdAt = (options.now ?? new Date()).toISOString();
     const attachmentId = randomUUID();
     const sessionDir = this.getSessionDir(sessionId);
@@ -130,9 +135,9 @@ export class AttachmentStore {
     if (toDelete.length === 0) {
       return 0;
     }
-    for (const record of toDelete) {
-      await this.deleteStoredFile(normalizedSessionId, record.storageFileName);
-    }
+    await Promise.all(
+      toDelete.map((record) => this.deleteStoredFile(normalizedSessionId, record.storageFileName)),
+    );
     index.attachments = index.attachments.filter((record) => !normalizedTurnIds.has(record.turnId));
     await this.writeOrDeleteIndex(normalizedSessionId, index);
     return toDelete.length;
@@ -140,14 +145,7 @@ export class AttachmentStore {
 
   async deleteSession(sessionId: string): Promise<void> {
     const normalizedSessionId = normalizeRequired(sessionId, 'sessionId');
-    try {
-      await fs.rm(this.getSessionDir(normalizedSessionId), { recursive: true, force: true });
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        throw err;
-      }
-    }
+    await fs.rm(this.getSessionDir(normalizedSessionId), { recursive: true, force: true });
   }
 
   private getSessionDir(sessionId: string): string {

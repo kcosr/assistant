@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { filterVisibleAgents } from './index';
 import { AgentRegistry } from './agents';
 import { AttachmentStore } from './attachments/store';
+import { MAX_ATTACHMENT_SIZE_BYTES } from './attachments/constants';
 import { BuiltInToolHost } from './tools';
 import type { BuiltInToolDefinition, ToolContext } from './tools';
 import { registerBuiltInSessionTools } from './builtInTools';
@@ -273,6 +274,71 @@ describe('registerBuiltInSessionTools', () => {
     expect(result.attachment.previewType).toBe('none');
   });
 
+  it('stores base64 attachments and preserves decoded bytes', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-base64'));
+    const host = createHost(store);
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'hello.bin',
+        dataBase64: Buffer.from('hello from base64', 'utf8').toString('base64'),
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        attachmentId: string;
+        contentType: string;
+      };
+    };
+
+    const stored = await store.getAttachmentFile('session-1', result.attachment.attachmentId);
+    expect(stored?.content.toString('utf8')).toBe('hello from base64');
+    expect(result.attachment.contentType).toBe('application/octet-stream');
+  });
+
+  it('stores bytes from absolute path sources', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-path-bytes'));
+    const host = createHost(store);
+    const sourcePath = path.join(await createTempDir('built-in-tools-path-source'), 'report.txt');
+    await fs.writeFile(sourcePath, 'path sourced bytes', 'utf8');
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'report.txt',
+        path: sourcePath,
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        attachmentId: string;
+      };
+    };
+
+    const stored = await store.getAttachmentFile('session-1', result.attachment.attachmentId);
+    expect(stored?.content.toString('utf8')).toBe('path sourced bytes');
+  });
+
+  it('rejects attachments larger than 4 MB', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-too-large'));
+    const host = createHost(store);
+
+    await expect(
+      host.callTool(
+        'attachment_send',
+        JSON.stringify({
+          fileName: 'big.txt',
+          text: 'a'.repeat(MAX_ATTACHMENT_SIZE_BYTES + 1),
+        }),
+        createContext(),
+      ),
+    ).rejects.toMatchObject({
+      code: 'attachment_too_large',
+      message: `Attachment exceeds the 4 MB limit (${MAX_ATTACHMENT_SIZE_BYTES + 1} bytes)`,
+    });
+  });
+
   it('rejects invalid attachment arguments', async () => {
     const store = new AttachmentStore(await createTempDir('built-in-tools-invalid-attachments'));
     const host = createHost(store);
@@ -329,5 +395,41 @@ describe('registerBuiltInSessionTools', () => {
 
     expect(result.attachment.contentType).toBe('text/html');
     expect(result.attachment.openMode).toBe('browser_blob');
+  });
+
+  it('defaults unknown extensions to application/octet-stream while keeping extensionless text plain', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-unknown-extension'));
+    const host = createHost(store);
+
+    const unknownExtension = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'archive.unknownext',
+        dataBase64: Buffer.from('abc', 'utf8').toString('base64'),
+      }),
+      createContext({ toolCallId: 'tool-call-unknown-ext' }),
+    )) as {
+      attachment: {
+        contentType: string;
+      };
+    };
+
+    const noExtension = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'README',
+        text: 'plain text without an extension',
+      }),
+      createContext({ toolCallId: 'tool-call-no-ext' }),
+    )) as {
+      attachment: {
+        contentType: string;
+        previewType: string;
+      };
+    };
+
+    expect(unknownExtension.attachment.contentType).toBe('application/octet-stream');
+    expect(noExtension.attachment.contentType).toBe('text/plain');
+    expect(noExtension.attachment.previewType).toBe('text');
   });
 });
