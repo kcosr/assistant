@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent } from '@assistant/shared';
 import { ChatRenderer } from './chatRenderer';
+import * as attachmentActions from '../utils/attachmentActions';
 import { setToolOutputBlockNearViewport } from '../utils/toolOutputRenderer';
 
 afterEach(() => {
@@ -287,6 +288,348 @@ describe('ChatRenderer', () => {
     expect(bubble?.querySelector('.voice-tool-error')?.textContent).toContain(
       'Prompt text is required.',
     );
+  });
+
+  it('renders attachment_send as a dedicated bubble with download and open actions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const openSpy = vi
+      .spyOn(attachmentActions, 'openHtmlAttachmentInBrowser')
+      .mockResolvedValue(undefined);
+    const downloadSpy = vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-attachment',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call',
+        turnId: 't-attachment',
+        responseId: 'r-attachment',
+        payload: {
+          toolCallId: 'tc-attachment',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'report.html',
+            title: 'Weekly Report',
+            text: '<html><body>Hello</body></html>',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result',
+        turnId: 't-attachment',
+        responseId: 'r-attachment',
+        payload: {
+          toolCallId: 'tc-attachment',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-1',
+              fileName: 'report.html',
+              title: 'Weekly Report',
+              contentType: 'text/html',
+              size: 128,
+              downloadUrl: '/api/attachments/session-1/att-1?download=1',
+              openUrl: '/api/attachments/session-1/att-1',
+              openMode: 'browser_blob',
+              previewType: 'none',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.textContent).toContain('Weekly Report');
+    expect(bubble?.textContent).toContain('report.html');
+    expect(bubble?.textContent).toContain('text/html');
+    expect(bubble?.querySelector('.tool-output-block')).toBeNull();
+
+    const downloadButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expect(downloadButton?.textContent).toBe('Download');
+    expect(downloadButton?.className).toBe('attachment-tool-action-button');
+    downloadButton?.click();
+    expect(downloadSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1?download=1', 'report.html');
+
+    const openButton = bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button')[1];
+    expect(openButton?.textContent).toBe('Open');
+    expect(openButton?.className).toBe('attachment-tool-action-button');
+    openButton?.click();
+    expect(openSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-1', 'report.html');
+  });
+
+  it('renders attachment_send preview text and attachment errors inline', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn',
+        turnId: 't-attachment-error',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call',
+        turnId: 't-attachment-error',
+        responseId: 'r-attachment-error',
+        payload: {
+          toolCallId: 'tc-attachment-error',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result',
+        turnId: 't-attachment-error',
+        responseId: 'r-attachment-error',
+        payload: {
+          toolCallId: 'tc-attachment-error',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-2',
+              fileName: 'note.txt',
+              contentType: 'text/plain',
+              size: 5,
+              downloadUrl: '/api/attachments/session-1/att-2?download=1',
+              previewType: 'text',
+              previewText: 'hello',
+            },
+          },
+        },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-2',
+        turnId: 't-attachment-error',
+        responseId: 'r-attachment-error',
+        payload: {
+          toolCallId: 'tc-attachment-error-2',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'bad.txt',
+            text: 'oops',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-2',
+        turnId: 't-attachment-error',
+        responseId: 'r-attachment-error',
+        payload: {
+          toolCallId: 'tc-attachment-error-2',
+          result: {},
+          error: {
+            code: 'attachment_failed',
+            message: 'Attachment storage failed.',
+          },
+        },
+      }),
+    ]);
+
+    const bubbles = Array.from(container.querySelectorAll<HTMLDivElement>('.attachment-tool-bubble'));
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello');
+    expect(bubbles[1]?.classList.contains('error')).toBe(true);
+    expect(bubbles[1]?.querySelector('.attachment-tool-error')?.textContent).toContain(
+      'Attachment storage failed.',
+    );
+  });
+
+  it('shows attachment action failures inline without dropping the attachment bubble', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+    vi.spyOn(attachmentActions, 'openHtmlAttachmentInBrowser').mockRejectedValue(
+      new Error('boom'),
+    );
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-open-fail',
+        turnId: 't-open-fail',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-open-fail',
+        turnId: 't-open-fail',
+        responseId: 'r-open-fail',
+        payload: {
+          toolCallId: 'tc-open-fail',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'report.html',
+            title: 'Weekly Report',
+            text: '<html><body>Hello</body></html>',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-open-fail',
+        turnId: 't-open-fail',
+        responseId: 'r-open-fail',
+        payload: {
+          toolCallId: 'tc-open-fail',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-open-fail',
+              fileName: 'report.html',
+              title: 'Weekly Report',
+              contentType: 'text/html',
+              size: 128,
+              downloadUrl: '/api/attachments/session-1/att-open-fail?download=1',
+              openUrl: '/api/attachments/session-1/att-open-fail',
+              openMode: 'browser_blob',
+              previewType: 'none',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    const openButton = bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button')[1];
+    openButton?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bubble?.querySelector('.attachment-tool-action-error')?.textContent).toContain(
+      'Failed to open attachment.',
+    );
+    expect(bubble?.querySelector('.attachment-tool-title')?.textContent).toContain('Weekly Report');
+    expect(bubble?.querySelectorAll('.attachment-tool-actions button').length).toBe(2);
+  });
+
+  it('replays wrapped attachment tool results from persisted history', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-history',
+        turnId: 't-attachment-history',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-history',
+        turnId: 't-attachment-history',
+        responseId: 'r-attachment-history',
+        payload: {
+          toolCallId: 'tc-attachment-history',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-history',
+        turnId: 't-attachment-history',
+        responseId: 'r-attachment-history',
+        payload: {
+          toolCallId: 'tc-attachment-history',
+          result: {
+            ok: true,
+            result: {
+              ok: true,
+              attachment: {
+                attachmentId: 'att-history',
+                fileName: 'note.txt',
+                contentType: 'text/plain',
+                size: 5,
+                downloadUrl: '/api/attachments/session-1/att-history?download=1',
+                previewType: 'text',
+                previewText: 'hello',
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello');
+    expect(bubble?.querySelector('.attachment-tool-error')).toBeNull();
+  });
+
+  it('replays stringified attachment tool results nested under content wrappers', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-history-content',
+        turnId: 't-attachment-history-content',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-history-content',
+        turnId: 't-attachment-history-content',
+        responseId: 'r-attachment-history-content',
+        payload: {
+          toolCallId: 'tc-attachment-history-content',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-history-content',
+        turnId: 't-attachment-history-content',
+        responseId: 'r-attachment-history-content',
+        payload: {
+          toolCallId: 'tc-attachment-history-content',
+          result: {
+            content:
+              '{"ok":true,"result":{"ok":true,"attachment":{"attachmentId":"att-history-content","fileName":"note.txt","contentType":"text/plain","size":5,"downloadUrl":"/api/attachments/session-1/att-history-content?download=1","previewType":"text","previewText":"hello"}}}',
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello');
+    expect(bubble?.querySelector('.attachment-tool-error')).toBeNull();
   });
 
   it('renders user_audio as a user bubble with microphone styling', () => {

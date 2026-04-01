@@ -2,6 +2,8 @@
 
 Node.js backend for the AI Assistant. Handles WebSocket connections, Pi SDK chat integration, TTS, and tool hosting.
 
+The built-in `attachment_send` tool persists assistant-owned attachments up to 4 MB each and stores up to 4000 characters of replayable text/markdown preview inline with the tool result.
+
 ## Table of Contents
 
 - [Running](#running)
@@ -257,6 +259,11 @@ Two TTS backends are supported:
 - Lower latency, true streaming
 
 ### Tool Hosts
+
+Built-in session tools include:
+
+- `voice_speak` and `voice_ask` for structured voice prompt transcript bubbles
+- `attachment_send` for persistent session-owned attachment bubbles with replayable metadata plus download routes, and platform-specific HTML open handling (blob URLs on web, native exported-file open on Android)
 
 The server supports two types of tools:
 

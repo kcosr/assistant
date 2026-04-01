@@ -6,6 +6,7 @@ import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { AgentRegistry } from './agents';
+import { AttachmentStore } from './attachments/store';
 import { SessionHub } from './sessionHub';
 import { SessionIndex } from './sessionIndex';
 import type { EventStore } from './events';
@@ -334,5 +335,150 @@ describe('SessionHub clearSession', () => {
         turnId: 'turn-1',
       }),
     ).rejects.toThrow('Turn history edits are only supported for Pi-backed sessions');
+  });
+
+  it('deletes session attachments on clearSession', async () => {
+    const sessionsFile = createTempFile('session-hub-clear-attachments');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const attachmentDir = createTempDir('session-hub-attachments');
+    const attachmentStore = new AttachmentStore(attachmentDir);
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-clear-attachments',
+      agentId: 'general',
+    });
+    await attachmentStore.createAttachment({
+      sessionId: session.sessionId,
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+      fileName: 'note.txt',
+      contentType: 'text/plain',
+      bytes: Buffer.from('hello', 'utf8'),
+    });
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      attachmentStore,
+    });
+
+    await sessionHub.clearSession(session.sessionId);
+
+    await expect(stat(path.join(attachmentDir, session.sessionId))).rejects.toThrow();
+  });
+
+  it('deletes dropped-turn attachments during history edits', async () => {
+    const sessionsFile = createTempFile('session-hub-edit-history-attachments');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = createTempDir('pi-sessions-edit-attachments');
+    const attachmentDir = createTempDir('session-hub-history-attachments');
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+    const attachmentStore = new AttachmentStore(attachmentDir);
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-edit-history-attachments',
+      agentId: 'pi-agent',
+    });
+    const summaryWithDir =
+      (await sessionIndex.updateSessionAttributes(session.sessionId, {
+        core: { workingDir: '/tmp/project' },
+      })) ?? session;
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter,
+      attachmentStore,
+    });
+
+    let summary = (await sessionIndex.getSession(session.sessionId)) ?? summaryWithDir;
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await attachmentStore.createAttachment({
+      sessionId: session.sessionId,
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+      fileName: 'first.txt',
+      contentType: 'text/plain',
+      bytes: Buffer.from('first', 'utf8'),
+    });
+
+    summary = (await sessionIndex.getSession(session.sessionId)) ?? summary;
+    await piSessionWriter.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(session.sessionId, patch),
+    });
+    const kept = await attachmentStore.createAttachment({
+      sessionId: session.sessionId,
+      turnId: 'turn-2',
+      toolCallId: 'tool-2',
+      fileName: 'second.txt',
+      contentType: 'text/plain',
+      bytes: Buffer.from('second', 'utf8'),
+    });
+
+    const result = await sessionHub.editSessionHistory({
+      sessionId: session.sessionId,
+      action: 'trim_before',
+      turnId: 'turn-2',
+    });
+
+    expect(result.droppedTurnIds).toEqual(['turn-1']);
+    expect(await attachmentStore.getAttachment(session.sessionId, kept.attachmentId)).not.toBeNull();
+    const metadataPath = path.join(attachmentDir, session.sessionId, 'metadata.json');
+    const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {
+      attachments: Array<{ turnId: string }>;
+    };
+    expect(metadata.attachments).toHaveLength(1);
+    expect(metadata.attachments[0]?.turnId).toBe('turn-2');
   });
 });

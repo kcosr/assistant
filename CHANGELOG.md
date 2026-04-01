@@ -5,10 +5,13 @@
 ### Breaking Changes
 
 ### Added
+- Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83))
 
 ### Changed
+- Changed attachment MIME inference so files with unknown extensions download as `application/octet-stream` while extensionless text still defaults to `text/plain`. ([#83](https://github.com/kcosr/assistant/pull/83))
 
 ### Fixed
+- Fixed attachment persistence to enforce the 4 MB size cap in the store as well as the tool layer, preventing oversized writes from non-tool callers. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi replay so late raw provider messages already mirrored into explicit app turns no longer get reassigned onto a newer turn during reload ([#82](https://github.com/kcosr/assistant/pull/82))

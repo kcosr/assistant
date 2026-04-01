@@ -1,5 +1,6 @@
 export * from './protocol';
 export * from './audio';
+export * from './attachments';
 export * from './chatEvents';
 export * from './panelProtocol';
 export * from './sessionTypes';
