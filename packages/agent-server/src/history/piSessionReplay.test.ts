@@ -289,6 +289,80 @@ describe('buildCanonicalPiReplayMessages', () => {
     });
   });
 
+  it('does not duplicate agent callbacks once the same callback was persisted as assistant.input', () => {
+    const callbackText =
+      '[Callback from unknown]: <questionnaire-response questionnaire-request-id="questionnaire-1" tool="questions_ask" />';
+    const content = [
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-04-01T00:14:33.494Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'agent_callback',
+          payload: {
+            messageId: 'questionnaire-1',
+            fromAgentId: 'unknown',
+            fromSessionId: '4d4cc8a3-3c8f-4bac-9864-27046c7d4159',
+            result:
+              '<questionnaire-response questionnaire-request-id="questionnaire-1" tool="questions_ask" />',
+          },
+          turnId: 'turn-callback',
+          responseId: 'resp-callback',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom_message',
+        timestamp: '2026-04-01T00:16:10.000Z',
+        customType: 'assistant.input',
+        content: callbackText,
+        details: {
+          kind: 'callback',
+          fromAgentId: 'unknown',
+          fromSessionId: '4d4cc8a3-3c8f-4bac-9864-27046c7d4159',
+        },
+        display: true,
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-04-01T00:16:20.000Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'user_message',
+          payload: {
+            text: 'follow-up',
+          },
+          turnId: 'turn-followup',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        timestamp: '2026-04-01T00:16:21.000Z',
+        customType: 'assistant.turn_end',
+        data: { v: 1, turnId: 'turn-followup', status: 'interrupted' },
+      }),
+    ].join('\n');
+
+    const messages = buildCanonicalPiReplayMessages(content);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content: callbackText,
+      historyTimestampMs: Date.parse('2026-04-01T00:16:10.000Z'),
+      meta: {
+        source: 'callback',
+        fromAgentId: 'unknown',
+        fromSessionId: '4d4cc8a3-3c8f-4bac-9864-27046c7d4159',
+        visibility: 'visible',
+      },
+    });
+    expect(messages[1]).toMatchObject({
+      role: 'user',
+      content: 'follow-up',
+      historyTimestampMs: Date.parse('2026-04-01T00:16:20.000Z'),
+    });
+  });
+
   it('replays interrupted assistant.event tool turns into canonical history', () => {
     const content = [
       JSON.stringify({

@@ -215,6 +215,7 @@ type CanonicalReplayCoverage = {
     text: string;
     historyTimestampMs?: number;
   }>;
+  callbackInputTexts: Set<string>;
   toolCallIds: Set<string>;
   toolResultIds: Set<string>;
 };
@@ -256,10 +257,23 @@ function collectCanonicalReplayCoverage(
   entries: Array<Record<string, unknown>>,
 ): CanonicalReplayCoverage {
   const users: CanonicalReplayCoverage['users'] = [];
+  const callbackInputTexts = new Set<string>();
   const toolCallIds = new Set<string>();
   const toolResultIds = new Set<string>();
 
   for (const entry of entries) {
+    if (
+      entry['type'] === 'custom_message' &&
+      getString(entry['customType']) === 'assistant.input'
+    ) {
+      const text = extractTextValue(entry['content']).trim();
+      const meta = toUserMeta(entry);
+      if (text && meta?.source === 'callback') {
+        callbackInputTexts.add(text);
+      }
+      continue;
+    }
+
     const message = entry['type'] === 'message' && isRecord(entry['message']) ? entry['message'] : null;
     if (!message) {
       continue;
@@ -296,6 +310,7 @@ function collectCanonicalReplayCoverage(
 
   return {
     users,
+    callbackInputTexts,
     toolCallIds,
     toolResultIds,
   };
@@ -447,7 +462,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       const chatEventType = getString(data['chatEventType']);
       const payload = isRecord(data['payload']) ? data['payload'] : null;
       const responseId = getString(data['responseId']).trim() || undefined;
-      const historyTimestampMs = resolveTimestamp(entry);
 
       if (!payload) {
         continue;
@@ -455,6 +469,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
 
       if (chatEventType === 'agent_callback') {
         closeOpenAssistantToolCalls();
+        const historyTimestampMs = resolveTimestamp(entry);
         const text =
           getAgentCallbackText({
             type: 'agent_callback',
@@ -466,6 +481,9 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
             },
           } as Parameters<typeof getAgentCallbackText>[0]) ?? '';
         if (!text) {
+          continue;
+        }
+        if (canonicalCoverage.callbackInputTexts.has(text)) {
           continue;
         }
         if (hasMatchingCanonicalUserMessage(canonicalCoverage, text, historyTimestampMs)) {
@@ -492,6 +510,8 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       if (!turnId || !interruptedTurnIds.has(turnId)) {
         continue;
       }
+
+      const historyTimestampMs = resolveTimestamp(entry);
 
       if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
         closeOpenAssistantToolCalls();
