@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.5] - 2026-04-01
 
 ### Breaking Changes
 
@@ -12,6 +12,7 @@
 - Fixed PI replay so async questionnaire callback answers persist into later provider requests instead of disappearing after the immediate follow-up turn. ([#80](https://github.com/kcosr/assistant/pull/80))
 
 ### Removed
+
 
 ## [0.17.4] - 2026-04-01
 

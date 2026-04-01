@@ -1,7 +1,7 @@
 {
   "name": "assistant",
   "author": "kcosr",
-  "version": "0.17.4",
+  "version": "0.17.5",
   "private": true,
   "engines": {
     "node": ">=20.18.1"
