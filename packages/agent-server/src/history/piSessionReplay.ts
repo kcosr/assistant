@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
+import { getAgentCallbackText } from '../chatEventText';
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
@@ -443,15 +444,52 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
       const turnId = getString(data['turnId']).trim();
-      if (!turnId || !interruptedTurnIds.has(turnId)) {
-        continue;
-      }
       const chatEventType = getString(data['chatEventType']);
       const payload = isRecord(data['payload']) ? data['payload'] : null;
       const responseId = getString(data['responseId']).trim() || undefined;
       const historyTimestampMs = resolveTimestamp(entry);
 
       if (!payload) {
+        continue;
+      }
+
+      if (chatEventType === 'agent_callback') {
+        closeOpenAssistantToolCalls();
+        const text =
+          getAgentCallbackText({
+            type: 'agent_callback',
+            payload: {
+              result: getString(payload['result']),
+              ...(isNonEmptyString(payload['fromAgentId'])
+                ? { fromAgentId: getString(payload['fromAgentId']).trim() }
+                : {}),
+            },
+          } as Parameters<typeof getAgentCallbackText>[0]) ?? '';
+        if (!text) {
+          continue;
+        }
+        if (hasMatchingCanonicalUserMessage(canonicalCoverage, text, historyTimestampMs)) {
+          continue;
+        }
+        messages.push({
+          role: 'user',
+          content: text,
+          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
+          meta: {
+            source: 'callback',
+            ...(isNonEmptyString(payload['fromAgentId'])
+              ? { fromAgentId: getString(payload['fromAgentId']).trim() }
+              : {}),
+            ...(isNonEmptyString(payload['fromSessionId'])
+              ? { fromSessionId: getString(payload['fromSessionId']).trim() }
+              : {}),
+            visibility: 'visible',
+          },
+        });
+        continue;
+      }
+
+      if (!turnId || !interruptedTurnIds.has(turnId)) {
         continue;
       }
 
