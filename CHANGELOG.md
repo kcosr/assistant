@@ -9,7 +9,7 @@
 ### Changed
 
 ### Fixed
-- Fixed PI replay so async questionnaire callback answers persist into later provider requests instead of disappearing after the immediate follow-up turn. ([#PR](https://github.com/kcosr/assistant/pull/PR))
+- Fixed PI replay so async questionnaire callback answers persist into later provider requests instead of disappearing after the immediate follow-up turn. ([#80](https://github.com/kcosr/assistant/pull/80))
 
 ### Removed
 
