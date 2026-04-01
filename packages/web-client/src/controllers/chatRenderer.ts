@@ -117,33 +117,49 @@ function parseJsonRecord(value: string): Record<string, unknown> | null {
 }
 
 function getAttachmentToolResult(value: unknown): AttachmentToolResult | null {
-  if (isAttachmentToolResult(value)) {
-    return value;
-  }
-
-  let record: Record<string, unknown> | null =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : null;
-
-  if (!record && typeof value === 'string') {
-    record = parseJsonRecord(value);
-  }
-  if (!record) {
-    return null;
-  }
-
-  const nestedResult = record['result'];
-  if (isAttachmentToolResult(nestedResult)) {
-    return nestedResult;
-  }
-  if (typeof nestedResult === 'string') {
-    const parsedNested = parseJsonRecord(nestedResult);
-    if (isAttachmentToolResult(parsedNested)) {
-      return parsedNested;
+  const queue: unknown[] = [value];
+  const seen = new Set<object>();
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    if (isAttachmentToolResult(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === 'string') {
+      const parsed = parseJsonRecord(candidate);
+      if (parsed) {
+        queue.push(parsed);
+      }
+      continue;
+    }
+    if (Array.isArray(candidate)) {
+      queue.push(...candidate);
+      continue;
+    }
+    if (!candidate || typeof candidate !== 'object') {
+      continue;
+    }
+    if (seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+    const record = candidate as Record<string, unknown>;
+    for (const key of ['result', 'content', 'output', 'toolUseResult', 'payload']) {
+      if (key in record) {
+        queue.push(record[key]);
+      }
+    }
+    for (const [key, entryValue] of Object.entries(record)) {
+      if (
+        key !== 'result' &&
+        key !== 'content' &&
+        key !== 'output' &&
+        key !== 'toolUseResult' &&
+        key !== 'payload'
+      ) {
+        queue.push(entryValue);
+      }
     }
   }
-
   return null;
 }
 
@@ -1239,6 +1255,7 @@ export class ChatRenderer {
         if (attachmentResult) {
           this.renderAttachmentToolBubble(block, attachmentResult.attachment);
         } else {
+          this.logInvalidAttachmentResult(event);
           this.updateAttachmentToolBubbleError(block, 'Attachment result payload was invalid.');
         }
       }
@@ -1259,6 +1276,9 @@ export class ChatRenderer {
         });
         this.renderAttachmentToolBubble(block, attachmentResult.attachment);
         return;
+      }
+      if (event.payload.toolCallId) {
+        this.logInvalidAttachmentResult(event);
       }
       const responseEl = this.getOrCreateToolCallContainer(
         event.id,
@@ -2904,6 +2924,18 @@ export class ChatRenderer {
       bubble.appendChild(errorEl);
     }
     errorEl.textContent = message;
+  }
+
+  private logInvalidAttachmentResult(event: ToolResultEvent): void {
+    console.warn('[attachments] Invalid attachment result payload', {
+      eventId: event.id,
+      turnId: event.turnId,
+      responseId: event.responseId,
+      toolCallId: event.payload.toolCallId,
+      hasError: Boolean(event.payload.error),
+      resultType: Array.isArray(event.payload.result) ? 'array' : typeof event.payload.result,
+      result: event.payload.result,
+    });
   }
 
   private createVoiceEventIcon(kind: 'speaker' | 'microphone'): HTMLSpanElement {

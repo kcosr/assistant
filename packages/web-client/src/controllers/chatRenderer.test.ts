@@ -507,6 +507,54 @@ describe('ChatRenderer', () => {
     expect(bubble?.querySelector('.attachment-tool-error')).toBeNull();
   });
 
+  it('replays stringified attachment tool results nested under content wrappers', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-history-content',
+        turnId: 't-attachment-history-content',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-history-content',
+        turnId: 't-attachment-history-content',
+        responseId: 'r-attachment-history-content',
+        payload: {
+          toolCallId: 'tc-attachment-history-content',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-history-content',
+        turnId: 't-attachment-history-content',
+        responseId: 'r-attachment-history-content',
+        payload: {
+          toolCallId: 'tc-attachment-history-content',
+          result: {
+            content:
+              '{"ok":true,"result":{"ok":true,"attachment":{"attachmentId":"att-history-content","fileName":"note.txt","contentType":"text/plain","size":5,"downloadUrl":"/api/attachments/session-1/att-history-content?download=1","previewType":"text","previewText":"hello"}}}',
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    expect(bubble).not.toBeNull();
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello');
+    expect(bubble?.querySelector('.attachment-tool-error')).toBeNull();
+  });
+
   it('renders user_audio as a user bubble with microphone styling', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
