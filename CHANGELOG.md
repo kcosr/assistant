@@ -9,6 +9,7 @@
 ### Changed
 
 ### Fixed
+- Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 
 ### Removed
 
