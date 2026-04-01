@@ -168,74 +168,7 @@ const isDebugFlagEnabled = (key: string): boolean => {
   }
 };
 
-const isWsDebugEnabled = (): boolean => isDebugFlagEnabled(WS_DEBUG_STORAGE_KEY);
-
-const previewWsText = (value: unknown): string | null => {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const singleLine = value.replace(/\s+/g, ' ').trim();
-  if (!singleLine) {
-    return '';
-  }
-  return singleLine.length > 120 ? `${singleLine.slice(0, 117)}...` : singleLine;
-};
-
-const logWsMessage = (message: ServerMessage): void => {
-  if (!isWsDebugEnabled()) {
-    return;
-  }
-  const anyMessage = message as Record<string, unknown>;
-  const rawType = anyMessage['type'];
-  const type = typeof rawType === 'string' ? rawType : 'unknown';
-  if (type === 'panel_event') {
-    const payload = anyMessage['payload'] as { type?: unknown } | null;
-    const payloadType = typeof payload?.type === 'string' ? payload.type : null;
-    console.log('[ws] panel_event', {
-      panelId: anyMessage['panelId'] ?? null,
-      panelType: anyMessage['panelType'] ?? null,
-      sessionId: anyMessage['sessionId'] ?? null,
-      payloadType,
-    });
-    return;
-  }
-  if (type === 'chat_event') {
-    const event = anyMessage['event'] as {
-      type?: unknown;
-      id?: unknown;
-      turnId?: unknown;
-      responseId?: unknown;
-      payload?: unknown;
-    } | null;
-    const eventType = typeof event?.type === 'string' ? event.type : null;
-    const payload = event?.payload as Record<string, unknown> | null | undefined;
-    console.log('[ws] chat_event', {
-      sessionId: anyMessage['sessionId'] ?? null,
-      eventType,
-      eventId: typeof event?.id === 'string' ? event.id : null,
-      turnId: typeof event?.turnId === 'string' ? event.turnId : null,
-      responseId: typeof event?.responseId === 'string' ? event.responseId : null,
-      phase: typeof payload?.['phase'] === 'string' ? payload['phase'] : null,
-      textPreview: previewWsText(payload?.['text']),
-    });
-    return;
-  }
-  if (
-    type === 'text_delta' ||
-    type === 'text_done' ||
-    type === 'thinking_delta' ||
-    type === 'thinking_done'
-  ) {
-    console.log(`[ws] ${type}`, {
-      sessionId: anyMessage['sessionId'] ?? null,
-      responseId: typeof anyMessage['responseId'] === 'string' ? anyMessage['responseId'] : null,
-      phase: typeof anyMessage['phase'] === 'string' ? anyMessage['phase'] : null,
-      textPreview: previewWsText(anyMessage['text'] ?? anyMessage['delta']),
-    });
-    return;
-  }
-  console.log('[ws] message', { type, message });
-};
+const logWsMessage = (_message: ServerMessage): void => {};
 
 interface SessionSummary {
   agentId?: string;

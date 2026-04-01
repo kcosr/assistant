@@ -253,10 +253,8 @@ export class ChatRenderer {
   }
 
   private debugLog(message: string, data: Record<string, unknown>): void {
-    if (!this.isDebugEnabled()) {
-      return;
-    }
-    console.log(`[ChatRenderer] ${message}`, data);
+    void message;
+    void data;
   }
 
   private previewText(text: string | undefined): string {
@@ -1255,7 +1253,6 @@ export class ChatRenderer {
         if (attachmentResult) {
           this.renderAttachmentToolBubble(block, attachmentResult.attachment);
         } else {
-          this.logInvalidAttachmentResult(event);
           this.updateAttachmentToolBubbleError(block, 'Attachment result payload was invalid.');
         }
       }
@@ -1276,9 +1273,6 @@ export class ChatRenderer {
         });
         this.renderAttachmentToolBubble(block, attachmentResult.attachment);
         return;
-      }
-      if (event.payload.toolCallId) {
-        this.logInvalidAttachmentResult(event);
       }
       const responseEl = this.getOrCreateToolCallContainer(
         event.id,
@@ -2924,18 +2918,6 @@ export class ChatRenderer {
       bubble.appendChild(errorEl);
     }
     errorEl.textContent = message;
-  }
-
-  private logInvalidAttachmentResult(event: ToolResultEvent): void {
-    console.warn('[attachments] Invalid attachment result payload', {
-      eventId: event.id,
-      turnId: event.turnId,
-      responseId: event.responseId,
-      toolCallId: event.payload.toolCallId,
-      hasError: Boolean(event.payload.error),
-      resultType: Array.isArray(event.payload.result) ? 'array' : typeof event.payload.result,
-      result: event.payload.result,
-    });
   }
 
   private createVoiceEventIcon(kind: 'speaker' | 'microphone'): HTMLSpanElement {
