@@ -28,6 +28,7 @@ import type { SessionConnection } from './ws/sessionConnection';
 import type { PiSessionWriter, PiTurnHistoryAction } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { isSessionContextUsageEqual } from './contextUsage';
+import type { AttachmentStore } from './attachments/store';
 import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
@@ -147,6 +148,7 @@ export class SessionHub {
   private readonly sessionAccessOrder: string[] = [];
   private readonly historyProvider: HistoryProviderRegistry | undefined;
   private readonly eventStore: EventStore | undefined;
+  private readonly attachmentStore: AttachmentStore | undefined;
 
   private readonly resolveSessionWorkingDir:
     | ((summary: SessionSummary) => string | null)
@@ -162,6 +164,7 @@ export class SessionHub {
     historyProvider?: HistoryProviderRegistry;
     eventStore?: EventStore;
     piSessionWriter?: PiSessionWriter;
+    attachmentStore?: AttachmentStore;
   }) {
     this.sessionIndex = options.sessionIndex;
     this.agentRegistry = options.agentRegistry;
@@ -170,6 +173,7 @@ export class SessionHub {
     this.historyProvider = options.historyProvider;
     this.eventStore = options.eventStore;
     this.piSessionWriter = options.piSessionWriter;
+    this.attachmentStore = options.attachmentStore;
 
     const rawMaxCached = options.maxCachedSessions;
     if (rawMaxCached !== undefined && Number.isFinite(rawMaxCached) && rawMaxCached > 0) {
@@ -193,6 +197,10 @@ export class SessionHub {
 
   getPluginRegistry(): PluginRegistry | undefined {
     return this.pluginRegistry;
+  }
+
+  getAttachmentStore(): AttachmentStore | undefined {
+    return this.attachmentStore;
   }
 
   async listSessionSummaries(): Promise<SessionSummary[]> {
@@ -456,6 +464,9 @@ export class SessionHub {
 
   async deleteSession(sessionId: string): Promise<SessionSummary | undefined> {
     console.log('[sessionHub] deleteSession', { sessionId });
+    if (this.attachmentStore) {
+      await this.attachmentStore.deleteSession(sessionId);
+    }
     const summary = await this.sessionIndex.markSessionDeleted(sessionId);
     this.interactionRegistry.clearSession(sessionId);
     this.cliToolCallRendezvous.clearSession(sessionId);
@@ -520,6 +531,9 @@ export class SessionHub {
       throw new Error(`Cannot clear deleted session: ${sessionId}`);
     }
 
+    if (this.attachmentStore) {
+      await this.attachmentStore.deleteSession(sessionId);
+    }
     if (this.eventStore) {
       await this.eventStore.clearSession(sessionId);
     }
@@ -562,7 +576,7 @@ export class SessionHub {
     sessionId: string;
     action: PiTurnHistoryAction;
     turnId: string;
-  }): Promise<{ summary: SessionSummary; changed: boolean }> {
+  }): Promise<{ summary: SessionSummary; changed: boolean; droppedTurnIds: string[] }> {
     const { sessionId, action, turnId } = options;
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {
@@ -593,7 +607,11 @@ export class SessionHub {
       updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
     });
     if (!result.changed) {
-      return { summary: result.summary, changed: false };
+      return { summary: result.summary, changed: false, droppedTurnIds: [] };
+    }
+
+    if (this.attachmentStore && result.droppedTurnIds.length > 0) {
+      await this.attachmentStore.deleteByTurnIds(sessionId, result.droppedTurnIds);
     }
 
     if (this.eventStore) {
@@ -621,7 +639,7 @@ export class SessionHub {
     };
     this.connections.broadcastToSession(sessionId, changedMessage);
 
-    return { summary, changed: true };
+    return { summary, changed: true, droppedTurnIds: result.droppedTurnIds };
   }
 
   async touchSession(sessionId: string): Promise<SessionSummary | undefined> {

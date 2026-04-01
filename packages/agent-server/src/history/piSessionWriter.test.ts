@@ -760,6 +760,7 @@ describe('PiSessionWriter', () => {
     });
 
     expect(result.changed).toBe(true);
+    expect(result.droppedTurnIds).toEqual(['turn-1']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -841,6 +842,7 @@ describe('PiSessionWriter', () => {
     });
 
     expect(result.changed).toBe(true);
+    expect(result.droppedTurnIds).toEqual(['turn-1']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -930,6 +932,7 @@ describe('PiSessionWriter', () => {
     });
 
     expect(result.changed).toBe(true);
+    expect(result.droppedTurnIds).toEqual(['turn-1', 'turn-2']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);

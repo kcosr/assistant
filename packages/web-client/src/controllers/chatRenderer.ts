@@ -1,4 +1,5 @@
 import type {
+  AttachmentDescriptor,
   AgentCallbackEvent,
   AgentMessageEvent,
   AssistantChunkEvent,
@@ -27,9 +28,14 @@ import type {
   UserMessageEvent,
 } from '@assistant/shared';
 import {
+  isAttachmentToolResult,
   parseQuestionnaireCallbackText,
   type QuestionnaireCallbackPayload,
 } from '@assistant/shared';
+import {
+  openHtmlAttachmentInBrowser,
+  resolveAttachmentUrl,
+} from '../utils/attachmentActions';
 import { applyMarkdownToElement } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
@@ -91,6 +97,7 @@ export interface ChatRendererOptions {
 }
 
 const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
+const ATTACHMENT_TOOL_NAME = 'attachment_send';
 
 export class ChatRenderer {
   private readonly container: HTMLElement;
@@ -858,6 +865,36 @@ export class ChatRenderer {
       return;
     }
 
+    if (this.isAttachmentToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createAttachmentToolBubble(callId);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+
+      this.updatePendingAttachmentToolBubble(bubble, this.getPendingAttachmentSummary(args));
+      this.toolInputBuffers.delete(callId);
+      this.toolInputOffsets.delete(callId);
+      return;
+    }
+
     // Check if block was already created by tool_input_chunk streaming
     let block = this.toolCallElements.get(callId);
     const existingBlock = !!block;
@@ -1036,6 +1073,37 @@ export class ChatRenderer {
       return;
     }
 
+    if (this.isAttachmentToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseId = this.getResponseId(event.responseId);
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        bubble = this.createAttachmentToolBubble(callId);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
+      }
+      const pendingSummary = this.getPendingAttachmentSummaryFromArgsJson(newBuffer);
+      if (pendingSummary) {
+        this.updatePendingAttachmentToolBubble(bubble, pendingSummary);
+      }
+      return;
+    }
+
     // Get or create the tool block
     let block = this.toolCallElements.get(callId);
     if (!block) {
@@ -1105,7 +1173,10 @@ export class ChatRenderer {
       // Tool block not yet created - buffer will be used when it arrives
       return;
     }
-    if (this.isVoiceToolName(block.dataset['toolName'] ?? '')) {
+    if (
+      this.isVoiceToolName(block.dataset['toolName'] ?? '') ||
+      this.isAttachmentToolName(block.dataset['toolName'] ?? '')
+    ) {
       return;
     }
 
@@ -1142,8 +1213,41 @@ export class ChatRenderer {
       }
       return;
     }
+    if (block && this.isAttachmentToolName(existingToolName)) {
+      if (event.payload.error) {
+        this.updateAttachmentToolBubbleError(block, event.payload.error.message);
+      } else if (isAttachmentToolResult(event.payload.result)) {
+        this.renderAttachmentToolBubble(block, event.payload.result.attachment);
+      } else {
+        this.updateAttachmentToolBubbleError(block, 'Attachment result payload was invalid.');
+      }
+      return;
+    }
     if (!block) {
       if (this.questionnaireToolCalls.has(callId)) {
+        return;
+      }
+      if (isAttachmentToolResult(event.payload.result)) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        block = this.createAttachmentToolBubble(callId);
+        block.dataset['eventId'] = event.id;
+        block.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(block);
+        this.toolCallElements.set(callId, block);
+        this.renderAttachmentToolBubble(block, event.payload.result.attachment);
+        if (responseId) {
+          this.markTextSegmentBreak(responseId);
+        }
         return;
       }
       const responseEl = this.getOrCreateToolCallContainer(
@@ -2447,11 +2551,19 @@ export class ChatRenderer {
   }
 
   private isGroupableToolCall(toolName: string): boolean {
-    return toolName !== 'agents_message' && !this.isVoiceToolName(toolName);
+    return (
+      toolName !== 'agents_message' &&
+      !this.isVoiceToolName(toolName) &&
+      !this.isAttachmentToolName(toolName)
+    );
   }
 
   private isVoiceToolName(toolName: string): toolName is 'voice_speak' | 'voice_ask' {
     return VOICE_TOOL_NAMES.has(toolName);
+  }
+
+  private isAttachmentToolName(toolName: string): boolean {
+    return toolName === ATTACHMENT_TOOL_NAME;
   }
 
   private getVoiceToolText(args: Record<string, unknown>): string {
@@ -2557,6 +2669,236 @@ export class ChatRenderer {
     errorEl.textContent = message;
   }
 
+  private getPendingAttachmentSummary(args: Record<string, unknown>): {
+    fileName?: string;
+    title?: string;
+  } {
+    return {
+      ...(typeof args['fileName'] === 'string' && args['fileName'].trim()
+        ? { fileName: args['fileName'].trim() }
+        : {}),
+      ...(typeof args['title'] === 'string' && args['title'].trim()
+        ? { title: args['title'].trim() }
+        : {}),
+    };
+  }
+
+  private getPendingAttachmentSummaryFromArgsJson(
+    argsJson: string,
+  ): { fileName?: string; title?: string } | null {
+    try {
+      return this.getPendingAttachmentSummary(JSON.parse(argsJson) as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  }
+
+  private formatAttachmentSize(size: number): string {
+    if (!Number.isFinite(size) || size < 1024) {
+      return `${Math.max(0, Math.round(size))} B`;
+    }
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  private createAttachmentToolBubble(callId: string): HTMLDivElement {
+    const bubble = document.createElement('div');
+    bubble.className = 'message assistant attachment-tool-bubble';
+    bubble.dataset['toolCallId'] = callId;
+    bubble.dataset['toolName'] = ATTACHMENT_TOOL_NAME;
+    bubble.dataset['status'] = 'pending';
+    bubble.style.display = 'flex';
+    bubble.style.flexDirection = 'column';
+    bubble.style.gap = '8px';
+    bubble.style.padding = '12px 14px';
+    bubble.style.borderRadius = '14px';
+    bubble.style.border = '1px solid var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.style.maxWidth = '680px';
+
+    const header = document.createElement('div');
+    header.className = 'attachment-tool-header';
+    header.style.display = 'inline-flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+    header.style.color = 'var(--color-text-secondary)';
+    header.style.fontSize = '0.78em';
+    header.style.fontWeight = '600';
+    header.style.letterSpacing = '0.04em';
+    header.style.textTransform = 'uppercase';
+    header.appendChild(this.createAttachmentEventIcon());
+
+    const label = document.createElement('span');
+    label.className = 'attachment-tool-label';
+    label.textContent = 'Attachment';
+    header.appendChild(label);
+
+    const title = document.createElement('div');
+    title.className = 'attachment-tool-title';
+    title.style.fontWeight = '600';
+    title.style.color = 'var(--color-message-assistant-text)';
+
+    const meta = document.createElement('div');
+    meta.className = 'attachment-tool-meta';
+    meta.style.color = 'var(--color-text-secondary)';
+    meta.style.fontSize = '0.9em';
+
+    const preview = document.createElement('div');
+    preview.className = 'attachment-tool-preview';
+    preview.style.display = 'none';
+    preview.style.padding = '10px 12px';
+    preview.style.borderRadius = '10px';
+    preview.style.background = 'var(--color-bg-subtle)';
+    preview.style.border = '1px solid var(--color-border-subtle)';
+    preview.style.overflow = 'hidden';
+
+    const actions = document.createElement('div');
+    actions.className = 'attachment-tool-actions';
+    actions.style.display = 'flex';
+    actions.style.gap = '10px';
+    actions.style.flexWrap = 'wrap';
+
+    bubble.append(header, title, meta, preview, actions);
+    return bubble;
+  }
+
+  private updatePendingAttachmentToolBubble(
+    bubble: HTMLDivElement,
+    summary: { fileName?: string; title?: string },
+  ): void {
+    bubble.dataset['status'] = 'pending';
+    bubble.classList.remove('error');
+    bubble.style.borderColor = 'var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.querySelector('.attachment-tool-error')?.remove();
+
+    const titleEl = bubble.querySelector<HTMLElement>('.attachment-tool-title');
+    if (titleEl) {
+      titleEl.textContent = summary.title || summary.fileName || 'Preparing attachment…';
+    }
+
+    const metaEl = bubble.querySelector<HTMLElement>('.attachment-tool-meta');
+    if (metaEl) {
+      metaEl.textContent = summary.title && summary.fileName ? summary.fileName : 'Preparing attachment…';
+    }
+
+    const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
+    if (previewEl) {
+      previewEl.style.display = 'none';
+      previewEl.classList.remove('markdown-content');
+      previewEl.replaceChildren();
+    }
+
+    const actionsEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-actions');
+    if (actionsEl) {
+      actionsEl.replaceChildren();
+    }
+  }
+
+  private renderAttachmentToolBubble(
+    bubble: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+  ): void {
+    bubble.dataset['status'] = 'complete';
+    bubble.classList.remove('error');
+    bubble.style.borderColor = 'var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.querySelector('.attachment-tool-error')?.remove();
+
+    const titleEl = bubble.querySelector<HTMLElement>('.attachment-tool-title');
+    if (titleEl) {
+      titleEl.textContent = attachment.title || attachment.fileName;
+    }
+
+    const metaEl = bubble.querySelector<HTMLElement>('.attachment-tool-meta');
+    if (metaEl) {
+      const parts = [
+        ...(attachment.title ? [attachment.fileName] : []),
+        attachment.contentType,
+        this.formatAttachmentSize(attachment.size),
+      ];
+      metaEl.textContent = parts.join(' • ');
+    }
+
+    const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
+    if (previewEl) {
+      previewEl.replaceChildren();
+      previewEl.classList.remove('markdown-content');
+      if (attachment.previewType === 'text' && typeof attachment.previewText === 'string') {
+        previewEl.style.display = 'block';
+        previewEl.textContent = attachment.previewTruncated
+          ? `${attachment.previewText}…`
+          : attachment.previewText;
+        previewEl.style.whiteSpace = 'pre-wrap';
+        previewEl.style.color = 'var(--color-message-assistant-text)';
+      } else if (
+        attachment.previewType === 'markdown' &&
+        typeof attachment.previewText === 'string'
+      ) {
+        previewEl.style.display = 'block';
+        previewEl.classList.add('markdown-content');
+        applyMarkdownToElement(
+          previewEl,
+          attachment.previewTruncated ? `${attachment.previewText}…` : attachment.previewText,
+        );
+      } else {
+        previewEl.style.display = 'none';
+      }
+    }
+
+    const actionsEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-actions');
+    if (actionsEl) {
+      actionsEl.replaceChildren();
+
+      const downloadLink = document.createElement('a');
+      downloadLink.href = resolveAttachmentUrl(attachment.downloadUrl);
+      downloadLink.textContent = 'Download';
+      downloadLink.rel = 'noopener noreferrer';
+      downloadLink.download = attachment.fileName;
+      downloadLink.style.color = 'var(--color-link)';
+      downloadLink.style.textDecoration = 'none';
+      actionsEl.appendChild(downloadLink);
+
+      if (attachment.openUrl && attachment.openMode === 'browser_blob') {
+        const openButton = document.createElement('button');
+        openButton.type = 'button';
+        openButton.textContent = 'Open';
+        openButton.className = 'text-button';
+        openButton.addEventListener('click', () => {
+          void openHtmlAttachmentInBrowser(attachment.openUrl!).catch((error) => {
+            console.error('[attachments] Failed to open HTML attachment', error);
+          });
+        });
+        actionsEl.appendChild(openButton);
+      }
+    }
+  }
+
+  private updateAttachmentToolBubbleError(bubble: HTMLDivElement, message: string): void {
+    bubble.dataset['status'] = 'error';
+    bubble.classList.add('error');
+    bubble.style.borderColor = 'var(--color-error-border)';
+    bubble.style.background = 'var(--color-error-soft)';
+    const actionsEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-actions');
+    actionsEl?.replaceChildren();
+    const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
+    if (previewEl) {
+      previewEl.style.display = 'none';
+      previewEl.replaceChildren();
+    }
+    let errorEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-error');
+    if (!errorEl) {
+      errorEl = document.createElement('div');
+      errorEl.className = 'attachment-tool-error';
+      errorEl.style.fontSize = '0.9em';
+      errorEl.style.color = 'var(--color-message-error-text)';
+      bubble.appendChild(errorEl);
+    }
+    errorEl.textContent = message;
+  }
+
   private createVoiceEventIcon(kind: 'speaker' | 'microphone'): HTMLSpanElement {
     const icon = document.createElement('span');
     icon.className = `voice-event-icon voice-event-icon-${kind}`;
@@ -2570,6 +2912,20 @@ export class ChatRenderer {
       kind === 'microphone'
         ? '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"></rect><path d="M12 19a6 6 0 0 0 6-6v-1h-2v1a4 4 0 0 1-8 0v-1H6v1a6 6 0 0 0 6 6z" fill="currentColor"></path><rect x="11" y="19" width="2" height="3" fill="currentColor"></rect><path d="M8 22h8a1 1 0 0 1 0 2H8a1 1 0 0 1 0-2z" fill="currentColor"></path></svg>'
         : '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.5 8.5a5 5 0 0 1 0 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    return icon;
+  }
+
+  private createAttachmentEventIcon(): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = 'attachment-event-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.display = 'inline-flex';
+    icon.style.alignItems = 'center';
+    icon.style.justifyContent = 'center';
+    icon.style.width = '18px';
+    icon.style.height = '18px';
+    icon.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M8 12.5 14.5 6a3.5 3.5 0 1 1 5 5l-8.5 8.5a5 5 0 0 1-7-7L12.5 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     return icon;
   }
 

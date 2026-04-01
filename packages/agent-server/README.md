@@ -258,6 +258,11 @@ Two TTS backends are supported:
 
 ### Tool Hosts
 
+Built-in session tools include:
+
+- `voice_speak` and `voice_ask` for structured voice prompt transcript bubbles
+- `attachment_send` for persistent session-owned attachment bubbles with replayable metadata plus download routes, and client-side HTML open via fetched blob URLs
+
 The server supports two types of tools:
 
 **Built-in Tools** (always available)

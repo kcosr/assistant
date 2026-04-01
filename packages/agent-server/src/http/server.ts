@@ -14,6 +14,7 @@ import type { SearchService } from '../search/searchService';
 import type { HistoryProviderRegistry } from '../history/historyProvider';
 
 import { PreferencesStore } from '../preferences/preferencesStore';
+import { handleAttachmentRoutes } from './routes/attachments';
 import { handleExternalRoutes } from './routes/external';
 import { handlePluginRoutes } from './routes/plugins';
 import { handlePreferencesRoutes } from './routes/preferences';
@@ -176,6 +177,7 @@ export function createHttpServer(options: {
       const pluginRoutes = pluginRegistry?.getHttpRoutes?.() ?? [];
       const handlers: HttpRouteHandler[] = [
         handleStaticRoutes,
+        handleAttachmentRoutes,
         handleExternalRoutes,
         handlePanelRoutes,
         handleSearchRoutes,

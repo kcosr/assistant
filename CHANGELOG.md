@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 ### Added
+- Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion.
 
 ### Changed
 

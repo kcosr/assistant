@@ -26,6 +26,7 @@ import {
   PiSessionHistoryProvider,
 } from './history/historyProvider';
 import { PiSessionWriter } from './history/piSessionWriter';
+import { AttachmentStore } from './attachments/store';
 
 export {
   buildSystemPrompt,
@@ -76,6 +77,7 @@ export async function startServer(
   ]);
   const mirrorPiSessionHistory = appConfig?.sessions?.mirrorPiSessionHistory ?? true;
   const piSessionWriter = mirrorPiSessionHistory ? new PiSessionWriter() : undefined;
+  const attachmentStore = new AttachmentStore(path.join(config.dataDir, 'attachments'));
 
   const maxCachedSessions =
     appConfig?.sessions && typeof appConfig.sessions.maxCached === 'number'
@@ -93,6 +95,7 @@ export async function startServer(
     historyProvider,
     eventStore,
     ...(piSessionWriter ? { piSessionWriter } : {}),
+    attachmentStore,
   });
   const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub, piOverlayBuffer);
 

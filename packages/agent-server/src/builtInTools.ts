@@ -1,5 +1,7 @@
-import type { ChatEvent } from '@assistant/shared';
+import type { AttachmentToolResult, ChatEvent } from '@assistant/shared';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import type { SessionHub, SessionIndex } from './index';
 import type { EnvConfig } from './envConfig';
@@ -16,6 +18,12 @@ import type { SkillSummary } from './skills';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
 import type { SearchService } from './search/searchService';
+import {
+  inferAttachmentContentType,
+  inferAttachmentContentTypeFromCandidates,
+  resolveAttachmentPreviewType,
+  supportsAttachmentOpenInBrowser,
+} from './attachments/contentType';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -28,6 +36,29 @@ interface AgentMessageArgs {
 type VoicePromptArgs = {
   text: string;
 };
+
+type AttachmentSendArgs =
+  | {
+      title?: string;
+      fileName: string;
+      contentType?: string;
+      text: string;
+    }
+  | {
+      title?: string;
+      fileName: string;
+      contentType?: string;
+      dataBase64: string;
+    }
+  | {
+      title?: string;
+      fileName: string;
+      contentType?: string;
+      path: string;
+    };
+
+const MAX_ATTACHMENT_SIZE_BYTES = 4 * 1024 * 1024;
+const MAX_ATTACHMENT_PREVIEW_CHARS = 4000;
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -53,6 +84,228 @@ function parseVoicePromptArgs(raw: unknown): VoicePromptArgs {
     throw createToolError('invalid_arguments', 'text must not be empty');
   }
   return { text };
+}
+
+function parseOptionalTrimmedString(obj: Record<string, unknown>, key: string): string | undefined {
+  const raw = obj[key];
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== 'string') {
+    throw createToolError('invalid_arguments', `${key} must be a string when provided`);
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseAttachmentSendArgs(raw: unknown): AttachmentSendArgs {
+  const obj = asObject(raw);
+  const title = parseOptionalTrimmedString(obj, 'title');
+  const fileName = parseOptionalTrimmedString(obj, 'fileName');
+  if (!fileName) {
+    throw createToolError('invalid_arguments', 'fileName is required and must be a non-empty string');
+  }
+  const contentType = parseOptionalTrimmedString(obj, 'contentType');
+
+  const hasText = typeof obj['text'] === 'string';
+  const hasDataBase64 = typeof obj['dataBase64'] === 'string';
+  const hasPath = typeof obj['path'] === 'string';
+  const sourceCount = Number(hasText) + Number(hasDataBase64) + Number(hasPath);
+  if (sourceCount !== 1) {
+    throw createToolError(
+      'invalid_arguments',
+      'Exactly one of text, dataBase64, or path must be provided',
+    );
+  }
+
+  if (hasText) {
+    return {
+      ...(title ? { title } : {}),
+      fileName,
+      ...(contentType ? { contentType } : {}),
+      text: obj['text'] as string,
+    };
+  }
+
+  if (hasDataBase64) {
+    return {
+      ...(title ? { title } : {}),
+      fileName,
+      ...(contentType ? { contentType } : {}),
+      dataBase64: obj['dataBase64'] as string,
+    };
+  }
+
+  const attachmentPath = (obj['path'] as string).trim();
+  if (!attachmentPath) {
+    throw createToolError('invalid_arguments', 'path must not be empty');
+  }
+  if (!path.isAbsolute(attachmentPath)) {
+    throw createToolError('invalid_arguments', 'path must be an absolute path');
+  }
+  return {
+    ...(title ? { title } : {}),
+    fileName,
+    ...(contentType ? { contentType } : {}),
+    path: attachmentPath,
+  };
+}
+
+function decodeAttachmentBase64(dataBase64: string): Buffer {
+  const normalized = dataBase64.trim().replace(/\s+/g, '');
+  const decoded = Buffer.from(normalized, 'base64');
+  const canonicalInput = normalized.replace(/=+$/, '');
+  const canonicalOutput = decoded.toString('base64').replace(/=+$/, '');
+  if (canonicalInput !== canonicalOutput) {
+    throw createToolError('invalid_arguments', 'dataBase64 must be valid base64');
+  }
+  return decoded;
+}
+
+function ensureAttachmentSize(size: number): void {
+  if (size > MAX_ATTACHMENT_SIZE_BYTES) {
+    throw createToolError(
+      'attachment_too_large',
+      `Attachment exceeds the 4 MB limit (${size} bytes)`,
+    );
+  }
+}
+
+function buildAttachmentRoutePath(sessionId: string, attachmentId: string): string {
+  return `/api/attachments/${encodeURIComponent(sessionId)}/${encodeURIComponent(attachmentId)}`;
+}
+
+async function materializeAttachmentBytes(
+  args: AttachmentSendArgs,
+): Promise<{ bytes: Buffer; inferredContentType: string }> {
+  if ('text' in args) {
+    return {
+      bytes: Buffer.from(args.text, 'utf8'),
+      inferredContentType: inferAttachmentContentTypeFromCandidates(args.fileName),
+    };
+  }
+  if ('dataBase64' in args) {
+    return {
+      bytes: decodeAttachmentBase64(args.dataBase64),
+      inferredContentType: inferAttachmentContentTypeFromCandidates(args.fileName),
+    };
+  }
+
+  try {
+    const stat = await fs.stat(args.path);
+    ensureAttachmentSize(stat.size);
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
+      throw createToolError('not_found', `Attachment path not found: ${args.path}`);
+    }
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      throw createToolError('not_readable', `Attachment path is not readable: ${args.path}`);
+    }
+    throw err;
+  }
+
+  try {
+    return {
+      bytes: await fs.readFile(args.path),
+      inferredContentType: inferAttachmentContentTypeFromCandidates(args.fileName, args.path),
+    };
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code === 'ENOENT') {
+      throw createToolError('not_found', `Attachment path not found: ${args.path}`);
+    }
+    if (error.code === 'EACCES' || error.code === 'EPERM') {
+      throw createToolError('not_readable', `Attachment path is not readable: ${args.path}`);
+    }
+    throw err;
+  }
+}
+
+function buildAttachmentPreview(options: {
+  bytes: Buffer;
+  contentType: string;
+}): {
+  previewType: 'none' | 'text' | 'markdown';
+  previewText?: string;
+  previewTruncated?: boolean;
+} {
+  const previewType = resolveAttachmentPreviewType(options.contentType);
+  if (previewType === 'none') {
+    return { previewType };
+  }
+
+  const fullText = options.bytes.toString('utf8');
+  const previewText =
+    fullText.length > MAX_ATTACHMENT_PREVIEW_CHARS
+      ? fullText.slice(0, MAX_ATTACHMENT_PREVIEW_CHARS)
+      : fullText;
+  return {
+    previewType,
+    previewText,
+    previewTruncated: previewText.length < fullText.length,
+  };
+}
+
+async function handleAttachmentSend(
+  raw: unknown,
+  ctx: ToolContext,
+  sessionHub: SessionHub,
+): Promise<AttachmentToolResult> {
+  const sessionId = ctx.sessionId?.trim();
+  const turnId = ctx.turnId?.trim();
+  const toolCallId = ctx.toolCallId?.trim();
+  if (!sessionId || !turnId || !toolCallId) {
+    throw createToolError(
+      'attachment_context_unavailable',
+      'attachment_send requires sessionId, turnId, and toolCallId',
+    );
+  }
+
+  const store = sessionHub.getAttachmentStore();
+  if (!store) {
+    throw createToolError('attachments_unavailable', 'Attachment storage is not configured');
+  }
+
+  const args = parseAttachmentSendArgs(raw);
+  const { bytes, inferredContentType } = await materializeAttachmentBytes(args);
+  ensureAttachmentSize(bytes.byteLength);
+
+  const contentType = args.contentType ?? inferredContentType;
+  const stored = await store.createAttachment({
+    sessionId,
+    turnId,
+    toolCallId,
+    fileName: args.fileName,
+    ...(args.title ? { title: args.title } : {}),
+    contentType,
+    bytes,
+  });
+
+  const routePath = buildAttachmentRoutePath(sessionId, stored.attachmentId);
+  const preview = buildAttachmentPreview({ bytes, contentType });
+  return {
+    ok: true,
+    attachment: {
+      attachmentId: stored.attachmentId,
+      fileName: stored.fileName,
+      ...(stored.title ? { title: stored.title } : {}),
+      contentType: stored.contentType,
+      size: stored.size,
+      downloadUrl: `${routePath}?download=1`,
+      ...(supportsAttachmentOpenInBrowser(stored.contentType)
+        ? {
+            openUrl: routePath,
+            openMode: 'browser_blob' as const,
+          }
+        : {}),
+      previewType: preview.previewType,
+      ...(preview.previewText !== undefined ? { previewText: preview.previewText } : {}),
+      ...(preview.previewTruncated !== undefined
+        ? { previewTruncated: preview.previewTruncated }
+        : {}),
+    },
+  };
 }
 
 async function getCurrentAgentIdFromContext(
@@ -787,8 +1040,6 @@ export function registerBuiltInSessionTools(options: {
   host: { registerTool(definition: BuiltInToolDefinition): void };
   sessionHub: SessionHub;
 }): void {
-  void options.sessionHub;
-
   const voicePromptParameters = {
     type: 'object',
     properties: {
@@ -821,5 +1072,43 @@ export function registerBuiltInSessionTools(options: {
       parseVoicePromptArgs(args);
       return { accepted: true };
     },
+  });
+
+  options.host.registerTool({
+    name: 'attachment_send',
+    description:
+      'Send a persistent attachment bubble to the user. Stores one attachment owned by this tool call and returns replayable metadata plus download/open paths.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          description: 'Optional display title shown above the filename.',
+        },
+        fileName: {
+          type: 'string',
+          description: 'Required file name presented to the user.',
+        },
+        contentType: {
+          type: 'string',
+          description: 'Optional MIME type override. When omitted, it is inferred from fileName or path.',
+        },
+        text: {
+          type: 'string',
+          description: 'Inline text content to persist as UTF-8 bytes.',
+        },
+        dataBase64: {
+          type: 'string',
+          description: 'Inline base64-encoded file bytes.',
+        },
+        path: {
+          type: 'string',
+          description: 'Absolute local file path readable by the server.',
+        },
+      },
+      required: ['fileName'],
+      additionalProperties: false,
+    },
+    handler: async (args, ctx) => handleAttachmentSend(args, ctx, options.sessionHub),
   });
 }

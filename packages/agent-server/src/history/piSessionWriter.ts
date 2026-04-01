@@ -1045,7 +1045,7 @@ function selectDroppedTurnRanges(options: {
   spans: PiTurnSpan[];
   action: PiTurnHistoryAction;
   turnId: string;
-}): Array<{ startIndex: number; endIndex: number }> {
+}): PiTurnSpan[] {
   const { spans, action, turnId } = options;
   const anchorIndex = spans.findIndex((span) => span.turnId === turnId);
   if (anchorIndex === -1) {
@@ -1152,7 +1152,7 @@ export class PiSessionWriter {
     updateAttributes?: (
       patch: SessionAttributesPatch,
     ) => Promise<SessionSummary | undefined>;
-  }): Promise<{ summary: SessionSummary; changed: boolean }> {
+  }): Promise<{ summary: SessionSummary; changed: boolean; droppedTurnIds: string[] }> {
     const { summary, action, turnId, updateAttributes } = options;
     const trimmedTurnId = turnId.trim();
     if (!trimmedTurnId) {
@@ -1179,8 +1179,9 @@ export class PiSessionWriter {
       action,
       turnId: trimmedTurnId,
     });
+    const droppedTurnIds = droppedRanges.map((range) => range.turnId);
     if (droppedRanges.length === 0) {
-      return { summary: stateInfo.summary, changed: false };
+      return { summary: stateInfo.summary, changed: false, droppedTurnIds: [] };
     }
 
     const keptEntries = rechainEntries(filterEntriesByDroppedRanges(records.entries, droppedRanges));
@@ -1194,7 +1195,7 @@ export class PiSessionWriter {
     });
 
     this.sessions.delete(summary.sessionId);
-    return { summary: stateInfo.summary, changed: true };
+    return { summary: stateInfo.summary, changed: true, droppedTurnIds };
   }
 
   async sync(options: {

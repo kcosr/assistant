@@ -1,6 +1,11 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 import { filterVisibleAgents } from './index';
 import { AgentRegistry } from './agents';
+import { AttachmentStore } from './attachments/store';
 import { BuiltInToolHost } from './tools';
 import type { BuiltInToolDefinition, ToolContext } from './tools';
 import { registerBuiltInSessionTools } from './builtInTools';
@@ -114,19 +119,28 @@ describe('filterVisibleAgents', () => {
 });
 
 describe('registerBuiltInSessionTools', () => {
-  function createHost(): BuiltInToolHost {
+  async function createTempDir(prefix: string): Promise<string> {
+    return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
+  }
+
+  function createHost(attachmentStore?: AttachmentStore): BuiltInToolHost {
     const host = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
     registerBuiltInSessionTools({
       host,
-      sessionHub: {} as never,
+      sessionHub: {
+        getAttachmentStore: () => attachmentStore,
+      } as never,
     });
     return host;
   }
 
-  function createContext(): ToolContext {
+  function createContext(overrides: Partial<ToolContext> = {}): ToolContext {
     return {
       sessionId: 'session-1',
       signal: new AbortController().signal,
+      turnId: 'turn-1',
+      toolCallId: 'tool-call-1',
+      ...overrides,
     };
   }
 
@@ -146,6 +160,21 @@ describe('registerBuiltInSessionTools', () => {
         expect.objectContaining({
           name: 'voice_ask',
           description: expect.stringContaining('spoken reply is expected'),
+        }),
+      ]),
+    );
+  });
+
+  it('registers attachment_send', async () => {
+    const host = createHost();
+
+    const tools = await host.listTools();
+
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'attachment_send',
+          description: expect.stringContaining('persistent attachment bubble'),
         }),
       ]),
     );
@@ -177,5 +206,128 @@ describe('registerBuiltInSessionTools', () => {
       code: 'invalid_arguments',
       message: 'text must not be empty',
     });
+  });
+
+  it('stores text attachments and returns replayable metadata', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-attachments'));
+    const host = createHost(store);
+    const ctx = createContext();
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        title: 'Release Notes',
+        fileName: 'notes.md',
+        contentType: 'text/markdown',
+        text: '# Hello\n\nThis is a note.',
+      }),
+      ctx,
+    )) as {
+      ok: boolean;
+      attachment: {
+        attachmentId: string;
+        fileName: string;
+        title?: string;
+        contentType: string;
+        size: number;
+        downloadUrl: string;
+        previewType: string;
+        previewText?: string;
+      };
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.attachment.title).toBe('Release Notes');
+    expect(result.attachment.fileName).toBe('notes.md');
+    expect(result.attachment.contentType).toBe('text/markdown');
+    expect(result.attachment.downloadUrl).toContain('/api/attachments/session-1/');
+    expect(result.attachment.previewType).toBe('markdown');
+    expect(result.attachment.previewText).toContain('# Hello');
+
+    const stored = await store.getAttachment('session-1', result.attachment.attachmentId);
+    expect(stored?.turnId).toBe('turn-1');
+    expect(stored?.toolCallId).toBe('tool-call-1');
+  });
+
+  it('uses browser_blob open mode for HTML attachments', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-html'));
+    const host = createHost(store);
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'report.html',
+        text: '<html><body>Hi</body></html>',
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        openUrl?: string;
+        openMode?: string;
+        previewType: string;
+      };
+    };
+
+    expect(result.attachment.openUrl).toContain('/api/attachments/session-1/');
+    expect(result.attachment.openMode).toBe('browser_blob');
+    expect(result.attachment.previewType).toBe('none');
+  });
+
+  it('rejects invalid attachment arguments', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-invalid-attachments'));
+    const host = createHost(store);
+
+    await expect(
+      host.callTool(
+        'attachment_send',
+        JSON.stringify({
+          fileName: 'note.txt',
+          text: 'hello',
+          dataBase64: 'aGVsbG8=',
+        }),
+        createContext(),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'Exactly one of text, dataBase64, or path must be provided',
+    });
+
+    await expect(
+      host.callTool(
+        'attachment_send',
+        JSON.stringify({
+          fileName: 'note.txt',
+          path: 'relative/path.txt',
+        }),
+        createContext(),
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_arguments',
+      message: 'path must be an absolute path',
+    });
+  });
+
+  it('prefers fileName extension over source path for MIME inference', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-path-inference'));
+    const host = createHost(store);
+    const sourcePath = path.join(await createTempDir('built-in-tools-source-file'), 'report');
+    await fs.writeFile(sourcePath, '<html><body>Hi</body></html>', 'utf8');
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'report.html',
+        path: sourcePath,
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        contentType: string;
+        openMode?: string;
+      };
+    };
+
+    expect(result.attachment.contentType).toBe('text/html');
+    expect(result.attachment.openMode).toBe('browser_blob');
   });
 });
