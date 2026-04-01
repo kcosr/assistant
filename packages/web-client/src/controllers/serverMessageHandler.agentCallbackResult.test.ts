@@ -12,11 +12,13 @@ vi.mock('dompurify', () => {
 import { ServerMessageHandler, type ServerMessageHandlerOptions } from './serverMessageHandler';
 import type { SpeechAudioController } from './speechAudioController';
 import type { ChatRuntime } from '../panels/chat/runtime';
+import { CURRENT_PROTOCOL_VERSION } from '@assistant/shared/protocol';
 
 function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const typingIndicators = new Set<string>();
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
+  const bufferChatEvent = vi.fn();
 
   const options: ServerMessageHandlerOptions = {
     statusEl: document.createElement('div'),
@@ -33,6 +35,8 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
     supportsAudioOutput: () => false,
     refreshSessions,
     loadSessionTranscript,
+    shouldBufferChatEvent: () => false,
+    bufferChatEvent,
     renderAgentSidebar: () => {},
     appendMessage: () => document.createElement('div'),
     scrollMessageIntoView: () => {},
@@ -60,7 +64,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
 
   const handler = new ServerMessageHandler(options);
 
-  return { handler, typingIndicators, refreshSessions, loadSessionTranscript };
+  return { handler, typingIndicators, refreshSessions, loadSessionTranscript, bufferChatEvent };
 }
 
 describe('ServerMessageHandler typing indicator', () => {
@@ -113,6 +117,21 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
   });
 
+  it('forces transcript reload when a session becomes ready', async () => {
+    const { handler, refreshSessions, loadSessionTranscript } = makeHandler();
+
+    await handler.handle({
+      type: 'session_ready',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      sessionId: 's-1',
+      inputMode: 'text',
+      outputMode: 'text',
+    });
+
+    expect(refreshSessions).toHaveBeenCalledWith('s-1');
+    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+  });
+
   it('scrolls visible chat panels to bottom on turn_start', async () => {
     const scrollToBottom = vi.fn();
     const autoScrollIfEnabled = vi.fn();
@@ -159,6 +178,54 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(handleNewEvent).toHaveBeenCalledTimes(1);
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
     expect(autoScrollIfEnabled).not.toHaveBeenCalled();
+  });
+
+  it('buffers chat events while transcript hydration is in progress', async () => {
+    const handleNewEvent = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom: vi.fn(),
+        autoScrollIfEnabled: vi.fn(),
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const { handler, bufferChatEvent } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+      shouldBufferChatEvent: () => true,
+    });
+
+    const event = {
+      id: 'user-1',
+      type: 'user_message',
+      timestamp: Date.now(),
+      sessionId: 's-1',
+      turnId: 't-1',
+      payload: { text: 'hello' },
+    } as const;
+
+    await handler.handle({
+      type: 'chat_event',
+      sessionId: 's-1',
+      event,
+    });
+
+    expect(bufferChatEvent).toHaveBeenCalledWith('s-1', event);
+    expect(handleNewEvent).not.toHaveBeenCalled();
   });
 
   it('marks sessions busy on turn_start and idle on turn_end before assistant output arrives', async () => {

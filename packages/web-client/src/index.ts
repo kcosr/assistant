@@ -399,6 +399,42 @@ async function main(): Promise<void> {
   const chatPanelsById = new Map<string, ChatPanelEntry>();
   const chatPanelIdBySession = new Map<string, string>();
   const loadedChatTranscripts = new Set<string>();
+  const hydratingSessionTranscriptCounts = new Map<string, number>();
+  const bufferedChatEvents = new Map<string, ChatEvent[]>();
+
+  function clearSessionTranscriptState(sessionId: string): void {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return;
+    }
+    loadedChatTranscripts.delete(trimmed);
+    hydratingSessionTranscriptCounts.delete(trimmed);
+    bufferedChatEvents.delete(trimmed);
+  }
+
+  function flushBufferedChatEvents(
+    sessionId: string,
+    chatRenderer: ChatRuntime['chatRenderer'],
+    chatScrollManager: ChatRuntime['chatScrollManager'],
+    replayedEventIds?: Set<string>,
+  ): void {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return;
+    }
+    const pendingEvents = bufferedChatEvents.get(trimmed) ?? [];
+    bufferedChatEvents.delete(trimmed);
+    const eventsToApply = replayedEventIds
+      ? pendingEvents.filter((event) => !replayedEventIds.has(event.id))
+      : pendingEvents;
+    if (eventsToApply.length === 0) {
+      return;
+    }
+    for (const event of eventsToApply) {
+      chatRenderer.handleNewEvent(event);
+    }
+    chatScrollManager.autoScrollIfEnabled();
+  }
 
   await listColumnPreferencesClient.load();
   await toolOutputPreferencesClient.load();
@@ -1460,7 +1496,7 @@ async function main(): Promise<void> {
       entry.inputRuntime.setSessionId(sessionId);
       entry.inputRuntime.updateContextAvailability();
       if (previousSessionId && previousSessionId !== sessionId) {
-        loadedChatTranscripts.delete(previousSessionId);
+        clearSessionTranscriptState(previousSessionId);
         // Reset panel state when switching sessions to prevent lingering state from previous session
         entry.runtime.chatRenderer.hideTypingIndicator();
         entry.inputRuntime.speechAudioController?.syncMicButtonState();
@@ -1565,7 +1601,7 @@ async function main(): Promise<void> {
       runtime.chatRenderer.setTurnDividerActionHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
-        loadedChatTranscripts.delete(entry.bindingSessionId);
+        clearSessionTranscriptState(entry.bindingSessionId);
       }
       if (entry.bindingSessionId && chatPanelIdBySession.get(entry.bindingSessionId) === panelId) {
         chatPanelIdBySession.delete(entry.bindingSessionId);
@@ -4014,7 +4050,9 @@ async function main(): Promise<void> {
     if (!trimmed) {
       return;
     }
-    if (!options?.force && loadedChatTranscripts.has(trimmed)) {
+    const forceReload = options?.force === true;
+    const alreadyLoaded = loadedChatTranscripts.has(trimmed);
+    if (!forceReload && alreadyLoaded) {
       return;
     }
     const runtime = getChatRuntimeForSession(trimmed);
@@ -4022,6 +4060,7 @@ async function main(): Promise<void> {
       return;
     }
     loadedChatTranscripts.add(trimmed);
+    hydratingSessionTranscriptCounts.set(trimmed, (hydratingSessionTranscriptCounts.get(trimmed) ?? 0) + 1);
     const chatLogEl = runtime.elements.chatLog;
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
@@ -4032,7 +4071,7 @@ async function main(): Promise<void> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: trimmed,
-          ...(options?.force ? { force: true } : {}),
+          ...(forceReload ? { force: true } : {}),
         }),
       });
       if (!eventsResponse.ok) {
@@ -4040,6 +4079,8 @@ async function main(): Promise<void> {
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
         loadedChatTranscripts.delete(trimmed);
+        hydratingSessionTranscriptCounts.delete(trimmed);
+        flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
         return;
       }
 
@@ -4055,11 +4096,23 @@ async function main(): Promise<void> {
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
       }
-    } catch {
-      console.error('Failed to fetch session events', sessionId);
+
+      const replayedEventIds = new Set(events.map((event) => event.id));
+      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager, replayedEventIds);
+    } catch (error) {
+      console.error('Failed to fetch session events', sessionId, error);
       chatRenderer.clear();
       ensureEmptySessionHint(chatLogEl);
       loadedChatTranscripts.delete(trimmed);
+      hydratingSessionTranscriptCounts.delete(trimmed);
+      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
+    } finally {
+      const remainingLoads = (hydratingSessionTranscriptCounts.get(trimmed) ?? 1) - 1;
+      if (remainingLoads > 0) {
+        hydratingSessionTranscriptCounts.set(trimmed, remainingLoads);
+      } else {
+        hydratingSessionTranscriptCounts.delete(trimmed);
+      }
     }
     const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
     if (shouldShowTyping) {
@@ -4317,12 +4370,24 @@ async function main(): Promise<void> {
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
     refreshSessions,
     loadSessionTranscript,
+    shouldBufferChatEvent: (sessionId) =>
+      (hydratingSessionTranscriptCounts.get(sessionId.trim()) ?? 0) > 0,
+    bufferChatEvent: (sessionId, event) => {
+      const trimmed = sessionId.trim();
+      if (!trimmed) {
+        return;
+      }
+      const existing = bufferedChatEvents.get(trimmed) ?? [];
+      existing.push(event);
+      bufferedChatEvents.set(trimmed, existing);
+    },
     renderAgentSidebar,
     appendMessage,
     scrollMessageIntoView,
     showSessionTypingIndicator,
     hideSessionTypingIndicator,
     onSessionDeleted: (sessionId) => {
+      clearSessionTranscriptState(sessionId);
       unbindChatPanelsForSession(sessionId);
       connectionManager.handleSessionDeleted(sessionId);
     },
