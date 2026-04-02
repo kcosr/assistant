@@ -11,6 +11,7 @@
 
 ### Changed
 
+- Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed attachment MIME inference so files with unknown extensions download as `application/octet-stream` while extensionless text still defaults to `text/plain`. ([#83](https://github.com/kcosr/assistant/pull/83))
 
 ### Fixed
