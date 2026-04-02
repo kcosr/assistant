@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
+
 export interface CliWrapperConfig {
   /**
    * Command wrapper path for running CLI tools in a container.
@@ -27,6 +29,17 @@ export type InstructionSkillSource = {
    * Defaults to [] when both available and inline are omitted.
    */
   inline?: string[];
+};
+
+export type ContextFileSource = {
+  /**
+   * Absolute root directory to search within after config loading resolves relative paths.
+   */
+  root: string;
+  /**
+   * Root-relative file paths or glob patterns to include in prompt context.
+   */
+  include: string[];
 };
 
 export type AgentSessionWorkingDirConfig =
@@ -63,7 +76,7 @@ export interface AgentDefinition {
      */
     thinking?: string[];
     config?:
-        | {
+      | {
           /**
            * Used for CLI providers ("claude-cli", "codex-cli", "pi-cli"): working directory.
            */
@@ -159,6 +172,10 @@ export interface AgentDefinition {
    * Optional instruction skills configuration (Pi-style SKILL.md discovery + prompt inclusion).
    */
   skills?: InstructionSkillSource[];
+  /**
+   * Optional context files configuration for prompt augmentation.
+   */
+  contextFiles?: ContextFileSource[];
 }
 
 export interface PiSdkChatConfig {
@@ -315,9 +332,7 @@ function parseChatThinking(options: { index: number; thinkingRaw: unknown }): st
     collected.push(value.trim());
   }
   if (collected.length === 0) {
-    throw new Error(
-      `agents[${index}].chat.thinking must contain at least one entry when provided`,
-    );
+    throw new Error(`agents[${index}].chat.thinking must contain at least one entry when provided`);
   }
   return collected;
 }
@@ -372,6 +387,7 @@ interface AgentDefinitionConfigShape {
   apiExposed?: unknown;
   schedules?: unknown;
   skills?: unknown;
+  contextFiles?: unknown;
   sessionWorkingDir?: unknown;
   sessionWorkingDirMode?: unknown;
   sessionWorkingDirRoots?: unknown;
@@ -384,6 +400,7 @@ interface AgentsConfigFileShape {
 function validateAgentDefinitionConfig(
   config: AgentDefinitionConfigShape,
   index: number,
+  configDir: string,
 ): AgentDefinition {
   const rawAgentId = config.agentId;
   const rawDisplayName = config.displayName;
@@ -565,9 +582,7 @@ function validateAgentDefinitionConfig(
       }
       return { mode: 'prompt', roots };
     }
-    throw new Error(
-      `agents[${index}].sessionWorkingDir.mode must be "none", "fixed", or "prompt"`,
-    );
+    throw new Error(`agents[${index}].sessionWorkingDir.mode must be "none", "fixed", or "prompt"`);
   };
 
   const sessionWorkingDir = parseSessionWorkingDir(rawSessionWorkingDir);
@@ -598,12 +613,17 @@ function validateAgentDefinitionConfig(
         throw new Error(`agents[${index}].skills[${i}].root must be a non-empty string`);
       }
 
-      const parseOptionalPatternList = (value: unknown, field: 'available' | 'inline'): string[] | undefined => {
+      const parseOptionalPatternList = (
+        value: unknown,
+        field: 'available' | 'inline',
+      ): string[] | undefined => {
         if (value === undefined || value === null) {
           return undefined;
         }
         if (!Array.isArray(value)) {
-          throw new Error(`agents[${index}].skills[${i}].${field} must be an array of strings when provided`);
+          throw new Error(
+            `agents[${index}].skills[${i}].${field} must be an array of strings when provided`,
+          );
         }
         const patterns: string[] = [];
         for (let j = 0; j < value.length; j += 1) {
@@ -632,6 +652,51 @@ function validateAgentDefinitionConfig(
   };
 
   const instructionSkills = parseInstructionSkills(config.skills);
+
+  const parseContextFiles = (raw: unknown): ContextFileSource[] | undefined => {
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      throw new Error(`agents[${index}].contextFiles must be an array when provided`);
+    }
+
+    const sources: ContextFileSource[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const entry = raw[i];
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`agents[${index}].contextFiles[${i}] must be an object`);
+      }
+      const source = entry as { root?: unknown; include?: unknown };
+      const root = typeof source.root === 'string' ? source.root.trim() : '';
+      if (!root) {
+        throw new Error(`agents[${index}].contextFiles[${i}].root must be a non-empty string`);
+      }
+      if (!Array.isArray(source.include)) {
+        throw new Error(`agents[${index}].contextFiles[${i}].include must be an array of strings`);
+      }
+      const include: string[] = [];
+      for (let j = 0; j < source.include.length; j += 1) {
+        const pattern = source.include[j];
+        if (typeof pattern !== 'string' || !pattern.trim()) {
+          throw new Error(
+            `agents[${index}].contextFiles[${i}].include[${j}] must be a non-empty string when provided`,
+          );
+        }
+        include.push(pattern.trim());
+      }
+      if (include.length === 0) {
+        throw new Error(`agents[${index}].contextFiles[${i}].include must not be empty`);
+      }
+      sources.push({ root, include });
+    }
+
+    return sources.length > 0
+      ? normalizeContextFileSourcesForConfigDir(sources, configDir)
+      : undefined;
+  };
+
+  const contextFiles = parseContextFiles(config.contextFiles);
 
   const base: AgentDefinition = {
     agentId,
@@ -1067,13 +1132,14 @@ function validateAgentDefinitionConfig(
       }
 
       if (extraArgs) {
-        const reservedArgs = models || thinking
-          ? [
-              ...PI_CLI_RESERVED_ARGS,
-              ...(models ? ['--model', '--provider'] : []),
-              ...(thinking ? ['--thinking'] : []),
-            ]
-          : PI_CLI_RESERVED_ARGS;
+        const reservedArgs =
+          models || thinking
+            ? [
+                ...PI_CLI_RESERVED_ARGS,
+                ...(models ? ['--model', '--provider'] : []),
+                ...(thinking ? ['--thinking'] : []),
+              ]
+            : PI_CLI_RESERVED_ARGS;
         assertNoReservedExtraArgs({
           index,
           provider: 'pi-cli',
@@ -1133,6 +1199,9 @@ function validateAgentDefinitionConfig(
   if (instructionSkills) {
     extended.skills = instructionSkills;
   }
+  if (contextFiles) {
+    extended.contextFiles = contextFiles;
+  }
   if (uiVisible !== undefined) {
     extended.uiVisible = uiVisible;
   }
@@ -1148,6 +1217,7 @@ function validateAgentDefinitionConfig(
 
 export function loadAgentDefinitionsFromFile(configPath: string): AgentDefinition[] {
   const resolvedPath = path.resolve(configPath);
+  const configDir = path.dirname(resolvedPath);
 
   let raw: string;
   try {
@@ -1193,7 +1263,7 @@ export function loadAgentDefinitionsFromFile(configPath: string): AgentDefinitio
       throw new Error(`agents[${i}] in ${resolvedPath} must be an object`);
     }
 
-    const definition = validateAgentDefinitionConfig(entry, i);
+    const definition = validateAgentDefinitionConfig(entry, i, configDir);
     if (seenIds.has(definition.agentId)) {
       throw new Error(
         `Duplicate agentId "${definition.agentId}" found in agents configuration at index ${i}`,

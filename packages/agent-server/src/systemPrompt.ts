@@ -1,6 +1,7 @@
 import { matchesGlobPattern, type Tool } from './tools';
 import type { SkillSummary } from './skills';
 import { AgentRegistry, type AgentDefinition } from './agents';
+import { buildContextFilesPrompt } from './contextFiles';
 import { buildInstructionSkillsPrompt } from './instructionSkills';
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant. Always respond in English unless the user explicitly asks for a different language.
@@ -128,9 +129,19 @@ export function buildSystemPrompt(
     sections.push(`Project directory: ${workingDir.trim()}`);
   }
   if (agent?.skills && agent.skills.length > 0) {
-    const skillsPrompt = buildInstructionSkillsPrompt(agent, undefined, selectedInstructionSkillNames);
+    const skillsPrompt = buildInstructionSkillsPrompt(
+      agent,
+      undefined,
+      selectedInstructionSkillNames,
+    );
     if (skillsPrompt) {
       sections.push(skillsPrompt);
+    }
+  }
+  if (agent?.contextFiles && agent.contextFiles.length > 0) {
+    const contextFilesPrompt = buildContextFilesPrompt(agent);
+    if (contextFilesPrompt) {
+      sections.push(contextFilesPrompt);
     }
   }
 

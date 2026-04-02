@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 import type { AgentDefinition } from './agents';
+import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
 const AbsolutePathSchema = NonEmptyTrimmedStringSchema.refine(
@@ -12,17 +13,6 @@ const AbsolutePathSchema = NonEmptyTrimmedStringSchema.refine(
 
 const GlobPatternListSchema = z
   .array(NonEmptyTrimmedStringSchema)
-  .optional()
-  .nullable()
-  .transform((value) => {
-    if (!value || value.length === 0) {
-      return undefined;
-    }
-    return value;
-  });
-
-const AbsolutePathListSchema = z
-  .array(AbsolutePathSchema)
   .optional()
   .nullable()
   .transform((value) => {
@@ -165,7 +155,10 @@ function parseChatModels(options: { agentId: string; modelsRaw: unknown }): stri
   return collected;
 }
 
-function parseChatThinking(options: { agentId: string; thinkingRaw: unknown }): string[] | undefined {
+function parseChatThinking(options: {
+  agentId: string;
+  thinkingRaw: unknown;
+}): string[] | undefined {
   const { agentId, thinkingRaw } = options;
   if (thinkingRaw === undefined || thinkingRaw === null) {
     return undefined;
@@ -261,6 +254,25 @@ const InstructionSkillsConfigSchema = z
     }));
   });
 
+const ContextFileSourceConfigSchema = z.object({
+  root: NonEmptyTrimmedStringSchema,
+  include: z.array(NonEmptyTrimmedStringSchema).min(1),
+});
+
+const ContextFilesConfigSchema = z
+  .array(ContextFileSourceConfigSchema)
+  .optional()
+  .nullable()
+  .transform((value) => {
+    if (!value || value.length === 0) {
+      return undefined;
+    }
+    return value.map((source) => ({
+      root: source.root,
+      include: source.include,
+    }));
+  });
+
 const SessionWorkingDirConfigSchema = z
   .discriminatedUnion('mode', [
     z.object({
@@ -306,8 +318,7 @@ const RawAgentConfigSchema = z.object({
       if (value !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            'sessionWorkingDirMode is no longer supported; use sessionWorkingDir instead',
+          message: 'sessionWorkingDirMode is no longer supported; use sessionWorkingDir instead',
         });
       }
     }),
@@ -318,8 +329,7 @@ const RawAgentConfigSchema = z.object({
       if (value !== undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message:
-            'sessionWorkingDirRoots is no longer supported; use sessionWorkingDir instead',
+          message: 'sessionWorkingDirRoots is no longer supported; use sessionWorkingDir instead',
         });
       }
     }),
@@ -336,6 +346,7 @@ const RawAgentConfigSchema = z.object({
       }
     }),
   skills: InstructionSkillsConfigSchema,
+  contextFiles: ContextFilesConfigSchema,
 });
 
 export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
@@ -360,6 +371,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     apiExposed,
     sessionWorkingDir,
     skills,
+    contextFiles,
   } = value;
 
   const base: AgentDefinition = {
@@ -367,6 +379,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     displayName,
     description,
     ...(skills !== undefined ? { skills } : {}),
+    ...(contextFiles !== undefined ? { contextFiles } : {}),
     ...(sessionWorkingDir ? { sessionWorkingDir } : {}),
   };
 
@@ -517,13 +530,14 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
           : undefined;
 
       if (config?.extraArgs) {
-        const reservedArgs = models || thinking
-          ? [
-              ...PI_CLI_RESERVED_ARGS,
-              ...(models ? ['--model', '--provider'] : []),
-              ...(thinking ? ['--thinking'] : []),
-            ]
-          : PI_CLI_RESERVED_ARGS;
+        const reservedArgs =
+          models || thinking
+            ? [
+                ...PI_CLI_RESERVED_ARGS,
+                ...(models ? ['--model', '--provider'] : []),
+                ...(thinking ? ['--thinking'] : []),
+              ]
+            : PI_CLI_RESERVED_ARGS;
         assertNoReservedArgs({
           agentId,
           provider: 'pi-cli',
@@ -878,6 +892,7 @@ function applyEnvSubstitution(config: AppConfig): AppConfig {
 
 export function loadConfig(configPath: string): AppConfig {
   const resolvedPath = path.resolve(configPath);
+  const configDir = path.dirname(resolvedPath);
 
   let raw: string;
   try {
@@ -901,9 +916,19 @@ export function loadConfig(configPath: string): AppConfig {
   }
 
   const config = applyEnvSubstitution(AppConfigSchema.parse(parsedJson));
+  const agents = config.agents.map((agent) => {
+    const contextFiles = agent.contextFiles
+      ? normalizeContextFileSourcesForConfigDir(agent.contextFiles, configDir)
+      : undefined;
+    return {
+      ...agent,
+      ...(contextFiles ? { contextFiles } : {}),
+    };
+  });
   const profiles = normalizeProfiles(config.profiles ?? []);
   return {
     ...config,
+    agents,
     profiles,
   };
 }
