@@ -18,6 +18,7 @@ import { GitVersioningService } from './gitVersioning';
 import { ScheduledSessionService, ScheduledSessionStore } from './scheduledSessions';
 import { SearchService } from './search/searchService';
 import { preloadInstructionSkillsForAgents } from './instructionSkills';
+import { preloadContextFilesForAgents } from './contextFiles';
 import {
   ClaudeSessionHistoryProvider,
   CodexSessionHistoryProvider,
@@ -131,10 +132,7 @@ export async function startServer(
         agentRegistry: registry,
         logger: console,
         store: new ScheduledSessionStore(
-          resolvePluginInstanceDataDir(
-            scheduledSessionsPlugin.dataDir,
-            DEFAULT_PLUGIN_INSTANCE_ID,
-          ),
+          resolvePluginInstanceDataDir(scheduledSessionsPlugin.dataDir, DEFAULT_PLUGIN_INSTANCE_ID),
         ),
         sessionHub,
         sessionIndex,
@@ -254,6 +252,7 @@ export async function runServer(): Promise<void> {
 
   agentRegistry = new AgentRegistry(agentDefinitions);
   preloadInstructionSkillsForAgents(agentDefinitions);
+  preloadContextFilesForAgents(agentDefinitions);
 
   const pluginRegistry = new DefaultPluginRegistry();
   await pluginRegistry.initialize(appConfig, envConfig.dataDir, {

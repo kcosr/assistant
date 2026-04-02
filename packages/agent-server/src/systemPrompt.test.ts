@@ -4,7 +4,8 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentRegistry } from './agents';
-import { buildSystemPrompt } from './index';
+import { clearContextFilesCachesForTests } from './contextFiles';
+import { buildSystemPrompt } from './systemPrompt';
 import type { SkillSummary } from './skills';
 import type { Tool } from './tools';
 
@@ -28,6 +29,7 @@ function writeSkill(options: {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearContextFilesCachesForTests();
 });
 
 describe('buildSystemPrompt', () => {
@@ -337,6 +339,41 @@ description: Critical skill
     expect(warnSpy).toHaveBeenCalled();
   });
 
+  it('inserts context files after instruction skills', () => {
+    const root = createTempDir('system-prompt-context-files');
+    writeSkill({
+      root,
+      dirName: 'lists',
+      frontmatter: `---
+name: lists
+description: Lists skill
+---`,
+      body: '# Lists Skill\n\nDo list things.',
+    });
+    fs.mkdirSync(path.join(root, 'context'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'context', 'README.md'), 'Project context', 'utf8');
+
+    const registry = new AgentRegistry([
+      {
+        agentId: 'agent',
+        displayName: 'Agent',
+        description: 'Agent',
+        skills: [{ root, available: ['*'] }],
+        contextFiles: [{ root: path.join(root, 'context'), include: ['README.md'] }],
+      },
+    ]);
+
+    const prompt = buildSystemPrompt(registry, 'agent');
+    const skillsIndex = prompt.indexOf('<available_skills>');
+    const contextIndex = prompt.indexOf('## Context Files');
+
+    expect(skillsIndex).toBeGreaterThan(-1);
+    expect(contextIndex).toBeGreaterThan(-1);
+    expect(skillsIndex).toBeLessThan(contextIndex);
+    expect(prompt).toContain('--- Context file: README.md ---');
+    expect(prompt).toContain('Project context');
+  });
+
   it('filters instruction skills to the selected session skill names when provided', () => {
     const root = createTempDir('instruction-skills-selected');
     const listsPath = writeSkill({
@@ -409,7 +446,7 @@ description: Lists skill
     expect(prompt).not.toContain('<skill name=');
   });
 
-  it('defaults a skills source with only root to available: [\"*\"]', () => {
+  it('defaults a skills source with only root to available: ["*"]', () => {
     const root = createTempDir('instruction-skills-defaults');
     writeSkill({
       root,
@@ -501,9 +538,7 @@ name: no-desc
     const prompt = buildSystemPrompt(registry, 'agent');
 
     expect(prompt).not.toContain('<name>no-desc</name>');
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('missing or empty description'),
-    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing or empty description'));
   });
 
   it('warns and falls back to parent directory name when frontmatter name is missing', () => {
@@ -531,6 +566,8 @@ description: Has description
     const prompt = buildSystemPrompt(registry, 'agent');
 
     expect(prompt).toContain('<name>fallback-name</name>');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('falling back to "fallback-name"'));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('falling back to "fallback-name"'),
+    );
   });
 });

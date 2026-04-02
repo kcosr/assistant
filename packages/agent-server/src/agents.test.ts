@@ -137,6 +137,36 @@ describe('loadAgentDefinitionsFromFile', () => {
     });
   });
 
+  it('resolves contextFiles roots relative to the agents config directory', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-config-context-files-'));
+    const filePath = path.join(configDir, 'agents.json');
+    const config = {
+      agents: [
+        {
+          agentId: 'docs',
+          displayName: 'Docs',
+          description: 'Reads docs',
+          contextFiles: [
+            {
+              root: './context',
+              include: ['README.md', 'policies/*.md'],
+            },
+          ],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(config), 'utf8');
+
+    const definitions = loadAgentDefinitionsFromFile(filePath);
+    expect(definitions[0]?.contextFiles).toEqual([
+      {
+        root: path.join(configDir, 'context'),
+        include: ['README.md', 'policies/*.md'],
+      },
+    ]);
+  });
+
   it('rejects legacy session working directory fields', async () => {
     const filePath = createTempFile('agents-config-session-working-dir-legacy');
     const config = {

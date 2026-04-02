@@ -184,6 +184,36 @@ describe('loadConfig', () => {
     expect(codingPlugin?.sidecar?.auth?.required).toBe(true);
   });
 
+  it('resolves contextFiles roots relative to the config directory', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'config-context-files-'));
+    const filePath = path.join(configDir, 'config.json');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'docs-agent',
+          displayName: 'Docs Agent',
+          description: 'Loads docs',
+          contextFiles: [
+            {
+              root: './context',
+              include: ['README.md', 'guides/*.md'],
+            },
+          ],
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents[0]?.contextFiles).toEqual([
+      {
+        root: path.join(configDir, 'context'),
+        include: ['README.md', 'guides/*.md'],
+      },
+    ]);
+  });
+
   it('preserves plugin-specific configuration fields', async () => {
     const filePath = createTempFile('config-plugin-extras');
     const configJson = {
@@ -481,10 +511,7 @@ describe('loadConfig', () => {
             models: ['pi-model'],
             thinking: ['medium'],
             config: {
-              extraArgs: [
-                '--tools',
-                'bash,fs',
-              ],
+              extraArgs: ['--tools', 'bash,fs'],
             },
           },
         },
@@ -504,10 +531,7 @@ describe('loadConfig', () => {
       models: ['pi-model'],
       thinking: ['medium'],
       config: {
-        extraArgs: [
-          '--tools',
-          'bash,fs',
-        ],
+        extraArgs: ['--tools', 'bash,fs'],
       },
     });
   });
@@ -686,7 +710,9 @@ describe('loadConfig', () => {
 
     await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
 
-    expect(() => loadConfig(filePath)).toThrow(/scheduled sessions are no longer configured on agents/i);
+    expect(() => loadConfig(filePath)).toThrow(
+      /scheduled sessions are no longer configured on agents/i,
+    );
   });
 
   it('supports pi chat provider config with env substitution', async () => {
@@ -814,9 +840,7 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     const codingPlugin = config.plugins['coding'];
 
-    expect(codingPlugin?.sidecar?.socketPath).toBe(
-      '/run/user/1000/assistant/coding-sidecar.sock',
-    );
+    expect(codingPlugin?.sidecar?.socketPath).toBe('/run/user/1000/assistant/coding-sidecar.sock');
     expect(codingPlugin?.sidecar?.auth?.token).toBe('/home/testuser/token');
   });
 
@@ -846,11 +870,7 @@ describe('loadConfig', () => {
   it('substitutes env vars in plugin instance workspaceRoot', async () => {
     const filePath = createTempFile('config-plugin-instances');
     const configJson = {
-      profiles: [
-        { id: 'default' },
-        { id: 'simple-instance' },
-        { id: 'custom' },
-      ],
+      profiles: [{ id: 'default' }, { id: 'simple-instance' }, { id: 'custom' }],
       plugins: {
         diff: {
           enabled: true,

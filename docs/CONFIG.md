@@ -54,21 +54,21 @@ reads the provider environment variables directly. For a complete list, see the
 
 ### Server
 
-| Variable          | Default  | Description                                 |
-| ----------------- | -------- | ------------------------------------------- |
-| `PORT`            | `3000`   | HTTP/WebSocket server port                  |
+| Variable          | Default  | Description                                                           |
+| ----------------- | -------- | --------------------------------------------------------------------- |
+| `PORT`            | `3000`   | HTTP/WebSocket server port                                            |
 | `DATA_DIR`        | `./data` | Directory for session data (event logs, preferences, plugin settings) |
-| `APP_CONFIG_PATH` | -        | Override config file location               |
+| `APP_CONFIG_PATH` | -        | Override config file location                                         |
 
 ### TTS
 
-| Variable             | Default           | Description                           |
-| -------------------- | ----------------- | ------------------------------------- |
-| `TTS_BACKEND`        | `openai`          | TTS backend: `openai` or `elevenlabs` |
-| `OPENAI_TTS_MODEL`   | `gpt-4o-mini-tts` | OpenAI TTS model                      |
-| `TTS_VOICE`          | `alloy`           | Voice name for TTS output             |
-| `TTS_FRAME_DURATION_MS` | `250`         | PCM frame duration for TTS output; larger values reduce client scheduling overhead |
-| `AUDIO_OUTPUT_SPEED` | -                 | Playback speed multiplier (e.g., `1.2`) |
+| Variable                | Default           | Description                                                                        |
+| ----------------------- | ----------------- | ---------------------------------------------------------------------------------- |
+| `TTS_BACKEND`           | `openai`          | TTS backend: `openai` or `elevenlabs`                                              |
+| `OPENAI_TTS_MODEL`      | `gpt-4o-mini-tts` | OpenAI TTS model                                                                   |
+| `TTS_VOICE`             | `alloy`           | Voice name for TTS output                                                          |
+| `TTS_FRAME_DURATION_MS` | `250`             | PCM frame duration for TTS output; larger values reduce client scheduling overhead |
+| `AUDIO_OUTPUT_SPEED`    | -                 | Playback speed multiplier (e.g., `1.2`)                                            |
 
 OpenAI TTS requires `OPENAI_API_KEY`.
 
@@ -103,18 +103,18 @@ Per session, 1-minute sliding window.
 
 ### Audio
 
-| Variable                      | Default  | Description                          |
-| ----------------------------- | -------- | ------------------------------------ |
-| `AUDIO_SAMPLE_RATE`           | `24000`  | Audio sample rate in Hz              |
-| `AUDIO_INPUT_MODE`            | `manual` | Input mode: `server_vad` or `manual` |
+| Variable                      | Default  | Description                            |
+| ----------------------------- | -------- | -------------------------------------- |
+| `AUDIO_SAMPLE_RATE`           | `24000`  | Audio sample rate in Hz                |
+| `AUDIO_INPUT_MODE`            | `manual` | Input mode: `server_vad` or `manual`   |
 | `AUDIO_TRANSCRIPTION_ENABLED` | `false`  | Forward transcription events to client |
 
 ### Debug
 
-| Variable                 | Default | Description                            |
-| ------------------------ | ------- | -------------------------------------- |
+| Variable                 | Default | Description                                                          |
+| ------------------------ | ------- | -------------------------------------------------------------------- |
 | `DEBUG_CHAT_COMPLETIONS` | `false` | Log Pi SDK request/response payloads (tools included, auth redacted) |
-| `DEBUG_HTTP_REQUESTS`    | `false` | Log HTTP request details               |
+| `DEBUG_HTTP_REQUESTS`    | `false` | Log HTTP request details                                             |
 
 ## Application configuration (config.json)
 
@@ -176,13 +176,13 @@ Examples:
 
 ### Top-Level Keys
 
-| Key | Type | Description |
-| --- | ---- | ----------- |
-| `sessions` | object | Session cache settings. |
-| `agents` | array | Agent persona definitions and chat provider config. |
-| `profiles` | array | Shared profile (instance) definitions for cross-plugin scoping. |
-| `plugins` | object | Plugin enablement and per-plugin config. |
-| `mcpServers` | array | External MCP servers launched over stdio. |
+| Key          | Type   | Description                                                     |
+| ------------ | ------ | --------------------------------------------------------------- |
+| `sessions`   | object | Session cache settings.                                         |
+| `agents`     | array  | Agent persona definitions and chat provider config.             |
+| `profiles`   | array  | Shared profile (instance) definitions for cross-plugin scoping. |
+| `plugins`    | object | Plugin enablement and per-plugin config.                        |
+| `mcpServers` | array  | External MCP servers launched over stdio.                       |
 
 #### `sessions`
 
@@ -348,29 +348,30 @@ relative file paths and `bash` commands anchor to the session picker’s working
 }
 ```
 
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `mode` | string | Execution mode: `local` or `sidecar`. |
-| `local.workspaceRoot` | string | Root directory for local workspaces. In `local` mode, `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
-| `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe). |
-| `sidecar.socketPath` | string | Unix socket path for the sidecar (host path). |
-| `sidecar.tcp.host` | string | TCP host for sidecar access (optional; use with `sidecar.tcp.port`). |
-| `sidecar.tcp.port` | number | TCP port for sidecar access. |
-| `sidecar.waitForReadyMs` | number | Wait time before failing readiness checks (milliseconds). |
-| `sidecar.auth.token` | string | Bearer token sent as `Authorization: Bearer <token>`. |
-| `sidecar.auth.required` | boolean | When `true`, sidecar rejects requests without a valid token. |
+| Field                             | Type    | Description                                                                                                                                          |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                            | string  | Execution mode: `local` or `sidecar`.                                                                                                                |
+| `local.workspaceRoot`             | string  | Root directory for local workspaces. In `local` mode, `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
+| `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe).                                                                           |
+| `sidecar.socketPath`              | string  | Unix socket path for the sidecar (host path).                                                                                                        |
+| `sidecar.tcp.host`                | string  | TCP host for sidecar access (optional; use with `sidecar.tcp.port`).                                                                                 |
+| `sidecar.tcp.port`                | number  | TCP port for sidecar access.                                                                                                                         |
+| `sidecar.waitForReadyMs`          | number  | Wait time before failing readiness checks (milliseconds).                                                                                            |
+| `sidecar.auth.token`              | string  | Bearer token sent as `Authorization: Bearer <token>`.                                                                                                |
+| `sidecar.auth.required`           | boolean | When `true`, sidecar rejects requests without a valid token.                                                                                         |
 
 Notes:
+
 - Configure exactly one endpoint: `sidecar.socketPath` or `sidecar.tcp` (host/port).
 
 ##### Agents plugin tools (when enabled)
 
 Agent coordination is provided by the `agents` plugin. Enable it in `config.json` and use the generated tools:
 
-| Tool | Description |
-| --- | --- |
+| Tool             | Description                                                                 |
+| ---------------- | --------------------------------------------------------------------------- |
 | `agents_message` | Send a message to another agent (sync or async) without switching sessions. |
-| `agents_list` | List configured agents for delegation or messaging. |
+| `agents_list`    | List configured agents for delegation or messaging.                         |
 
 Terminology: users may say "agent" to refer to a configured assistant persona (for example, "journal agent" or "todo agent").
 
@@ -428,26 +429,26 @@ Defines external MCP tool servers (Model Context Protocol) launched over stdio.
 }
 ```
 
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `agentId` | string | Unique id (used by tools and session routing). |
-| `displayName` | string | UI label. |
-| `description` | string | UI description and prompt context. |
-| `type` | string | Agent type: `chat` (default) or `external`. |
-| `systemPrompt` | string | Optional custom prompt. |
-| `toolAllowlist` | array | Glob patterns for tool access. |
-| `toolDenylist` | array | Glob patterns for tool denylist. |
-| `toolExposure` | string | `tools`, `skills`, or `mixed`. |
-| `skillAllowlist` | array | Plugin ids exposed as CLI skills. |
-| `skillDenylist` | array | Plugin ids blocked from skill exposure. |
-| `skills` | array | Instruction skills (filesystem `SKILL.md` discovery + Pi-style prompt inclusion). |
-| `capabilityAllowlist` | array | Glob patterns for capability access. |
-| `capabilityDenylist` | array | Glob patterns for capability denylist. |
-| `agentAllowlist` | array | Glob patterns for agents this agent can delegate to. |
-| `agentDenylist` | array | Glob patterns for agents blocked from delegation. |
-| `sessionWorkingDir` | object | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }` to leave `core.workingDir` unset by default. |
-| `uiVisible` | boolean | Hide from built-in UI if `false`. |
-| `apiExposed` | boolean | Reserved for external API tools (currently unused). |
+| Field                 | Type    | Description                                                                                                                                                                                                              |
+| --------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agentId`             | string  | Unique id (used by tools and session routing).                                                                                                                                                                           |
+| `displayName`         | string  | UI label.                                                                                                                                                                                                                |
+| `description`         | string  | UI description and prompt context.                                                                                                                                                                                       |
+| `type`                | string  | Agent type: `chat` (default) or `external`.                                                                                                                                                                              |
+| `systemPrompt`        | string  | Optional custom prompt.                                                                                                                                                                                                  |
+| `toolAllowlist`       | array   | Glob patterns for tool access.                                                                                                                                                                                           |
+| `toolDenylist`        | array   | Glob patterns for tool denylist.                                                                                                                                                                                         |
+| `toolExposure`        | string  | `tools`, `skills`, or `mixed`.                                                                                                                                                                                           |
+| `skillAllowlist`      | array   | Plugin ids exposed as CLI skills.                                                                                                                                                                                        |
+| `skillDenylist`       | array   | Plugin ids blocked from skill exposure.                                                                                                                                                                                  |
+| `skills`              | array   | Instruction skills (filesystem `SKILL.md` discovery + Pi-style prompt inclusion).                                                                                                                                        |
+| `capabilityAllowlist` | array   | Glob patterns for capability access.                                                                                                                                                                                     |
+| `capabilityDenylist`  | array   | Glob patterns for capability denylist.                                                                                                                                                                                   |
+| `agentAllowlist`      | array   | Glob patterns for agents this agent can delegate to.                                                                                                                                                                     |
+| `agentDenylist`       | array   | Glob patterns for agents blocked from delegation.                                                                                                                                                                        |
+| `sessionWorkingDir`   | object  | Optional working-directory policy for new sessions. Use `{ "mode": "fixed", "path": "/abs/path" }`, `{ "mode": "prompt", "roots": ["/abs/root"] }`, or `{ "mode": "none" }` to leave `core.workingDir` unset by default. |
+| `uiVisible`           | boolean | Hide from built-in UI if `false`.                                                                                                                                                                                        |
+| `apiExposed`          | boolean | Reserved for external API tools (currently unused).                                                                                                                                                                      |
 
 #### Working directory behavior
 
@@ -480,9 +481,9 @@ Each entry is a “source”:
     {
       "root": "~/skills",
       "available": ["*"],
-      "inline": ["my-critical-*"]
-    }
-  ]
+      "inline": ["my-critical-*"],
+    },
+  ],
 }
 ```
 
@@ -490,6 +491,35 @@ Each entry is a “source”:
 - `available`: glob patterns over skill `name` to include in `<available_skills>`.
 - `inline`: glob patterns over skill `name` to inline as `<skill name="...">...</skill>`.
 - If both `available` and `inline` are omitted for a source, it defaults to `available: ["*"]`.
+
+#### Context files (`contextFiles`)
+
+The `contextFiles` field injects ordinary UTF-8 text files into the agent's system prompt after
+instruction skills. This is intended for static project context that should be loaded once at
+startup and reused for later prompt rebuilds.
+
+Each entry is a rooted source:
+
+```jsonc
+{
+  "contextFiles": [
+    {
+      "root": "./context",
+      "include": ["README.md", "product/overview.md", "product/policies/*.md", "shared/**/*.md"],
+    },
+  ],
+}
+```
+
+- `root`: directory to search within. Relative roots resolve against the config file directory when
+  the config is loaded.
+- `include`: root-relative file paths or glob patterns. Matches are ordered by source order, then
+  include-pattern order, then lexical path order within each pattern.
+- Matches are restricted to files inside the declared root, even when symlinks are involved.
+- Duplicate matches are kept only on the first match.
+- Startup fails if a root is missing, unreadable, outside-root traversal is detected, an include
+  pattern matches nothing, or a matched file is binary / invalid UTF-8.
+- File contents are cached at startup. Changes on disk are not picked up until restart.
 
 #### External Agents
 
@@ -510,9 +540,9 @@ custom agent implementations.
 }
 ```
 
-| Field | Type | Description |
-| ----- | ---- | ----------- |
-| `external.inputUrl` | string | URL where messages are POSTed to the external agent. |
+| Field                      | Type   | Description                                                   |
+| -------------------------- | ------ | ------------------------------------------------------------- |
+| `external.inputUrl`        | string | URL where messages are POSTed to the external agent.          |
 | `external.callbackBaseUrl` | string | Base URL the external agent uses to call back with responses. |
 
 External agents receive messages via POST and respond asynchronously via callbacks. See
@@ -539,12 +569,12 @@ Supported providers:
 - `codex-cli`
 - `pi-cli`
 
-| Provider | CLI Tool | Description |
-| --- | --- | --- |
-| `pi` | - | Pi SDK in-process chat (upstream providers configured via Pi). |
-| `claude-cli` | `claude` | Anthropic Claude CLI with tool use. |
-| `codex-cli` | `codex` | OpenAI Codex CLI with file editing and shell. |
-| `pi-cli` | `pi` | Pi CLI agent. |
+| Provider     | CLI Tool | Description                                                    |
+| ------------ | -------- | -------------------------------------------------------------- |
+| `pi`         | -        | Pi SDK in-process chat (upstream providers configured via Pi). |
+| `claude-cli` | `claude` | Anthropic Claude CLI with tool use.                            |
+| `codex-cli`  | `codex`  | OpenAI Codex CLI with file editing and shell.                  |
+| `pi-cli`     | `pi`     | Pi CLI agent.                                                  |
 
 #### CLI provider example
 
@@ -574,6 +604,7 @@ create and manage them dynamically. They are stored in the plugin data directory
 `data/plugins/scheduled-sessions/default/schedules.json`.
 
 Each persisted schedule record includes:
+
 - `agentId`
 - `scheduleId`
 - `cron`
@@ -590,6 +621,7 @@ Each persisted schedule record includes:
 - `maxConcurrent`
 
 Notes:
+
 - Each schedule must define `prompt`, `preCheck`, or both.
 - `sessionConfig` values are validated against the selected agent on create/update and
   revalidated when a scheduled run starts.
