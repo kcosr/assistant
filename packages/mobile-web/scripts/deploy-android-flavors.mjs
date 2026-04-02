@@ -1,25 +1,15 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { createAndroidBuildStage } from './android-build-stage.mjs';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const mobileDir = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(mobileDir, '..', '..');
 const flavorsPath = path.join(mobileDir, 'flavors.json');
-const capacitorConfigPath = path.join(mobileDir, 'capacitor.config.json');
-const androidDir = path.join(mobileDir, 'android');
-const debugApkPath = path.join(
-  mobileDir,
-  'android',
-  'app',
-  'build',
-  'outputs',
-  'apk',
-  'debug',
-  'app-debug.apk',
-);
 
 function run(command, args, options = {}) {
   const cwd = options.cwd ?? mobileDir;
@@ -104,69 +94,63 @@ for (const flavorName of flavorNames) {
   }
 }
 
-const originalCapacitorConfig = readFileSync(capacitorConfigPath, 'utf8');
-
-try {
-  if (!skipWebBuild) {
-    run('npm', ['run', 'build', '-w', '@assistant/web-client'], { cwd: repoRoot });
-  }
-
-  const devices = getConnectedDevices();
-  console.log(`[deploy-android-flavors] Target devices: ${devices.join(', ')}`);
-
-  for (const flavorName of flavorNames) {
-    const flavor = flavors[flavorName];
-    console.log(`\n[deploy-android-flavors] Deploying flavor: ${flavorName}`);
-    console.log(
-      `[deploy-android-flavors] appId=${flavor.appId}, apiHost=${flavor.apiHost}`,
-    );
-
-    run('node', ['scripts/apply-flavor.mjs', flavorName], { cwd: mobileDir });
-
-    const flavorEnv = {
-      ASSISTANT_API_HOST: flavor.apiHost,
-      ASSISTANT_APP_ID: flavor.appId,
-      ASSISTANT_APP_NAME: flavor.appName,
-    };
-
-    if (!existsSync(androidDir)) {
-      run('npm', ['run', 'android:add'], {
-        cwd: mobileDir,
-        env: flavorEnv,
-      });
-    }
-
-    run('npm', ['run', 'android:build'], {
-      cwd: mobileDir,
-      env: flavorEnv,
-    });
-
-    if (!existsSync(debugApkPath)) {
-      console.error(`[deploy-android-flavors] APK not found: ${debugApkPath}`);
-      process.exit(1);
-    }
-
-    for (const device of devices) {
-      run('adb', ['-s', device, 'install', '-r', debugApkPath], { cwd: repoRoot });
-      run(
-        'adb',
-        [
-          '-s',
-          device,
-          'shell',
-          'monkey',
-          '-p',
-          flavor.appId,
-          '-c',
-          'android.intent.category.LAUNCHER',
-          '1',
-        ],
-        { cwd: repoRoot },
-      );
-    }
-  }
-
-  console.log('\n[deploy-android-flavors] Completed.');
-} finally {
-  writeFileSync(capacitorConfigPath, originalCapacitorConfig, 'utf8');
+if (!skipWebBuild) {
+  run('npm', ['run', 'build', '-w', '@assistant/web-client'], { cwd: repoRoot });
 }
+
+const devices = getConnectedDevices();
+console.log(`[deploy-android-flavors] Target devices: ${devices.join(', ')}`);
+
+for (const flavorName of flavorNames) {
+  const flavor = flavors[flavorName];
+  console.log(`\n[deploy-android-flavors] Deploying flavor: ${flavorName}`);
+  console.log(
+    `[deploy-android-flavors] appId=${flavor.appId}, apiHost=${flavor.apiHost}`,
+  );
+
+  const stage = createAndroidBuildStage({
+    repoRoot,
+    mobileDir,
+    flavorName,
+  });
+  console.log(`[deploy-android-flavors] stagingDir=${stage.stageRoot}`);
+
+  run('node', ['scripts/apply-flavor.mjs', flavorName], { cwd: stage.stagedMobileDir });
+
+  const flavorEnv = {
+    ASSISTANT_API_HOST: flavor.apiHost,
+    ASSISTANT_APP_ID: flavor.appId,
+    ASSISTANT_APP_NAME: flavor.appName,
+  };
+
+  run('npm', ['run', 'android:build'], {
+    cwd: stage.stagedMobileDir,
+    env: flavorEnv,
+  });
+
+  if (!existsSync(stage.debugApkPath)) {
+    console.error(`[deploy-android-flavors] APK not found: ${stage.debugApkPath}`);
+    process.exit(1);
+  }
+
+  for (const device of devices) {
+    run('adb', ['-s', device, 'install', '-r', stage.debugApkPath], { cwd: repoRoot });
+    run(
+      'adb',
+      [
+        '-s',
+        device,
+        'shell',
+        'monkey',
+        '-p',
+        flavor.appId,
+        '-c',
+        'android.intent.category.LAUNCHER',
+        '1',
+      ],
+      { cwd: repoRoot },
+    );
+  }
+}
+
+console.log('\n[deploy-android-flavors] Completed.');

@@ -21,6 +21,7 @@ packages/agent-server/data/*
 packages/android-client/app/build
 packages/push-cli/firebase-sa.json
 packages/mobile-web/google-services.json
+.build/
 .build-service/workspace-id
 .build-service/npm-installed
 PLAN.md

@@ -18,7 +18,7 @@ This package contains the Capacitor scaffolding to build the AI Assistant web cl
 ## Layout
 
 - `mobile-web/` – Capacitor project root
-- `mobile-web/android/` – Generated Android project scaffold with committed Assistant-specific bridge/service files layered on top
+- `mobile-web/android/` – Committed Android project source
 - `mobile-web/ios/` – Generated iOS native project (not committed)
 - `mobile-web/resources/` – Mobile icon sources for Capacitor asset generation
 
@@ -62,9 +62,8 @@ npm install
 
 ### Android
 
-```bash
-npm run android:add   # bootstraps the generated android/ scaffold (one-time)
-```
+The repository keeps `android/` as source. Restore it from git if it is missing or incomplete;
+do not regenerate it during normal build or deploy flows.
 
 ### iOS
 
@@ -115,7 +114,7 @@ npm run ios:sync
 
 ## Android Patches
 
-The following patches are applied automatically on `android:add` and `android:sync`:
+The following patches are applied automatically on `android:sync`:
 
 ### Network Security Config (`patch-android-security.mjs`)
 
@@ -161,9 +160,6 @@ Set the `WEBVIEW_TEXT_ZOOM` environment variable to customize the zoom level (de
 
 ```bash
 # 120% zoom (larger text)
-WEBVIEW_TEXT_ZOOM=120 npm run android:add
-
-# Or when syncing
 WEBVIEW_TEXT_ZOOM=120 npm run android:sync
 ```
 
@@ -213,9 +209,10 @@ npm run flavor
 npm run flavor default
 ```
 
-This updates `capacitor.config.json` with the flavor's `appId` and `appName`.
 The committed Android sources stay on a shared namespace (`com.assistant.mobile`).
-Flavor builds vary the installed application ID, display name, and API host at build time:
+Flavor deploys stage a temporary Android build copy under the repo-level `.build/` directory,
+apply the flavor there, and keep the tracked source tree untouched. Flavor builds vary the
+installed application ID, display name, and API host at build time:
 
 ```bash
 npm run flavor default
@@ -267,8 +264,8 @@ matching Firebase app registration.
 
 - Web assets are pulled from `../web-client/public` as configured in `capacitor.config.json`
 - `ios/` and `node_modules/` are gitignored
-- `android/` uses a hybrid model: generated Capacitor scaffold/build output stays ignored, while Assistant-owned native bridge/service files are committed
-- If `android/` is missing, run `ASSISTANT_APP_ID='com.assistant.app' ASSISTANT_APP_NAME='Assistant' npm run android:add`; the shared native namespace remains `com.assistant.mobile`
+- `android/` is a committed source tree. Build/deploy commands stage flavor-specific copies under the repo-level `.build/` directory so tracked sources stay untouched.
+- If `android/` is missing or required native files are absent, restore the committed tree from git instead of regenerating it during deploy.
 - If `ios/` is missing, run `npm run ios:add`
 - Android back button closes overlays/modals first (command palette, panel launcher, session picker, header popovers, settings/layout dropdowns, context menus, modal panels, mobile sidebar, navigation modes). When nothing is open, it falls back to history back or exits the app.
 
