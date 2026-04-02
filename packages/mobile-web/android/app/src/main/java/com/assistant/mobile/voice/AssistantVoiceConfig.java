@@ -516,7 +516,8 @@ final class AssistantVoiceConfig {
             inputContextEnabled,
             inputContextLine,
             voiceAdapterBaseUrl,
-            assistantBaseUrl
+            assistantBaseUrl,
+            ttsGain
         );
     }
 
