@@ -72,6 +72,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long ADAPTER_RECONNECT_DELAY_MS = 2000L;
     private static final int MAX_RECOGNITION_CUE_RETRIES = 2;
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
+    private static final long RECOGNITION_CUE_ARMING_DELAY_MS = 240L;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -83,7 +84,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(true)
         .build();
-    private final AssistantVoicePcmPlayer player = new AssistantVoicePcmPlayer();
+    private AssistantVoicePcmPlayer player;
     private AssistantVoiceMicStreamer micStreamer;
 
     private final Runnable reconnectRunnable = this::connectAdapterSocketIfNeeded;
@@ -140,6 +141,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     public void onCreate() {
         super.onCreate();
         micStreamer = new AssistantVoiceMicStreamer(this);
+        player = new AssistantVoicePcmPlayer(this);
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
@@ -1153,7 +1155,23 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
-        playRecognitionReadyCueIfNeeded();
+        boolean playedArmingCue = playRecognitionReadyCueIfNeeded();
+        if (playedArmingCue) {
+            mainHandler.postDelayed(
+                () -> startRecognitionCapture(requestId),
+                RECOGNITION_CUE_ARMING_DELAY_MS
+            );
+            return;
+        }
+        startRecognitionCapture(requestId);
+    }
+
+    private void startRecognitionCapture(String requestId) {
+        if (!requestId.equals(activeSttRequestId) || micStreamer == null) {
+            return;
+        }
+
+        player.beginRecognitionCaptureFocus();
         boolean started = micStreamer.start(requestId, new AssistantVoiceMicStreamer.Listener() {
             @Override
             public void onStarted(int sampleRate, int channels, String encoding) {
@@ -1185,6 +1203,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         });
 
         if (!started) {
+            player.endRecognitionCaptureFocus();
             activeSttRequestId = "";
             playRecognitionCompletionCueIfNeeded(false);
             resetRecognitionCueState();
@@ -1259,6 +1278,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handleMicCaptureStopped(String requestId) {
+        player.endRecognitionCaptureFocus();
         playQueuedRecognitionCompletionCueIfNeeded(requestId);
         if (requestId != null && requestId.equals(adapterStoppedSttRequestId)) {
             Log.d(TAG, "skip media_stt_end for adapter-stopped requestId=" + requestId);
@@ -1408,12 +1428,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         playRecognitionCompletionCueIfNeeded(success);
     }
 
-    private void playRecognitionReadyCueIfNeeded() {
+    private boolean playRecognitionReadyCueIfNeeded() {
         if (!config.recognitionCueEnabled || recognitionReadyCuePlayed) {
-            return;
+            return false;
         }
         recognitionReadyCuePlayed = true;
-        playRecognitionCueWithRetry(true, 0);
+        return playRecognitionCueWithRetry(true, 0);
     }
 
     private void playRecognitionCompletionCueIfNeeded(boolean success) {
@@ -1424,20 +1444,21 @@ public final class AssistantVoiceRuntimeService extends Service {
         playRecognitionCueWithRetry(success, 0);
     }
 
-    private void playRecognitionCueWithRetry(boolean success, int attempt) {
+    private boolean playRecognitionCueWithRetry(boolean success, int attempt) {
         if (!config.recognitionCueEnabled) {
-            return;
+            return false;
         }
         if (player.playRecognitionCue(success)) {
-            return;
+            return true;
         }
         if (attempt >= MAX_RECOGNITION_CUE_RETRIES) {
-            return;
+            return false;
         }
         mainHandler.postDelayed(
             () -> playRecognitionCueWithRetry(success, attempt + 1),
             RECOGNITION_CUE_RETRY_DELAY_MS * (attempt + 1L)
         );
+        return false;
     }
 
     private static String trim(String value) {

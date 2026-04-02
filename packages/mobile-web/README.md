@@ -162,8 +162,9 @@ The following patches are applied automatically on `android:sync`:
 - Android-native recognition also plays positive/negative PCM cue tones on the same native media
   path for ready, success, timeout/no-speech, error, and manual-stop events, with an on/off toggle
   plus a `Recognition cue gain` slider clamped to `25%`-`500%`.
-- The recognition start cue is an arming cue that plays before native mic startup begins; the
-  completion cue is deferred until recording has actually stopped.
+- The recognition start cue is an arming cue that plays shortly before native mic startup begins
+  with a short native media preroll, and the completion cue is deferred until recording has
+  actually stopped and capture focus has been released.
 - Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
   listening pass immediately; later prompts that arrive while a pass is active are rendered only
   and are not queued for delayed autoplay.

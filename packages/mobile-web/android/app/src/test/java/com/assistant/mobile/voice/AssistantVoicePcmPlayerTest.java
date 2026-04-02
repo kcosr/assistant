@@ -54,6 +54,21 @@ public final class AssistantVoicePcmPlayerTest {
     }
 
     @Test
+    public void resolveCueOutputSampleRateClampsToSupportedDeviceRange() {
+        assertEquals(48000, AssistantVoicePcmPlayer.resolveCueOutputSampleRate(null));
+        assertEquals(48000, AssistantVoicePcmPlayer.resolveCueOutputSampleRate("96000"));
+        assertEquals(16000, AssistantVoicePcmPlayer.resolveCueOutputSampleRate("8000"));
+        assertEquals(44100, AssistantVoicePcmPlayer.resolveCueOutputSampleRate("44100"));
+        assertEquals(48000, AssistantVoicePcmPlayer.resolveCueOutputSampleRate("abc"));
+    }
+
+    @Test
+    public void buildRecognitionCuePrerollPcmUsesConfiguredSilenceWindow() {
+        assertEquals(15360, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(48000).length);
+        assertEquals(0, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(0).length);
+    }
+
+    @Test
     public void generateRecognitionCuePcmDataBuildsDistinctSuccessAndFailureCues() {
         byte[] successCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(48000, true);
         byte[] failureCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(48000, false);

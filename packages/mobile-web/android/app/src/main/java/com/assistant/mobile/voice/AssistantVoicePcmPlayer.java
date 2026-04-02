@@ -1,30 +1,74 @@
 package com.assistant.mobile.voice;
 
+import android.content.Context;
 import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
+import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Base64;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class AssistantVoicePcmPlayer {
-    private static final int RECOGNITION_CUE_SAMPLE_RATE = 48000;
+    private static final int DEFAULT_PLAYBACK_SAMPLE_RATE = 24000;
+    private static final int DEFAULT_CUE_OUTPUT_SAMPLE_RATE = 48000;
+    private static final int MIN_CUE_OUTPUT_SAMPLE_RATE = 16000;
+    private static final int MAX_CUE_OUTPUT_SAMPLE_RATE = 48000;
+    private static final int RECOGNITION_CUE_PREROLL_MS = 160;
+    private static final long PLAYBACK_FOCUS_RELEASE_DELAY_MS = 1400L;
+    private static final long RECOGNITION_CUE_POST_WRITE_CHECK_DELAY_MS = 220L;
+    private static final int MAX_RECOGNITION_CUE_REPLAY_ATTEMPTS = 1;
     private static final int RECOGNITION_CUE_FADE_WINDOW_DIVISOR = 80;
     private static final int RECOGNITION_CUE_MIN_FADE_SAMPLES = 12;
     private static final byte[] SUCCESS_RECOGNITION_CUE_PCM =
-        generateRecognitionCuePcmData(RECOGNITION_CUE_SAMPLE_RATE, true);
+        generateRecognitionCuePcmData(DEFAULT_CUE_OUTPUT_SAMPLE_RATE, true);
     private static final byte[] FAILURE_RECOGNITION_CUE_PCM =
-        generateRecognitionCuePcmData(RECOGNITION_CUE_SAMPLE_RATE, false);
+        generateRecognitionCuePcmData(DEFAULT_CUE_OUTPUT_SAMPLE_RATE, false);
 
     interface Listener {
         void onPlaybackDrained(String requestId);
     }
 
+    private enum FocusMode {
+        NONE,
+        PLAYBACK,
+        CAPTURE,
+    }
+
     private final Object lock = new Object();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-
+    private final AudioManager audioManager;
+    private final Handler mainHandler;
     private AudioTrack audioTrack;
+    private final Runnable abandonPlaybackFocusRunnable = this::releasePlaybackFocusIfIdle;
+    private final AudioManager.OnAudioFocusChangeListener focusChangeListener = change -> {
+        synchronized (lock) {
+            if (audioTrack == null) {
+                return;
+            }
+            if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+                try {
+                    audioTrack.setVolume(0.35f);
+                } catch (Exception ignored) {
+                }
+                return;
+            }
+            if (change == AudioManager.AUDIOFOCUS_GAIN) {
+                try {
+                    audioTrack.setVolume(1f);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    };
+    private final AudioFocusRequest playbackFocusRequest;
+    private final AudioFocusRequest captureFocusRequest;
+
     private Listener listener;
     private String activeRequestId = "";
     private int activeSampleRate = 0;
@@ -34,8 +78,43 @@ final class AssistantVoicePcmPlayer {
     private int pendingWrites = 0;
     private int framesWritten = 0;
     private long generation = 0L;
+    private FocusMode focusMode = FocusMode.NONE;
 
-    AssistantVoicePcmPlayer() {}
+    AssistantVoicePcmPlayer(Context context) {
+        Context appContext = context == null ? null : context.getApplicationContext();
+        audioManager = appContext == null ? null : appContext.getSystemService(AudioManager.class);
+        mainHandler =
+            appContext == null
+                ? null
+                : new Handler(Looper.getMainLooper());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioManager != null && mainHandler != null) {
+            playbackFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setWillPauseWhenDucked(true)
+                .setOnAudioFocusChangeListener(focusChangeListener, mainHandler)
+                .build();
+            captureFocusRequest = new AudioFocusRequest.Builder(
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+            )
+                .setAudioAttributes(
+                    new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setWillPauseWhenDucked(true)
+                .setOnAudioFocusChangeListener(focusChangeListener, mainHandler)
+                .build();
+        } else {
+            playbackFocusRequest = null;
+            captureFocusRequest = null;
+        }
+    }
 
     void setListener(Listener listener) {
         synchronized (lock) {
@@ -52,6 +131,35 @@ final class AssistantVoicePcmPlayer {
     void setRecognitionCueGain(float gain) {
         synchronized (lock) {
             recognitionCueGain = AssistantVoiceConfig.clampRecognitionCueGain(gain);
+        }
+    }
+
+    boolean beginRecognitionCaptureFocus() {
+        synchronized (lock) {
+            if (audioManager == null) {
+                return true;
+            }
+            cancelPendingPlaybackFocusReleaseLocked();
+            if (focusMode == FocusMode.CAPTURE) {
+                return true;
+            }
+            if (focusMode == FocusMode.PLAYBACK) {
+                abandonPlaybackFocusLocked();
+            }
+            boolean granted = requestCaptureFocusLocked();
+            if (!granted) {
+                focusMode = FocusMode.NONE;
+            }
+            return granted;
+        }
+    }
+
+    void endRecognitionCaptureFocus() {
+        synchronized (lock) {
+            if (focusMode != FocusMode.CAPTURE) {
+                return;
+            }
+            abandonCaptureFocusLocked();
         }
     }
 
@@ -113,19 +221,25 @@ final class AssistantVoicePcmPlayer {
     }
 
     void release() {
+        synchronized (lock) {
+            cancelPendingPlaybackFocusReleaseLocked();
+        }
         stop();
+        synchronized (lock) {
+            abandonPlaybackFocusLocked();
+            abandonCaptureFocusLocked();
+        }
         executor.shutdownNow();
     }
 
     boolean playRecognitionCue(boolean success) {
-        byte[] cuePcm = success ? SUCCESS_RECOGNITION_CUE_PCM : FAILURE_RECOGNITION_CUE_PCM;
-        if (cuePcm.length == 0) {
-            return false;
-        }
-
         byte[] adjustedCue;
+        int outputRate;
         long taskGeneration;
         synchronized (lock) {
+            if (!requestPlaybackFocusIfNeededLocked()) {
+                return false;
+            }
             generation += 1L;
             activeRequestId = "";
             activeSampleRate = 0;
@@ -133,17 +247,20 @@ final class AssistantVoicePcmPlayer {
             pendingWrites = 0;
             framesWritten = 0;
             releaseTrackLocked();
-            if (ensureTrackLocked(RECOGNITION_CUE_SAMPLE_RATE) == null) {
+            outputRate = resolveCueOutputSampleRateLocked();
+            if (ensureTrackLocked(outputRate) == null) {
+                schedulePlaybackFocusReleaseLocked();
                 return false;
             }
-            adjustedCue = applySoftwareGainPcm16(
-                cuePcm,
+            adjustedCue = buildRecognitionCueBytes(
+                outputRate,
+                success,
                 resolveRecognitionCueGain(recognitionCueGain)
             );
             taskGeneration = generation;
         }
 
-        executor.execute(() -> writeRecognitionCue(taskGeneration, adjustedCue));
+        executor.execute(() -> writeRecognitionCue(taskGeneration, success, adjustedCue, outputRate, 0));
         return true;
     }
 
@@ -202,6 +319,31 @@ final class AssistantVoicePcmPlayer {
             0.15d,
             Math.min(4.0d, Math.pow(10.0d, cueGainDb / 20.0d))
         );
+    }
+
+    static int resolveCueOutputSampleRate(String rawSampleRate) {
+        if (rawSampleRate == null || rawSampleRate.trim().isEmpty()) {
+            return DEFAULT_CUE_OUTPUT_SAMPLE_RATE;
+        }
+        try {
+            return Math.max(
+                MIN_CUE_OUTPUT_SAMPLE_RATE,
+                Math.min(MAX_CUE_OUTPUT_SAMPLE_RATE, Integer.parseInt(rawSampleRate.trim()))
+            );
+        } catch (NumberFormatException ignored) {
+            return DEFAULT_CUE_OUTPUT_SAMPLE_RATE;
+        }
+    }
+
+    static byte[] buildRecognitionCuePrerollPcm(int sampleRate) {
+        if (sampleRate <= 0 || RECOGNITION_CUE_PREROLL_MS <= 0) {
+            return new byte[0];
+        }
+        long sampleCount = (sampleRate * (long) RECOGNITION_CUE_PREROLL_MS) / 1000L;
+        if (sampleCount <= 0L) {
+            return new byte[0];
+        }
+        return new byte[(int) Math.min(Integer.MAX_VALUE, sampleCount * 2L)];
     }
 
     static byte[] applySoftwareGainPcm16(byte[] input, float gain) {
@@ -285,15 +427,99 @@ final class AssistantVoicePcmPlayer {
         return pcm;
     }
 
-    private void writeRecognitionCue(long taskGeneration, byte[] cuePcm) {
+    private byte[] buildRecognitionCueBytes(int sampleRate, boolean success, float gain) {
+        byte[] baseCue = resolveRecognitionCueBasePcm(sampleRate, success);
+        byte[] adjustedCue = applySoftwareGainPcm16(baseCue, gain);
+        byte[] preroll = buildRecognitionCuePrerollPcm(sampleRate);
+        if (preroll.length == 0) {
+            return adjustedCue;
+        }
+        byte[] combined = new byte[preroll.length + adjustedCue.length];
+        System.arraycopy(preroll, 0, combined, 0, preroll.length);
+        System.arraycopy(adjustedCue, 0, combined, preroll.length, adjustedCue.length);
+        return combined;
+    }
+
+    private static byte[] resolveRecognitionCueBasePcm(int sampleRate, boolean success) {
+        if (sampleRate == DEFAULT_CUE_OUTPUT_SAMPLE_RATE) {
+            return success ? SUCCESS_RECOGNITION_CUE_PCM : FAILURE_RECOGNITION_CUE_PCM;
+        }
+        return generateRecognitionCuePcmData(sampleRate, success);
+    }
+
+    private void writeRecognitionCue(
+        long taskGeneration,
+        boolean success,
+        byte[] cuePcm,
+        int outputRate,
+        int replayAttempt
+    ) {
         AudioTrack track;
         synchronized (lock) {
             if (taskGeneration != generation || audioTrack == null) {
+                schedulePlaybackFocusReleaseLocked();
                 return;
             }
             track = audioTrack;
         }
-        writePcm(track, cuePcm);
+        int bytesWritten = writePcm(track, cuePcm);
+        synchronized (lock) {
+            schedulePlaybackFocusReleaseLocked();
+            if (taskGeneration != generation || bytesWritten <= 0) {
+                return;
+            }
+            scheduleRecognitionCueReplayCheckLocked(
+                taskGeneration,
+                success,
+                outputRate,
+                replayAttempt
+            );
+        }
+    }
+
+    private void scheduleRecognitionCueReplayCheckLocked(
+        long taskGeneration,
+        boolean success,
+        int outputRate,
+        int replayAttempt
+    ) {
+        if (mainHandler == null || replayAttempt >= MAX_RECOGNITION_CUE_REPLAY_ATTEMPTS) {
+            return;
+        }
+        mainHandler.postDelayed(
+            () -> {
+                byte[] replayCue = null;
+                synchronized (lock) {
+                    if (taskGeneration != generation || audioTrack == null) {
+                        return;
+                    }
+                    if (audioTrack.getPlaybackHeadPosition() > 0) {
+                        return;
+                    }
+                    releaseTrackLocked();
+                    if (ensureTrackLocked(outputRate) == null) {
+                        schedulePlaybackFocusReleaseLocked();
+                        return;
+                    }
+                    replayCue = buildRecognitionCueBytes(
+                        outputRate,
+                        success,
+                        resolveRecognitionCueGain(recognitionCueGain)
+                    );
+                }
+                byte[] cueForReplay = replayCue;
+                if (cueForReplay != null) {
+                    executor.execute(() -> writeRecognitionCue(
+                        taskGeneration,
+                        success,
+                        cueForReplay,
+                        outputRate,
+                        replayAttempt + 1
+                    ));
+                }
+            },
+            RECOGNITION_CUE_POST_WRITE_CHECK_DELAY_MS
+        );
     }
 
     private static int writePcm(AudioTrack track, byte[] pcm) {
@@ -314,7 +540,7 @@ final class AssistantVoicePcmPlayer {
     }
 
     private AudioTrack ensureTrackLocked(int sampleRate) {
-        int normalizedRate = sampleRate > 0 ? sampleRate : 24000;
+        int normalizedRate = sampleRate > 0 ? sampleRate : DEFAULT_PLAYBACK_SAMPLE_RATE;
         if (audioTrack != null && activeSampleRate == normalizedRate) {
             return audioTrack;
         }
@@ -419,6 +645,123 @@ final class AssistantVoicePcmPlayer {
                 currentListener.onPlaybackDrained(requestIdForCallback);
             }
         }
+    }
+
+    private int resolveCueOutputSampleRateLocked() {
+        if (audioManager == null) {
+            return DEFAULT_CUE_OUTPUT_SAMPLE_RATE;
+        }
+        return resolveCueOutputSampleRate(
+            audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)
+        );
+    }
+
+    private boolean requestPlaybackFocusIfNeededLocked() {
+        if (audioManager == null) {
+            return true;
+        }
+        cancelPendingPlaybackFocusReleaseLocked();
+        if (focusMode == FocusMode.PLAYBACK) {
+            return true;
+        }
+        if (focusMode == FocusMode.CAPTURE) {
+            abandonCaptureFocusLocked();
+        }
+        boolean granted = requestPlaybackFocusLocked();
+        if (!granted) {
+            focusMode = FocusMode.NONE;
+        }
+        return granted;
+    }
+
+    private boolean requestPlaybackFocusLocked() {
+        if (audioManager == null) {
+            return true;
+        }
+        int result;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playbackFocusRequest != null) {
+            result = audioManager.requestAudioFocus(playbackFocusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                focusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            );
+        }
+        boolean granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        if (granted) {
+            focusMode = FocusMode.PLAYBACK;
+        }
+        return granted;
+    }
+
+    private boolean requestCaptureFocusLocked() {
+        if (audioManager == null) {
+            return true;
+        }
+        int result;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && captureFocusRequest != null) {
+            result = audioManager.requestAudioFocus(captureFocusRequest);
+        } else {
+            result = audioManager.requestAudioFocus(
+                focusChangeListener,
+                AudioManager.STREAM_VOICE_CALL,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+            );
+        }
+        boolean granted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        if (granted) {
+            focusMode = FocusMode.CAPTURE;
+        }
+        return granted;
+    }
+
+    private void abandonPlaybackFocusLocked() {
+        if (audioManager == null || focusMode != FocusMode.PLAYBACK) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && playbackFocusRequest != null) {
+            audioManager.abandonAudioFocusRequest(playbackFocusRequest);
+        } else {
+            audioManager.abandonAudioFocus(focusChangeListener);
+        }
+        focusMode = FocusMode.NONE;
+    }
+
+    private void abandonCaptureFocusLocked() {
+        if (audioManager == null || focusMode != FocusMode.CAPTURE) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && captureFocusRequest != null) {
+            audioManager.abandonAudioFocusRequest(captureFocusRequest);
+        } else {
+            audioManager.abandonAudioFocus(focusChangeListener);
+        }
+        focusMode = FocusMode.NONE;
+    }
+
+    private void releasePlaybackFocusIfIdle() {
+        synchronized (lock) {
+            if (focusMode != FocusMode.PLAYBACK || activeRequestId.length() > 0) {
+                return;
+            }
+            abandonPlaybackFocusLocked();
+        }
+    }
+
+    private void schedulePlaybackFocusReleaseLocked() {
+        if (mainHandler == null || focusMode != FocusMode.PLAYBACK) {
+            return;
+        }
+        mainHandler.removeCallbacks(abandonPlaybackFocusRunnable);
+        mainHandler.postDelayed(abandonPlaybackFocusRunnable, PLAYBACK_FOCUS_RELEASE_DELAY_MS);
+    }
+
+    private void cancelPendingPlaybackFocusReleaseLocked() {
+        if (mainHandler == null) {
+            return;
+        }
+        mainHandler.removeCallbacks(abandonPlaybackFocusRunnable);
     }
 
     private boolean matchesActiveRequestLocked(String requestId) {
