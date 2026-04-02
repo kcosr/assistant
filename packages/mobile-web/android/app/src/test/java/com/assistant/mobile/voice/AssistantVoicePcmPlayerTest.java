@@ -64,8 +64,12 @@ public final class AssistantVoicePcmPlayerTest {
 
     @Test
     public void buildRecognitionCuePrerollPcmUsesConfiguredSilenceWindow() {
-        assertEquals(15360, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(48000).length);
-        assertEquals(0, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(0).length);
+        assertEquals(
+            49152,
+            AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(48000, 512).length
+        );
+        assertEquals(0, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(0, 512).length);
+        assertEquals(0, AssistantVoicePcmPlayer.buildRecognitionCuePrerollPcm(48000, 0).length);
     }
 
     @Test

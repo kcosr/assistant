@@ -19,7 +19,8 @@ final class AssistantVoicePcmPlayer {
     private static final int DEFAULT_CUE_OUTPUT_SAMPLE_RATE = 48000;
     private static final int MIN_CUE_OUTPUT_SAMPLE_RATE = 16000;
     private static final int MAX_CUE_OUTPUT_SAMPLE_RATE = 48000;
-    private static final int RECOGNITION_CUE_PREROLL_MS = 160;
+    private static final int DEFAULT_STARTUP_PRE_ROLL_MS =
+        AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS;
     private static final long PLAYBACK_FOCUS_RELEASE_DELAY_MS = 1400L;
     private static final long RECOGNITION_CUE_POST_WRITE_CHECK_DELAY_MS = 220L;
     private static final int MAX_RECOGNITION_CUE_REPLAY_ATTEMPTS = 1;
@@ -74,6 +75,7 @@ final class AssistantVoicePcmPlayer {
     private int activeSampleRate = 0;
     private float ttsGain = AssistantVoiceConfig.DEFAULT_TTS_GAIN;
     private float recognitionCueGain = AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_GAIN;
+    private int startupPreRollMs = DEFAULT_STARTUP_PRE_ROLL_MS;
     private boolean streamEnded = false;
     private int pendingWrites = 0;
     private int framesWritten = 0;
@@ -131,6 +133,15 @@ final class AssistantVoicePcmPlayer {
     void setRecognitionCueGain(float gain) {
         synchronized (lock) {
             recognitionCueGain = AssistantVoiceConfig.clampRecognitionCueGain(gain);
+        }
+    }
+
+    void setStartupPreRollMs(int value) {
+        synchronized (lock) {
+            startupPreRollMs = Math.max(
+                AssistantVoiceConfig.MIN_STARTUP_PRE_ROLL_MS,
+                Math.min(AssistantVoiceConfig.MAX_STARTUP_PRE_ROLL_MS, value)
+            );
         }
     }
 
@@ -258,7 +269,8 @@ final class AssistantVoicePcmPlayer {
             adjustedCue = buildRecognitionCueBytes(
                 outputRate,
                 success,
-                resolveRecognitionCueGain(recognitionCueGain)
+                resolveRecognitionCueGain(recognitionCueGain),
+                startupPreRollMs
             );
             taskGeneration = generation;
         }
@@ -338,11 +350,11 @@ final class AssistantVoicePcmPlayer {
         }
     }
 
-    static byte[] buildRecognitionCuePrerollPcm(int sampleRate) {
-        if (sampleRate <= 0 || RECOGNITION_CUE_PREROLL_MS <= 0) {
+    static byte[] buildRecognitionCuePrerollPcm(int sampleRate, int startupPreRollMs) {
+        if (sampleRate <= 0 || startupPreRollMs <= 0) {
             return new byte[0];
         }
-        long sampleCount = (sampleRate * (long) RECOGNITION_CUE_PREROLL_MS) / 1000L;
+        long sampleCount = (sampleRate * (long) startupPreRollMs) / 1000L;
         if (sampleCount <= 0L) {
             return new byte[0];
         }
@@ -430,10 +442,15 @@ final class AssistantVoicePcmPlayer {
         return pcm;
     }
 
-    private byte[] buildRecognitionCueBytes(int sampleRate, boolean success, float gain) {
+    private byte[] buildRecognitionCueBytes(
+        int sampleRate,
+        boolean success,
+        float gain,
+        int startupPreRollMs
+    ) {
         byte[] baseCue = resolveRecognitionCueBasePcm(sampleRate, success);
         byte[] adjustedCue = applySoftwareGainPcm16(baseCue, gain);
-        byte[] preroll = buildRecognitionCuePrerollPcm(sampleRate);
+        byte[] preroll = buildRecognitionCuePrerollPcm(sampleRate, startupPreRollMs);
         if (preroll.length == 0) {
             return adjustedCue;
         }
@@ -521,7 +538,8 @@ final class AssistantVoicePcmPlayer {
                     replayCue = buildRecognitionCueBytes(
                         outputRate,
                         success,
-                        resolveRecognitionCueGain(recognitionCueGain)
+                        resolveRecognitionCueGain(recognitionCueGain),
+                        startupPreRollMs
                     );
                 }
                 byte[] cueForReplay = replayCue;

@@ -55,6 +55,8 @@ function createVoiceSettingsInputs(): {
   voiceRecognitionCueCheckboxEl: HTMLInputElement;
   voiceRecognitionCueGainSliderEl: HTMLInputElement;
   voiceRecognitionCueGainValueEl: HTMLElement;
+  voiceStartupPreRollSliderEl: HTMLInputElement;
+  voiceStartupPreRollValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
 } {
@@ -75,6 +77,12 @@ function createVoiceSettingsInputs(): {
   voiceRecognitionCueGainSliderEl.max = '500';
   voiceRecognitionCueGainSliderEl.step = '1';
   voiceRecognitionCueGainSliderEl.value = '100';
+  const voiceStartupPreRollSliderEl = document.createElement('input');
+  voiceStartupPreRollSliderEl.type = 'range';
+  voiceStartupPreRollSliderEl.min = '0';
+  voiceStartupPreRollSliderEl.max = '4096';
+  voiceStartupPreRollSliderEl.step = '1';
+  voiceStartupPreRollSliderEl.value = '512';
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
@@ -86,6 +94,8 @@ function createVoiceSettingsInputs(): {
     voiceRecognitionCueCheckboxEl: document.createElement('input'),
     voiceRecognitionCueGainSliderEl,
     voiceRecognitionCueGainValueEl: document.createElement('span'),
+    voiceStartupPreRollSliderEl,
+    voiceStartupPreRollValueEl: document.createElement('span'),
     voiceTtsGainSliderEl,
     voiceTtsGainValueEl: document.createElement('span'),
   };
@@ -104,6 +114,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     ttsGain: 1,
     recognitionCueEnabled: true,
     recognitionCueGain: 1,
+    startupPreRollMs: 512,
     ...overrides,
   };
 }
@@ -448,6 +459,47 @@ describe('AssistantNativeVoiceBridge', () => {
     });
   });
 
+  it('syncs the native startup pre-roll control and persists changes', () => {
+    ensureWebSocketGlobal();
+
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+    });
+
+    controller.attach();
+    controller.setVoiceSettings({
+      ...controller.voiceSettings,
+      startupPreRollMs: 768,
+    });
+
+    expect(controller.voiceSettings.startupPreRollMs).toBe(768);
+    expect(inputs.voiceStartupPreRollSliderEl.value).toBe('768');
+    expect(inputs.voiceStartupPreRollValueEl.textContent).toBe('768 ms');
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      startupPreRollMs: 768,
+    });
+  });
+
   it('skips rewriting mic input options when the native device list is unchanged', async () => {
     ensureWebSocketGlobal();
 
@@ -782,6 +834,8 @@ describe('SpeechAudioController.micButtonState', () => {
       voiceRecognitionCueCheckboxEl: document.createElement('input'),
       voiceRecognitionCueGainSliderEl: document.createElement('input'),
       voiceRecognitionCueGainValueEl: document.createElement('span'),
+      voiceStartupPreRollSliderEl: document.createElement('input'),
+      voiceStartupPreRollValueEl: document.createElement('span'),
       voiceTtsGainSliderEl: document.createElement('input'),
       voiceTtsGainValueEl: document.createElement('span'),
       inputEl: document.createElement('input'),

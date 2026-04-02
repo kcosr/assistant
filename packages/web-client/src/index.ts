@@ -96,8 +96,10 @@ import {
 import {
   areVoiceSettingsEqual,
   DEFAULT_VOICE_ADAPTER_BASE_URL,
+  formatStartupPreRollMsLabel,
   formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
+  normalizeStartupPreRollMs,
   normalizeVoiceSettings,
   recognitionCueGainToPercent,
   recognitionCueGainPercentToValue,
@@ -401,6 +403,9 @@ async function main(): Promise<void> {
     voiceRecognitionCueGainControl: voiceRecognitionCueGainControlEl,
     voiceRecognitionCueGainSlider: voiceRecognitionCueGainSliderEl,
     voiceRecognitionCueGainValue: voiceRecognitionCueGainValueEl,
+    voiceStartupPreRollControl: voiceStartupPreRollControlEl,
+    voiceStartupPreRollSlider: voiceStartupPreRollSliderEl,
+    voiceStartupPreRollValue: voiceStartupPreRollValueEl,
     voiceTtsGainControl: voiceTtsGainControlEl,
     voiceTtsGainSlider: voiceTtsGainSliderEl,
     voiceTtsGainValue: voiceTtsGainValueEl,
@@ -513,6 +518,7 @@ async function main(): Promise<void> {
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
   voiceRecognitionCueControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueGainControlEl.hidden = !useNativeVoiceRuntime;
+  voiceStartupPreRollControlEl.hidden = !useNativeVoiceRuntime;
   voiceTtsGainControlEl.hidden = !useNativeVoiceRuntime;
   const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
 
@@ -524,6 +530,12 @@ async function main(): Promise<void> {
   const syncTtsGainLabelFromSlider = (): void => {
     const gain = ttsGainPercentToValue(voiceTtsGainSliderEl.value);
     voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(gain);
+  };
+
+  const syncStartupPreRollLabelFromSlider = (): void => {
+    voiceStartupPreRollValueEl.textContent = formatStartupPreRollMsLabel(
+      normalizeStartupPreRollMs(voiceStartupPreRollSliderEl.value),
+    );
   };
 
   const initialPreferences = loadClientPreferences({
@@ -1377,6 +1389,8 @@ async function main(): Promise<void> {
       voiceRecognitionCueCheckboxEl,
       voiceRecognitionCueGainSliderEl,
       voiceRecognitionCueGainValueEl,
+      voiceStartupPreRollSliderEl,
+      voiceStartupPreRollValueEl,
       voiceTtsGainSliderEl,
       voiceTtsGainValueEl,
       initialIncludePanelContext: includePanelContext,
@@ -3450,6 +3464,10 @@ async function main(): Promise<void> {
         voiceRecognitionCueGainSliderEl.value,
         currentSettings.recognitionCueGain,
       ),
+      startupPreRollMs: normalizeStartupPreRollMs(
+        voiceStartupPreRollSliderEl.value,
+        currentSettings.startupPreRollMs,
+      ),
       ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
     });
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
@@ -3472,6 +3490,8 @@ async function main(): Promise<void> {
   voiceRecognitionCueCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionCueGainSliderEl.addEventListener('input', syncRecognitionCueGainLabelFromSlider);
   voiceRecognitionCueGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceStartupPreRollSliderEl.addEventListener('input', syncStartupPreRollLabelFromSlider);
+  voiceStartupPreRollSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceTtsGainSliderEl.addEventListener('input', syncTtsGainLabelFromSlider);
   voiceTtsGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   const resetVoiceSettingsInputs = (): void => {
@@ -3502,6 +3522,11 @@ async function main(): Promise<void> {
     );
     voiceRecognitionCueGainSliderEl.disabled =
       !useNativeVoiceRuntime || !settings.recognitionCueEnabled;
+    voiceStartupPreRollSliderEl.value = String(
+      normalizeStartupPreRollMs(settings.startupPreRollMs),
+    );
+    voiceStartupPreRollValueEl.textContent = formatStartupPreRollMsLabel(settings.startupPreRollMs);
+    voiceStartupPreRollSliderEl.disabled = !useNativeVoiceRuntime;
     voiceTtsGainSliderEl.value = String(ttsGainToPercent(settings.ttsGain));
     voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(settings.ttsGain);
   };

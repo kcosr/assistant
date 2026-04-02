@@ -9,6 +9,9 @@ export const MAX_TTS_GAIN = 5.0;
 export const DEFAULT_TTS_GAIN = 1.0;
 export const DEFAULT_RECOGNITION_CUE_ENABLED = true;
 export const DEFAULT_RECOGNITION_CUE_GAIN = 1.0;
+export const MIN_STARTUP_PRE_ROLL_MS = 0;
+export const MAX_STARTUP_PRE_ROLL_MS = 4096;
+export const DEFAULT_STARTUP_PRE_ROLL_MS = 512;
 export const MIN_TTS_GAIN_PERCENT = MIN_TTS_GAIN * 100;
 export const MAX_TTS_GAIN_PERCENT = MAX_TTS_GAIN * 100;
 
@@ -24,6 +27,7 @@ export interface VoiceSettings {
   ttsGain: number;
   recognitionCueEnabled: boolean;
   recognitionCueGain: number;
+  startupPreRollMs: number;
 }
 
 function normalizeOptionalString(value: unknown): string {
@@ -69,6 +73,33 @@ export function normalizeTtsGain(value: unknown, fallback = DEFAULT_TTS_GAIN): n
     }
   }
   return Math.min(MAX_TTS_GAIN, Math.max(MIN_TTS_GAIN, candidate));
+}
+
+export function normalizeStartupPreRollMs(
+  value: unknown,
+  fallback = DEFAULT_STARTUP_PRE_ROLL_MS,
+): number {
+  const normalizedFallback =
+    typeof fallback === 'number' && Number.isFinite(fallback)
+      ? Math.min(MAX_STARTUP_PRE_ROLL_MS, Math.max(MIN_STARTUP_PRE_ROLL_MS, Math.round(fallback)))
+      : DEFAULT_STARTUP_PRE_ROLL_MS;
+  let candidate = normalizedFallback;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    candidate = value;
+  } else if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value.trim());
+    if (Number.isFinite(parsed)) {
+      candidate = parsed;
+    }
+  }
+  return Math.min(
+    MAX_STARTUP_PRE_ROLL_MS,
+    Math.max(MIN_STARTUP_PRE_ROLL_MS, Math.round(candidate)),
+  );
+}
+
+export function formatStartupPreRollMsLabel(value: number): string {
+  return `${normalizeStartupPreRollMs(value)} ms`;
 }
 
 export function ttsGainToPercent(gain: number): number {
@@ -117,6 +148,7 @@ export function createDefaultVoiceSettings(options?: {
     ttsGain: DEFAULT_TTS_GAIN,
     recognitionCueEnabled: DEFAULT_RECOGNITION_CUE_ENABLED,
     recognitionCueGain: DEFAULT_RECOGNITION_CUE_GAIN,
+    startupPreRollMs: DEFAULT_STARTUP_PRE_ROLL_MS,
   };
 }
 
@@ -159,6 +191,10 @@ export function normalizeVoiceSettings(
         ? record['recognitionCueEnabled']
         : defaults.recognitionCueEnabled,
     recognitionCueGain: normalizeTtsGain(record['recognitionCueGain'], defaults.recognitionCueGain),
+    startupPreRollMs: normalizeStartupPreRollMs(
+      record['startupPreRollMs'],
+      defaults.startupPreRollMs,
+    ),
   };
 }
 
@@ -174,6 +210,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.recognitionEndSilenceMs === right.recognitionEndSilenceMs &&
     left.ttsGain === right.ttsGain &&
     left.recognitionCueEnabled === right.recognitionCueEnabled &&
-    left.recognitionCueGain === right.recognitionCueGain
+    left.recognitionCueGain === right.recognitionCueGain &&
+    left.startupPreRollMs === right.startupPreRollMs
   );
 }

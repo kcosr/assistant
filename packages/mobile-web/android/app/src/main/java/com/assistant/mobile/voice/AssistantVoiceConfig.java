@@ -30,6 +30,9 @@ final class AssistantVoiceConfig {
     static final float MIN_RECOGNITION_CUE_GAIN = 0.25f;
     static final float MAX_RECOGNITION_CUE_GAIN = 5.0f;
     static final float DEFAULT_RECOGNITION_CUE_GAIN = 1.0f;
+    static final int MIN_STARTUP_PRE_ROLL_MS = 0;
+    static final int MAX_STARTUP_PRE_ROLL_MS = 4096;
+    static final int DEFAULT_STARTUP_PRE_ROLL_MS = 512;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
@@ -50,6 +53,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_TTS_GAIN = "tts_gain";
     private static final String KEY_RECOGNITION_CUE_ENABLED = "recognition_cue_enabled";
     private static final String KEY_RECOGNITION_CUE_GAIN = "recognition_cue_gain";
+    private static final String KEY_STARTUP_PRE_ROLL_MS = "startup_pre_roll_ms";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
@@ -70,6 +74,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_TTS_GAIN = "ttsGain";
     static final String EXTRA_RECOGNITION_CUE_ENABLED = "recognitionCueEnabled";
     static final String EXTRA_RECOGNITION_CUE_GAIN = "recognitionCueGain";
+    static final String EXTRA_STARTUP_PRE_ROLL_MS = "startupPreRollMs";
 
     final String audioMode;
     final boolean autoListenEnabled;
@@ -89,6 +94,7 @@ final class AssistantVoiceConfig {
     final float ttsGain;
     final boolean recognitionCueEnabled;
     final float recognitionCueGain;
+    final int startupPreRollMs;
 
     AssistantVoiceConfig(
         String audioMode,
@@ -108,7 +114,8 @@ final class AssistantVoiceConfig {
         String assistantBaseUrl,
         float ttsGain,
         boolean recognitionCueEnabled,
-        float recognitionCueGain
+        float recognitionCueGain,
+        int startupPreRollMs
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.autoListenEnabled = autoListenEnabled;
@@ -146,6 +153,10 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             DEFAULT_RECOGNITION_CUE_GAIN
         );
+        this.startupPreRollMs = normalizeStartupPreRollMs(
+            startupPreRollMs,
+            DEFAULT_STARTUP_PRE_ROLL_MS
+        );
     }
 
     static AssistantVoiceConfig load(Context context) {
@@ -171,7 +182,8 @@ final class AssistantVoiceConfig {
             prefs.getString(KEY_ASSISTANT_BASE_URL, DEFAULT_ASSISTANT_BASE_URL),
             prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN),
             prefs.getBoolean(KEY_RECOGNITION_CUE_ENABLED, DEFAULT_RECOGNITION_CUE_ENABLED),
-            prefs.getFloat(KEY_RECOGNITION_CUE_GAIN, DEFAULT_RECOGNITION_CUE_GAIN)
+            prefs.getFloat(KEY_RECOGNITION_CUE_GAIN, DEFAULT_RECOGNITION_CUE_GAIN),
+            prefs.getInt(KEY_STARTUP_PRE_ROLL_MS, DEFAULT_STARTUP_PRE_ROLL_MS)
         );
     }
 
@@ -196,6 +208,7 @@ final class AssistantVoiceConfig {
             .putFloat(KEY_TTS_GAIN, config.ttsGain)
             .putBoolean(KEY_RECOGNITION_CUE_ENABLED, config.recognitionCueEnabled)
             .putFloat(KEY_RECOGNITION_CUE_GAIN, config.recognitionCueGain)
+            .putInt(KEY_STARTUP_PRE_ROLL_MS, config.startupPreRollMs)
             .apply();
     }
 
@@ -254,7 +267,8 @@ final class AssistantVoiceConfig {
             intent.getFloatExtra(
                 EXTRA_RECOGNITION_CUE_GAIN,
                 fallback.recognitionCueGain
-            )
+            ),
+            intent.getIntExtra(EXTRA_STARTUP_PRE_ROLL_MS, fallback.startupPreRollMs)
         );
     }
 
@@ -276,6 +290,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_TTS_GAIN, ttsGain);
         intent.putExtra(EXTRA_RECOGNITION_CUE_ENABLED, recognitionCueEnabled);
         intent.putExtra(EXTRA_RECOGNITION_CUE_GAIN, recognitionCueGain);
+        intent.putExtra(EXTRA_STARTUP_PRE_ROLL_MS, startupPreRollMs);
         return intent;
     }
 
@@ -348,6 +363,20 @@ final class AssistantVoiceConfig {
         return candidate;
     }
 
+    private static int normalizeStartupPreRollMs(int value, int fallback) {
+        int candidate = value;
+        if (candidate == Integer.MIN_VALUE) {
+            candidate = fallback;
+        }
+        if (candidate < MIN_STARTUP_PRE_ROLL_MS) {
+            return MIN_STARTUP_PRE_ROLL_MS;
+        }
+        if (candidate > MAX_STARTUP_PRE_ROLL_MS) {
+            return MAX_STARTUP_PRE_ROLL_MS;
+        }
+        return candidate;
+    }
+
     private static String normalizeAudioMode(String value) {
         String normalized = normalizeOptional(value);
         switch (normalized) {
@@ -391,7 +420,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -414,7 +444,8 @@ final class AssistantVoiceConfig {
             url,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -444,7 +475,8 @@ final class AssistantVoiceConfig {
             && Objects.equals(assistantBaseUrl, config.assistantBaseUrl)
             && ttsGain == config.ttsGain
             && recognitionCueEnabled == config.recognitionCueEnabled
-            && recognitionCueGain == config.recognitionCueGain;
+            && recognitionCueGain == config.recognitionCueGain
+            && startupPreRollMs == config.startupPreRollMs;
     }
 
     @Override
@@ -467,7 +499,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -493,7 +526,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             (float) settings.optDouble("ttsGain", ttsGain),
             settings.optBoolean("recognitionCueEnabled", recognitionCueEnabled),
-            (float) settings.optDouble("recognitionCueGain", recognitionCueGain)
+            (float) settings.optDouble("recognitionCueGain", recognitionCueGain),
+            settings.optInt("startupPreRollMs", startupPreRollMs)
         );
     }
 
@@ -516,7 +550,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -539,7 +574,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -562,7 +598,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
@@ -585,7 +622,8 @@ final class AssistantVoiceConfig {
             assistantBaseUrl,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 

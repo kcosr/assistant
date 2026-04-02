@@ -3,8 +3,10 @@ import { TtsAudioPlayer } from '../utils/audio';
 import type { AudioMode } from '../utils/audioMode';
 import {
   areVoiceSettingsEqual,
+  formatStartupPreRollMsLabel,
   formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
+  normalizeStartupPreRollMs,
   normalizeVoiceSettings,
   recognitionCueGainToPercent,
   ttsGainToPercent,
@@ -341,6 +343,8 @@ export interface SpeechAudioControllerOptions {
   voiceRecognitionCueCheckboxEl: HTMLInputElement;
   voiceRecognitionCueGainSliderEl: HTMLInputElement;
   voiceRecognitionCueGainValueEl: HTMLElement;
+  voiceStartupPreRollSliderEl: HTMLInputElement;
+  voiceStartupPreRollValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
   inputEl: HTMLInputElement;
@@ -955,6 +959,12 @@ export class SpeechAudioController {
     this.options.voiceRecognitionCueGainValueEl.textContent = formatRecognitionCueGainPercentLabel(
       this.currentVoiceSettings.recognitionCueGain,
     );
+    this.options.voiceStartupPreRollSliderEl.value = String(
+      normalizeStartupPreRollMs(this.currentVoiceSettings.startupPreRollMs),
+    );
+    this.options.voiceStartupPreRollValueEl.textContent = formatStartupPreRollMsLabel(
+      this.currentVoiceSettings.startupPreRollMs,
+    );
     this.options.voiceTtsGainSliderEl.value = String(
       ttsGainToPercent(this.currentVoiceSettings.ttsGain),
     );
@@ -976,6 +986,7 @@ export class SpeechAudioController {
     this.options.voiceRecognitionCueCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCueGainSliderEl.disabled =
       !supportsNativeVoiceSettings || !this.currentVoiceSettings.recognitionCueEnabled;
+    this.options.voiceStartupPreRollSliderEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceTtsGainSliderEl.disabled = !supportsNativeVoiceSettings;
   }
 

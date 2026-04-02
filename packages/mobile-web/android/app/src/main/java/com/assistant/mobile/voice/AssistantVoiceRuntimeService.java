@@ -73,7 +73,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final int MAX_RECOGNITION_CUE_RETRIES = 2;
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
-    private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 120L;
+    private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 320L;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final String RECOGNITION_ARMING_CUE_REQUEST_PREFIX = "__recognition_arming__:";
 
@@ -149,6 +149,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
         player.setRecognitionCueGain(config.recognitionCueGain);
+        player.setStartupPreRollMs(config.startupPreRollMs);
         player.setListener(requestId -> mainHandler.post(() -> handlePlaybackDrained(requestId)));
         createNotificationChannel();
         startInForeground();
@@ -226,6 +227,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         player.setTtsGain(updated.ttsGain);
         player.setRecognitionCueGain(updated.recognitionCueGain);
+        player.setStartupPreRollMs(updated.startupPreRollMs);
 
         boolean preferredSessionChanged =
             !previous.preferredVoiceSessionId.equals(updated.preferredVoiceSessionId);

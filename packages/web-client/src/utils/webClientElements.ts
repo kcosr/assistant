@@ -17,6 +17,9 @@ export interface WebClientElements {
   voiceRecognitionCueGainControl: HTMLElement;
   voiceRecognitionCueGainSlider: HTMLInputElement;
   voiceRecognitionCueGainValue: HTMLElement;
+  voiceStartupPreRollControl: HTMLElement;
+  voiceStartupPreRollSlider: HTMLInputElement;
+  voiceStartupPreRollValue: HTMLElement;
   voiceTtsGainControl: HTMLElement;
   voiceTtsGainSlider: HTMLInputElement;
   voiceTtsGainValue: HTMLElement;
@@ -103,6 +106,9 @@ export function getWebClientElements(): WebClientElements | null {
     'voice-recognition-cue-gain-slider',
   );
   const voiceRecognitionCueGainValue = getElement<HTMLElement>('voice-recognition-cue-gain-value');
+  const voiceStartupPreRollControl = getElement<HTMLElement>('voice-startup-pre-roll-control');
+  const voiceStartupPreRollSlider = getElement<HTMLInputElement>('voice-startup-pre-roll-slider');
+  const voiceStartupPreRollValue = getElement<HTMLElement>('voice-startup-pre-roll-value');
   const voiceTtsGainControl = getElement<HTMLElement>('voice-tts-gain-control');
   const voiceTtsGainSlider = getElement<HTMLInputElement>('voice-tts-gain-slider');
   const voiceTtsGainValue = getElement<HTMLElement>('voice-tts-gain-value');
@@ -145,6 +151,9 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceRecognitionCueGainControl ||
     !voiceRecognitionCueGainSlider ||
     !voiceRecognitionCueGainValue ||
+    !voiceStartupPreRollControl ||
+    !voiceStartupPreRollSlider ||
+    !voiceStartupPreRollValue ||
     !voiceTtsGainControl ||
     !voiceTtsGainSlider ||
     !voiceTtsGainValue ||
@@ -177,6 +186,9 @@ export function getWebClientElements(): WebClientElements | null {
     voiceRecognitionCueGainControl,
     voiceRecognitionCueGainSlider,
     voiceRecognitionCueGainValue,
+    voiceStartupPreRollControl,
+    voiceStartupPreRollSlider,
+    voiceStartupPreRollValue,
     voiceTtsGainControl,
     voiceTtsGainSlider,
     voiceTtsGainValue,

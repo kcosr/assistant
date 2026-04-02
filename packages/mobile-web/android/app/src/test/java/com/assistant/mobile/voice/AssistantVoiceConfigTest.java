@@ -74,6 +74,12 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void constructorClampsStartupPreRollMs() {
+        assertEquals(0, createConfig(1.0f, true, 1.0f, -10).startupPreRollMs);
+        assertEquals(4096, createConfig(1.0f, true, 1.0f, 99999).startupPreRollMs);
+    }
+
+    @Test
     public void withVoiceSettingsReadsTtsGain() throws Exception {
         AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
             new JSONObject().put("ttsGain", 1.8)
@@ -94,12 +100,21 @@ public final class AssistantVoiceConfigTest {
         assertEquals(1.8f, updated.recognitionCueGain, 0.0001f);
     }
 
+    @Test
+    public void withVoiceSettingsReadsStartupPreRollMs() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("startupPreRollMs", 768)
+        );
+
+        assertEquals(768, updated.startupPreRollMs);
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
         return createConfig(titles, 1.0f);
     }
 
     private static AssistantVoiceConfig createConfig(float ttsGain) {
-        return createConfig(ttsGain, true, 1.0f);
+        return createConfig(ttsGain, true, 1.0f, AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS);
     }
 
     private static AssistantVoiceConfig createConfig(
@@ -107,18 +122,46 @@ public final class AssistantVoiceConfigTest {
         boolean recognitionCueEnabled,
         float recognitionCueGain
     ) {
-        return createConfig(Collections.emptyMap(), ttsGain, recognitionCueEnabled, recognitionCueGain);
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain,
+        int startupPreRollMs
+    ) {
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            startupPreRollMs
+        );
     }
 
     private static AssistantVoiceConfig createConfig(Map<String, String> titles, float ttsGain) {
-        return createConfig(titles, ttsGain, true, 1.0f);
+        return createConfig(
+            titles,
+            ttsGain,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS
+        );
     }
 
     private static AssistantVoiceConfig createConfig(
         Map<String, String> titles,
         float ttsGain,
         boolean recognitionCueEnabled,
-        float recognitionCueGain
+        float recognitionCueGain,
+        int startupPreRollMs
     ) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
@@ -138,7 +181,8 @@ public final class AssistantVoiceConfigTest {
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
             ttsGain,
             recognitionCueEnabled,
-            recognitionCueGain
+            recognitionCueGain,
+            startupPreRollMs
         );
     }
 
