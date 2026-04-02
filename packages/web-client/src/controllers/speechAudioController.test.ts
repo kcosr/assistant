@@ -99,6 +99,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
 
@@ -117,6 +118,9 @@ describe('AssistantNativeVoiceBridge', () => {
     await expect(
       bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
     ).resolves.toBe(true);
+    await expect(
+      bridge.setSessionTitles({ 'session-1': 'Daily Assistant' }),
+    ).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings({
@@ -128,6 +132,11 @@ describe('AssistantNativeVoiceBridge', () => {
       selection: {
         panelId: 'panel-1',
         sessionId: 'session-1',
+      },
+    });
+    expect(target.setSessionTitles).toHaveBeenCalledWith({
+      sessionTitles: {
+        'session-1': 'Daily Assistant',
       },
     });
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
@@ -150,6 +159,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
 
@@ -163,11 +173,17 @@ describe('AssistantNativeVoiceBridge', () => {
 
     await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(true);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
+    await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings(),
     });
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
+    expect(target.setSessionTitles).toHaveBeenCalledWith({
+      sessionTitles: {
+        'session-1': 'Daily Assistant',
+      },
+    });
     expect(target.setAssistantBaseUrl).toHaveBeenCalledWith({ url: 'https://assistant' });
   });
 
@@ -197,6 +213,9 @@ describe('AssistantNativeVoiceBridge', () => {
 
     await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(false);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(false);
+    await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(
+      false,
+    );
   });
 
   it('returns false when an async native setter rejects', async () => {

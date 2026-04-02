@@ -154,6 +154,8 @@ v1 requirements:
 - persistent minimal notification
 - public notification visibility so the persistent `Speak` / `Stop` controls are eligible to appear
   on the lock screen
+- notification title should surface the runtime state directly, e.g. `Voice (Listening)`
+- notification body should show the resolved preferred or active session title when available
 - automatic reconnect while enabled
 - service may start immediately when voice mode is enabled
 - service should not arm prompt playback until it has valid selected-session state
@@ -171,6 +173,7 @@ Recommended minimum web-to-native API:
 
 - `setVoiceSettings({ settings })`
 - `setSelectedSession({ selection: { panelId, sessionId } | null })`
+- `setSessionTitles({ sessionTitles: Record<string, string> })`
 - `setAssistantBaseUrl({ url: string })`
 
 ### User actions

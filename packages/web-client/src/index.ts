@@ -120,7 +120,7 @@ import { PluginSettingsClient } from './utils/pluginSettingsClient';
 import { shouldAutoOpenSessionPicker } from './utils/sessionPickerAutoOpen';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
-import { formatSessionLabel, resolveAutoTitle } from './utils/sessionLabel';
+import { formatSessionLabel, resolveAutoTitle, resolveSessionBaseLabel } from './utils/sessionLabel';
 import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
@@ -835,6 +835,43 @@ async function main(): Promise<void> {
     return formatSessionLabel(summary ?? { sessionId }, { agentSummaries });
   }
 
+  function getSessionNotificationTitle(sessionId: string): string {
+    const summary = sessionSummaries.find((candidate) => candidate.sessionId === sessionId) ?? null;
+    if (!summary) {
+      return '';
+    }
+    return resolveSessionBaseLabel(summary, agentSummaries);
+  }
+
+  function getNativeVoiceSessionTitles(): Record<string, string> {
+    const titles: Record<string, string> = {};
+    for (const summary of sessionSummaries) {
+      const title = getSessionNotificationTitle(summary.sessionId);
+      if (!title) {
+        continue;
+      }
+      titles[summary.sessionId] = title;
+    }
+    return titles;
+  }
+
+  function areSessionTitlesEqual(
+    left: Record<string, string>,
+    right: Record<string, string>,
+  ): boolean {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+    for (const key of leftKeys) {
+      if (left[key] !== right[key]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   function syncPreferredVoiceSessionOptions(): void {
     const selectEl = voicePreferredSessionSelectEl;
     const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
@@ -935,6 +972,10 @@ async function main(): Promise<void> {
     (selection) => nativeVoiceBridge.setSelectedSession(selection),
     (left, right) => left?.panelId === right?.panelId && left?.sessionId === right?.sessionId,
   );
+  const nativeSessionTitlesSync = new AsyncValueSync<Record<string, string>>(
+    (sessionTitles) => nativeVoiceBridge.setSessionTitles(sessionTitles),
+    areSessionTitlesEqual,
+  );
   const nativeAssistantBaseUrlSync = new AsyncValueSync<string>((url) =>
     nativeVoiceBridge.setAssistantBaseUrl(url),
   );
@@ -981,6 +1022,10 @@ async function main(): Promise<void> {
   function syncNativeSelectedSession(): void {
     const selection = getNativeVoiceSelectedSession();
     nativeSelectedSessionSync.request(selection);
+  }
+
+  function syncNativeSessionTitles(): void {
+    nativeSessionTitlesSync.request(getNativeVoiceSessionTitles());
   }
 
   function getNativeVoiceInputContext(): AssistantNativeVoiceInputContext {
@@ -1032,6 +1077,7 @@ async function main(): Promise<void> {
     syncNativeVoiceSettings();
     syncNativeInputContext();
     syncNativeSelectedSession();
+    syncNativeSessionTitles();
   }
 
   function normalizeNativeVoiceRuntimeState(
@@ -2710,6 +2756,7 @@ async function main(): Promise<void> {
       }
       clearMissingPreferredVoiceSession();
       syncPreferredVoiceSessionOptions();
+      syncNativeSessionTitles();
       syncSessionContext();
       for (const sessionId of currentModelBySession.keys()) {
         updateChatPanelModelSelect(sessionId);
@@ -2721,6 +2768,7 @@ async function main(): Promise<void> {
     setAgentSummaries: (agents) => {
       agentSummaries = agents;
       syncPreferredVoiceSessionOptions();
+      syncNativeSessionTitles();
       panelHostController?.setContext('agent.summaries', agentSummaries);
     },
     renderAgentSidebar,

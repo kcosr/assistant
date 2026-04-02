@@ -20,6 +20,8 @@ function createFixtureRepo() {
   const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'assistant-android-stage-repo-'));
   const mobileDir = path.join(repoRoot, 'packages', 'mobile-web');
   const webPublicDir = path.join(repoRoot, 'packages', 'web-client', 'public');
+  const rootNodeModulesDir = path.join(repoRoot, 'node_modules');
+  const mobileNodeModulesDir = path.join(mobileDir, 'node_modules');
 
   writeFile(path.join(webPublicDir, 'index.html'), '<html></html>');
   writeFile(path.join(webPublicDir, 'config.js'), 'window.ASSISTANT_API_HOST = "https://assistant";');
@@ -34,8 +36,11 @@ function createFixtureRepo() {
   writeFile(path.join(mobileDir, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'));
   writeFile(path.join(mobileDir, 'android', '.gradle', 'cache.txt'));
   writeFile(path.join(mobileDir, '.build', 'stale.txt'));
+  writeFile(path.join(rootNodeModulesDir, '.placeholder'));
+  writeFile(path.join(mobileNodeModulesDir, '@capacitor', 'android', 'package.json'), '{}');
+  writeFile(path.join(mobileNodeModulesDir, '.cache', 'stale.txt'));
 
-  return { repoRoot, mobileDir };
+  return { mobileDir, mobileNodeModulesDir, repoRoot, rootNodeModulesDir };
 }
 
 describe('assertAndroidProjectPresent', () => {
@@ -51,7 +56,7 @@ describe('assertAndroidProjectPresent', () => {
 
 describe('createAndroidBuildStage', () => {
   it('copies the mobile project into an ignored staging area without build artifacts', () => {
-    const { repoRoot, mobileDir } = createFixtureRepo();
+    const { mobileDir, mobileNodeModulesDir, repoRoot, rootNodeModulesDir } = createFixtureRepo();
     const stageBaseDir = createTempAndroidStageBase();
 
     const result = createAndroidBuildStage({
@@ -67,6 +72,14 @@ describe('createAndroidBuildStage', () => {
     expect(fs.existsSync(path.join(result.stagedWebPublicDir, 'index.html'))).toBe(true);
     expect(fs.existsSync(path.join(result.stagedMobileDir, REQUIRED_ANDROID_SOURCE_FILES[1]))).toBe(
       true,
+    );
+    expect(fs.lstatSync(path.join(result.stageRepoRoot, 'node_modules')).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(result.stagedMobileDir, 'node_modules')).isSymbolicLink()).toBe(
+      true,
+    );
+    expect(fs.realpathSync(path.join(result.stageRepoRoot, 'node_modules'))).toBe(rootNodeModulesDir);
+    expect(fs.realpathSync(path.join(result.stagedMobileDir, 'node_modules'))).toBe(
+      mobileNodeModulesDir,
     );
   });
 });

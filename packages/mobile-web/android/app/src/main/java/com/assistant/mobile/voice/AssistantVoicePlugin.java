@@ -127,6 +127,19 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setSessionTitles(PluginCall call) {
+        JSONObject sessionTitles = call.getData().optJSONObject(AssistantVoiceConfig.EXTRA_SESSION_TITLES);
+        if (sessionTitles == null) {
+            call.reject("sessionTitles is required");
+            return;
+        }
+        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
+        AssistantVoiceConfig updated = current.withSessionTitles(sessionTitles);
+        applyConfig(updated);
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void setInputContext(PluginCall call) {
         JSONObject inputContext = call.getData().optJSONObject("inputContext");
         if (inputContext == null) {
@@ -301,12 +314,17 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("recognitionStartTimeoutMs", current.recognitionStartTimeoutMs);
         voiceSettings.put("recognitionCompletionTimeoutMs", current.recognitionCompletionTimeoutMs);
         voiceSettings.put("recognitionEndSilenceMs", current.recognitionEndSilenceMs);
+        JSObject sessionTitles = new JSObject();
+        for (java.util.Map.Entry<String, String> entry : current.sessionTitles.entrySet()) {
+            sessionTitles.put(entry.getKey(), entry.getValue());
+        }
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
         payload.put("voiceSettings", voiceSettings);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);
+        payload.put("sessionTitles", sessionTitles);
         payload.put("inputContext", inputContext);
 
         String error = AssistantVoiceConfig.loadRuntimeError(getContext());

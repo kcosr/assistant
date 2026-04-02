@@ -6,7 +6,9 @@ import android.content.SharedPreferences;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -32,6 +34,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_SELECTED_PANEL_ID = "selected_panel_id";
     private static final String KEY_SELECTED_SESSION_ID = "selected_session_id";
     private static final String KEY_PREFERRED_VOICE_SESSION_ID = "preferred_voice_session_id";
+    private static final String KEY_SESSION_TITLES = "session_titles";
     private static final String KEY_WATCHED_SESSION_IDS = "watched_session_ids";
     private static final String KEY_INPUT_CONTEXT_ENABLED = "input_context_enabled";
     private static final String KEY_INPUT_CONTEXT_LINE = "input_context_line";
@@ -49,6 +52,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_SELECTED_PANEL_ID = "selectedPanelId";
     static final String EXTRA_SELECTED_SESSION_ID = "selectedSessionId";
     static final String EXTRA_PREFERRED_VOICE_SESSION_ID = "preferredVoiceSessionId";
+    static final String EXTRA_SESSION_TITLES = "sessionTitles";
     static final String EXTRA_INPUT_CONTEXT_ENABLED = "inputContextEnabled";
     static final String EXTRA_INPUT_CONTEXT_LINE = "inputContextLine";
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
@@ -63,6 +67,7 @@ final class AssistantVoiceConfig {
     final String selectedPanelId;
     final String selectedSessionId;
     final String preferredVoiceSessionId;
+    final Map<String, String> sessionTitles;
     final List<String> watchedSessionIds;
     final boolean inputContextEnabled;
     final String inputContextLine;
@@ -79,6 +84,7 @@ final class AssistantVoiceConfig {
         String selectedPanelId,
         String selectedSessionId,
         String preferredVoiceSessionId,
+        Map<String, String> sessionTitles,
         List<String> watchedSessionIds,
         boolean inputContextEnabled,
         String inputContextLine,
@@ -103,6 +109,7 @@ final class AssistantVoiceConfig {
         this.selectedPanelId = normalizeOptional(selectedPanelId);
         this.selectedSessionId = normalizeOptional(selectedSessionId);
         this.preferredVoiceSessionId = normalizeOptional(preferredVoiceSessionId);
+        this.sessionTitles = normalizeSessionTitleMap(sessionTitles);
         this.watchedSessionIds = normalizeSessionIdList(watchedSessionIds);
         this.inputContextEnabled = inputContextEnabled;
         this.inputContextLine = normalizeOptional(inputContextLine);
@@ -131,6 +138,7 @@ final class AssistantVoiceConfig {
             prefs.getString(KEY_SELECTED_PANEL_ID, null),
             prefs.getString(KEY_SELECTED_SESSION_ID, null),
             prefs.getString(KEY_PREFERRED_VOICE_SESSION_ID, null),
+            parseSessionTitleMap(prefs.getString(KEY_SESSION_TITLES, null)),
             parseSessionIdList(prefs.getString(KEY_WATCHED_SESSION_IDS, null)),
             prefs.getBoolean(KEY_INPUT_CONTEXT_ENABLED, false),
             prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
@@ -151,6 +159,7 @@ final class AssistantVoiceConfig {
             .putString(KEY_SELECTED_PANEL_ID, emptyToNull(config.selectedPanelId))
             .putString(KEY_SELECTED_SESSION_ID, emptyToNull(config.selectedSessionId))
             .putString(KEY_PREFERRED_VOICE_SESSION_ID, emptyToNull(config.preferredVoiceSessionId))
+            .putString(KEY_SESSION_TITLES, serializeSessionTitleMap(config.sessionTitles))
             .putString(KEY_WATCHED_SESSION_IDS, serializeSessionIdList(config.watchedSessionIds))
             .putBoolean(KEY_INPUT_CONTEXT_ENABLED, config.inputContextEnabled)
             .putString(KEY_INPUT_CONTEXT_LINE, emptyToNull(config.inputContextLine))
@@ -192,6 +201,9 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_PREFERRED_VOICE_SESSION_ID)
                 ? intent.getStringExtra(EXTRA_PREFERRED_VOICE_SESSION_ID)
                 : fallback.preferredVoiceSessionId,
+            intent.hasExtra(EXTRA_SESSION_TITLES)
+                ? parseSessionTitleMap(intent.getStringExtra(EXTRA_SESSION_TITLES))
+                : fallback.sessionTitles,
             fallback.watchedSessionIds,
             intent.getBooleanExtra(EXTRA_INPUT_CONTEXT_ENABLED, fallback.inputContextEnabled),
             intent.hasExtra(EXTRA_INPUT_CONTEXT_LINE)
@@ -216,6 +228,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_SELECTED_PANEL_ID, emptyToNull(selectedPanelId));
         intent.putExtra(EXTRA_SELECTED_SESSION_ID, emptyToNull(selectedSessionId));
         intent.putExtra(EXTRA_PREFERRED_VOICE_SESSION_ID, emptyToNull(preferredVoiceSessionId));
+        intent.putExtra(EXTRA_SESSION_TITLES, serializeSessionTitleMap(sessionTitles));
         intent.putExtra(EXTRA_INPUT_CONTEXT_ENABLED, inputContextEnabled);
         intent.putExtra(EXTRA_INPUT_CONTEXT_LINE, emptyToNull(inputContextLine));
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
@@ -295,6 +308,7 @@ final class AssistantVoiceConfig {
             panelId,
             sessionId,
             preferredVoiceSessionId,
+            sessionTitles,
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
@@ -314,6 +328,7 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             preferredVoiceSessionId,
+            sessionTitles,
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
@@ -340,6 +355,7 @@ final class AssistantVoiceConfig {
             && Objects.equals(selectedPanelId, config.selectedPanelId)
             && Objects.equals(selectedSessionId, config.selectedSessionId)
             && Objects.equals(preferredVoiceSessionId, config.preferredVoiceSessionId)
+            && Objects.equals(sessionTitles, config.sessionTitles)
             && Objects.equals(watchedSessionIds, config.watchedSessionIds)
             && inputContextEnabled == config.inputContextEnabled
             && Objects.equals(inputContextLine, config.inputContextLine)
@@ -359,6 +375,7 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             preferredVoiceSessionId,
+            sessionTitles,
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
@@ -381,6 +398,7 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             settings.optString("preferredVoiceSessionId", preferredVoiceSessionId),
+            sessionTitles,
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
@@ -400,6 +418,7 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             preferredVoiceSessionId,
+            sessionTitles,
             watchedSessionIds,
             enabled,
             contextLine,
@@ -419,6 +438,7 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             preferredVoiceSessionId,
+            sessionTitles,
             sessionIds,
             inputContextEnabled,
             inputContextLine,
@@ -438,12 +458,42 @@ final class AssistantVoiceConfig {
             selectedPanelId,
             selectedSessionId,
             sessionId,
+            sessionTitles,
             watchedSessionIds,
             inputContextEnabled,
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl
         );
+    }
+
+    AssistantVoiceConfig withSessionTitles(JSONObject titles) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionTitleMapFromJson(titles),
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl
+        );
+    }
+
+    String getSessionTitle(String sessionId) {
+        String normalized = normalizeOptional(sessionId);
+        if (normalized.isEmpty()) {
+            return "";
+        }
+        String title = sessionTitles.get(normalized);
+        return title == null ? "" : title;
     }
 
     private static List<String> normalizeSessionIdList(List<String> values) {
@@ -461,6 +511,27 @@ final class AssistantVoiceConfig {
             return Collections.emptyList();
         }
         return Collections.unmodifiableList(new ArrayList<>(normalized));
+    }
+
+    private static Map<String, String> normalizeSessionTitleMap(Map<String, String> values) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, String> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (entry == null) {
+                continue;
+            }
+            String sessionId = normalizeOptional(entry.getKey());
+            String title = normalizeOptional(entry.getValue());
+            if (!sessionId.isEmpty() && !title.isEmpty()) {
+                normalized.put(sessionId, title);
+            }
+        }
+        if (normalized.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return Collections.unmodifiableMap(normalized);
     }
 
     private static List<String> parseSessionIdList(String raw) {
@@ -495,5 +566,54 @@ final class AssistantVoiceConfig {
             entries.put(value);
         }
         return entries.length() == 0 ? null : entries.toString();
+    }
+
+    private static Map<String, String> sessionTitleMapFromJson(JSONObject object) {
+        if (object == null) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, String> titles = new LinkedHashMap<>();
+        JSONArray names = object.names();
+        if (names == null) {
+            return Collections.emptyMap();
+        }
+        for (int index = 0; index < names.length(); index += 1) {
+            String key = normalizeOptional(names.optString(index));
+            if (key.isEmpty()) {
+                continue;
+            }
+            String value = normalizeOptional(object.optString(key));
+            if (!value.isEmpty()) {
+                titles.put(key, value);
+            }
+        }
+        return normalizeSessionTitleMap(titles);
+    }
+
+    private static Map<String, String> parseSessionTitleMap(String raw) {
+        String normalized = normalizeOptional(raw);
+        if (normalized.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            return sessionTitleMapFromJson(new JSONObject(normalized));
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private static String serializeSessionTitleMap(Map<String, String> titles) {
+        Map<String, String> normalized = normalizeSessionTitleMap(titles);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        JSONObject object = new JSONObject();
+        for (Map.Entry<String, String> entry : normalized.entrySet()) {
+            try {
+                object.put(entry.getKey(), entry.getValue());
+            } catch (Exception ignored) {
+            }
+        }
+        return object.toString();
     }
 }

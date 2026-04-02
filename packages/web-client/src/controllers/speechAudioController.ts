@@ -13,6 +13,10 @@ export interface AssistantNativeVoiceSelection {
   sessionId: string;
 }
 
+export interface AssistantNativeVoiceSessionTitles {
+  sessionTitles: Record<string, string>;
+}
+
 export interface AssistantNativeVoiceInputDevice {
   id: string;
   label: string;
@@ -33,6 +37,10 @@ export interface AssistantNativeVoiceInputContextArgs {
 
 export interface AssistantNativeVoiceSelectionArgs {
   selection: AssistantNativeVoiceSelection | null;
+}
+
+export interface AssistantNativeVoiceSessionTitlesArgs {
+  sessionTitles: Record<string, string>;
 }
 
 export interface AssistantNativeVoiceUrlArgs {
@@ -57,6 +65,7 @@ export interface AssistantNativeVoiceStatePayload {
   inputContext?: AssistantNativeVoiceInputContext;
   assistantBaseUrl?: string;
   selectedSession?: AssistantNativeVoiceSelection | null;
+  sessionTitles?: Record<string, string>;
   lastError?: string;
 }
 
@@ -72,6 +81,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
   setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
+  setSessionTitles?: (args: AssistantNativeVoiceSessionTitlesArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
@@ -107,6 +117,10 @@ export class AssistantNativeVoiceBridge {
 
   setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
     return this.invokeAsync('setSelectedSession', { selection });
+  }
+
+  setSessionTitles(sessionTitles: Record<string, string>): Promise<boolean> {
+    return this.invokeAsync('setSessionTitles', { sessionTitles });
   }
 
   setVoiceSettings(settings: VoiceSettings): Promise<boolean> {

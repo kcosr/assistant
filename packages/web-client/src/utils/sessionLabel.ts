@@ -19,7 +19,7 @@ export function formatSessionLabel(
   summary: SessionLabelSummary,
   options?: SessionLabelOptions,
 ): string {
-  const baseLabel = resolveBaseLabel(summary, options?.agentSummaries);
+  const baseLabel = resolveSessionBaseLabel(summary, options?.agentSummaries);
   const idLabel = summary.sessionId.slice(0, 8);
   if (!baseLabel) {
     return idLabel;
@@ -45,7 +45,7 @@ export function resolveAutoTitle(attributes?: Record<string, unknown>): string {
   return autoTitle.trim();
 }
 
-function resolveBaseLabel(
+export function resolveSessionBaseLabel(
   summary: SessionLabelSummary,
   agentSummaries?: AgentLabelSummary[],
 ): string {
