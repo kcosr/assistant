@@ -7,7 +7,14 @@ The current `piSessionWriter.ts` (1,831 lines) is the most complex file in the m
 1. **Dual message format translation** — converting `ChatCompletionMessage` (with `piSdkMessage` sidecar) to pi-compatible JSONL entries. This goes away entirely when messages are native pi-ai format.
 2. **Incremental sync with signature-based alignment** — comparing persisted vs in-memory messages to append only what's new, handling replay drift, orphan tool results, etc. Much of this complexity exists because assistant's messages and pi's messages were two different formats that could drift apart.
 
-With native pi-ai messages, the writer becomes much simpler: messages are already in the right format, so writing is just appending entries to JSONL.
+With native pi-ai messages, some conversion logic disappears, but the writer is still not a trivial
+append-only logger. It must preserve assistant-specific behaviors that the current app already uses:
+
+- coding-agent-compatible entry chaining with `id` / `parentId`
+- assistant-only `custom` / `custom_message` entries
+- explicit assistant request boundaries
+- turn-history editing
+- replay compatibility with the current `PiSessionHistoryProvider`
 
 ## Target: Align with Coding-Agent's SessionManager Format
 
@@ -38,11 +45,22 @@ Assistant needs a few custom entries beyond what coding-agent uses:
 
 These all fit within the existing `custom` / `custom_message` entry types — no format extension needed.
 
+The target is the coding-agent-compatible file format and semantics, not necessarily importing
+`SessionManager` directly.
+
 ## New Architecture
 
-### Simple Append-Only Writer
+### Target Writer
 
-Replace the 1,831-line writer with a straightforward append-only writer:
+Replace the 1,831-line writer with a smaller writer only after preserving these contracts:
+
+- emit `message` entries for user / assistant / toolResult messages
+- emit `custom_message` entries for assistant-attributed inputs and orphan tool-result markers
+- emit `custom` entries for assistant-only events and request boundaries
+- keep `model_change`, `thinking_level_change`, and `session_info`
+- preserve `id` / `parentId` chaining so history editing still works
+
+The simplified interface can still look like:
 
 ```typescript
 class PiSessionWriter {
@@ -74,20 +92,25 @@ class PiSessionWriter {
 }
 ```
 
-### No More Sync / Alignment
+### Reduce Sync / Alignment, But Do Not Assume It Vanishes
 
 The current writer has elaborate sync logic because:
 - Messages might be added to `chatMessages[]` in memory without being persisted
 - The pi session file might already have entries from a previous run
 - Signatures are computed to detect what's new
 
-With agent-core, the event listener writes entries as they happen:
+With agent-core, the event listener can write entries as they happen:
 - `message_end` → `appendMessage(event.message)`
 - `turn_start` → `appendCustom('assistant.turn_start', { turnId })`
 - `turn_end` → `appendCustom('assistant.turn_end', { turnId, status })`
 - Model change → `appendModelChange(provider, modelId)`
 
-No diffing, no alignment, no signatures. Events arrive in order, entries are appended in order.
+However, there are two important caveats:
+
+1. Agent-core `turn_start` / `turn_end` are internal loop turns, not assistant request boundaries.
+   Assistant request boundaries must still be derived from request state.
+2. If any temporary projection/shim is introduced during implementation, it is internal-only and
+   removed before the migration is considered complete.
 
 ### Session Resume
 
@@ -96,21 +119,26 @@ On resume, the writer loads the existing JSONL file and reconstructs:
 - Message count — for any bookkeeping
 - The messages themselves → fed into `agent.replaceMessages()` as `AgentMessage[]`
 
-Since messages are already in pi-ai format in the file, loading is trivial — just parse each `message` entry and collect them.
+Do not treat resume as `agent.continue()` by default. The normal flow is:
+
+1. reconstruct messages
+2. `agent.replaceMessages(messages)`
+3. wait for the next user input
+4. call `agent.prompt(nextUserMessage)`
 
 ## Event-Driven Writing
 
-The session writer is driven entirely by the `AgentEvent` listener:
+The session writer is driven by the request adapter plus the `AgentEvent` listener:
 
 ```
 AgentEvent               → Session Writer Action
 ──────────────────────────────────────────────────
-turn_start               → appendCustom('assistant.turn_start', { turnId, trigger })
+request_start            → appendCustom('assistant.turn_start', { turnId, trigger })
 message_start (user)     → appendMessage(userMessage)
                            (or appendCustomMessage for agent/callback inputs)
 message_end (assistant)  → appendMessage(assistantMessage)
 message_end (toolResult) → appendMessage(toolResultMessage)
-turn_end                 → appendCustom('assistant.turn_end', { turnId, status })
+request_end              → appendCustom('assistant.turn_end', { turnId, status })
 model change (external)  → appendModelChange(provider, modelId)
 thinking change (ext.)   → appendThinkingLevelChange(level)
 ```
@@ -144,7 +172,8 @@ From the current `piSessionWriter.ts`, all of these are no longer needed:
 
 ## Estimated Size
 
-The new writer should be roughly **200-400 lines** — mostly the JSONL append mechanics, entry creation helpers, and session file initialization. Compare to 1,831 lines today.
+The steady-state writer should still be materially smaller than the current implementation, but
+expect more than just "JSONL append mechanics" because compatibility responsibilities remain.
 
 ## Compatibility
 
@@ -153,9 +182,15 @@ The output JSONL format matches coding-agent's `SessionManager`. This means:
 - Assistant can open pi CLI sessions (same message types)
 - Custom entries (`assistant.turn_start`, etc.) are ignored by pi CLI (it skips unknown custom types)
 
+The migration also has to remain consumable by assistant's current replay stack until that stack is
+rewritten. Today `SessionHub` still rebuilds `chatMessages` from `ChatEvent`s via
+`buildChatMessagesFromEvents()`, and `PiSessionHistoryProvider` still parses the session JSONL back
+into `ChatEvent`s for replay.
+
 ## Open Questions
 
-- [ ] Do we import `SessionManager` from coding-agent, or write our own minimal version? (Recommend: write our own — SessionManager has TUI, branching, and other logic we don't need)
-- [ ] Session file location — keep current `~/.assistant/data/sessions/<id>/pi/` or align with pi CLI's `~/.pi/agent/sessions/`?
-- [ ] Turn history manipulation (trim_before, trim_after, delete_turn) — reimplement or defer?
+- [ ] Do we import `SessionManager` from coding-agent, or write our own minimal version?
+  Recommendation: write our own compatibility-focused version
+- [x] Session file location — align with pi CLI's `~/.pi/agent/sessions/`
+- [x] Turn history manipulation (trim_before, trim_after, delete_turn) — keep in scope for the first cut
 - [ ] How to handle model/thinking changes that happen between turns (user changes via UI)?

@@ -2,19 +2,46 @@
 
 ## Overview
 
-A new module (e.g., `piNativeChat.ts`) replaces `chatRunCore.ts` as the entry point for all pi-native chat. It owns an `Agent` instance from `@mariozechner/pi-agent-core`, subscribes to its `AgentEvent` stream, and bridges to assistant's session hub, WebSocket clients, session writer, and event store.
+A new module (e.g., `piNativeChat.ts`) replaces `chatRunCore.ts` as the entry point for all
+pi-native chat. It owns an `Agent` instance from `@mariozechner/pi-agent-core`, subscribes to its
+`AgentEvent` stream, and bridges to assistant's session hub, WebSocket clients, session writer, and
+event store.
+
+This module needs a request-level adapter. In agent-core, a single prompt can emit multiple
+internal `turn_start` / `turn_end` cycles while tools execute and queued steering/follow-up
+messages are drained. Assistant's current `turnId` / `responseId` model is closer to
+"one user request", not "one internal assistant/tool loop iteration".
+
+## Request Adapter
+
+The request adapter is the assistant-owned boundary around `Agent`. Give it a concrete home
+(`piNativeChat.ts` or adjacent module) and treat it as the single place that understands the
+difference between:
+
+- assistant requests
+- agent-core internal turns
+- session persistence
+- live UI transport
+
+Suggested responsibilities:
+
+- start one assistant request with stable `{ responseId, assistantTurnId }`
+- feed the initial prompt/callback into `Agent`
+- translate `AgentEvent` to assistant `ServerMessage` / `ChatEvent`
+- persist assistant request boundaries separately from agent-core internal turn boundaries
+- own cancellation / accumulated text / finalization bookkeeping
+- finalize exactly once on success, abort, or error
 
 ## Lifecycle
 
 ```
 1. User sends message (or agent callback arrives)
-2. SessionHub routes to piNativeChat
+2. SessionHub creates a request envelope (`responseId`, assistant-level `turnId`, cancel state)
 3. piNativeChat configures Agent (model, thinking, tools, system prompt)
-4. Calls agent.prompt(userMessage) or agent.continue()
-5. AgentEvent stream fires events
-6. Event listener translates to ServerMessages → WebSocket
-7. Event listener writes to session file
-8. On agent_end, finalize turn (context usage, turn_end event, cleanup)
+4. Calls `agent.prompt(userMessage)` for normal input
+5. AgentEvent stream fires events, potentially across multiple internal turns
+6. Request adapter translates to ServerMessages / ChatEvents / persistence writes
+7. On `agent_end`, finalize the assistant request (context usage, request `turn_end`, cleanup)
 ```
 
 ## Agent Instance Management
@@ -22,7 +49,7 @@ A new module (e.g., `piNativeChat.ts`) replaces `chatRunCore.ts` as the entry po
 ### Per-Session Agent
 
 Each logical session gets its own `Agent` instance. The agent holds:
-- `state.messages` — the conversation history (native `AgentMessage[]`)
+- `state.messages` — the conversation history (`AgentMessage[]`, not necessarily only raw pi-ai messages)
 - `state.model` — resolved pi-ai `Model`
 - `state.thinkingLevel` — from session config
 - `state.tools` — `AgentTool[]` instances
@@ -31,7 +58,7 @@ Each logical session gets its own `Agent` instance. The agent holds:
 ### When to Create
 
 - **New session**: create fresh `Agent`
-- **Resume session**: create `Agent`, load session file into `AgentMessage[]`, set via `agent.replaceMessages()`
+- **Resume session**: create `Agent`, load prior messages into `AgentMessage[]`, set via `agent.replaceMessages()`
 
 ### Configuration
 
@@ -52,6 +79,13 @@ const agent = new Agent({
   sessionId,                     // for provider-side caching
 });
 ```
+
+Initial policy choices:
+
+- `transformContext`: wire as a no-op / `undefined` initially, then replace with compaction later
+- `steer()` / `followUp()`: do not expose new assistant features on top of these until the base
+  migration is stable
+- `toolExecution`: default to `sequential` in the first cut unless tool concurrency is proven safe
 
 ### Model Resolution
 
@@ -161,6 +195,16 @@ function handleMessageUpdate(event: MessageUpdateEvent) {
 }
 ```
 
+Do not assume `message_update` alone covers tool result persistence. Tool results are emitted as:
+
+- `tool_execution_start`
+- zero or more `tool_execution_update`
+- `tool_execution_end`
+- `message_start` / `message_end` for the resulting `toolResult` message
+
+That final `toolResult` message must be handled if the session file / replay path wants the same
+message graph as coding-agent.
+
 ### message_end Handler
 
 ```typescript
@@ -178,9 +222,8 @@ function handleMessageEnd(event: MessageEndEvent) {
 
 ```typescript
 function handleTurnEnd(event: TurnEndEvent) {
-  // Extract context usage from event.message (AssistantMessage)
-  // Update session context usage via sessionHub
-  // Emit turn_end ChatEvent
+  // Internal agent-core turn ended (assistant response + tool results)
+  // Do not map this 1:1 to assistant request boundaries without an adapter
 }
 ```
 
@@ -215,7 +258,8 @@ Removed:
 - `abortController` — agent-core manages its own; call `agent.abort()`
 - `ttsSession` — removed entirely
 - `textStartedAt` — can derive from first text_delta event if needed
-- `activeToolCalls` — agent-core tracks via `state.pendingToolCalls`
+- `activeToolCalls` — only removable once interrupt / replay behavior can be reproduced from
+  `state.pendingToolCalls` plus streamed tool events
 
 ## Abort / Cancel
 
@@ -223,6 +267,17 @@ Removed:
 - Agent-core handles abort propagation to the stream and tool executions
 - `agent_end` event fires with error/aborted stop reason
 - Event listener emits interrupt ChatEvent and cleans up
+
+## Errors / Retries
+
+- Treat retry behavior as assistant-owned policy, not something inferred automatically from the raw
+  agent-core stream.
+- Preserve current assistant behavior for:
+  - partial persistence on abort/error
+  - user-visible error finalization
+  - retry / re-prompt decisions
+- Do not introduce long-lived fallback routing to the old loop. If the new path cannot satisfy the
+  cutover gate, the migration is not ready to switch.
 
 ## convertToLlm
 
@@ -237,6 +292,9 @@ function convertToLlm(messages: AgentMessage[]): Message[] {
 ```
 
 Later, if we add custom message types (compaction summaries, agent messages), this is where they get translated — same pattern as coding-agent's `messages.ts`.
+
+This is also the escape hatch for keeping assistant-only custom messages during migration while
+still presenting valid provider input to pi-ai.
 
 ## Entry Points
 
@@ -268,8 +326,9 @@ async function handlePiNativeResume(options: {
   sessionHub: SessionHub;
 }) {
   const piAgent = getOrCreateAgent(options);
-  // Load session messages into agent
-  await piAgent.continue();
+  piAgent.replaceMessages(loadMessagesForSession(options));
+  // Normal resumed conversations use prompt() for the next user input.
+  // continue() is only valid when the last message is not assistant.
 }
 ```
 
@@ -284,7 +343,7 @@ async function handlePiNativeResume(options: {
 | Tool iteration while loop | Agent-core's `runLoop()` |
 | `chatProcessor.ts` provider dispatch | Direct routing to pi-native module |
 | `resolvePiSdkModel()` | Kept, moved to `llm/modelResolution.ts` |
-| `resolvePiAgentAuthApiKey()` | Kept, wired via `getApiKey` hook |
+| `resolvePiAgentAuthApiKey()` | Replaced by `AuthStorage.getApiKey()` via `getApiKey` hook |
 
 ## Open Questions
 
@@ -292,3 +351,5 @@ async function handlePiNativeResume(options: {
 - [ ] How to handle model/thinking changes mid-session (user switches model via UI)?
 - [ ] Where does the Agent instance live — on `LogicalSessionState`, or in a separate map?
 - [ ] Should `convertToLlm` handle text signature / phase logic, or does that stay in the event listener?
+- [ ] Which assistant-level events continue to be derived from request state instead of raw
+  agent-core turn events?

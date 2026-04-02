@@ -2,150 +2,203 @@
 
 ## Principles
 
-- Each step should leave the codebase in a consistent state (may be non-functional for chat, but should compile)
-- Steps are ordered by dependency — later steps build on earlier ones
+- Each step should leave the codebase in a consistent state
+- Runtime parity comes before simplification
 - The greenfield pi-native module is built first, then old code is removed
-- CLI/Codex providers are stripped early to reduce noise, added back later as sidecars
+- Strip old providers only after the new native path is proven end-to-end
 
-## Phase 1: Strip CLI Providers and Legacy TTS
+## Phase 1: Add Dependencies and Lock API Assumptions
 
-**Goal**: Remove code that won't exist in the new architecture. Reduces noise for the rebuild.
+**Goal**: make `pi-agent-core` / `pi-coding-agent` available and verify the plan against the real
+APIs.
 
-### Step 1.1: Remove CLI provider implementations
-- Delete `ws/claudeCliChat.ts`, `ws/codexCliChat.ts`, `ws/piCliChat.ts`
-- Delete `ws/cliCallbackFactory.ts`, `ws/cliRuntimeConfig.ts`, `ws/cliEnv.ts`, `ws/cliProcessRegistry.ts`, `ws/cliToolCallRendezvous.ts`
-- Delete `codexSessionStore.ts`
-- Delete all associated test files
-- Remove CLI branches from `chatRunCore.ts` `runChatCompletionCore()` (leave only `pi` branch)
-- Remove CLI provider types from `agents.ts`
-- Update `index.ts` exports
-- **Test**: Project compiles. CLI providers are gone.
+### Step 1.1: Add package dependencies
 
-### Step 1.2: Remove legacy TTS
-- Delete `tts/` directory
-- Delete `elevenLabsTts.ts`
-- Remove TTS wiring from `chatRunCore.ts` (`createTtsSession`, `ttsSession.appendText`)
-- Remove TTS from `ws/chatRunLifecycle.ts`, `sessionHub.ts`, `sessionMessages.ts`
-- Remove TTS env config from `envConfig.ts`
-- **Test**: Project compiles. No TTS references remain.
-
-## Phase 2: Add Dependencies
-
-**Goal**: Make agent-core and coding-agent packages available.
-
-### Step 2.1: Add package dependencies
 - Add `@mariozechner/pi-agent-core` to `agent-server/package.json`
-- Add `@mariozechner/pi-coding-agent` to `agent-server/package.json` (for coding tools and AuthStorage)
-- **Test**: `npm install` succeeds, imports resolve.
+- Add `@mariozechner/pi-coding-agent` to `agent-server/package.json`
+- Test: `npm install` succeeds, imports resolve, and the server build still works with the added dependency tree.
 
-## Phase 3: Build Pi-Native Chat Module
+### Step 1.2: Lock actual API assumptions
 
-**Goal**: New greenfield module that handles chat using agent-core. Built alongside old code, not yet wired in.
+- Verify actual `Agent`, `AgentEvent`, `AgentTool`, `AuthStorage`, and coding-tool exports
+- Document the mismatches that matter:
+  - internal agent turn semantics vs assistant request semantics
+  - `continue()` restrictions
+  - `tool_execution_update` + `toolResult` message ordering
+  - session-writer compatibility requirements
+- Test: plan docs updated before implementation starts.
 
-### Step 3.1: Model resolution utility
+## Phase 2: Build Pi-Native Chat Module Behind Compatibility Adapters
+
+**Goal**: build the new runtime without rewriting the whole replay/tool stack in one pass.
+
+### Step 2.1: Model resolution utility
+
 - Extract `resolvePiSdkModel()` from `piSdkProvider.ts` into `llm/modelResolution.ts`
-- Keep only model resolution logic, drop everything else (buildPiContext, runPiSdkChatCompletionIteration, tool mapping)
-- **Test**: Import works, model resolution resolves provider/model strings.
+- Keep only model resolution logic
+- Test: import works and provider/model resolution matches current behavior.
 
-### Step 3.2: Auth setup
+### Step 2.2: Auth setup
+
 - Import `AuthStorage` from `@mariozechner/pi-coding-agent`
 - Create auth initialization that calls `AuthStorage.create()`
 - Verify it reads `~/.pi/agent/auth.json` and resolves API keys
-- **Test**: `authStorage.getApiKey('anthropic')` returns a key.
+- Test: `authStorage.getApiKey(provider)` works for configured providers.
 
-### Step 3.3: Coding tools
-- Import `createReadTool`, `createWriteTool`, `createEditTool`, `createBashTool`, `createGrepTool`, `createFindTool`, `createLsTool` from `@mariozechner/pi-coding-agent`
-- Create helper that builds coding `AgentTool[]` for a given `cwd`
-- **Test**: Tools instantiate, have correct names/schemas.
+### Step 2.3: Compatibility tool adapter
 
-### Step 3.4: Plugin tool generation
-- Update `plugins/registry.ts` and `plugins/operations.ts` to generate `AgentTool` format
-- Change handler signature: parsed params, structured return, signal parameter
-- Handle schema conversion (TypeBox `Type.Unsafe()` or pass-through)
-- Build `ToolContext` from closure-captured session state
-- **Test**: Plugin tools generate as `AgentTool[]`, handlers execute.
+- Keep the current tool-host path for the first cut
+- Build an adapter that exposes scoped `ToolHost` tools as `AgentTool`s
+- Preserve approvals, interactions, MCP/plugin loading, and nested chunk forwarding
+- Test: existing built-in and plugin tools can execute through the adapter.
 
-### Step 3.5: Built-in tools
-- Rewrite `voice_speak`, `voice_ask`, `attachment_send` as `AgentTool` implementations
-- Rewrite `agents_message` as `AgentTool` that routes through SessionHub
-- **Test**: Tools instantiate, basic execution works.
+### Step 2.4: Optional coding-tool imports
 
-### Step 3.6: Pi-native chat module (core)
-- Create new `piNativeChat.ts` module
-- Create `Agent` instance with model, thinking, tools, system prompt, `convertToLlm`, `getApiKey`
-- Implement `AgentEvent` listener with:
-  - `ServerMessage` emission to WebSocket
-  - `ChatEvent` emission to EventStore
-  - State tracking (`accumulatedText`, `outputStarted`)
-- Implement `handlePiNativeChat()` entry point (new turn)
-- Implement abort via `agent.abort()`
-- **Test**: Send a message, receive streamed text back via WebSocket.
+- Import `createReadTool`, `createWriteTool`, `createEditTool`, `createBashTool`,
+  `createGrepTool`, `createFindTool`, and `createLsTool` from `@mariozechner/pi-coding-agent`
+- Validate whether using the exported package directly is acceptable in the server build/runtime
+- Test: tools instantiate and the dependency surface is acceptable.
 
-### Step 3.7: Tool execution in the loop
-- Wire tools into the Agent instance
-- Verify tool calls execute and results feed back to LLM
-- Verify tool lifecycle events (`tool_execution_start/update/end`) emit correct ServerMessages
-- **Test**: Send a message that triggers tool use, verify full loop works.
+### Step 2.5: Pi-native chat module (core)
 
-## Phase 4: Session Writer
+- Create new `piNativeChat.ts`
+- Create `Agent` with model, thinking, tools, system prompt, `convertToLlm`, and `getApiKey`
+- Implement an assistant request adapter on top of `AgentEvent`
+- Keep emitting current `ChatEvent` and `ServerMessage` payloads
+- Test: send a message and receive streamed text/thinking/tool updates with current client expectations.
 
-**Goal**: Persist conversations to pi-compatible JSONL files.
+### Step 2.6: Tool execution in the loop
 
-### Step 4.1: New session writer
-- Implement simplified append-only JSONL writer
-- Entry types: session header, message, model_change, thinking_level_change, custom, custom_message
-- Event-driven: write entries from AgentEvent listener
-- Handle agent message custom entries (`assistant.input` with agent/callback metadata)
-- Handle turn boundary custom entries (`assistant.turn_start`, `assistant.turn_end`)
-- **Test**: Run a chat turn, verify JSONL file is written with correct entries. Verify pi CLI can open the file.
+- Wire tools into the `Agent`
+- Verify tool calls execute and results feed back to the LLM
+- Verify `tool_execution_start/update/end` and `toolResult` `message_start/message_end` events are mapped correctly
+- Test: send a message that triggers tool use and verify the full loop.
 
-### Step 4.2: Session resume
-- Load existing JSONL session file into `AgentMessage[]`
+### Step 2.7: Keep replay compatibility
+
+- Continue emitting current `ChatEvent` sequences for EventStore
+- Continue supporting `SessionHub.resolveChatMessages()` and `PiSessionHistoryProvider`
+- Test: reconnect/reload shows the same transcript as before.
+
+## Phase 3: Persistence Cutover
+
+**Goal**: persist conversations to pi-compatible JSONL files without breaking current replay/history.
+
+### Step 3.1: Compatibility-first session writer
+
+- Either:
+  - adapt the current writer to the new runtime, or
+  - implement a new writer that preserves the same entry graph and assistant-specific entries
+- Keep request-level turn boundaries, assistant events, session info, and history-editing support
+- Test: run a chat turn, verify JSONL is written correctly and current replay still works.
+
+### Step 3.2: Session resume
+
+- Load existing JSONL into `AgentMessage[]`
 - Set on agent via `agent.replaceMessages()`
-- Use `agent.prompt()` for the next turn (agent-core handles the context)
-- **Test**: Start a session, stop, resume, verify conversation continues.
+- Use `agent.prompt()` for the next user turn
+- Reserve `agent.continue()` for retry / queued-message cases only
+- Test: start a session, stop, resume, and verify conversation continues.
 
-## Phase 5: Wire Into SessionHub
+### Step 3.3: Define the parity gate explicitly
 
-**Goal**: Replace the old chat path with the new pi-native module.
+The cutover is blocked until these cases pass:
 
-### Step 5.1: Route pi provider to new module
+- event mapping
+  - text deltas
+  - thinking start/delta/end
+  - toolcall input streaming
+  - tool execution start/update/end
+  - toolResult message persistence
+- request semantics
+  - one assistant request spanning multiple internal agent turns
+  - assistant request finalization exactly once
+- `agents_message`
+  - sync mode
+  - async mode
+  - callback turn
+  - nested chunk forwarding
+- interruption
+  - abort before output
+  - abort after partial text
+  - abort during tool execution
+- persistence / replay
+  - fresh session
+  - resumed session
+  - reconnect / replay
+  - questionnaire / interaction recovery
+  - turn-history editing
+- session config changes
+  - model change
+  - thinking-level change
+
+## Phase 4: Wire Into SessionHub
+
+**Goal**: replace the old pi chat path with the new native module.
+
+### Step 4.1: Route `provider === 'pi'` to new module
+
 - Update `chatProcessor.ts` (or its replacement) to route `provider === 'pi'` to `piNativeChat`
-- Wire session state, sessionHub, eventStore connections
+- Wire session state, sessionHub, and EventStore connections
 - Handle agent exchange ID tagging
-- **Test**: End-to-end chat works through the normal UI flow.
+- No long-lived dual routing or fallback path. Switch only after the parity gate passes.
+- Test: end-to-end chat works through the normal UI flow, including `agents_message`, callbacks, interruption, and replay.
 
-### Step 5.2: Context usage tracking
-- Extract usage from `AssistantMessage` on `message_end` / `turn_end`
-- Update session context usage via sessionHub
-- **Test**: UI shows context usage percentage.
+### Step 4.2: Context usage tracking
 
-## Phase 6: Remove Old Code
+- Extract usage from `AssistantMessage` on `message_end` / request finalization
+- Update session context usage via `sessionHub`
+- Test: UI shows context usage percentage.
 
-**Goal**: Delete everything replaced by the new pi-native module.
+## Phase 5: Remove Old Code and Simplify
 
-### Step 6.1: Remove old chat infrastructure
+**Goal**: delete the old pi loop after the new path is stable.
+
+### Step 5.1: Remove old pi loop infrastructure
+
 - Delete `chatRunCore.ts`
 - Delete `chatCompletionTypes.ts`
-- Delete `llm/piSdkProvider.ts` (model resolution already extracted)
+- Delete `llm/piSdkProvider.ts` loop code
 - Delete `history/piSessionSync.ts`
-- Delete `history/piSessionWriter.ts` (replaced by new writer)
-- Delete `history/piSessionReplay.ts` (replaced by new resume logic)
-- Delete `llm/piAgentAuth.ts` (replaced by AuthStorage import)
-- Remove `ChatCompletionMessage` references from all surviving files
-- **Test**: Project compiles. All tests pass.
+- Delete or replace `history/piSessionWriter.ts` only after parity tests pass
+- Delete or replace `history/piSessionReplay.ts` only after parity tests pass
+- Delete `llm/piAgentAuth.ts`
+- Test: project compiles and tests pass.
 
-### Step 6.2: Clean up surviving files
-- Simplify `sessionHub.ts` — remove CLI session tracking, old TTS factory, codex store
-- Simplify `agents.ts` — remove CLI provider types
-- Simplify `envConfig.ts` — remove CLI and TTS config
-- Simplify `sessionModel.ts` — remove CLI-specific resolution
-- Update `chatProcessor.ts` — remove old provider dispatch
-- **Test**: Project compiles. Full end-to-end chat works.
+### Step 5.2: Simplify surviving files
 
-## Phase 7: Future Work (not part of this migration)
+- Simplify `sessionHub.ts`
+- Simplify `agents.ts`
+- Simplify `envConfig.ts`
+- Simplify `sessionModel.ts`
+- Update `chatProcessor.ts`
+- Test: project compiles and full end-to-end chat works.
 
-- Port compaction from coding-agent (implement `transformContext` hook)
-- Add CLI/Codex agents back as isolated sidecars
-- Remove EventStore once frontend can work with session file + WebSocket directly
-- Implement steering/follow-up message support for advanced workflows
+## Phase 6: Strip CLI Providers and Legacy TTS
+
+**Goal**: remove code that is no longer needed after the native path is the default.
+
+### Step 6.1: Remove CLI provider implementations
+
+- Delete `ws/claudeCliChat.ts`, `ws/codexCliChat.ts`, `ws/piCliChat.ts`
+- Delete `ws/cliCallbackFactory.ts`, `ws/cliRuntimeConfig.ts`, `ws/cliEnv.ts`,
+  `ws/cliProcessRegistry.ts`, `ws/cliToolCallRendezvous.ts`
+- Delete `codexSessionStore.ts`
+- Delete associated tests
+- Remove CLI provider types from `agents.ts`
+- Update exports
+- Test: project compiles and the native path remains stable.
+
+### Step 6.2: Remove legacy TTS
+
+- Delete `tts/` directory
+- Delete `elevenLabsTts.ts`
+- Remove TTS wiring from surviving runtime files
+- Remove TTS env config from `envConfig.ts`
+- Test: project compiles and no TTS references remain.
+
+## Phase 7: Future Work
+
+- Port compaction from coding-agent
+- Add CLI/Codex sidecars back as isolated modules
+- Remove EventStore once replay no longer depends on `ChatEvent`

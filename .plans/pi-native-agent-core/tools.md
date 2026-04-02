@@ -9,6 +9,14 @@ Assistant has two categories of tools:
 
 Both currently use assistant's own interfaces (`BuiltInToolDefinition`, `PluginToolDefinition`) which take raw `unknown` args and return `unknown`. These need to migrate to agent-core's `AgentTool` interface.
 
+The migration does not need to rewrite every tool up front. The existing tool host already
+contains approvals, interaction routing, rate limiting hooks, MCP/plugin loading, and
+`agents_message` side effects. The lowest-risk first cut is an adapter layer that exposes current
+tool-host tools as `AgentTool`s while preserving current behavior.
+
+Target-state note: these adapters are temporary internal scaffolding only. The target contract is
+native `AgentTool` implementations and agent-core hook ownership where that improves clarity.
+
 ## Target Interface
 
 Agent-core's `AgentTool`:
@@ -77,9 +85,30 @@ Each tool:
 
 ### Dependency Decision
 
-Add `@mariozechner/pi-coding-agent` as a dependency for the tool implementations, or copy the tool source files. Importing is cleaner if the package is available; copying avoids pulling in TUI dependencies.
+Add `@mariozechner/pi-coding-agent` as a dependency for the tool implementations, or copy the tool
+source files. Importing is cleaner if the package is available; copying avoids pulling in TUI and
+other CLI dependencies if package size / install surface becomes a problem.
 
-**Recommendation**: Import. The tools are exported from the package's public API and the TUI deps are only used in render paths we don't call.
+**Recommendation**: Import first, but verify the agent-server build/runtime impact immediately.
+`@mariozechner/pi-coding-agent` depends on `@mariozechner/pi-tui` and other CLI packages. The
+runtime should prove that those imports remain safe in the server process before committing to this
+as the permanent approach.
+
+## Hook Ownership
+
+Target ownership for orchestration concerns:
+
+- `beforeToolCall`
+  - approvals
+  - tool-call rate limiting
+  - final allow/deny checks after argument validation
+- `afterToolCall`
+  - result normalization
+  - error/result metadata shaping
+  - post-execution logging / metrics
+
+Until that migration is complete, the existing assistant tool stack may still own some of this
+logic internally. That is a temporary implementation detail, not the end-state contract.
 
 ## Category 2: Plugin Tools (notes, lists, search, etc.)
 
@@ -99,9 +128,18 @@ interface PluginToolDefinition {
 
 These are generated dynamically from plugin manifests and operations.
 
-### Approach: Change Generation to Output AgentTool Directly
+### Approach: Start with an Adapter, Then Move Native
 
-Plugin tools are generated from manifests at a single point (`plugins/registry.ts` and `plugins/operations.ts`). Rather than wrapping the old format, change the generation to produce `AgentTool` natively. The handler signature changes slightly (parsed params, structured return, signal as parameter), but the generation code is the single point to update.
+Initial migration path:
+
+1. Keep plugin generation as-is.
+2. Wrap the existing `ToolHost` or plugin tool definitions in `AgentTool` adapters.
+3. Convert plugin generation to emit native `AgentTool`s only after the new pi-native runtime is
+   stable.
+
+Reason: current plugin tools already carry coercion, HTTP surface generation, CLI matching, and
+interaction wiring. Replacing all of that in the same migration as the core chat loop would widen
+the failure surface unnecessarily.
 
 ### ToolContext Mapping
 
@@ -206,6 +244,17 @@ function createAgentsMessageTool(deps: {
 
 **Key change**: `agents_message` currently calls `processUserMessage` which is deeply tied to the old chat path. In the new architecture, it routes through **SessionHub** instead — `sessionHub.sendMessage(targetSessionId, text)` or similar. SessionHub knows how to dispatch to the target session's `Agent` instance. The tool doesn't need to know about chat internals at all.
 
+This is the desired end state. For the migration cutover, it is acceptable to keep
+`agents_message` on a compatibility bridge into the existing session/runtime entrypoint until the
+new pi-native dispatch path supports:
+
+- sync mode
+- async mode
+- callback turns
+- chunk forwarding for nested tool output
+- agent exchange ids
+- questionnaire / interaction propagation
+
 Flow:
 1. `execute()` resolves target agent + session (same as today)
 2. Calls `sessionHub.sendMessage(targetSessionId, text, { fromSessionId, fromAgentId, mode })`
@@ -220,13 +269,37 @@ Currently, tools can call `ctx.requestInteraction()` to prompt the user mid-exec
 
 With agent-core, tools still have full control during `execute()`. The interaction flow would work the same way — the tool calls an interaction function captured in its closure, waits for the response, and continues. Agent-core doesn't interfere with what tools do during execution.
 
-No architecture change needed, just pass the interaction registry through the tool context closure.
+No product-level architecture change needed, but the migration must preserve current semantics from
+`ToolContext`:
+
+- `requestInteraction()`
+- approval cache access
+- `forwardChunksTo` for nested streaming
+- `eventStore` emission for interaction state recovery
+
+## Tool Execution Mode
+
+Agent-core supports parallel tool execution. Assistant should not enable that by default in the
+first migration cut.
+
+Reason:
+- current tools have side effects
+- interactions can block on user input
+- EventStore/WebSocket ordering is observable
+- nested chunk forwarding and `agents_message` are concurrency-sensitive
+
+Default policy:
+- first cut: `sequential`
+- later: enable `parallel` only after tool-safety review and explicit tests
 
 ## Tool Scoping
 
 Assistant has `toolAllowlist` / `toolDenylist` per agent to control which tools are visible. This filtering happens at the `ToolHost` level before tools are passed to the chat run.
 
 With agent-core, filtering happens before setting `agent.setTools(filteredTools)`. Same logic, different point of application.
+
+If the first cut uses a compatibility tool-host adapter, keep the current scoping logic exactly as
+it is and apply it before building the adapter list.
 
 ## Summary
 
@@ -240,8 +313,7 @@ With agent-core, filtering happens before setting `agent.setTools(filteredTools)
 
 ## Open Questions
 
-- [ ] Import coding tools from pi-coding-agent or copy source? (Recommend: import)
+- [ ] Import coding tools from pi-coding-agent or copy source? (Recommend: import first, validate build/runtime impact)
 - [ ] TypeBox schema conversion for plugin tools: `Type.Unsafe()` vs pass-through?
-- [ ] `agents_message` dependency on `processUserMessage` — needs redesign for new chat path
-- [ ] Do we keep the `ToolHost` abstraction for MCP servers, or flatten everything to `AgentTool[]`?
-- [ ] Tool rate limiting — currently in `toolCallHandling.ts`. Move to `beforeToolCall` hook?
+- [ ] Do we keep a compatibility adapter over `ToolHost` for the first cut? (Recommend: yes)
+- [ ] Which built-in/plugin tools can safely opt into parallel execution later?

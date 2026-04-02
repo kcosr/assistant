@@ -1,10 +1,16 @@
 # Strip List — Files to Remove or Rewrite
 
+This list reflects the end state, not the first implementation step. Several of these files are
+still part of the active runtime and replay path today, so they should be removed only after the
+new pi-native path is wired and parity-tested.
+
 Total lines in files targeted for removal/rewrite: **~8,654 lines** (source only, excludes tests).
 
-## 1. CLI Providers — Remove Entirely
+## 1. CLI Providers — Remove Entirely (after native cutover)
 
-These implement the claude-cli, codex-cli, and pi-cli subprocess-based providers. All will be removed now and optionally re-added later as isolated sidecars.
+These implement the claude-cli, codex-cli, and pi-cli subprocess-based providers. Remove them only
+after the native path is the default and parity-tested, then optionally re-add them later as
+isolated sidecars.
 
 | File | Lines | Purpose |
 |---|---|---|
@@ -40,7 +46,7 @@ These implement the claude-cli, codex-cli, and pi-cli subprocess-based providers
 - `agents.ts` — CLI provider type definitions
 - `index.ts` — exports
 
-## 2. Legacy TTS — Remove Entirely
+## 2. Legacy TTS — Remove Entirely (after native cutover)
 
 Server-side text-to-speech integration (ElevenLabs, OpenAI TTS). Replaced by separate voice adapter architecture.
 
@@ -81,6 +87,10 @@ The `ChatCompletionMessage` type and all translation plumbing between it and pi-
 - `piSdkProvider.ts` — **mostly deleted**. Model resolution (`resolvePiSdkModel`) may be kept or moved. `buildPiContext()` and `runPiSdkChatCompletionIteration()` are replaced by agent-core's loop. Tool mapping replaced by native `AgentTool`. Text signature helpers may be kept if still needed.
 - `piSessionSync.ts` — **deleted**. No more sidecar attachment needed when messages are native.
 
+Migration note: if a temporary internal projection from assistant state into
+`ChatCompletionMessage` is needed while implementation is in flight, treat it as throwaway
+scaffolding and remove it before the migration is considered complete.
+
 ### Files with `ChatCompletionMessage` references that need updating:
 - `chatProcessor.ts`
 - `chatRunCore.ts`
@@ -112,6 +122,12 @@ These files implement the current shared agent loop and stream handling. Replace
 - `chatRunCore.ts` — **deleted**. Replaced by new pi-native chat module using `Agent` from agent-core.
 - `chatProcessor.ts` — **heavily rewritten**. Turn orchestration logic survives in simplified form, but the provider dispatch, stream handling, and tool call loop are all replaced.
 
+Do not delete these files before the new path covers:
+- current ServerMessage payloads
+- current ChatEvent payloads
+- interruption / partial persistence
+- `agents_message` sync + async callbacks
+
 ## 5. Session History — Rewrite
 
 | File | Lines | Purpose |
@@ -122,8 +138,11 @@ These files implement the current shared agent loop and stream handling. Replace
 **Total: ~2,514 lines**
 
 ### What happens:
-- `piSessionWriter.ts` — **rewritten, much smaller**. Messages are already native pi-ai format, so most of the conversion logic disappears. Custom entries (agent messages, callbacks) remain.
-- `piSessionReplay.ts` — **rewritten**. Session resume uses agent-core's `agent.continue()` / `agentLoopContinue`. Replay loads session file into `AgentMessage[]` and sets on agent context.
+- `piSessionWriter.ts` — **rewritten or adapted**, but it still has to preserve entry chaining,
+  assistant-specific custom entries, and history editing.
+- `piSessionReplay.ts` — **rewritten**. Normal session resume should load messages into
+  `agent.replaceMessages()` and use `agent.prompt()` for the next user turn. `continue()` is not
+  the generic resume primitive.
 
 ## 6. Files That Survive With Modifications
 
@@ -139,6 +158,12 @@ These files reference stripped code and need targeted cleanup, but are not thems
 - `sessionMessages.ts` — remove TTS, simplify message handling
 - `sessionChatMessages.ts` — adapt to native message types
 - `index.ts` — update exports
+
+Additional files that are currently still on the replay critical path and should not be removed
+early:
+
+- `history/historyProvider.ts`
+- `events/chatEventUtils.ts`
 
 ## Summary
 
