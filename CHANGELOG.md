@@ -10,6 +10,7 @@
 - Added configurable `attachment_send` preview snippet limits plus inline expand/collapse for truncated attachment previews in chat. ([#88](https://github.com/kcosr/assistant/pull/88))
 - Added rooted per-agent `contextFiles` prompt injection with config-relative roots, root-confined glob includes, startup preload caching, fail-fast file validation, and system-prompt insertion after instruction skills.
 - Added Android native voice `TTS gain` settings with a 25%-500% playback control, Android PCM software gain, runtime gain reporting, and an Android source-tree `android:test` entrypoint that syncs Capacitor before Gradle tests. ([#87](https://github.com/kcosr/assistant/pull/87))
+- Added Android native recognition cues with configurable cue gain and startup pre-roll settings, a persistent notification media-button capture toggle, and a local spoken `stop` abort path. ([#89](https://github.com/kcosr/assistant/pull/89))
 
 ### Changed
 
