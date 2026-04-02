@@ -419,7 +419,7 @@ final class AssistantVoicePcmPlayer {
         switch (cueType) {
             case SUCCESS_COMPLETION:
                 segments = new CueSegment[] {
-                    new CueSegment(659.25d, 70, 0.16f),
+                    new CueSegment(659.25d, 140, 0.16f),
                 };
                 break;
             case FAILURE_COMPLETION:

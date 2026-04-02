@@ -310,8 +310,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         mediaSession.setCallback(new MediaSession.Callback() {
             @Override
             public void onPlay() {
+                Log.d(TAG, "MediaSession onPlay");
                 mainHandler.post(() -> {
                     if (!config.mediaButtonsEnabled) {
+                        Log.d(TAG, "MediaSession onPlay ignored: media buttons disabled");
                         return;
                     }
                     startManualListen("");
@@ -320,24 +322,30 @@ public final class AssistantVoiceRuntimeService extends Service {
 
             @Override
             public void onPause() {
+                Log.d(TAG, "MediaSession onPause");
                 mainHandler.post(() -> handleMediaSessionStop());
             }
 
             @Override
             public void onStop() {
+                Log.d(TAG, "MediaSession onStop");
                 mainHandler.post(() -> handleMediaSessionStop());
             }
 
             @Override
             public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                Log.d(TAG, "MediaSession onMediaButtonEvent intent=" + mediaButtonIntent);
                 if (!config.mediaButtonsEnabled) {
+                    Log.d(TAG, "MediaSession media button ignored: media buttons disabled");
                     return false;
                 }
                 KeyEvent event =
                     mediaButtonIntent == null
                         ? null
                         : mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                Log.d(TAG, "MediaSession media button event=" + describeKeyEvent(event));
                 if (!shouldHandleMediaButtonKeyEvent(event)) {
+                    Log.d(TAG, "MediaSession media button ignored: unsupported event");
                     return false;
                 }
                 mainHandler.post(() -> handleMediaButtonKeyCode(event.getKeyCode()));
@@ -347,6 +355,15 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handleMediaButtonKeyCode(int keyCode) {
+        Log.d(
+            TAG,
+            "handleMediaButtonKeyCode keyCode="
+                + KeyEvent.keyCodeToString(keyCode)
+                + " runtimeState="
+                + runtimeState
+                + " hasActiveInteraction="
+                + hasActiveInteraction()
+        );
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY:
                 startManualListen("");
@@ -370,8 +387,18 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void handleMediaSessionStop() {
         if (!config.mediaButtonsEnabled) {
+            Log.d(TAG, "handleMediaSessionStop ignored: media buttons disabled");
             return;
         }
+        Log.d(
+            TAG,
+            "handleMediaSessionStop runtimeState="
+                + runtimeState
+                + " promptPlaybackActive="
+                + isPromptPlaybackActive()
+                + " activeSttRequestId="
+                + !activeSttRequestId.isEmpty()
+        );
         stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
     }
 
@@ -387,20 +414,44 @@ public final class AssistantVoiceRuntimeService extends Service {
             || STATE_SPEAKING.equals(trim(state));
     }
 
+    private static String describeKeyEvent(KeyEvent event) {
+        if (event == null) {
+            return "null";
+        }
+        return "action="
+            + event.getAction()
+            + ",keyCode="
+            + KeyEvent.keyCodeToString(event.getKeyCode())
+            + ",repeat="
+            + event.getRepeatCount();
+    }
+
     private void syncMediaSession() {
         if (mediaSession == null) {
             return;
         }
         boolean enabled = config.isEnabled() && config.mediaButtonsEnabled && !destroyed;
+        int mediaPlaybackState = resolveMediaSessionPlaybackState(runtimeState);
         PlaybackState.Builder playbackState = new PlaybackState.Builder()
             .setActions(enabled ? MEDIA_SESSION_PLAYBACK_ACTIONS : 0L)
             .setState(
-                resolveMediaSessionPlaybackState(runtimeState),
+                mediaPlaybackState,
                 PlaybackState.PLAYBACK_POSITION_UNKNOWN,
                 STATE_SPEAKING.equals(runtimeState) || STATE_LISTENING.equals(runtimeState) ? 1.0f : 0.0f
             );
         mediaSession.setPlaybackState(playbackState.build());
         mediaSession.setActive(enabled);
+        Log.d(
+            TAG,
+            "syncMediaSession enabled="
+                + enabled
+                + " runtimeState="
+                + runtimeState
+                + " playbackState="
+                + mediaPlaybackState
+                + " hasActiveInteraction="
+                + hasActiveInteraction()
+        );
     }
 
     private void releaseMediaSession() {
