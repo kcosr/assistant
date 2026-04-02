@@ -35,8 +35,9 @@ import {
 } from '@assistant/shared';
 import {
   downloadAttachment,
+  fetchAttachmentTextContent,
+  getAttachmentContentUrl,
   openHtmlAttachmentInBrowser,
-  resolveAttachmentUrl,
 } from '../utils/attachmentActions';
 import { applyMarkdownToElement } from '../utils/markdown';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
@@ -101,6 +102,10 @@ export interface ChatRendererOptions {
 
 const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
 const ATTACHMENT_TOOL_NAME = 'attachment_send';
+
+type AttachmentExpansionState =
+  | { status: 'loading' }
+  | { status: 'ready'; fullText: string; expanded: boolean };
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {
   const trimmed = value.trim();
@@ -206,6 +211,7 @@ export class ChatRenderer {
     string,
     InteractionResponseEvent['payload']
   >();
+  private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
   // Track text segment index per response.
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
@@ -2767,7 +2773,6 @@ export class ChatRenderer {
     preview.style.borderRadius = '10px';
     preview.style.background = 'var(--color-bg-subtle)';
     preview.style.border = '1px solid var(--color-border-subtle)';
-    preview.style.overflow = 'hidden';
 
     const actions = document.createElement('div');
     actions.className = 'attachment-tool-actions';
@@ -2800,6 +2805,38 @@ export class ChatRenderer {
     return button;
   }
 
+  private isAttachmentInlinePreviewable(attachment: AttachmentDescriptor): boolean {
+    return attachment.previewType === 'text' || attachment.previewType === 'markdown';
+  }
+
+  private renderAttachmentPreviewContent(
+    previewEl: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+    contentText: string,
+    options?: { truncated?: boolean; expanded?: boolean },
+  ): void {
+    const contentEl = document.createElement('div');
+    previewEl.replaceChildren();
+    previewEl.style.display = 'block';
+    previewEl.classList.toggle('expanded', options?.expanded === true);
+
+    if (attachment.previewType === 'markdown') {
+      contentEl.className = 'attachment-tool-preview-content markdown-content';
+      applyMarkdownToElement(contentEl, contentText);
+    } else {
+      contentEl.className = 'attachment-tool-preview-content';
+      contentEl.textContent = contentText;
+    }
+    previewEl.appendChild(contentEl);
+
+    if (options?.truncated) {
+      const statusEl = document.createElement('div');
+      statusEl.className = 'attachment-tool-preview-status';
+      statusEl.textContent = 'Preview truncated. Expand to load the full attachment.';
+      previewEl.appendChild(statusEl);
+    }
+  }
+
   private clearAttachmentToolActionError(bubble: HTMLDivElement): void {
     bubble.querySelector('.attachment-tool-action-error')?.remove();
   }
@@ -2820,6 +2857,7 @@ export class ChatRenderer {
     bubble: HTMLDivElement,
     summary: { fileName?: string; title?: string },
   ): void {
+    this.attachmentExpansionStates.delete(bubble);
     const summaryKey = `${summary.title ?? ''}\n${summary.fileName ?? ''}`;
     if (bubble.dataset['pendingSummaryKey'] === summaryKey) {
       return;
@@ -2845,7 +2883,7 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     if (previewEl) {
       previewEl.style.display = 'none';
-      previewEl.classList.remove('markdown-content');
+      previewEl.classList.remove('expanded');
       previewEl.replaceChildren();
     }
 
@@ -2883,25 +2921,23 @@ export class ChatRenderer {
     }
 
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
+    const expansionState = this.attachmentExpansionStates.get(bubble);
+    const expandedText =
+      expansionState?.status === 'ready' && expansionState.expanded ? expansionState.fullText : undefined;
     if (previewEl) {
       previewEl.replaceChildren();
-      previewEl.classList.remove('markdown-content');
-      if (attachment.previewType === 'text' && typeof attachment.previewText === 'string') {
-        previewEl.style.display = 'block';
-        previewEl.textContent = attachment.previewTruncated
-          ? `${attachment.previewText}…`
-          : attachment.previewText;
-        previewEl.style.whiteSpace = 'pre-wrap';
-        previewEl.style.color = 'var(--color-message-assistant-text)';
+      previewEl.classList.remove('expanded');
+      if (typeof expandedText === 'string') {
+        this.renderAttachmentPreviewContent(previewEl, attachment, expandedText, { expanded: true });
       } else if (
-        attachment.previewType === 'markdown' &&
+        this.isAttachmentInlinePreviewable(attachment) &&
         typeof attachment.previewText === 'string'
       ) {
-        previewEl.style.display = 'block';
-        previewEl.classList.add('markdown-content');
-        applyMarkdownToElement(
+        this.renderAttachmentPreviewContent(
           previewEl,
+          attachment,
           attachment.previewTruncated ? `${attachment.previewText}…` : attachment.previewText,
+          { truncated: attachment.previewTruncated === true },
         );
       } else {
         previewEl.style.display = 'none';
@@ -2911,6 +2947,68 @@ export class ChatRenderer {
     const actionsEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-actions');
     if (actionsEl) {
       actionsEl.replaceChildren();
+      const canExpandInline =
+        this.isAttachmentInlinePreviewable(attachment) && attachment.previewTruncated === true;
+      const showExpandAction =
+        canExpandInline &&
+        (expansionState === undefined ||
+          expansionState.status === 'loading' ||
+          (expansionState.status === 'ready' && !expansionState.expanded));
+      const showCollapseAction = expansionState?.status === 'ready' && expansionState.expanded;
+
+      if (showExpandAction) {
+        const isLoading = expansionState?.status === 'loading';
+        const expandButton = this.createAttachmentActionButton(
+          isLoading ? 'Expanding…' : 'Expand',
+          () => {
+            this.clearAttachmentToolActionError(bubble);
+            if (expansionState?.status === 'ready') {
+              this.attachmentExpansionStates.set(bubble, {
+                status: 'ready',
+                fullText: expansionState.fullText,
+                expanded: true,
+              });
+              this.renderAttachmentToolBubble(bubble, attachment);
+              return;
+            }
+            this.attachmentExpansionStates.set(bubble, { status: 'loading' });
+            this.renderAttachmentToolBubble(bubble, attachment);
+            void fetchAttachmentTextContent(getAttachmentContentUrl(attachment.downloadUrl))
+              .then((fullText) => {
+                this.attachmentExpansionStates.set(bubble, {
+                  status: 'ready',
+                  fullText,
+                  expanded: true,
+                });
+                this.renderAttachmentToolBubble(bubble, attachment);
+              })
+              .catch((error) => {
+                console.error('[attachments] Failed to expand attachment', error);
+                this.attachmentExpansionStates.delete(bubble);
+                this.renderAttachmentToolBubble(bubble, attachment);
+                this.showAttachmentToolActionError(bubble, 'Failed to expand attachment.');
+              });
+          },
+        );
+        expandButton.disabled = isLoading;
+        actionsEl.appendChild(expandButton);
+      }
+
+      if (showCollapseAction) {
+        const collapseButton = this.createAttachmentActionButton('Collapse', () => {
+          if (expansionState?.status !== 'ready') {
+            return;
+          }
+          this.clearAttachmentToolActionError(bubble);
+          this.attachmentExpansionStates.set(bubble, {
+            status: 'ready',
+            fullText: expansionState.fullText,
+            expanded: false,
+          });
+          this.renderAttachmentToolBubble(bubble, attachment);
+        });
+        actionsEl.appendChild(collapseButton);
+      }
 
       const downloadButton = this.createAttachmentActionButton('Download', () => {
         this.clearAttachmentToolActionError(bubble);
@@ -2935,6 +3033,7 @@ export class ChatRenderer {
   }
 
   private updateAttachmentToolBubbleError(bubble: HTMLDivElement, message: string): void {
+    this.attachmentExpansionStates.delete(bubble);
     delete bubble.dataset['pendingSummaryKey'];
     bubble.dataset['status'] = 'error';
     bubble.classList.add('error');
@@ -2945,6 +3044,7 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     if (previewEl) {
       previewEl.style.display = 'none';
+      previewEl.classList.remove('expanded');
       previewEl.replaceChildren();
     }
     let errorEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-error');

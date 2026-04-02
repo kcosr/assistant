@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { z } from 'zod';
 import type { AgentDefinition } from './agents';
+import { DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS } from './attachments/constants';
 import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
@@ -716,6 +717,16 @@ export const SessionsConfigSchema = z.object({
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
 
+export const AttachmentsConfigSchema = z.object({
+  previewSnippetChars: z
+    .number()
+    .int()
+    .min(1)
+    .default(DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS),
+});
+
+export type AttachmentsConfig = z.infer<typeof AttachmentsConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     agents: z
@@ -732,6 +743,7 @@ export const AppConfigSchema = z
       .optional()
       .transform((value) => value ?? []),
     sessions: SessionsConfigSchema.optional(),
+    attachments: AttachmentsConfigSchema.default({}),
   })
   .superRefine((value, ctx) => {
     const profileIds = new Set<string>();

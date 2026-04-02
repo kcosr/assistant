@@ -66,6 +66,9 @@ describe('DefaultPluginRegistry', () => {
         fixture: { enabled: true, source: { path: pluginRoot } },
       },
       mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
     };
 
     const registry = new DefaultPluginRegistry();
@@ -86,6 +89,9 @@ describe('DefaultPluginRegistry', () => {
       profiles: [],
       plugins: {},
       mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
     };
 
     const registry = new DefaultPluginRegistry();
@@ -125,6 +131,9 @@ describe('DefaultPluginRegistry', () => {
         custom: { enabled: true },
       },
       mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
     };
 
     await registry.initialize(config, dataDir);
@@ -165,6 +174,9 @@ describe('DefaultPluginRegistry', () => {
         broken: { enabled: true },
       },
       mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
     };
 
     await registry.initialize(config, dataDir);
@@ -196,6 +208,9 @@ describe('PluginToolHost', () => {
         fixture: { enabled: true, source: { path: pluginRoot } },
       },
       mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
     };
 
     const registry = new DefaultPluginRegistry();

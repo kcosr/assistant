@@ -183,6 +183,9 @@ export function createToolHost(config: ToolHostConfig, deps?: CreateToolHostDeps
     registerBuiltInSessionTools({
       host: builtInHost,
       sessionHub: deps.sessionHub,
+      ...(typeof deps.attachmentPreviewChars === 'number'
+        ? { attachmentPreviewChars: deps.attachmentPreviewChars }
+        : {}),
     });
   }
 

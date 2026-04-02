@@ -266,6 +266,30 @@ describe('loadConfig', () => {
     expect(config.sessions?.mirrorPiSessionHistory).toBe(false);
   });
 
+  it('parses attachments preview snippet configuration', async () => {
+    const filePath = createTempFile('config-attachments');
+    const configJson = {
+      attachments: {
+        previewSnippetChars: 1024,
+      },
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+
+    expect(config.attachments.previewSnippetChars).toBe(1024);
+  });
+
+  it('defaults attachments preview snippet configuration', async () => {
+    const filePath = createTempFile('config-attachments-default');
+    await fs.writeFile(filePath, JSON.stringify({}), 'utf8');
+
+    const config = loadConfig(filePath);
+
+    expect(config.attachments.previewSnippetChars).toBe(512);
+  });
+
   it('supports claude-cli chat provider config', async () => {
     const filePath = createTempFile('config-claude-cli');
     const configJson = {
