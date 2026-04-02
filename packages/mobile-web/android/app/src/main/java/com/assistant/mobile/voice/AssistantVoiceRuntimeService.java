@@ -1221,6 +1221,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         String text = trim(message.optString("text"));
         String error = trim(message.optString("error"));
         int durationMs = Math.max(0, message.optInt("durationMs", 0));
+        boolean localStopCommand = shouldHandleRecognizedStopCommand(success, text);
         boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
         boolean captureAlreadyStopped =
             shouldScheduleQueuedRecognitionCompletionCueAfterResult(
@@ -1229,7 +1230,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
 
         activeSttRequestId = "";
-        queueRecognitionCompletionCue(requestId, positiveCue);
+        queueRecognitionCompletionCue(requestId, positiveCue && !localStopCommand);
         if (captureAlreadyStopped) {
             stoppedRecognitionRequestId = "";
             scheduleQueuedRecognitionCompletionCueIfNeeded(requestId);
@@ -1246,6 +1247,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " textLength=" + text.length()
                 + " durationMs=" + durationMs
                 + " sessionId=" + sessionId
+                + " localStopCommand=" + localStopCommand
                 + " error=" + error
         );
 
@@ -1254,6 +1256,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
         }
 
+        if (localStopCommand) {
+            return;
+        }
         if (positiveCue && !sessionId.isEmpty()) {
             submitRecognizedSpeech(sessionId, text, durationMs);
             return;
@@ -1665,6 +1670,16 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static boolean shouldUsePositiveRecognitionCue(boolean success, String text) {
         return success && !trim(text).isEmpty();
+    }
+
+    static boolean shouldHandleRecognizedStopCommand(boolean success, String text) {
+        if (!success) {
+            return false;
+        }
+        String normalized = trim(text)
+            .toLowerCase(java.util.Locale.US)
+            .replaceAll("^[^a-z0-9]+|[^a-z0-9]+$", "");
+        return "stop".equals(normalized);
     }
 
     static boolean shouldPlayQueuedRecognitionCompletionCue(

@@ -236,6 +236,16 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldHandleRecognizedStopCommandMatchesExactStopWord() {
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop"));
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, " Stop. "));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop now"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, ""));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(false, "stop"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldPlayQueuedRecognitionCompletionCueMatchesStoppedRequest() {
         assertEquals(
             true,

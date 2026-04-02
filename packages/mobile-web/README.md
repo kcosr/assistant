@@ -173,6 +173,9 @@ The following patches are applied automatically on `android:sync`:
   drains, then waits a brief settle delay before native mic startup begins. The completion cue is
   deferred until recording has actually stopped, capture focus has been released, and a longer
   media-route settle delay has elapsed before the tone plays.
+- A final native STT transcript of exactly `stop` is treated as a local stop command instead of
+  being forwarded to the LLM. That path plays the same negative completion cue used for canceled
+  or aborted recognition and leaves the runtime idle without surfacing an error.
 - Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
   listening pass immediately; later prompts that arrive while a pass is active are rendered only
   and are not queued for delayed autoplay.
