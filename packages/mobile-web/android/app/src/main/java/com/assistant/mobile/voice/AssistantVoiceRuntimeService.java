@@ -368,23 +368,9 @@ public final class AssistantVoiceRuntimeService extends Service {
             case KeyEvent.KEYCODE_MEDIA_PLAY:
             case KeyEvent.KEYCODE_MEDIA_PAUSE:
             case KeyEvent.KEYCODE_MEDIA_STOP:
-                if (shouldStopForMediaButtonKeyCode(
-                    keyCode,
-                    runtimeState,
-                    hasActiveInteraction()
-                )) {
-                    handleMediaSessionStop();
-                } else {
-                    startManualListen("");
-                }
-                return;
             case KeyEvent.KEYCODE_HEADSETHOOK:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                if (shouldStopForMediaButtonKeyCode(
-                    keyCode,
-                    runtimeState,
-                    hasActiveInteraction()
-                )) {
+                if (shouldToggleMediaButtonToStop(runtimeState, hasActiveInteraction())) {
                     handleMediaSessionStop();
                 } else {
                     startManualListen("");
@@ -424,22 +410,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             || STATE_SPEAKING.equals(trim(state));
     }
 
-    static boolean shouldStopForMediaButtonKeyCode(
-        int keyCode,
-        String state,
-        boolean hasActiveInteraction
-    ) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_MEDIA_PLAY:
-            case KeyEvent.KEYCODE_HEADSETHOOK:
-            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                return shouldStopForMediaButtonToggle(state, hasActiveInteraction);
-            case KeyEvent.KEYCODE_MEDIA_PAUSE:
-            case KeyEvent.KEYCODE_MEDIA_STOP:
-                return true;
-            default:
-                return false;
-        }
+    static boolean shouldToggleMediaButtonToStop(String state, boolean hasActiveInteraction) {
+        return shouldStopForMediaButtonToggle(state, hasActiveInteraction);
     }
 
     private static String describeKeyEvent(KeyEvent event) {

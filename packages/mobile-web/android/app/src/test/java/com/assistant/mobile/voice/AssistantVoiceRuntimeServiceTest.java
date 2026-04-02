@@ -205,25 +205,22 @@ public final class AssistantVoiceRuntimeServiceTest {
     public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
         assertEquals(
             true,
-            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
-                KeyEvent.KEYCODE_MEDIA_PLAY,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
                 AssistantVoiceRuntimeService.STATE_IDLE,
                 true
             )
         );
         assertEquals(
             false,
-            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
-                KeyEvent.KEYCODE_MEDIA_PLAY,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
                 AssistantVoiceRuntimeService.STATE_IDLE,
                 false
             )
         );
         assertEquals(
             true,
-            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
-                KeyEvent.KEYCODE_MEDIA_PAUSE,
-                AssistantVoiceRuntimeService.STATE_IDLE,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
+                AssistantVoiceRuntimeService.STATE_LISTENING,
                 false
             )
         );
