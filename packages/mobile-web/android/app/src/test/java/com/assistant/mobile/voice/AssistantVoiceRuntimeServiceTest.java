@@ -21,6 +21,7 @@ import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceRuntimeServiceTest {
@@ -54,22 +55,18 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT))
         );
         assertNotNull(notification.actions);
-        assertEquals(4, notification.actions.length);
+        assertEquals(3, notification.actions.length);
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_speak),
+            context.getString(R.string.assistant_voice_notification_action_stop),
             notification.actions[0].title
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_stop),
-            notification.actions[1].title
-        );
-        assertEquals(
             R.drawable.ic_notification_media_buttons_disabled,
-            notification.actions[2].icon
+            notification.actions[1].icon
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_audio_mode_tool),
-            notification.actions[3].title
+            R.drawable.ic_notification_mode_tool,
+            notification.actions[2].icon
         );
     }
 
@@ -136,12 +133,16 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
         assertEquals(3, notification.actions.length);
         assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_speak),
+            notification.actions[0].title
+        );
+        assertEquals(
             R.drawable.ic_notification_media_buttons_enabled,
             notification.actions[1].icon
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_audio_mode_response),
-            notification.actions[2].title
+            R.drawable.ic_notification_mode_response,
+            notification.actions[2].icon
         );
     }
 
@@ -161,7 +162,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             createServicePendingIntent(context, "toggle"),
             false,
             false,
-            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
             false
         );
 
@@ -171,8 +172,71 @@ public final class AssistantVoiceRuntimeServiceTest {
             notification.actions[0].icon
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_audio_mode_off),
-            notification.actions[1].title
+            R.drawable.ic_notification_mode_off,
+            notification.actions[1].icon
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveNotificationAudioModeActionIconMatchesMode() {
+        assertEquals(
+            R.drawable.ic_notification_mode_tool,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_TOOL
+            )
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_response,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            )
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_off,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_OFF
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveDisplayedNotificationAudioModeForcesOffWhenDisabled() {
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceRuntimeService.STATE_DISABLED,
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            )
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceConfig.AUDIO_MODE_TOOL
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void cycleAudioModeIntentCarriesDisplayedMode() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Intent intent = AssistantVoiceRuntimeService.cycleAudioModeIntent(
+            context,
+            AssistantVoiceConfig.AUDIO_MODE_OFF
+        );
+
+        assertEquals(
+            AssistantVoiceRuntimeService.ACTION_CYCLE_AUDIO_MODE,
+            intent.getAction()
+        );
+        assertTrue(intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE));
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
         );
     }
 

@@ -161,6 +161,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             .setAction(ACTION_CYCLE_AUDIO_MODE);
     }
 
+    static Intent cycleAudioModeIntent(Context context, String audioMode) {
+        return cycleAudioModeIntent(context)
+            .putExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE, trim(audioMode));
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -211,7 +216,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_STICKY;
         }
         if (ACTION_CYCLE_AUDIO_MODE.equals(action)) {
-            applyConfig(config.withAudioMode(nextNotificationAudioMode(config.audioMode)));
+            String currentMode = intent != null && intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
+                ? intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
+                : config.audioMode;
+            applyConfig(config.withAudioMode(nextNotificationAudioMode(currentMode)));
             return START_STICKY;
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
@@ -488,6 +496,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private Notification buildNotification(String state) {
+        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, config.audioMode);
         Intent launchIntent = new Intent(this, MainActivity.class)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent launchPendingIntent = PendingIntent.getActivity(
@@ -511,7 +520,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent cycleAudioModePendingIntent = PendingIntent.getService(
             this,
             3,
-            cycleAudioModeIntent(this),
+            cycleAudioModeIntent(this, displayedAudioMode),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
         PendingIntent toggleMediaButtonsPendingIntent = PendingIntent.getService(
@@ -545,7 +554,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             toggleMediaButtonsPendingIntent,
             showSpeakAction,
             showStopAction,
-            config.audioMode,
+            displayedAudioMode,
             config.mediaButtonsEnabled
         );
     }
@@ -581,20 +590,20 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!normalizedSessionTitle.isEmpty()) {
             builder.setContentText(normalizedSessionTitle);
         }
+        String displayedAudioMode = resolveDisplayedNotificationAudioMode(state, audioMode);
         int compactActionCount = 0;
-        if (showSpeakAction) {
-            builder.addAction(
-                android.R.drawable.ic_btn_speak_now,
-                context.getString(R.string.assistant_voice_notification_action_speak),
-                startListenPendingIntent
-            );
-            compactActionCount += 1;
-        }
         if (showStopAction) {
             builder.addAction(
                 R.drawable.ic_notification_stop,
                 context.getString(R.string.assistant_voice_notification_action_stop),
                 stopInteractionPendingIntent
+            );
+            compactActionCount += 1;
+        } else if (showSpeakAction) {
+            builder.addAction(
+                android.R.drawable.ic_btn_speak_now,
+                context.getString(R.string.assistant_voice_notification_action_speak),
+                startListenPendingIntent
             );
             compactActionCount += 1;
         }
@@ -603,18 +612,21 @@ public final class AssistantVoiceRuntimeService extends Service {
             "",
             toggleMediaButtonsPendingIntent
         );
+        compactActionCount += 1;
         builder.addAction(
-            R.drawable.ic_notification_text_action,
-            resolveNotificationAudioModeActionLabel(context, audioMode),
+            resolveNotificationAudioModeActionIcon(displayedAudioMode),
+            resolveNotificationAudioModeActionLabel(
+                context,
+                displayedAudioMode
+            ),
             cycleAudioModePendingIntent
         );
-        if (compactActionCount > 0) {
-            if (compactActionCount == 1) {
-                builder.setStyle(new MediaStyle().setShowActionsInCompactView(0));
-            } else {
-                builder.setStyle(new MediaStyle().setShowActionsInCompactView(0, 1));
-            }
-        }
+        compactActionCount += 1;
+        builder.setStyle(
+            compactActionCount >= 3
+                ? new MediaStyle().setShowActionsInCompactView(0, 1, 2)
+                : new MediaStyle().setShowActionsInCompactView(0, 1)
+        );
         return builder.build();
     }
 
@@ -622,6 +634,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         return mediaButtonsEnabled
             ? R.drawable.ic_notification_media_buttons_enabled
             : R.drawable.ic_notification_media_buttons_disabled;
+    }
+
+    static int resolveNotificationAudioModeActionIcon(String audioMode) {
+        switch (trim(audioMode)) {
+            case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
+                return R.drawable.ic_notification_mode_response;
+            case AssistantVoiceConfig.AUDIO_MODE_OFF:
+                return R.drawable.ic_notification_mode_off;
+            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
+            default:
+                return R.drawable.ic_notification_mode_tool;
+        }
     }
 
     static String resolveNotificationAudioModeActionLabel(Context context, String audioMode) {
@@ -634,6 +658,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             default:
                 return context.getString(R.string.assistant_voice_notification_audio_mode_tool);
         }
+    }
+
+    static String resolveDisplayedNotificationAudioMode(String state, String audioMode) {
+        return STATE_DISABLED.equals(trim(state))
+            ? AssistantVoiceConfig.AUDIO_MODE_OFF
+            : trim(audioMode);
     }
 
     static String nextNotificationAudioMode(String audioMode) {
