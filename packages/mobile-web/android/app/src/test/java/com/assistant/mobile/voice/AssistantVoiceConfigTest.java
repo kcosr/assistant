@@ -20,9 +20,9 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(sdk = Build.VERSION_CODES.N)
 public final class AssistantVoiceConfigTest {
     @Test
-    @Config(sdk = Build.VERSION_CODES.N)
     public void saveAndLoadPersistSessionTitles() {
         Context context = RuntimeEnvironment.getApplication();
         AssistantVoiceConfig.save(context, createConfig(sessionTitles(
@@ -40,7 +40,6 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
-    @Config(sdk = Build.VERSION_CODES.N)
     public void fromIntentReplacesSessionTitlesWithLatestBridgePayload() throws Exception {
         AssistantVoiceConfig fallback = createConfig(sessionTitles(
             "session-1",

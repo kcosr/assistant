@@ -92,6 +92,9 @@ npm run android:build
 # Install on connected device/emulator
 npm run android:run
 
+# Run Android unit tests from the source tree
+npm run android:test
+
 # Open in Android Studio
 npm run android:open
 
@@ -101,6 +104,10 @@ npm run android:build:release
 # Environment diagnostics
 npm run android:doctor
 ```
+
+`android:test` is the preferred source-tree unit-test entrypoint because it runs
+`android:sync` first, which regenerates Capacitor-managed files such as
+`android/capacitor.settings.gradle` before invoking Gradle.
 
 ### iOS
 
