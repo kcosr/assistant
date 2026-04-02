@@ -12,6 +12,10 @@ final class AssistantVoicePcmPlayer {
     private static final int RECOGNITION_CUE_SAMPLE_RATE = 48000;
     private static final int RECOGNITION_CUE_FADE_WINDOW_DIVISOR = 80;
     private static final int RECOGNITION_CUE_MIN_FADE_SAMPLES = 12;
+    private static final byte[] SUCCESS_RECOGNITION_CUE_PCM =
+        generateRecognitionCuePcmData(RECOGNITION_CUE_SAMPLE_RATE, true);
+    private static final byte[] FAILURE_RECOGNITION_CUE_PCM =
+        generateRecognitionCuePcmData(RECOGNITION_CUE_SAMPLE_RATE, false);
 
     interface Listener {
         void onPlaybackDrained(String requestId);
@@ -47,7 +51,7 @@ final class AssistantVoicePcmPlayer {
 
     void setRecognitionCueGain(float gain) {
         synchronized (lock) {
-            recognitionCueGain = normalizeRecognitionCueGain(gain);
+            recognitionCueGain = AssistantVoiceConfig.clampRecognitionCueGain(gain);
         }
     }
 
@@ -114,13 +118,13 @@ final class AssistantVoicePcmPlayer {
     }
 
     boolean playRecognitionCue(boolean success) {
-        byte[] cuePcm = generateRecognitionCuePcmData(RECOGNITION_CUE_SAMPLE_RATE, success);
+        byte[] cuePcm = success ? SUCCESS_RECOGNITION_CUE_PCM : FAILURE_RECOGNITION_CUE_PCM;
         if (cuePcm.length == 0) {
             return false;
         }
 
-        AudioTrack track;
         byte[] adjustedCue;
+        long taskGeneration;
         synchronized (lock) {
             generation += 1L;
             activeRequestId = "";
@@ -129,30 +133,18 @@ final class AssistantVoicePcmPlayer {
             pendingWrites = 0;
             framesWritten = 0;
             releaseTrackLocked();
-            track = ensureTrackLocked(RECOGNITION_CUE_SAMPLE_RATE);
-            if (track == null) {
+            if (ensureTrackLocked(RECOGNITION_CUE_SAMPLE_RATE) == null) {
                 return false;
             }
             adjustedCue = applySoftwareGainPcm16(
                 cuePcm,
                 resolveRecognitionCueGain(recognitionCueGain)
             );
+            taskGeneration = generation;
         }
 
-        int offset = 0;
-        while (offset < adjustedCue.length) {
-            int written;
-            try {
-                written = track.write(adjustedCue, offset, adjustedCue.length - offset);
-            } catch (Exception error) {
-                break;
-            }
-            if (written <= 0) {
-                break;
-            }
-            offset += written;
-        }
-        return offset > 0;
+        executor.execute(() -> writeRecognitionCue(taskGeneration, adjustedCue));
+        return true;
     }
 
     private void writeChunk(long taskGeneration, String requestId, byte[] chunk, int sampleRate) {
@@ -173,23 +165,11 @@ final class AssistantVoicePcmPlayer {
         }
 
         byte[] adjustedChunk = applySoftwareGainPcm16(chunk, chunkGain);
-        int offset = 0;
-        while (offset < adjustedChunk.length) {
-            int written;
-            try {
-                written = track.write(adjustedChunk, offset, adjustedChunk.length - offset);
-            } catch (Exception error) {
-                break;
-            }
-            if (written <= 0) {
-                break;
-            }
-            offset += written;
-        }
+        int bytesWritten = writePcm(track, adjustedChunk);
 
         synchronized (lock) {
             if (taskGeneration == generation && matchesActiveRequestLocked(requestId)) {
-                framesWritten += adjustedChunk.length / 2;
+                framesWritten += bytesWritten / 2;
             }
             pendingWrites = Math.max(0, pendingWrites - 1);
             maybeCompletePlaybackLocked();
@@ -209,22 +189,10 @@ final class AssistantVoicePcmPlayer {
         return gain;
     }
 
-    static float normalizeRecognitionCueGain(float gain) {
-        if (!Float.isFinite(gain) || gain <= 0f) {
-            return AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_GAIN;
-        }
-        if (gain < AssistantVoiceConfig.MIN_RECOGNITION_CUE_GAIN) {
-            return AssistantVoiceConfig.MIN_RECOGNITION_CUE_GAIN;
-        }
-        if (gain > AssistantVoiceConfig.MAX_RECOGNITION_CUE_GAIN) {
-            return AssistantVoiceConfig.MAX_RECOGNITION_CUE_GAIN;
-        }
-        return gain;
-    }
-
     static float resolveRecognitionCueGain(float gain) {
         float normalized = (
-            normalizeRecognitionCueGain(gain) - AssistantVoiceConfig.MIN_RECOGNITION_CUE_GAIN
+            AssistantVoiceConfig.clampRecognitionCueGain(gain)
+                - AssistantVoiceConfig.MIN_RECOGNITION_CUE_GAIN
         ) / (
             AssistantVoiceConfig.MAX_RECOGNITION_CUE_GAIN
                 - AssistantVoiceConfig.MIN_RECOGNITION_CUE_GAIN
@@ -315,6 +283,34 @@ final class AssistantVoicePcmPlayer {
             sampleOffset += segmentSamples;
         }
         return pcm;
+    }
+
+    private void writeRecognitionCue(long taskGeneration, byte[] cuePcm) {
+        AudioTrack track;
+        synchronized (lock) {
+            if (taskGeneration != generation || audioTrack == null) {
+                return;
+            }
+            track = audioTrack;
+        }
+        writePcm(track, cuePcm);
+    }
+
+    private static int writePcm(AudioTrack track, byte[] pcm) {
+        int offset = 0;
+        while (offset < pcm.length) {
+            int written;
+            try {
+                written = track.write(pcm, offset, pcm.length - offset);
+            } catch (Exception error) {
+                break;
+            }
+            if (written <= 0) {
+                break;
+            }
+            offset += written;
+        }
+        return offset;
     }
 
     private AudioTrack ensureTrackLocked(int sampleRate) {

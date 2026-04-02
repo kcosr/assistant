@@ -329,6 +329,10 @@ final class AssistantVoiceConfig {
         return candidate;
     }
 
+    static float clampRecognitionCueGain(float value) {
+        return normalizeRecognitionCueGain(value, DEFAULT_RECOGNITION_CUE_GAIN);
+    }
+
     private static float normalizeRecognitionCueGain(float value, float fallback) {
         float normalizedFallback =
             Float.isFinite(fallback) && fallback > 0f

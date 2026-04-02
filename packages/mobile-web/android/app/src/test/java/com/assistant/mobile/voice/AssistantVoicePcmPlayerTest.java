@@ -37,11 +37,11 @@ public final class AssistantVoicePcmPlayerTest {
 
     @Test
     public void normalizeRecognitionCueGainClampsToSupportedRange() {
-        assertEquals(0.25f, AssistantVoicePcmPlayer.normalizeRecognitionCueGain(0.1f), 0.0001f);
-        assertEquals(5.0f, AssistantVoicePcmPlayer.normalizeRecognitionCueGain(8.0f), 0.0001f);
+        assertEquals(0.25f, AssistantVoiceConfig.clampRecognitionCueGain(0.1f), 0.0001f);
+        assertEquals(5.0f, AssistantVoiceConfig.clampRecognitionCueGain(8.0f), 0.0001f);
         assertEquals(
             1.0f,
-            AssistantVoicePcmPlayer.normalizeRecognitionCueGain(Float.NaN),
+            AssistantVoiceConfig.clampRecognitionCueGain(Float.NaN),
             0.0001f
         );
     }

@@ -99,7 +99,9 @@ import {
   formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
   normalizeVoiceSettings,
+  recognitionCueGainToPercent,
   recognitionCueGainPercentToValue,
+  ttsGainToPercent,
   ttsGainPercentToValue,
   type VoiceSettings,
 } from './utils/voiceSettings';
@@ -3492,13 +3494,15 @@ async function main(): Promise<void> {
     );
     voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
     voiceRecognitionCueCheckboxEl.checked = settings.recognitionCueEnabled;
-    voiceRecognitionCueGainSliderEl.value = String(Math.round(settings.recognitionCueGain * 100));
+    voiceRecognitionCueGainSliderEl.value = String(
+      recognitionCueGainToPercent(settings.recognitionCueGain),
+    );
     voiceRecognitionCueGainValueEl.textContent = formatRecognitionCueGainPercentLabel(
       settings.recognitionCueGain,
     );
     voiceRecognitionCueGainSliderEl.disabled =
       !useNativeVoiceRuntime || !settings.recognitionCueEnabled;
-    voiceTtsGainSliderEl.value = String(Math.round(settings.ttsGain * 100));
+    voiceTtsGainSliderEl.value = String(ttsGainToPercent(settings.ttsGain));
     voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(settings.ttsGain);
   };
   bindVoiceSettingsBlurResetHandlers({
