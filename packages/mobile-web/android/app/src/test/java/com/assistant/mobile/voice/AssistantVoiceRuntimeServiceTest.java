@@ -127,6 +127,32 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(false, "hello"));
     }
 
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldPlayQueuedRecognitionCompletionCueMatchesStoppedRequest() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "request-1",
+                " request-1 "
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "request-1",
+                "request-2"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "",
+                "request-1"
+            )
+        );
+    }
+
     private static PendingIntent createActivityPendingIntent(Context context, String action) {
         return PendingIntent.getActivity(
             context,
