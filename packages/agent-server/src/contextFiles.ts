@@ -303,11 +303,8 @@ function buildContextPrompt(records: ContextFileRecord[]): string {
   return sections.join('\n');
 }
 
-function getContextCacheKey(agent: AgentDefinition): string {
-  return JSON.stringify({
-    agentId: agent.agentId,
-    contextFiles: agent.contextFiles,
-  });
+function getContextPromptCacheKey(agent: AgentDefinition): string {
+  return JSON.stringify(agent.contextFiles ?? []);
 }
 
 function resolveContextPrompt(agent: AgentDefinition): string {
@@ -357,7 +354,7 @@ export function preloadContextFilesForAgents(agents: AgentDefinition[]): void {
     if (!agent.contextFiles || agent.contextFiles.length === 0) {
       continue;
     }
-    const cacheKey = getContextCacheKey(agent);
+    const cacheKey = getContextPromptCacheKey(agent);
     if (!contextPromptCache.has(cacheKey)) {
       contextPromptCache.set(cacheKey, resolveContextPrompt(agent));
     }
@@ -368,7 +365,7 @@ export function buildContextFilesPrompt(agent: AgentDefinition | undefined): str
   if (!agent?.contextFiles || agent.contextFiles.length === 0) {
     return '';
   }
-  const cacheKey = getContextCacheKey(agent);
+  const cacheKey = getContextPromptCacheKey(agent);
   const existing = contextPromptCache.get(cacheKey);
   if (existing !== undefined) {
     return existing;

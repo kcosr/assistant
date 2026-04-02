@@ -5,12 +5,16 @@
 ### Breaking Changes
 
 ### Added
+
 - Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83))
+- Added rooted per-agent `contextFiles` prompt injection with config-relative roots, root-confined glob includes, startup preload caching, fail-fast file validation, and system-prompt insertion after instruction skills.
 
 ### Changed
+
 - Changed attachment MIME inference so files with unknown extensions download as `application/octet-stream` while extensionless text still defaults to `text/plain`. ([#83](https://github.com/kcosr/assistant/pull/83))
 
 ### Fixed
+
 - Fixed attachment persistence to enforce the 4 MB size cap in the store as well as the tool layer, preventing oversized writes from non-tool callers. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
@@ -28,10 +32,10 @@
 ### Changed
 
 ### Fixed
+
 - Fixed PI replay so async questionnaire callback answers persist into later provider requests instead of disappearing after the immediate follow-up turn. ([#80](https://github.com/kcosr/assistant/pull/80))
 
 ### Removed
-
 
 ## [0.17.4] - 2026-04-01
 
@@ -40,13 +44,14 @@
 ### Added
 
 ### Changed
+
 - Changed PI replay and history reconstruction to keep interrupted visible user turns, preserve interrupted assistant text when it was shown to the user, and align replay sequencing more closely with upstream PI session behavior.
 
 ### Fixed
+
 - Fixed interrupted PI tool turns so replay no longer drops remembered requests, duplicates completed tool activity, or sends orphaned tool results on the next provider request.
 
 ### Removed
-
 
 ## [0.17.3] - 2026-03-31
 
@@ -55,28 +60,29 @@
 ### Added
 
 ### Changed
+
 - Changed the new session modal skills picker to add `Select all` and `Select none` bulk actions while preserving the implicit all-skills default when everything is selected. ([#78](https://github.com/kcosr/assistant/pull/78))
 
 ### Fixed
 
 ### Removed
 
-
 ## [0.17.2] - 2026-03-31
 
 ### Breaking Changes
 
 ### Added
+
 - Added a live title/agent filter to the scheduled sessions panel. ([#76](https://github.com/kcosr/assistant/pull/76))
 
 ### Changed
 
 ### Fixed
+
 - Fixed the scheduled sessions panel scrolling and refined it into a flatter compact collapsed-by-default layout. ([#76](https://github.com/kcosr/assistant/pull/76))
 - Fixed PI-backed chat runs so backend timeouts/errors close turns durably, sync wrapper timeouts abort the underlying run, and PI replay preserves assistant narration and thinking ordering after refresh. ([#77](https://github.com/kcosr/assistant/pull/77))
 
 ### Removed
-
 
 ## [0.17.1] - 2026-03-31
 
@@ -87,57 +93,63 @@
 ### Changed
 
 ### Fixed
+
 - Fixed mobile session long-press actions so the session context menu no longer closes immediately after opening. ([#75](https://github.com/kcosr/assistant/pull/75))
 
 ### Removed
 
-
 ## [0.17.0] - 2026-03-31
 
 ### Breaking Changes
+
 - Changed the websocket protocol to require protocol version `3` with structured `hello.subscriptions` and optional per-session subscription masks; legacy v1/v2 hello flows are no longer accepted. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Added
+
 - Added masked websocket session subscriptions so clients can subscribe per session with server-side event filtering instead of always receiving the full session stream. ([#73](https://github.com/kcosr/assistant/pull/73))
 - Added native voice preferred-session routing so Android can watch multiple sessions, persist a `Voice notification session`, and route notification `Speak` to that preferred session while foreground mic input still targets the current chat. ([#73](https://github.com/kcosr/assistant/pull/73))
 - Added per-panel custom rename support with persisted `customTitle` overrides and a panel-menu rename action. ([#73](https://github.com/kcosr/assistant/pull/73))
 - Added an opt-in `Auto-title chats, lists, and notes` client preference that synthesizes entity-aware panel titles such as `Test Chat` and `Todo List (Scratch)`. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Changed
+
 - Changed panel title resolution so tabs, panel headers, navigator labels, panel inventory/context, and pinned-panel labels share the same resolved display title. ([#73](https://github.com/kcosr/assistant/pull/73))
 - Changed turn-history `Delete after` to remove the clicked turn as well as the later turns, matching the chat divider semantics more intuitively. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Fixed
+
 - Fixed Codex/CLI session replay so completed turns are not duplicated on reload and aborted or cancelled turns close cleanly instead of leaving replayed typing state stuck. ([#73](https://github.com/kcosr/assistant/pull/73))
 
 ### Removed
-
 
 ## [0.16.1] - 2026-03-31
 
 ### Breaking Changes
 
 ### Added
+
 - Added an Android native cold-start backend chooser with persisted saved backends, last-used selection, and pre-bootstrap backend handoff to the web client. ([#72](https://github.com/kcosr/assistant/pull/72))
 
 ### Changed
 
 ### Fixed
+
 - Fixed voice settings so the adapter URL field no longer resets to the previous value when it loses focus. ([#72](https://github.com/kcosr/assistant/pull/72))
 
 ### Removed
-
 
 ## [0.16.0] - 2026-03-31
 
 ### Breaking Changes
 
 ### Added
+
 - Added Android native voice playback and recognition support for assistant voice tool prompts and final response playback, including foreground-service runtime handling and mobile voice bridge integration. ([#71](https://github.com/kcosr/assistant/pull/71))
 - Added unified voice settings with `Audio Mode`, `Auto-listen`, adapter URL, microphone input selection, and per-request recognition timing controls in the web/mobile client. ([#71](https://github.com/kcosr/assistant/pull/71))
 - Added compact Android notification `Speak` and `Stop` actions for the native voice runtime so manual listen and active playback/listening control are available directly from the persistent notification. ([#71](https://github.com/kcosr/assistant/pull/71))
 
 ### Changed
+
 - Changed chat rendering and replay so `voice_speak`, `voice_ask`, and `user_audio` render as dedicated voice bubbles, spoken input keeps its typing/interruption state across reloads, and in-progress native/tool turns replay correctly. ([#71](https://github.com/kcosr/assistant/pull/71))
 - Changed backend session/audio handling so spoken submits publish `user_audio`, `sessions.message` advertises audio-submit metadata, and replay/projection paths treat spoken input consistently with normal user text. ([#71](https://github.com/kcosr/assistant/pull/71))
 
@@ -145,53 +157,59 @@
 
 ### Removed
 
-
 ## [0.15.3] - 2026-03-30
 
 ### Breaking Changes
 
 ### Added
+
 - Added durable async questionnaires with late submission replay, follow-up callback turns, and dedicated questionnaire submit/cancel websocket flows. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Changed
+
 - Changed `questions_ask` to default to async submission flow, simplified the public tool surface, and clarified the agent-facing questionnaire schema guidance for field types and `{ label, value }` option objects. ([#70](https://github.com/kcosr/assistant/pull/70))
 - Changed assistant message streaming to progressively re-render markdown again in the active chat renderer while leaving tool output rendering unchanged. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Fixed
+
 - Fixed questionnaire replay/rendering so submitted async forms stay disabled with submitted values, show a post-turn submission indicator, and avoid unnecessary questionnaire DOM rebuilds on completion. ([#70](https://github.com/kcosr/assistant/pull/70))
 - Fixed lists item action menus to close again after row actions, outside clicks, and Escape following the shared context-menu manager refactor for Pi turn history menus. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ### Removed
-- Removed the unused legacy `MessageRenderer` path from the web client now that the unified `ChatRenderer` is the only production chat transcript renderer. ([#70](https://github.com/kcosr/assistant/pull/70))
 
+- Removed the unused legacy `MessageRenderer` path from the web client now that the unified `ChatRenderer` is the only production chat transcript renderer. ([#70](https://github.com/kcosr/assistant/pull/70))
 
 ## [0.15.2] - 2026-03-29
 
 ### Breaking Changes
 
 ### Added
+
 - Added explicit Pi session `assistant.turn_start` / `assistant.turn_end` markers plus Pi-backed session history edit operations for trimming before/after a turn or deleting a specific turn. ([#69](https://github.com/kcosr/assistant/pull/69))
 - Added clickable turn timestamp dividers with chat turn history actions for trimming surrounding turns, deleting a turn, or resetting transcript history. ([#69](https://github.com/kcosr/assistant/pull/69))
 
 ### Changed
+
 - Changed chat web/mobile typography to use a 13px shared base size with tighter tool header padding, including an Android-specific tool-header spacing adjustment for WebView. ([#68](https://github.com/kcosr/assistant/pull/68))
 - Changed Pi callback and interrupted-run persistence so callback turns and interrupted turns close cleanly inside explicit Pi turn boundaries. ([#69](https://github.com/kcosr/assistant/pull/69))
 
 ### Fixed
+
 - Fixed interrupted turn indicators to sit below message content without the old overlap/indent styling. ([#69](https://github.com/kcosr/assistant/pull/69))
 - Fixed legacy Pi transcript replay to start a fresh turn for each unmarked user message so older sessions do not collapse multiple user turns under one divider. ([#69](https://github.com/kcosr/assistant/pull/69))
 - Fixed chat transcript scrolling regressions by removing the experimental turn-windowing path while keeping tool-output hydration/dehydration and streaming rendering optimizations. ([#68](https://github.com/kcosr/assistant/pull/68))
 - Fixed bash tool formatted input rendering to show the shell command as the primary expanded view while keeping the JSON toggle available for the full argument payload. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ### Removed
-- Removed the unused chat turn-windowing runtime and DOM wrapper from the web client pending a future revisit. ([#68](https://github.com/kcosr/assistant/pull/68))
 
+- Removed the unused chat turn-windowing runtime and DOM wrapper from the web client pending a future revisit. ([#68](https://github.com/kcosr/assistant/pull/68))
 
 ## [0.15.1] - 2026-03-29
 
 ### Breaking Changes
 
 ### Added
+
 - Added Pi-backed session context usage summaries with persisted available-context percentages, compact badges in chat headers and session rows, and warning/error badge colors based on remaining context. ([#67](https://github.com/kcosr/assistant/pull/67))
 - Added desktop Tauri webview zoom hotkeys so `Cmd/Ctrl +/-` style zoom shortcuts work in desktop builds. ([#67](https://github.com/kcosr/assistant/pull/67))
 
@@ -201,18 +219,20 @@
 - Refined the session composer UI on mobile with a slightly shorter modal, a scrollable skills list, and a simpler `Fixed` working-directory badge label. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Fixed
+
 - Fixed `write` tool formatted input rendering to show plain file content with preserved newlines instead of the full JSON payload, while keeping the JSON toggle available. ([#67](https://github.com/kcosr/assistant/pull/67))
 
 ### Removed
 
-
 ## [0.15.0] - 2026-03-29
 
 ### Breaking Changes
+
 - Removed static `agents[].schedules` config; scheduled sessions now load only from the scheduled-sessions plugin store under `data/plugins/scheduled-sessions/default/schedules.json`. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Removed legacy `agents[].sessionWorkingDirMode` / `sessionWorkingDirRoots` in favor of a single `agents[].sessionWorkingDir` object with `none`, `fixed`, and `prompt` modes. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Added
+
 - Added root `clean` and `build:clean` scripts for maintainers who need a full rebuild from a scrubbed workspace. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Added runtime-managed scheduled session CRUD through the scheduled-sessions service plus generated plugin tools, HTTP operations, and CLI commands. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Added fixed agent working-directory support through `sessionWorkingDir`, so agents can either prompt for a directory or automatically use a configured path. ([#66](https://github.com/kcosr/assistant/pull/66))
@@ -222,6 +242,7 @@
 - Added active-session editing through the shared session composer, including title, working directory, model, thinking, and selected skills for existing sessions. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Changed
+
 - Changed lists move/copy target menus to follow the current browser sort mode instead of always sorting alphabetically. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Changed lists item listing and search defaults to return up to 100 items when no explicit limit is provided. ([#65](https://github.com/kcosr/assistant/pull/65))
 - Updated `@mariozechner/pi-ai` in `@assistant/agent-server` to the latest 0.62.x release. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -232,6 +253,7 @@
 - Changed the agent sidebar, session picker, and scheduled sessions panel to launch the shared session composer instead of using separate create flows. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Fixed
+
 - Fixed chat panels to clear stale typing/stop-output state after mobile backgrounding and reconnects, so completed sessions no longer stay stuck busy until the app is fully reopened. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Fixed shared session composer skill selection so explicit empty selections persist correctly, agent-default selections stay implicit, and session picker edit actions consistently open the full session editor flow. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Fixed lists browser-mode shared search Escape handling so pressing Escape a second time blurs the search input after clearing. ([#65](https://github.com/kcosr/assistant/pull/65))
@@ -267,7 +289,6 @@
 
 ### Removed
 
-
 ## [0.14.6] - 2026-03-09
 
 ### Breaking Changes
@@ -275,12 +296,12 @@
 ### Added
 
 ### Changed
+
 - Changed desktop build variants to support an env-configurable default backend URL via `ASSISTANT_DESKTOP_DEFAULT_BACKEND_URL` (default build falls back to `https://assistant`; work build sets `https://assistant/assistant-work`). ([#63](https://github.com/kcosr/assistant/pull/63))
 
 ### Fixed
 
 ### Removed
-
 
 ## [0.14.5] - 2026-03-08
 
@@ -289,13 +310,14 @@
 ### Added
 
 ### Changed
+
 - Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.57.1`. ([#62](https://github.com/kcosr/assistant/pull/62))
 
 ### Fixed
+
 - Fixed `@assistant/agent-server` startup failures with Pi SDK `0.57.1` by lazy-loading Pi SDK modules in the CommonJS runtime. ([#62](https://github.com/kcosr/assistant/pull/62))
 
 ### Removed
-
 
 ## [0.14.4] - 2026-03-07
 
@@ -304,60 +326,66 @@
 ### Added
 
 ### Changed
+
 - Changed list/note item tag chip clicks to apply global AQL with a configurable behavior setting (`Append with AND` or `Replace query`). ([#61](https://github.com/kcosr/assistant/pull/61))
 
 ### Fixed
 
 ### Removed
 
-
 ## [0.14.3] - 2026-03-07
 
 ### Breaking Changes
 
 ### Added
+
 - Added reverse proxy sub-path support: auto-detect base path from page URL for API requests, WebSocket connections, and static assets when served behind a proxy at a sub-path (for example `/assistant`). ([#60](https://github.com/kcosr/assistant/pull/60))
 - Added a mobile build flavor system (`flavors.json` + `npm run flavor`) to support side-by-side app installs with different app IDs and API hosts. ([#60](https://github.com/kcosr/assistant/pull/60))
 - Added automated Android flavor deployment scripts (`android:deploy:flavors`, `android:deploy:default`, `android:deploy:work`) to rebuild/install selected flavors on all connected ADB devices. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Changed
+
 - Changed `npm run flavor` to list available flavors when no flavor name is provided. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Fixed
+
 - Fixed static asset loading (`config.js`, `client.js`) behind reverse-proxy sub-path deployments by using relative script paths in `index.html`. ([#60](https://github.com/kcosr/assistant/pull/60))
 - Fixed `apiFetch` to prepend the detected base path for absolute-path API requests when `ASSISTANT_API_HOST` is not set. ([#60](https://github.com/kcosr/assistant/pull/60))
 
 ### Removed
 
-
 ## [0.14.2] - 2026-02-22
 
 ### Breaking Changes
+
 - Changed exported plugin skill names and generated plugin CLI executable names to use the `assistant-` prefix (for example `assistant-notes` and `assistant-notes-cli`). ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Added
 
 ### Changed
+
 - Updated `@mariozechner/pi-ai` dependency in `@assistant/agent-server` to `^0.54.0`. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Raised the root Node.js engine requirement to `>=20.18.1` to match transitive `undici` runtime requirements. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Fixed
+
 - Fixed generated skill/plugin CLIs to preserve path-prefixed `ASSISTANT_URL` values when calling plugin operations. ([#66](https://github.com/kcosr/assistant/pull/66))
 - Fixed time tracker timer starts to use the client-local `entry_date` so late-night entries remain visible under "Today" when server and client time zones differ. ([#66](https://github.com/kcosr/assistant/pull/66))
 
 ### Removed
-
 
 ## [0.14.1] - 2026-02-09
 
 ### Breaking Changes
 
 ### Added
+
 - Added session rename mirroring into Pi session JSONL (`session_info`) for Pi-backed sessions (`pi`, `pi-cli`). ([#55](https://github.com/kcosr/assistant/pull/55))
 
 ### Changed
 
 ### Fixed
+
 - Fixed session model/thinking updates to cancel active chat runs to avoid stuck queued messages. ([#54](https://github.com/kcosr/assistant/pull/54))
 - Fixed Android/Capacitor lifecycle to release window profile leases on background and reuse the last-used profile on relaunch. ([#55](https://github.com/kcosr/assistant/pull/55))
 - Fixed Android/Capacitor resume to refresh bound chat transcripts without a full page reload. ([#55](https://github.com/kcosr/assistant/pull/55))
@@ -365,15 +393,16 @@
 
 ### Removed
 
-
 ## [0.14.0] - 2026-02-04
 
 ### Breaking Changes
+
 - Removed `openai` and `openai-compatible` chat providers; use `pi` instead. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Removed managed container mode for the coding plugin; sidecar must be externally managed and connected via socket/TCP. ([#51](https://github.com/kcosr/assistant/pull/51))
 - Removed `sessionId` from the coding sidecar API and executor interface; all operations use the workspace root. ([#51](https://github.com/kcosr/assistant/pull/51))
 
 ### Added
+
 - Added Pi SDK-backed `pi` chat provider for in-process completions. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added Pi SDK session mirroring to the pi-mono JSONL format for CLI resume. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Added Pi SDK debug logging for requests/responses when `DEBUG_CHAT_COMPLETIONS` is enabled. ([#50](https://github.com/kcosr/assistant/pull/50))
@@ -385,6 +414,7 @@
 - Added per-agent working directory picker options for new session creation. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Changed
+
 - Changed default chat provider to `pi` and pass model/thinking selection through to Pi. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Made Pi session mirror files configurable via `sessions.mirrorPiSessionHistory` (default true). ([#50](https://github.com/kcosr/assistant/pull/50))
 - Changed coding-sidecar build to emit a bundled server artifact. ([#51](https://github.com/kcosr/assistant/pull/51))
@@ -392,6 +422,7 @@
 - Changed working directory picker to list immediate subfolders and show folder names; selection adds project directory to the system prompt. ([#53](https://github.com/kcosr/assistant/pull/53))
 
 ### Fixed
+
 - Fixed Pi SDK history replay to preserve reasoning items for OpenAI Responses tool calls. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi SDK session mirroring to include aborted/canceled turns for pi-mono resume. ([#50](https://github.com/kcosr/assistant/pull/50))
 - Fixed Pi session mirroring to avoid orphan tool results that break Pi-native session replay. ([#52](https://github.com/kcosr/assistant/pull/52))
@@ -407,12 +438,12 @@
 
 ### Removed
 
-
 ## [0.13.0] - 2026-02-01
 
 ### Breaking Changes
 
 ### Added
+
 - Added favorites for lists and notes with a heart indicator and `/favorites` command palette view. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added build-service configuration for TypeScript remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
 - Added `build:parallel` and `build:remote` scripts for parallel/remote builds. ([#46](https://github.com/kcosr/assistant/pull/46))
@@ -427,6 +458,7 @@
 - Added a global AQL header bar for window-scoped filtering. ([#49](https://github.com/kcosr/assistant/pull/49))
 
 ### Changed
+
 - Changed lists and notes panels to register shortcuts through the shared registry. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed time tracker dialogs to register Escape handling through the shortcut registry. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Changed shortcut binding overrides to support stable binding ids for per-plugin keybinding preferences. ([#47](https://github.com/kcosr/assistant/pull/47))
@@ -435,6 +467,7 @@
 - Changed split shortcut to Ctrl+S and removed Ctrl+S sessions focus. ([#48](https://github.com/kcosr/assistant/pull/48))
 
 ### Fixed
+
 - Fixed instance dropdown keyboard focus after selecting items with Enter. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Fixed focus history to ignore modal-only panels. ([#47](https://github.com/kcosr/assistant/pull/47))
 - Fixed time tracker dialog escape handlers to clean up on unmount. ([#47](https://github.com/kcosr/assistant/pull/47))
@@ -443,12 +476,12 @@
 
 ### Removed
 
-
 ## [0.12.0] - 2026-01-27
 
 ### Breaking Changes
 
 ### Added
+
 - Added reference custom field type for list items with a picker and navigation. ([#40](https://github.com/kcosr/assistant/pull/40))
 - Added time tracker reported flag and XLSX export with artifacts upload. ([#42](https://github.com/kcosr/assistant/pull/42))
 - Added client-side note search filtering in the time tracker panel. ([#42](https://github.com/kcosr/assistant/pull/42))
@@ -457,11 +490,13 @@
 - Added Android back button handling for Capacitor overlays and modal navigation. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Changed
+
 - Changed AQL status hint copy when clearing a query. ([#44](https://github.com/kcosr/assistant/pull/44))
 - Changed Escape to close pinned or modal chat panels without canceling active chat operations. ([#45](https://github.com/kcosr/assistant/pull/45))
 - Changed Android back button fallback to open the command palette when nothing else is open. ([#45](https://github.com/kcosr/assistant/pull/45))
 
 ### Fixed
+
 - Fixed review-mode custom field listener handling when inputs are missing. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed time tracker created-at date formatting showing the year instead of day. ([#41](https://github.com/kcosr/assistant/pull/41))
 - Fixed artifacts instance listing to include configured instances. ([#42](https://github.com/kcosr/assistant/pull/42))
@@ -470,17 +505,18 @@
 
 ### Removed
 
-
 ## [0.11.0] - 2026-01-26
 
 ### Breaking Changes
 
 ### Added
+
 - Added AQL search mode for lists with structured filters, ordering, column visibility overrides, and saved queries with defaults. ([#37](https://github.com/kcosr/assistant/pull/37))
 - Added server-side AQL queries and panel apply tooling for lists. ([#39](https://github.com/kcosr/assistant/pull/39))
 - Added list item editor review mode with report-style layout, markdown previews, inline field edits, and a default mode setting. ([#38](https://github.com/kcosr/assistant/pull/38))
 
 ### Changed
+
 - Changed list view preferences to persist per-panel instead of `/preferences`. ([#37](https://github.com/kcosr/assistant/pull/37))
 - Changed list item single-click setting to a dropdown (none/select/open edit modal/open review). ([#38](https://github.com/kcosr/assistant/pull/38))
 - Changed list item review mode inline edits to replace previews with inline editors, allow canceling text edits, use shared markdown rendering with collapsible sections, and render markdown custom fields full-width; renamed Quick edit to Edit. ([#38](https://github.com/kcosr/assistant/pull/38))
@@ -489,12 +525,12 @@
 
 ### Removed
 
-
 ## [0.10.0] - 2026-01-25
 
 ### Breaking Changes
 
 ### Added
+
 - Added list item drag export blocks for external drop targets. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added Cmd/Ctrl+X/C/V cut/copy/paste shortcuts for list items across lists. ([#27](https://github.com/kcosr/assistant/pull/27))
 - Added interactive tool approvals and questionnaires with an interactive-mode toggle. ([#28](https://github.com/kcosr/assistant/pull/28))
@@ -504,6 +540,7 @@
 - Added quick-add (+) action in the lists dropdown to add items without switching lists. ([#31](https://github.com/kcosr/assistant/pull/31))
 
 ### Changed
+
 - Changed CLI providers to inject `ASSISTANT_SESSION_ID` and default plugin CLIs to read it when `--session-id` is omitted. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Changed questionnaire inputs to use themed styling. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Changed questionnaire blocks to match tool output width, improve checkbox alignment, and allow flexible input sizing. ([#32](https://github.com/kcosr/assistant/pull/32))
@@ -513,6 +550,7 @@
 - Changed list metadata custom field rows to align actions in a compact layout. ([#33](https://github.com/kcosr/assistant/pull/33))
 
 ### Fixed
+
 - Fixed HTTP plugin operations to allow interactive requests when a session id is provided. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Fixed interactive tool rendering/grouping/pending-state handling, including refresh replay for approvals/questionnaires. ([#30](https://github.com/kcosr/assistant/pull/30))
 - Fixed CLI interactive tool replay ordering/persistence by aligning overlay interactions with CLI tool calls when response/turn ids are missing. ([#30](https://github.com/kcosr/assistant/pull/30))
@@ -521,12 +559,12 @@
 
 ### Removed
 
-
 ## [0.9.0] - 2026-01-24
 
 ### Breaking Changes
 
 ### Added
+
 - Added inline editing for select and checkbox custom fields in list rows. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Added custom field reorder controls in the list metadata dialog. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Added mobile lists search FAB that opens the command palette. ([#25](https://github.com/kcosr/assistant/pull/25))
@@ -535,6 +573,7 @@
 - Added command palette sort/group modes for search results. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Changed
+
 - Changed command palette list item results to use a check icon distinct from list titles. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Changed pinned icon to 📍. ([#26](https://github.com/kcosr/assistant/pull/26))
 - Changed list title sorting to prioritize pinned items. ([#26](https://github.com/kcosr/assistant/pull/26))
@@ -545,6 +584,7 @@
 - Changed notes panel to support `f` as a search focus shortcut. ([#26](https://github.com/kcosr/assistant/pull/26))
 
 ### Fixed
+
 - Fixed markdown fade/preview affordance not recalculating after list column resize. ([#24](https://github.com/kcosr/assistant/pull/24))
 - Fixed notes search input not blurring on Escape when empty. ([#26](https://github.com/kcosr/assistant/pull/26))
 - Fixed Ctrl+P/Ctrl+H not toggling while panel navigation mode is active. ([#26](https://github.com/kcosr/assistant/pull/26))
@@ -553,69 +593,76 @@
 
 ### Removed
 
-
 ## [0.8.0] - 2026-01-23
 
 ### Breaking Changes
 
 ### Added
+
 - Added temporary pinned behavior for lists, list items, and notes using the pinned tag (icons, shortcuts, /pinned palette entry). ([#22](https://github.com/kcosr/assistant/pull/22))
 - Added markdown rendering for text custom fields (metadata toggle, multiline editor input, notes-style preview popup). ([#23](https://github.com/kcosr/assistant/pull/23))
 
 ### Changed
+
 - Changed command palette to open with the command list (no auto `/`) and added tag-only search syntax for lists/notes. ([#22](https://github.com/kcosr/assistant/pull/22))
 - Changed palette-launched lists/notes to avoid auto-focusing the panel search input. ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Fixed
+
 - Fixed palette-launched list items to select the target row and open the correct profile. ([#22](https://github.com/kcosr/assistant/pull/22))
 - Fixed pinned shortcut updates to avoid reloading the entire list view. ([#22](https://github.com/kcosr/assistant/pull/22))
 
 ### Removed
-
 
 ## [0.7.0] - 2026-01-22
 
 ### Breaking Changes
 
 ### Added
+
 - Added floating add-item button in lists view for Capacitor builds and small viewports. ([#21](https://github.com/kcosr/assistant/pull/21))
 - Added browser-mode keyboard navigation for list/note collections (arrow keys/Enter, Escape to return). ([#21](https://github.com/kcosr/assistant/pull/21))
 - Added sticky list column headers during list scrolling. ([#21](https://github.com/kcosr/assistant/pull/21))
 - Added list column resizing with per-panel column width persistence. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Changed
+
 - Changed list arrow-key navigation to stop at the first/last item. ([#21](https://github.com/kcosr/assistant/pull/21))
 - Changed list and note dialog sizing to sit higher and allow taller content before scrolling. ([#21](https://github.com/kcosr/assistant/pull/21))
 - Changed list/note browser list view selection to show an outline on the active item. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Fixed
+
 - Fixed list/note browser focus to stay on the active item when returning from detail view. ([#21](https://github.com/kcosr/assistant/pull/21))
 
 ### Removed
-
 
 ## [0.6.0] - 2026-01-22
 
 ### Breaking Changes
 
 ### Added
+
 - Added list keyboard navigation and shortcuts (selection, edit, complete, add, move, delete, search focus). ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Changed
+
 - Added global setting for list single-click selection and refined click behavior. ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Fixed
+
 - Fixed notes/lists context to use the active item instance id. ([#20](https://github.com/kcosr/assistant/pull/20))
 
 ### Removed
 
-
 ## [0.5.0] - 2026-01-22
 
 ### Breaking Changes
+
 - Require non-default plugin instances to be declared in `profiles`. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Added
+
 - Added shared profiles config plus multi-profile selection (with instance badges) in notes and lists panels. ([#19](https://github.com/kcosr/assistant/pull/19))
 - Added search plugin wrapper exposing global search via tools/CLI. ([#19](https://github.com/kcosr/assistant/pull/19))
 - Added profile selector to list and note editors when multiple profiles are selected. ([#19](https://github.com/kcosr/assistant/pull/19))
@@ -623,6 +670,7 @@
 - Added "Open modal" option to panel Add dropdown for opening panels as modals. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Changed
+
 - Search API now accepts `profiles` and `plugin` query parameters. ([#19](https://github.com/kcosr/assistant/pull/19))
 - Instance dropdown multi-select now keeps the menu open for additions and uses per-row clear/exclusive selection behavior. ([#19](https://github.com/kcosr/assistant/pull/19))
 - Instance badges now sit inline with item titles and use a distinct style from tags. ([#19](https://github.com/kcosr/assistant/pull/19))
@@ -630,24 +678,27 @@
 - Command palette opens with Search preselected and "All" labels for profile/plugin pickers. ([#19](https://github.com/kcosr/assistant/pull/19))
 
 ### Fixed
+
 - Fixed lists edit modal not removing custom field values when cleared (select set to "Select...", text/number cleared, checkbox unchecked).
 
 ### Removed
 
-
 ## [0.4.1] - 2026-01-21
 
 ### Added
+
 - Added cross-list drag-and-drop moves for list items. ([#18](https://github.com/kcosr/assistant/pull/18))
 
 ## [0.4.0] - 2026-01-21
 
 ### Added
+
 - Added mobile web Capacitor icon generation using the desktop app icon for Android/iOS builds. ([#17](https://github.com/kcosr/assistant/pull/17))
 - Added artifacts plugin for sharing files between agents and users, including panel UI, CLI, and server operations. ([#17](https://github.com/kcosr/assistant/pull/17))
 - Added custom plugin CLI bundling support for plugins that ship a `bin/cli.ts` entry point. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ### Changed
+
 - Added `extraHttpRoutes` for operations-based plugins to support binary download endpoints alongside JSON operations. ([#17](https://github.com/kcosr/assistant/pull/17))
 - Artifacts file download endpoint now supports inline viewing by default with `?download=1` to force attachment. ([#17](https://github.com/kcosr/assistant/pull/17))
 - Added Tauri native save dialog and Capacitor filesystem/share support for artifact downloads. ([#17](https://github.com/kcosr/assistant/pull/17))
@@ -655,14 +706,17 @@
 - Disabled text selection on touch for artifacts rows to allow long-press selection. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ### Fixed
+
 - Fixed artifacts panel theme colors to use shared `--color-*` variables for light/dark themes. ([#17](https://github.com/kcosr/assistant/pull/17))
 
 ## [0.3.2] - 2026-01-20
 
 ### Changed
+
 - List rows can now be dragged from the row surface while keeping title text and tag badges selectable.
 
 ### Fixed
+
 - Chat panel model/thinking selectors now wrap with other header controls in compact layouts.
 - Prevented text selection during list row drag and avoided touch selection when dragging.
 - List drag reorder now inserts correctly when dragging upward and keeps client positions aligned.
@@ -670,9 +724,11 @@
 ## [0.3.1] - 2026-01-20
 
 ### Changed
+
 - ESC now stops streaming in chat header/modals before closing panels. ([#15](https://github.com/kcosr/assistant/pull/15))
 
 ### Fixed
+
 - Notes search now matches note titles as well as content. ([#15](https://github.com/kcosr/assistant/pull/15))
 - Chat panels auto-scroll to the most recent messages when opened. ([#15](https://github.com/kcosr/assistant/pull/15))
 - Chat panels reset busy indicators when switching sessions. ([#15](https://github.com/kcosr/assistant/pull/15))
@@ -681,21 +737,26 @@
 ## [0.3.0] - 2026-01-19
 
 ### Added
+
 - Added CLI model selection plus thinking controls for Pi/Codex with provider-aware Pi model parsing. ([#13](https://github.com/kcosr/assistant/pull/13))
 
 ### Fixed
+
 - Fixed session list updates for sessions created via the sessions plugin. ([#12](https://github.com/kcosr/assistant/pull/12))
 
 ## [0.2.0] - 2026-01-18
 
 ### Added
+
 - Added Pi session history provider with chat replay/refresh support and default Pi session file lookup. ([#9](https://github.com/kcosr/assistant/pull/9))
 - Added Claude session history provider with chat replay from Claude session files. ([#10](https://github.com/kcosr/assistant/pull/10))
 
 ### Changed
+
 - Changed history persistence routing to be provider-agnostic for external history providers. ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ### Fixed
+
 - Fixed notes search launches to switch instances before opening a note. ([#11](https://github.com/kcosr/assistant/pull/11))
 - Fixed Pi history tool call extraction to show tool names and inputs from Pi session logs. ([#9](https://github.com/kcosr/assistant/pull/9))
 - Fixed Pi tool output streaming to surface incremental tool updates in chat. ([#9](https://github.com/kcosr/assistant/pull/9))
@@ -704,12 +765,14 @@
 - Synced Tauri version files (Cargo.toml, tauri.conf.json) to 0.1.3. ([#8](https://github.com/kcosr/assistant/pull/8))
 
 ### Removed
+
 - Removed legacy conversation transcript store in favor of event logs. ([#9](https://github.com/kcosr/assistant/pull/9))
 - Removed `pi-cli` sessionDir/sessionDirCli config options in favor of default Pi session directories. ([#9](https://github.com/kcosr/assistant/pull/9))
 
 ## [0.1.3] - 2026-01-16
 
 ### Added
+
 - Global search command palette with scoped search and modal/pin launch actions. ([#7](https://github.com/kcosr/assistant/pull/7))
 - Search providers for notes and lists, including list name matches and scoped title browse. ([#7](https://github.com/kcosr/assistant/pull/7))
 - Modal panel overlay support. ([#7](https://github.com/kcosr/assistant/pull/7))
@@ -717,6 +780,7 @@
 ## [0.1.2] - 2026-01-15
 
 ### Changed
+
 - Time tracker "Stop & Save" button now uses red styling to indicate a destructive action. ([#5](https://github.com/kcosr/assistant/pull/5))
 - Time tracker entries now display creation timestamp (MM/YY HH:mm) alongside notes. ([#5](https://github.com/kcosr/assistant/pull/5))
 - Roll out shared panel chrome rows across panels and plugins. ([#6](https://github.com/kcosr/assistant/pull/6))
@@ -724,9 +788,11 @@
 ## [0.1.1] - 2026-01-13
 
 ### Changed
+
 - Start continuous listening as soon as the long-press threshold is reached. ([#4](https://github.com/kcosr/assistant/pull/4))
 
 ### Fixed
+
 - Reduce TTS scheduling churn by sending larger PCM frames to clients. ([#4](https://github.com/kcosr/assistant/pull/4))
 - Stream TTS playback through an AudioWorklet ring buffer to avoid long-response choppiness. ([#4](https://github.com/kcosr/assistant/pull/4))
 - Delay continuous listening re-arm until TTS playback completes (with a short grace window). ([#4](https://github.com/kcosr/assistant/pull/4))
@@ -736,14 +802,17 @@
 ## [0.1.0] - 2026-01-13
 
 ### Added
+
 - Support environment variable substitution (`${VAR}`) in all config string values, not just specific fields. ([#1](https://github.com/kcosr/assistant/pull/1))
 - Add scheduled sessions for cron-driven agent runs with plugin UI, API, and configurable auto titles. ([#2](https://github.com/kcosr/assistant/pull/2))
 - Added the desktop/Tauri package with local proxy and plugin asset sync support. ([#3](https://github.com/kcosr/assistant/pull/3))
 
 ### Changed
+
 - Updated web-client proxy normalization and plugin bundle loading for desktop/Tauri. ([#3](https://github.com/kcosr/assistant/pull/3))
 
 ### Fixed
+
 - Fixed drag/drop drop-target indicators and focus marker reordering in desktop webviews. ([#3](https://github.com/kcosr/assistant/pull/3))
 - Fixed speech recognition permission errors to disable input cleanly on desktop. ([#3](https://github.com/kcosr/assistant/pull/3))
 - Fixed sessions panel rendering when mounted as a standard panel in web/Tauri layouts. ([#2](https://github.com/kcosr/assistant/pull/2))
@@ -751,4 +820,5 @@
 ## [0.0.1] - 2026-01-11
 
 ### Added
+
 - Added multi-instance support for the lists plugin.
