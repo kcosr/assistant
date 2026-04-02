@@ -108,7 +108,9 @@ export async function startServer(
     {
       sessionHub,
       sessionIndex,
-      attachmentPreviewChars: appConfig?.attachments.previewSnippetChars,
+      ...(typeof appConfig?.attachments.previewSnippetChars === 'number'
+        ? { attachmentPreviewChars: appConfig.attachments.previewSnippetChars }
+        : {}),
     },
   );
 

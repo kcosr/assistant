@@ -115,6 +115,9 @@ async function startTestServer(workspaceRoot: string): Promise<{
       files: { enabled: true, workspaceRoot },
     },
     mcpServers: [],
+    attachments: {
+      previewSnippetChars: 512,
+    },
   };
   await pluginRegistry.initialize(appConfig, config.dataDir);
 

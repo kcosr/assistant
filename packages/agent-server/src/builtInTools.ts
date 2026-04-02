@@ -25,6 +25,7 @@ import {
   supportsAttachmentOpenInBrowser,
 } from './attachments/contentType';
 import {
+  DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS,
   MAX_ATTACHMENT_SIZE_BYTES,
   formatAttachmentTooLargeMessage,
 } from './attachments/constants';
@@ -60,8 +61,6 @@ type AttachmentSendArgs =
       contentType?: string;
       path: string;
     };
-
-const DEFAULT_ATTACHMENT_PREVIEW_CHARS = 512;
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -1050,7 +1049,7 @@ export function registerBuiltInSessionTools(options: {
   const attachmentPreviewChars =
     typeof options.attachmentPreviewChars === 'number'
       ? options.attachmentPreviewChars
-      : DEFAULT_ATTACHMENT_PREVIEW_CHARS;
+      : DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS;
   const voicePromptParameters = {
     type: 'object',
     properties: {

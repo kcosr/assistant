@@ -5737,9 +5737,28 @@ textarea.interaction-input {
   font-weight: bold;
 }
 
-.attachment-tool-preview[data-expanded='true'] {
+.attachment-tool-preview.expanded {
   max-height: min(28rem, 65vh);
   overflow: auto;
+}
+
+.attachment-tool-preview-content {
+  color: var(--color-message-assistant-text);
+  white-space: pre-wrap;
+}
+
+.attachment-tool-preview-status {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.attachment-tool-action-button:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 /* ===== Input Panel ===== */

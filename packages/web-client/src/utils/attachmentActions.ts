@@ -63,41 +63,56 @@ function clickObjectUrlAnchor(
   }, 60_000);
 }
 
-export function resolveAttachmentUrl(url: string): string {
+function normalizeAttachmentUrlInput(
+  url: string,
+): { value: string; isAbsolute: boolean; isRootRelative: boolean } | null {
   const trimmed = url.trim();
   if (!trimmed) {
+    return null;
+  }
+  return {
+    value: trimmed,
+    isAbsolute: /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed),
+    isRootRelative: trimmed.startsWith('/'),
+  };
+}
+
+export function resolveAttachmentUrl(url: string): string {
+  const normalized = normalizeAttachmentUrlInput(url);
+  if (!normalized) {
     return '';
   }
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
-    return trimmed;
+  if (normalized.isAbsolute) {
+    return normalized.value;
   }
-  if (!trimmed.startsWith('/')) {
-    return trimmed;
+  if (!normalized.isRootRelative) {
+    return normalized.value;
   }
-  return `${getApiBaseUrl().replace(/\/+$/, '')}${trimmed}`;
+  return `${getApiBaseUrl().replace(/\/+$/, '')}${normalized.value}`;
 }
 
 export function getAttachmentContentUrl(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) {
+  const normalized = normalizeAttachmentUrlInput(url);
+  if (!normalized) {
     return '';
   }
 
-  const isAbsolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  const isRootRelative = trimmed.startsWith('/');
-  const parsed = new URL(trimmed, 'http://assistant.local');
+  const parsed = new URL(
+    normalized.value,
+    normalized.isAbsolute ? undefined : 'http://assistant.local',
+  );
   parsed.searchParams.delete('download');
 
-  if (isAbsolute) {
+  if (normalized.isAbsolute) {
     return parsed.toString();
   }
 
-  const normalized = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-  if (isRootRelative) {
-    return normalized;
+  const contentUrl = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  if (normalized.isRootRelative) {
+    return contentUrl;
   }
 
-  return normalized.replace(/^\/+/, '');
+  return contentUrl.replace(/^\/+/, '');
 }
 
 export async function fetchAttachmentTextContent(url: string): Promise<string> {

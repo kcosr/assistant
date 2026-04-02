@@ -2819,6 +2819,7 @@ export class ChatRenderer {
     const contentEl = document.createElement('div');
     previewEl.replaceChildren();
     previewEl.style.display = 'block';
+    previewEl.classList.toggle('expanded', options?.expanded === true);
 
     if (attachment.previewType === 'markdown') {
       contentEl.className = 'attachment-tool-preview-content markdown-content';
@@ -2826,8 +2827,6 @@ export class ChatRenderer {
     } else {
       contentEl.className = 'attachment-tool-preview-content';
       contentEl.textContent = contentText;
-      contentEl.style.whiteSpace = 'pre-wrap';
-      contentEl.style.color = 'var(--color-message-assistant-text)';
     }
     previewEl.appendChild(contentEl);
 
@@ -2835,17 +2834,7 @@ export class ChatRenderer {
       const statusEl = document.createElement('div');
       statusEl.className = 'attachment-tool-preview-status';
       statusEl.textContent = 'Preview truncated. Expand to load the full attachment.';
-      statusEl.style.marginTop = '8px';
-      statusEl.style.paddingTop = '8px';
-      statusEl.style.borderTop = '1px solid var(--color-border-subtle)';
-      statusEl.style.color = 'var(--color-text-secondary)';
-      statusEl.style.fontSize = '0.85em';
-      statusEl.style.fontWeight = '500';
       previewEl.appendChild(statusEl);
-    } else if (options?.expanded) {
-      previewEl.dataset['expanded'] = 'true';
-    } else {
-      delete previewEl.dataset['expanded'];
     }
   }
 
@@ -2895,7 +2884,7 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     if (previewEl) {
       previewEl.style.display = 'none';
-      delete previewEl.dataset['expanded'];
+      previewEl.classList.remove('expanded');
       previewEl.replaceChildren();
     }
 
@@ -2938,7 +2927,7 @@ export class ChatRenderer {
       expansionState?.status === 'expanded' ? expansionState.fullText : undefined;
     if (previewEl) {
       previewEl.replaceChildren();
-      delete previewEl.dataset['expanded'];
+      previewEl.classList.remove('expanded');
       if (typeof expandedText === 'string') {
         this.renderAttachmentPreviewContent(previewEl, attachment, expandedText, { expanded: true });
       } else if (
@@ -2989,10 +2978,6 @@ export class ChatRenderer {
           },
         );
         expandButton.disabled = isLoading;
-        if (isLoading) {
-          expandButton.style.opacity = '0.65';
-          expandButton.style.cursor = 'default';
-        }
         actionsEl.appendChild(expandButton);
       }
 
@@ -3030,7 +3015,7 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     if (previewEl) {
       previewEl.style.display = 'none';
-      delete previewEl.dataset['expanded'];
+      previewEl.classList.remove('expanded');
       previewEl.replaceChildren();
     }
     let errorEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-error');
