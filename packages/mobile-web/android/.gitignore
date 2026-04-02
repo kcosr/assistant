@@ -89,7 +89,7 @@ lint/tmp/
 # Android Profiling
 *.hprof
 
-# Cordova plugins for Capacitor
+# Generated Capacitor plugin shell
 capacitor-cordova-android-plugins
 
 # Copied web assets
@@ -100,24 +100,10 @@ app/src/main/assets/capacitor.config.json
 app/src/main/assets/capacitor.plugins.json
 app/src/main/res/xml/config.xml
 
-# Generated Capacitor Android scaffold files.
-# The repository keeps Assistant-owned bridge/service files under android/,
-# while the surrounding generated project shell remains ignored.
-app/.gitignore
+# Generated Capacitor build files
 app/capacitor.build.gradle
-app/proguard-rules.pro
-app/src/androidTest/
-app/src/main/res/drawable*/
-app/src/main/res/layout/
-app/src/main/res/mipmap*/
-app/src/main/res/values/ic_launcher_background.xml
-app/src/main/res/values/styles.xml
-app/src/main/res/xml/
-app/src/test/java/com/getcapacitor/
-build.gradle
 capacitor.settings.gradle
-gradle.properties
-gradle/
-gradlew
-gradlew.bat
-settings.gradle
+
+# Generated Capacitor test scaffold
+app/src/androidTest/
+app/src/test/java/com/getcapacitor/
