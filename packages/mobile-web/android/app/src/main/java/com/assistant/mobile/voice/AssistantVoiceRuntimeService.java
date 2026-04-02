@@ -61,7 +61,13 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String EXTRA_STATE = "state";
     static final String EXTRA_MESSAGE = "message";
 
-    private static final String NOTIFICATION_CHANNEL_ID = "assistant_voice_mode";
+    static final String LEGACY_NOTIFICATION_CHANNEL_ID = "assistant_voice_mode";
+    static final String NOTIFICATION_CHANNEL_ID = "assistant_voice_runtime_controls";
+    static final int NOTIFICATION_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_DEFAULT;
+    static final int NOTIFICATION_PRIORITY = NotificationCompat.PRIORITY_DEFAULT;
+    static final int NOTIFICATION_VISIBILITY = NotificationCompat.VISIBILITY_PUBLIC;
+    static final int NOTIFICATION_LOCKSCREEN_VISIBILITY = Notification.VISIBILITY_PUBLIC;
+    static final String NOTIFICATION_CATEGORY = NotificationCompat.CATEGORY_SERVICE;
     private static final int NOTIFICATION_ID = 4302;
     private static final long ADAPTER_RECONNECT_DELAY_MS = 2000L;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
@@ -288,35 +294,61 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopCurrentInteractionIntent(this),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle(getString(R.string.assistant_voice_notification_title))
-            .setContentText(getString(R.string.assistant_voice_notification_text, state))
-            .setContentIntent(launchPendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true);
-        int compactActionCount = 0;
-        if (AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
+
+        boolean showSpeakAction = AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
             config.isEnabled(),
             config.preferredVoiceSessionId,
             isPromptPlaybackActive(),
             !activeSttRequestId.isEmpty(),
             isRuntimeConnected()
-        )) {
+        );
+        boolean showStopAction = AssistantVoiceInteractionRules.shouldShowNotificationStopAction(
+            isPromptPlaybackActive(),
+            !activeSttRequestId.isEmpty()
+        );
+
+        return buildNotification(
+            this,
+            state,
+            launchPendingIntent,
+            startListenPendingIntent,
+            stopInteractionPendingIntent,
+            showSpeakAction,
+            showStopAction
+        );
+    }
+
+    static Notification buildNotification(
+        Context context,
+        String state,
+        PendingIntent launchPendingIntent,
+        PendingIntent startListenPendingIntent,
+        PendingIntent stopInteractionPendingIntent,
+        boolean showSpeakAction,
+        boolean showStopAction
+    ) {
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle(context.getString(R.string.assistant_voice_notification_title))
+            .setContentText(context.getString(R.string.assistant_voice_notification_text, state))
+            .setContentIntent(launchPendingIntent)
+            .setPriority(NOTIFICATION_PRIORITY)
+            .setVisibility(NOTIFICATION_VISIBILITY)
+            .setCategory(NOTIFICATION_CATEGORY)
+            .setOngoing(true);
+        int compactActionCount = 0;
+        if (showSpeakAction) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
-                getString(R.string.assistant_voice_notification_action_speak),
+                context.getString(R.string.assistant_voice_notification_action_speak),
                 startListenPendingIntent
             );
             compactActionCount += 1;
         }
-        if (AssistantVoiceInteractionRules.shouldShowNotificationStopAction(
-            isPromptPlaybackActive(),
-            !activeSttRequestId.isEmpty()
-        )) {
+        if (showStopAction) {
             builder.addAction(
                 android.R.drawable.ic_media_pause,
-                getString(R.string.assistant_voice_notification_action_stop),
+                context.getString(R.string.assistant_voice_notification_action_stop),
                 stopInteractionPendingIntent
             );
             compactActionCount += 1;
@@ -332,19 +364,30 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        ensureNotificationChannel(this, manager);
+    }
+
+    static void ensureNotificationChannel(Context context, NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || manager == null) {
             return;
         }
+        // Channel importance and lock-screen visibility are sticky after first creation.
+        if (!LEGACY_NOTIFICATION_CHANNEL_ID.equals(NOTIFICATION_CHANNEL_ID)) {
+            manager.deleteNotificationChannel(LEGACY_NOTIFICATION_CHANNEL_ID);
+        }
+        manager.createNotificationChannel(buildNotificationChannel(context));
+    }
+
+    static NotificationChannel buildNotificationChannel(Context context) {
         NotificationChannel channel = new NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
-            getString(R.string.assistant_voice_notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
+            context.getString(R.string.assistant_voice_notification_channel_name),
+            NOTIFICATION_CHANNEL_IMPORTANCE
         );
-        channel.setDescription(getString(R.string.assistant_voice_notification_channel_description));
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            manager.createNotificationChannel(channel);
-        }
+        channel.setDescription(context.getString(R.string.assistant_voice_notification_channel_description));
+        channel.setLockscreenVisibility(NOTIFICATION_LOCKSCREEN_VISIBILITY);
+        return channel;
     }
 
     private void connectAdapterSocketIfNeeded() {

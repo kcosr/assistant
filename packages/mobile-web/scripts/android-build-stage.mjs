@@ -38,6 +38,7 @@ function shouldCopyMobilePath(relativePath) {
   }
 
   const excludedPrefixes = [
+    'node_modules',
     'android/.gradle',
     'android/build',
     'android/app/build',

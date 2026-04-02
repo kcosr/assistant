@@ -152,9 +152,16 @@ Native voice mode should run as a foreground service while enabled.
 v1 requirements:
 
 - persistent minimal notification
+- public notification visibility so the persistent `Speak` / `Stop` controls are eligible to appear
+  on the lock screen
 - automatic reconnect while enabled
 - service may start immediately when voice mode is enabled
 - service should not arm prompt playback until it has valid selected-session state
+- use a dedicated notification channel with public lock-screen visibility and default importance;
+  migrate with a new channel id when notification behavior changes because channel presentation
+  settings are sticky after first creation
+- lock-screen visibility is the required success condition; starting microphone capture directly from
+  `Speak` while the device remains fully locked may still vary by Android version and OEM policy
 
 ## Bridge Contract
 

@@ -16,8 +16,8 @@
     <string name="assistant_backend_delete_confirm_button">Delete</string>
     <string name="assistant_voice_notification_title">Assistant voice mode</string>
     <string name="assistant_voice_notification_text">Voice runtime active (%1$s)</string>
-    <string name="assistant_voice_notification_channel_name">Assistant voice mode</string>
-    <string name="assistant_voice_notification_channel_description">Foreground voice playback and listening for Assistant prompts.</string>
+    <string name="assistant_voice_notification_channel_name">Assistant voice controls</string>
+    <string name="assistant_voice_notification_channel_description">Persistent Assistant voice playback and listening with Speak and Stop controls, including lock-screen visibility when allowed.</string>
     <string name="assistant_voice_notification_action_speak">Speak</string>
     <string name="assistant_voice_notification_action_stop">Stop</string>
 </resources>
