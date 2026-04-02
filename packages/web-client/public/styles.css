@@ -5737,6 +5737,10 @@ textarea.interaction-input {
   font-weight: bold;
 }
 
+.attachment-tool-preview {
+  overflow: hidden;
+}
+
 .attachment-tool-preview.expanded {
   max-height: min(28rem, 65vh);
   overflow: auto;

@@ -105,7 +105,7 @@ const ATTACHMENT_TOOL_NAME = 'attachment_send';
 
 type AttachmentExpansionState =
   | { status: 'loading' }
-  | { status: 'expanded'; fullText: string };
+  | { status: 'ready'; fullText: string; expanded: boolean };
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {
   const trimmed = value.trim();
@@ -2773,7 +2773,6 @@ export class ChatRenderer {
     preview.style.borderRadius = '10px';
     preview.style.background = 'var(--color-bg-subtle)';
     preview.style.border = '1px solid var(--color-border-subtle)';
-    preview.style.overflow = 'hidden';
 
     const actions = document.createElement('div');
     actions.className = 'attachment-tool-actions';
@@ -2924,7 +2923,7 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     const expansionState = this.attachmentExpansionStates.get(bubble);
     const expandedText =
-      expansionState?.status === 'expanded' ? expansionState.fullText : undefined;
+      expansionState?.status === 'ready' && expansionState.expanded ? expansionState.fullText : undefined;
     if (previewEl) {
       previewEl.replaceChildren();
       previewEl.classList.remove('expanded');
@@ -2948,10 +2947,14 @@ export class ChatRenderer {
     const actionsEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-actions');
     if (actionsEl) {
       actionsEl.replaceChildren();
+      const canExpandInline =
+        this.isAttachmentInlinePreviewable(attachment) && attachment.previewTruncated === true;
       const showExpandAction =
-        this.isAttachmentInlinePreviewable(attachment) &&
-        attachment.previewTruncated === true &&
-        expansionState?.status !== 'expanded';
+        canExpandInline &&
+        (expansionState === undefined ||
+          expansionState.status === 'loading' ||
+          (expansionState.status === 'ready' && !expansionState.expanded));
+      const showCollapseAction = expansionState?.status === 'ready' && expansionState.expanded;
 
       if (showExpandAction) {
         const isLoading = expansionState?.status === 'loading';
@@ -2959,13 +2962,23 @@ export class ChatRenderer {
           isLoading ? 'Expanding…' : 'Expand',
           () => {
             this.clearAttachmentToolActionError(bubble);
+            if (expansionState?.status === 'ready') {
+              this.attachmentExpansionStates.set(bubble, {
+                status: 'ready',
+                fullText: expansionState.fullText,
+                expanded: true,
+              });
+              this.renderAttachmentToolBubble(bubble, attachment);
+              return;
+            }
             this.attachmentExpansionStates.set(bubble, { status: 'loading' });
             this.renderAttachmentToolBubble(bubble, attachment);
             void fetchAttachmentTextContent(getAttachmentContentUrl(attachment.downloadUrl))
               .then((fullText) => {
                 this.attachmentExpansionStates.set(bubble, {
-                  status: 'expanded',
+                  status: 'ready',
                   fullText,
+                  expanded: true,
                 });
                 this.renderAttachmentToolBubble(bubble, attachment);
               })
@@ -2979,6 +2992,22 @@ export class ChatRenderer {
         );
         expandButton.disabled = isLoading;
         actionsEl.appendChild(expandButton);
+      }
+
+      if (showCollapseAction) {
+        const collapseButton = this.createAttachmentActionButton('Collapse', () => {
+          if (expansionState?.status !== 'ready') {
+            return;
+          }
+          this.clearAttachmentToolActionError(bubble);
+          this.attachmentExpansionStates.set(bubble, {
+            status: 'ready',
+            fullText: expansionState.fullText,
+            expanded: false,
+          });
+          this.renderAttachmentToolBubble(bubble, attachment);
+        });
+        actionsEl.appendChild(collapseButton);
       }
 
       const downloadButton = this.createAttachmentActionButton('Download', () => {

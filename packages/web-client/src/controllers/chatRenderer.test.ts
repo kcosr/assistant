@@ -532,7 +532,21 @@ describe('ChatRenderer', () => {
       Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['Download']);
+    ).toEqual(['Collapse', 'Download']);
+
+    const collapseButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expect(collapseButton?.textContent).toBe('Collapse');
+    collapseButton?.click();
+
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello…');
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain(
+      'Preview truncated. Expand to load the full attachment.',
+    );
+    expect(
+      Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['Expand', 'Download']);
   });
 
   it('shows attachment expand failures inline and keeps the expand action available', async () => {
