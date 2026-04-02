@@ -5742,8 +5742,8 @@ textarea.interaction-input {
 }
 
 .attachment-tool-preview.expanded {
-  max-height: min(28rem, 65vh);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .attachment-tool-preview-content {
