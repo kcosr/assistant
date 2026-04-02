@@ -366,15 +366,25 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
         switch (keyCode) {
             case KeyEvent.KEYCODE_MEDIA_PLAY:
-                startManualListen("");
-                return;
             case KeyEvent.KEYCODE_MEDIA_PAUSE:
             case KeyEvent.KEYCODE_MEDIA_STOP:
-                handleMediaSessionStop();
+                if (shouldStopForMediaButtonKeyCode(
+                    keyCode,
+                    runtimeState,
+                    hasActiveInteraction()
+                )) {
+                    handleMediaSessionStop();
+                } else {
+                    startManualListen("");
+                }
                 return;
             case KeyEvent.KEYCODE_HEADSETHOOK:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                if (shouldStopForMediaButtonToggle(runtimeState, hasActiveInteraction())) {
+                if (shouldStopForMediaButtonKeyCode(
+                    keyCode,
+                    runtimeState,
+                    hasActiveInteraction()
+                )) {
                     handleMediaSessionStop();
                 } else {
                     startManualListen("");
@@ -412,6 +422,24 @@ public final class AssistantVoiceRuntimeService extends Service {
         return hasActiveInteraction
             || STATE_LISTENING.equals(trim(state))
             || STATE_SPEAKING.equals(trim(state));
+    }
+
+    static boolean shouldStopForMediaButtonKeyCode(
+        int keyCode,
+        String state,
+        boolean hasActiveInteraction
+    ) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                return shouldStopForMediaButtonToggle(state, hasActiveInteraction);
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_STOP:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static String describeKeyEvent(KeyEvent event) {

@@ -202,6 +202,35 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                true
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
+                KeyEvent.KEYCODE_MEDIA_PLAY,
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonKeyCode(
+                KeyEvent.KEYCODE_MEDIA_PAUSE,
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldUsePositiveRecognitionCueRequiresSuccessfulNonEmptySpeech() {
         assertEquals(true, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "hello"));
         assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "  "));
