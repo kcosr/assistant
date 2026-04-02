@@ -82,6 +82,13 @@ final class AssistantVoiceMicStreamer {
         preferredDeviceId = parsePreferredDeviceId(deviceId);
     }
 
+    boolean shouldUseCommunicationSourceForCurrentConfiguration() {
+        AudioDeviceInfo preferredDevice = preferredDeviceId == null
+            ? null
+            : AssistantVoiceAudioDeviceUtils.findInputDevice(context, preferredDeviceId);
+        return shouldUseCommunicationSource(preferredDevice);
+    }
+
     boolean start(String requestId, Listener listener) {
         if (listener == null || requestId == null || requestId.trim().isEmpty()) {
             return false;
