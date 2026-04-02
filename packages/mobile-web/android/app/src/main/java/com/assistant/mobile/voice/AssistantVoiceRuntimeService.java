@@ -15,6 +15,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
+import android.view.KeyEvent;
 
 import androidx.core.app.NotificationCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
@@ -326,7 +327,45 @@ public final class AssistantVoiceRuntimeService extends Service {
             public void onStop() {
                 mainHandler.post(() -> handleMediaSessionStop());
             }
+
+            @Override
+            public boolean onMediaButtonEvent(Intent mediaButtonIntent) {
+                if (!config.mediaButtonsEnabled) {
+                    return false;
+                }
+                KeyEvent event =
+                    mediaButtonIntent == null
+                        ? null
+                        : mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                if (!shouldHandleMediaButtonKeyEvent(event)) {
+                    return false;
+                }
+                mainHandler.post(() -> handleMediaButtonKeyCode(event.getKeyCode()));
+                return true;
+            }
         });
+    }
+
+    private void handleMediaButtonKeyCode(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+                startManualListen("");
+                return;
+            case KeyEvent.KEYCODE_MEDIA_PAUSE:
+            case KeyEvent.KEYCODE_MEDIA_STOP:
+                handleMediaSessionStop();
+                return;
+            case KeyEvent.KEYCODE_HEADSETHOOK:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                if (shouldStopForMediaButtonToggle(runtimeState, hasActiveInteraction())) {
+                    handleMediaSessionStop();
+                } else {
+                    startManualListen("");
+                }
+                return;
+            default:
+                return;
+        }
     }
 
     private void handleMediaSessionStop() {
@@ -334,6 +373,18 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+    }
+
+    static boolean shouldHandleMediaButtonKeyEvent(KeyEvent event) {
+        return event != null
+            && event.getAction() == KeyEvent.ACTION_DOWN
+            && event.getRepeatCount() == 0;
+    }
+
+    static boolean shouldStopForMediaButtonToggle(String state, boolean hasActiveInteraction) {
+        return hasActiveInteraction
+            || STATE_LISTENING.equals(trim(state))
+            || STATE_SPEAKING.equals(trim(state));
     }
 
     private void syncMediaSession() {
@@ -480,10 +531,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             compactActionCount += 1;
         }
         builder.addAction(
-            mediaButtonsEnabled
-                ? android.R.drawable.ic_media_pause
-                : android.R.drawable.ic_media_play,
-            formatNotificationMediaButtonsActionLabel(context, mediaButtonsEnabled),
+            resolveNotificationMediaButtonsActionIcon(mediaButtonsEnabled),
+            "",
             toggleMediaButtonsPendingIntent
         );
         if (compactActionCount > 0) {
@@ -496,15 +545,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         return builder.build();
     }
 
-    static String formatNotificationMediaButtonsActionLabel(
-        Context context,
-        boolean mediaButtonsEnabled
-    ) {
-        return context.getString(
-            mediaButtonsEnabled
-                ? R.string.assistant_voice_notification_action_media_buttons_disable
-                : R.string.assistant_voice_notification_action_media_buttons_enable
-        );
+    static int resolveNotificationMediaButtonsActionIcon(boolean mediaButtonsEnabled) {
+        return mediaButtonsEnabled
+            ? R.drawable.ic_notification_media_buttons_enabled
+            : R.drawable.ic_notification_media_buttons_disabled;
     }
 
     private void createNotificationChannel() {

@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.KeyEvent;
 
 import com.assistant.mobile.R;
 
@@ -60,9 +61,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             context.getString(R.string.assistant_voice_notification_action_stop),
             notification.actions[1].title
         );
+        assertEquals("", String.valueOf(notification.actions[2].title));
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_media_buttons_enable),
-            notification.actions[2].title
+            R.drawable.ic_notification_media_buttons_disabled,
+            notification.actions[2].icon
         );
     }
 
@@ -125,9 +127,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertEquals("", String.valueOf(notification.actions[1].title));
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_media_buttons_disable),
-            notification.actions[1].title
+            R.drawable.ic_notification_media_buttons_enabled,
+            notification.actions[1].icon
         );
     }
 
@@ -150,6 +153,49 @@ public final class AssistantVoiceRuntimeServiceTest {
             android.media.session.PlaybackState.STATE_PAUSED,
             AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
                 AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldHandleMediaButtonKeyEventRequiresInitialActionDown() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldHandleMediaButtonKeyEvent(
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldHandleMediaButtonKeyEvent(
+                new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopForMediaButtonToggleWhenInteractionIsActive() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                true
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_LISTENING,
+                false
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false
             )
         );
     }
