@@ -26,6 +26,11 @@ describe('getWebClientElements', () => {
       <input id="voice-recognition-start-timeout-input" type="number" />
       <input id="voice-recognition-completion-timeout-input" type="number" />
       <input id="voice-recognition-end-silence-input" type="number" />
+      <div id="voice-recognition-cue-control"></div>
+      <input id="voice-recognition-cue-checkbox" type="checkbox" />
+      <div id="voice-recognition-cue-gain-control"></div>
+      <input id="voice-recognition-cue-gain-slider" type="range" />
+      <span id="voice-recognition-cue-gain-value"></span>
       <div id="voice-tts-gain-control"></div>
       <input id="voice-tts-gain-slider" type="range" />
       <span id="voice-tts-gain-value"></span>
@@ -57,6 +62,11 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRecognitionEndSilenceInput.id).toBe(
       'voice-recognition-end-silence-input',
     );
+    expect(elements?.voiceRecognitionCueControl.id).toBe('voice-recognition-cue-control');
+    expect(elements?.voiceRecognitionCueCheckbox.id).toBe('voice-recognition-cue-checkbox');
+    expect(elements?.voiceRecognitionCueGainControl.id).toBe('voice-recognition-cue-gain-control');
+    expect(elements?.voiceRecognitionCueGainSlider.id).toBe('voice-recognition-cue-gain-slider');
+    expect(elements?.voiceRecognitionCueGainValue.id).toBe('voice-recognition-cue-gain-value');
     expect(elements?.voiceTtsGainControl.id).toBe('voice-tts-gain-control');
     expect(elements?.voiceTtsGainSlider.id).toBe('voice-tts-gain-slider');
     expect(elements?.voiceTtsGainValue.id).toBe('voice-tts-gain-value');
@@ -74,6 +84,11 @@ describe('getWebClientElements', () => {
     expect(modal?.hidden).toBe(true);
     expect((modal as HTMLElement | null)?.style.display).toBe('none');
     expect(modal?.parentElement?.tagName).toBe('BODY');
+
+    const recognitionCueControl = dom.window.document.getElementById(
+      'voice-recognition-cue-control',
+    );
+    expect(recognitionCueControl?.hasAttribute('hidden')).toBe(true);
 
     const ttsGainControl = dom.window.document.getElementById('voice-tts-gain-control');
     expect(ttsGainControl?.hasAttribute('hidden')).toBe(true);

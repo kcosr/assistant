@@ -26,6 +26,10 @@ final class AssistantVoiceConfig {
     static final float MIN_TTS_GAIN = 0.25f;
     static final float MAX_TTS_GAIN = 5.0f;
     static final float DEFAULT_TTS_GAIN = 1.0f;
+    static final boolean DEFAULT_RECOGNITION_CUE_ENABLED = true;
+    static final float MIN_RECOGNITION_CUE_GAIN = 0.25f;
+    static final float MAX_RECOGNITION_CUE_GAIN = 5.0f;
+    static final float DEFAULT_RECOGNITION_CUE_GAIN = 1.0f;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
@@ -44,6 +48,8 @@ final class AssistantVoiceConfig {
     private static final String KEY_VOICE_ADAPTER_BASE_URL = "voice_adapter_base_url";
     private static final String KEY_ASSISTANT_BASE_URL = "assistant_base_url";
     private static final String KEY_TTS_GAIN = "tts_gain";
+    private static final String KEY_RECOGNITION_CUE_ENABLED = "recognition_cue_enabled";
+    private static final String KEY_RECOGNITION_CUE_GAIN = "recognition_cue_gain";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
@@ -62,6 +68,8 @@ final class AssistantVoiceConfig {
     static final String EXTRA_VOICE_ADAPTER_BASE_URL = "voiceAdapterBaseUrl";
     static final String EXTRA_ASSISTANT_BASE_URL = "assistantBaseUrl";
     static final String EXTRA_TTS_GAIN = "ttsGain";
+    static final String EXTRA_RECOGNITION_CUE_ENABLED = "recognitionCueEnabled";
+    static final String EXTRA_RECOGNITION_CUE_GAIN = "recognitionCueGain";
 
     final String audioMode;
     final boolean autoListenEnabled;
@@ -79,6 +87,8 @@ final class AssistantVoiceConfig {
     final String voiceAdapterBaseUrl;
     final String assistantBaseUrl;
     final float ttsGain;
+    final boolean recognitionCueEnabled;
+    final float recognitionCueGain;
 
     AssistantVoiceConfig(
         String audioMode,
@@ -96,7 +106,9 @@ final class AssistantVoiceConfig {
         String inputContextLine,
         String voiceAdapterBaseUrl,
         String assistantBaseUrl,
-        float ttsGain
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.autoListenEnabled = autoListenEnabled;
@@ -129,6 +141,11 @@ final class AssistantVoiceConfig {
             DEFAULT_ASSISTANT_BASE_URL
         );
         this.ttsGain = normalizeTtsGain(ttsGain, DEFAULT_TTS_GAIN);
+        this.recognitionCueEnabled = recognitionCueEnabled;
+        this.recognitionCueGain = normalizeRecognitionCueGain(
+            recognitionCueGain,
+            DEFAULT_RECOGNITION_CUE_GAIN
+        );
     }
 
     static AssistantVoiceConfig load(Context context) {
@@ -152,7 +169,9 @@ final class AssistantVoiceConfig {
             prefs.getString(KEY_INPUT_CONTEXT_LINE, null),
             prefs.getString(KEY_VOICE_ADAPTER_BASE_URL, DEFAULT_VOICE_ADAPTER_BASE_URL),
             prefs.getString(KEY_ASSISTANT_BASE_URL, DEFAULT_ASSISTANT_BASE_URL),
-            prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN)
+            prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN),
+            prefs.getBoolean(KEY_RECOGNITION_CUE_ENABLED, DEFAULT_RECOGNITION_CUE_ENABLED),
+            prefs.getFloat(KEY_RECOGNITION_CUE_GAIN, DEFAULT_RECOGNITION_CUE_GAIN)
         );
     }
 
@@ -175,6 +194,8 @@ final class AssistantVoiceConfig {
             .putString(KEY_VOICE_ADAPTER_BASE_URL, config.voiceAdapterBaseUrl)
             .putString(KEY_ASSISTANT_BASE_URL, config.assistantBaseUrl)
             .putFloat(KEY_TTS_GAIN, config.ttsGain)
+            .putBoolean(KEY_RECOGNITION_CUE_ENABLED, config.recognitionCueEnabled)
+            .putFloat(KEY_RECOGNITION_CUE_GAIN, config.recognitionCueGain)
             .apply();
     }
 
@@ -225,7 +246,15 @@ final class AssistantVoiceConfig {
             intent.hasExtra(EXTRA_ASSISTANT_BASE_URL)
                 ? intent.getStringExtra(EXTRA_ASSISTANT_BASE_URL)
                 : fallback.assistantBaseUrl,
-            intent.getFloatExtra(EXTRA_TTS_GAIN, fallback.ttsGain)
+            intent.getFloatExtra(EXTRA_TTS_GAIN, fallback.ttsGain),
+            intent.getBooleanExtra(
+                EXTRA_RECOGNITION_CUE_ENABLED,
+                fallback.recognitionCueEnabled
+            ),
+            intent.getFloatExtra(
+                EXTRA_RECOGNITION_CUE_GAIN,
+                fallback.recognitionCueGain
+            )
         );
     }
 
@@ -245,6 +274,8 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_VOICE_ADAPTER_BASE_URL, voiceAdapterBaseUrl);
         intent.putExtra(EXTRA_ASSISTANT_BASE_URL, assistantBaseUrl);
         intent.putExtra(EXTRA_TTS_GAIN, ttsGain);
+        intent.putExtra(EXTRA_RECOGNITION_CUE_ENABLED, recognitionCueEnabled);
+        intent.putExtra(EXTRA_RECOGNITION_CUE_GAIN, recognitionCueGain);
         return intent;
     }
 
@@ -298,6 +329,21 @@ final class AssistantVoiceConfig {
         return candidate;
     }
 
+    private static float normalizeRecognitionCueGain(float value, float fallback) {
+        float normalizedFallback =
+            Float.isFinite(fallback) && fallback > 0f
+                ? fallback
+                : DEFAULT_RECOGNITION_CUE_GAIN;
+        float candidate = Float.isFinite(value) && value > 0f ? value : normalizedFallback;
+        if (candidate < MIN_RECOGNITION_CUE_GAIN) {
+            return MIN_RECOGNITION_CUE_GAIN;
+        }
+        if (candidate > MAX_RECOGNITION_CUE_GAIN) {
+            return MAX_RECOGNITION_CUE_GAIN;
+        }
+        return candidate;
+    }
+
     private static String normalizeAudioMode(String value) {
         String normalized = normalizeOptional(value);
         switch (normalized) {
@@ -339,7 +385,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -360,7 +408,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             url,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -388,7 +438,9 @@ final class AssistantVoiceConfig {
             && Objects.equals(inputContextLine, config.inputContextLine)
             && Objects.equals(voiceAdapterBaseUrl, config.voiceAdapterBaseUrl)
             && Objects.equals(assistantBaseUrl, config.assistantBaseUrl)
-            && ttsGain == config.ttsGain;
+            && ttsGain == config.ttsGain
+            && recognitionCueEnabled == config.recognitionCueEnabled
+            && recognitionCueGain == config.recognitionCueGain;
     }
 
     @Override
@@ -409,7 +461,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -433,7 +487,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             settings.optString("voiceAdapterBaseUrl", voiceAdapterBaseUrl),
             assistantBaseUrl,
-            (float) settings.optDouble("ttsGain", ttsGain)
+            (float) settings.optDouble("ttsGain", ttsGain),
+            settings.optBoolean("recognitionCueEnabled", recognitionCueEnabled),
+            (float) settings.optDouble("recognitionCueGain", recognitionCueGain)
         );
     }
 
@@ -454,7 +510,9 @@ final class AssistantVoiceConfig {
             contextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -475,7 +533,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -496,7 +556,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 
@@ -517,7 +579,9 @@ final class AssistantVoiceConfig {
             inputContextLine,
             voiceAdapterBaseUrl,
             assistantBaseUrl,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 

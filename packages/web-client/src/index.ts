@@ -96,8 +96,10 @@ import {
 import {
   areVoiceSettingsEqual,
   DEFAULT_VOICE_ADAPTER_BASE_URL,
+  formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
   normalizeVoiceSettings,
+  recognitionCueGainPercentToValue,
   ttsGainPercentToValue,
   type VoiceSettings,
 } from './utils/voiceSettings';
@@ -122,7 +124,11 @@ import { PluginSettingsClient } from './utils/pluginSettingsClient';
 import { shouldAutoOpenSessionPicker } from './utils/sessionPickerAutoOpen';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
-import { formatSessionLabel, resolveAutoTitle, resolveSessionBaseLabel } from './utils/sessionLabel';
+import {
+  formatSessionLabel,
+  resolveAutoTitle,
+  resolveSessionBaseLabel,
+} from './utils/sessionLabel';
 import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
@@ -388,6 +394,11 @@ async function main(): Promise<void> {
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
+    voiceRecognitionCueControl: voiceRecognitionCueControlEl,
+    voiceRecognitionCueCheckbox: voiceRecognitionCueCheckboxEl,
+    voiceRecognitionCueGainControl: voiceRecognitionCueGainControlEl,
+    voiceRecognitionCueGainSlider: voiceRecognitionCueGainSliderEl,
+    voiceRecognitionCueGainValue: voiceRecognitionCueGainValueEl,
     voiceTtsGainControl: voiceTtsGainControlEl,
     voiceTtsGainSlider: voiceTtsGainSliderEl,
     voiceTtsGainValue: voiceTtsGainValueEl,
@@ -498,8 +509,15 @@ async function main(): Promise<void> {
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  voiceRecognitionCueControlEl.hidden = !useNativeVoiceRuntime;
+  voiceRecognitionCueGainControlEl.hidden = !useNativeVoiceRuntime;
   voiceTtsGainControlEl.hidden = !useNativeVoiceRuntime;
   const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
+
+  const syncRecognitionCueGainLabelFromSlider = (): void => {
+    const gain = recognitionCueGainPercentToValue(voiceRecognitionCueGainSliderEl.value);
+    voiceRecognitionCueGainValueEl.textContent = formatRecognitionCueGainPercentLabel(gain);
+  };
 
   const syncTtsGainLabelFromSlider = (): void => {
     const gain = ttsGainPercentToValue(voiceTtsGainSliderEl.value);
@@ -921,7 +939,8 @@ async function main(): Promise<void> {
   }
 
   function clearMissingPreferredVoiceSession(): void {
-    const currentSettings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const currentSettings =
+      getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
     const preferredSessionId = currentSettings.preferredVoiceSessionId;
     if (!preferredSessionId) {
       return;
@@ -1353,6 +1372,9 @@ async function main(): Promise<void> {
       voiceRecognitionStartTimeoutInputEl,
       voiceRecognitionCompletionTimeoutInputEl,
       voiceRecognitionEndSilenceInputEl,
+      voiceRecognitionCueCheckboxEl,
+      voiceRecognitionCueGainSliderEl,
+      voiceRecognitionCueGainValueEl,
       voiceTtsGainSliderEl,
       voiceTtsGainValueEl,
       initialIncludePanelContext: includePanelContext,
@@ -3409,7 +3431,8 @@ async function main(): Promise<void> {
     audioModeSelectEl.focus();
   };
   const syncVoiceSettingsFromInputs = (): void => {
-    const currentSettings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const currentSettings =
+      getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
       audioMode: audioModeSelectEl.value,
@@ -3420,6 +3443,11 @@ async function main(): Promise<void> {
       recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
       recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
       preferredVoiceSessionId: voicePreferredSessionSelectEl.value,
+      recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
+      recognitionCueGain: recognitionCueGainPercentToValue(
+        voiceRecognitionCueGainSliderEl.value,
+        currentSettings.recognitionCueGain,
+      ),
       ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
     });
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
@@ -3437,11 +3465,11 @@ async function main(): Promise<void> {
   voicePreferredSessionSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceMicInputSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognitionCompletionTimeoutInputEl.addEventListener(
-    'change',
-    syncVoiceSettingsFromInputs,
-  );
+  voiceRecognitionCompletionTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionCueCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognitionCueGainSliderEl.addEventListener('input', syncRecognitionCueGainLabelFromSlider);
+  voiceRecognitionCueGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceTtsGainSliderEl.addEventListener('input', syncTtsGainLabelFromSlider);
   voiceTtsGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   const resetVoiceSettingsInputs = (): void => {
@@ -3459,8 +3487,17 @@ async function main(): Promise<void> {
       voiceMicInputSelectEl.value = '';
     }
     voiceRecognitionStartTimeoutInputEl.value = String(settings.recognitionStartTimeoutMs);
-    voiceRecognitionCompletionTimeoutInputEl.value = String(settings.recognitionCompletionTimeoutMs);
+    voiceRecognitionCompletionTimeoutInputEl.value = String(
+      settings.recognitionCompletionTimeoutMs,
+    );
     voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
+    voiceRecognitionCueCheckboxEl.checked = settings.recognitionCueEnabled;
+    voiceRecognitionCueGainSliderEl.value = String(Math.round(settings.recognitionCueGain * 100));
+    voiceRecognitionCueGainValueEl.textContent = formatRecognitionCueGainPercentLabel(
+      settings.recognitionCueGain,
+    );
+    voiceRecognitionCueGainSliderEl.disabled =
+      !useNativeVoiceRuntime || !settings.recognitionCueEnabled;
     voiceTtsGainSliderEl.value = String(Math.round(settings.ttsGain * 100));
     voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(settings.ttsGain);
   };
@@ -4058,7 +4095,10 @@ async function main(): Promise<void> {
       return;
     }
     loadedChatTranscripts.add(trimmed);
-    hydratingSessionTranscriptCounts.set(trimmed, (hydratingSessionTranscriptCounts.get(trimmed) ?? 0) + 1);
+    hydratingSessionTranscriptCounts.set(
+      trimmed,
+      (hydratingSessionTranscriptCounts.get(trimmed) ?? 0) + 1,
+    );
     const chatLogEl = runtime.elements.chatLog;
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
@@ -4111,7 +4151,8 @@ async function main(): Promise<void> {
         hydratingSessionTranscriptCounts.delete(trimmed);
       }
     }
-    const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
+    const shouldShowTyping =
+      sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
     if (shouldShowTyping) {
       showSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'busy');

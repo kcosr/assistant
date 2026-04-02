@@ -119,6 +119,14 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
     }
 
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUsePositiveRecognitionCueRequiresSuccessfulNonEmptySpeech() {
+        assertEquals(true, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "hello"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "  "));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(false, "hello"));
+    }
+
     private static PendingIntent createActivityPendingIntent(Context context, String action) {
         return PendingIntent.getActivity(
             context,

@@ -1,6 +1,7 @@
 package com.assistant.mobile.voice;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -67,6 +68,12 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void constructorClampsRecognitionCueGain() {
+        assertEquals(0.25f, createConfig(1.0f, true, 0.05f).recognitionCueGain, 0.0001f);
+        assertEquals(5.0f, createConfig(1.0f, true, 9.0f).recognitionCueGain, 0.0001f);
+    }
+
+    @Test
     public void withVoiceSettingsReadsTtsGain() throws Exception {
         AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
             new JSONObject().put("ttsGain", 1.8)
@@ -75,15 +82,44 @@ public final class AssistantVoiceConfigTest {
         assertEquals(1.8f, updated.ttsGain, 0.0001f);
     }
 
+    @Test
+    public void withVoiceSettingsReadsRecognitionCueSettings() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject()
+                .put("recognitionCueEnabled", false)
+                .put("recognitionCueGain", 1.8)
+        );
+
+        assertFalse(updated.recognitionCueEnabled);
+        assertEquals(1.8f, updated.recognitionCueGain, 0.0001f);
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
         return createConfig(titles, 1.0f);
     }
 
     private static AssistantVoiceConfig createConfig(float ttsGain) {
-        return createConfig(Collections.emptyMap(), ttsGain);
+        return createConfig(ttsGain, true, 1.0f);
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain
+    ) {
+        return createConfig(Collections.emptyMap(), ttsGain, recognitionCueEnabled, recognitionCueGain);
     }
 
     private static AssistantVoiceConfig createConfig(Map<String, String> titles, float ttsGain) {
+        return createConfig(titles, ttsGain, true, 1.0f);
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        Map<String, String> titles,
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain
+    ) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
             true,
@@ -100,7 +136,9 @@ public final class AssistantVoiceConfigTest {
             "",
             AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain
         );
     }
 

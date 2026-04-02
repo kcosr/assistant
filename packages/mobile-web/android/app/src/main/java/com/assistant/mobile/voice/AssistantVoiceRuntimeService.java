@@ -70,6 +70,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String NOTIFICATION_CATEGORY = NotificationCompat.CATEGORY_SERVICE;
     private static final int NOTIFICATION_ID = 4302;
     private static final long ADAPTER_RECONNECT_DELAY_MS = 2000L;
+    private static final int MAX_RECOGNITION_CUE_RETRIES = 2;
+    private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -105,6 +107,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean pendingPlaybackDrainStartsListening = false;
     private String activeSttRequestId = "";
     private String adapterStoppedSttRequestId = "";
+    private boolean recognitionReadyCuePlayed = false;
+    private boolean recognitionCompletionCuePlayed = false;
     private boolean watchedSessionRefreshInFlight = false;
     private boolean watchedSessionRefreshPending = false;
     private boolean destroyed = false;
@@ -137,6 +141,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
         player.setTtsGain(config.ttsGain);
+        player.setRecognitionCueGain(config.recognitionCueGain);
         player.setListener(requestId -> mainHandler.post(() -> handlePlaybackDrained(requestId)));
         createNotificationChannel();
         startInForeground();
@@ -213,6 +218,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             micStreamer.setPreferredDeviceId(updated.selectedMicDeviceId);
         }
         player.setTtsGain(updated.ttsGain);
+        player.setRecognitionCueGain(updated.recognitionCueGain);
 
         boolean preferredSessionChanged =
             !previous.preferredVoiceSessionId.equals(updated.preferredVoiceSessionId);
@@ -966,6 +972,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         String text = trim(message.optString("text"));
         String error = trim(message.optString("error"));
         int durationMs = Math.max(0, message.optInt("durationMs", 0));
+        boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
 
         Log.d(
             TAG,
@@ -978,12 +985,13 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " error=" + error
         );
 
+        playRecognitionCompletionCueIfNeeded(positiveCue);
         clearActivePromptContext();
         if (!hasActiveInteraction()) {
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
         }
 
-        if (success && !text.isEmpty() && !sessionId.isEmpty()) {
+        if (positiveCue && !sessionId.isEmpty()) {
             submitRecognizedSpeech(sessionId, text, durationMs);
             return;
         }
@@ -1054,6 +1062,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         String listeningRequestId = activeSttRequestId;
         String speakingSessionId = activeVoiceSessionId;
         String speakingToolName = activePromptToolName;
+        boolean playManualStopCue =
+            "manual_stop".equals(reason) && !listeningRequestId.isEmpty();
 
         activeTtsRequestId = "";
         pendingPlaybackDrainRequestId = "";
@@ -1070,6 +1080,9 @@ public final class AssistantVoiceRuntimeService extends Service {
                 micStreamer.stop(listeningRequestId);
             }
             sendAdapterSttCancel(listeningRequestId);
+            if (playManualStopCue) {
+                playRecognitionCompletionCueIfNeeded(false);
+            }
         }
 
         if (transitionToRecognition && !speakingSessionId.isEmpty()) {
@@ -1125,11 +1138,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         activeVoiceSessionId = sessionId.trim();
         activePromptToolName = "manual_listen".equals(reason) ? "voice_manual" : activePromptToolName;
         activeSttRequestId = requestId;
+        resetRecognitionCueState();
         Log.d(TAG, "startRecognition requestId=" + requestId + " sessionId=" + activeVoiceSessionId + " reason=" + reason);
-        updateState(STATE_LISTENING, null);
 
         if (micStreamer == null) {
             activeSttRequestId = "";
+            resetRecognitionCueState();
             clearActivePromptContext();
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
             emitRuntimeError("Microphone capture is unavailable");
@@ -1139,16 +1153,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean started = micStreamer.start(requestId, new AssistantVoiceMicStreamer.Listener() {
             @Override
             public void onStarted(int sampleRate, int channels, String encoding) {
-                JSONObject message = new JSONObject();
-                putJson(message, "type", "media_stt_start");
-                putJson(message, "requestId", requestId);
-                putJson(message, "sampleRate", sampleRate);
-                putJson(message, "channels", channels);
-                putJson(message, "encoding", encoding);
-                putJson(message, "startTimeoutMs", config.recognitionStartTimeoutMs);
-                putJson(message, "completionTimeoutMs", config.recognitionCompletionTimeoutMs);
-                putJson(message, "endSilenceMs", config.recognitionEndSilenceMs);
-                sendAdapterMessage(message);
+                mainHandler.post(() -> handleMicCaptureStarted(
+                    requestId,
+                    sampleRate,
+                    channels,
+                    encoding
+                ));
             }
 
             @Override
@@ -1172,6 +1182,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         if (!started) {
             activeSttRequestId = "";
+            resetRecognitionCueState();
             clearActivePromptContext();
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
             emitRuntimeError("Microphone capture is unavailable");
@@ -1217,6 +1228,30 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (adapterSocketConnected && adapterSocket != null) {
             adapterSocket.send(message.toString());
         }
+    }
+
+    private void handleMicCaptureStarted(
+        String requestId,
+        int sampleRate,
+        int channels,
+        String encoding
+    ) {
+        if (!requestId.equals(activeSttRequestId)) {
+            return;
+        }
+        updateState(STATE_LISTENING, null);
+        playRecognitionReadyCueIfNeeded();
+
+        JSONObject message = new JSONObject();
+        putJson(message, "type", "media_stt_start");
+        putJson(message, "requestId", requestId);
+        putJson(message, "sampleRate", sampleRate);
+        putJson(message, "channels", channels);
+        putJson(message, "encoding", encoding);
+        putJson(message, "startTimeoutMs", config.recognitionStartTimeoutMs);
+        putJson(message, "completionTimeoutMs", config.recognitionCompletionTimeoutMs);
+        putJson(message, "endSilenceMs", config.recognitionEndSilenceMs);
+        sendAdapterMessage(message);
     }
 
     private void handleMicCaptureStopped(String requestId) {
@@ -1332,6 +1367,47 @@ public final class AssistantVoiceRuntimeService extends Service {
         errorIntent.setPackage(getPackageName());
         errorIntent.putExtra(EXTRA_MESSAGE, message);
         sendBroadcast(errorIntent);
+    }
+
+    static boolean shouldUsePositiveRecognitionCue(boolean success, String text) {
+        return success && !trim(text).isEmpty();
+    }
+
+    private void resetRecognitionCueState() {
+        recognitionReadyCuePlayed = false;
+        recognitionCompletionCuePlayed = false;
+    }
+
+    private void playRecognitionReadyCueIfNeeded() {
+        if (!config.recognitionCueEnabled || recognitionReadyCuePlayed) {
+            return;
+        }
+        recognitionReadyCuePlayed = true;
+        playRecognitionCueWithRetry(true, 0);
+    }
+
+    private void playRecognitionCompletionCueIfNeeded(boolean success) {
+        if (!config.recognitionCueEnabled || recognitionCompletionCuePlayed) {
+            return;
+        }
+        recognitionCompletionCuePlayed = true;
+        playRecognitionCueWithRetry(success, 0);
+    }
+
+    private void playRecognitionCueWithRetry(boolean success, int attempt) {
+        if (!config.recognitionCueEnabled) {
+            return;
+        }
+        if (player.playRecognitionCue(success)) {
+            return;
+        }
+        if (attempt >= MAX_RECOGNITION_CUE_RETRIES) {
+            return;
+        }
+        mainHandler.postDelayed(
+            () -> playRecognitionCueWithRetry(success, attempt + 1),
+            RECOGNITION_CUE_RETRY_DELAY_MS * (attempt + 1L)
+        );
     }
 
     private static String trim(String value) {

@@ -3,8 +3,10 @@ import { TtsAudioPlayer } from '../utils/audio';
 import type { AudioMode } from '../utils/audioMode';
 import {
   areVoiceSettingsEqual,
+  formatRecognitionCueGainPercentLabel,
   formatTtsGainPercentLabel,
   normalizeVoiceSettings,
+  recognitionCueGainToPercent,
   ttsGainToPercent,
   type VoiceSettings,
 } from '../utils/voiceSettings';
@@ -69,6 +71,7 @@ export interface AssistantNativeVoiceStatePayload {
   selectedSession?: AssistantNativeVoiceSelection | null;
   sessionTitles?: Record<string, string>;
   effectiveTtsGain?: number;
+  effectiveRecognitionCueGain?: number;
   lastError?: string;
 }
 
@@ -88,10 +91,9 @@ export interface AssistantNativeVoiceBridgeTarget {
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
   startManualListen?: (args?: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
-  listInputDevices?:
-    () =>
-      | AssistantNativeVoiceInputDevice[]
-      | Promise<AssistantNativeVoiceInputDevice[]>;
+  listInputDevices?: () =>
+    | AssistantNativeVoiceInputDevice[]
+    | Promise<AssistantNativeVoiceInputDevice[]>;
   getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
   addListener?: (
     eventName: 'stateChanged' | 'runtimeError',
@@ -155,11 +157,9 @@ export class AssistantNativeVoiceBridge {
       const resolved = await Promise.resolve(result);
       const entries = Array.isArray(resolved)
         ? resolved
-        : (
-            resolved &&
+        : resolved &&
             typeof resolved === 'object' &&
             Array.isArray((resolved as { devices?: unknown }).devices)
-          )
           ? (resolved as { devices: unknown[] }).devices
           : [];
       return entries
@@ -338,6 +338,9 @@ export interface SpeechAudioControllerOptions {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceRecognitionCueCheckboxEl: HTMLInputElement;
+  voiceRecognitionCueGainSliderEl: HTMLInputElement;
+  voiceRecognitionCueGainValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
   inputEl: HTMLInputElement;
@@ -419,9 +422,8 @@ export class SpeechAudioController {
       }
       return;
     }
-    const devices = await (
-      this.options.nativeVoiceBridge?.listInputDevices() ?? Promise.resolve([])
-    );
+    const devices = await (this.options.nativeVoiceBridge?.listInputDevices() ??
+      Promise.resolve([]));
     if (this.areNativeInputDevicesEqual(this.availableNativeInputDevices, devices)) {
       return;
     }
@@ -945,6 +947,14 @@ export class SpeechAudioController {
     this.options.voiceRecognitionEndSilenceInputEl.value = String(
       this.currentVoiceSettings.recognitionEndSilenceMs,
     );
+    this.options.voiceRecognitionCueCheckboxEl.checked =
+      this.currentVoiceSettings.recognitionCueEnabled;
+    this.options.voiceRecognitionCueGainSliderEl.value = String(
+      recognitionCueGainToPercent(this.currentVoiceSettings.recognitionCueGain),
+    );
+    this.options.voiceRecognitionCueGainValueEl.textContent = formatRecognitionCueGainPercentLabel(
+      this.currentVoiceSettings.recognitionCueGain,
+    );
     this.options.voiceTtsGainSliderEl.value = String(
       ttsGainToPercent(this.currentVoiceSettings.ttsGain),
     );
@@ -963,6 +973,9 @@ export class SpeechAudioController {
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionCueCheckboxEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognitionCueGainSliderEl.disabled =
+      !supportsNativeVoiceSettings || !this.currentVoiceSettings.recognitionCueEnabled;
     this.options.voiceTtsGainSliderEl.disabled = !supportsNativeVoiceSettings;
   }
 
