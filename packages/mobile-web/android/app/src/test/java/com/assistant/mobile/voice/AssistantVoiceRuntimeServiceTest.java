@@ -35,8 +35,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "toggle"),
             true,
-            true
+            true,
+            false
         );
         Bundle extras = notification.extras;
 
@@ -49,7 +51,7 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT))
         );
         assertNotNull(notification.actions);
-        assertEquals(2, notification.actions.length);
+        assertEquals(3, notification.actions.length);
         assertEquals(
             context.getString(R.string.assistant_voice_notification_action_speak),
             notification.actions[0].title
@@ -57,6 +59,10 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(
             context.getString(R.string.assistant_voice_notification_action_stop),
             notification.actions[1].title
+        );
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_media_buttons_enable),
+            notification.actions[2].title
         );
     }
 
@@ -108,8 +114,10 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "toggle"),
             true,
-            false
+            false,
+            true
         );
 
         assertEquals(
@@ -117,6 +125,33 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_media_buttons_disable),
+            notification.actions[1].title
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveMediaSessionPlaybackStateTreatsListeningAndSpeakingAsPlaying() {
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_LISTENING
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_SPEAKING
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PAUSED,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
     }
 
     @Test

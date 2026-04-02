@@ -8,6 +8,8 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -54,6 +56,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
+    static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
@@ -74,6 +77,11 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
     private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 320L;
+    private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
+        PlaybackState.ACTION_PLAY
+            | PlaybackState.ACTION_PLAY_PAUSE
+            | PlaybackState.ACTION_PAUSE
+            | PlaybackState.ACTION_STOP;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final String RECOGNITION_ARMING_CUE_REQUEST_PREFIX = "__recognition_arming__:";
 
@@ -88,6 +96,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         .build();
     private AssistantVoicePcmPlayer player;
     private AssistantVoiceMicStreamer micStreamer;
+    private MediaSession mediaSession;
 
     private final Runnable reconnectRunnable = this::connectAdapterSocketIfNeeded;
     private final Runnable assistantReconnectRunnable = this::connectAssistantSocketIfNeeded;
@@ -141,6 +150,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             .putExtra(EXTRA_MANUAL_LISTEN_SESSION_ID, trim(sessionId));
     }
 
+    public static Intent toggleMediaButtonsIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_TOGGLE_MEDIA_BUTTONS);
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -152,8 +166,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         player.setRecognitionCueGain(config.recognitionCueGain);
         player.setStartupPreRollMs(config.startupPreRollMs);
         player.setListener(requestId -> mainHandler.post(() -> handlePlaybackDrained(requestId)));
+        initializeMediaSession();
         createNotificationChannel();
         startInForeground();
+        syncMediaSession();
         if (!config.isEnabled()) {
             updateState(STATE_DISABLED, null);
             stopSelf();
@@ -185,6 +201,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             startManualListen(intent.getStringExtra(EXTRA_MANUAL_LISTEN_SESSION_ID));
             return START_STICKY;
         }
+        if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
+            applyConfig(config.withMediaButtonsEnabled(!config.mediaButtonsEnabled));
+            return START_STICKY;
+        }
         if (ACTION_APPLY_CONFIG.equals(action)) {
             AssistantVoiceConfig updated = AssistantVoiceConfig.fromIntent(intent, config);
             applyConfig(updated);
@@ -201,6 +221,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         stopCurrentInteraction(false, "service_destroy");
         disconnectAdapterSocket();
         disconnectAssistantSocket();
+        releaseMediaSession();
         player.release();
         if (micStreamer != null) {
             micStreamer.release();
@@ -240,12 +261,14 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopCurrentInteraction(false, "voice_mode_disabled");
             disconnectAdapterSocket();
             disconnectAssistantSocket();
+            syncMediaSession();
             updateState(STATE_DISABLED, null);
             stopSelf();
             return;
         }
 
         startInForeground();
+        syncMediaSession();
 
         if (adapterUrlChanged || assistantUrlChanged) {
             stopCurrentInteraction(false, "config_changed");
@@ -275,6 +298,70 @@ public final class AssistantVoiceRuntimeService extends Service {
         } else if (!hasActiveInteraction()) {
             updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
         }
+    }
+
+    private void initializeMediaSession() {
+        mediaSession = new MediaSession(this, TAG + ":media_buttons");
+        mediaSession.setFlags(
+            MediaSession.FLAG_HANDLES_MEDIA_BUTTONS
+                | MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
+        );
+        mediaSession.setCallback(new MediaSession.Callback() {
+            @Override
+            public void onPlay() {
+                mainHandler.post(() -> {
+                    if (!config.mediaButtonsEnabled) {
+                        return;
+                    }
+                    startManualListen("");
+                });
+            }
+
+            @Override
+            public void onPause() {
+                mainHandler.post(() -> handleMediaSessionStop());
+            }
+
+            @Override
+            public void onStop() {
+                mainHandler.post(() -> handleMediaSessionStop());
+            }
+        });
+    }
+
+    private void handleMediaSessionStop() {
+        if (!config.mediaButtonsEnabled) {
+            return;
+        }
+        stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
+    }
+
+    private void syncMediaSession() {
+        if (mediaSession == null) {
+            return;
+        }
+        boolean enabled = config.isEnabled() && config.mediaButtonsEnabled && !destroyed;
+        PlaybackState.Builder playbackState = new PlaybackState.Builder()
+            .setActions(enabled ? MEDIA_SESSION_PLAYBACK_ACTIONS : 0L)
+            .setState(
+                resolveMediaSessionPlaybackState(runtimeState),
+                PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+                STATE_SPEAKING.equals(runtimeState) || STATE_LISTENING.equals(runtimeState) ? 1.0f : 0.0f
+            );
+        mediaSession.setPlaybackState(playbackState.build());
+        mediaSession.setActive(enabled);
+    }
+
+    private void releaseMediaSession() {
+        if (mediaSession == null) {
+            return;
+        }
+        try {
+            mediaSession.setActive(false);
+            mediaSession.release();
+        } catch (Exception ignored) {
+        }
+        mediaSession = null;
     }
 
     private void startInForeground() {
@@ -312,6 +399,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopCurrentInteractionIntent(this),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+        PendingIntent toggleMediaButtonsPendingIntent = PendingIntent.getService(
+            this,
+            3,
+            toggleMediaButtonsIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
 
         boolean showSpeakAction = AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
             config.isEnabled(),
@@ -333,8 +426,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchPendingIntent,
             startListenPendingIntent,
             stopInteractionPendingIntent,
+            toggleMediaButtonsPendingIntent,
             showSpeakAction,
-            showStopAction
+            showStopAction,
+            config.mediaButtonsEnabled
         );
     }
 
@@ -345,8 +440,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent launchPendingIntent,
         PendingIntent startListenPendingIntent,
         PendingIntent stopInteractionPendingIntent,
+        PendingIntent toggleMediaButtonsPendingIntent,
         boolean showSpeakAction,
-        boolean showStopAction
+        boolean showStopAction,
+        boolean mediaButtonsEnabled
     ) {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -382,6 +479,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
             compactActionCount += 1;
         }
+        builder.addAction(
+            mediaButtonsEnabled
+                ? android.R.drawable.ic_media_pause
+                : android.R.drawable.ic_media_play,
+            formatNotificationMediaButtonsActionLabel(context, mediaButtonsEnabled),
+            toggleMediaButtonsPendingIntent
+        );
         if (compactActionCount > 0) {
             if (compactActionCount == 1) {
                 builder.setStyle(new MediaStyle().setShowActionsInCompactView(0));
@@ -390,6 +494,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             }
         }
         return builder.build();
+    }
+
+    static String formatNotificationMediaButtonsActionLabel(
+        Context context,
+        boolean mediaButtonsEnabled
+    ) {
+        return context.getString(
+            mediaButtonsEnabled
+                ? R.string.assistant_voice_notification_action_media_buttons_disable
+                : R.string.assistant_voice_notification_action_media_buttons_enable
+        );
     }
 
     private void createNotificationChannel() {
@@ -452,6 +567,22 @@ public final class AssistantVoiceRuntimeService extends Service {
             case STATE_DISABLED:
             default:
                 return context.getString(R.string.assistant_voice_notification_state_disabled);
+        }
+    }
+
+    static int resolveMediaSessionPlaybackState(String state) {
+        switch (trim(state)) {
+            case STATE_LISTENING:
+            case STATE_SPEAKING:
+                return PlaybackState.STATE_PLAYING;
+            case STATE_DISABLED:
+                return PlaybackState.STATE_STOPPED;
+            case STATE_ERROR:
+                return PlaybackState.STATE_ERROR;
+            case STATE_CONNECTING:
+            case STATE_IDLE:
+            default:
+                return PlaybackState.STATE_PAUSED;
         }
     }
 
@@ -1395,6 +1526,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (manager != null) {
             manager.notify(NOTIFICATION_ID, buildNotification(runtimeState));
         }
+        syncMediaSession();
     }
 
     private void updateState(String nextState, String maybeErrorMessage) {

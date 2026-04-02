@@ -33,6 +33,7 @@ final class AssistantVoiceConfig {
     static final int MIN_STARTUP_PRE_ROLL_MS = 0;
     static final int MAX_STARTUP_PRE_ROLL_MS = 4096;
     static final int DEFAULT_STARTUP_PRE_ROLL_MS = 512;
+    static final boolean DEFAULT_MEDIA_BUTTONS_ENABLED = false;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
@@ -54,6 +55,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_RECOGNITION_CUE_ENABLED = "recognition_cue_enabled";
     private static final String KEY_RECOGNITION_CUE_GAIN = "recognition_cue_gain";
     private static final String KEY_STARTUP_PRE_ROLL_MS = "startup_pre_roll_ms";
+    private static final String KEY_MEDIA_BUTTONS_ENABLED = "media_buttons_enabled";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
@@ -75,6 +77,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_RECOGNITION_CUE_ENABLED = "recognitionCueEnabled";
     static final String EXTRA_RECOGNITION_CUE_GAIN = "recognitionCueGain";
     static final String EXTRA_STARTUP_PRE_ROLL_MS = "startupPreRollMs";
+    static final String EXTRA_MEDIA_BUTTONS_ENABLED = "mediaButtonsEnabled";
 
     final String audioMode;
     final boolean autoListenEnabled;
@@ -95,6 +98,7 @@ final class AssistantVoiceConfig {
     final boolean recognitionCueEnabled;
     final float recognitionCueGain;
     final int startupPreRollMs;
+    final boolean mediaButtonsEnabled;
 
     AssistantVoiceConfig(
         String audioMode,
@@ -115,7 +119,8 @@ final class AssistantVoiceConfig {
         float ttsGain,
         boolean recognitionCueEnabled,
         float recognitionCueGain,
-        int startupPreRollMs
+        int startupPreRollMs,
+        boolean mediaButtonsEnabled
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.autoListenEnabled = autoListenEnabled;
@@ -157,6 +162,7 @@ final class AssistantVoiceConfig {
             startupPreRollMs,
             DEFAULT_STARTUP_PRE_ROLL_MS
         );
+        this.mediaButtonsEnabled = mediaButtonsEnabled;
     }
 
     static AssistantVoiceConfig load(Context context) {
@@ -183,7 +189,8 @@ final class AssistantVoiceConfig {
             prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN),
             prefs.getBoolean(KEY_RECOGNITION_CUE_ENABLED, DEFAULT_RECOGNITION_CUE_ENABLED),
             prefs.getFloat(KEY_RECOGNITION_CUE_GAIN, DEFAULT_RECOGNITION_CUE_GAIN),
-            prefs.getInt(KEY_STARTUP_PRE_ROLL_MS, DEFAULT_STARTUP_PRE_ROLL_MS)
+            prefs.getInt(KEY_STARTUP_PRE_ROLL_MS, DEFAULT_STARTUP_PRE_ROLL_MS),
+            prefs.getBoolean(KEY_MEDIA_BUTTONS_ENABLED, DEFAULT_MEDIA_BUTTONS_ENABLED)
         );
     }
 
@@ -209,6 +216,7 @@ final class AssistantVoiceConfig {
             .putBoolean(KEY_RECOGNITION_CUE_ENABLED, config.recognitionCueEnabled)
             .putFloat(KEY_RECOGNITION_CUE_GAIN, config.recognitionCueGain)
             .putInt(KEY_STARTUP_PRE_ROLL_MS, config.startupPreRollMs)
+            .putBoolean(KEY_MEDIA_BUTTONS_ENABLED, config.mediaButtonsEnabled)
             .apply();
     }
 
@@ -268,7 +276,8 @@ final class AssistantVoiceConfig {
                 EXTRA_RECOGNITION_CUE_GAIN,
                 fallback.recognitionCueGain
             ),
-            intent.getIntExtra(EXTRA_STARTUP_PRE_ROLL_MS, fallback.startupPreRollMs)
+            intent.getIntExtra(EXTRA_STARTUP_PRE_ROLL_MS, fallback.startupPreRollMs),
+            intent.getBooleanExtra(EXTRA_MEDIA_BUTTONS_ENABLED, fallback.mediaButtonsEnabled)
         );
     }
 
@@ -291,6 +300,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_RECOGNITION_CUE_ENABLED, recognitionCueEnabled);
         intent.putExtra(EXTRA_RECOGNITION_CUE_GAIN, recognitionCueGain);
         intent.putExtra(EXTRA_STARTUP_PRE_ROLL_MS, startupPreRollMs);
+        intent.putExtra(EXTRA_MEDIA_BUTTONS_ENABLED, mediaButtonsEnabled);
         return intent;
     }
 
@@ -421,7 +431,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -445,7 +456,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -476,7 +488,8 @@ final class AssistantVoiceConfig {
             && ttsGain == config.ttsGain
             && recognitionCueEnabled == config.recognitionCueEnabled
             && recognitionCueGain == config.recognitionCueGain
-            && startupPreRollMs == config.startupPreRollMs;
+            && startupPreRollMs == config.startupPreRollMs
+            && mediaButtonsEnabled == config.mediaButtonsEnabled;
     }
 
     @Override
@@ -500,7 +513,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -527,7 +541,8 @@ final class AssistantVoiceConfig {
             (float) settings.optDouble("ttsGain", ttsGain),
             settings.optBoolean("recognitionCueEnabled", recognitionCueEnabled),
             (float) settings.optDouble("recognitionCueGain", recognitionCueGain),
-            settings.optInt("startupPreRollMs", startupPreRollMs)
+            settings.optInt("startupPreRollMs", startupPreRollMs),
+            mediaButtonsEnabled
         );
     }
 
@@ -551,7 +566,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -575,7 +591,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -599,7 +616,8 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 
@@ -623,7 +641,33 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
+        );
+    }
+
+    AssistantVoiceConfig withMediaButtonsEnabled(boolean enabled) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionTitles,
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl,
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            startupPreRollMs,
+            enabled
         );
     }
 

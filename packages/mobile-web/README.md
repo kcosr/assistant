@@ -164,6 +164,11 @@ The following patches are applied automatically on `android:sync`:
   plus a `Recognition cue gain` slider clamped to `25%`-`500%`. Native voice settings also expose
   a `Startup pre-roll (ms)` slider clamped to `0`-`4096`, defaulting to `512`, which controls the
   silence prepended before recognition cue playback warms the media path.
+- The persistent Android notification now also includes a native-only `Media Btns On/Off` toggle.
+  When enabled, the foreground service activates an Android `MediaSession` so Bluetooth/headset
+  media play maps to the existing manual-listen flow, while pause/stop map to the existing stop
+  interaction flow. The toggle is persisted in native config and may compete with other media apps
+  for headset button ownership while enabled.
 - The recognition start cue is an arming cue that plays with a short native media preroll, fully
   drains, then waits a brief settle delay before native mic startup begins. The completion cue is
   deferred until recording has actually stopped, capture focus has been released, and a longer

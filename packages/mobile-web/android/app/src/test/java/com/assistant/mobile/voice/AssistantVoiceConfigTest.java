@@ -109,12 +109,29 @@ public final class AssistantVoiceConfigTest {
         assertEquals(768, updated.startupPreRollMs);
     }
 
+    @Test
+    public void saveAndLoadPersistMediaButtonsEnabled() {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceConfig.save(context, createConfig(true));
+
+        AssistantVoiceConfig loaded = AssistantVoiceConfig.load(context);
+
+        assertTrue(loaded.mediaButtonsEnabled);
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
         return createConfig(titles, 1.0f);
     }
 
     private static AssistantVoiceConfig createConfig(float ttsGain) {
-        return createConfig(ttsGain, true, 1.0f, AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS);
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
+        );
     }
 
     private static AssistantVoiceConfig createConfig(
@@ -127,7 +144,8 @@ public final class AssistantVoiceConfigTest {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
         );
     }
 
@@ -142,7 +160,19 @@ public final class AssistantVoiceConfigTest {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            false
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(boolean mediaButtonsEnabled) {
+        return createConfig(
+            Collections.emptyMap(),
+            1.0f,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            mediaButtonsEnabled
         );
     }
 
@@ -152,7 +182,8 @@ public final class AssistantVoiceConfigTest {
             ttsGain,
             true,
             1.0f,
-            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
         );
     }
 
@@ -161,7 +192,8 @@ public final class AssistantVoiceConfigTest {
         float ttsGain,
         boolean recognitionCueEnabled,
         float recognitionCueGain,
-        int startupPreRollMs
+        int startupPreRollMs,
+        boolean mediaButtonsEnabled
     ) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
@@ -182,7 +214,8 @@ public final class AssistantVoiceConfigTest {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
-            startupPreRollMs
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 

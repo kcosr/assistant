@@ -25,4 +25,6 @@
     <string name="assistant_voice_notification_channel_description">Persistent Assistant voice playback and listening with Speak and Stop controls, including lock-screen visibility when allowed.</string>
     <string name="assistant_voice_notification_action_speak">Speak</string>
     <string name="assistant_voice_notification_action_stop">Stop</string>
+    <string name="assistant_voice_notification_action_media_buttons_enable">Media Btns On</string>
+    <string name="assistant_voice_notification_action_media_buttons_disable">Media Btns Off</string>
 </resources>
