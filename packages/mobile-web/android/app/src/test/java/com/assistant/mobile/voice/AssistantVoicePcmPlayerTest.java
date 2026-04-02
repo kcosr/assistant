@@ -88,7 +88,7 @@ public final class AssistantVoicePcmPlayerTest {
         );
 
         assertEquals(27840, armingCue.length);
-        assertEquals(17280, successCue.length);
+        assertEquals(13440, successCue.length);
         assertEquals(28800, failureCue.length);
         assertFalse(Arrays.equals(armingCue, successCue));
         assertFalse(Arrays.equals(armingCue, failureCue));
