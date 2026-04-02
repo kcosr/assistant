@@ -38,6 +38,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionStartTimeoutMs).toBe(30000);
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(60000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(1200);
+    expect(preferences.voice.ttsGain).toBe(1);
     expect(preferences.synthesizedPanelTitlesEnabled).toBe(false);
   });
 
@@ -49,6 +50,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.audioMode).toBe('tool');
     expect(preferences.voice.autoListenEnabled).toBe(true);
     expect(preferences.voice.selectedMicDeviceId).toBe('');
+    expect(preferences.voice.ttsGain).toBe(1);
   });
 
   it('respects an explicit stored response mode on Capacitor Android', () => {
@@ -88,6 +90,7 @@ describe('loadClientPreferences', () => {
         recognitionCompletionTimeoutMs: 15000,
         recognitionEndSilenceMs: '900',
         selectedMicDeviceId: '11',
+        ttsGain: '6.2',
       }),
     );
 
@@ -98,6 +101,7 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(15000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(900);
     expect(preferences.voice.selectedMicDeviceId).toBe('11');
+    expect(preferences.voice.ttsGain).toBe(5);
   });
 
   it('loads synthesized panel title preference when enabled', () => {

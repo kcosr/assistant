@@ -4,6 +4,11 @@ export const DEFAULT_VOICE_ADAPTER_BASE_URL = 'https://assistant/agent-voice-ada
 export const DEFAULT_RECOGNITION_START_TIMEOUT_MS = 30_000;
 export const DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS = 60_000;
 export const DEFAULT_RECOGNITION_END_SILENCE_MS = 1_200;
+export const MIN_TTS_GAIN = 0.25;
+export const MAX_TTS_GAIN = 5.0;
+export const DEFAULT_TTS_GAIN = 1.0;
+export const MIN_TTS_GAIN_PERCENT = MIN_TTS_GAIN * 100;
+export const MAX_TTS_GAIN_PERCENT = MAX_TTS_GAIN * 100;
 
 export interface VoiceSettings {
   audioMode: AudioMode;
@@ -14,6 +19,7 @@ export interface VoiceSettings {
   recognitionStartTimeoutMs: number;
   recognitionCompletionTimeoutMs: number;
   recognitionEndSilenceMs: number;
+  ttsGain: number;
 }
 
 function normalizeOptionalString(value: unknown): string {
@@ -44,6 +50,40 @@ function normalizePositiveInt(value: unknown, fallback: number): number {
   return fallback;
 }
 
+export function normalizeTtsGain(value: unknown, fallback = DEFAULT_TTS_GAIN): number {
+  const normalizedFallback =
+    typeof fallback === 'number' && Number.isFinite(fallback) && fallback > 0
+      ? fallback
+      : DEFAULT_TTS_GAIN;
+  let candidate = normalizedFallback;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    candidate = value;
+  } else if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value.trim());
+    if (Number.isFinite(parsed) && parsed > 0) {
+      candidate = parsed;
+    }
+  }
+  return Math.min(MAX_TTS_GAIN, Math.max(MIN_TTS_GAIN, candidate));
+}
+
+export function ttsGainToPercent(gain: number): number {
+  return Math.round(normalizeTtsGain(gain) * 100);
+}
+
+export function ttsGainPercentToValue(value: unknown, fallback = DEFAULT_TTS_GAIN): number {
+  return normalizeTtsGain(
+    typeof value === 'string' || typeof value === 'number'
+      ? Number(value) / 100
+      : DEFAULT_TTS_GAIN,
+    fallback,
+  );
+}
+
+export function formatTtsGainPercentLabel(gain: number): string {
+  return `${ttsGainToPercent(gain)}%`;
+}
+
 export function createDefaultVoiceSettings(options?: {
   isCapacitorAndroid?: boolean;
 }): VoiceSettings {
@@ -57,6 +97,7 @@ export function createDefaultVoiceSettings(options?: {
     recognitionStartTimeoutMs: DEFAULT_RECOGNITION_START_TIMEOUT_MS,
     recognitionCompletionTimeoutMs: DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
     recognitionEndSilenceMs: DEFAULT_RECOGNITION_END_SILENCE_MS,
+    ttsGain: DEFAULT_TTS_GAIN,
   };
 }
 
@@ -93,6 +134,7 @@ export function normalizeVoiceSettings(
       record['recognitionEndSilenceMs'],
       defaults.recognitionEndSilenceMs,
     ),
+    ttsGain: normalizeTtsGain(record['ttsGain'], defaults.ttsGain),
   };
 }
 
@@ -105,6 +147,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.selectedMicDeviceId === right.selectedMicDeviceId &&
     left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
     left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
-    left.recognitionEndSilenceMs === right.recognitionEndSilenceMs
+    left.recognitionEndSilenceMs === right.recognitionEndSilenceMs &&
+    left.ttsGain === right.ttsGain
   );
 }

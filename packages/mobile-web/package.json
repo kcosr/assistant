@@ -14,6 +14,7 @@
     "android:build": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:build:release": "npm run android:sync && cd android && ./gradlew assembleRelease",
     "android:run": "npm run android:sync && cd android && ./gradlew installDebug",
+    "android:test": "npm run android:sync && cd android && ./gradlew testDebugUnitTest",
     "android:doctor": "npx cap doctor",
     "ios:add": "npx @capacitor/cli telemetry off && npx @capacitor/cli add ios && npm run icons:generate && node scripts/patch-web-config.mjs",
     "ios:sync": "npx @capacitor/cli sync ios && npm run icons:generate && node scripts/patch-web-config.mjs",

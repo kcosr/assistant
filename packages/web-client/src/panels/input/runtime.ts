@@ -77,6 +77,8 @@ export interface InputRuntimeOptions {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceTtsGainSliderEl: HTMLInputElement;
+  voiceTtsGainValueEl: HTMLElement;
   initialIncludePanelContext: boolean;
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
@@ -325,6 +327,8 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInputEl: options.voiceRecognitionEndSilenceInputEl,
+    voiceTtsGainSliderEl: options.voiceTtsGainSliderEl,
+    voiceTtsGainValueEl: options.voiceTtsGainValueEl,
     inputEl: elements.inputEl,
     getSocket: options.getSocket,
     getSessionId: options.getSelectedSessionId,

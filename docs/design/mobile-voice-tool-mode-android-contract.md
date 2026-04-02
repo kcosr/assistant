@@ -124,6 +124,7 @@ Current fields:
 - `recognitionStartTimeoutMs`
 - `recognitionCompletionTimeoutMs`
 - `recognitionEndSilenceMs`
+- `ttsGain`
 
 `voiceAdapterBaseUrl` is sourced from that model.
 
@@ -208,7 +209,8 @@ Recommended `setVoiceSettings` payload:
     "selectedMicDeviceId": "",
     "recognitionStartTimeoutMs": 30000,
     "recognitionCompletionTimeoutMs": 60000,
-    "recognitionEndSilenceMs": 1200
+    "recognitionEndSilenceMs": 1200,
+    "ttsGain": 1.0
   }
 }
 ```

@@ -3,7 +3,9 @@ import { TtsAudioPlayer } from '../utils/audio';
 import type { AudioMode } from '../utils/audioMode';
 import {
   areVoiceSettingsEqual,
+  formatTtsGainPercentLabel,
   normalizeVoiceSettings,
+  ttsGainToPercent,
   type VoiceSettings,
 } from '../utils/voiceSettings';
 import type { SpeechInputController } from './speechInput';
@@ -66,6 +68,7 @@ export interface AssistantNativeVoiceStatePayload {
   assistantBaseUrl?: string;
   selectedSession?: AssistantNativeVoiceSelection | null;
   sessionTitles?: Record<string, string>;
+  effectiveTtsGain?: number;
   lastError?: string;
 }
 
@@ -335,6 +338,8 @@ export interface SpeechAudioControllerOptions {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceTtsGainSliderEl: HTMLInputElement;
+  voiceTtsGainValueEl: HTMLElement;
   inputEl: HTMLInputElement;
   getSocket: () => WebSocket | null;
   getSessionId: () => string | null;
@@ -940,6 +945,12 @@ export class SpeechAudioController {
     this.options.voiceRecognitionEndSilenceInputEl.value = String(
       this.currentVoiceSettings.recognitionEndSilenceMs,
     );
+    this.options.voiceTtsGainSliderEl.value = String(
+      ttsGainToPercent(this.currentVoiceSettings.ttsGain),
+    );
+    this.options.voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(
+      this.currentVoiceSettings.ttsGain,
+    );
   }
 
   private syncVoiceSettingsControlState(): void {
@@ -952,6 +963,7 @@ export class SpeechAudioController {
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceTtsGainSliderEl.disabled = !supportsNativeVoiceSettings;
   }
 
   private syncNativeInputDeviceOptions(): void {

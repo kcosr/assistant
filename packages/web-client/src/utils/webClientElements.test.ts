@@ -26,6 +26,9 @@ describe('getWebClientElements', () => {
       <input id="voice-recognition-start-timeout-input" type="number" />
       <input id="voice-recognition-completion-timeout-input" type="number" />
       <input id="voice-recognition-end-silence-input" type="number" />
+      <div id="voice-tts-gain-control"></div>
+      <input id="voice-tts-gain-slider" type="range" />
+      <span id="voice-tts-gain-value"></span>
       <input id="autofocus-chat-checkbox" type="checkbox" />
       <input id="keyboard-shortcuts-checkbox" type="checkbox" />
       <input id="auto-scroll-checkbox" type="checkbox" />
@@ -54,6 +57,9 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRecognitionEndSilenceInput.id).toBe(
       'voice-recognition-end-silence-input',
     );
+    expect(elements?.voiceTtsGainControl.id).toBe('voice-tts-gain-control');
+    expect(elements?.voiceTtsGainSlider.id).toBe('voice-tts-gain-slider');
+    expect(elements?.voiceTtsGainValue.id).toBe('voice-tts-gain-value');
   });
 
   it('keeps the voice settings modal hidden in the static document', () => {
@@ -68,5 +74,8 @@ describe('getWebClientElements', () => {
     expect(modal?.hidden).toBe(true);
     expect((modal as HTMLElement | null)?.style.display).toBe('none');
     expect(modal?.parentElement?.tagName).toBe('BODY');
+
+    const ttsGainControl = dom.window.document.getElementById('voice-tts-gain-control');
+    expect(ttsGainControl?.hasAttribute('hidden')).toBe(true);
   });
 });

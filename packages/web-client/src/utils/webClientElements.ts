@@ -12,6 +12,9 @@ export interface WebClientElements {
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
   voiceRecognitionEndSilenceInput: HTMLInputElement;
+  voiceTtsGainControl: HTMLElement;
+  voiceTtsGainSlider: HTMLInputElement;
+  voiceTtsGainValue: HTMLElement;
   includeContextCheckbox: HTMLInputElement | null;
   showContextCheckbox: HTMLInputElement | null;
   listInsertAtTopCheckbox: HTMLInputElement | null;
@@ -82,6 +85,9 @@ export function getWebClientElements(): WebClientElements | null {
   const voiceRecognitionEndSilenceInput = getElement<HTMLInputElement>(
     'voice-recognition-end-silence-input',
   );
+  const voiceTtsGainControl = getElement<HTMLElement>('voice-tts-gain-control');
+  const voiceTtsGainSlider = getElement<HTMLInputElement>('voice-tts-gain-slider');
+  const voiceTtsGainValue = getElement<HTMLElement>('voice-tts-gain-value');
   const includeContextCheckbox = getElement<HTMLInputElement>('include-context-checkbox');
   const showContextCheckbox = getElement<HTMLInputElement>('show-context-checkbox');
   const listInsertAtTopCheckbox = getElement<HTMLInputElement>('list-insert-at-top-checkbox');
@@ -118,6 +124,9 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
     !voiceRecognitionEndSilenceInput ||
+    !voiceTtsGainControl ||
+    !voiceTtsGainSlider ||
+    !voiceTtsGainValue ||
     !autoFocusChatCheckbox ||
     !keyboardShortcutsCheckbox ||
     !autoScrollCheckbox ||
@@ -142,6 +151,9 @@ export function getWebClientElements(): WebClientElements | null {
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,
     voiceRecognitionEndSilenceInput,
+    voiceTtsGainControl,
+    voiceTtsGainSlider,
+    voiceTtsGainValue,
     includeContextCheckbox,
     showContextCheckbox,
     listInsertAtTopCheckbox,
