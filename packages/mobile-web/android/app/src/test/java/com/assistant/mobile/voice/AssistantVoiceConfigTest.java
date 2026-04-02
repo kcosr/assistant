@@ -1,6 +1,7 @@
 package com.assistant.mobile.voice;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -67,6 +68,18 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void constructorClampsRecognitionCueGain() {
+        assertEquals(0.25f, createConfig(1.0f, true, 0.05f).recognitionCueGain, 0.0001f);
+        assertEquals(5.0f, createConfig(1.0f, true, 9.0f).recognitionCueGain, 0.0001f);
+    }
+
+    @Test
+    public void constructorClampsStartupPreRollMs() {
+        assertEquals(0, createConfig(1.0f, true, 1.0f, -10).startupPreRollMs);
+        assertEquals(4096, createConfig(1.0f, true, 1.0f, 99999).startupPreRollMs);
+    }
+
+    @Test
     public void withVoiceSettingsReadsTtsGain() throws Exception {
         AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
             new JSONObject().put("ttsGain", 1.8)
@@ -75,15 +88,113 @@ public final class AssistantVoiceConfigTest {
         assertEquals(1.8f, updated.ttsGain, 0.0001f);
     }
 
+    @Test
+    public void withVoiceSettingsReadsRecognitionCueSettings() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject()
+                .put("recognitionCueEnabled", false)
+                .put("recognitionCueGain", 1.8)
+        );
+
+        assertFalse(updated.recognitionCueEnabled);
+        assertEquals(1.8f, updated.recognitionCueGain, 0.0001f);
+    }
+
+    @Test
+    public void withVoiceSettingsReadsStartupPreRollMs() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("startupPreRollMs", 768)
+        );
+
+        assertEquals(768, updated.startupPreRollMs);
+    }
+
+    @Test
+    public void saveAndLoadPersistMediaButtonsEnabled() {
+        Context context = RuntimeEnvironment.getApplication();
+        AssistantVoiceConfig.save(context, createConfig(true));
+
+        AssistantVoiceConfig loaded = AssistantVoiceConfig.load(context);
+
+        assertTrue(loaded.mediaButtonsEnabled);
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
         return createConfig(titles, 1.0f);
     }
 
     private static AssistantVoiceConfig createConfig(float ttsGain) {
-        return createConfig(Collections.emptyMap(), ttsGain);
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain
+    ) {
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain,
+        int startupPreRollMs
+    ) {
+        return createConfig(
+            Collections.emptyMap(),
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            startupPreRollMs,
+            false
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(boolean mediaButtonsEnabled) {
+        return createConfig(
+            Collections.emptyMap(),
+            1.0f,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            mediaButtonsEnabled
+        );
     }
 
     private static AssistantVoiceConfig createConfig(Map<String, String> titles, float ttsGain) {
+        return createConfig(
+            titles,
+            ttsGain,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false
+        );
+    }
+
+    private static AssistantVoiceConfig createConfig(
+        Map<String, String> titles,
+        float ttsGain,
+        boolean recognitionCueEnabled,
+        float recognitionCueGain,
+        int startupPreRollMs,
+        boolean mediaButtonsEnabled
+    ) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
             true,
@@ -100,7 +211,11 @@ public final class AssistantVoiceConfigTest {
             "",
             AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
             AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
-            ttsGain
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            startupPreRollMs,
+            mediaButtonsEnabled
         );
     }
 

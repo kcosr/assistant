@@ -77,6 +77,11 @@ export interface InputRuntimeOptions {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceRecognitionCueCheckboxEl: HTMLInputElement;
+  voiceRecognitionCueGainSliderEl: HTMLInputElement;
+  voiceRecognitionCueGainValueEl: HTMLElement;
+  voiceStartupPreRollSliderEl: HTMLInputElement;
+  voiceStartupPreRollValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
   initialIncludePanelContext: boolean;
@@ -327,6 +332,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInputEl: options.voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInputEl: options.voiceRecognitionEndSilenceInputEl,
+    voiceRecognitionCueCheckboxEl: options.voiceRecognitionCueCheckboxEl,
+    voiceRecognitionCueGainSliderEl: options.voiceRecognitionCueGainSliderEl,
+    voiceRecognitionCueGainValueEl: options.voiceRecognitionCueGainValueEl,
+    voiceStartupPreRollSliderEl: options.voiceStartupPreRollSliderEl,
+    voiceStartupPreRollValueEl: options.voiceStartupPreRollValueEl,
     voiceTtsGainSliderEl: options.voiceTtsGainSliderEl,
     voiceTtsGainValueEl: options.voiceTtsGainValueEl,
     inputEl: elements.inputEl,

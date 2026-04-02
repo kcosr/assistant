@@ -52,6 +52,11 @@ function createVoiceSettingsInputs(): {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceRecognitionCueCheckboxEl: HTMLInputElement;
+  voiceRecognitionCueGainSliderEl: HTMLInputElement;
+  voiceRecognitionCueGainValueEl: HTMLElement;
+  voiceStartupPreRollSliderEl: HTMLInputElement;
+  voiceStartupPreRollValueEl: HTMLElement;
   voiceTtsGainSliderEl: HTMLInputElement;
   voiceTtsGainValueEl: HTMLElement;
 } {
@@ -66,6 +71,18 @@ function createVoiceSettingsInputs(): {
   voiceTtsGainSliderEl.max = '500';
   voiceTtsGainSliderEl.step = '1';
   voiceTtsGainSliderEl.value = '100';
+  const voiceRecognitionCueGainSliderEl = document.createElement('input');
+  voiceRecognitionCueGainSliderEl.type = 'range';
+  voiceRecognitionCueGainSliderEl.min = '25';
+  voiceRecognitionCueGainSliderEl.max = '500';
+  voiceRecognitionCueGainSliderEl.step = '1';
+  voiceRecognitionCueGainSliderEl.value = '100';
+  const voiceStartupPreRollSliderEl = document.createElement('input');
+  voiceStartupPreRollSliderEl.type = 'range';
+  voiceStartupPreRollSliderEl.min = '0';
+  voiceStartupPreRollSliderEl.max = '4096';
+  voiceStartupPreRollSliderEl.step = '1';
+  voiceStartupPreRollSliderEl.value = '512';
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
@@ -74,6 +91,11 @@ function createVoiceSettingsInputs(): {
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
     voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
     voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+    voiceRecognitionCueCheckboxEl: document.createElement('input'),
+    voiceRecognitionCueGainSliderEl,
+    voiceRecognitionCueGainValueEl: document.createElement('span'),
+    voiceStartupPreRollSliderEl,
+    voiceStartupPreRollValueEl: document.createElement('span'),
     voiceTtsGainSliderEl,
     voiceTtsGainValueEl: document.createElement('span'),
   };
@@ -90,6 +112,9 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     recognitionCompletionTimeoutMs: 60000,
     recognitionEndSilenceMs: 1200,
     ttsGain: 1,
+    recognitionCueEnabled: true,
+    recognitionCueGain: 1,
+    startupPreRollMs: 512,
     ...overrides,
   };
 }
@@ -129,9 +154,7 @@ describe('AssistantNativeVoiceBridge', () => {
     await expect(
       bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
     ).resolves.toBe(true);
-    await expect(
-      bridge.setSessionTitles({ 'session-1': 'Daily Assistant' }),
-    ).resolves.toBe(true);
+    await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings({
@@ -224,9 +247,7 @@ describe('AssistantNativeVoiceBridge', () => {
 
     await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(false);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(false);
-    await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(
-      false,
-    );
+    await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(false);
   });
 
   it('returns false when an async native setter rejects', async () => {
@@ -389,6 +410,93 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(inputs.voiceTtsGainValueEl.textContent).toBe('175%');
     expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
       ttsGain: 1.75,
+    });
+  });
+
+  it('syncs the native recognition cue controls and persists cue changes', () => {
+    ensureWebSocketGlobal();
+
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+    });
+
+    controller.attach();
+    controller.setVoiceSettings({
+      ...controller.voiceSettings,
+      recognitionCueEnabled: false,
+      recognitionCueGain: 1.75,
+    });
+
+    expect(controller.voiceSettings.recognitionCueEnabled).toBe(false);
+    expect(controller.voiceSettings.recognitionCueGain).toBe(1.75);
+    expect(inputs.voiceRecognitionCueCheckboxEl.checked).toBe(false);
+    expect(inputs.voiceRecognitionCueGainSliderEl.value).toBe('175');
+    expect(inputs.voiceRecognitionCueGainValueEl.textContent).toBe('175%');
+    expect(inputs.voiceRecognitionCueGainSliderEl.disabled).toBe(true);
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      recognitionCueEnabled: false,
+      recognitionCueGain: 1.75,
+    });
+  });
+
+  it('syncs the native startup pre-roll control and persists changes', () => {
+    ensureWebSocketGlobal();
+
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+    });
+
+    controller.attach();
+    controller.setVoiceSettings({
+      ...controller.voiceSettings,
+      startupPreRollMs: 768,
+    });
+
+    expect(controller.voiceSettings.startupPreRollMs).toBe(768);
+    expect(inputs.voiceStartupPreRollSliderEl.value).toBe('768');
+    expect(inputs.voiceStartupPreRollValueEl.textContent).toBe('768 ms');
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      startupPreRollMs: 768,
     });
   });
 
@@ -705,10 +813,7 @@ describe('SpeechAudioController.micButtonState', () => {
     controller.setAudioMode('response');
     controller.setAudioMode('off');
 
-    expect(handler).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ audioMode: 'response' }),
-    );
+    expect(handler).toHaveBeenNthCalledWith(1, expect.objectContaining({ audioMode: 'response' }));
     expect(handler).toHaveBeenNthCalledWith(2, expect.objectContaining({ audioMode: 'off' }));
   });
 
@@ -726,6 +831,11 @@ describe('SpeechAudioController.micButtonState', () => {
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceRecognitionCueCheckboxEl: document.createElement('input'),
+      voiceRecognitionCueGainSliderEl: document.createElement('input'),
+      voiceRecognitionCueGainValueEl: document.createElement('span'),
+      voiceStartupPreRollSliderEl: document.createElement('input'),
+      voiceStartupPreRollValueEl: document.createElement('span'),
       voiceTtsGainSliderEl: document.createElement('input'),
       voiceTtsGainValueEl: document.createElement('span'),
       inputEl: document.createElement('input'),

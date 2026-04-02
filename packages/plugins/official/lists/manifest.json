@@ -393,13 +393,15 @@
             "type": "string",
             "description": "Instance id (defaults to \"default\")."
           },
-          "query": { "type": "string", "description": "Search query." },
+          "query": {
+            "type": "string",
+            "description": "Optional search query. Provide query, listId, or tags."
+          },
           "listId": { "type": "string", "description": "Optional list id." },
           "limit": { "type": "number", "description": "Max results." },
           "tags": { "type": "array", "items": { "type": "string" } },
           "tagMatch": { "type": "string", "enum": ["all", "any"] }
-        },
-        "required": ["query"]
+        }
       },
       "capabilities": ["lists.read"]
     },

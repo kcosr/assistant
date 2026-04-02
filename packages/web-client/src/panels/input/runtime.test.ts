@@ -20,17 +20,16 @@ describe('createInputRuntime', () => {
       <input type="checkbox" />
     `;
 
-    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] = Array.from(
-      document.body.children,
-    ) as [
-      HTMLFormElement,
-      HTMLInputElement,
-      HTMLButtonElement,
-      HTMLButtonElement,
-      HTMLButtonElement,
-      HTMLSelectElement,
-      HTMLInputElement,
-    ];
+    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] =
+      Array.from(document.body.children) as [
+        HTMLFormElement,
+        HTMLInputElement,
+        HTMLButtonElement,
+        HTMLButtonElement,
+        HTMLButtonElement,
+        HTMLSelectElement,
+        HTMLInputElement,
+      ];
 
     const send = vi.fn();
     const socket = { readyState: WebSocket.OPEN, send } as unknown as WebSocket;
@@ -79,6 +78,11 @@ describe('createInputRuntime', () => {
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceRecognitionCueCheckboxEl: document.createElement('input'),
+      voiceRecognitionCueGainSliderEl: document.createElement('input'),
+      voiceRecognitionCueGainValueEl: document.createElement('span'),
+      voiceStartupPreRollSliderEl: document.createElement('input'),
+      voiceStartupPreRollValueEl: document.createElement('span'),
       voiceTtsGainSliderEl: document.createElement('input'),
       voiceTtsGainValueEl: document.createElement('span'),
       initialIncludePanelContext: true,
@@ -94,6 +98,9 @@ describe('createInputRuntime', () => {
         recognitionCompletionTimeoutMs: 60000,
         recognitionEndSilenceMs: 1200,
         ttsGain: 1,
+        recognitionCueEnabled: true,
+        recognitionCueGain: 1,
+        startupPreRollMs: 512,
       },
       voiceSettingsStorageKey: 'test-voice-settings',
       continuousListeningLongPressMs: 250,
@@ -123,9 +130,16 @@ describe('createInputRuntime', () => {
       <input type="checkbox" />
     `;
 
-    const [contextPreviewEl, form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] = Array.from(
-      document.body.children,
-    ) as [
+    const [
+      contextPreviewEl,
+      form,
+      inputEl,
+      clearButtonEl,
+      _submitButtonEl,
+      micButtonEl,
+      select,
+      autoListenCheckbox,
+    ] = Array.from(document.body.children) as [
       HTMLElement,
       HTMLFormElement,
       HTMLInputElement,
@@ -182,6 +196,11 @@ describe('createInputRuntime', () => {
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceRecognitionCueCheckboxEl: document.createElement('input'),
+      voiceRecognitionCueGainSliderEl: document.createElement('input'),
+      voiceRecognitionCueGainValueEl: document.createElement('span'),
+      voiceStartupPreRollSliderEl: document.createElement('input'),
+      voiceStartupPreRollValueEl: document.createElement('span'),
       voiceTtsGainSliderEl: document.createElement('input'),
       voiceTtsGainValueEl: document.createElement('span'),
       initialIncludePanelContext: true,

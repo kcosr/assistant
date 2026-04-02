@@ -24,4 +24,3 @@ packages/mobile-web/google-services.json
 .build/
 .build-service/workspace-id
 .build-service/npm-installed
-PLAN.md

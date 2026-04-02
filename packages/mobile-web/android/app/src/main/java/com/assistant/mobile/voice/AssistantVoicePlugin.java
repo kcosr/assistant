@@ -317,6 +317,9 @@ public final class AssistantVoicePlugin extends Plugin {
             sessionTitles.put(entry.getKey(), entry.getValue());
         }
         voiceSettings.put("ttsGain", (double) current.ttsGain);
+        voiceSettings.put("recognitionCueEnabled", current.recognitionCueEnabled);
+        voiceSettings.put("recognitionCueGain", (double) current.recognitionCueGain);
+        voiceSettings.put("startupPreRollMs", current.startupPreRollMs);
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
@@ -326,6 +329,7 @@ public final class AssistantVoicePlugin extends Plugin {
         payload.put("sessionTitles", sessionTitles);
         payload.put("inputContext", inputContext);
         payload.put("effectiveTtsGain", (double) current.ttsGain);
+        payload.put("effectiveRecognitionCueGain", (double) current.recognitionCueGain);
 
         String error = AssistantVoiceConfig.loadRuntimeError(getContext());
         if (!error.isEmpty()) {

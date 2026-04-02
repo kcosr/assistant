@@ -39,6 +39,9 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionCompletionTimeoutMs).toBe(60000);
     expect(preferences.voice.recognitionEndSilenceMs).toBe(1200);
     expect(preferences.voice.ttsGain).toBe(1);
+    expect(preferences.voice.recognitionCueEnabled).toBe(true);
+    expect(preferences.voice.recognitionCueGain).toBe(1);
+    expect(preferences.voice.startupPreRollMs).toBe(512);
     expect(preferences.synthesizedPanelTitlesEnabled).toBe(false);
   });
 
@@ -51,6 +54,9 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.autoListenEnabled).toBe(true);
     expect(preferences.voice.selectedMicDeviceId).toBe('');
     expect(preferences.voice.ttsGain).toBe(1);
+    expect(preferences.voice.recognitionCueEnabled).toBe(true);
+    expect(preferences.voice.recognitionCueGain).toBe(1);
+    expect(preferences.voice.startupPreRollMs).toBe(512);
   });
 
   it('respects an explicit stored response mode on Capacitor Android', () => {
@@ -91,6 +97,9 @@ describe('loadClientPreferences', () => {
         recognitionEndSilenceMs: '900',
         selectedMicDeviceId: '11',
         ttsGain: '6.2',
+        recognitionCueEnabled: false,
+        recognitionCueGain: '6.2',
+        startupPreRollMs: '6000',
       }),
     );
 
@@ -102,6 +111,9 @@ describe('loadClientPreferences', () => {
     expect(preferences.voice.recognitionEndSilenceMs).toBe(900);
     expect(preferences.voice.selectedMicDeviceId).toBe('11');
     expect(preferences.voice.ttsGain).toBe(5);
+    expect(preferences.voice.recognitionCueEnabled).toBe(false);
+    expect(preferences.voice.recognitionCueGain).toBe(5);
+    expect(preferences.voice.startupPreRollMs).toBe(4096);
   });
 
   it('loads synthesized panel title preference when enabled', () => {
