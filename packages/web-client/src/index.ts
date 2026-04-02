@@ -7,6 +7,7 @@ import {
   type PanelPlacement,
   type PanelStatus,
   type PanelTypeManifest,
+  type ProjectedTranscriptEvent,
   type ServerMessage,
   type SessionAttributesPatch,
   type SessionConfig,
@@ -227,7 +228,6 @@ import {
 import { configureNativeLaunchBackend } from './utils/nativeLaunchBackend';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
-import { projectedTranscriptToChatEvents } from './utils/projectedTranscript';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
 function createWebSocketUrl(): string {
@@ -341,6 +341,7 @@ async function main(): Promise<void> {
   const hydratingSessionTranscriptCounts = new Map<string, number>();
   const sessionTranscriptCursors = new Map<string, string>();
   const bufferedChatEvents = new Map<string, ChatEvent[]>();
+  const bufferedTranscriptEvents = new Map<string, ProjectedTranscriptEvent[]>();
 
   function clearSessionTranscriptState(sessionId: string): void {
     const trimmed = sessionId.trim();
@@ -351,6 +352,7 @@ async function main(): Promise<void> {
     hydratingSessionTranscriptCounts.delete(trimmed);
     sessionTranscriptCursors.delete(trimmed);
     bufferedChatEvents.delete(trimmed);
+    bufferedTranscriptEvents.delete(trimmed);
   }
 
   function flushBufferedChatEvents(
@@ -371,6 +373,32 @@ async function main(): Promise<void> {
     }
     for (const event of eventsToApply) {
       chatRenderer.handleNewEvent(event);
+    }
+    chatScrollManager.autoScrollIfEnabled();
+  }
+
+  function flushBufferedTranscriptEvents(
+    sessionId: string,
+    chatRenderer: ChatRuntime['chatRenderer'],
+    chatScrollManager: ChatRuntime['chatScrollManager'],
+    replayedEvents?: ProjectedTranscriptEvent[],
+  ): void {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return;
+    }
+    const pendingEvents = bufferedTranscriptEvents.get(trimmed) ?? [];
+    bufferedTranscriptEvents.delete(trimmed);
+    if (pendingEvents.length === 0) {
+      return;
+    }
+    const replayedIds = new Set((replayedEvents ?? []).map((event) => event.eventId));
+    const eventsToApply = pendingEvents.filter((event) => !replayedIds.has(event.eventId));
+    if (eventsToApply.length === 0) {
+      return;
+    }
+    for (const event of eventsToApply) {
+      chatRenderer.handleNewProjectedEvent(event);
     }
     chatScrollManager.autoScrollIfEnabled();
   }
@@ -4091,22 +4119,22 @@ async function main(): Promise<void> {
 
       const replay = await readSessionOperationResult<SessionReplayResponse>(eventsResponse);
       const projectedEvents = Array.isArray(replay?.events) ? replay.events : [];
-      const events = projectedTranscriptToChatEvents(projectedEvents);
       if (typeof replay?.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
         sessionTranscriptCursors.set(trimmed, replay.nextCursor.trim());
       } else {
         sessionTranscriptCursors.delete(trimmed);
       }
 
-      if (events.length > 0) {
-        chatRenderer.replayEvents(events);
+      if (projectedEvents.length > 0) {
+        chatRenderer.replayProjectedEvents(projectedEvents);
         chatScrollManager.scrollToBottom();
       } else {
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
       }
 
-      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager, events);
+      flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, projectedEvents);
+      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
     } catch (error) {
       console.error('Failed to fetch session events', sessionId, error);
       chatRenderer.clear();
@@ -4389,6 +4417,17 @@ async function main(): Promise<void> {
       const existing = bufferedChatEvents.get(trimmed) ?? [];
       existing.push(event);
       bufferedChatEvents.set(trimmed, existing);
+    },
+    shouldBufferTranscriptEvent: (sessionId) =>
+      (hydratingSessionTranscriptCounts.get(sessionId.trim()) ?? 0) > 0,
+    bufferTranscriptEvent: (sessionId, event) => {
+      const trimmed = sessionId.trim();
+      if (!trimmed) {
+        return;
+      }
+      const existing = bufferedTranscriptEvents.get(trimmed) ?? [];
+      existing.push(event);
+      bufferedTranscriptEvents.set(trimmed, existing);
     },
     renderAgentSidebar,
     appendMessage,

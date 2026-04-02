@@ -23,6 +23,7 @@ import type {
   ToolResultEvent,
   SummaryMessageEvent,
   TurnEndEvent,
+  ProjectedTranscriptEvent,
   TurnStartEvent,
   InterruptEvent,
   UserAudioEvent,
@@ -68,6 +69,7 @@ import {
   type InteractionResponseDraft,
   type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
+import { projectedTranscriptEventToChatEvent } from '../utils/projectedTranscript';
 
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
@@ -465,6 +467,28 @@ export class ChatRenderer {
 
   handleNewEvent(event: ChatEvent): void {
     this.renderEvent(event);
+  }
+
+  renderProjectedEvent(event: ProjectedTranscriptEvent): void {
+    const chatEvent = projectedTranscriptEventToChatEvent(event);
+    if (!chatEvent) {
+      return;
+    }
+    this.renderEvent(chatEvent);
+  }
+
+  replayProjectedEvents(events: ProjectedTranscriptEvent[]): void {
+    this.clear();
+    this._isReplaying = true;
+    for (const event of events) {
+      this.renderProjectedEvent(event);
+    }
+    this._isReplaying = false;
+    this.syncTypingIndicatorFromTurnState();
+  }
+
+  handleNewProjectedEvent(event: ProjectedTranscriptEvent): void {
+    this.renderProjectedEvent(event);
   }
 
   clear(): void {

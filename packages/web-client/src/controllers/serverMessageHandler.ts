@@ -2,6 +2,7 @@ import type {
   ChatEvent,
   PanelEventEnvelope,
   PanelStatus,
+  ProjectedTranscriptEvent,
   ServerChatEventMessage,
   ServerMessage,
   ServerMessageDequeuedMessage,
@@ -16,7 +17,6 @@ import type { PendingMessageListController } from './pendingMessageListControlle
 import type { ChatRuntime } from '../panels/chat/runtime';
 import { ensureEmptySessionHint } from '../utils/emptySessionHint';
 import type { AudioMode } from '../utils/audioMode';
-import { projectedTranscriptToChatEvents } from '../utils/projectedTranscript';
 
 interface SessionSummary {
   sessionId: string;
@@ -53,6 +53,8 @@ export interface ServerMessageHandlerOptions {
   loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
   shouldBufferChatEvent?: (sessionId: string) => boolean;
   bufferChatEvent?: (sessionId: string, event: ChatEvent) => void;
+  shouldBufferTranscriptEvent?: (sessionId: string) => boolean;
+  bufferTranscriptEvent?: (sessionId: string, event: ProjectedTranscriptEvent) => void;
   renderAgentSidebar: () => void;
   appendMessage: (
     container: HTMLElement,
@@ -180,6 +182,47 @@ export class ServerMessageHandler {
     this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
   }
 
+  private handleProjectedTranscriptEventForSession(
+    sessionId: string,
+    event: ProjectedTranscriptEvent,
+  ): void {
+    if (event.kind === 'request_start') {
+      this.markTurnStarted(sessionId, event.requestId);
+    } else if (
+      event.kind === 'request_end' ||
+      event.kind === 'interrupt' ||
+      event.kind === 'error'
+    ) {
+      this.markTurnFinished(sessionId, event.requestId);
+    }
+
+    if (!this.options.isChatPanelVisible(sessionId)) {
+      this.markSessionHasPendingMessages(sessionId);
+      this.options.showBackgroundSessionActivityIndicator(sessionId);
+    }
+
+    this.syncSessionTurnActivity(sessionId);
+
+    if (this.options.shouldBufferTranscriptEvent?.(sessionId)) {
+      this.options.bufferTranscriptEvent?.(sessionId, event);
+      return;
+    }
+
+    const runtime = this.options.getChatRuntimeForSession(sessionId);
+    if (!runtime) {
+      return;
+    }
+    runtime.chatRenderer.handleNewProjectedEvent(event);
+    if (this.options.isChatPanelVisible(sessionId)) {
+      if (event.kind === 'request_start') {
+        runtime.chatScrollManager.scrollToBottom();
+      } else {
+        runtime.chatScrollManager.autoScrollIfEnabled();
+      }
+    }
+    this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
+  }
+
   private markSessionHasPendingMessages(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -237,14 +280,7 @@ export class ServerMessageHandler {
           console.warn('[client] transcript_event missing sessionId', transcriptMessage);
           break;
         }
-        const projectedEvents = projectedTranscriptToChatEvents([transcriptMessage.event]);
-        if (projectedEvents.length === 0) {
-          console.warn('[client] transcript_event could not be projected', transcriptMessage);
-          break;
-        }
-        for (const event of projectedEvents) {
-          this.handleChatEventForSession(sessionId, event);
-        }
+        this.handleProjectedTranscriptEventForSession(sessionId, transcriptMessage.event);
         break;
       }
 

@@ -229,12 +229,12 @@ describe('ServerMessageHandler typing indicator', () => {
   });
 
   it('renders transcript events through the chat renderer path', async () => {
-    const handleNewEvent = vi.fn();
+    const handleNewProjectedEvent = vi.fn();
     const scrollToBottom = vi.fn();
     const autoScrollIfEnabled = vi.fn();
     const runtime = {
       chatRenderer: {
-        handleNewEvent,
+        handleNewProjectedEvent,
         hideTypingIndicator: vi.fn(),
         showTypingIndicator: vi.fn(),
       },
@@ -273,12 +273,12 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
 
-    expect(handleNewEvent).toHaveBeenCalledWith(
+    expect(handleNewProjectedEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        type: 'turn_start',
-        id: 'transcript-1',
         sessionId: 's-1',
-        turnId: 'turn-1',
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+        kind: 'request_start',
       }),
     );
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
@@ -287,10 +287,10 @@ describe('ServerMessageHandler typing indicator', () => {
   });
 
   it('buffers transcript events while transcript hydration is in progress', async () => {
-    const handleNewEvent = vi.fn();
+    const handleNewProjectedEvent = vi.fn();
     const runtime = {
       chatRenderer: {
-        handleNewEvent,
+        handleNewProjectedEvent,
         hideTypingIndicator: vi.fn(),
         showTypingIndicator: vi.fn(),
       },
@@ -309,12 +309,12 @@ describe('ServerMessageHandler typing indicator', () => {
       dispose: vi.fn(),
     } as unknown as ChatRuntime;
 
-    const bufferChatEvent = vi.fn();
+    const bufferTranscriptEvent = vi.fn();
     const { handler } = makeHandler({
       getChatRuntimeForSession: () => runtime,
       isChatPanelVisible: () => true,
-      shouldBufferChatEvent: () => true,
-      bufferChatEvent,
+      shouldBufferTranscriptEvent: () => true,
+      bufferTranscriptEvent,
     });
 
     await handler.handle({
@@ -332,16 +332,16 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
 
-    expect(bufferChatEvent).toHaveBeenCalledWith(
+    expect(bufferTranscriptEvent).toHaveBeenCalledWith(
       's-1',
       expect.objectContaining({
-        type: 'turn_start',
-        id: 'transcript-1',
         sessionId: 's-1',
-        turnId: 'turn-1',
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+        kind: 'request_start',
       }),
     );
-    expect(handleNewEvent).not.toHaveBeenCalled();
+    expect(handleNewProjectedEvent).not.toHaveBeenCalled();
   });
 
   it('marks sessions busy on turn_start and idle on turn_end before assistant output arrives', async () => {
