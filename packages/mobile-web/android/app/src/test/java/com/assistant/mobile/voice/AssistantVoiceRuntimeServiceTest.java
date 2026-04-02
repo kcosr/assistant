@@ -166,6 +166,32 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals("", AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId("tts-1"));
     }
 
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStartRecognitionAfterArmingCueMatchesPendingRecognitionRequest() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "request-1",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-1")
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "request-1",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-2")
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-1")
+            )
+        );
+    }
+
     private static PendingIntent createActivityPendingIntent(Context context, String action) {
         return PendingIntent.getActivity(
             context,
