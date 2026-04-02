@@ -4,6 +4,8 @@
 
 ### Breaking Changes
 
+- Removed `sessions.mirrorPiSessionHistory`; Pi-backed sessions now always persist canonical Pi JSONL history for replay, reload, and request-group editing.
+
 ### Added
 
 - Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83))

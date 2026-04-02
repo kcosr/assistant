@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import { WebSocketServer } from 'ws';
 import { AgentRegistry } from './agents';
 import { loadConfig as loadAppConfig, type AppConfig } from './config';
-import { FileEventStore, InMemoryOverlayEventBuffer, SessionScopedEventStore } from './events';
+import { FileEventStore, SessionScopedEventStore } from './events';
 import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstanceDataDir } from './plugins/instances';
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
@@ -24,7 +24,6 @@ import {
   CodexSessionHistoryProvider,
   EventStoreHistoryProvider,
   HistoryProviderRegistry,
-  PiSessionHistoryProvider,
 } from './history/historyProvider';
 import { PiSessionWriter } from './history/piSessionWriter';
 import { AttachmentStore } from './attachments/store';
@@ -68,16 +67,13 @@ export async function startServer(
 ): Promise<void> {
   const sessionIndex = new SessionIndex(path.join(config.dataDir, 'sessions.jsonl'));
   const eventStore = new FileEventStore(config.dataDir);
-  const piOverlayBuffer = new InMemoryOverlayEventBuffer();
   const registry = agentRegistry ?? new AgentRegistry([]);
   const historyProvider = new HistoryProviderRegistry([
     new ClaudeSessionHistoryProvider({ eventStore }),
     new CodexSessionHistoryProvider({ eventStore, dataDir: config.dataDir }),
-    new PiSessionHistoryProvider({ eventStore, overlayBuffer: piOverlayBuffer }),
     new EventStoreHistoryProvider(eventStore),
   ]);
-  const mirrorPiSessionHistory = appConfig?.sessions?.mirrorPiSessionHistory ?? true;
-  const piSessionWriter = mirrorPiSessionHistory ? new PiSessionWriter() : undefined;
+  const piSessionWriter = new PiSessionWriter();
   const attachmentStore = new AttachmentStore(path.join(config.dataDir, 'attachments'));
 
   const maxCachedSessions =
@@ -95,10 +91,10 @@ export async function startServer(
     ...(resolveSessionWorkingDir ? { resolveSessionWorkingDir } : {}),
     historyProvider,
     eventStore,
-    ...(piSessionWriter ? { piSessionWriter } : {}),
+    piSessionWriter,
     attachmentStore,
   });
-  const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub, piOverlayBuffer);
+  const chatEventStore = new SessionScopedEventStore(eventStore, sessionHub);
 
   const baseToolHost = createToolHost(
     {

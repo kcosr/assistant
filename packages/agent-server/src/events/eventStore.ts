@@ -364,6 +364,10 @@ export class SessionScopedEventStore implements EventStore {
     private readonly overlayBuffer?: InMemoryOverlayEventBuffer,
   ) {}
 
+  private isPiProvider(providerId: string | null | undefined): boolean {
+    return providerId === 'pi' || providerId === 'pi-cli';
+  }
+
   private resolveSessionProvider(summary: SessionSummary | undefined): string | null {
     const agentId = summary?.agentId;
     if (!agentId) {
@@ -416,7 +420,7 @@ export class SessionScopedEventStore implements EventStore {
         return;
       }
       this.assertEventSessionMatches(trimmed, event);
-      if (this.resolveSessionProvider(activeSummary) === 'pi') {
+      if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
         if (this.overlayBuffer) {
           await this.overlayBuffer.append(trimmed, event);
         }
@@ -436,7 +440,7 @@ export class SessionScopedEventStore implements EventStore {
       return;
     }
     this.assertEventSessionMatches(trimmed, event);
-    if (this.resolveSessionProvider(summary) === 'pi') {
+    if (this.isPiProvider(this.resolveSessionProvider(summary))) {
       if (this.overlayBuffer) {
         await this.overlayBuffer.append(trimmed, event);
       }
@@ -466,7 +470,7 @@ export class SessionScopedEventStore implements EventStore {
       for (const event of overlayEvents) {
         this.assertEventSessionMatches(trimmed, event);
       }
-      if (this.resolveSessionProvider(activeSummary) === 'pi') {
+      if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
         if (this.overlayBuffer) {
           await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
         }
@@ -492,7 +496,7 @@ export class SessionScopedEventStore implements EventStore {
     for (const event of overlayEvents) {
       this.assertEventSessionMatches(trimmed, event);
     }
-    if (this.resolveSessionProvider(summary) === 'pi') {
+    if (this.isPiProvider(this.resolveSessionProvider(summary))) {
       if (this.overlayBuffer) {
         await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
       }
@@ -513,7 +517,7 @@ export class SessionScopedEventStore implements EventStore {
     }
     const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
     const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
-    if (summary && this.resolveSessionProvider(summary) === 'pi') {
+    if (summary && this.isPiProvider(this.resolveSessionProvider(summary))) {
       return this.overlayBuffer?.getEvents(trimmed) ?? [];
     }
     const events = await this.base.getEvents(trimmed);
@@ -527,7 +531,7 @@ export class SessionScopedEventStore implements EventStore {
     }
     const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
     const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
-    if (summary && this.resolveSessionProvider(summary) === 'pi') {
+    if (summary && this.isPiProvider(this.resolveSessionProvider(summary))) {
       return this.overlayBuffer?.getEventsSince(trimmed, afterEventId) ?? [];
     }
     const events = await this.base.getEventsSince(trimmed, afterEventId);

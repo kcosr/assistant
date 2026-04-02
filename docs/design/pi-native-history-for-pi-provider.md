@@ -28,7 +28,7 @@ This design makes `providerId: "pi"` behave like the CLI providers:
 
 ### Pi session mirroring exists but is not used for reload for `providerId: "pi"`
 - `packages/agent-server/src/history/piSessionWriter.ts` mirrors session messages into Pi’s JSONL format under `~/.pi/agent/sessions/`.
-- It is enabled by default: `appConfig.sessions.mirrorPiSessionHistory ?? true`.
+- Canonical Pi JSONL persistence is now always enabled for Pi-backed sessions.
 - However, reload for `providerId: "pi"` does not read that file today.
 
 ### Important edge case: async agent callbacks

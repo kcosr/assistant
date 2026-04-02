@@ -3,8 +3,7 @@
     "previewSnippetChars": 512
   },
   "sessions": {
-    "maxCached": 100,
-    "mirrorPiSessionHistory": true
+    "maxCached": 100
   },
   "agents": [
     {

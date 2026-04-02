@@ -742,12 +742,15 @@ export class SessionHub {
   }
 
   shouldPersistSessionEvents(summary: SessionSummary): boolean {
-    if (!this.historyProvider) {
-      return true;
-    }
     const agentId = summary.agentId;
     const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
     const providerId = agent?.chat?.provider;
+    if (providerId === 'pi' || providerId === 'pi-cli') {
+      return false;
+    }
+    if (!this.historyProvider) {
+      return true;
+    }
     return this.historyProvider.shouldPersist({
       sessionId: summary.sessionId,
       ...(agentId ? { agentId } : {}),

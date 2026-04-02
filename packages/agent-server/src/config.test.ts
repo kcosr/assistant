@@ -254,7 +254,6 @@ describe('loadConfig', () => {
     const configJson = {
       sessions: {
         maxCached: 42,
-        mirrorPiSessionHistory: false,
       },
     };
 
@@ -263,7 +262,6 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
     expect(config.sessions).toBeDefined();
     expect(config.sessions?.maxCached).toBe(42);
-    expect(config.sessions?.mirrorPiSessionHistory).toBe(false);
   });
 
   it('parses attachments preview snippet configuration', async () => {
@@ -1097,7 +1095,6 @@ describe('loadConfig', () => {
     const config = loadConfig(filePath);
 
     expect(config.sessions?.maxCached).toBe(100);
-    expect(config.sessions?.mirrorPiSessionHistory).toBe(true);
     expect(config.plugins['coding']?.enabled).toBe(true);
     expect(config.plugins['coding']?.local?.workspaceRoot).toBe('/tmp/workspaces');
     expect(config.plugins['coding']?.sidecar?.tcp?.port).toBe(8765);

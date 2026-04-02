@@ -712,7 +712,6 @@ export type McpServerConfig = z.infer<typeof McpServerConfigSchema>;
 
 export const SessionsConfigSchema = z.object({
   maxCached: z.number().int().min(1).default(100),
-  mirrorPiSessionHistory: z.boolean().default(true),
 });
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;

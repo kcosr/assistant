@@ -83,7 +83,7 @@ Introduce a Pi SDK adapter similar to `SdkLlmProvider` in agent-hub:
 - Aborted/canceled runs still sync the latest assistant/tool-call entries plus interrupted tool
   results so the pi-mono CLI can resume from partial turns.
 - Sessions are written under `~/.pi/agent/sessions/<encoded-cwd>/*_<pi-session-id>.jsonl`.
-- Mirroring is controlled by `sessions.mirrorPiSessionHistory` (default `true`).
+- This canonical Pi JSONL history is always written for Pi-backed sessions.
 
 ### Model + Provider Mapping
 

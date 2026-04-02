@@ -189,12 +189,10 @@ Examples:
 Controls session cache behavior.
 
 ```json
-{ "sessions": { "maxCached": 100, "mirrorPiSessionHistory": true } }
+{ "sessions": { "maxCached": 100 } }
 ```
 
 - `maxCached`: maximum number of sessions cached in memory
-- `mirrorPiSessionHistory`: when `true`, Pi SDK sessions are mirrored to Pi JSONL history
-  files for pi-mono CLI resume (default: `true`)
 
 #### `agents`
 
@@ -673,7 +671,7 @@ pi-mono CLI. Sessions are written to:
 The `cwd` comes from `attributes.core.workingDir` when available (otherwise the
 server working directory).
 Canceled runs still write partial assistant/tool entries so the pi-mono CLI can resume.
-Disable mirroring by setting `sessions.mirrorPiSessionHistory` to `false`.
+Pi-backed sessions always persist canonical Pi JSONL history for replay and reload.
 
 #### CLI Providers (`claude-cli`, `codex-cli`, `pi-cli`)
 
