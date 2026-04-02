@@ -7,8 +7,67 @@ import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { EventStore } from './events';
 
-vi.mock('./llm/piSdkProvider', () => {
+type MockAgentListener = ((event: unknown) => Promise<void> | void) | undefined;
+
+const mockPiAgentPrompt = vi.fn<
+  (options: {
+    agent: {
+      model: { id: string; provider: string; api: string };
+      tools: unknown[];
+      listener: MockAgentListener;
+    };
+    prompt: unknown;
+    emit: (event: unknown) => Promise<void>;
+  }) => Promise<void>
+>();
+
+vi.mock('@mariozechner/pi-agent-core', async () => {
+  const actual = await vi.importActual<typeof import('@mariozechner/pi-agent-core')>(
+    '@mariozechner/pi-agent-core',
+  );
+  class MockAgent {
+    model = { id: 'mock-model', provider: 'openai', api: 'openai-responses' };
+    tools: unknown[] = [];
+    messages: unknown[] = [];
+    listener: MockAgentListener = undefined;
+    setModel(model: { id: string; provider: string; api: string }) {
+      this.model = model;
+    }
+    setSystemPrompt(_value: string) {}
+    setThinkingLevel(_value: unknown) {}
+    setTools(tools: unknown[]) {
+      this.tools = tools;
+    }
+    replaceMessages(messages: unknown[]) {
+      this.messages = [...messages];
+    }
+    subscribe(fn: (event: unknown) => Promise<void> | void) {
+      this.listener = fn;
+      return () => {
+        if (this.listener === fn) {
+          this.listener = undefined;
+        }
+      };
+    }
+    abort() {}
+    async prompt(prompt: unknown) {
+      this.messages.push(prompt);
+      await mockPiAgentPrompt({
+        agent: this,
+        prompt,
+        emit: async (event) => {
+          await this.listener?.(event);
+        },
+      });
+    }
+  }
+  return { ...actual, Agent: MockAgent };
+});
+
+vi.mock('./llm/piSdkProvider', async () => {
+  const actual = await vi.importActual<typeof import('./llm/piSdkProvider')>('./llm/piSdkProvider');
   return {
+    ...actual,
     runPiSdkChatCompletionIteration: vi.fn(),
     resolvePiSdkModel: vi.fn(),
     extractAssistantTextBlocksFromPiMessage: vi.fn(
@@ -50,9 +109,180 @@ vi.mock('./llm/piSdkProvider', () => {
 import { runPiSdkChatCompletionIteration, resolvePiSdkModel } from './llm/piSdkProvider';
 import { processUserMessage } from './chatProcessor';
 
+function createAssistantMessage(options: {
+  text?: string;
+  provider?: string;
+  model?: string;
+  api?: string;
+  stopReason?: 'stop' | 'toolUse' | 'aborted' | 'error';
+  content?: Array<Record<string, unknown>>;
+}) {
+  const {
+    text = '',
+    provider = 'openai',
+    model = 'gpt-4o-mini',
+    api = 'openai-responses',
+    stopReason = 'stop',
+    content,
+  } = options;
+  return {
+    role: 'assistant' as const,
+    content: content ?? [{ type: 'text', text }],
+    api,
+    provider,
+    model,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
+
 describe('processUserMessage stream event emission', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPiAgentPrompt.mockImplementation(async ({ agent, emit }) => {
+      try {
+        const result = await vi.mocked(runPiSdkChatCompletionIteration)({
+          model: agent.model as never,
+          messages: (agent as { messages?: unknown[] }).messages ?? [],
+          tools: agent.tools as never,
+          abortSignal: new AbortController().signal,
+          onDeltaText: async (delta: string, textSoFar: string, phase?: string) => {
+            const partial = createAssistantMessage({
+              text: textSoFar,
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [
+                {
+                  type: 'text',
+                  text: textSoFar,
+                  ...(phase
+                    ? {
+                        textSignature: JSON.stringify({
+                          v: 1,
+                          id: `sig-${phase}`,
+                          phase,
+                        }),
+                      }
+                    : {}),
+                },
+              ],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'text_delta',
+                contentIndex: 0,
+                delta,
+                partial,
+              },
+            });
+          },
+          onThinkingStart: async () => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking: '' }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_start',
+                contentIndex: 0,
+                partial,
+              },
+            });
+          },
+          onThinkingDelta: async (delta: string) => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking: delta }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_delta',
+                contentIndex: 0,
+                delta,
+                partial,
+              },
+            });
+          },
+          onThinkingDone: async (thinking: string) => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_end',
+                contentIndex: 0,
+                partial,
+              },
+            });
+          },
+        } as never);
+        const assistantMessage = {
+          ...result.assistantMessage,
+          ...(result.abortReason === 'timeout' ? { errorMessage: 'timeout' } : {}),
+          content:
+            result.toolCalls?.length &&
+            !result.assistantMessage.content.some((block) => block.type === 'toolCall')
+              ? [
+                  ...result.assistantMessage.content,
+                  ...result.toolCalls.map((call) => ({
+                    type: 'toolCall',
+                    id: call.id,
+                    name: call.name,
+                    arguments: {},
+                  })),
+                ]
+              : result.assistantMessage.content,
+        };
+        await emit({ type: 'message_end', message: assistantMessage });
+        if (result.toolCalls?.length) {
+          await emit({
+            type: 'turn_end',
+            message: assistantMessage,
+            toolResults: result.toolCalls.map((call) => ({
+              role: 'toolResult',
+              toolCallId: call.id,
+              toolName: call.name,
+              content: [],
+              isError: false,
+              timestamp: Date.now(),
+            })),
+          });
+        }
+      } catch (error) {
+        console.error('mockPiAgentPrompt error', error);
+        throw error;
+      }
+    });
   });
 
   it('emits assistant_chunk and assistant_done events for pi runs', async () => {

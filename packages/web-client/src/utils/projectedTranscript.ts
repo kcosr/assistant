@@ -8,20 +8,29 @@ function getSourceEvent(event: ProjectedTranscriptEvent): ChatEvent | null {
   return payload.sourceEvent as ChatEvent;
 }
 
+export function projectedTranscriptEventToChatEvent(
+  event: ProjectedTranscriptEvent,
+): ChatEvent | null {
+  const sourceEvent = getSourceEvent(event);
+  if (!sourceEvent) {
+    return null;
+  }
+  return {
+    ...sourceEvent,
+    id: event.eventId,
+    sessionId: event.sessionId,
+    turnId: event.requestId,
+  };
+}
+
 export function projectedTranscriptToChatEvents(
   events: ProjectedTranscriptEvent[],
 ): ChatEvent[] {
   return events.flatMap((event): ChatEvent[] => {
-    const sourceEvent = getSourceEvent(event);
-    if (!sourceEvent) {
+    const replayedEvent = projectedTranscriptEventToChatEvent(event);
+    if (!replayedEvent) {
       return [];
     }
-    const replayedEvent: ChatEvent = {
-      ...sourceEvent,
-      id: event.eventId,
-      sessionId: event.sessionId,
-      turnId: event.requestId,
-    };
     return [replayedEvent];
   });
 }

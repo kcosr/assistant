@@ -18,7 +18,7 @@ import type { EnvConfig } from './envConfig';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { SessionConnection } from './ws/sessionConnection';
 import { buildExternalCallbackUrl, postExternalUserInput } from './externalAgents';
-import type { Tool } from './tools';
+import type { AgentTool, Tool } from './tools';
 import type { SkillSummary } from './skills';
 import { updateSystemPromptWithTools } from './systemPromptUpdater';
 import type { TtsBackendFactory } from './tts/types';
@@ -156,6 +156,7 @@ export interface ChatProcessorOptions {
   sessionHub: SessionHub;
   envConfig: EnvConfig;
   chatCompletionTools: unknown[];
+  agentTools?: AgentTool[];
   availableTools?: Tool[];
   availableSkills?: SkillSummary[];
   handleChatToolCalls: (
@@ -232,6 +233,7 @@ export async function processUserMessage(
     sessionHub,
     envConfig,
     chatCompletionTools,
+    agentTools = [],
     availableTools,
     availableSkills,
     handleChatToolCalls,
@@ -600,6 +602,7 @@ export async function processUserMessage(
       provider: chatProvider,
       envConfig,
       chatCompletionTools,
+      agentTools,
       handleChatToolCalls,
       sessionHub,
       output,
@@ -622,6 +625,9 @@ export async function processUserMessage(
         runResult.abortReason === 'timeout' ||
         abortSignal.reason === 'timeout' ||
         externalAbortSignal?.reason === 'timeout';
+      if (runResult.provider === 'pi' && runResult.piReplayMessages) {
+        state.chatMessages = runResult.piReplayMessages;
+      }
       if (piSessionWriter && runResult.provider === 'pi') {
         await persistInterruptedPiAssistantMessage({
           sessionId,
@@ -753,32 +759,25 @@ export async function processUserMessage(
           : undefined) ??
         (active?.textStartedAt ? Date.parse(active.textStartedAt) : undefined) ??
         Date.now();
-      state.chatMessages.push({
+      const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
         role: 'assistant',
         content: visibleAssistant.text,
         historyTimestampMs: assistantTimestampMs,
         ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
-      });
+      };
+      if (runResult.provider === 'pi' && runResult.piReplayMessages) {
+        state.chatMessages = runResult.piReplayMessages;
+      }
+      state.chatMessages.push(finalAssistantMessage);
 
       if (piSessionWriter && runResult.provider === 'pi') {
         try {
           const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
           const thinkingLevel = resolveSessionThinkingForRun({ agent, summary: state.summary });
           const defaultProvider = (agent?.chat?.config as PiSdkChatConfig | undefined)?.provider;
-          const finalAssistantMessage: ChatCompletionMessage & { role: 'assistant' } = {
-            role: 'assistant',
-            content: visibleAssistant.text,
-            historyTimestampMs: assistantTimestampMs,
-            ...(runResult.piSdkMessage ? { piSdkMessage: runResult.piSdkMessage } : {}),
-          };
-          const messagesForPiSync = buildMessagesForPiSync({
-            stateMessages: state.chatMessages,
-            ...(runResult.piReplayMessages ? { replayMessages: runResult.piReplayMessages } : {}),
-            finalAssistantMessage,
-          });
           const updatedSummary = await piSessionWriter.sync({
             summary: state.summary,
-            messages: messagesForPiSync,
+            messages: state.chatMessages,
             ...(modelSpec ? { modelSpec } : {}),
             ...(defaultProvider ? { defaultProvider } : {}),
             ...(thinkingLevel ? { thinkingLevel } : {}),

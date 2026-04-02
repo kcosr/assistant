@@ -35,6 +35,7 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'tool_output_delta',
   'tool_result',
   'chat_event',
+  'transcript_event',
   'agent_callback_result',
   'modes_updated',
   'pong',
@@ -726,6 +727,11 @@ export const ServerChatEventMessageSchema = z.object({
   event: ChatEventSchema,
 });
 
+export const ServerTranscriptEventMessageSchema = z.object({
+  type: z.literal('transcript_event'),
+  event: ProjectedTranscriptEventSchema,
+});
+
 export const ServerAgentCallbackResultMessageSchema = z.object({
   type: z.literal('agent_callback_result'),
   /**
@@ -869,6 +875,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerToolOutputDeltaMessageSchema,
   ServerToolResultMessageSchema,
   ServerChatEventMessageSchema,
+  ServerTranscriptEventMessageSchema,
   ServerAgentCallbackResultMessageSchema,
   ServerModesUpdatedMessageSchema,
   ServerPongMessageSchema,
@@ -902,6 +909,7 @@ export type ServerToolCallStartMessage = z.infer<typeof ServerToolCallStartMessa
 export type ServerToolOutputDeltaMessage = z.infer<typeof ServerToolOutputDeltaMessageSchema>;
 export type ServerToolResultMessage = z.infer<typeof ServerToolResultMessageSchema>;
 export type ServerChatEventMessage = z.infer<typeof ServerChatEventMessageSchema>;
+export type ServerTranscriptEventMessage = z.infer<typeof ServerTranscriptEventMessageSchema>;
 export type ServerAgentCallbackResultMessage = z.infer<
   typeof ServerAgentCallbackResultMessageSchema
 >;

@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { SessionHub, SessionIndex } from './index';
 import type { EnvConfig } from './envConfig';
 import type { AgentDefinition, AgentRegistry } from './agents';
-import type { BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
+import type { AgentTool, BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import { createScopedToolHost } from './tools';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './ws/toolCallHandling';
@@ -469,6 +469,7 @@ interface AsyncAgentMessageContext {
   baseToolHost: ToolHost;
   scopedToolHost: ToolHost;
   chatTools: unknown[];
+  agentTools: AgentTool[];
   availableTools?: Awaited<ReturnType<ToolHost['listTools']>>;
   availableSkills?: SkillSummary[];
   sessionHub: SessionHub;
@@ -500,6 +501,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     agentRegistry,
     baseToolHost,
     chatTools,
+    agentTools,
     availableTools,
     availableSkills,
     sessionHub,
@@ -516,6 +518,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     sessionHub,
     envConfig,
     chatCompletionTools: chatTools,
+    agentTools,
     ...(availableTools !== undefined ? { availableTools } : {}),
     ...(availableSkills ? { availableSkills } : {}),
     handleChatToolCalls,
@@ -592,14 +595,29 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     const {
       availableTools: callerAvailableTools,
       chatTools: callerChatTools,
+      agentTools: callerAgentTools,
       availableSkills: callerAvailableSkills,
     } = callerScopedToolHost
       ? await resolveAgentToolExposureForHost({
           scopedToolHost: callerScopedToolHost,
           agent: callerAgent,
           sessionHub,
+          toolContext: {
+            signal: new AbortController().signal,
+            sessionId: callerSessionId,
+            agentRegistry,
+            sessionIndex: sessionHub.getSessionIndex(),
+            envConfig,
+            sessionHub,
+            baseToolHost,
+            ...(eventStore ? { eventStore } : {}),
+            ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
+            ...(ctx.scheduledSessionService
+              ? { scheduledSessionService: ctx.scheduledSessionService }
+              : {}),
+          },
         })
-      : { availableTools: [], chatTools: [], availableSkills: [] };
+      : { availableTools: [], chatTools: [], agentTools: [], availableSkills: [] };
 
     const handleCallerChatToolCalls = async (
       runSessionId: string,
@@ -670,6 +688,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
           sessionHub,
           envConfig,
           chatCompletionTools: callerChatTools,
+          agentTools: callerAgentTools,
           ...(callerAvailableTools !== undefined ? { availableTools: callerAvailableTools } : {}),
           ...(callerAvailableSkills ? { availableSkills: callerAvailableSkills } : {}),
           handleChatToolCalls: handleCallerChatToolCalls,
@@ -807,10 +826,26 @@ export async function handleAgentMessage(
     agent.capabilityDenylist,
   );
 
-  const { availableTools, chatTools, availableSkills } = await resolveAgentToolExposureForHost({
+  const { availableTools, chatTools, agentTools, availableSkills } = await resolveAgentToolExposureForHost({
     scopedToolHost,
     agent,
     sessionHub,
+    toolContext: {
+      signal: ctx.signal,
+      sessionId,
+      ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
+      ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+      ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
+      agentRegistry,
+      sessionIndex,
+      envConfig,
+      sessionHub,
+      baseToolHost,
+      ...(eventStore ? { eventStore } : {}),
+      ...(ctx.searchService ? { searchService: ctx.searchService } : {}),
+      ...(ctx.scheduledSessionService ? { scheduledSessionService: ctx.scheduledSessionService } : {}),
+      ...(ctx.forwardChunksTo ? { forwardChunksTo: ctx.forwardChunksTo } : {}),
+    },
   });
 
   // Forward tool output chunks to the caller session if we have the caller's tool call ID
@@ -872,6 +907,7 @@ export async function handleAgentMessage(
       baseToolHost,
       scopedToolHost,
       chatTools,
+      agentTools,
       availableTools,
       ...(availableSkills ? { availableSkills } : {}),
       sessionHub,
@@ -934,6 +970,7 @@ export async function handleAgentMessage(
       baseToolHost,
       scopedToolHost,
       chatTools,
+      agentTools,
       availableTools,
       ...(availableSkills ? { availableSkills } : {}),
       sessionHub,
@@ -984,6 +1021,7 @@ export async function handleAgentMessage(
       sessionHub,
       envConfig,
       chatCompletionTools: chatTools,
+      agentTools,
       ...(availableTools !== undefined ? { availableTools } : {}),
       ...(availableSkills ? { availableSkills } : {}),
       handleChatToolCalls,

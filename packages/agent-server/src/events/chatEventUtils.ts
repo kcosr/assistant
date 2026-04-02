@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ChatEvent, ServerChatEventMessage } from '@assistant/shared';
+import type { ChatEvent, ServerChatEventMessage, ServerMessage } from '@assistant/shared';
 
 import type { EventStore } from './eventStore';
 import type { SessionHub } from '../sessionHub';
+import { projectTranscriptEvents } from '../../../plugins/core/sessions/server/transcriptProjection';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for emitting tool_call and tool_result ChatEvents.
@@ -152,12 +153,7 @@ export function emitToolOutputChunkEvent(params: EmitToolOutputChunkParams): voi
   };
 
   // Broadcast only - not persisted (transient event)
-  const message: ServerChatEventMessage = {
-    type: 'chat_event',
-    sessionId,
-    event,
-  };
-  sessionHub.broadcastToSession(sessionId, message);
+  broadcastLiveChatEvents(sessionHub, sessionId, [event]);
 }
 
 /**
@@ -183,12 +179,7 @@ export function emitToolInputChunkEvent(params: EmitToolInputChunkParams): void 
   };
 
   // Broadcast only - not persisted (transient event)
-  const message: ServerChatEventMessage = {
-    type: 'chat_event',
-    sessionId,
-    event,
-  };
-  sessionHub.broadcastToSession(sessionId, message);
+  broadcastLiveChatEvents(sessionHub, sessionId, [event]);
 }
 
 /**
@@ -268,12 +259,7 @@ export function emitInteractionRequestEvent(params: EmitInteractionRequestEventP
     return;
   }
 
-  const message: ServerChatEventMessage = {
-    type: 'chat_event',
-    sessionId,
-    event: events[0]!,
-  };
-  sessionHub.broadcastToSession(sessionId, message);
+  broadcastLiveChatEvents(sessionHub, sessionId, events);
 }
 
 export function emitInteractionResponseEvent(params: EmitInteractionResponseEventParams): void {
@@ -315,12 +301,7 @@ export function emitInteractionResponseEvent(params: EmitInteractionResponseEven
     return;
   }
 
-  const message: ServerChatEventMessage = {
-    type: 'chat_event',
-    sessionId,
-    event: events[0]!,
-  };
-  sessionHub.broadcastToSession(sessionId, message);
+  broadcastLiveChatEvents(sessionHub, sessionId, events);
 }
 
 export function emitInteractionPendingEvent(params: EmitInteractionPendingEventParams): void {
@@ -358,18 +339,87 @@ export function emitInteractionPendingEvent(params: EmitInteractionPendingEventP
     return;
   }
 
-  const message: ServerChatEventMessage = {
-    type: 'chat_event',
-    sessionId,
-    event: events[0]!,
-  };
-  sessionHub.broadcastToSession(sessionId, message);
+  broadcastLiveChatEvents(sessionHub, sessionId, events);
 }
 
 export interface ChatEventContext {
   eventStore: EventStore;
   sessionHub: SessionHub;
   sessionId: string;
+}
+
+const liveTranscriptSequenceBySession = new Map<string, number>();
+
+function shouldBroadcastProjectedTranscript(sessionHub: SessionHub, sessionId: string): boolean {
+  if (typeof sessionHub.getSessionState !== 'function') {
+    return false;
+  }
+  const state = sessionHub.getSessionState(sessionId);
+  const agentId = state?.summary.agentId;
+  if (!agentId) {
+    return false;
+  }
+  if (typeof sessionHub.getAgentRegistry !== 'function') {
+    return false;
+  }
+  const provider = sessionHub.getAgentRegistry().getAgent(agentId)?.chat?.provider;
+  return provider === 'pi' || provider === 'pi-cli';
+}
+
+function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {
+  if (typeof sessionHub.getSessionState !== 'function') {
+    return Date.now();
+  }
+  const updatedAt = sessionHub.getSessionState(sessionId)?.summary.updatedAt;
+  const parsed = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : Date.now();
+}
+
+function broadcastProjectedTranscriptEvents(
+  sessionHub: SessionHub,
+  sessionId: string,
+  events: ChatEvent[],
+): void {
+  if (!events.length || !shouldBroadcastProjectedTranscript(sessionHub, sessionId)) {
+    return;
+  }
+  const revision = getProjectedTranscriptRevision(sessionHub, sessionId);
+  const startSequence = liveTranscriptSequenceBySession.get(sessionId) ?? 0;
+  const projected = projectTranscriptEvents({ sessionId, revision, events }).map((event, index) => ({
+    ...event,
+    revision,
+    sequence: startSequence + index,
+  }));
+  liveTranscriptSequenceBySession.set(sessionId, startSequence + projected.length);
+  for (const event of projected) {
+    const message: ServerMessage = {
+      type: 'transcript_event',
+      event,
+    };
+    sessionHub.broadcastToSession(sessionId, message);
+  }
+}
+
+function broadcastLiveChatEvents(
+  sessionHub: SessionHub,
+  sessionId: string,
+  events: ChatEvent[],
+): void {
+  if (!events.length) {
+    return;
+  }
+  if (shouldBroadcastProjectedTranscript(sessionHub, sessionId)) {
+    broadcastProjectedTranscriptEvents(sessionHub, sessionId, events);
+    return;
+  }
+  for (const event of events) {
+    const message: ServerChatEventMessage = {
+      type: 'chat_event',
+      sessionId,
+      event,
+    };
+    sessionHub.broadcastToSession(sessionId, message);
+  }
 }
 
 export function createChatEventBase(options: {
@@ -425,12 +475,5 @@ export async function appendAndBroadcastChatEvents(
     return;
   }
 
-  for (const event of events) {
-    const message: ServerChatEventMessage = {
-      type: 'chat_event',
-      sessionId,
-      event,
-    };
-    sessionHub.broadcastToSession(sessionId, message);
-  }
+  broadcastLiveChatEvents(sessionHub, sessionId, events);
 }

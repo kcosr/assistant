@@ -6,6 +6,7 @@ import type {
   ServerMessage,
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
+  ServerTranscriptEventMessage,
   SessionContextUsage,
 } from '@assistant/shared';
 import { clearExternalSentIndicators } from '../utils/chatMessageRenderer';
@@ -15,6 +16,7 @@ import type { PendingMessageListController } from './pendingMessageListControlle
 import type { ChatRuntime } from '../panels/chat/runtime';
 import { ensureEmptySessionHint } from '../utils/emptySessionHint';
 import type { AudioMode } from '../utils/audioMode';
+import { projectedTranscriptToChatEvents } from '../utils/projectedTranscript';
 
 interface SessionSummary {
   sessionId: string;
@@ -140,6 +142,44 @@ export class ServerMessageHandler {
     }
   }
 
+  private handleChatEventForSession(sessionId: string, event: ChatEvent): void {
+    if (event.type === 'turn_start') {
+      this.markTurnStarted(sessionId, event.turnId);
+    } else if (
+      event.type === 'turn_end' ||
+      event.type === 'interrupt' ||
+      event.type === 'error'
+    ) {
+      this.markTurnFinished(sessionId, event.turnId);
+    }
+
+    if (!this.options.isChatPanelVisible(sessionId)) {
+      this.markSessionHasPendingMessages(sessionId);
+      this.options.showBackgroundSessionActivityIndicator(sessionId);
+    }
+
+    this.syncSessionTurnActivity(sessionId);
+
+    if (this.options.shouldBufferChatEvent?.(sessionId)) {
+      this.options.bufferChatEvent?.(sessionId, event);
+      return;
+    }
+
+    const runtime = this.options.getChatRuntimeForSession(sessionId);
+    if (!runtime) {
+      return;
+    }
+    runtime.chatRenderer.handleNewEvent(event);
+    if (this.options.isChatPanelVisible(sessionId)) {
+      if (event.type === 'turn_start') {
+        runtime.chatScrollManager.scrollToBottom();
+      } else {
+        runtime.chatScrollManager.autoScrollIfEnabled();
+      }
+    }
+    this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
+  }
+
   private markSessionHasPendingMessages(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -186,48 +226,25 @@ export class ServerMessageHandler {
           console.warn('[client] chat_event missing sessionId', chatEventMessage);
           break;
         }
-        const sessionId = messageSessionId;
-        const event: ChatEvent = chatEventMessage.event;
+        this.handleChatEventForSession(messageSessionId, chatEventMessage.event);
+        break;
+      }
 
-        if (event.type === 'turn_start') {
-          this.markTurnStarted(sessionId, event.turnId);
-        } else if (
-          event.type === 'turn_end' ||
-          event.type === 'interrupt' ||
-          event.type === 'error'
-        ) {
-          this.markTurnFinished(sessionId, event.turnId);
-        }
-
-        if (!this.options.isChatPanelVisible(sessionId)) {
-          this.markSessionHasPendingMessages(sessionId);
-          this.options.showBackgroundSessionActivityIndicator(sessionId);
-        }
-
+      case 'transcript_event': {
+        const transcriptMessage = message as ServerTranscriptEventMessage;
+        const sessionId = transcriptMessage.event.sessionId.trim();
         if (!sessionId) {
+          console.warn('[client] transcript_event missing sessionId', transcriptMessage);
           break;
         }
-
-        this.syncSessionTurnActivity(sessionId);
-
-        if (this.options.shouldBufferChatEvent?.(sessionId)) {
-          this.options.bufferChatEvent?.(sessionId, event);
+        const projectedEvents = projectedTranscriptToChatEvents([transcriptMessage.event]);
+        if (projectedEvents.length === 0) {
+          console.warn('[client] transcript_event could not be projected', transcriptMessage);
           break;
         }
-
-        const runtime = this.options.getChatRuntimeForSession(sessionId);
-        if (!runtime) {
-          break;
+        for (const event of projectedEvents) {
+          this.handleChatEventForSession(sessionId, event);
         }
-        runtime.chatRenderer.handleNewEvent(event);
-        if (this.options.isChatPanelVisible(sessionId)) {
-          if (event.type === 'turn_start') {
-            runtime.chatScrollManager.scrollToBottom();
-          } else {
-            runtime.chatScrollManager.autoScrollIfEnabled();
-          }
-        }
-        this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
         break;
       }
 

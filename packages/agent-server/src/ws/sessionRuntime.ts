@@ -35,7 +35,14 @@ import {
   validateQuestionnaireInput,
 } from '@assistant/shared';
 
-import { createScopedToolHost, mapToolsToChatCompletionSpecs, type ToolHost } from '../tools';
+import {
+  createScopedToolHost,
+  listAgentToolsForHost,
+  mapToolsToChatCompletionSpecs,
+  type AgentTool,
+  type ToolContext,
+  type ToolHost,
+} from '../tools';
 import { RateLimiter } from '../rateLimit';
 import type { SessionHub } from '../sessionHub';
 import type { LogicalSessionState } from '../sessionHub';
@@ -93,6 +100,7 @@ type ToolResolutionDebugDetails = {
 
 type ToolResolutionResult = {
   specs: ReturnType<typeof mapToolsToChatCompletionSpecs>;
+  agentTools: AgentTool[];
   debug: ToolResolutionDebugDetails;
 };
 
@@ -575,6 +583,7 @@ export class SessionRuntime {
           sessionHub: this.sessionHub,
           envConfig: this.config,
           chatCompletionTools: callbackToolResolution.specs,
+          agentTools: callbackToolResolution.agentTools,
           handleChatToolCalls: (targetSessionId, targetState, toolCalls) =>
             this.handleChatToolCalls(
               targetSessionId,
@@ -1092,6 +1101,23 @@ export class SessionRuntime {
         selectedSkillIds: getSelectedSessionSkillIds(state?.summary.attributes),
       });
       const specs = visibleTools.length > 0 ? mapToolsToChatCompletionSpecs(visibleTools) : [];
+      const toolContext: ToolContext = {
+        signal: new AbortController().signal,
+        sessionId: state?.summary.sessionId ?? '',
+        sessionHub: this.sessionHub,
+        sessionIndex: this.sessionHub.getSessionIndex(),
+        agentRegistry: this.sessionHub.getAgentRegistry(),
+        envConfig: this.config,
+        baseToolHost: this.baseToolHost,
+        ...(this.eventStore ? { eventStore: this.eventStore } : {}),
+        ...(this.searchService ? { searchService: this.searchService } : {}),
+        ...(this.scheduledSessionService
+          ? { scheduledSessionService: this.scheduledSessionService }
+          : {}),
+      };
+      const allAgentTools = await listAgentToolsForHost(sessionToolHost, toolContext);
+      const visibleToolNames = new Set(visibleTools.map((tool) => tool.name));
+      const agentTools = allAgentTools.filter((tool) => visibleToolNames.has(tool.name));
       if (visibleTools.length > 0 || (selectedSkills && selectedSkills.length > 0)) {
         await updateSystemPromptWithTools({
           state,
@@ -1103,6 +1129,7 @@ export class SessionRuntime {
       }
       return {
         specs,
+        agentTools,
         debug: {
           availableToolsCount: availableTools.length,
           visibleToolsCount: visibleTools.length,
@@ -1116,6 +1143,7 @@ export class SessionRuntime {
       this.log('failed to list tools from ToolHost for chat completions', err);
       return {
         specs: [],
+        agentTools: [],
         debug: {
           availableToolsCount: 0,
           visibleToolsCount: 0,
@@ -1242,6 +1270,7 @@ export class SessionRuntime {
         : '';
     const systemPromptHasTools = firstMessageContent.includes('Available tools:');
     let chatCompletionToolsForRun: ReturnType<typeof mapToolsToChatCompletionSpecs> = [];
+    let agentToolsForRun: AgentTool[] = [];
     let toolResolution: ToolResolutionResult | null = null;
     if (shouldResolveTools) {
       toolResolution = await this.resolveChatCompletionTools(
@@ -1249,6 +1278,7 @@ export class SessionRuntime {
         sessionToolHostForRun,
       );
       chatCompletionToolsForRun = toolResolution.specs;
+      agentToolsForRun = toolResolution.agentTools;
     }
 
     const debugChatCompletionsContext = this.buildToolResolutionDebugContext({
@@ -1270,6 +1300,7 @@ export class SessionRuntime {
       sessionHub: this.sessionHub,
       config: this.config,
       chatCompletionTools: chatCompletionToolsForRun,
+      agentTools: agentToolsForRun,
       debugChatCompletionsContext,
       outputMode: this.outputMode,
       clientAudioCapabilities: this.clientAudioCapabilities,

@@ -32,6 +32,7 @@ import type { AttachmentStore } from './attachments/store';
 import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
+import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
 import {
   CliToolCallRendezvous,
   type CliToolCallMatchOptions,
@@ -41,6 +42,18 @@ import {
 export interface LogicalSessionState {
   summary: SessionSummary;
   chatMessages: ChatCompletionMessage[];
+  piAgentRuntime?:
+    | {
+        agent: PiAgent;
+        requestConfig: {
+          apiKey?: string;
+          temperature?: number;
+          maxTokens?: number;
+          headers?: Record<string, string>;
+        };
+        onPayload?: ((payload: unknown, model: unknown) => unknown | Promise<unknown>) | undefined;
+      }
+    | undefined;
   activeChatRun?:
     | {
       /**

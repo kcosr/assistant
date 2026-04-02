@@ -10,6 +10,7 @@ import type {
   ServerThinkingDoneMessage,
   ServerThinkingStartMessage,
   ServerToolCallStartMessage,
+  ServerToolResultMessage,
 } from '@assistant/shared';
 
 import type { AgentDefinition, PiSdkChatConfig } from './agents';
@@ -18,14 +19,31 @@ import type {
   ChatCompletionToolCallMessageToolCall,
   ChatCompletionToolCallState,
 } from './chatCompletionTypes';
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import {
+  Agent,
+  type AgentEvent,
+  type AgentMessage,
+  type ThinkingLevel as PiAgentThinkingLevel,
+} from '@mariozechner/pi-agent-core';
+import {
+  streamSimple,
+  type AssistantMessage,
+  type AssistantMessageEvent,
+  type Message as PiSdkMessage,
+  type Model,
+  type TextContent,
+  type ToolCall,
+  type ToolResultMessage,
+} from '@mariozechner/pi-ai';
 import type { EnvConfig } from './envConfig';
 import type { EventStore } from './events';
 import {
   appendAndBroadcastChatEvents,
   createChatEventBase,
+  emitToolCallEvent,
   emitToolInputChunkEvent,
   emitToolOutputChunkEvent,
+  emitToolResultEvent,
 } from './events/chatEventUtils';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
@@ -44,14 +62,15 @@ import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piC
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import {
+  parseAssistantTextSignature,
   resolvePiSdkModel,
   resolvePiSdkAuthApiKey,
-  runPiSdkChatCompletionIteration,
 } from './llm/piSdkProvider';
 import {
   extractSessionContextUsageFromAssistantMessage,
   isSessionContextUsageEqual,
 } from './contextUsage';
+import type { AgentTool as NativeAgentTool } from './tools';
 
 type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
@@ -81,6 +100,7 @@ export interface ChatRunCoreOptions {
   provider: ChatProvider;
   envConfig: EnvConfig;
   chatCompletionTools: unknown[];
+  agentTools?: NativeAgentTool[];
   handleChatToolCalls: (
     sessionId: string,
     state: LogicalSessionState,
@@ -572,6 +592,237 @@ function createChatRunStreamHandlers(options: {
   };
 }
 
+function createEmptyUsage() {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+  };
+}
+
+function parseToolCallArguments(argumentsJson: string): Record<string, unknown> {
+  const trimmed = argumentsJson.trim();
+  if (!trimmed) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to empty arguments.
+  }
+  return {};
+}
+
+function stringifyToolCallArguments(args: unknown): string {
+  try {
+    return JSON.stringify(args ?? {});
+  } catch {
+    return '{}';
+  }
+}
+
+function parseToolResultErrorState(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if ('ok' in parsed) {
+        return (parsed as { ok?: unknown }).ok !== true;
+      }
+      if ('error' in parsed) {
+        return Boolean((parsed as { error?: unknown }).error);
+      }
+    }
+  } catch {
+    // Ignore parse errors.
+  }
+  return false;
+}
+
+function getMessageTimestampMs(message: Exclude<ChatCompletionMessage, { role: 'system' }>): number {
+  return message.historyTimestampMs ?? Date.now();
+}
+
+function buildSyntheticAssistantMessage(options: {
+  message: Extract<ChatCompletionMessage, { role: 'assistant' }>;
+  model: Model<any>;
+}): AssistantMessage {
+  const { message, model } = options;
+  const content: Array<TextContent | ToolCall> = [];
+  if (message.content.trim()) {
+    content.push({
+      type: 'text',
+      text: message.content,
+      ...(message.assistantTextSignature ? { textSignature: message.assistantTextSignature } : {}),
+    });
+  }
+  for (const toolCall of message.tool_calls ?? []) {
+    content.push({
+      type: 'toolCall',
+      id: toolCall.id,
+      name: toolCall.function.name,
+      arguments: parseToolCallArguments(toolCall.function.arguments),
+    });
+  }
+  return {
+    role: 'assistant',
+    content,
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: createEmptyUsage(),
+    stopReason: message.tool_calls?.length ? 'toolUse' : 'stop',
+    timestamp: getMessageTimestampMs(message),
+  };
+}
+
+function buildToolNameIndex(messages: ChatCompletionMessage[]): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role === 'assistant') {
+      if (message.piSdkMessage?.role === 'assistant') {
+        for (const block of message.piSdkMessage.content) {
+          if (block.type === 'toolCall') {
+            names.set(block.id, block.name);
+          }
+        }
+      }
+      for (const toolCall of message.tool_calls ?? []) {
+        names.set(toolCall.id, toolCall.function.name);
+      }
+    }
+  }
+  return names;
+}
+
+function toPiAgentMessage(options: {
+  message: Exclude<ChatCompletionMessage, { role: 'system' }>;
+  toolNameIndex: Map<string, string>;
+  model: Model<any>;
+}): AgentMessage {
+  const { message, toolNameIndex, model } = options;
+  if (message.role === 'user') {
+    return {
+      role: 'user',
+      content: message.content,
+      timestamp: getMessageTimestampMs(message),
+    };
+  }
+  if (message.role === 'assistant') {
+    return message.piSdkMessage && message.piSdkMessage.role === 'assistant'
+      ? message.piSdkMessage
+      : buildSyntheticAssistantMessage({ message, model });
+  }
+  return {
+    role: 'toolResult',
+    toolCallId: message.tool_call_id,
+    toolName: toolNameIndex.get(message.tool_call_id) ?? 'tool',
+    content: message.content.trim() ? [{ type: 'text', text: message.content }] : [],
+    details: undefined,
+    isError: parseToolResultErrorState(message.content),
+    timestamp: getMessageTimestampMs(message),
+  };
+}
+
+function buildPiAgentContext(options: {
+  messages: ChatCompletionMessage[];
+  text: string;
+  model: Model<any>;
+}): {
+  systemPrompt: string;
+  contextMessages: AgentMessage[];
+  promptMessage: AgentMessage;
+} {
+  const { messages, text, model } = options;
+  const systemPrompt = messages[0]?.role === 'system' ? messages[0].content : '';
+  const nonSystemMessages = (messages[0]?.role === 'system' ? messages.slice(1) : messages.slice())
+    .filter((message): message is Exclude<ChatCompletionMessage, { role: 'system' }> => message.role !== 'system');
+  const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
+  const toolNameIndex = buildToolNameIndex(nonSystemMessages);
+  const promptSource =
+    lastMessage?.role === 'user' && lastMessage.content === text ? lastMessage : undefined;
+  const contextSource = promptSource ? nonSystemMessages.slice(0, -1) : nonSystemMessages;
+  const contextMessages = contextSource.map((message) =>
+    toPiAgentMessage({
+      message,
+      toolNameIndex,
+      model,
+    }),
+  );
+  const promptMessage: AgentMessage = promptSource
+    ? toPiAgentMessage({
+        message: promptSource,
+        toolNameIndex,
+        model,
+      })
+    : {
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      };
+  return {
+    systemPrompt,
+    contextMessages,
+    promptMessage,
+  };
+}
+
+function appendAssistantToolCallMessage(
+  target: ChatCompletionMessage[],
+  message: AssistantMessage,
+): void {
+  const textBlocks = message.content.filter((block): block is TextContent => block.type === 'text');
+  const toolCalls = message.content.filter((block): block is ToolCall => block.type === 'toolCall');
+  if (toolCalls.length === 0) {
+    return;
+  }
+  target.push({
+    role: 'assistant',
+    content: textBlocks.map((block) => block.text).join(''),
+    tool_calls: toolCalls.map((toolCall) => ({
+      id: toolCall.id,
+      type: 'function',
+      function: {
+        name: toolCall.name,
+        arguments: stringifyToolCallArguments(toolCall.arguments),
+      },
+    })),
+    historyTimestampMs: message.timestamp,
+    piSdkMessage: message,
+  });
+}
+
+function appendToolResultMessage(
+  target: ChatCompletionMessage[],
+  message: ToolResultMessage,
+): void {
+  const text = message.content
+    .filter((block): block is TextContent => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+  target.push({
+    role: 'tool',
+    tool_call_id: message.toolCallId,
+    content: text,
+    historyTimestampMs: message.timestamp,
+  });
+}
+
 export async function runChatCompletionCore(
   options: ChatRunCoreOptions,
 ): Promise<ChatRunCoreResult> {
@@ -585,6 +836,7 @@ export async function runChatCompletionCore(
     provider,
     envConfig,
     chatCompletionTools,
+    agentTools = [],
     handleChatToolCalls,
     sessionHub,
     output,
@@ -600,7 +852,8 @@ export async function runChatCompletionCore(
   } = options;
 
   const getAgentExchangeIdFn = () => state.activeChatRun?.agentExchangeId;
-  const requestPayload = createRequestPayload(getRequestId(state, requestId, responseId));
+  const requestIdValue = getRequestId(state, requestId, responseId);
+  const requestPayload = createRequestPayload(requestIdValue);
   const streamHandlers = createChatRunStreamHandlers({
     sessionId,
     state,
@@ -951,37 +1204,6 @@ export async function runChatCompletionCore(
     aborted = cliAborted;
     fullText = piText;
   } else if (provider === 'pi') {
-    let iterations = 0;
-    piReplayMessages = state.chatMessages;
-
-    const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
-      summary: state.summary,
-    });
-    if (canonicalReplayMessages) {
-      const systemMessage =
-        state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
-      const currentUserMessage =
-        state.chatMessages[state.chatMessages.length - 1]?.role === 'user'
-          ? state.chatMessages[state.chatMessages.length - 1]
-          : undefined;
-      const lastCanonical = canonicalReplayMessages[canonicalReplayMessages.length - 1];
-      const shouldAppendCurrentUser =
-        currentUserMessage?.role === 'user' &&
-        !(
-          lastCanonical?.role === 'user' &&
-          lastCanonical.content === currentUserMessage.content &&
-          lastCanonical.historyTimestampMs !== undefined &&
-          lastCanonical.historyTimestampMs === currentUserMessage.historyTimestampMs
-        );
-      piReplayMessages = [
-        ...(systemMessage ? [systemMessage] : []),
-        ...canonicalReplayMessages,
-        ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
-      ];
-    }
-    const piStateForRun =
-      piReplayMessages === state.chatMessages ? state : { ...state, chatMessages: piReplayMessages };
-
     const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
     const maxToolIterations = piConfig?.maxToolIterations ?? 100;
     const modelSpec = resolveSessionModelForRun({ agent, summary: state.summary });
@@ -1008,152 +1230,370 @@ export async function runChatCompletionCore(
 
     const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
     const reasoning = thinking && isPiReasoningLevel(thinking) ? thinking : undefined;
-
-
     const configProvider = piConfig?.provider?.trim();
     const providerMatchesConfig =
       !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
-
-    // Resolve auth in this order:
-    // 1) explicit agent config apiKey (only applies when provider matches config.provider)
-    // 2) ~/.pi/agent/auth.json OAuth token for supported providers (anthropic, openai-codex)
     const piAgentAuthApiKey = await resolvePiSdkAuthApiKey({
       providerId: resolvedModel.providerId,
       log,
     });
-
     const apiKey =
       providerMatchesConfig ? piConfig?.apiKey ?? piAgentAuthApiKey : piAgentAuthApiKey;
     const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
     const headers = providerMatchesConfig ? piConfig?.headers : undefined;
+    const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
+      summary: state.summary,
+    });
+    piReplayMessages = state.chatMessages;
+    if (canonicalReplayMessages) {
+      const systemMessage =
+        state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
+      const currentUserMessage =
+        state.chatMessages[state.chatMessages.length - 1]?.role === 'user'
+          ? state.chatMessages[state.chatMessages.length - 1]
+          : undefined;
+      const lastCanonical = canonicalReplayMessages[canonicalReplayMessages.length - 1];
+      const shouldAppendCurrentUser =
+        currentUserMessage?.role === 'user' &&
+        !(
+          lastCanonical?.role === 'user' &&
+          lastCanonical.content === currentUserMessage.content &&
+          lastCanonical.historyTimestampMs !== undefined &&
+          lastCanonical.historyTimestampMs === currentUserMessage.historyTimestampMs
+        );
+      piReplayMessages = [
+        ...(systemMessage ? [systemMessage] : []),
+        ...canonicalReplayMessages,
+        ...(shouldAppendCurrentUser && currentUserMessage ? [currentUserMessage] : []),
+      ];
+    }
 
-    // Track cumulative offsets for tool input streaming
+    const agentModel: Model<any> = {
+      ...resolvedModel.model,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(headers ? { headers } : {}),
+    };
+    type PiRuntimeConfig = {
+      apiKey?: string;
+      temperature?: number;
+      maxTokens?: number;
+      headers?: Record<string, string>;
+    };
+    type PiRuntimeState = {
+      requestConfig: PiRuntimeConfig;
+      onPayload?: ((payload: unknown, model: Model<any>) => unknown | Promise<unknown>) | undefined;
+      agent: Agent;
+    };
+    const piAgentRuntime =
+      state.piAgentRuntime ??
+      (() => {
+        const runtime: PiRuntimeState = {
+          requestConfig: {},
+          onPayload: undefined,
+          agent: undefined as unknown as Agent,
+        };
+        runtime.agent = new Agent({
+          convertToLlm: async (messages) =>
+            messages.filter(
+              (message) =>
+                message.role === 'user' ||
+                message.role === 'assistant' ||
+                message.role === 'toolResult',
+            ) as PiSdkMessage[],
+          streamFn: (model, context, options) =>
+            streamSimple(model, context, {
+              ...options,
+              ...(runtime.requestConfig.apiKey ? { apiKey: runtime.requestConfig.apiKey } : {}),
+              ...(runtime.requestConfig.temperature !== undefined
+                ? { temperature: runtime.requestConfig.temperature }
+                : {}),
+              ...(runtime.requestConfig.maxTokens !== undefined
+                ? { maxTokens: runtime.requestConfig.maxTokens }
+                : {}),
+              ...(runtime.requestConfig.headers ? { headers: runtime.requestConfig.headers } : {}),
+            }),
+          onPayload: async (payload, model) =>
+            runtime.onPayload ? runtime.onPayload(payload, model) : undefined,
+          sessionId,
+        });
+        state.piAgentRuntime = runtime as LogicalSessionState['piAgentRuntime'];
+        return runtime;
+      })() as PiRuntimeState;
+    piAgentRuntime.requestConfig = {
+      ...(apiKey ? { apiKey } : {}),
+      ...(piConfig?.temperature !== undefined ? { temperature: piConfig.temperature } : {}),
+      ...(piConfig?.maxTokens !== undefined ? { maxTokens: piConfig.maxTokens } : {}),
+      ...(headers ? { headers } : {}),
+    };
+    piAgentRuntime.onPayload = envConfig.debugChatCompletions
+      ? async (payload, model) => {
+          const record = {
+            timestamp: new Date().toISOString(),
+            direction: 'request',
+            sessionId,
+            responseId,
+            provider: resolvedModel.providerId,
+            model: model.id,
+            ...(debugChatCompletionsContext !== undefined
+              ? { debugContext: debugChatCompletionsContext }
+              : {}),
+            payload,
+          };
+          log('pi chat request', formatDebugPayloadForLog(record));
+          await appendDebugChatCompletionsLogRecord({
+            dataDir: envConfig.dataDir,
+            record,
+          }).catch((error) => {
+            log('failed to write pi chat request debug log', String(error));
+          });
+          return undefined;
+        }
+      : undefined;
+    piAgentRuntime.agent.setModel(agentModel);
+    piAgentRuntime.agent.setSystemPrompt(
+      buildPiAgentContext({
+        messages: piReplayMessages,
+        text,
+        model: agentModel,
+      }).systemPrompt,
+    );
+    piAgentRuntime.agent.setThinkingLevel((reasoning ?? 'off') as PiAgentThinkingLevel);
+    piAgentRuntime.agent.setTools(agentTools as never);
+
+    const { contextMessages, promptMessage, systemPrompt } = buildPiAgentContext({
+      messages: piReplayMessages,
+      text,
+      model: agentModel,
+    });
+    piAgentRuntime.agent.setSystemPrompt(systemPrompt);
+    piAgentRuntime.agent.replaceMessages(contextMessages);
+
     const toolInputOffsets = new Map<string, number>();
-    const debugChatCompletions = envConfig.debugChatCompletions;
+    const toolOutputOffsets = new Map<string, number>();
+    const piReplayAccumulator = piReplayMessages.slice();
+    let toolIterationCount = 0;
     let hitToolIterationLimit = false;
 
-    while (!abortController.signal.aborted && iterations < maxToolIterations) {
-      // Clear offsets for new iteration (tool calls are new per iteration)
-      toolInputOffsets.clear();
-      const iterationIndex = iterations + 1;
+    const emitToolResultMessage = (event: Extract<AgentEvent, { type: 'tool_execution_end' }>) => {
+      const result = event.result as {
+        content?: Array<{ type?: string; text?: string }>;
+        details?: unknown;
+      };
+      const textResult = result.content
+        ?.filter((block) => block.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text as string)
+        .join('');
+      const toolResultMessage: ServerToolResultMessage = {
+        type: 'tool_result',
+        callId: event.toolCallId,
+        toolName: event.toolName,
+        ok: !event.isError,
+        ...(requestIdValue ? { requestId: requestIdValue } : {}),
+        ...(getAgentExchangeId(state, getAgentExchangeIdFn)
+          ? { agentExchangeId: getAgentExchangeId(state, getAgentExchangeIdFn) }
+          : {}),
+        ...(result.details !== undefined ? { result: result.details } : {}),
+        ...(event.isError
+          ? {
+              error: {
+                code: 'tool_error',
+                message: textResult || 'Tool call failed',
+              },
+            }
+          : {}),
+      };
+      output.send(toolResultMessage);
+      if (shouldEmitChatEvents && eventStore && turnId) {
+        emitToolResultEvent({
+          eventStore,
+          sessionHub,
+          sessionId,
+          turnId,
+          responseId,
+          toolCallId: event.toolCallId,
+          result: result.details ?? null,
+          ...(event.isError
+            ? {
+                error: {
+                  code: 'tool_error',
+                  message: textResult || 'Tool call failed',
+                },
+              }
+            : {}),
+        });
+      }
+    };
 
-      const {
-        text: iterationText,
-        toolCalls,
-        aborted: piAborted,
-        abortReason: piAbortReason,
-        assistantMessage,
-      } =
-        await runPiSdkChatCompletionIteration({
-          model: resolvedModel.model,
-          messages: piStateForRun.chatMessages,
-          tools: chatCompletionTools,
-          abortSignal: abortController.signal,
-          onToolCallStart: (info) => {
-            const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
-            const message: ServerToolCallStartMessage = {
-              type: 'tool_call_start',
-              callId: info.id,
-              toolName: info.name,
-              arguments: '{}',
-              ...requestPayload,
-              ...(agentExchangeId ? { agentExchangeId } : {}),
-            };
-            output.send(message);
-
-            toolInputOffsets.set(info.id, 0);
-          },
-          onToolInputDelta: (info) => {
-            if (shouldEmitChatEvents && turnId) {
-              const currentOffset = toolInputOffsets.get(info.id) ?? 0;
+    const subscription = piAgentRuntime.agent.subscribe(async (event) => {
+      switch (event.type) {
+        case 'message_update': {
+          const partial = event.message;
+          if (partial.role !== 'assistant') {
+            return;
+          }
+          const assistantEvent = event.assistantMessageEvent as AssistantMessageEvent;
+          if (
+            assistantEvent.type === 'text_delta' ||
+            assistantEvent.type === 'text_start' ||
+            assistantEvent.type === 'text_end'
+          ) {
+            const block = partial.content[assistantEvent.contentIndex];
+            const phase =
+              block && block.type === 'text'
+                ? parseAssistantTextSignature(block.textSignature)?.phase
+                : undefined;
+            if (assistantEvent.type === 'text_delta' && assistantEvent.delta) {
+              fullText += assistantEvent.delta;
+              await streamHandlers.emitTextDelta(assistantEvent.delta, fullText, phase);
+            }
+          } else if (
+            assistantEvent.type === 'thinking_start' ||
+            assistantEvent.type === 'thinking_delta' ||
+            assistantEvent.type === 'thinking_end'
+          ) {
+            if (assistantEvent.type === 'thinking_start') {
+              await streamHandlers.emitThinkingStart();
+            } else if (assistantEvent.type === 'thinking_delta' && assistantEvent.delta) {
+              await streamHandlers.emitThinkingDelta(assistantEvent.delta);
+            } else if (assistantEvent.type === 'thinking_end') {
+              const block = partial.content[assistantEvent.contentIndex];
+              await streamHandlers.emitThinkingDone(
+                block && block.type === 'thinking' ? block.thinking : streamHandlers.getThinkingText(),
+              );
+            }
+          } else if (assistantEvent.type === 'toolcall_start') {
+            const block = partial.content[assistantEvent.contentIndex];
+            if (block?.type === 'toolCall') {
+              toolInputOffsets.set(block.id, 0);
+            }
+          } else if (assistantEvent.type === 'toolcall_delta') {
+            const block = partial.content[assistantEvent.contentIndex];
+            if (block?.type === 'toolCall' && shouldEmitChatEvents && turnId) {
+              const currentOffset = toolInputOffsets.get(block.id) ?? 0;
               emitToolInputChunkEvent({
                 sessionHub,
                 sessionId,
                 turnId,
                 responseId,
-                toolCallId: info.id,
-                toolName: info.name,
-                chunk: info.argumentsDelta,
+                toolCallId: block.id,
+                toolName: block.name,
+                chunk: assistantEvent.delta,
                 offset: currentOffset,
               });
-              toolInputOffsets.set(info.id, currentOffset + info.argumentsDelta.length);
+              toolInputOffsets.set(block.id, currentOffset + assistantEvent.delta.length);
             }
-          },
-          onDeltaText: streamHandlers.emitTextDelta,
-          onThinkingStart: streamHandlers.emitThinkingStart,
-          onThinkingDelta: streamHandlers.emitThinkingDelta,
-          onThinkingDone: streamHandlers.emitThinkingDone,
-          ...(piConfig?.maxTokens !== undefined ? { maxTokens: piConfig.maxTokens } : {}),
-          ...(piConfig?.temperature !== undefined ? { temperature: piConfig.temperature } : {}),
-          ...(reasoning ? { reasoning } : {}),
-          ...(apiKey ? { apiKey } : {}),
-          ...(baseUrl ? { baseUrl } : {}),
-          ...(headers ? { headers } : {}),
-          timeoutMs: piConfig?.timeoutMs ?? DEFAULT_PI_REQUEST_TIMEOUT_MS,
-          ...(debugChatCompletions
-            ? {
-                onPayload: (payload) => {
-                  const record = {
-                    timestamp: new Date().toISOString(),
-                    direction: 'request',
-                    sessionId,
-                    responseId,
-                    iteration: iterationIndex,
-                    provider: resolvedModel.providerId,
-                    model: resolvedModel.model.id,
-                    ...(debugChatCompletionsContext !== undefined
-                      ? { debugContext: debugChatCompletionsContext }
-                      : {}),
-                    payload,
-                  };
-                  log(
-                    'pi chat request',
-                    formatDebugPayloadForLog(record),
-                  );
-                  void appendDebugChatCompletionsLogRecord({
-                    dataDir: envConfig.dataDir,
-                    record,
-                  }).catch((error) => {
-                    log('failed to write pi chat request debug log', String(error));
-                  });
-                },
-                onResponse: (response) => {
-                  const record = {
-                    timestamp: new Date().toISOString(),
-                    direction: 'response',
-                    sessionId,
-                    responseId,
-                    iteration: iterationIndex,
-                    provider: resolvedModel.providerId,
-                    model: resolvedModel.model.id,
-                    ...(debugChatCompletionsContext !== undefined
-                      ? { debugContext: debugChatCompletionsContext }
-                      : {}),
-                    response: {
-                      text: response.text,
-                      toolCalls: response.toolCalls,
-                      aborted: response.aborted,
-                      message: response.message,
-                    },
-                  };
-                  log(
-                    'pi chat response',
-                    formatDebugPayloadForLog(record),
-                  );
-                  void appendDebugChatCompletionsLogRecord({
-                    dataDir: envConfig.dataDir,
-                    record,
-                  }).catch((error) => {
-                    log('failed to write pi chat response debug log', String(error));
-                  });
-                },
-              }
-            : {}),
-        });
+          }
+          return;
+        }
+        case 'message_end': {
+          if (event.message.role === 'assistant') {
+            lastPiSdkMessage = event.message;
+            if (event.message.content.some((block) => block.type === 'toolCall')) {
+              appendAssistantToolCallMessage(piReplayAccumulator, event.message);
+              appendAssistantToolCallMessage(state.chatMessages, event.message);
+            } else {
+              finalPiSdkMessage = event.message;
+            }
+          } else if (event.message.role === 'toolResult') {
+            appendToolResultMessage(piReplayAccumulator, event.message);
+            appendToolResultMessage(state.chatMessages, event.message);
+          }
+          return;
+        }
+        case 'turn_end':
+          if (event.toolResults.length > 0) {
+            toolIterationCount += 1;
+            if (toolIterationCount >= maxToolIterations) {
+              hitToolIterationLimit = true;
+              piAgentRuntime.agent.abort();
+            }
+          }
+          return;
+        case 'tool_execution_start': {
+          const argsJson = stringifyToolCallArguments(event.args);
+          output.send({
+            type: 'tool_call_start',
+            callId: event.toolCallId,
+            toolName: event.toolName,
+            arguments: argsJson,
+            ...(requestIdValue ? { requestId: requestIdValue } : {}),
+            ...(getAgentExchangeId(state, getAgentExchangeIdFn)
+              ? { agentExchangeId: getAgentExchangeId(state, getAgentExchangeIdFn) }
+              : {}),
+          });
+          toolOutputOffsets.set(event.toolCallId, 0);
+          if (shouldEmitChatEvents && eventStore && turnId) {
+            emitToolCallEvent({
+              eventStore,
+              sessionHub,
+              sessionId,
+              turnId,
+              responseId,
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              args: event.args,
+            });
+          }
+          return;
+        }
+        case 'tool_execution_update': {
+          const partialResult = event.partialResult as {
+            content?: Array<{ type?: string; text?: string }>;
+            details?: Record<string, unknown>;
+          };
+          const delta = partialResult.content
+            ?.filter((block) => block.type === 'text' && typeof block.text === 'string')
+            .map((block) => block.text as string)
+            .join('');
+          if (!delta) {
+            return;
+          }
+          const currentOffset = toolOutputOffsets.get(event.toolCallId) ?? 0;
+          const streamValue = partialResult.details?.['stream'];
+          emitToolOutputChunkEvent({
+            sessionHub,
+            sessionId,
+            ...(turnId ? { turnId } : {}),
+            ...(responseId ? { responseId } : {}),
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            chunk: delta,
+            offset: currentOffset + delta.length,
+            ...(streamValue === 'stdout' || streamValue === 'stderr' || streamValue === 'output'
+              ? { stream: streamValue }
+              : {}),
+          });
+          toolOutputOffsets.set(event.toolCallId, currentOffset + delta.length);
+          return;
+        }
+        case 'tool_execution_end':
+          emitToolResultMessage(event);
+          if (onToolCallMetric) {
+            onToolCallMetric(event.toolName, 0);
+          }
+          return;
+      }
+    });
 
+    const onAbort = () => {
+      piAgentRuntime.agent.abort();
+    };
+    abortController.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      await piAgentRuntime.agent.prompt(promptMessage);
+    } finally {
+      abortController.signal.removeEventListener('abort', onAbort);
+      subscription();
+    }
+
+    piReplayMessages = piReplayAccumulator.slice();
+    const maybeResolvedPiMessage = finalPiSdkMessage ?? lastPiSdkMessage;
+    const resolvedPiMessage =
+      maybeResolvedPiMessage?.role === 'assistant' ? maybeResolvedPiMessage : undefined;
+    if (resolvedPiMessage) {
       const contextUsage = extractSessionContextUsageFromAssistantMessage({
         contextWindow: resolvedModel.model.contextWindow,
-        message: assistantMessage,
+        message: resolvedPiMessage,
       });
       if (contextUsage && !isSessionContextUsageEqual(state.summary.contextUsage, contextUsage)) {
         const updatedSummary = await sessionHub.updateSessionContextUsage(sessionId, contextUsage);
@@ -1161,68 +1601,29 @@ export async function runChatCompletionCore(
           state.summary = updatedSummary;
         }
       }
-
-      if (iterationText.length > 0) {
-        fullText += iterationText;
-        if (state.activeChatRun) {
-          state.activeChatRun.accumulatedText = fullText;
-        }
-      }
-
-      lastPiSdkMessage = assistantMessage;
-
-      if (piAborted) {
-        aborted = true;
-        abortReason = piAbortReason;
-        finalPiSdkMessage = assistantMessage;
-        break;
-      }
-
-      if (!toolCalls || toolCalls.length === 0) {
-        finalPiSdkMessage = assistantMessage;
-        break;
-      }
-
-      const assistantToolCallMessage: ChatCompletionMessage = {
-        role: 'assistant',
-        content: iterationText,
-        historyTimestampMs: Number.isFinite(assistantMessage.timestamp)
-          ? assistantMessage.timestamp
-          : Date.now(),
-        tool_calls: toolCalls.map<ChatCompletionToolCallMessageToolCall>((call) => ({
-          id: call.id,
-          type: 'function',
-          function: {
-            name: call.name,
-            arguments: call.argumentsJson,
+      if (envConfig.debugChatCompletions) {
+        const record = {
+          timestamp: new Date().toISOString(),
+          direction: 'response',
+          sessionId,
+          responseId,
+          provider: resolvedModel.providerId,
+          model: resolvedModel.model.id,
+          ...(debugChatCompletionsContext !== undefined
+            ? { debugContext: debugChatCompletionsContext }
+            : {}),
+          response: {
+            text: fullText,
+            message: resolvedPiMessage,
           },
-        })),
-        piSdkMessage: assistantMessage,
-      };
-
-      piStateForRun.chatMessages.push(assistantToolCallMessage);
-      if (piStateForRun !== state) {
-        state.chatMessages.push(assistantToolCallMessage);
-      }
-
-      const toolMessagesStart = piStateForRun.chatMessages.length;
-      const toolRunStart = Date.now();
-      await handleChatToolCalls(sessionId, piStateForRun, toolCalls);
-      const toolRunDurationMs = Date.now() - toolRunStart;
-      if (piStateForRun !== state && piStateForRun.chatMessages.length > toolMessagesStart) {
-        state.chatMessages.push(...piStateForRun.chatMessages.slice(toolMessagesStart));
-      }
-
-      if (onToolCallMetric) {
-        for (const call of toolCalls) {
-          onToolCallMetric(call.name, toolRunDurationMs);
-        }
-      }
-
-      iterations += 1;
-      if (iterations >= maxToolIterations) {
-        hitToolIterationLimit = true;
-        break;
+        };
+        log('pi chat response', formatDebugPayloadForLog(record));
+        await appendDebugChatCompletionsLogRecord({
+          dataDir: envConfig.dataDir,
+          record,
+        }).catch((error) => {
+          log('failed to write pi chat response debug log', String(error));
+        });
       }
     }
 
@@ -1231,16 +1632,32 @@ export async function runChatCompletionCore(
         sessionId,
         responseId,
         maxToolIterations,
-        iterations,
+        iterations: toolIterationCount,
       });
       throw new ChatRunError(
         'tool_iteration_limit',
         `Tool iteration limit reached (${maxToolIterations}).`,
         {
           maxToolIterations,
-          iterations,
+          iterations: toolIterationCount,
         },
       );
+    }
+
+    if (resolvedPiMessage?.stopReason === 'aborted' || abortController.signal.aborted) {
+      aborted = true;
+      abortReason =
+        abortController.signal.reason === 'timeout' || resolvedPiMessage?.errorMessage === 'timeout'
+          ? 'timeout'
+          : 'aborted';
+      finalPiSdkMessage = resolvedPiMessage;
+    } else if (resolvedPiMessage?.stopReason === 'error') {
+      throw new ChatRunError(
+        'upstream_error',
+        resolvedPiMessage.errorMessage || 'Chat backend error',
+      );
+    } else {
+      finalPiSdkMessage = resolvedPiMessage;
     }
   } else {
     throw new ChatRunError(

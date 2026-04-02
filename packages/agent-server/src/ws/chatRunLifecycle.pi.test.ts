@@ -11,6 +11,77 @@ import type { EnvConfig } from '../envConfig';
 import type { EventStore } from '../events';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 
+type MockAgentListener = ((event: unknown) => Promise<void> | void) | undefined;
+type MockToolResult = {
+  content: Array<{ type: string; text?: string }>;
+  details: unknown;
+};
+type MockAgentTool = {
+  name: string;
+  execute?: (
+    toolCallId: string,
+    params: unknown,
+    signal?: AbortSignal,
+    onUpdate?: (partialResult: MockToolResult) => void,
+  ) => Promise<MockToolResult>;
+};
+
+const mockPiAgentPrompt = vi.fn<
+  (options: {
+    agent: {
+      model: { id: string; provider: string; api: string };
+      tools: MockAgentTool[];
+      messages: unknown[];
+      listener: MockAgentListener;
+    };
+    prompt: unknown;
+    emit: (event: unknown) => Promise<void>;
+  }) => Promise<void>
+>();
+
+vi.mock('@mariozechner/pi-agent-core', async () => {
+  const actual = await vi.importActual<typeof import('@mariozechner/pi-agent-core')>(
+    '@mariozechner/pi-agent-core',
+  );
+  class MockAgent {
+    model = { id: 'mock-model', provider: 'openai', api: 'openai-responses' };
+    tools: MockAgentTool[] = [];
+    messages: unknown[] = [];
+    listener: MockAgentListener = undefined;
+    setModel(model: { id: string; provider: string; api: string }) {
+      this.model = model;
+    }
+    setSystemPrompt(_value: string) {}
+    setThinkingLevel(_value: unknown) {}
+    setTools(tools: unknown[]) {
+      this.tools = tools as MockAgentTool[];
+    }
+    replaceMessages(messages: unknown[]) {
+      this.messages = [...messages];
+    }
+    subscribe(fn: (event: unknown) => Promise<void> | void) {
+      this.listener = fn;
+      return () => {
+        if (this.listener === fn) {
+          this.listener = undefined;
+        }
+      };
+    }
+    abort() {}
+    async prompt(prompt: unknown) {
+      this.messages.push(prompt);
+      await mockPiAgentPrompt({
+        agent: this,
+        prompt,
+        emit: async (event) => {
+          await this.listener?.(event);
+        },
+      });
+    }
+  }
+  return { ...actual, Agent: MockAgent };
+});
+
 vi.mock('../llm/piSdkProvider', async () => {
   const actual = await vi.importActual<typeof import('../llm/piSdkProvider')>('../llm/piSdkProvider');
   return {
@@ -26,6 +97,47 @@ vi.mock('../llm/piAgentAuth', () => ({
 
 import { handleTextInputWithChatCompletions } from './chatRunLifecycle';
 import { resolvePiSdkModel, runPiSdkChatCompletionIteration } from '../llm/piSdkProvider';
+
+function createAssistantMessage(options: {
+  text?: string;
+  provider?: string;
+  model?: string;
+  api?: string;
+  stopReason?: 'stop' | 'toolUse' | 'aborted' | 'error';
+  content?: Array<Record<string, unknown>>;
+}) {
+  const {
+    text = '',
+    provider = 'openai',
+    model = 'gpt-4o-mini',
+    api = 'openai-responses',
+    stopReason = 'stop',
+    content,
+  } = options;
+  return {
+    role: 'assistant' as const,
+    content: content ?? [{ type: 'text', text }],
+    api,
+    provider,
+    model,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
 
 function createTestEventStore(): EventStore {
   return {
@@ -74,6 +186,211 @@ function encodePiCwd(cwd: string): string {
 describe('handleTextInputWithChatCompletions (pi)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPiAgentPrompt.mockImplementation(async ({ agent, emit }) => {
+      const messages = agent.messages;
+      while (true) {
+        let sawTextDelta = false;
+        const result = await vi.mocked(runPiSdkChatCompletionIteration)({
+          model: agent.model as never,
+          messages,
+          tools: agent.tools as never,
+          abortSignal: new AbortController().signal,
+          onDeltaText: async (delta: string, textSoFar: string, phase?: string) => {
+            sawTextDelta = true;
+            const partial = createAssistantMessage({
+              text: textSoFar,
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [
+                {
+                  type: 'text',
+                  text: textSoFar,
+                  ...(phase
+                    ? {
+                        textSignature: JSON.stringify({
+                          v: 1,
+                          id: `sig-${phase}`,
+                          phase,
+                        }),
+                      }
+                    : {}),
+                },
+              ],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'text_delta',
+                contentIndex: 0,
+                delta,
+                partial,
+              },
+            });
+          },
+          onThinkingStart: async () => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking: '' }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_start',
+                contentIndex: 0,
+                partial,
+              },
+            });
+          },
+          onThinkingDelta: async (delta: string) => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking: delta }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_delta',
+                contentIndex: 0,
+                delta,
+                partial,
+              },
+            });
+          },
+          onThinkingDone: async (thinking: string) => {
+            const partial = createAssistantMessage({
+              provider: agent.model.provider,
+              model: agent.model.id,
+              api: agent.model.api,
+              content: [{ type: 'thinking', thinking }],
+            });
+            await emit({
+              type: 'message_update',
+              message: partial,
+              assistantMessageEvent: {
+                type: 'thinking_end',
+                contentIndex: 0,
+                partial,
+              },
+            });
+          },
+        } as never);
+        const assistantMessage = {
+          ...result.assistantMessage,
+          ...(result.abortReason === 'timeout' ? { errorMessage: 'timeout' } : {}),
+          content:
+            result.toolCalls?.length &&
+            !result.assistantMessage.content.some((block) => block.type === 'toolCall')
+              ? [
+                  ...result.assistantMessage.content,
+                  ...result.toolCalls.map((call) => ({
+                    type: 'toolCall',
+                    id: call.id,
+                    name: call.name,
+                    arguments:
+                      call.argumentsJson.trim().length > 0
+                        ? JSON.parse(call.argumentsJson)
+                        : {},
+                  })),
+              ]
+            : result.assistantMessage.content,
+        };
+        if (!sawTextDelta) {
+          let textSoFar = '';
+          for (const [index, block] of assistantMessage.content.entries()) {
+            if (
+              block.type !== 'text' ||
+              !('text' in block) ||
+              typeof block.text !== 'string' ||
+              !block.text.length
+            ) {
+              continue;
+            }
+            textSoFar += block.text;
+            await emit({
+              type: 'message_update',
+              message: assistantMessage,
+              assistantMessageEvent: {
+                type: 'text_delta',
+                contentIndex: index,
+                delta: block.text,
+                partial: assistantMessage,
+              },
+            });
+          }
+        }
+        messages.push(assistantMessage);
+        await emit({ type: 'message_end', message: assistantMessage });
+
+        const toolCalls = result.toolCalls ?? [];
+        if (toolCalls.length === 0) {
+          if (result.assistantMessage.stopReason === 'toolUse') {
+            await emit({
+              type: 'turn_end',
+              message: assistantMessage,
+              toolResults: [],
+            });
+          }
+          return;
+        }
+
+        const toolResults = [];
+        for (const call of toolCalls) {
+          const args = call.argumentsJson.trim().length > 0 ? JSON.parse(call.argumentsJson) : {};
+          await emit({
+            type: 'tool_execution_start',
+            toolCallId: call.id,
+            toolName: call.name,
+            args,
+          });
+          const tool = agent.tools.find((candidate) => candidate.name === call.name);
+          const resultPayload = tool?.execute
+            ? await tool.execute(call.id, args, undefined, async (partialResult) => {
+                await emit({
+                  type: 'tool_execution_update',
+                  toolCallId: call.id,
+                  toolName: call.name,
+                  args,
+                  partialResult,
+                });
+              })
+            : { content: [], details: undefined };
+          const toolResultMessage = {
+            role: 'toolResult' as const,
+            toolCallId: call.id,
+            toolName: call.name,
+            content: resultPayload.content,
+            details: resultPayload.details,
+            isError: false,
+            timestamp: Date.now(),
+          };
+          messages.push(toolResultMessage);
+          await emit({
+            type: 'tool_execution_end',
+            toolCallId: call.id,
+            toolName: call.name,
+            args,
+            result: resultPayload,
+            isError: false,
+          });
+          await emit({ type: 'message_end', message: toolResultMessage });
+          toolResults.push(toolResultMessage);
+        }
+
+        await emit({
+          type: 'turn_end',
+          message: assistantMessage,
+          toolResults,
+        });
+      }
+    });
   });
 
   it('uses the canonical Pi transcript for replay and records only the final answer text', async () => {
@@ -261,15 +578,20 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
 
     expect(runPiSdkChatCompletionIteration).toHaveBeenCalledTimes(1);
     expect(replayMessagesAtCall).toMatchObject([
-      { role: 'system', content: 'System prompt' },
       { role: 'user', content: 'Earlier request' },
       {
         role: 'assistant',
-        content: 'Stored final answer',
-        piSdkMessage: {
-          role: 'assistant',
-          provider: 'openai-codex',
-        },
+        content: [
+          {
+            type: 'text',
+            text: 'Working on it',
+          },
+          {
+            type: 'text',
+            text: 'Stored final answer',
+          },
+        ],
+        provider: 'openai-codex',
       },
       { role: 'user', content: 'Current request' },
     ]);
@@ -290,13 +612,15 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
     expect(state.chatMessages).toMatchObject([
       { role: 'system', content: 'System prompt' },
-      { role: 'assistant', content: 'polluted to=lists_items_list ...' },
+      { role: 'user', content: 'Earlier request' },
+      { role: 'assistant', content: 'Stored final answer' },
       { role: 'user', content: 'Current request' },
       { role: 'assistant', content: 'Stored final answer' },
     ]);
     expect(
       state.chatMessages.some(
-        (message) => message.role === 'user' && message.content === 'Earlier request',
+        (message) =>
+          message.role === 'assistant' && message.content === 'polluted to=lists_items_list ...',
       ),
     ).toBe(false);
     expect(state.chatMessages[state.chatMessages.length - 1]).toMatchObject({
@@ -437,7 +761,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
 
     expect(replayMessagesAtCall).toMatchObject([
-      { role: 'system', content: 'System prompt' },
       { role: 'user', content: 'repeat request' },
       { role: 'user', content: 'repeat request' },
     ]);
@@ -578,13 +901,25 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       outputMode: 'text',
       clientAudioCapabilities: undefined,
       ttsBackendFactory: null,
-      handleChatToolCalls: async (_sessionId, stateArg) => {
-        stateArg.chatMessages.push({
-          role: 'tool',
-          tool_call_id: 'call-1',
-          content: '{"ok":true}',
-        });
-      },
+      agentTools: [
+        {
+          name: 'bash',
+          label: 'bash',
+          description: 'bash',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: { type: 'string' },
+            },
+            required: ['command'],
+          },
+          execute: async () => ({
+            content: [{ type: 'text', text: '{"ok":true}' }],
+            details: { ok: true },
+          }),
+        },
+      ],
+      handleChatToolCalls: async () => undefined,
       setActiveRunState: () => undefined,
       clearActiveRunState: () => undefined,
       sendError: () => undefined,

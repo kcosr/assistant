@@ -8,7 +8,7 @@ import type { SessionHub } from './sessionHub';
 import type { SessionIndex, SessionSummary } from './sessionIndex';
 import type { SearchService } from './search/searchService';
 import { ToolError, createScopedToolHost } from './tools';
-import type { ToolHost } from './tools';
+import type { AgentTool, ToolContext, ToolHost } from './tools';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './ws/toolCallHandling';
 import { deliverWebhook } from './webhookDelivery';
@@ -81,6 +81,7 @@ type SessionToolContext = {
   state: Awaited<ReturnType<SessionHub['ensureSessionState']>>;
   scopedToolHost: ToolHost;
   chatTools: unknown[];
+  agentTools: AgentTool[];
   availableTools: Awaited<ReturnType<ToolHost['listTools']>> | undefined;
   availableSkills:
     | Awaited<ReturnType<typeof resolveAgentToolExposureForHost>>['availableSkills']
@@ -122,15 +123,25 @@ async function buildSessionToolContext(options: {
     : toolHost;
 
   let chatTools: unknown[] = [];
+  let agentTools: AgentTool[] = [];
   let availableTools: Awaited<ReturnType<ToolHost['listTools']>> | undefined;
   let availableSkills:
     | Awaited<ReturnType<typeof resolveAgentToolExposureForHost>>['availableSkills']
     | undefined;
   try {
+    const toolContext: ToolContext = {
+      signal: new AbortController().signal,
+      sessionId,
+      agentRegistry,
+      sessionIndex,
+      sessionHub,
+      baseToolHost: toolHost,
+    };
     const exposure = await resolveAgentToolExposureForHost({
       scopedToolHost,
       agent,
       sessionHub,
+      toolContext,
     });
     availableTools = exposure.availableTools;
     availableSkills = filterSessionSkills({
@@ -138,10 +149,12 @@ async function buildSessionToolContext(options: {
       selectedSkillIds: getSelectedSessionSkillIds(summary.attributes),
     });
     chatTools = exposure.chatTools;
+    agentTools = exposure.agentTools;
   } catch {
     availableTools = undefined;
     availableSkills = undefined;
     chatTools = [];
+    agentTools = [];
   }
 
   return {
@@ -150,6 +163,7 @@ async function buildSessionToolContext(options: {
     state,
     scopedToolHost,
     chatTools,
+    agentTools,
     availableTools,
     availableSkills,
   };
@@ -202,7 +216,7 @@ export async function startSessionMessage(options: {
 
   const agentRegistry = options.agentRegistry ?? sessionHub.getAgentRegistry();
 
-  const { summary, state, scopedToolHost, chatTools, availableTools, availableSkills } =
+  const { summary, state, scopedToolHost, chatTools, agentTools, availableTools, availableSkills } =
     await buildSessionToolContext({
       sessionId: input.sessionId,
       sessionIndex,
@@ -281,6 +295,7 @@ export async function startSessionMessage(options: {
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,
+        agentTools,
         ...(availableTools !== undefined ? { availableTools } : {}),
         ...(availableSkills ? { availableSkills } : {}),
         handleChatToolCalls,
@@ -361,6 +376,7 @@ export async function startSessionMessage(options: {
         sessionHub,
         envConfig,
         chatCompletionTools: chatTools,
+        agentTools,
         ...(availableTools !== undefined ? { availableTools } : {}),
         ...(availableSkills ? { availableSkills } : {}),
         handleChatToolCalls,

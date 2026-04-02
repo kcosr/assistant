@@ -55,7 +55,7 @@ describe('client message validation', () => {
         {
           sessionId: 'session-1',
           mask: {
-            serverMessageTypes: ['chat_event', 'output_cancelled'],
+            serverMessageTypes: ['chat_event', 'transcript_event', 'output_cancelled'],
             chatEventTypes: ['tool_call', 'assistant_done'],
             toolNames: ['voice_speak', 'voice_ask'],
             messagePhases: ['final_answer'],
@@ -227,6 +227,36 @@ describe('server message validation', () => {
       type: 'open_url',
       url: 'https://example.com',
       sessionId: 'session-5',
+    };
+
+    const parsed = validateServerMessage(message);
+    expect(parsed).toEqual(message);
+  });
+
+  it('accepts a transcript_event message', () => {
+    const message: ServerMessage = {
+      type: 'transcript_event',
+      event: {
+        sessionId: 'session-1',
+        revision: 7,
+        sequence: 0,
+        requestId: 'request-1',
+        eventId: 'event-1',
+        kind: 'request_start',
+        timestamp: '2026-04-01T12:00:00.000Z',
+        payload: {
+          sourceEvent: {
+            id: 'event-1',
+            timestamp: 0,
+            sessionId: 'session-1',
+            turnId: 'request-1',
+            type: 'turn_start',
+            payload: {
+              trigger: 'user',
+            },
+          },
+        },
+      },
     };
 
     const parsed = validateServerMessage(message);

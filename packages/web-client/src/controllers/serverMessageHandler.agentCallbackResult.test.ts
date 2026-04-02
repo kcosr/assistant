@@ -228,6 +228,138 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(handleNewEvent).not.toHaveBeenCalled();
   });
 
+  it('renders transcript events through the chat renderer path', async () => {
+    const handleNewEvent = vi.fn();
+    const scrollToBottom = vi.fn();
+    const autoScrollIfEnabled = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom,
+        autoScrollIfEnabled,
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const { handler, typingIndicators } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 101,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+        kind: 'request_start',
+        timestamp: '2026-04-01T00:00:00.000Z',
+        payload: {
+          sourceEvent: {
+            id: 'chat-1',
+            timestamp: Date.now(),
+            sessionId: 's-1',
+            turnId: 'turn-1',
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+        },
+      },
+    });
+
+    expect(handleNewEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'turn_start',
+        id: 'transcript-1',
+        sessionId: 's-1',
+        turnId: 'turn-1',
+      }),
+    );
+    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(autoScrollIfEnabled).not.toHaveBeenCalled();
+    expect(typingIndicators.has('s-1')).toBe(true);
+  });
+
+  it('buffers transcript events while transcript hydration is in progress', async () => {
+    const handleNewEvent = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom: vi.fn(),
+        autoScrollIfEnabled: vi.fn(),
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const bufferChatEvent = vi.fn();
+    const { handler } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+      shouldBufferChatEvent: () => true,
+      bufferChatEvent,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 101,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+        kind: 'request_start',
+        timestamp: '2026-04-01T00:00:00.000Z',
+        payload: {
+          sourceEvent: {
+            id: 'chat-1',
+            timestamp: Date.now(),
+            sessionId: 's-1',
+            turnId: 'turn-1',
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+        },
+      },
+    });
+
+    expect(bufferChatEvent).toHaveBeenCalledWith(
+      's-1',
+      expect.objectContaining({
+        type: 'turn_start',
+        id: 'transcript-1',
+        sessionId: 's-1',
+        turnId: 'turn-1',
+      }),
+    );
+    expect(handleNewEvent).not.toHaveBeenCalled();
+  });
+
   it('marks sessions busy on turn_start and idle on turn_end before assistant output arrives', async () => {
     const statuses: Array<{ sessionId: string; status: string }> = [];
     const { handler, typingIndicators } = makeHandler({
