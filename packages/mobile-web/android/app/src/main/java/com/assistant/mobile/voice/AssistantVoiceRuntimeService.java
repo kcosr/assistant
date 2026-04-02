@@ -1501,7 +1501,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         recognitionReadyCuePlayed = true;
         return playRecognitionCueWithRetry(
             buildRecognitionArmingCueRequestId(activeSttRequestId),
-            true,
+            AssistantVoicePcmPlayer.RecognitionCueType.ARMING,
             0
         );
     }
@@ -1511,21 +1511,31 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         recognitionCompletionCuePlayed = true;
-        playRecognitionCueWithRetry("", success, 0);
+        playRecognitionCueWithRetry(
+            "",
+            success
+                ? AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
+                : AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION,
+            0
+        );
     }
 
-    private boolean playRecognitionCueWithRetry(String requestId, boolean success, int attempt) {
+    private boolean playRecognitionCueWithRetry(
+        String requestId,
+        AssistantVoicePcmPlayer.RecognitionCueType cueType,
+        int attempt
+    ) {
         if (!config.recognitionCueEnabled) {
             return false;
         }
-        if (player.playRecognitionCue(requestId, success)) {
+        if (player.playRecognitionCue(requestId, cueType)) {
             return true;
         }
         if (attempt >= MAX_RECOGNITION_CUE_RETRIES) {
             return false;
         }
         mainHandler.postDelayed(
-            () -> playRecognitionCueWithRetry(requestId, success, attempt + 1),
+            () -> playRecognitionCueWithRetry(requestId, cueType, attempt + 1),
             RECOGNITION_CUE_RETRY_DELAY_MS * (attempt + 1L)
         );
         return false;

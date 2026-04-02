@@ -73,12 +73,25 @@ public final class AssistantVoicePcmPlayerTest {
     }
 
     @Test
-    public void generateRecognitionCuePcmDataBuildsDistinctSuccessAndFailureCues() {
-        byte[] successCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(48000, true);
-        byte[] failureCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(48000, false);
+    public void generateRecognitionCuePcmDataBuildsDistinctArmingSuccessAndFailureCues() {
+        byte[] armingCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(
+            48000,
+            AssistantVoicePcmPlayer.RecognitionCueType.ARMING
+        );
+        byte[] successCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(
+            48000,
+            AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
+        );
+        byte[] failureCue = AssistantVoicePcmPlayer.generateRecognitionCuePcmData(
+            48000,
+            AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION
+        );
 
-        assertEquals(27840, successCue.length);
+        assertEquals(27840, armingCue.length);
+        assertEquals(32640, successCue.length);
         assertEquals(28800, failureCue.length);
+        assertFalse(Arrays.equals(armingCue, successCue));
+        assertFalse(Arrays.equals(armingCue, failureCue));
         assertFalse(Arrays.equals(successCue, failureCue));
     }
 }

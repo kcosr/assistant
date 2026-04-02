@@ -15,6 +15,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class AssistantVoicePcmPlayer {
+    enum RecognitionCueType {
+        ARMING,
+        SUCCESS_COMPLETION,
+        FAILURE_COMPLETION,
+    }
+
     private static final int DEFAULT_PLAYBACK_SAMPLE_RATE = 24000;
     private static final int DEFAULT_CUE_OUTPUT_SAMPLE_RATE = 48000;
     private static final int MIN_CUE_OUTPUT_SAMPLE_RATE = 16000;
@@ -26,10 +32,21 @@ final class AssistantVoicePcmPlayer {
     private static final int MAX_RECOGNITION_CUE_REPLAY_ATTEMPTS = 1;
     private static final int RECOGNITION_CUE_FADE_WINDOW_DIVISOR = 80;
     private static final int RECOGNITION_CUE_MIN_FADE_SAMPLES = 12;
-    private static final byte[] SUCCESS_RECOGNITION_CUE_PCM =
-        generateRecognitionCuePcmData(DEFAULT_CUE_OUTPUT_SAMPLE_RATE, true);
-    private static final byte[] FAILURE_RECOGNITION_CUE_PCM =
-        generateRecognitionCuePcmData(DEFAULT_CUE_OUTPUT_SAMPLE_RATE, false);
+    private static final byte[] ARMING_RECOGNITION_CUE_PCM =
+        generateRecognitionCuePcmData(
+            DEFAULT_CUE_OUTPUT_SAMPLE_RATE,
+            RecognitionCueType.ARMING
+        );
+    private static final byte[] SUCCESS_COMPLETION_RECOGNITION_CUE_PCM =
+        generateRecognitionCuePcmData(
+            DEFAULT_CUE_OUTPUT_SAMPLE_RATE,
+            RecognitionCueType.SUCCESS_COMPLETION
+        );
+    private static final byte[] FAILURE_COMPLETION_RECOGNITION_CUE_PCM =
+        generateRecognitionCuePcmData(
+            DEFAULT_CUE_OUTPUT_SAMPLE_RATE,
+            RecognitionCueType.FAILURE_COMPLETION
+        );
 
     interface Listener {
         void onPlaybackDrained(String requestId);
@@ -243,7 +260,7 @@ final class AssistantVoicePcmPlayer {
         executor.shutdownNow();
     }
 
-    boolean playRecognitionCue(String requestId, boolean success) {
+    boolean playRecognitionCue(String requestId, RecognitionCueType cueType) {
         byte[] adjustedCue;
         int outputRate;
         long taskGeneration;
@@ -268,14 +285,16 @@ final class AssistantVoicePcmPlayer {
             }
             adjustedCue = buildRecognitionCueBytes(
                 outputRate,
-                success,
+                cueType,
                 resolveRecognitionCueGain(recognitionCueGain),
                 startupPreRollMs
             );
             taskGeneration = generation;
         }
 
-        executor.execute(() -> writeRecognitionCue(taskGeneration, success, adjustedCue, outputRate, 0));
+        executor.execute(
+            () -> writeRecognitionCue(taskGeneration, cueType, adjustedCue, outputRate, 0)
+        );
         return true;
     }
 
@@ -388,22 +407,41 @@ final class AssistantVoicePcmPlayer {
         return output;
     }
 
-    static byte[] generateRecognitionCuePcmData(int sampleRate, boolean success) {
+    static byte[] generateRecognitionCuePcmData(
+        int sampleRate,
+        RecognitionCueType cueType
+    ) {
         if (sampleRate <= 0) {
             return new byte[0];
         }
 
-        CueSegment[] segments = success
-            ? new CueSegment[] {
-                new CueSegment(523.25d, 95, 0.14f),
-                new CueSegment(0.0d, 55, 0.0f),
-                new CueSegment(659.25d, 140, 0.16f),
-            }
-            : new CueSegment[] {
-                new CueSegment(659.25d, 105, 0.14f),
-                new CueSegment(0.0d, 55, 0.0f),
-                new CueSegment(493.88d, 140, 0.16f),
-            };
+        CueSegment[] segments;
+        switch (cueType) {
+            case SUCCESS_COMPLETION:
+                segments = new CueSegment[] {
+                    new CueSegment(659.25d, 70, 0.13f),
+                    new CueSegment(0.0d, 35, 0.0f),
+                    new CueSegment(830.61d, 75, 0.14f),
+                    new CueSegment(0.0d, 35, 0.0f),
+                    new CueSegment(987.77d, 125, 0.15f),
+                };
+                break;
+            case FAILURE_COMPLETION:
+                segments = new CueSegment[] {
+                    new CueSegment(659.25d, 105, 0.14f),
+                    new CueSegment(0.0d, 55, 0.0f),
+                    new CueSegment(493.88d, 140, 0.16f),
+                };
+                break;
+            case ARMING:
+            default:
+                segments = new CueSegment[] {
+                    new CueSegment(523.25d, 95, 0.14f),
+                    new CueSegment(0.0d, 55, 0.0f),
+                    new CueSegment(659.25d, 140, 0.16f),
+                };
+                break;
+        }
 
         int totalSamples = 0;
         for (CueSegment segment : segments) {
@@ -444,11 +482,11 @@ final class AssistantVoicePcmPlayer {
 
     private byte[] buildRecognitionCueBytes(
         int sampleRate,
-        boolean success,
+        RecognitionCueType cueType,
         float gain,
         int startupPreRollMs
     ) {
-        byte[] baseCue = resolveRecognitionCueBasePcm(sampleRate, success);
+        byte[] baseCue = resolveRecognitionCueBasePcm(sampleRate, cueType);
         byte[] adjustedCue = applySoftwareGainPcm16(baseCue, gain);
         byte[] preroll = buildRecognitionCuePrerollPcm(sampleRate, startupPreRollMs);
         if (preroll.length == 0) {
@@ -460,16 +498,27 @@ final class AssistantVoicePcmPlayer {
         return combined;
     }
 
-    private static byte[] resolveRecognitionCueBasePcm(int sampleRate, boolean success) {
+    private static byte[] resolveRecognitionCueBasePcm(
+        int sampleRate,
+        RecognitionCueType cueType
+    ) {
         if (sampleRate == DEFAULT_CUE_OUTPUT_SAMPLE_RATE) {
-            return success ? SUCCESS_RECOGNITION_CUE_PCM : FAILURE_RECOGNITION_CUE_PCM;
+            switch (cueType) {
+                case SUCCESS_COMPLETION:
+                    return SUCCESS_COMPLETION_RECOGNITION_CUE_PCM;
+                case FAILURE_COMPLETION:
+                    return FAILURE_COMPLETION_RECOGNITION_CUE_PCM;
+                case ARMING:
+                default:
+                    return ARMING_RECOGNITION_CUE_PCM;
+            }
         }
-        return generateRecognitionCuePcmData(sampleRate, success);
+        return generateRecognitionCuePcmData(sampleRate, cueType);
     }
 
     private void writeRecognitionCue(
         long taskGeneration,
-        boolean success,
+        RecognitionCueType cueType,
         byte[] cuePcm,
         int outputRate,
         int replayAttempt
@@ -499,7 +548,7 @@ final class AssistantVoicePcmPlayer {
             }
             scheduleRecognitionCueReplayCheckLocked(
                 taskGeneration,
-                success,
+                cueType,
                 outputRate,
                 replayAttempt
             );
@@ -508,7 +557,7 @@ final class AssistantVoicePcmPlayer {
 
     private void scheduleRecognitionCueReplayCheckLocked(
         long taskGeneration,
-        boolean success,
+        RecognitionCueType cueType,
         int outputRate,
         int replayAttempt
     ) {
@@ -537,7 +586,7 @@ final class AssistantVoicePcmPlayer {
                     }
                     replayCue = buildRecognitionCueBytes(
                         outputRate,
-                        success,
+                        cueType,
                         resolveRecognitionCueGain(recognitionCueGain),
                         startupPreRollMs
                     );
@@ -546,7 +595,7 @@ final class AssistantVoicePcmPlayer {
                 if (cueForReplay != null) {
                     executor.execute(() -> writeRecognitionCue(
                         taskGeneration,
-                        success,
+                        cueType,
                         cueForReplay,
                         outputRate,
                         replayAttempt + 1
