@@ -797,16 +797,17 @@ export class ListsStore {
   }): Promise<ListItem[]> {
     await this.ensureLoaded();
 
+    const listId = params.listId?.trim() || undefined;
     const query = params.query?.trim().toLowerCase() ?? '';
     const hasTagFilter = (params.tags?.length ?? 0) > 0;
-    if (!query && !params.listId && !hasTagFilter) {
+    if (!query && !listId && !hasTagFilter) {
       return [];
     }
 
     let items = [...this.data.items];
 
-    if (params.listId) {
-      items = items.filter((item) => item.listId === params.listId);
+    if (listId) {
+      items = items.filter((item) => item.listId === listId);
     }
 
     if (query) {

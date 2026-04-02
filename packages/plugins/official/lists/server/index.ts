@@ -894,8 +894,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       'items-search': async (args): Promise<unknown> => {
         const parsed = asObject(args);
         const { store: listsStore } = await resolveStore(parsed);
-        const query = parseOptionalString(parsed['query'], 'query');
-        const trimmedQuery = trimOptionalString(query);
+        const query = trimOptionalString(parseOptionalString(parsed['query'], 'query'));
         const listId = trimOptionalString(parseOptionalString(parsed['listId'], 'listId'));
         const limit = parsed['limit'];
         if (limit !== undefined && typeof limit !== 'number') {
@@ -903,7 +902,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         }
         const tags = parseOptionalTags(parsed['tags']);
         const tagMatch = parseTagMatch(parsed['tagMatch']);
-        if (!trimmedQuery && !listId && (!tags || tags.length === 0)) {
+        if (!query && !listId && (!tags || tags.length === 0)) {
           throw new ToolError(
             'invalid_arguments',
             'items-search requires query text, listId, or at least one tag',

@@ -515,6 +515,12 @@ describe('ListsStore (plugin)', () => {
     });
     expect(searchByBlankQueryAndTags.map((item) => item.title)).toEqual(['First Item']);
 
+    const searchByBlankListIdAndTags = await store.searchItems({
+      listId: '   ',
+      tags: ['dairy'],
+    });
+    expect(searchByBlankListIdAndTags.map((item) => item.title)).toEqual(['First Item']);
+
     const fullyEmptySearch = await store.searchItems({});
     expect(fullyEmptySearch).toEqual([]);
   });
