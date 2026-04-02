@@ -93,5 +93,34 @@ public final class AssistantVoicePcmPlayerTest {
         assertFalse(Arrays.equals(armingCue, successCue));
         assertFalse(Arrays.equals(armingCue, failureCue));
         assertFalse(Arrays.equals(successCue, failureCue));
+        assertFalse(Arrays.equals(successCue, synthesizeSingleTonePcm(48000, 523.25d, 140, 0.16f)));
+        assertFalse(Arrays.equals(successCue, synthesizeSingleTonePcm(48000, 1046.50d, 140, 0.16f)));
+    }
+
+    private static byte[] synthesizeSingleTonePcm(
+        int sampleRate,
+        double frequencyHz,
+        int durationMs,
+        float amplitude
+    ) {
+        int totalSamples = (sampleRate * durationMs) / 1000;
+        int fadeWindow = Math.max(sampleRate / 80, 12);
+        byte[] pcm = new byte[totalSamples * 2];
+        for (int index = 0; index < totalSamples; index += 1) {
+            float fadeIn = Math.min(1.0f, index / (float) fadeWindow);
+            float fadeOut = Math.min(1.0f, (totalSamples - index) / (float) fadeWindow);
+            float envelope = Math.min(fadeIn, fadeOut);
+            double value =
+                Math.sin((2.0d * Math.PI * frequencyHz * index) / sampleRate) *
+                (Short.MAX_VALUE * amplitude * envelope);
+            int sample = Math.max(
+                Short.MIN_VALUE,
+                Math.min(Short.MAX_VALUE, (int) value)
+            );
+            int byteIndex = index * 2;
+            pcm[byteIndex] = (byte) (sample & 0xFF);
+            pcm[byteIndex + 1] = (byte) ((sample >> 8) & 0xFF);
+        }
+        return pcm;
     }
 }

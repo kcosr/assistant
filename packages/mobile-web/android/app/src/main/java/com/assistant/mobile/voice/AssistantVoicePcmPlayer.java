@@ -419,7 +419,7 @@ final class AssistantVoicePcmPlayer {
         switch (cueType) {
             case SUCCESS_COMPLETION:
                 segments = new CueSegment[] {
-                    new CueSegment(783.99d, 140, 0.16f),
+                    new CueSegment(523.25d, 1046.50d, 140, 0.16f),
                 };
                 break;
             case FAILURE_COMPLETION:
@@ -458,10 +458,15 @@ final class AssistantVoicePcmPlayer {
                 float envelope = Math.min(fadeIn, fadeOut);
                 double value = 0.0d;
                 if (segment.frequencyHz > 0.0d && segment.amplitude > 0f) {
-                    value =
-                        Math.sin(
-                            (2.0d * Math.PI * segment.frequencyHz * index) / sampleRate
-                        ) * (Short.MAX_VALUE * segment.amplitude * envelope);
+                    double phase = (2.0d * Math.PI * segment.frequencyHz * index) / sampleRate;
+                    value = Math.sin(phase);
+                    if (segment.secondaryFrequencyHz > 0.0d) {
+                        double secondaryPhase =
+                            (2.0d * Math.PI * segment.secondaryFrequencyHz * index) /
+                            sampleRate;
+                        value = (value + Math.sin(secondaryPhase)) * 0.5d;
+                    }
+                    value *= Short.MAX_VALUE * segment.amplitude * envelope;
                 }
                 int sample = Math.max(
                     Short.MIN_VALUE,
@@ -879,11 +884,22 @@ final class AssistantVoicePcmPlayer {
 
     private static final class CueSegment {
         final double frequencyHz;
+        final double secondaryFrequencyHz;
         final int durationMs;
         final float amplitude;
 
         CueSegment(double frequencyHz, int durationMs, float amplitude) {
+            this(frequencyHz, 0.0d, durationMs, amplitude);
+        }
+
+        CueSegment(
+            double frequencyHz,
+            double secondaryFrequencyHz,
+            int durationMs,
+            float amplitude
+        ) {
             this.frequencyHz = frequencyHz;
+            this.secondaryFrequencyHz = secondaryFrequencyHz;
             this.durationMs = durationMs;
             this.amplitude = amplitude;
         }
