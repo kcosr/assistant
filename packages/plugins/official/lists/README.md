@@ -28,6 +28,8 @@ operations.
 - Default instance data lives under `data/plugins/lists/default/`; additional instances use
   `data/plugins/lists/<instanceId>/`.
 - Server operations: defined in `manifest.json` and implemented in `server/index.ts`.
+- `items-search` accepts a blank or omitted `query` when another search constraint such as
+  `listId` or `tags` is provided, enabling tag-only searches like `tags: ["pinned"]`.
 - Web UI: implemented in `web/index.ts` using shared controllers from `packages/web-client/src`.
 - Drag within a list to reorder, or drag selected items across list panels to move them to the
   drop position.

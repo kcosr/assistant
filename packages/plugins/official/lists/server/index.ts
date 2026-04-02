@@ -94,6 +94,14 @@ function parseTagMatch(value: unknown): 'all' | 'any' | undefined {
   throw new ToolError('invalid_arguments', "tagMatch must be 'all' or 'any'");
 }
 
+function trimOptionalString(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function slugify(raw: string): string {
   const normalized = raw.normalize('NFKD').toLowerCase();
   return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -886,16 +894,23 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       'items-search': async (args): Promise<unknown> => {
         const parsed = asObject(args);
         const { store: listsStore } = await resolveStore(parsed);
-        const query = requireNonEmptyString(parsed['query'], 'query');
-        const listId = parseOptionalString(parsed['listId'], 'listId');
+        const query = parseOptionalString(parsed['query'], 'query');
+        const trimmedQuery = trimOptionalString(query);
+        const listId = trimOptionalString(parseOptionalString(parsed['listId'], 'listId'));
         const limit = parsed['limit'];
         if (limit !== undefined && typeof limit !== 'number') {
           throw new ToolError('invalid_arguments', 'limit must be a number');
         }
         const tags = parseOptionalTags(parsed['tags']);
         const tagMatch = parseTagMatch(parsed['tagMatch']);
+        if (!trimmedQuery && !listId && (!tags || tags.length === 0)) {
+          throw new ToolError(
+            'invalid_arguments',
+            'items-search requires query text, listId, or at least one tag',
+          );
+        }
         return listsStore.searchItems({
-          query,
+          ...(query !== undefined ? { query } : {}),
           ...(listId ? { listId } : {}),
           ...(limit !== undefined ? { limit: limit as number } : {}),
           ...(tags !== undefined ? { tags } : {}),

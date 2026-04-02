@@ -789,7 +789,7 @@ export class ListsStore {
   }
 
   async searchItems(params: {
-    query: string;
+    query?: string;
     listId?: string;
     limit?: number;
     tags?: string[];
@@ -797,8 +797,9 @@ export class ListsStore {
   }): Promise<ListItem[]> {
     await this.ensureLoaded();
 
-    const query = params.query.trim().toLowerCase();
-    if (!query) {
+    const query = params.query?.trim().toLowerCase() ?? '';
+    const hasTagFilter = (params.tags?.length ?? 0) > 0;
+    if (!query && !params.listId && !hasTagFilter) {
       return [];
     }
 
@@ -808,12 +809,14 @@ export class ListsStore {
       items = items.filter((item) => item.listId === params.listId);
     }
 
-    items = items.filter((item) => {
-      const title = item.title.toLowerCase();
-      const url = item.url?.toLowerCase() ?? '';
-      const notes = item.notes?.toLowerCase() ?? '';
-      return title.includes(query) || url.includes(query) || notes.includes(query);
-    });
+    if (query) {
+      items = items.filter((item) => {
+        const title = item.title.toLowerCase();
+        const url = item.url?.toLowerCase() ?? '';
+        const notes = item.notes?.toLowerCase() ?? '';
+        return title.includes(query) || url.includes(query) || notes.includes(query);
+      });
+    }
 
     if (params.tags && params.tags.length > 0) {
       items = items.filter((item) => this.matchesTags(item.tags, params.tags, params.tagMatch));

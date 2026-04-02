@@ -502,6 +502,21 @@ describe('ListsStore (plugin)', () => {
       tagMatch: 'all',
     });
     expect(searchScopedToList.map((item) => item.title)).toEqual(['First Item']);
+
+    const searchByTagsOnly = await store.searchItems({
+      tags: ['dairy'],
+    });
+    expect(searchByTagsOnly.map((item) => item.title)).toEqual(['First Item']);
+
+    const searchByBlankQueryAndTags = await store.searchItems({
+      query: '   ',
+      tags: ['shopping'],
+      tagMatch: 'all',
+    });
+    expect(searchByBlankQueryAndTags.map((item) => item.title)).toEqual(['First Item']);
+
+    const fullyEmptySearch = await store.searchItems({});
+    expect(fullyEmptySearch).toEqual([]);
   });
 
   it('defaults item listing and search limits to 100', async () => {
