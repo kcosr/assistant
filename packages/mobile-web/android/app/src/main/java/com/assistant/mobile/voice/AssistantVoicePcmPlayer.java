@@ -232,7 +232,7 @@ final class AssistantVoicePcmPlayer {
         executor.shutdownNow();
     }
 
-    boolean playRecognitionCue(boolean success) {
+    boolean playRecognitionCue(String requestId, boolean success) {
         byte[] adjustedCue;
         int outputRate;
         long taskGeneration;
@@ -241,14 +241,17 @@ final class AssistantVoicePcmPlayer {
                 return false;
             }
             generation += 1L;
-            activeRequestId = "";
+            activeRequestId = requestId == null ? "" : requestId.trim();
             activeSampleRate = 0;
-            streamEnded = false;
-            pendingWrites = 0;
+            streamEnded = true;
+            pendingWrites = 1;
             framesWritten = 0;
             releaseTrackLocked();
             outputRate = resolveCueOutputSampleRateLocked();
             if (ensureTrackLocked(outputRate) == null) {
+                activeRequestId = "";
+                streamEnded = false;
+                pendingWrites = 0;
                 schedulePlaybackFocusReleaseLocked();
                 return false;
             }
@@ -464,8 +467,17 @@ final class AssistantVoicePcmPlayer {
         }
         int bytesWritten = writePcm(track, cuePcm);
         synchronized (lock) {
+            if (taskGeneration != generation) {
+                schedulePlaybackFocusReleaseLocked();
+                return;
+            }
+            if (bytesWritten > 0) {
+                framesWritten += bytesWritten / 2;
+            }
+            pendingWrites = Math.max(0, pendingWrites - 1);
+            maybeCompletePlaybackLocked();
             schedulePlaybackFocusReleaseLocked();
-            if (taskGeneration != generation || bytesWritten <= 0) {
+            if (bytesWritten <= 0) {
                 return;
             }
             scheduleRecognitionCueReplayCheckLocked(
@@ -497,7 +509,12 @@ final class AssistantVoicePcmPlayer {
                         return;
                     }
                     releaseTrackLocked();
+                    framesWritten = 0;
+                    pendingWrites = 1;
+                    streamEnded = true;
                     if (ensureTrackLocked(outputRate) == null) {
+                        pendingWrites = 0;
+                        streamEnded = false;
                         schedulePlaybackFocusReleaseLocked();
                         return;
                     }

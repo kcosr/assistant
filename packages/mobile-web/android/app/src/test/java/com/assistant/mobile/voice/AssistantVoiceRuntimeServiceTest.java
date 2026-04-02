@@ -153,6 +153,19 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
     }
 
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionArmingCueRequestIdRoundTripsThroughPlaybackMarker() {
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId(" request-1 ");
+
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId(playbackRequestId)
+        );
+        assertEquals("", AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId("tts-1"));
+    }
+
     private static PendingIntent createActivityPendingIntent(Context context, String action) {
         return PendingIntent.getActivity(
             context,

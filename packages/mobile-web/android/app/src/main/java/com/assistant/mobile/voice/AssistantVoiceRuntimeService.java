@@ -72,8 +72,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long ADAPTER_RECONNECT_DELAY_MS = 2000L;
     private static final int MAX_RECOGNITION_CUE_RETRIES = 2;
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
-    private static final long RECOGNITION_CUE_ARMING_DELAY_MS = 240L;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final String RECOGNITION_ARMING_CUE_REQUEST_PREFIX = "__recognition_arming__:";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -107,6 +107,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private String pendingPlaybackDrainRequestId = "";
     private boolean pendingPlaybackDrainStartsListening = false;
     private String activeSttRequestId = "";
+    private String pendingRecognitionArmingCueRequestId = "";
     private String adapterStoppedSttRequestId = "";
     private String pendingRecognitionCompletionCueRequestId = "";
     private boolean pendingRecognitionCompletionCueSuccess = false;
@@ -941,6 +942,15 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handlePlaybackDrained(String requestId) {
+        String recognitionRequestId = extractRecognitionArmingCueRequestId(requestId);
+        if (!recognitionRequestId.isEmpty()) {
+            if (!recognitionRequestId.equals(pendingRecognitionArmingCueRequestId)) {
+                return;
+            }
+            pendingRecognitionArmingCueRequestId = "";
+            startRecognitionCapture(recognitionRequestId);
+            return;
+        }
         if (!requestId.equals(pendingPlaybackDrainRequestId)) {
             return;
         }
@@ -1068,10 +1078,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         String speakingToolName = activePromptToolName;
         boolean playManualStopCue =
             "manual_stop".equals(reason) && !listeningRequestId.isEmpty();
+        boolean pendingArmingCue =
+            listeningRequestId.equals(pendingRecognitionArmingCueRequestId);
 
         activeTtsRequestId = "";
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
+        pendingRecognitionArmingCueRequestId = "";
         player.stop();
 
         if (!ttsRequestId.isEmpty()) {
@@ -1081,7 +1094,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!listeningRequestId.isEmpty()) {
             activeSttRequestId = "";
             if (playManualStopCue) {
-                queueRecognitionCompletionCue(listeningRequestId, false);
+                if (pendingArmingCue) {
+                    playRecognitionCompletionCueIfNeeded(false);
+                } else {
+                    queueRecognitionCompletionCue(listeningRequestId, false);
+                }
             }
             if (micStreamer != null) {
                 micStreamer.stop(listeningRequestId);
@@ -1155,14 +1172,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        pendingRecognitionArmingCueRequestId = requestId;
         boolean playedArmingCue = playRecognitionReadyCueIfNeeded();
         if (playedArmingCue) {
-            mainHandler.postDelayed(
-                () -> startRecognitionCapture(requestId),
-                RECOGNITION_CUE_ARMING_DELAY_MS
-            );
             return;
         }
+        pendingRecognitionArmingCueRequestId = "";
         startRecognitionCapture(requestId);
     }
 
@@ -1171,6 +1186,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        pendingRecognitionArmingCueRequestId = "";
         player.beginRecognitionCaptureFocus();
         boolean started = micStreamer.start(requestId, new AssistantVoiceMicStreamer.Listener() {
             @Override
@@ -1409,6 +1425,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private void resetRecognitionCueState() {
         pendingRecognitionCompletionCueRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
+        pendingRecognitionArmingCueRequestId = "";
         recognitionReadyCuePlayed = false;
         recognitionCompletionCuePlayed = false;
     }
@@ -1433,7 +1450,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             return false;
         }
         recognitionReadyCuePlayed = true;
-        return playRecognitionCueWithRetry(true, 0);
+        return playRecognitionCueWithRetry(
+            buildRecognitionArmingCueRequestId(activeSttRequestId),
+            true,
+            0
+        );
     }
 
     private void playRecognitionCompletionCueIfNeeded(boolean success) {
@@ -1441,24 +1462,37 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         recognitionCompletionCuePlayed = true;
-        playRecognitionCueWithRetry(success, 0);
+        playRecognitionCueWithRetry("", success, 0);
     }
 
-    private boolean playRecognitionCueWithRetry(boolean success, int attempt) {
+    private boolean playRecognitionCueWithRetry(String requestId, boolean success, int attempt) {
         if (!config.recognitionCueEnabled) {
             return false;
         }
-        if (player.playRecognitionCue(success)) {
+        if (player.playRecognitionCue(requestId, success)) {
             return true;
         }
         if (attempt >= MAX_RECOGNITION_CUE_RETRIES) {
             return false;
         }
         mainHandler.postDelayed(
-            () -> playRecognitionCueWithRetry(success, attempt + 1),
+            () -> playRecognitionCueWithRetry(requestId, success, attempt + 1),
             RECOGNITION_CUE_RETRY_DELAY_MS * (attempt + 1L)
         );
         return false;
+    }
+
+    static String buildRecognitionArmingCueRequestId(String requestId) {
+        String normalized = trim(requestId);
+        return normalized.isEmpty() ? "" : RECOGNITION_ARMING_CUE_REQUEST_PREFIX + normalized;
+    }
+
+    static String extractRecognitionArmingCueRequestId(String playbackRequestId) {
+        String normalized = trim(playbackRequestId);
+        if (!normalized.startsWith(RECOGNITION_ARMING_CUE_REQUEST_PREFIX)) {
+            return "";
+        }
+        return trim(normalized.substring(RECOGNITION_ARMING_CUE_REQUEST_PREFIX.length()));
     }
 
     private static String trim(String value) {
