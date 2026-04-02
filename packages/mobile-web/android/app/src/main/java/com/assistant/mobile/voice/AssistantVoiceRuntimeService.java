@@ -112,6 +112,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private String pendingRecognitionArmingCueRequestId = "";
     private String adapterStoppedSttRequestId = "";
     private String pendingRecognitionCompletionCueRequestId = "";
+    private String stoppedRecognitionRequestId = "";
     private boolean pendingRecognitionCompletionCueSuccess = false;
     private boolean recognitionReadyCuePlayed = false;
     private boolean recognitionCompletionCuePlayed = false;
@@ -995,10 +996,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         String error = trim(message.optString("error"));
         int durationMs = Math.max(0, message.optInt("durationMs", 0));
         boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
+        boolean captureAlreadyStopped =
+            shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                stoppedRecognitionRequestId,
+                requestId
+            );
 
         activeSttRequestId = "";
         queueRecognitionCompletionCue(requestId, positiveCue);
-        if (micStreamer != null) {
+        if (captureAlreadyStopped) {
+            stoppedRecognitionRequestId = "";
+            scheduleQueuedRecognitionCompletionCueIfNeeded(requestId);
+        } else if (micStreamer != null) {
             adapterStoppedSttRequestId = requestId;
             micStreamer.stop(requestId);
         }
@@ -1308,8 +1317,11 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handleMicCaptureStopped(String requestId) {
+        stoppedRecognitionRequestId = trim(requestId);
         player.endRecognitionCaptureFocus();
-        scheduleQueuedRecognitionCompletionCueIfNeeded(requestId);
+        if (scheduleQueuedRecognitionCompletionCueIfNeeded(requestId)) {
+            stoppedRecognitionRequestId = "";
+        }
         if (requestId != null && requestId.equals(adapterStoppedSttRequestId)) {
             Log.d(TAG, "skip media_stt_end for adapter-stopped requestId=" + requestId);
             adapterStoppedSttRequestId = "";
@@ -1436,10 +1448,19 @@ public final class AssistantVoiceRuntimeService extends Service {
         return !expected.isEmpty() && expected.equals(trim(stoppedRequestId));
     }
 
+    static boolean shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+        String stoppedRequestId,
+        String resultRequestId
+    ) {
+        String stopped = trim(stoppedRequestId);
+        return !stopped.isEmpty() && stopped.equals(trim(resultRequestId));
+    }
+
     private void resetRecognitionCueState() {
         pendingRecognitionCompletionCueRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
         pendingRecognitionArmingCueRequestId = "";
+        stoppedRecognitionRequestId = "";
         recognitionReadyCuePlayed = false;
         recognitionCompletionCuePlayed = false;
     }
@@ -1459,9 +1480,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         playRecognitionCompletionCueIfNeeded(success);
     }
 
-    private void scheduleQueuedRecognitionCompletionCueIfNeeded(String requestId) {
+    private boolean scheduleQueuedRecognitionCompletionCueIfNeeded(String requestId) {
         if (!shouldPlayQueuedRecognitionCompletionCue(pendingRecognitionCompletionCueRequestId, requestId)) {
-            return;
+            return false;
         }
         boolean success = pendingRecognitionCompletionCueSuccess;
         pendingRecognitionCompletionCueRequestId = "";
@@ -1470,6 +1491,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             () -> playRecognitionCompletionCueIfNeeded(success),
             RECOGNITION_CUE_POST_STOP_DELAY_MS
         );
+        return true;
     }
 
     private boolean playRecognitionReadyCueIfNeeded() {

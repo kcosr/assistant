@@ -155,6 +155,32 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldScheduleQueuedRecognitionCompletionCueAfterResultMatchesEarlierStop() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                " request-1 ",
+                "request-1"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                "",
+                "request-1"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                "request-2",
+                "request-1"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void recognitionArmingCueRequestIdRoundTripsThroughPlaybackMarker() {
         String playbackRequestId =
             AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId(" request-1 ");
