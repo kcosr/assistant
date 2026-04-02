@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadAttachment, openHtmlAttachmentInBrowser, resolveAttachmentUrl } from './attachmentActions';
+import {
+  downloadAttachment,
+  fetchAttachmentTextContent,
+  getAttachmentContentUrl,
+  openHtmlAttachmentInBrowser,
+  resolveAttachmentUrl,
+} from './attachmentActions';
 
 function setLocationPathname(pathname: string): void {
   Object.defineProperty(window, 'location', {
@@ -36,6 +42,27 @@ describe('attachmentActions', () => {
     expect(resolveAttachmentUrl('/api/attachments/s1/a1?download=1')).toBe(
       'https://example.com/custom/api/attachments/s1/a1?download=1',
     );
+  });
+
+  it('derives the inline attachment content URL from the download URL', () => {
+    expect(getAttachmentContentUrl('/api/attachments/s1/a1?download=1')).toBe(
+      '/api/attachments/s1/a1',
+    );
+    expect(getAttachmentContentUrl('https://example.com/api/attachments/s1/a1?download=1')).toBe(
+      'https://example.com/api/attachments/s1/a1',
+    );
+  });
+
+  it('fetches attachment text content through the API helper', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('hello world', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      }),
+    );
+
+    await expect(fetchAttachmentTextContent('/api/attachments/s1/a1')).resolves.toBe('hello world');
+    expect(fetchSpy).toHaveBeenCalledWith('/assistant/api/attachments/s1/a1', { method: 'GET' });
   });
 
   it('opens HTML attachments from fetched bytes via an object URL', async () => {

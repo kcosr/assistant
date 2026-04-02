@@ -61,7 +61,7 @@ type AttachmentSendArgs =
       path: string;
     };
 
-const MAX_ATTACHMENT_PREVIEW_CHARS = 4000;
+const DEFAULT_ATTACHMENT_PREVIEW_CHARS = 512;
 
 function asObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -225,6 +225,7 @@ async function materializeAttachmentBytes(
 function buildAttachmentPreview(options: {
   bytes: Buffer;
   contentType: string;
+  maxChars: number;
 }): {
   previewType: 'none' | 'text' | 'markdown';
   previewText?: string;
@@ -237,8 +238,8 @@ function buildAttachmentPreview(options: {
 
   const fullText = options.bytes.toString('utf8');
   const previewText =
-    fullText.length > MAX_ATTACHMENT_PREVIEW_CHARS
-      ? fullText.slice(0, MAX_ATTACHMENT_PREVIEW_CHARS)
+    fullText.length > options.maxChars
+      ? fullText.slice(0, options.maxChars)
       : fullText;
   return {
     previewType,
@@ -251,6 +252,7 @@ async function handleAttachmentSend(
   raw: unknown,
   ctx: ToolContext,
   sessionHub: SessionHub,
+  previewCharLimit: number,
 ): Promise<AttachmentToolResult> {
   const sessionId = ctx.sessionId?.trim();
   const turnId = ctx.turnId?.trim();
@@ -283,7 +285,11 @@ async function handleAttachmentSend(
   });
 
   const routePath = buildAttachmentRoutePath(sessionId, stored.attachmentId);
-  const preview = buildAttachmentPreview({ bytes, contentType });
+  const preview = buildAttachmentPreview({
+    bytes,
+    contentType,
+    maxChars: previewCharLimit,
+  });
   return {
     ok: true,
     attachment: {
@@ -1039,7 +1045,12 @@ export async function handleAgentMessage(
 export function registerBuiltInSessionTools(options: {
   host: { registerTool(definition: BuiltInToolDefinition): void };
   sessionHub: SessionHub;
+  attachmentPreviewChars?: number;
 }): void {
+  const attachmentPreviewChars =
+    typeof options.attachmentPreviewChars === 'number'
+      ? options.attachmentPreviewChars
+      : DEFAULT_ATTACHMENT_PREVIEW_CHARS;
   const voicePromptParameters = {
     type: 'object',
     properties: {
@@ -1112,6 +1123,7 @@ export function registerBuiltInSessionTools(options: {
       required: ['fileName'],
       additionalProperties: false,
     },
-    handler: async (args, ctx) => handleAttachmentSend(args, ctx, options.sessionHub),
+    handler: async (args, ctx) =>
+      handleAttachmentSend(args, ctx, options.sessionHub, attachmentPreviewChars),
   });
 }

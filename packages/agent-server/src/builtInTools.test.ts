@@ -124,13 +124,19 @@ describe('registerBuiltInSessionTools', () => {
     return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
   }
 
-  function createHost(attachmentStore?: AttachmentStore): BuiltInToolHost {
+  function createHost(
+    attachmentStore?: AttachmentStore,
+    options?: { attachmentPreviewChars?: number },
+  ): BuiltInToolHost {
     const host = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
     registerBuiltInSessionTools({
       host,
       sessionHub: {
         getAttachmentStore: () => attachmentStore,
       } as never,
+      ...(typeof options?.attachmentPreviewChars === 'number'
+        ? { attachmentPreviewChars: options.attachmentPreviewChars }
+        : {}),
     });
     return host;
   }
@@ -248,6 +254,52 @@ describe('registerBuiltInSessionTools', () => {
     const stored = await store.getAttachment('session-1', result.attachment.attachmentId);
     expect(stored?.turnId).toBe('turn-1');
     expect(stored?.toolCallId).toBe('tool-call-1');
+  });
+
+  it('truncates preview text using the default preview snippet limit', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-preview-default'));
+    const host = createHost(store);
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'note.txt',
+        text: 'a'.repeat(600),
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        previewType: string;
+        previewText?: string;
+        previewTruncated?: boolean;
+      };
+    };
+
+    expect(result.attachment.previewType).toBe('text');
+    expect(result.attachment.previewText).toHaveLength(512);
+    expect(result.attachment.previewTruncated).toBe(true);
+  });
+
+  it('uses the configured preview snippet limit for text attachments', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-preview-configured'));
+    const host = createHost(store, { attachmentPreviewChars: 12 });
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'note.txt',
+        text: 'hello world and beyond',
+      }),
+      createContext(),
+    )) as {
+      attachment: {
+        previewText?: string;
+        previewTruncated?: boolean;
+      };
+    };
+
+    expect(result.attachment.previewText).toBe('hello world ');
+    expect(result.attachment.previewTruncated).toBe(true);
   });
 
   it('uses browser_blob open mode for HTML attachments', async () => {

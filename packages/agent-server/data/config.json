@@ -1,4 +1,7 @@
 {
+  "attachments": {
+    "previewSnippetChars": 512
+  },
   "agents": [
     {
       "agentId": "claude-cli",

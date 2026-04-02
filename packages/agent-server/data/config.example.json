@@ -1,4 +1,7 @@
 {
+  "attachments": {
+    "previewSnippetChars": 512
+  },
   "sessions": {
     "maxCached": 100,
     "mirrorPiSessionHistory": true

@@ -192,4 +192,5 @@ export interface ToolHostConfig {
 export interface CreateToolHostDeps {
   sessionHub?: SessionHub;
   sessionIndex?: SessionIndex;
+  attachmentPreviewChars?: number;
 }

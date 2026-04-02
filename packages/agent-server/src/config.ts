@@ -716,6 +716,12 @@ export const SessionsConfigSchema = z.object({
 
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
 
+export const AttachmentsConfigSchema = z.object({
+  previewSnippetChars: z.number().int().min(1).default(512),
+});
+
+export type AttachmentsConfig = z.infer<typeof AttachmentsConfigSchema>;
+
 export const AppConfigSchema = z
   .object({
     agents: z
@@ -732,6 +738,7 @@ export const AppConfigSchema = z
       .optional()
       .transform((value) => value ?? []),
     sessions: SessionsConfigSchema.optional(),
+    attachments: AttachmentsConfigSchema.default({}),
   })
   .superRefine((value, ctx) => {
     const profileIds = new Set<string>();

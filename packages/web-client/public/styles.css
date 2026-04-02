@@ -5737,6 +5737,11 @@ textarea.interaction-input {
   font-weight: bold;
 }
 
+.attachment-tool-preview[data-expanded='true'] {
+  max-height: min(28rem, 65vh);
+  overflow: auto;
+}
+
 /* ===== Input Panel ===== */
 .input-panel {
   display: flex;

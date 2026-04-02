@@ -453,6 +453,159 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('shows truncated previews with an expand action and renders full text inline after fetch', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+    const fetchSpy = vi.spyOn(attachmentActions, 'fetchAttachmentTextContent').mockResolvedValue(
+      'hello world and beyond',
+    );
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-truncated',
+        turnId: 't-attachment-truncated',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-truncated',
+        turnId: 't-attachment-truncated',
+        responseId: 'r-attachment-truncated',
+        payload: {
+          toolCallId: 'tc-attachment-truncated',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello world and beyond',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-truncated',
+        turnId: 't-attachment-truncated',
+        responseId: 'r-attachment-truncated',
+        payload: {
+          toolCallId: 'tc-attachment-truncated',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-truncated',
+              fileName: 'note.txt',
+              contentType: 'text/plain',
+              size: 22,
+              downloadUrl: '/api/attachments/session-1/att-truncated?download=1',
+              previewType: 'text',
+              previewText: 'hello',
+              previewTruncated: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain('hello…');
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain(
+      'Preview truncated. Expand to load the full attachment.',
+    );
+
+    const expandButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expect(expandButton?.textContent).toBe('Expand');
+    expandButton?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fetchSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-truncated');
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).toContain(
+      'hello world and beyond',
+    );
+    expect(bubble?.querySelector('.attachment-tool-preview')?.textContent).not.toContain(
+      'Preview truncated. Expand to load the full attachment.',
+    );
+    expect(
+      Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['Download']);
+  });
+
+  it('shows attachment expand failures inline and keeps the expand action available', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+    vi.spyOn(attachmentActions, 'fetchAttachmentTextContent').mockRejectedValue(new Error('boom'));
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderer.replayEvents([
+      createBaseEvent('turn_start', {
+        id: 'e-turn-expand-fail',
+        turnId: 't-attachment-expand-fail',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-expand-fail',
+        turnId: 't-attachment-expand-fail',
+        responseId: 'r-attachment-expand-fail',
+        payload: {
+          toolCallId: 'tc-attachment-expand-fail',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello world and beyond',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-expand-fail',
+        turnId: 't-attachment-expand-fail',
+        responseId: 'r-attachment-expand-fail',
+        payload: {
+          toolCallId: 'tc-attachment-expand-fail',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-expand-fail',
+              fileName: 'note.txt',
+              contentType: 'text/plain',
+              size: 22,
+              downloadUrl: '/api/attachments/session-1/att-expand-fail?download=1',
+              previewType: 'text',
+              previewText: 'hello',
+              previewTruncated: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    const expandButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expandButton?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bubble?.querySelector('.attachment-tool-action-error')?.textContent).toContain(
+      'Failed to expand attachment.',
+    );
+    expect(
+      Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(['Expand', 'Download']);
+  });
+
   it('shows attachment action failures inline without dropping the attachment bubble', async () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

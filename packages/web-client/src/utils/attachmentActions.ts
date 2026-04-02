@@ -77,6 +77,37 @@ export function resolveAttachmentUrl(url: string): string {
   return `${getApiBaseUrl().replace(/\/+$/, '')}${trimmed}`;
 }
 
+export function getAttachmentContentUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const isAbsolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  const isRootRelative = trimmed.startsWith('/');
+  const parsed = new URL(trimmed, 'http://assistant.local');
+  parsed.searchParams.delete('download');
+
+  if (isAbsolute) {
+    return parsed.toString();
+  }
+
+  const normalized = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  if (isRootRelative) {
+    return normalized;
+  }
+
+  return normalized.replace(/^\/+/, '');
+}
+
+export async function fetchAttachmentTextContent(url: string): Promise<string> {
+  const response = await apiFetch(url, { method: 'GET' });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch attachment (${response.status})`);
+  }
+  return response.text();
+}
+
 export async function downloadAttachment(url: string, fileName: string): Promise<void> {
   const resolvedUrl = resolveAttachmentUrl(url);
   if (!resolvedUrl) {

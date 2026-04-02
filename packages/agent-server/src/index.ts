@@ -108,6 +108,7 @@ export async function startServer(
     {
       sessionHub,
       sessionIndex,
+      attachmentPreviewChars: appConfig?.attachments.previewSnippetChars,
     },
   );
 
