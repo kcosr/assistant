@@ -1,3 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mariozechner/pi-ai', () => ({
@@ -13,6 +17,7 @@ import {
   buildPiContext,
   extractAssistantTextBlocksFromPiMessage,
   mapChatCompletionToolsToPiTools,
+  resolvePiSdkAuthApiKey,
   resolvePiSdkModel,
   runPiSdkChatCompletionIteration,
 } from './piSdkProvider';
@@ -60,6 +65,43 @@ describe('resolvePiSdkModel', () => {
         modelSpec: 'gpt-4o-mini',
       }),
     ).rejects.toThrow(/provider\/model format/i);
+  });
+});
+
+describe('resolvePiSdkAuthApiKey', () => {
+  it('resolves keys through AuthStorage', async () => {
+    const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-'));
+    process.env['PI_CODING_AGENT_DIR'] = tempDir;
+
+    try {
+      await fs.writeFile(
+        path.join(tempDir, 'auth.json'),
+        JSON.stringify(
+          {
+            anthropic: {
+              type: 'api_key',
+              key: 'resolved-key',
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      await expect(
+        resolvePiSdkAuthApiKey({
+          providerId: 'anthropic',
+        }),
+      ).resolves.toBe('resolved-key');
+    } finally {
+      if (originalAgentDir === undefined) {
+        delete process.env['PI_CODING_AGENT_DIR'];
+      } else {
+        process.env['PI_CODING_AGENT_DIR'] = originalAgentDir;
+      }
+    }
   });
 });
 

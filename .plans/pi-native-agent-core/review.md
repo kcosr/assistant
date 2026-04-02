@@ -8,6 +8,35 @@ Applied decisions after the PI second pass:
 - define a concrete request-adapter boundary in the plan
 - keep the target end state single-path; no long-lived fallback/dual-routing design
 - align session files with `~/.pi/agent/sessions/`
+- keep one live `Agent` runtime per loaded session; rebuild from persisted messages after eviction/restart
+- keep model/thinking changes supported with request-boundary semantics, plus explicit persisted
+  change entries
+- use direct imports from `@mariozechner/pi-coding-agent` as the long-term source of truth for
+  coding tools
+- keep session persistence assistant-owned rather than importing coding-agent `SessionManager`
+- persist outer assistant request grouping in the same pi JSONL file instead of using a separate
+  replay/correlation store
+- persist all user-visible interaction lifecycle state in that same pi JSONL file as well
+- use one durable cross-session `exchangeId` for each `agents_message` invocation while keeping
+  normal per-session request groups
+- keep `convertToLlm` assistant-local and minimal; model-visible callback/agent input should be
+  normal `user` messages, not custom metadata messages
+- use native `AgentTool` directly as the runtime contract; rewrite tool construction rather than
+  keeping `ToolHost` as the first-cut execution bridge
+- spell out generated plugin-operation migration details instead of treating plugins as one generic
+  bucket: naming/capabilities, `Type.Unsafe()` schema wrapping, coercion parity, result shaping,
+  and narrowed execution context
+- move UI replay/reconnect onto the pi session file in the same migration instead of carrying
+  EventStore forward
+- add a session-local replay `sequence` plus resume `cursor` so the client reconciles live and
+  replayed events without payload-based dedup hacks
+- make that sequence/cursor ordering authoritative for attachment/tool-result reconciliation too,
+  so the UI no longer rebuilds those bubbles via replay-time guesswork
+- make history edits anchor on outer assistant request groups, not pi internal turns, so transcript
+  controls operate on the same visible boundary the user sees
+- keep a narrow import-compatibility path for shared pi/coding-agent logs that lack assistant
+  request metadata: synthesize coarse request groups on replay, then materialize assistant request
+  markers on rewrite
 - keep turn-history editing in scope for the first cut
 - add an explicit parity test matrix before switching `provider === 'pi'`
 - keep agent-core tool execution sequential in the first cut unless concurrency is proven safe
@@ -63,17 +92,24 @@ References:
 Implication: the event bridge and writer must handle both the execution events and the final
 `toolResult` message if replay/persistence should stay compatible.
 
-### 4. EventStore is still on the critical path
+### 4. EventStore is still on the critical path today
 
 Today replay still depends on `ChatEvent` reconstruction:
 
 - `packages/agent-server/src/sessionHub.ts`
 - `packages/agent-server/src/sessionChatMessages.ts`
 - `packages/agent-server/src/history/historyProvider.ts`
+- `packages/web-client/src/utils/chatEventReplayDedup.ts`
+- `packages/web-client/src/controllers/chatRenderer.ts`
 
 For `provider === 'pi'`, `PiSessionHistoryProvider` also merges overlay events while the Pi session
 file is missing or being tailed. That means EventStore/overlay behavior cannot be dropped as part
 of the loop migration alone.
+
+Decision update: absorb the replay/UI rewrite into the main migration and remove this dependency
+instead of preserving it as scaffolding. The new replay model also needs an explicit session-local
+sequence/cursor so live updates, replay, and attachment/tool-result rendering all reconcile in one
+ordering space.
 
 ### 5. Session-writer simplification was overstated
 
@@ -94,7 +130,7 @@ References:
 Implication: the target should be "smaller target-format writer", not "plain append-only JSONL
 logger".
 
-### 6. Tool migration should start with adapters, not a full rewrite
+### 6. Tool migration originally looked adapter-first
 
 Current assistant tool execution still flows through `ToolHost`, `ToolContext`, approvals,
 interactions, and plugin operation surfaces:
@@ -104,8 +140,8 @@ interactions, and plugin operation surfaces:
 - `packages/agent-server/src/plugins/operations.ts`
 - `packages/agent-server/src/builtInTools.ts`
 
-Implication: a thin internal `AgentTool` adapter over the existing tool-host path is acceptable as
-temporary scaffolding. It is not part of the target end-state contract.
+Decision update: after deeper review, move directly to native `AgentTool` construction instead of
+keeping `ToolHost` as the runtime bridge.
 
 ### 7. Strip-first sequencing is too risky
 
@@ -122,12 +158,10 @@ without shortening the critical path materially.
 ## Recommended migration order
 
 1. Add `pi-agent-core` and `pi-coding-agent`, then lock actual API assumptions in the plan.
-2. Build a new pi-native runtime with temporary internal adapters only where necessary:
-   - existing tool host
-   - existing ChatEvent/EventStore flow
-   - existing session writer or a target-format replacement
-3. Prove parity for streaming, tools, interruption, replay, and `agents_message`.
-4. Route `provider === 'pi'` to the new path.
-5. Remove old pi loop code.
-6. Simplify tools/replay/writer after cutover.
+2. Build a new pi-native runtime, native `AgentTool` layer, session writer, replay projector, and
+   client sequence/cursor reconciliation together.
+3. Move reconnect/replay onto the pi session file with a session-local sequence/cursor model.
+4. Prove parity for streaming, tools, interruption, replay, and `agents_message`.
+5. Route `provider === 'pi'` to the new path.
+6. Remove old pi loop code and EventStore-based replay.
 7. Strip CLI/TTS only after the native path is stable.

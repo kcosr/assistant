@@ -329,6 +329,68 @@ describe('BuiltInToolHost', () => {
     expect(firstTool?.parameters).toEqual({ type: 'object' });
   });
 
+  it('exposes native agent tools with executable wrappers', async () => {
+    const host = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
+    host.registerTool({
+      name: 'echo',
+      description: 'Echo tool',
+      parameters: { type: 'object' },
+      handler: async (args, ctx) => ({
+        updates: (() => {
+          ctx.onUpdate?.({ delta: 'first', details: { stage: 1 } });
+          ctx.onUpdate?.({ delta: 'second', details: { stage: 2 } });
+          return true;
+        })(),
+        args,
+        sessionId: ctx.sessionId,
+      }),
+    });
+
+    const ctx: ToolContext = { sessionId: 'session-native', signal: new AbortController().signal };
+    const tools = await host.listAgentTools(ctx);
+
+    expect(tools).toHaveLength(1);
+    const [tool] = tools;
+    expect(tool).toMatchObject({
+      name: 'echo',
+      description: 'Echo tool',
+      label: 'Echo tool',
+    });
+
+    const partials: unknown[] = [];
+    const result = await tool!.execute('tool-call-1', { foo: 'bar' }, ctx.signal, (partial) => {
+      partials.push(partial);
+    });
+
+    expect(partials).toEqual([
+      {
+        content: [{ type: 'text', text: 'first' }],
+        details: { stage: 1 },
+      },
+      {
+        content: [{ type: 'text', text: 'firstsecond' }],
+        details: { stage: 2 },
+      },
+    ]);
+    expect(result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              updates: true,
+              args: { foo: 'bar' },
+              sessionId: 'session-native',
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      details: { updates: true, args: { foo: 'bar' }, sessionId: 'session-native' },
+    });
+  });
+
   it('invokes the correct handler with parsed args and context', async () => {
     const host = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
 
@@ -384,6 +446,31 @@ describe('CompositeToolHost', () => {
     const composite = new CompositeToolHost([hostA, hostB]);
 
     const tools = await composite.listTools();
+    const names = tools.map((tool) => tool.name).sort();
+    expect(names).toEqual(['tool_a', 'tool_b']);
+  });
+
+  it('aggregates native agent tools from multiple hosts', async () => {
+    const hostA = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
+    hostA.registerTool({
+      name: 'tool_a',
+      description: 'Tool A',
+      parameters: {},
+      handler: async () => 'a',
+    });
+
+    const hostB = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
+    hostB.registerTool({
+      name: 'tool_b',
+      description: 'Tool B',
+      parameters: {},
+      handler: async () => 'b',
+    });
+
+    const composite = new CompositeToolHost([hostA, hostB]);
+    const ctx: ToolContext = { sessionId: 'session-1', signal: new AbortController().signal };
+    const tools = await composite.listAgentTools(ctx);
+
     const names = tools.map((tool) => tool.name).sort();
     expect(names).toEqual(['tool_a', 'tool_b']);
   });
@@ -457,6 +544,32 @@ describe('ScopedToolHost', () => {
     const tools = await scoped.listTools();
     const names = tools.map((tool) => tool.name).sort();
     expect(names).toEqual(['reading_list_add', 'system_sessions_list']);
+  });
+
+  it('filters native agent tools using the allowlist', async () => {
+    const baseHost = new BuiltInToolHost({ tools: new Map<string, BuiltInToolDefinition>() });
+    baseHost.registerTool({
+      name: 'reading_list_add',
+      description: 'Add to reading list',
+      parameters: {},
+      handler: async () => 'ok',
+    });
+    baseHost.registerTool({
+      name: 'todo_add',
+      description: 'Add todo item',
+      parameters: {},
+      handler: async () => 'ok',
+    });
+
+    const scoped = new ScopedToolHost({
+      baseHost,
+      allowlist: ['reading_list_*'],
+    });
+
+    const ctx: ToolContext = { sessionId: 'session-1', signal: new AbortController().signal };
+    const tools = await scoped.listAgentTools(ctx);
+    const names = tools.map((tool) => tool.name).sort();
+    expect(names).toEqual(['reading_list_add']);
   });
 
   it('rejects tool calls that are not allowed by the allowlist', async () => {

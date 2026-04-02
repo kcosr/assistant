@@ -5,7 +5,7 @@
 A new module (e.g., `piNativeChat.ts`) replaces `chatRunCore.ts` as the entry point for all
 pi-native chat. It owns an `Agent` instance from `@mariozechner/pi-agent-core`, subscribes to its
 `AgentEvent` stream, and bridges to assistant's session hub, WebSocket clients, session writer, and
-event store.
+replay projector.
 
 This module needs a request-level adapter. In agent-core, a single prompt can emit multiple
 internal `turn_start` / `turn_end` cycles while tools execute and queued steering/follow-up
@@ -27,8 +27,9 @@ Suggested responsibilities:
 
 - start one assistant request with stable `{ responseId, assistantTurnId }`
 - feed the initial prompt/callback into `Agent`
-- translate `AgentEvent` to assistant `ServerMessage` / `ChatEvent`
+- translate `AgentEvent` to assistant live UI messages and persisted replay state
 - persist assistant request boundaries separately from agent-core internal turn boundaries
+- assign session-local replay `sequence` / `cursor` values from the projected UI ordering model
 - own cancellation / accumulated text / finalization bookkeeping
 - finalize exactly once on success, abort, or error
 
@@ -40,7 +41,7 @@ Suggested responsibilities:
 3. piNativeChat configures Agent (model, thinking, tools, system prompt)
 4. Calls `agent.prompt(userMessage)` for normal input
 5. AgentEvent stream fires events, potentially across multiple internal turns
-6. Request adapter translates to ServerMessages / ChatEvents / persistence writes
+6. Request adapter translates to live UI messages / persistence writes / replay projection state
 7. On `agent_end`, finalize the assistant request (context usage, request `turn_end`, cleanup)
 ```
 
@@ -86,6 +87,32 @@ Initial policy choices:
 - `steer()` / `followUp()`: do not expose new assistant features on top of these until the base
   migration is stable
 - `toolExecution`: default to `sequential` in the first cut unless tool concurrency is proven safe
+
+## Agent Lifetime
+
+The target design keeps one live `Agent` runtime per loaded assistant session.
+
+- Store it on session state, alongside other session-local runtime state
+- Reuse it across user turns instead of recreating it per request
+- Treat the session file as the recovery source of truth
+- On process restart or session eviction, recreate the runtime and restore prior messages with
+  `agent.replaceMessages()`
+
+This is the end-state design, not a temporary optimization. A fresh-per-turn `Agent` would force
+assistant to rebuild session continuity, tool hook installation, queued-message handling, and other
+runtime state outside agent-core, which defeats much of the migration.
+
+## Model And Thinking Changes
+
+Assistant continues to support session-level model and thinking changes.
+
+- If the session is idle, apply the change to the live `Agent` immediately
+- If a request is in flight, do not mutate that running generation; apply the change to the next
+  request
+- Persist the change as explicit `model_change` / `thinking_level_change` session entries
+- Clamp thinking level to model capabilities when switching models
+
+This preserves current user-facing behavior while keeping request execution deterministic.
 
 ### Model Resolution
 
@@ -160,7 +187,6 @@ function handleMessageUpdate(event: MessageUpdateEvent) {
   switch (streamEvent.type) {
     case 'text_delta':
       // → ServerTextDeltaMessage to WebSocket
-      // → ChatEvent assistant_chunk to EventStore
       // → update activeChatRun.accumulatedText
       break;
 
@@ -170,12 +196,10 @@ function handleMessageUpdate(event: MessageUpdateEvent) {
 
     case 'thinking_delta':
       // → ServerThinkingDeltaMessage
-      // → ChatEvent thinking_chunk
       break;
 
     case 'thinking_end':
       // → ServerThinkingDoneMessage
-      // → ChatEvent thinking_done
       break;
 
     case 'toolcall_start':
@@ -266,7 +290,8 @@ Removed:
 - User cancels output → call `agent.abort()`
 - Agent-core handles abort propagation to the stream and tool executions
 - `agent_end` event fires with error/aborted stop reason
-- Event listener emits interrupt ChatEvent and cleans up
+- Event listener persists the terminal request state, emits the live interruption signal, and cleans
+  up
 
 ## Errors / Retries
 
@@ -281,7 +306,16 @@ Removed:
 
 ## convertToLlm
 
-Initially simple — if we only have standard pi-ai messages:
+Keep an assistant-local `convertToLlm`, but make it minimal.
+
+Target behavior:
+
+- pass through normal `user`, `assistant`, and `toolResult` messages
+- drop assistant metadata-only custom entries from model context
+- avoid using custom message types for content the model should actually see; persist that content
+  as normal `user` messages instead
+
+Initially this can stay close to pi-agent-core's default behavior:
 
 ```typescript
 function convertToLlm(messages: AgentMessage[]): Message[] {
@@ -291,10 +325,9 @@ function convertToLlm(messages: AgentMessage[]): Message[] {
 }
 ```
 
-Later, if we add custom message types (compaction summaries, agent messages), this is where they get translated — same pattern as coding-agent's `messages.ts`.
-
-This is also the escape hatch for keeping assistant-only custom messages during migration while
-still presenting valid provider input to pi-ai.
+This preserves an explicit assistant-owned boundary without inheriting coding-agent's larger custom
+message universe. If a future assistant-specific custom message truly belongs in model context,
+handle that case explicitly here instead of broadening the persisted message model.
 
 ## Entry Points
 
@@ -347,9 +380,10 @@ async function handlePiNativeResume(options: {
 
 ## Open Questions
 
-- [ ] Do we create one Agent instance per session and keep it alive, or create fresh per turn?
-- [ ] How to handle model/thinking changes mid-session (user switches model via UI)?
-- [ ] Where does the Agent instance live — on `LogicalSessionState`, or in a separate map?
-- [ ] Should `convertToLlm` handle text signature / phase logic, or does that stay in the event listener?
+- [x] Agent lifetime/storage — keep one live `Agent` per loaded session, stored on session state;
+  rebuild from persisted messages after eviction/restart
+- [x] Model/thinking changes mid-session — supported at request boundaries; persist explicit
+  change entries and do not hot-swap the model for an in-flight run
+- [x] `convertToLlm` scope — assistant-local and minimal; no text signature / phase / UI logic
 - [ ] Which assistant-level events continue to be derived from request state instead of raw
   agent-core turn events?

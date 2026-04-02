@@ -1,7 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 import { ToolError } from './errors';
-import type { Tool, ToolContext, ToolHost } from './types';
+import { createAgentTool } from '../tools';
+import type { AgentTool, Tool, ToolContext, ToolHost } from './types';
 
 interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -194,6 +195,22 @@ export class McpToolHost implements ToolHost {
     }));
 
     return this.cachedTools;
+  }
+
+  async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
+    const tools = await this.listTools();
+    return tools.map((tool) =>
+      createAgentTool({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
+        context: ctx,
+        handler: async (_args, toolContext) => {
+          return this.callTool(tool.name, JSON.stringify(_args ?? {}), toolContext);
+        },
+      }),
+    );
   }
 
   async callTool(name: string, argsJson: string, _ctx: ToolContext): Promise<unknown> {

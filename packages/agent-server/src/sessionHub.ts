@@ -25,7 +25,7 @@ import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
 import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
-import type { PiSessionWriter, PiTurnHistoryAction } from './history/piSessionWriter';
+import type { PiSessionWriter, PiRequestHistoryAction } from './history/piSessionWriter';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { isSessionContextUsageEqual } from './contextUsage';
 import type { AttachmentStore } from './attachments/store';
@@ -43,71 +43,76 @@ export interface LogicalSessionState {
   chatMessages: ChatCompletionMessage[];
   activeChatRun?:
     | {
-        /**
-         * Identifier for the current turn. Used to group
-         * chat events (user message, assistant response,
-         * tools, callbacks) in the unified event log.
-         */
-        turnId?: string;
-        responseId: string;
-        abortController: AbortController;
-        ttsSession?: TtsStreamingSession;
-        /**
-         * Optional identifier used to group streaming messages and tool
-         * calls that belong to a single agent-to-agent exchange initiated
-         * via agents_message.
-         *
-         * When present, this value is propagated to server messages so
-         * clients can render the entire exchange inside a single tool
-         * block.
-         */
-        agentExchangeId?: string;
-        /**
-         * Approximate playback offset (in ms) where the client
-         * requested output cancellation for the current response.
-         */
-        audioTruncatedAtMs?: number;
-        /**
-         * Accumulated text from the streaming response so far. Used to
-         * save partial text when the response is interrupted.
-         */
-        accumulatedText: string;
-        /**
-         * True once any assistant output begins (thinking/text/tool).
-         * Used to distinguish "cancel before output" from real interruptions.
-         */
-        outputStarted?: boolean;
-        /**
-         * Timestamp of the first text delta. Used to ensure interrupted
-         * assistant messages are logged with correct ordering.
-         */
-        textStartedAt?: string;
-        /**
-         * Tool calls that have started during this chat run but have not
-         * yet completed. Used so that output cancellation can mark them
-         * as interrupted in the conversation log.
-         */
-        activeToolCalls?: Map<
-          string,
-          {
-            callId: string;
-            toolName: string;
-            argsJson: string;
-          }
-        >;
-        /**
-         * True when this chat run was cancelled via an explicit output
-         * cancel control message. This is used to distinguish user
-         * interrupts from other abort reasons (for example, session
-         * switching) so that only user cancels mark tool calls as
-         * interrupted.
-         */
-        outputCancelled?: boolean;
-        /**
-         * Prevents duplicate interrupt/error/turn_end persistence when
-         * multiple terminal paths race with each other.
-         */
-        terminalEventsFinalized?: boolean;
+      /**
+       * Identifier for the current outer assistant request group.
+       * This is the visible transcript boundary and can span multiple turns.
+       */
+      requestId?: string;
+      /**
+       * Identifier for the current turn. Used to group
+       * chat events (user message, assistant response,
+       * tools, callbacks) in the unified event log.
+       */
+      turnId?: string;
+      responseId: string;
+      abortController: AbortController;
+      ttsSession?: TtsStreamingSession;
+      /**
+       * Optional identifier used to group streaming messages and tool
+       * calls that belong to a single agent-to-agent exchange initiated
+       * via agents_message.
+       *
+       * When present, this value is propagated to server messages so
+       * clients can render the entire exchange inside a single tool
+       * block.
+       */
+      agentExchangeId?: string;
+      /**
+       * Approximate playback offset (in ms) where the client
+       * requested output cancellation for the current response.
+       */
+      audioTruncatedAtMs?: number;
+      /**
+       * Accumulated text from the streaming response so far. Used to
+       * save partial text when the response is interrupted.
+       */
+      accumulatedText: string;
+      /**
+       * True once any assistant output begins (thinking/text/tool).
+       * Used to distinguish "cancel before output" from real interruptions.
+       */
+      outputStarted?: boolean;
+      /**
+       * Timestamp of the first text delta. Used to ensure interrupted
+       * assistant messages are logged with correct ordering.
+       */
+      textStartedAt?: string;
+      /**
+       * Tool calls that have started during this chat run but have not
+       * yet completed. Used so that output cancellation can mark them
+       * as interrupted in the conversation log.
+       */
+      activeToolCalls?: Map<
+        string,
+        {
+          callId: string;
+          toolName: string;
+          argsJson: string;
+        }
+      >;
+      /**
+       * True when this chat run was cancelled via an explicit output
+       * cancel control message. This is used to distinguish user
+       * interrupts from other abort reasons (for example, session
+       * switching) so that only user cancels mark tool calls as
+       * interrupted.
+       */
+      outputCancelled?: boolean;
+      /**
+       * Prevents duplicate interrupt/error/turn_end persistence when
+       * multiple terminal paths race with each other.
+       */
+      terminalEventsFinalized?: boolean;
       }
     | undefined;
   deleted?: boolean;
@@ -574,10 +579,10 @@ export class SessionHub {
 
   async editSessionHistory(options: {
     sessionId: string;
-    action: PiTurnHistoryAction;
-    turnId: string;
-  }): Promise<{ summary: SessionSummary; changed: boolean; droppedTurnIds: string[] }> {
-    const { sessionId, action, turnId } = options;
+    action: PiRequestHistoryAction;
+    requestId: string;
+  }): Promise<{ summary: SessionSummary; changed: boolean; droppedRequestIds: string[] }> {
+    const { sessionId, action, requestId } = options;
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -594,24 +599,24 @@ export class SessionHub {
     const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
     const provider = agent?.chat?.provider ?? null;
     if (provider !== 'pi' && provider !== 'pi-cli') {
-      throw new Error('Turn history edits are only supported for Pi-backed sessions');
+      throw new Error('Request history edits are only supported for Pi-backed sessions');
     }
     if (!this.piSessionWriter) {
       throw new Error('Pi session writer is unavailable');
     }
 
-    const result = await this.piSessionWriter.rewriteHistoryByTurn({
+    const result = await this.piSessionWriter.rewriteHistoryByRequest({
       summary: existing,
       action,
-      turnId,
+      requestId,
       updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
     });
     if (!result.changed) {
-      return { summary: result.summary, changed: false, droppedTurnIds: [] };
+      return { summary: result.summary, changed: false, droppedRequestIds: [] };
     }
 
-    if (this.attachmentStore && result.droppedTurnIds.length > 0) {
-      await this.attachmentStore.deleteByTurnIds(sessionId, result.droppedTurnIds);
+    if (this.attachmentStore && result.droppedRequestIds.length > 0) {
+      await this.attachmentStore.deleteByTurnIds(sessionId, result.droppedRequestIds);
     }
 
     if (this.eventStore) {
@@ -621,7 +626,8 @@ export class SessionHub {
     this.cliToolCallRendezvous.clearSession(sessionId);
 
     const summary =
-      (await this.sessionIndex.recordSessionHistoryEdit(sessionId, action, turnId)) ?? result.summary;
+      (await this.sessionIndex.recordSessionHistoryEdit(sessionId, action, requestId)) ??
+      result.summary;
 
     const currentState = this.sessions.get(sessionId);
     if (currentState) {
@@ -639,7 +645,7 @@ export class SessionHub {
     };
     this.connections.broadcastToSession(sessionId, changedMessage);
 
-    return { summary, changed: true, droppedTurnIds: result.droppedTurnIds };
+    return { summary, changed: true, droppedRequestIds: result.droppedRequestIds };
   }
 
   async touchSession(sessionId: string): Promise<SessionSummary | undefined> {

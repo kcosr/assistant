@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CURRENT_PROTOCOL_VERSION,
   PanelDisplayModeSchema,
+  SessionHistoryEditRequestSchema,
+  SessionReplayResponseSchema,
   safeValidateClientMessage,
   safeValidateServerMessage,
   validateClientMessage,
@@ -322,6 +324,51 @@ describe('server message validation', () => {
       },
     };
     expect(validateServerMessage(message)).toEqual(message);
+  });
+});
+
+describe('session replay protocol', () => {
+  it('accepts projected replay responses', () => {
+    const parsed = SessionReplayResponseSchema.parse({
+      sessionId: 'session-1',
+      revision: 1,
+      reset: true,
+      nextCursor: '1:0',
+      events: [
+        {
+          sessionId: 'session-1',
+          revision: 1,
+          sequence: 0,
+          requestId: 'request-1',
+          eventId: 'event-1',
+          kind: 'request_start',
+          timestamp: '2026-04-02T12:00:00.000Z',
+          payload: {
+            sourceEvent: {
+              id: 'event-1',
+              timestamp: 123,
+              sessionId: 'session-1',
+              turnId: 'request-1',
+              type: 'turn_start',
+              payload: { trigger: 'user' },
+            },
+          },
+        },
+      ],
+    });
+
+    expect(parsed.nextCursor).toBe('1:0');
+    expect(parsed.events[0]?.kind).toBe('request_start');
+  });
+
+  it('accepts request-scoped history edit requests', () => {
+    const parsed = SessionHistoryEditRequestSchema.parse({
+      sessionId: 'session-1',
+      action: 'delete_request',
+      requestId: 'request-1',
+    });
+
+    expect(parsed.action).toBe('delete_request');
   });
 });
 

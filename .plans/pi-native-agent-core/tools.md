@@ -9,13 +9,11 @@ Assistant has two categories of tools:
 
 Both currently use assistant's own interfaces (`BuiltInToolDefinition`, `PluginToolDefinition`) which take raw `unknown` args and return `unknown`. These need to migrate to agent-core's `AgentTool` interface.
 
-The migration does not need to rewrite every tool up front. The existing tool host already
-contains approvals, interaction routing, rate limiting hooks, MCP/plugin loading, and
-`agents_message` side effects. The lowest-risk first cut is an adapter layer that exposes current
-tool-host tools as `AgentTool`s while preserving current behavior.
+Decision after code review: move directly to native `AgentTool` as the runtime contract.
 
-Target-state note: these adapters are temporary internal scaffolding only. The target contract is
-native `AgentTool` implementations and agent-core hook ownership where that improves clarity.
+`AgentTool` is expressive enough for assistant's current needs. The remaining work is not a model
+gap in pi-agent-core; it is a rewrite of assistant's tool construction layer so built-ins, plugins,
+coding tools, and MCP tools are produced as `AgentTool`s directly.
 
 ## Target Interface
 
@@ -85,14 +83,24 @@ Each tool:
 
 ### Dependency Decision
 
-Add `@mariozechner/pi-coding-agent` as a dependency for the tool implementations, or copy the tool
-source files. Importing is cleaner if the package is available; copying avoids pulling in TUI and
-other CLI dependencies if package size / install surface becomes a problem.
+Use `@mariozechner/pi-coding-agent` as the source of truth for coding-tool implementations.
 
-**Recommendation**: Import first, but verify the agent-server build/runtime impact immediately.
-`@mariozechner/pi-coding-agent` depends on `@mariozechner/pi-tui` and other CLI packages. The
-runtime should prove that those imports remain safe in the server process before committing to this
-as the permanent approach.
+Decision:
+
+- Import the coding tools directly from `@mariozechner/pi-coding-agent`
+- Do not copy the tool sources into assistant
+- If package/runtime issues appear, fix them at the package boundary rather than forking the tool
+  code into assistant
+
+Rationale:
+
+- keeps the long-term architecture single-source rather than creating a local fork
+- avoids permanent drift between assistant and coding-agent tool behavior
+- matches the goal of moving toward the native pi stack instead of rebuilding it locally
+- keeps assistant focused on runtime integration, not tool maintenance
+
+The server build still needs an immediate validation pass to prove the imported dependency surface
+is safe in-process, but import is the target design, not a tentative default.
 
 ## Hook Ownership
 
@@ -128,22 +136,126 @@ interface PluginToolDefinition {
 
 These are generated dynamically from plugin manifests and operations.
 
-### Approach: Start with an Adapter, Then Move Native
+### Approach: Emit Native AgentTools Directly
 
-Initial migration path:
+Do not keep `ToolHost` as the runtime execution abstraction.
 
-1. Keep plugin generation as-is.
-2. Wrap the existing `ToolHost` or plugin tool definitions in `AgentTool` adapters.
-3. Convert plugin generation to emit native `AgentTool`s only after the new pi-native runtime is
-   stable.
+Instead:
 
-Reason: current plugin tools already carry coercion, HTTP surface generation, CLI matching, and
-interaction wiring. Replacing all of that in the same migration as the core chat loop would widen
-the failure surface unnecessarily.
+1. Rewrite plugin generation so it emits `AgentTool`s directly.
+2. Keep a small assistant-local helper layer for constructing per-session execution closures.
+3. Reuse existing business logic (`handler(args, ctx)`, operation coercion, interaction wiring,
+   approvals, rate limiting, nested chunk forwarding) behind those `AgentTool` implementations.
+
+Deep-dive conclusion:
+
+- built-in tools are straightforward to rewrite directly
+- plugin tools can stay on their current handler logic, but should be wrapped at registration time
+  into native `AgentTool`s rather than routed back through `ToolHost`
+- coding tools already exist as native `AgentTool`s in `pi-coding-agent`
+- MCP tools need an `AgentTool` wrapper around the current MCP client, but there is no conceptual
+  blocker requiring `ToolHost` to stay as the primary runtime abstraction
+
+### Generated Operation Tools
+
+Manifest-defined plugin operations need a more explicit migration plan because they are generated
+rather than hand-written one by one.
+
+Target rules:
+
+- generate one `AgentTool` per manifest operation
+- preserve current naming from `resolveToolConfig()` / `normalizeToolPrefix()`
+- preserve current description and capability wiring from the manifest
+- keep HTTP/CLI operation surfaces independent; the `AgentTool` migration is only for the tool
+  surface
+
+Implementation shape:
+
+1. Keep the current manifest-to-tool discovery path in `createPluginOperationSurface()`.
+2. Replace the returned `PluginToolDefinition[]` tool surface with generated `AgentTool[]`.
+3. Keep the existing operation handler functions as the business logic endpoint.
+4. Keep route generation for HTTP operations unchanged except for any context-type fallout from the
+   tool runtime rewrite.
+
+This keeps generated tools and generated HTTP routes aligned around the same manifest/handler
+definitions without preserving the old `ToolHost` execution contract.
+
+### Schema And Argument Semantics
+
+Generated plugin tools should preserve current input behavior as closely as possible.
+
+Plan:
+
+- wrap the normalized manifest JSON schema with `Type.Unsafe()` for the `AgentTool.parameters`
+  field
+- preserve assistant-side `coerceArgs()` and `validateArgs()` behavior before invoking the
+  operation handler
+- do not rely on raw TypeBox validation alone if that would change current string-to-number,
+  string-to-boolean, string-to-array, or JSON-text coercion behavior
+
+This matters because generated operation tools currently accept some values through best-effort
+coercion in [operations.ts](/home/kevin/worktrees/assistant-pi-native-agent-core/packages/agent-server/src/plugins/operations.ts). The migration should not silently tighten or reshape plugin inputs just because the runtime contract changes.
+
+### Result Shaping For Generated Tools
+
+Generated plugin operations return arbitrary JSON-serializable values today. The migration needs a
+deterministic adapter from those results into `AgentToolResult`.
+
+Compatibility-first rule:
+
+- `details` carries the raw operation result
+- `content` is derived for model/tool-result visibility:
+  - string result → one text content item with that string
+  - number / boolean / null → one text content item with JSON stringification
+  - object / array → one text content item with stable JSON stringification
+
+Scope limit:
+
+- richer outputs such as attachment bubbles or non-text media should not be implicit in generated
+  plugin operations
+- plugins that need richer tool-result semantics should use an explicit built-in or hand-written
+  native `AgentTool`, not the generic generated-operation adapter
+
+### Target ToolContext For Generated Tools
+
+The generated-tool path should narrow the current `ToolContext` instead of carrying forward every
+legacy dependency.
+
+Target execution context for generated tools:
+
+- keep:
+  - `signal`
+  - `sessionId`
+  - `toolCallId`
+  - `requestInteraction`
+  - `approvals`
+  - `interaction`
+  - `onUpdate`
+  - `forwardChunksTo`
+  - `sessionHub`
+  - `sessionIndex`
+  - `agentRegistry`
+  - `envConfig`
+  - `scheduledSessionService`
+  - `searchService`
+- add / prefer:
+  - `requestId` as the outer request-group id
+- phase out:
+  - `turnId` as the primary visible-history anchor
+  - `eventStore`
+  - `historyProvider`
+  - `baseToolHost`
+
+If a plugin operation still needs one of the phase-out fields during migration, treat that as a
+temporary adapter concern and track it explicitly rather than leaving the final context contract
+vague.
 
 ### ToolContext Mapping
 
-Plugin handlers currently receive a rich `ToolContext` with sessionId, eventStore, sessionHub, etc. We need to construct this from the agent-core execution context:
+Plugin handlers currently receive a rich `ToolContext` with sessionId, sessionHub, interaction
+helpers, and other assistant services.
+We still need to construct this from the agent-core execution context, but that can happen inside
+native `AgentTool.execute()` implementations:
 
 ```typescript
 function buildToolContext(options: {
@@ -162,8 +274,8 @@ function buildToolContext(options: {
     sessionIndex,
     envConfig,
     sessionHub,
-    baseToolHost,
-    eventStore,
+    requestAdapter,
+    sessionWriter,
     // ... etc
     onUpdate: options.onUpdate ? (update) => {
       options.onUpdate!({
@@ -212,18 +324,30 @@ const voiceSpeakTool: AgentTool = {
 
 #### attachment_send
 
-Rewrite `handleAttachmentSend` to return `AgentToolResult` instead of raw object. The logic stays the same, just the return shape changes.
+Rewrite `handleAttachmentSend` to return `AgentToolResult` instead of raw object. The logic stays
+the same, just the return shape changes. Its result also needs stable projection into the
+session-local replay sequence so attachment bubbles reconcile identically across live stream,
+reconnect, and reload.
+
+Attachment ownership should be explicit:
+
+- persist the owning `requestId`
+- persist the `toolCallId`
+- use those ids for replay placement and history-edit cleanup
 
 #### agents_message
 
-This is the most complex built-in tool (~500 lines). It needs access to sessionHub, agentRegistry, envConfig, eventStore, etc. These would be captured in a closure when creating the tool:
+This is the most complex built-in tool (~500 lines). It needs access to sessionHub, agentRegistry,
+envConfig, and request/persistence coordination helpers. These would be captured in a closure when
+creating the tool:
 
 ```typescript
 function createAgentsMessageTool(deps: {
   sessionHub: SessionHub;
   agentRegistry: AgentRegistry;
   envConfig: EnvConfig;
-  eventStore?: EventStore;
+  requestAdapter: RequestAdapter;
+  sessionWriter: PiSessionWriter;
   // ...
 }): AgentTool {
   return {
@@ -244,20 +368,40 @@ function createAgentsMessageTool(deps: {
 
 **Key change**: `agents_message` currently calls `processUserMessage` which is deeply tied to the old chat path. In the new architecture, it routes through **SessionHub** instead — `sessionHub.sendMessage(targetSessionId, text)` or similar. SessionHub knows how to dispatch to the target session's `Agent` instance. The tool doesn't need to know about chat internals at all.
 
-This is the desired end state. For the migration cutover, it is acceptable to keep
-`agents_message` on a compatibility bridge into the existing session/runtime entrypoint until the
-new pi-native dispatch path supports:
-
-- sync mode
-- async mode
-- callback turns
-- chunk forwarding for nested tool output
-- agent exchange ids
-- questionnaire / interaction propagation
-
 Flow:
 1. `execute()` resolves target agent + session (same as today)
 2. Calls `sessionHub.sendMessage(targetSessionId, text, { fromSessionId, fromAgentId, mode })`
+
+### Exchange Model
+
+`agents_message` should use one durable cross-session `exchangeId` per invocation.
+
+Rules:
+
+- `requestId` stays per-session and identifies one outer request group in that session
+- `exchangeId` spans the caller request, the target request, and any callback request triggered by
+  that `agents_message` exchange
+- callback turns are normal new outer requests in the caller session, not a separate persistence
+  model
+
+Persistence:
+
+- caller-side tool metadata should include `exchangeId`
+- target-side attribution metadata entry should include:
+  - `kind: 'agent_message'`
+  - `exchangeId`
+  - `fromSessionId`
+  - `fromAgentId`
+  - caller `requestId` when available
+- callback-side attribution metadata entry should include:
+  - `kind: 'callback'`
+  - `exchangeId`
+  - `fromSessionId`
+  - `fromAgentId`
+  - source target-session `requestId` when available
+
+This keeps cross-session correlation in the same pi JSONL file without introducing a second replay
+or callback store.
 3. SessionHub routes to the target session's pi-native chat module
 4. For sync mode: await result. For async: fire-and-forget, SessionHub handles callback routing.
 
@@ -275,7 +419,7 @@ No product-level architecture change needed, but the migration must preserve cur
 - `requestInteraction()`
 - approval cache access
 - `forwardChunksTo` for nested streaming
-- `eventStore` emission for interaction state recovery
+- durable interaction persistence through the session writer / request adapter
 
 ## Tool Execution Mode
 
@@ -285,21 +429,39 @@ first migration cut.
 Reason:
 - current tools have side effects
 - interactions can block on user input
-- EventStore/WebSocket ordering is observable
+- live/replay UI ordering is observable and now needs to reconcile through one sequence/cursor model
 - nested chunk forwarding and `agents_message` are concurrency-sensitive
 
 Default policy:
 - first cut: `sequential`
 - later: enable `parallel` only after tool-safety review and explicit tests
 
+## Interaction Model
+
+Tools continue to own interaction behavior inside `execute()`, but the durable state model changes:
+
+- every user-visible interaction lifecycle step must be persisted in the same pi session file
+- the in-memory waiter/promise is only a live execution detail, not the source of truth
+- synchronous waits may block while the process is alive, but they are not revived as blocked
+  promises after restart
+- asynchronous interaction completion should resume through a later normal agent request, backed by
+  durable session-file entries, not by continuing an old suspended tool call
+
+Recommended durable custom entries:
+
+- `assistant.interaction_request`
+- `assistant.interaction_response`
+- `assistant.interaction_update`
+- `assistant.interaction_terminal`
+
+This keeps interaction recovery in the same single-file history model as messages, turns, and outer
+request groups.
+
 ## Tool Scoping
 
 Assistant has `toolAllowlist` / `toolDenylist` per agent to control which tools are visible. This filtering happens at the `ToolHost` level before tools are passed to the chat run.
 
 With agent-core, filtering happens before setting `agent.setTools(filteredTools)`. Same logic, different point of application.
-
-If the first cut uses a compatibility tool-host adapter, keep the current scoping logic exactly as
-it is and apply it before building the adapter list.
 
 ## Summary
 
@@ -311,9 +473,30 @@ it is and apply it before building the adapter list.
 | agents_message | 1 | Rewrite as `AgentTool`, update to use new chat module |
 | Interaction tools | varies | No architecture change, pass context through closure |
 
+## Deep-Dive Conclusion
+
+Direct native `AgentTool` usage is viable. I do not see an architectural gap that requires a
+runtime `ToolHost` bridge.
+
+The concrete rewrite surfaces are:
+
+- built-in tool registration (`registerBuiltInSessionTools`)
+- plugin tool registration (`PluginToolDefinition` / `PluginToolHost`)
+- MCP tool registration (`McpToolHost`)
+- per-session tool scoping and exposure
+- shared closure/context construction for `sessionId`, `requestId`, interaction helpers,
+  event/persistence hooks, and chunk forwarding
+
+Those are implementation tasks, not blockers in the pi tool model.
+
 ## Open Questions
 
-- [ ] Import coding tools from pi-coding-agent or copy source? (Recommend: import first, validate build/runtime impact)
-- [ ] TypeBox schema conversion for plugin tools: `Type.Unsafe()` vs pass-through?
-- [ ] Do we keep a compatibility adapter over `ToolHost` for the first cut? (Recommend: yes)
+- [x] Coding tools source — import directly from `@mariozechner/pi-coding-agent`; do not copy tool
+  sources into assistant
+- [x] Generated plugin tool schema wrapping — use `Type.Unsafe()` around normalized manifest JSON
+  schema, while preserving assistant-side coercion/validation helpers for parity
+- [x] First-cut runtime contract — use native `AgentTool` directly, not a compatibility `ToolHost`
+  adapter
+- [x] Generated plugin result shaping — raw result goes in `details`; textual `content` is derived
+  deterministically for strings/scalars/objects
 - [ ] Which built-in/plugin tools can safely opt into parallel execution later?

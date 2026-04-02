@@ -28,9 +28,10 @@ APIs.
   - session-writer compatibility requirements
 - Test: plan docs updated before implementation starts.
 
-## Phase 2: Build Pi-Native Chat Module Behind Compatibility Adapters
+## Phase 2: Build Pi-Native Chat Module And Replay Model
 
-**Goal**: build the new runtime without rewriting the whole replay/tool stack in one pass.
+**Goal**: build the new runtime and the new replay/UI recovery model together so the session file
+becomes the only durable source of truth.
 
 ### Step 2.1: Model resolution utility
 
@@ -45,18 +46,25 @@ APIs.
 - Verify it reads `~/.pi/agent/auth.json` and resolves API keys
 - Test: `authStorage.getApiKey(provider)` works for configured providers.
 
-### Step 2.3: Compatibility tool adapter
+### Step 2.3: Native AgentTool construction
 
-- Keep the current tool-host path for the first cut
-- Build an adapter that exposes scoped `ToolHost` tools as `AgentTool`s
-- Preserve approvals, interactions, MCP/plugin loading, and nested chunk forwarding
-- Test: existing built-in and plugin tools can execute through the adapter.
+- Replace runtime `ToolHost` execution with native `AgentTool` construction
+- Rewrite built-in, plugin, and MCP tool registration so they produce scoped `AgentTool`s directly
+- Preserve approvals, interactions, MCP/plugin loading, and nested chunk forwarding through shared
+  closure/context helpers rather than a `ToolHost` bridge
+- Preserve generated plugin-operation behavior:
+  - operation tool naming/capabilities
+  - argument coercion/validation parity
+  - deterministic result shaping into `AgentToolResult`
+- Test: existing built-in and plugin tools execute through native `AgentTool`s with current
+  behavior preserved.
 
 ### Step 2.4: Optional coding-tool imports
 
 - Import `createReadTool`, `createWriteTool`, `createEditTool`, `createBashTool`,
   `createGrepTool`, `createFindTool`, and `createLsTool` from `@mariozechner/pi-coding-agent`
-- Validate whether using the exported package directly is acceptable in the server build/runtime
+- Treat the package import as the intended long-term source of truth for coding tools
+- Validate that using the exported package directly is acceptable in the server build/runtime
 - Test: tools instantiate and the dependency surface is acceptable.
 
 ### Step 2.5: Pi-native chat module (core)
@@ -64,7 +72,7 @@ APIs.
 - Create new `piNativeChat.ts`
 - Create `Agent` with model, thinking, tools, system prompt, `convertToLlm`, and `getApiKey`
 - Implement an assistant request adapter on top of `AgentEvent`
-- Keep emitting current `ChatEvent` and `ServerMessage` payloads
+- Emit live `ServerMessage` payloads with session-local sequence/cursor metadata
 - Test: send a message and receive streamed text/thinking/tool updates with current client expectations.
 
 ### Step 2.6: Tool execution in the loop
@@ -74,23 +82,35 @@ APIs.
 - Verify `tool_execution_start/update/end` and `toolResult` `message_start/message_end` events are mapped correctly
 - Test: send a message that triggers tool use and verify the full loop.
 
-### Step 2.7: Keep replay compatibility
+### Step 2.7: Rewrite replay / reconnect now
 
-- Continue emitting current `ChatEvent` sequences for EventStore
-- Continue supporting `SessionHub.resolveChatMessages()` and `PiSessionHistoryProvider`
-- Test: reconnect/reload shows the same transcript as before.
+- Replace EventStore-based replay with session-file replay projection
+- Add session-local replay `sequence` plus resume `cursor`
+- Update the client to reconcile live and replayed events by sequence/cursor
+- Remove `chat_event` replay and payload-based replay dedup heuristics
+- Make attachment/tool-result rendering reconcile by projected sequence order rather than
+  opportunistic payload matching
+- Move transcript editing from internal turn ids to outer `requestId` anchors used by the visible UI
+- Support imported/shared pi session files that lack assistant request metadata by synthesizing
+  coarse request groups during replay
+- Test: reconnect/reload shows the same transcript using only the session file plus live stream.
 
 ## Phase 3: Persistence Cutover
 
-**Goal**: persist conversations to pi-compatible JSONL files without breaking current replay/history.
+**Goal**: persist conversations to pi-compatible JSONL files and make that file the replay source.
 
 ### Step 3.1: Compatibility-first session writer
 
-- Either:
-  - adapt the current writer to the new runtime, or
-  - implement a new writer that preserves the same entry graph and assistant-specific entries
-- Keep request-level turn boundaries, assistant events, session info, and history-editing support
-- Test: run a chat turn, verify JSONL is written correctly and current replay still works.
+- Implement an assistant-owned writer for the new runtime
+- Preserve the same entry graph and assistant-specific entries needed for replay/history
+- Add explicit outer request-group entries in the session file so the UI can group one request
+  across multiple pi turns without relying on a second store
+- Add replay ordering metadata sufficient to project a stable sequence/cursor stream
+- Ensure projected ordering is stable for attachment bubbles, tool output blocks, and interaction
+  UI artifacts
+- Keep outer request grouping, assistant metadata entries, session info, and history-editing
+  support
+- Test: run a chat turn, verify JSONL is written correctly and replay projection works from it.
 
 ### Step 3.2: Session resume
 
@@ -110,14 +130,20 @@ The cutover is blocked until these cases pass:
   - toolcall input streaming
   - tool execution start/update/end
   - toolResult message persistence
+- generated/plugin tools
+  - manifest operation tool naming/capabilities preserved
+  - coercion/validation parity for generated operation args
+  - deterministic result shaping for scalar/object returns
 - request semantics
   - one assistant request spanning multiple internal agent turns
+  - outer request-group entries persisted in the session file
   - assistant request finalization exactly once
 - `agents_message`
   - sync mode
   - async mode
   - callback turn
   - nested chunk forwarding
+  - durable `exchangeId` correlation across caller/target/callback requests
 - interruption
   - abort before output
   - abort after partial text
@@ -126,8 +152,14 @@ The cutover is blocked until these cases pass:
   - fresh session
   - resumed session
   - reconnect / replay
+  - imported/shared pi coding-agent session with no assistant metadata still loads with synthesized
+    request grouping
   - questionnaire / interaction recovery
-  - turn-history editing
+  - persisted interaction state remains visible after restart
+  - client reconciliation by sequence/cursor with no payload-dedup fallback
+  - attachment/tool-result UI reconciliation is stable across live stream, reconnect, and reload
+  - request-anchored history editing (`trim_before`, `trim_after`, `delete_request`, `reset_session`)
+  - cursor invalidation after history rewrites
 - session config changes
   - model change
   - thinking-level change
@@ -139,8 +171,8 @@ The cutover is blocked until these cases pass:
 ### Step 4.1: Route `provider === 'pi'` to new module
 
 - Update `chatProcessor.ts` (or its replacement) to route `provider === 'pi'` to `piNativeChat`
-- Wire session state, sessionHub, and EventStore connections
-- Handle agent exchange ID tagging
+- Wire session state, sessionHub, live stream, and replay projector connections
+- Handle durable `exchangeId` tagging across caller/target/callback flows
 - No long-lived dual routing or fallback path. Switch only after the parity gate passes.
 - Test: end-to-end chat works through the normal UI flow, including `agents_message`, callbacks, interruption, and replay.
 
@@ -162,6 +194,10 @@ The cutover is blocked until these cases pass:
 - Delete `history/piSessionSync.ts`
 - Delete or replace `history/piSessionWriter.ts` only after parity tests pass
 - Delete or replace `history/piSessionReplay.ts` only after parity tests pass
+- Delete `events/eventStore.ts`
+- Delete `events/chatEventUtils.ts`
+- Delete or replace `history/historyProvider.ts`
+- Delete `packages/web-client/src/utils/chatEventReplayDedup.ts`
 - Delete `llm/piAgentAuth.ts`
 - Test: project compiles and tests pass.
 
@@ -201,4 +237,3 @@ The cutover is blocked until these cases pass:
 
 - Port compaction from coding-agent
 - Add CLI/Codex sidecars back as isolated modules
-- Remove EventStore once replay no longer depends on `ChatEvent`

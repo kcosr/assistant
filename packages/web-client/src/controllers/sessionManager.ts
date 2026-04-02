@@ -1,4 +1,4 @@
-import type { SessionConfig } from '@assistant/shared';
+import type { SessionConfig, SessionHistoryEditAction } from '@assistant/shared';
 
 import { apiFetch } from '../utils/api';
 import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
@@ -39,8 +39,6 @@ export interface CreateSessionOptions {
 export interface UpdateSessionOptions {
   sessionConfig?: SessionConfig;
 }
-
-type SessionHistoryEditAction = 'trim_before' | 'trim_after' | 'delete_turn';
 
 export class SessionManager {
   constructor(private readonly options: SessionManagerOptions) {}
@@ -133,13 +131,13 @@ export class SessionManager {
   async editSessionHistory(
     sessionId: string,
     action: SessionHistoryEditAction,
-    turnId: string,
+    requestId: string,
   ): Promise<void> {
     try {
       const response = await apiFetch(sessionsOperationPath('history-edit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, action, turnId }),
+        body: JSON.stringify({ sessionId, action, requestId }),
       });
       if (!response.ok) {
         this.options.setStatus('Failed to edit session history');

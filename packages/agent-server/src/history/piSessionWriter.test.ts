@@ -522,8 +522,8 @@ describe('PiSessionWriter', () => {
     expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
   });
 
-  it('appends explicit turn boundary entries', async () => {
-    const baseDir = await createTempDir('pi-session-writer-turn-boundaries');
+  it('appends explicit request boundary entries', async () => {
+    const baseDir = await createTempDir('pi-session-writer-request-boundaries');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
 
@@ -562,22 +562,30 @@ describe('PiSessionWriter', () => {
     const content = await fs.readFile(filePath, 'utf8');
     const entries = parseJsonLines(content);
 
-    const turnStart = entries.find(
-      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_start',
+    const requestStart = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
     ) as Record<string, unknown> | undefined;
-    const turnEnd = entries.find(
-      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_end',
+    const requestEnd = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
     ) as Record<string, unknown> | undefined;
 
-    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
-    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
-    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['trigger']).toBe('user');
-    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
-    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
-    expect((turnEnd?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe('completed');
+    expect((requestStart?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
+    expect((requestStart?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
+      'turn-1',
+    );
+    expect((requestStart?.['data'] as Record<string, unknown> | undefined)?.['trigger']).toBe(
+      'user',
+    );
+    expect((requestEnd?.['data'] as Record<string, unknown> | undefined)?.['v']).toBe(1);
+    expect((requestEnd?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
+      'turn-1',
+    );
+    expect((requestEnd?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe(
+      'completed',
+    );
   });
 
-  it('creates the Pi session file immediately on turn start before assistant output exists', async () => {
+  it('creates the Pi session file immediately on request start before assistant output exists', async () => {
     const baseDir = await createTempDir('pi-session-writer-eager-file');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -615,16 +623,16 @@ describe('PiSessionWriter', () => {
     const entries = parseJsonLines(content);
 
     expect(entries[0]?.['type']).toBe('session');
-    const turnStart = entries.find(
-      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.turn_start',
+    const requestStart = entries.find(
+      (entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
     ) as Record<string, unknown> | undefined;
-    expect((turnStart?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe(
+    expect((requestStart?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
       'turn-eager',
     );
   });
 
-  it('repairs an unterminated persisted turn before starting the next one', async () => {
-    const baseDir = await createTempDir('pi-session-writer-turn-repair');
+  it('repairs an unterminated persisted request before starting the next one', async () => {
+    const baseDir = await createTempDir('pi-session-writer-request-repair');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
 
@@ -671,17 +679,23 @@ describe('PiSessionWriter', () => {
     const boundaries = entries.filter(
       (entry) =>
         entry['type'] === 'custom' &&
-        (entry['customType'] === 'assistant.turn_start' ||
-          entry['customType'] === 'assistant.turn_end'),
+        (entry['customType'] === 'assistant.request_start' ||
+          entry['customType'] === 'assistant.request_end'),
     );
 
     expect(boundaries).toHaveLength(3);
-    expect((boundaries[0]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
-    expect((boundaries[1]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-1');
+    expect((boundaries[0]?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
+      'turn-1',
+    );
+    expect((boundaries[1]?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
+      'turn-1',
+    );
     expect((boundaries[1]?.['data'] as Record<string, unknown> | undefined)?.['status']).toBe(
       'interrupted',
     );
-    expect((boundaries[2]?.['data'] as Record<string, unknown> | undefined)?.['turnId']).toBe('turn-2');
+    expect((boundaries[2]?.['data'] as Record<string, unknown> | undefined)?.['requestId']).toBe(
+      'turn-2',
+    );
   });
 
   it('rewrites Pi history when trimming turns before an anchor', async () => {
@@ -752,15 +766,15 @@ describe('PiSessionWriter', () => {
       updateAttributes,
     });
 
-    const result = await writer.rewriteHistoryByTurn({
+    const result = await writer.rewriteHistoryByRequest({
       summary,
       action: 'trim_before',
-      turnId: 'turn-2',
+      requestId: 'turn-2',
       updateAttributes,
     });
 
     expect(result.changed).toBe(true);
-    expect(result.droppedTurnIds).toEqual(['turn-1']);
+    expect(result.droppedRequestIds).toEqual(['turn-1']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -776,7 +790,7 @@ describe('PiSessionWriter', () => {
     expect(entries[1]?.['parentId']).toBeNull();
   });
 
-  it('rewrites Pi history when deleting a specific turn', async () => {
+  it('rewrites Pi history when deleting a specific request', async () => {
     const baseDir = await createTempDir('pi-session-writer-delete-turn');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -834,15 +848,15 @@ describe('PiSessionWriter', () => {
     });
     await writer.appendTurnEnd({ summary, turnId: 'turn-2', status: 'completed', updateAttributes });
 
-    const result = await writer.rewriteHistoryByTurn({
+    const result = await writer.rewriteHistoryByRequest({
       summary,
-      action: 'delete_turn',
-      turnId: 'turn-1',
+      action: 'delete_request',
+      requestId: 'turn-1',
       updateAttributes,
     });
 
     expect(result.changed).toBe(true);
-    expect(result.droppedTurnIds).toEqual(['turn-1']);
+    expect(result.droppedRequestIds).toEqual(['turn-1']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -852,8 +866,8 @@ describe('PiSessionWriter', () => {
 
     expect(content).not.toContain('first turn');
     expect(content).toContain('second turn');
-    expect(content).not.toContain('"turnId":"turn-1"');
-    expect(content).toContain('"turnId":"turn-2"');
+    expect(content).not.toContain('"requestId":"turn-1"');
+    expect(content).toContain('"requestId":"turn-2"');
   });
 
   it('rewrites Pi history when trimming turns after an anchor inclusively', async () => {
@@ -924,15 +938,15 @@ describe('PiSessionWriter', () => {
       updateAttributes,
     });
 
-    const result = await writer.rewriteHistoryByTurn({
+    const result = await writer.rewriteHistoryByRequest({
       summary,
       action: 'trim_after',
-      turnId: 'turn-1',
+      requestId: 'turn-1',
       updateAttributes,
     });
 
     expect(result.changed).toBe(true);
-    expect(result.droppedTurnIds).toEqual(['turn-1', 'turn-2']);
+    expect(result.droppedRequestIds).toEqual(['turn-1', 'turn-2']);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -950,8 +964,8 @@ describe('PiSessionWriter', () => {
     expect(entries[0]).not.toHaveProperty('parentId');
   });
 
-  it('rejects history rewrites when explicit turn markers are missing', async () => {
-    const baseDir = await createTempDir('pi-session-writer-turn-missing-markers');
+  it('synthesizes request groups when explicit request markers are missing', async () => {
+    const baseDir = await createTempDir('pi-session-writer-request-synthetic-groups');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
 
@@ -982,18 +996,47 @@ describe('PiSessionWriter', () => {
       updateAttributes,
     });
 
-    await expect(
-      writer.rewriteHistoryByTurn({
-        summary,
-        action: 'trim_before',
-        turnId: 'turn-1',
-        updateAttributes,
-      }),
-    ).rejects.toThrow('Pi session history does not contain explicit turn markers');
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'legacy turn' },
+        { role: 'assistant', content: 'Legacy reply' },
+        { role: 'user', content: 'second legacy turn' },
+        { role: 'assistant', content: 'Second legacy reply' },
+      ],
+      updateAttributes,
+    });
+
+    const sessionDir = path.join(
+      baseDir,
+      `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`,
+    );
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+    const userEntries = entries.filter(
+      (entry) =>
+        entry['type'] === 'message' &&
+        (entry['message'] as Record<string, unknown> | undefined)?.['role'] === 'user',
+    );
+    const requestId = userEntries[1]?.['id'] ? `synthetic-${userEntries[1]['id']}` : undefined;
+    expect(requestId).toBeTruthy();
+
+    const result = await writer.rewriteHistoryByRequest({
+      summary,
+      action: 'trim_before',
+      requestId: requestId as string,
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.droppedRequestIds.length).toBeGreaterThan(0);
   });
 
-  it('rejects history rewrites when the anchor turn does not exist', async () => {
-    const baseDir = await createTempDir('pi-session-writer-turn-unknown-anchor');
+  it('rejects history rewrites when the anchor request does not exist', async () => {
+    const baseDir = await createTempDir('pi-session-writer-request-unknown-anchor');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
 
@@ -1037,13 +1080,13 @@ describe('PiSessionWriter', () => {
     });
 
     await expect(
-      writer.rewriteHistoryByTurn({
+      writer.rewriteHistoryByRequest({
         summary,
-        action: 'delete_turn',
-        turnId: 'missing-turn',
+        action: 'delete_request',
+        requestId: 'missing-request',
         updateAttributes,
       }),
-    ).rejects.toThrow('Turn not found in Pi session history: missing-turn');
+    ).rejects.toThrow('Request not found in Pi session history: missing-request');
   });
 
   it('appends session_info entries after the session is flushed', async () => {

@@ -141,9 +141,13 @@
             "type": "string",
             "description": "Session id."
           },
-          "after": {
+          "afterCursor": {
             "type": "string",
-            "description": "Optional event id to fetch events after."
+            "description": "Optional replay cursor to fetch transcript events after."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "When true, return a full replay snapshot and reset the client projection."
           }
         },
         "required": ["sessionId"]
@@ -222,7 +226,7 @@
     },
     {
       "id": "history-edit",
-      "summary": "Edit Pi-backed session history at explicit turn boundaries.",
+      "summary": "Edit Pi-backed session history at explicit request boundaries.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -232,15 +236,15 @@
           },
           "action": {
             "type": "string",
-            "enum": ["trim_before", "trim_after", "delete_turn"],
+            "enum": ["trim_before", "trim_after", "delete_request"],
             "description": "History edit action."
           },
-          "turnId": {
+          "requestId": {
             "type": "string",
-            "description": "Explicit turn id anchor."
+            "description": "Explicit outer request id anchor."
           }
         },
-        "required": ["sessionId", "action", "turnId"]
+        "required": ["sessionId", "action", "requestId"]
       },
       "capabilities": ["sessions.write"]
     },

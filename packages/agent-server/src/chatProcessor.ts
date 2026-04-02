@@ -151,6 +151,7 @@ export interface ChatProcessorOptions {
   sessionId: string;
   state: LogicalSessionState;
   text: string;
+  requestId?: string;
   responseId?: string;
   sessionHub: SessionHub;
   envConfig: EnvConfig;
@@ -227,6 +228,7 @@ export async function processUserMessage(
     sessionId,
     state,
     text,
+    requestId: requestIdOption,
     sessionHub,
     envConfig,
     chatCompletionTools,
@@ -275,6 +277,7 @@ export async function processUserMessage(
 
   const startTime = Date.now();
   const responseId = options.responseId ?? randomUUID();
+  const requestId = requestIdOption ?? responseId;
   const agentExchangeId = agentMessageContext?.responseId;
 
   console.log('[chatProcessor] processUserMessage start', {
@@ -428,11 +431,13 @@ export async function processUserMessage(
           sessionId,
           transcription: trimmedText,
           durationMs: userInput.durationMs,
+          requestId,
         }
       : {
           type: 'user_message',
           sessionId,
           text: trimmedText,
+          requestId,
           ...(agentMessageContext
             ? {
                 fromSessionId: agentMessageContext.fromSessionId,
@@ -547,6 +552,7 @@ export async function processUserMessage(
   });
 
   state.activeChatRun = {
+    requestId,
     responseId,
     abortController,
     accumulatedText: '',
@@ -589,6 +595,7 @@ export async function processUserMessage(
       sessionId,
       state,
       text: trimmedText,
+      requestId,
       responseId,
       provider: chatProvider,
       envConfig,
@@ -673,6 +680,7 @@ export async function processUserMessage(
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
         responseId,
+        requestId,
         text: visibleAssistant.text,
         ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
         ...(visibleAssistant.textSignature

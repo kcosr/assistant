@@ -1,4 +1,4 @@
-import type { Tool } from './types';
+import type { ToolDescriptor } from './types';
 
 export interface ChatCompletionToolSpec {
   type: 'function';
@@ -9,7 +9,7 @@ export interface ChatCompletionToolSpec {
   };
 }
 
-export function mapToolsToChatCompletionSpecs(tools: Tool[]): ChatCompletionToolSpec[] {
+export function mapToolsToChatCompletionSpecs(tools: ToolDescriptor[]): ChatCompletionToolSpec[] {
   return tools.map((tool) => ({
     type: 'function' as const,
     function: {

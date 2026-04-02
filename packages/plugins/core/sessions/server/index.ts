@@ -1,5 +1,8 @@
 import type {
   CombinedPluginManifest,
+  SessionClearResponse,
+  SessionHistoryEditResponse,
+  SessionReplayResponse,
   SessionAttributesPatch,
   SessionConfig,
 } from '@assistant/shared';
@@ -19,7 +22,8 @@ import {
 import { startSessionMessage } from '../../../../agent-server/src/sessionMessages';
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
-import type { PiTurnHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
+import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
+import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
@@ -76,22 +80,27 @@ function parseOptionalNullableString(value: unknown, field: string): string | nu
   return value;
 }
 
+function getRevisionFromUpdatedAt(updatedAt: string): number {
+  const revision = Date.parse(updatedAt);
+  return Number.isFinite(revision) && revision >= 0 ? revision : Date.now();
+}
+
 function requireSessionId(raw: unknown): string {
   const sessionId = requireNonEmptyString(raw, 'sessionId');
   return sessionId;
 }
 
-function requireTurnId(raw: unknown): string {
-  return requireNonEmptyString(raw, 'turnId');
+function requireRequestId(raw: unknown): string {
+  return requireNonEmptyString(raw, 'requestId');
 }
 
-function requireHistoryAction(raw: unknown): PiTurnHistoryAction {
-  if (raw === 'trim_before' || raw === 'trim_after' || raw === 'delete_turn') {
+function requireHistoryAction(raw: unknown): PiRequestHistoryAction {
+  if (raw === 'trim_before' || raw === 'trim_after' || raw === 'delete_request') {
     return raw;
   }
   throw new ToolError(
     'invalid_arguments',
-    'action must be one of trim_before, trim_after, or delete_turn',
+    'action must be one of trim_before, trim_after, or delete_request',
   );
 }
 
@@ -397,7 +406,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           throw new ToolError('invalid_arguments', message);
         }
       },
-      events: async (args, ctx): Promise<{ sessionId: string; events: unknown[] }> => {
+      events: async (args, ctx): Promise<SessionReplayResponse> => {
         const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
         const eventStore = ctx.eventStore;
@@ -408,11 +417,13 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           throw new ToolError('session_not_found', 'Session not found');
         }
 
-        const afterRaw = parsed['after'];
-        const after =
-          typeof afterRaw === 'string' && afterRaw.trim().length > 0 ? afterRaw.trim() : undefined;
-
+        const afterCursorRaw = parsed['afterCursor'];
+        const afterCursor =
+          typeof afterCursorRaw === 'string' && afterCursorRaw.trim().length > 0
+            ? afterCursorRaw.trim()
+            : undefined;
         const force = parsed['force'] === true;
+        const revision = getRevisionFromUpdatedAt(existing.updatedAt);
         const historyProvider = ctx.historyProvider;
         if (historyProvider) {
           const registry = requireAgentRegistry(ctx, sessionHub);
@@ -425,21 +436,44 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ...(agent ? { agent } : {}),
             providerId,
             ...(existing.attributes ? { attributes: existing.attributes } : {}),
-            ...(after ? { after } : {}),
             ...(force ? { force } : {}),
           });
-          return { sessionId, events };
+          const projected = projectTranscriptEvents({ sessionId, revision, events });
+          const sliced = sliceProjectedTranscript({
+            revision,
+            events: projected,
+            ...(afterCursor ? { afterCursor } : {}),
+            force,
+          });
+          return {
+            sessionId,
+            revision,
+            reset: sliced.reset,
+            ...(sliced.nextCursor ? { nextCursor: sliced.nextCursor } : {}),
+            events: sliced.events,
+          };
         }
 
         if (!eventStore) {
           throw new ToolError('event_store_unavailable', 'Event store is not available');
         }
 
-        const events = after
-          ? await eventStore.getEventsSince(sessionId, after)
-          : await eventStore.getEvents(sessionId);
+        const events = await eventStore.getEvents(sessionId);
+        const projected = projectTranscriptEvents({ sessionId, revision, events });
+        const sliced = sliceProjectedTranscript({
+          revision,
+          events: projected,
+          ...(afterCursor ? { afterCursor } : {}),
+          force,
+        });
 
-        return { sessionId, events };
+        return {
+          sessionId,
+          revision,
+          reset: sliced.reset,
+          ...(sliced.nextCursor ? { nextCursor: sliced.nextCursor } : {}),
+          events: sliced.events,
+        };
       },
       message: async (args, ctx): Promise<unknown> => {
         const sessionHub = requireSessionHub(ctx);
@@ -581,10 +615,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
         return response;
       },
-      clear: async (
-        args,
-        ctx,
-      ): Promise<{ sessionId: string; cleared: true; updatedAt: string }> => {
+      clear: async (args, ctx): Promise<SessionClearResponse> => {
         const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
         const parsed = asObject(args);
@@ -601,6 +632,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             sessionId,
             cleared: true,
             updatedAt: summary.updatedAt,
+            revision: getRevisionFromUpdatedAt(summary.updatedAt),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to clear session';
@@ -610,19 +642,13 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       'history-edit': async (
         args,
         ctx,
-      ): Promise<{
-        sessionId: string;
-        action: PiTurnHistoryAction;
-        turnId: string;
-        changed: boolean;
-        updatedAt: string;
-      }> => {
+      ): Promise<SessionHistoryEditResponse> => {
         const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
         const parsed = asObject(args);
         const sessionId = requireSessionId(parsed['sessionId']);
         const action = requireHistoryAction(parsed['action']);
-        const turnId = requireTurnId(parsed['turnId']);
+        const requestId = requireRequestId(parsed['requestId']);
 
         const existing = await sessionIndex.getSession(sessionId);
         if (!existing) {
@@ -633,14 +659,15 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const { summary, changed } = await sessionHub.editSessionHistory({
             sessionId,
             action,
-            turnId,
+            requestId,
           });
           return {
             sessionId,
             action,
-            turnId,
+            requestId,
             changed,
             updatedAt: summary.updatedAt,
+            revision: getRevisionFromUpdatedAt(summary.updatedAt),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to edit session history';

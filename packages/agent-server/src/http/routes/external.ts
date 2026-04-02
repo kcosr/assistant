@@ -69,6 +69,7 @@ export const handleExternalRoutes: HttpRouteHandler = async (
     const message: ServerTextDoneMessage = {
       type: 'text_done',
       responseId,
+      requestId: responseId,
       text,
     };
     context.sessionHub.broadcastToSession(sessionId, message);

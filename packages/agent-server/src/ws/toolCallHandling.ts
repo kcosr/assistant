@@ -393,6 +393,7 @@ export async function handleChatToolCalls(options: {
   const shouldEmitChatEvents = !!eventStore;
   const turnId = state.activeChatRun?.turnId;
   const responseId = state.activeChatRun?.responseId;
+  const requestId = state.activeChatRun?.requestId ?? responseId;
 
   log('handleChatToolCalls', {
     sessionId,
@@ -505,6 +506,7 @@ export async function handleChatToolCalls(options: {
       callId: call.id,
       toolName: call.name,
       arguments: argsJson,
+      ...(requestId ? { requestId } : {}),
       ...(agentExchangeId ? { agentExchangeId } : {}),
     };
     sessionHub.broadcastToSession(sessionId, toolCallStartMessage);
@@ -623,6 +625,7 @@ export async function handleChatToolCalls(options: {
       callId: call.id,
       toolName: call.name,
       ok,
+      ...(requestId ? { requestId } : {}),
       ...(truncationSummary
         ? {
             truncated: truncationSummary.truncated,

@@ -16,7 +16,7 @@ export const SessionContextUsageSchema = z.object({
   usage: TokenUsageBreakdownSchema,
 });
 
-export const CURRENT_PROTOCOL_VERSION = 3 as const;
+export const CURRENT_PROTOCOL_VERSION = 4 as const;
 export type ProtocolVersion = typeof CURRENT_PROTOCOL_VERSION;
 
 const SERVER_MESSAGE_TYPE_VALUES = [
@@ -418,6 +418,7 @@ export const ServerSessionReadyMessageSchema = z.object({
 export const ServerTextDeltaMessageSchema = z.object({
   type: z.literal('text_delta'),
   responseId: z.string(),
+  requestId: z.string().optional(),
   sessionId: z.string().optional(),
   delta: z.string().min(1),
   phase: AssistantTextPhaseSchema.optional(),
@@ -427,6 +428,7 @@ export const ServerTextDeltaMessageSchema = z.object({
 export const ServerTextDoneMessageSchema = z.object({
   type: z.literal('text_done'),
   responseId: z.string(),
+  requestId: z.string().optional(),
   sessionId: z.string().optional(),
   text: z.string(),
   phase: AssistantTextPhaseSchema.optional(),
@@ -441,6 +443,7 @@ export const ServerTextDoneMessageSchema = z.object({
 export const ServerThinkingStartMessageSchema = z.object({
   type: z.literal('thinking_start'),
   responseId: z.string(),
+  requestId: z.string().optional(),
   sessionId: z.string().optional(),
   /**
    * Optional identifier used to group messages that belong to a single
@@ -455,6 +458,7 @@ export const ServerThinkingStartMessageSchema = z.object({
 export const ServerThinkingDeltaMessageSchema = z.object({
   type: z.literal('thinking_delta'),
   responseId: z.string(),
+  requestId: z.string().optional(),
   sessionId: z.string().optional(),
   delta: z.string().min(1),
   /**
@@ -467,6 +471,7 @@ export const ServerThinkingDeltaMessageSchema = z.object({
 export const ServerThinkingDoneMessageSchema = z.object({
   type: z.literal('thinking_done'),
   responseId: z.string(),
+  requestId: z.string().optional(),
   sessionId: z.string().optional(),
   text: z.string(),
   /**
@@ -480,6 +485,7 @@ export const ServerUserMessageMessageSchema = z.object({
   type: z.literal('user_message'),
   sessionId: z.string(),
   text: z.string(),
+  requestId: z.string().optional(),
   /**
    * Optional identifier of the agent that originated this message
    * when it was sent via agents_message. When present, the
@@ -518,6 +524,7 @@ export const ServerUserAudioMessageSchema = z.object({
   sessionId: z.string(),
   transcription: z.string(),
   durationMs: z.number().int().nonnegative(),
+  requestId: z.string().optional(),
 });
 
 export const ServerTranscriptDeltaMessageSchema = z.object({
@@ -532,12 +539,103 @@ export const ServerTranscriptDoneMessageSchema = z.object({
   text: z.string(),
 });
 
+export const ProjectedTranscriptEventKindSchema = z.enum([
+  'request_start',
+  'request_end',
+  'user_message',
+  'assistant_message',
+  'thinking',
+  'tool_call',
+  'tool_input',
+  'tool_output',
+  'tool_result',
+  'interaction_request',
+  'interaction_update',
+  'interaction_response',
+  'interrupt',
+  'error',
+]);
+export type ProjectedTranscriptEventKind = z.infer<typeof ProjectedTranscriptEventKindSchema>;
+
+export const ProjectedTranscriptEventPayloadSchema = z
+  .object({
+    sourceEvent: ChatEventSchema,
+  })
+  .passthrough();
+export type ProjectedTranscriptEventPayload = z.infer<typeof ProjectedTranscriptEventPayloadSchema>;
+
+export const ProjectedTranscriptEventSchema = z.object({
+  sessionId: z.string(),
+  revision: z.number().int().nonnegative(),
+  sequence: z.number().int().nonnegative(),
+  requestId: z.string(),
+  eventId: z.string(),
+  kind: ProjectedTranscriptEventKindSchema,
+  timestamp: z.string(),
+  messageId: z.string().optional(),
+  toolCallId: z.string().optional(),
+  interactionId: z.string().optional(),
+  exchangeId: z.string().optional(),
+  piTurnId: z.string().optional(),
+  payload: ProjectedTranscriptEventPayloadSchema,
+});
+export type ProjectedTranscriptEvent = z.infer<typeof ProjectedTranscriptEventSchema>;
+
+export const SessionReplayRequestSchema = z.object({
+  sessionId: z.string(),
+  afterCursor: z.string().optional(),
+  force: z.boolean().optional(),
+});
+export type SessionReplayRequest = z.infer<typeof SessionReplayRequestSchema>;
+
+export const SessionReplayResponseSchema = z.object({
+  sessionId: z.string(),
+  revision: z.number().int().nonnegative(),
+  reset: z.boolean(),
+  nextCursor: z.string().optional(),
+  events: z.array(ProjectedTranscriptEventSchema),
+});
+export type SessionReplayResponse = z.infer<typeof SessionReplayResponseSchema>;
+
+export const SessionHistoryEditActionSchema = z.enum([
+  'trim_before',
+  'trim_after',
+  'delete_request',
+]);
+export type SessionHistoryEditAction = z.infer<typeof SessionHistoryEditActionSchema>;
+
+export const SessionHistoryEditRequestSchema = z.object({
+  sessionId: z.string(),
+  action: SessionHistoryEditActionSchema,
+  requestId: z.string(),
+});
+export type SessionHistoryEditRequest = z.infer<typeof SessionHistoryEditRequestSchema>;
+
+export const SessionHistoryEditResponseSchema = z.object({
+  sessionId: z.string(),
+  action: SessionHistoryEditActionSchema,
+  requestId: z.string(),
+  changed: z.boolean(),
+  updatedAt: z.string(),
+  revision: z.number().int().nonnegative(),
+});
+export type SessionHistoryEditResponse = z.infer<typeof SessionHistoryEditResponseSchema>;
+
+export const SessionClearResponseSchema = z.object({
+  sessionId: z.string(),
+  cleared: z.literal(true),
+  updatedAt: z.string(),
+  revision: z.number().int().nonnegative(),
+});
+export type SessionClearResponse = z.infer<typeof SessionClearResponseSchema>;
+
 export const ServerToolCallMessageSchema = z.object({
   type: z.literal('tool_call'),
   sessionId: z.string().optional(),
   callId: z.string(),
   toolName: z.string(),
   arguments: z.record(z.string(), z.unknown()),
+  requestId: z.string().optional(),
   /**
    * Optional identifier used to group tool calls that were made while
    * processing a specific agent-to-agent exchange.
@@ -551,6 +649,7 @@ export const ServerToolCallStartMessageSchema = z.object({
   callId: z.string(),
   toolName: z.string(),
   arguments: z.string(),
+  requestId: z.string().optional(),
   /**
    * Optional identifier used to group tool calls that were made while
    * processing a specific agent-to-agent exchange.
@@ -565,6 +664,7 @@ export const ServerToolOutputDeltaMessageSchema = z.object({
   toolName: z.string(),
   delta: z.string(),
   details: z.record(z.string(), z.unknown()).optional(),
+  requestId: z.string().optional(),
   /**
    * Optional identifier used to group tool output that was produced
    * while processing a specific agent-to-agent exchange.
@@ -578,6 +678,7 @@ export const ServerToolResultMessageSchema = z.object({
   callId: z.string(),
   toolName: z.string(),
   ok: z.boolean(),
+  requestId: z.string().optional(),
   /**
    * When true, indicates that the tool output was truncated before being
    * sent to the client (for example, large file reads or long command output).
@@ -687,6 +788,7 @@ export const ServerOutputCancelledMessageSchema = z.object({
   type: z.literal('output_cancelled'),
   sessionId: z.string().optional(),
   responseId: z.string().optional(),
+  requestId: z.string().optional(),
 });
 
 export const ServerOpenUrlMessageSchema = z.object({
@@ -748,6 +850,7 @@ export const ServerSessionHistoryChangedMessageSchema = z.object({
   type: z.literal('session_history_changed'),
   sessionId: z.string(),
   updatedAt: z.string(),
+  revision: z.number().int().nonnegative().optional(),
 });
 
 export const ServerMessageSchema = z.discriminatedUnion('type', [

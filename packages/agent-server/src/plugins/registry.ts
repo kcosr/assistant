@@ -6,8 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { CombinedPluginManifestSchema, type CombinedPluginManifest } from '@assistant/shared';
 
 import type { AppConfig, PluginsConfig } from '../config';
-import type { Tool, ToolContext, ToolHost } from '../tools';
-import { ToolError } from '../tools';
+import type { AgentTool, Tool, ToolContext, ToolHost } from '../tools';
+import { ToolError, createAgentTool } from '../tools';
 import type { PanelEventHandler, PluginModule, PluginToolDefinition, ToolPlugin } from './types';
 import type { HttpRouteHandler } from '../http/types';
 import { createPluginOperationSurface, normalizeToolPrefix } from './operations';
@@ -18,6 +18,7 @@ const CORE_PANEL_TYPES = new Set(['sessions']);
 export interface PluginRegistry {
   initialize(config: AppConfig, dataDir: string, options?: { configDir?: string }): Promise<void>;
   getTools(): PluginToolDefinition[];
+  getAgentTools?(ctx: ToolContext): AgentTool[];
   getHttpRoutes?(): HttpRouteHandler[];
   getManifests?(): CombinedPluginManifest[];
   getRegisteredPlugins?(): RegisteredPluginInfo[];
@@ -556,6 +557,25 @@ export class DefaultPluginRegistry implements PluginRegistry {
     return tools;
   }
 
+  getAgentTools(ctx: ToolContext): AgentTool[] {
+    const tools: AgentTool[] = [];
+    for (const registration of this.plugins) {
+      for (const tool of registration.plugin.tools) {
+        tools.push(
+          createAgentTool({
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+            ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
+            context: ctx,
+            handler: (args, toolContext) => tool.handler(args as Record<string, unknown>, toolContext),
+          }),
+        );
+      }
+    }
+    return tools;
+  }
+
   getHttpRoutes(): HttpRouteHandler[] {
     const routes: HttpRouteHandler[] = [];
     for (const registration of this.plugins) {
@@ -662,6 +682,25 @@ export class PluginToolHost implements ToolHost {
     }
 
     return tools;
+  }
+
+  async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
+    const getAgentTools = this.registry.getAgentTools;
+    if (getAgentTools) {
+      return getAgentTools.call(this.registry, ctx);
+    }
+
+    const pluginTools = this.registry.getTools();
+    return pluginTools.map((tool) =>
+      createAgentTool({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+        ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
+        context: ctx,
+        handler: (args, toolContext) => tool.handler(args as Record<string, unknown>, toolContext),
+      }),
+    );
   }
 
   async callTool(name: string, argsJson: string, ctx: ToolContext): Promise<unknown> {

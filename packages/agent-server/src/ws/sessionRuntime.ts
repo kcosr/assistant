@@ -1379,11 +1379,12 @@ export class SessionRuntime {
     this.sendToClient(payload);
   }
 
-  private sendOutputCancelled(sessionId: string, responseId?: string): void {
+  private sendOutputCancelled(sessionId: string, responseId?: string, requestId?: string): void {
     const message: ServerMessage = {
       type: 'output_cancelled',
       sessionId,
       ...(responseId ? { responseId } : {}),
+      ...(requestId ? { requestId } : {}),
     } as ServerMessage;
     this.sessionHub.broadcastToSession(sessionId, message);
   }
@@ -1408,7 +1409,7 @@ export class SessionRuntime {
       activeRunState,
       sessionHub: this.sessionHub,
       broadcastOutputCancelled: (sessionId, responseId) => {
-        this.sendOutputCancelled(sessionId, responseId);
+        this.sendOutputCancelled(sessionId, responseId, activeRunState?.state.activeChatRun?.requestId);
       },
       log: (logMessage, details) => {
         this.log(logMessage, details);

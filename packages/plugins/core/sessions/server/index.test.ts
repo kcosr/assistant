@@ -361,7 +361,7 @@ describe('sessions plugin operations', () => {
     ).toBe(true);
   });
 
-  it('edits Pi-backed session history at explicit turn boundaries', async () => {
+  it('edits Pi-backed session history at explicit request boundaries', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-history-edit'));
     const agentRegistry = new AgentRegistry([
       {
@@ -440,7 +440,7 @@ describe('sessions plugin operations', () => {
       {
         sessionId: summary.sessionId,
         action: 'trim_before',
-        turnId: 'turn-2',
+        requestId: 'turn-2',
       },
       ctx,
     );
@@ -448,10 +448,87 @@ describe('sessions plugin operations', () => {
     expect(result).toEqual({
       sessionId: summary.sessionId,
       action: 'trim_before',
-      turnId: 'turn-2',
+      requestId: 'turn-2',
       changed: true,
       updatedAt: expect.any(String),
+      revision: expect.any(Number),
     });
+  });
+
+  it('projects session replay events with request-group metadata and cursors', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+      historyProvider: {
+        getHistory: vi.fn(async () => [
+          {
+            id: 'turn-1',
+            timestamp: 1000,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+          {
+            id: 'assistant-1',
+            timestamp: 1001,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'assistant_done',
+            payload: { text: 'Hello' },
+          },
+        ]),
+      },
+    } as ToolContext;
+
+    const created = (await plugin.operations?.create(
+      { agentId: 'pi-agent', sessionConfig: { workingDir: '/tmp/project' } },
+      ctx,
+    )) as SessionSummary;
+
+    const result = (await plugin.operations?.events(
+      { sessionId: created.sessionId, force: true },
+      ctx,
+    )) as {
+      sessionId: string;
+      revision: number;
+      reset: boolean;
+      nextCursor?: string;
+      events: Array<Record<string, unknown>>;
+    };
+
+    expect(result.sessionId).toBe(created.sessionId);
+    expect(result.revision).toEqual(expect.any(Number));
+    expect(result.reset).toBe(true);
+    expect(result.nextCursor).toEqual(expect.any(String));
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]).toEqual(
+      expect.objectContaining({
+        sessionId: created.sessionId,
+        requestId: 'turn-1',
+        kind: 'request_start',
+        payload: expect.objectContaining({
+          sourceEvent: expect.objectContaining({
+            type: 'turn_start',
+          }),
+        }),
+      }),
+    );
   });
 
   it('passes spoken input metadata through the message route', async () => {

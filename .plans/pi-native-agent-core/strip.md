@@ -124,7 +124,7 @@ These files implement the current shared agent loop and stream handling. Replace
 
 Do not delete these files before the new path covers:
 - current ServerMessage payloads
-- current ChatEvent payloads
+- current live UI semantics (including tool output, attachment bubbles, and interactions)
 - interruption / partial persistence
 - `agents_message` sync + async callbacks
 
@@ -164,6 +164,11 @@ early:
 
 - `history/historyProvider.ts`
 - `events/chatEventUtils.ts`
+- `packages/web-client/src/controllers/serverMessageHandler.ts` (`chat_event` handling branch)
+- `packages/web-client/src/utils/chatEventReplayDedup.ts`
+
+Decision update: because replay/UI recovery now moves into the main migration, these replay files
+should be removed or replaced in the main cut rather than preserved as a later cleanup task.
 
 ## Summary
 

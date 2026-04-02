@@ -283,9 +283,10 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     ).toBe(false);
 
     const textDone = broadcast.find((message) => message.type === 'text_done') as
-      | { text?: string }
+      | { text?: string; requestId?: string }
       | undefined;
     expect(textDone?.text).toBe('Stored final answer');
+    expect(typeof textDone?.requestId).toBe('string');
     expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
     expect(state.chatMessages).toMatchObject([
       { role: 'system', content: 'System prompt' },

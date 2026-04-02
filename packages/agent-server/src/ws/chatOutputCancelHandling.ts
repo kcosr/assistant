@@ -15,7 +15,11 @@ export interface HandleChatOutputCancelOptions {
   message: ClientControlMessage;
   activeRunState: ActiveChatRunState | undefined;
   sessionHub: SessionHub;
-  broadcastOutputCancelled: (sessionId: string, responseId?: string) => void;
+  broadcastOutputCancelled: (
+    sessionId: string,
+    responseId?: string,
+    requestId?: string,
+  ) => void;
   log: (message: string, details?: unknown) => void;
   eventStore?: EventStore;
 }
@@ -40,6 +44,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
   if (!run) {
     return;
   }
+  const requestId = run.requestId ?? run.responseId;
 
   log('handling chat completions output cancel', {
     responseId: run.responseId,
@@ -94,6 +99,7 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
         callId: call.callId,
         toolName: call.toolName,
         ok: false,
+        ...(requestId ? { requestId } : {}),
         error: errorPayload,
       };
       sessionHub.broadcastToSession(sessionId, messagePayload);
@@ -149,5 +155,5 @@ export function handleChatOutputCancel(options: HandleChatOutputCancelOptions): 
     ...(shouldPersistPiTurnEnd ? { piTurnEndStatus: 'interrupted' as const } : {}),
   });
 
-  broadcastOutputCancelled(sessionId, run.responseId);
+  broadcastOutputCancelled(sessionId, run.responseId, requestId);
 }

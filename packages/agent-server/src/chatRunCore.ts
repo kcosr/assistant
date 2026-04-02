@@ -30,7 +30,6 @@ import {
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 import type { TtsBackendFactory, TtsStreamingSession } from './tts/types';
 import { getCodexSessionStore } from './codexSessionStore';
-import { resolvePiAgentAuthApiKey } from './llm/piAgentAuth';
 
 import {
   resolveCliModelForRun,
@@ -46,6 +45,7 @@ import { buildProviderAttributesPatch, getProviderAttributes } from './history/p
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import {
   resolvePiSdkModel,
+  resolvePiSdkAuthApiKey,
   runPiSdkChatCompletionIteration,
 } from './llm/piSdkProvider';
 import {
@@ -75,6 +75,7 @@ export interface ChatRunCoreOptions {
   sessionId: string;
   state: LogicalSessionState;
   text: string;
+  requestId?: string;
   responseId: string;
   agent?: AgentDefinition;
   provider: ChatProvider;
@@ -310,9 +311,22 @@ function getAgentExchangeId(
   return state.activeChatRun?.agentExchangeId;
 }
 
+function getRequestId(
+  state: LogicalSessionState,
+  requestId?: string,
+  responseId?: string,
+): string | undefined {
+  return requestId ?? state.activeChatRun?.requestId ?? responseId;
+}
+
+function createRequestPayload(requestId?: string): {} | { requestId: string } {
+  return requestId ? { requestId } : {};
+}
+
 function createChatRunStreamHandlers(options: {
   sessionId: string;
   state: LogicalSessionState;
+  requestId?: string;
   responseId: string;
   provider: ChatProvider;
   output: ChatRunOutputAdapter;
@@ -331,6 +345,7 @@ function createChatRunStreamHandlers(options: {
   const {
     sessionId,
     state,
+    requestId,
     responseId,
     provider,
     output,
@@ -350,6 +365,7 @@ function createChatRunStreamHandlers(options: {
   let thinkingText = '';
   let thinkingStarted = false;
   let thinkingCompleted = false;
+  const requestPayload = createRequestPayload(getRequestId(state, requestId, responseId));
 
   const buildAgentExchangePayload = (): { agentExchangeId?: string } => {
     const agentExchangeId = getAgentExchangeId(state, getAgentExchangeIdFn);
@@ -399,6 +415,7 @@ function createChatRunStreamHandlers(options: {
     const message: ServerThinkingStartMessage = {
       type: 'thinking_start',
       responseId,
+      ...requestPayload,
       ...buildAgentExchangePayload(),
     };
     output.send(message);
@@ -416,6 +433,7 @@ function createChatRunStreamHandlers(options: {
       type: 'thinking_delta',
       responseId,
       delta,
+      ...requestPayload,
       ...buildAgentExchangePayload(),
     };
     output.send(message);
@@ -457,6 +475,7 @@ function createChatRunStreamHandlers(options: {
       type: 'thinking_done',
       responseId,
       text: finalText,
+      ...requestPayload,
       ...buildAgentExchangePayload(),
     };
     output.send(message);
@@ -502,6 +521,7 @@ function createChatRunStreamHandlers(options: {
       responseId,
       delta: deltaText,
       ...(phase ? { phase } : {}),
+      ...requestPayload,
       ...buildAgentExchangePayload(),
     };
     output.send(message);
@@ -559,6 +579,7 @@ export async function runChatCompletionCore(
     sessionId,
     state,
     text,
+    requestId,
     responseId,
     agent,
     provider,
@@ -579,6 +600,7 @@ export async function runChatCompletionCore(
   } = options;
 
   const getAgentExchangeIdFn = () => state.activeChatRun?.agentExchangeId;
+  const requestPayload = createRequestPayload(getRequestId(state, requestId, responseId));
   const streamHandlers = createChatRunStreamHandlers({
     sessionId,
     state,
@@ -594,6 +616,7 @@ export async function runChatCompletionCore(
     debugDataDir: envConfig.dataDir,
     log,
     getAgentExchangeId: getAgentExchangeIdFn,
+    ...requestPayload,
     ...(eventStore ? { eventStore } : {}),
     ...(turnId ? { turnId } : {}),
   });
@@ -662,6 +685,7 @@ export async function runChatCompletionCore(
       shouldEmitChatEvents,
       getAgentExchangeId: getAgentExchangeIdFn,
       providerName: 'Claude CLI',
+      ...requestPayload,
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
 
@@ -745,6 +769,7 @@ export async function runChatCompletionCore(
       shouldEmitChatEvents,
       getAgentExchangeId: getAgentExchangeIdFn,
       providerName: 'Codex CLI',
+      ...requestPayload,
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
     const model = resolveCliModelForRun({ agent, summary: state.summary });
@@ -853,6 +878,7 @@ export async function runChatCompletionCore(
       shouldEmitChatEvents,
       getAgentExchangeId: getAgentExchangeIdFn,
       providerName: 'Pi CLI',
+      ...requestPayload,
       ...(onToolCallMetric ? { onToolCallMetric } : {}),
     });
 
@@ -991,7 +1017,7 @@ export async function runChatCompletionCore(
     // Resolve auth in this order:
     // 1) explicit agent config apiKey (only applies when provider matches config.provider)
     // 2) ~/.pi/agent/auth.json OAuth token for supported providers (anthropic, openai-codex)
-    const piAgentAuthApiKey = await resolvePiAgentAuthApiKey({
+    const piAgentAuthApiKey = await resolvePiSdkAuthApiKey({
       providerId: resolvedModel.providerId,
       log,
     });
@@ -1030,6 +1056,7 @@ export async function runChatCompletionCore(
               callId: info.id,
               toolName: info.name,
               arguments: '{}',
+              ...requestPayload,
               ...(agentExchangeId ? { agentExchangeId } : {}),
             };
             output.send(message);

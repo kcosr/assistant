@@ -80,8 +80,8 @@ export type SessionIndexRecord =
       type: 'session_history_edited';
       sessionId: string;
       timestamp: string;
-      action: 'trim_before' | 'trim_after' | 'delete_turn';
-      turnId: string;
+      action: 'trim_before' | 'trim_after' | 'delete_request';
+      requestId: string;
     };
 
 export function loadSessionIndexFromFileContent(

@@ -11,6 +11,8 @@ import {
   type SessionAttributesPatch,
   type SessionConfig,
   type SessionContextUsage,
+  type SessionHistoryEditAction,
+  type SessionReplayResponse,
   CURRENT_PROTOCOL_VERSION,
   GLOBAL_QUERY_CONTEXT_KEY,
 } from '@assistant/shared';
@@ -225,6 +227,7 @@ import {
 import { configureNativeLaunchBackend } from './utils/nativeLaunchBackend';
 import { configureTauri, isTauri, waitForTauriProxyReady } from './utils/tauri';
 import { initPushNotifications } from './utils/pushNotifications';
+import { projectedTranscriptToChatEvents } from './utils/projectedTranscript';
 import { readSessionOperationResult, sessionsOperationPath } from './utils/sessionsApi';
 
 function createWebSocketUrl(): string {
@@ -336,6 +339,7 @@ async function main(): Promise<void> {
   const chatPanelIdBySession = new Map<string, string>();
   const loadedChatTranscripts = new Set<string>();
   const hydratingSessionTranscriptCounts = new Map<string, number>();
+  const sessionTranscriptCursors = new Map<string, string>();
   const bufferedChatEvents = new Map<string, ChatEvent[]>();
 
   function clearSessionTranscriptState(sessionId: string): void {
@@ -345,6 +349,7 @@ async function main(): Promise<void> {
     }
     loadedChatTranscripts.delete(trimmed);
     hydratingSessionTranscriptCounts.delete(trimmed);
+    sessionTranscriptCursors.delete(trimmed);
     bufferedChatEvents.delete(trimmed);
   }
 
@@ -1382,13 +1387,13 @@ async function main(): Promise<void> {
       inputRuntime.focusInput();
     });
     runtime.chatRenderer.setTurnDividerActionHandler(
-      ({ turnId, anchorEl, hasBefore, hasAfter }) => {
+      ({ turnId: requestId, anchorEl, hasBefore, hasAfter }) => {
         if (!bindingSessionId || !isSessionPiBacked(bindingSessionId)) {
           return;
         }
         showTurnHistoryMenu({
           sessionId: bindingSessionId,
-          turnId,
+          requestId,
           anchorEl,
           hasBefore,
           hasAfter,
@@ -2923,34 +2928,34 @@ async function main(): Promise<void> {
 
   function showTurnHistoryEditConfirmation(
     sessionId: string,
-    turnId: string,
-    action: 'trim_before' | 'trim_after' | 'delete_turn',
+    requestId: string,
+    action: SessionHistoryEditAction,
   ): void {
     panelWorkspace?.closeHeaderPopover();
     const options =
       action === 'trim_before'
         ? {
             title: 'Delete Before',
-            message: 'Remove all turns before this one? This turn will be kept.',
+            message: 'Remove all requests before this one? This request will be kept.',
             confirmText: 'Delete',
           }
         : action === 'trim_after'
           ? {
-              title: 'Delete After',
-              message: 'Remove this turn and all turns after it?',
-              confirmText: 'Delete',
-            }
+            title: 'Delete After',
+            message: 'Remove this request and all requests after it?',
+            confirmText: 'Delete',
+          }
           : {
-              title: 'Delete Turn',
-              message: 'Remove this turn from the session history?',
-              confirmText: 'Delete',
-            };
+            title: 'Delete Request',
+            message: 'Remove this request from the session history?',
+            confirmText: 'Delete',
+          };
 
     dialogManager.showConfirmDialog({
       ...options,
       confirmClassName: 'danger',
       onConfirm: () => {
-        void requireSessionManager().editSessionHistory(sessionId, action, turnId);
+        void requireSessionManager().editSessionHistory(sessionId, action, requestId);
       },
       cancelCloseBehavior: 'remove-only',
       confirmCloseBehavior: 'remove-only',
@@ -2974,12 +2979,12 @@ async function main(): Promise<void> {
 
   function showTurnHistoryMenu(options: {
     sessionId: string;
-    turnId: string;
+    requestId: string;
     anchorEl: HTMLElement;
     hasBefore: boolean;
     hasAfter: boolean;
   }): void {
-    const { sessionId, turnId, anchorEl, hasBefore, hasAfter } = options;
+    const { sessionId, requestId, anchorEl, hasBefore, hasAfter } = options;
     contextMenuManager.showAnchoredMenu({
       anchorEl,
       menuClassName: 'context-menu turn-history-menu',
@@ -2990,15 +2995,15 @@ async function main(): Promise<void> {
               {
                 label: 'Delete Before',
                 onClick: () => {
-                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_before');
+                  showTurnHistoryEditConfirmation(sessionId, requestId, 'trim_before');
                 },
               },
             ]
           : []),
         {
-          label: 'Delete Turn',
+          label: 'Delete Request',
           onClick: () => {
-            showTurnHistoryEditConfirmation(sessionId, turnId, 'delete_turn');
+            showTurnHistoryEditConfirmation(sessionId, requestId, 'delete_request');
           },
         },
         ...(hasAfter
@@ -3006,7 +3011,7 @@ async function main(): Promise<void> {
               {
                 label: 'Delete After',
                 onClick: () => {
-                  showTurnHistoryEditConfirmation(sessionId, turnId, 'trim_after');
+                  showTurnHistoryEditConfirmation(sessionId, requestId, 'trim_after');
                 },
               },
             ]
@@ -4062,6 +4067,7 @@ async function main(): Promise<void> {
     const chatLogEl = runtime.elements.chatLog;
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
+    const replayCursor = !forceReload ? sessionTranscriptCursors.get(trimmed) : undefined;
     // Unified events are the single source of truth for transcript replay.
     try {
       const eventsResponse = await apiFetch(sessionsOperationPath('events'), {
@@ -4069,6 +4075,7 @@ async function main(): Promise<void> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: trimmed,
+          ...(replayCursor ? { afterCursor: replayCursor } : {}),
           ...(forceReload ? { force: true } : {}),
         }),
       });
@@ -4082,10 +4089,14 @@ async function main(): Promise<void> {
         return;
       }
 
-      const data = await readSessionOperationResult<{ sessionId: string; events: ChatEvent[] }>(
-        eventsResponse,
-      );
-      const events = Array.isArray(data?.events) ? data.events : [];
+      const replay = await readSessionOperationResult<SessionReplayResponse>(eventsResponse);
+      const projectedEvents = Array.isArray(replay?.events) ? replay.events : [];
+      const events = projectedTranscriptToChatEvents(projectedEvents);
+      if (typeof replay?.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
+        sessionTranscriptCursors.set(trimmed, replay.nextCursor.trim());
+      } else {
+        sessionTranscriptCursors.delete(trimmed);
+      }
 
       if (events.length > 0) {
         chatRenderer.replayEvents(events);
@@ -4102,6 +4113,7 @@ async function main(): Promise<void> {
       ensureEmptySessionHint(chatLogEl);
       loadedChatTranscripts.delete(trimmed);
       hydratingSessionTranscriptCounts.delete(trimmed);
+      sessionTranscriptCursors.delete(trimmed);
       flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
     } finally {
       const remainingLoads = (hydratingSessionTranscriptCounts.get(trimmed) ?? 1) - 1;

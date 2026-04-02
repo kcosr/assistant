@@ -6,7 +6,7 @@ import type { HistoryProviderRegistry } from '../history/historyProvider';
 import type { ScheduledSessionService } from '../scheduledSessions/scheduledSessionService';
 import type { SearchService } from '../search/searchService';
 
-export interface Tool {
+export interface ToolDescriptor {
   name: string;
   description: string;
   /**
@@ -20,6 +20,8 @@ export interface Tool {
   capabilities?: string[];
 }
 
+export interface Tool extends ToolDescriptor {}
+
 export interface BuiltInToolDefinition {
   name: string;
   description: string;
@@ -29,6 +31,29 @@ export interface BuiltInToolDefinition {
    */
   capabilities?: string[];
   handler: (args: unknown, ctx: ToolContext) => Promise<unknown>;
+}
+
+export type AgentToolContent = { type: 'text'; text: string } | { type: string; [key: string]: unknown };
+
+export interface AgentToolResult {
+  content: AgentToolContent[];
+  details: unknown;
+}
+
+export type AgentToolUpdateCallback = (partialResult: AgentToolResult) => void;
+
+export interface AgentTool extends ToolDescriptor {
+  /**
+   * Human-facing label shown by native pi runtime consumers.
+   * Defaults to the tool description when omitted.
+   */
+  label: string;
+  execute: (
+    toolCallId: string,
+    params: unknown,
+    signal?: AbortSignal,
+    onUpdate?: AgentToolUpdateCallback,
+  ) => Promise<AgentToolResult>;
 }
 
 export interface ToolUpdate {
@@ -170,6 +195,11 @@ export interface ToolContext {
 
 export interface ToolHost {
   listTools(): Promise<Tool[]>;
+  /**
+   * Optional native pi-agent tool list for runtimes that consume AgentTool
+   * directly instead of going through the legacy ToolHost call path.
+   */
+  listAgentTools?(ctx: ToolContext): Promise<AgentTool[]>;
   /**
    * Invoke a tool by name with JSON-encoded arguments.
    * The result must be JSON-serialisable.

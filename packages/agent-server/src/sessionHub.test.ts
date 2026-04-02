@@ -290,7 +290,7 @@ describe('SessionHub clearSession', () => {
     const result = await sessionHub.editSessionHistory({
       sessionId: session.sessionId,
       action: 'trim_before',
-      turnId: 'turn-2',
+      requestId: 'turn-2',
     });
 
     expect(result.changed).toBe(true);
@@ -306,7 +306,7 @@ describe('SessionHub clearSession', () => {
     expect(content).toContain('second turn');
   });
 
-  it('rejects turn history edits for non-Pi sessions', async () => {
+  it('rejects request history edits for non-Pi sessions', async () => {
     const sessionsFile = createTempFile('session-hub-edit-history-non-pi');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -331,10 +331,10 @@ describe('SessionHub clearSession', () => {
     await expect(
       sessionHub.editSessionHistory({
         sessionId: session.sessionId,
-        action: 'delete_turn',
-        turnId: 'turn-1',
+        action: 'delete_request',
+        requestId: 'turn-1',
       }),
-    ).rejects.toThrow('Turn history edits are only supported for Pi-backed sessions');
+    ).rejects.toThrow('Request history edits are only supported for Pi-backed sessions');
   });
 
   it('deletes session attachments on clearSession', async () => {
@@ -369,7 +369,7 @@ describe('SessionHub clearSession', () => {
     await expect(stat(path.join(attachmentDir, session.sessionId))).rejects.toThrow();
   });
 
-  it('deletes dropped-turn attachments during history edits', async () => {
+  it('deletes dropped-request attachments during history edits', async () => {
     const sessionsFile = createTempFile('session-hub-edit-history-attachments');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -469,10 +469,10 @@ describe('SessionHub clearSession', () => {
     const result = await sessionHub.editSessionHistory({
       sessionId: session.sessionId,
       action: 'trim_before',
-      turnId: 'turn-2',
+      requestId: 'turn-2',
     });
 
-    expect(result.droppedTurnIds).toEqual(['turn-1']);
+    expect(result.droppedRequestIds).toEqual(['turn-1']);
     expect(await attachmentStore.getAttachment(session.sessionId, kept.attachmentId)).not.toBeNull();
     const metadataPath = path.join(attachmentDir, session.sessionId, 'metadata.json');
     const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {

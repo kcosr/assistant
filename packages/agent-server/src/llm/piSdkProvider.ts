@@ -13,6 +13,7 @@ import type {
   ToolResultMessage,
   Usage,
 } from '@mariozechner/pi-ai';
+import { AuthStorage } from '@mariozechner/pi-coding-agent';
 import type { AssistantTextPhase } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -43,12 +44,41 @@ export interface PiAssistantTextBlock {
 
 type PiAiModule = typeof import('@mariozechner/pi-ai');
 let piAiModulePromise: Promise<PiAiModule> | null = null;
+let piAuthStorage: AuthStorage | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
     piAiModulePromise = import('@mariozechner/pi-ai');
   }
   return piAiModulePromise;
+}
+
+function getPiAuthStorage(): AuthStorage {
+  if (!piAuthStorage) {
+    piAuthStorage = AuthStorage.create();
+  }
+  return piAuthStorage;
+}
+
+export async function resolvePiSdkAuthApiKey(options: {
+  providerId: string;
+  log?: (...args: unknown[]) => void;
+}): Promise<string | undefined> {
+  const { providerId, log } = options;
+  const trimmedProviderId = providerId.trim();
+  if (!trimmedProviderId) {
+    return undefined;
+  }
+
+  try {
+    return await getPiAuthStorage().getApiKey(trimmedProviderId);
+  } catch (err) {
+    log?.('[pi-sdk] Failed to resolve API key from AuthStorage', {
+      providerId: trimmedProviderId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
 }
 
 function createEmptyUsage(): Usage {

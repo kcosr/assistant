@@ -545,8 +545,8 @@ export class SessionIndex {
 
   async recordSessionHistoryEdit(
     sessionId: string,
-    action: 'trim_before' | 'trim_after' | 'delete_turn',
-    turnId: string,
+    action: 'trim_before' | 'trim_after' | 'delete_request',
+    requestId: string,
   ): Promise<SessionSummary | undefined> {
     await this.ensureLoaded();
 
@@ -566,7 +566,7 @@ export class SessionIndex {
       sessionId,
       timestamp,
       action,
-      turnId,
+      requestId,
     };
     await this.append(record);
 

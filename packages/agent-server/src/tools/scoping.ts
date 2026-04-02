@@ -1,4 +1,4 @@
-import type { Tool } from './types';
+import type { ToolDescriptor } from './types';
 
 const ALWAYS_ALLOWED_TOOL_NAMES = new Set<string>([
   'panels_list',
@@ -24,14 +24,14 @@ export function matchesGlobPattern(toolName: string, pattern: string): boolean {
   return regex.test(toolName);
 }
 
-export function filterToolsForAgent(
-  tools: Tool[],
+export function filterToolsForAgent<T extends ToolDescriptor>(
+  tools: T[],
   allowlist: string[] | undefined,
   denylist: string[] | undefined,
   capabilityAllowlist?: string[] | undefined,
   capabilityDenylist?: string[] | undefined,
-): Tool[] {
-  let filtered: Tool[];
+): T[] {
+  let filtered: T[];
 
   if (!allowlist) {
     filtered = tools;
@@ -67,12 +67,15 @@ export function filterToolsForAgent(
   );
 }
 
-export function filterToolsByAllowlist(tools: Tool[], allowlist: string[] | undefined): Tool[] {
+export function filterToolsByAllowlist<T extends ToolDescriptor>(
+  tools: T[],
+  allowlist: string[] | undefined,
+): T[] {
   return filterToolsForAgent(tools, allowlist, undefined, undefined, undefined);
 }
 
 function isToolAllowedByCapabilities(
-  tool: Tool,
+  tool: ToolDescriptor,
   allowlist: string[] | undefined,
   denylist: string[] | undefined,
 ): boolean {

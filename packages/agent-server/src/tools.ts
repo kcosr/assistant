@@ -1,10 +1,15 @@
 import { registerBuiltInSessionTools } from './builtInTools';
 
 export type {
+  AgentTool,
+  AgentToolContent,
+  AgentToolResult,
+  AgentToolUpdateCallback,
   BuiltInToolDefinition,
   CreateToolHostDeps,
   McpServerConfig,
   Tool,
+  ToolDescriptor,
   ToolContext,
   ToolHost,
   ToolHostConfig,
@@ -19,6 +24,8 @@ export { filterToolsByAllowlist, filterToolsForAgent, matchesGlobPattern } from 
 export { McpToolHost } from './tools/mcpToolHost';
 
 import type {
+  AgentTool,
+  AgentToolResult,
   BuiltInToolDefinition,
   CreateToolHostDeps,
   Tool,
@@ -30,8 +37,112 @@ import { ToolError } from './tools/errors';
 import { filterToolsForAgent } from './tools/scoping';
 import { McpToolHost } from './tools/mcpToolHost';
 
+function isNativeToolResult(value: unknown): value is AgentToolResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return Array.isArray(candidate['content']) && 'details' in candidate;
+}
+
+function stringifyToolDetails(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value === undefined) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+export function normalizeAgentToolResult(value: unknown): AgentToolResult {
+  if (isNativeToolResult(value)) {
+    return value;
+  }
+
+  const text = stringifyToolDetails(value);
+  const content = text ? [{ type: 'text' as const, text }] : [];
+  return {
+    content,
+    details: value,
+  };
+}
+
+export function createAgentTool(options: {
+  name: string;
+  description: string;
+  parameters: unknown;
+  capabilities?: string[];
+  label?: string;
+  context: ToolContext;
+  handler: (args: unknown, ctx: ToolContext) => Promise<unknown>;
+}): AgentTool {
+  const { context } = options;
+  return {
+    name: options.name,
+    description: options.description,
+    parameters: options.parameters,
+    ...(options.capabilities ? { capabilities: options.capabilities } : {}),
+    label: options.label ?? options.description,
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      let streamedText = '';
+      let latestDetails: unknown = undefined;
+      const legacyOnUpdate = context.onUpdate;
+      const updateBridge =
+        typeof onUpdate === 'function' || typeof legacyOnUpdate === 'function'
+          ? (update: { delta: string; details?: Record<string, unknown> }) => {
+              if (typeof legacyOnUpdate === 'function') {
+                legacyOnUpdate(update);
+              }
+              if (typeof update.delta === 'string' && update.delta.length > 0) {
+                streamedText += update.delta;
+              }
+              if (update.details !== undefined) {
+                latestDetails = update.details;
+              }
+              if (typeof onUpdate === 'function') {
+                onUpdate({
+                  content: streamedText ? [{ type: 'text' as const, text: streamedText }] : [],
+                  details: latestDetails,
+                });
+              }
+            }
+          : undefined;
+
+      const toolContext: ToolContext = {
+        ...context,
+        signal: signal ?? context.signal,
+        toolCallId,
+        ...(updateBridge ? { onUpdate: updateBridge } : {}),
+      };
+
+      const result = await options.handler(params, toolContext);
+      return normalizeAgentToolResult(result);
+    },
+  };
+}
+
+export async function listAgentToolsForHost(
+  host: ToolHost,
+  ctx: ToolContext,
+): Promise<AgentTool[]> {
+  if (!host.listAgentTools) {
+    return [];
+  }
+  return host.listAgentTools(ctx);
+}
+
 class NoopToolHost implements ToolHost {
   async listTools(): Promise<Tool[]> {
+    return [];
+  }
+
+  async listAgentTools(_ctx: ToolContext): Promise<AgentTool[]> {
     return [];
   }
 
@@ -60,6 +171,23 @@ export class BuiltInToolHost implements ToolHost {
         parameters: tool.parameters,
         ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
       });
+    }
+    return tools;
+  }
+
+  async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
+    const tools: AgentTool[] = [];
+    for (const tool of this.tools.values()) {
+      tools.push(
+        createAgentTool({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+          ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
+          context: ctx,
+          handler: tool.handler,
+        }),
+      );
     }
     return tools;
   }
@@ -107,6 +235,18 @@ export class CompositeToolHost implements ToolHost {
     return allTools;
   }
 
+  async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
+    const allTools: AgentTool[] = [];
+    for (const host of this.hosts) {
+      const listAgentTools = host.listAgentTools;
+      if (!listAgentTools) {
+        continue;
+      }
+      allTools.push(...(await listAgentTools.call(host, ctx)));
+    }
+    return allTools;
+  }
+
   async callTool(name: string, argsJson: string, ctx: ToolContext): Promise<unknown> {
     let host = this.toolHostByName.get(name);
     if (!host) {
@@ -145,6 +285,21 @@ export class ScopedToolHost implements ToolHost {
 
   async listTools(): Promise<Tool[]> {
     const tools = await this.baseHost.listTools();
+    return filterToolsForAgent(
+      tools,
+      this.allowlist,
+      this.denylist,
+      this.capabilityAllowlist,
+      this.capabilityDenylist,
+    );
+  }
+
+  async listAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
+    const listAgentTools = this.baseHost.listAgentTools;
+    if (!listAgentTools) {
+      return [];
+    }
+    const tools = await listAgentTools.call(this.baseHost, ctx);
     return filterToolsForAgent(
       tools,
       this.allowlist,

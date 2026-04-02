@@ -239,4 +239,43 @@ describe('PluginToolHost', () => {
 
     await registry.shutdown();
   });
+
+  it('exposes plugin tools as native agent tools', async () => {
+    const dataDir = createTempDataDir('plugin-tool-host-native');
+    const pluginRoot = await createTempPluginPackage();
+
+    const config: AppConfig = {
+      agents: [],
+      profiles: [],
+      plugins: {
+        fixture: { enabled: true, source: { path: pluginRoot } },
+      },
+      mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
+    };
+
+    const registry = new DefaultPluginRegistry();
+    await registry.initialize(config, dataDir);
+
+    const host = new PluginToolHost(registry);
+    const ctx: ToolContext = {
+      sessionId: 'fixture-session',
+      signal: new AbortController().signal,
+    };
+
+    const tools = await host.listAgentTools(ctx);
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.name).toBe('fixture_echo');
+
+    const result = await tools[0]!.execute('call-1', { text: 'hello' }, ctx.signal);
+    expect(result.details).toEqual({ text: 'hello' });
+    expect(result.content[0]).toEqual({
+      type: 'text',
+      text: JSON.stringify({ text: 'hello' }, null, 2),
+    });
+
+    await registry.shutdown();
+  });
 });

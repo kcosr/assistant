@@ -209,6 +209,8 @@ export async function handleTextInputWithChatCompletions(options: {
     return;
   }
 
+  const requestId = randomUUID();
+
   if (state.activeChatRun) {
     const queuedMessage: ClientTextInputMessage = { ...message, text };
     try {
@@ -273,6 +275,7 @@ export async function handleTextInputWithChatCompletions(options: {
     type: 'user_message',
     sessionId,
     text,
+    requestId,
   };
   sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, connection);
 
@@ -366,6 +369,7 @@ export async function handleTextInputWithChatCompletions(options: {
   });
 
   state.activeChatRun = {
+    requestId,
     responseId,
     abortController,
     accumulatedText: '',
@@ -406,6 +410,7 @@ export async function handleTextInputWithChatCompletions(options: {
       sessionId,
       state,
       text,
+      requestId,
       responseId,
       provider: chatProvider,
       envConfig,
@@ -488,6 +493,7 @@ export async function handleTextInputWithChatCompletions(options: {
       const doneMessage: ServerTextDoneMessage = {
         type: 'text_done',
         responseId,
+        requestId,
         text: visibleAssistant.text,
         ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
         ...(visibleAssistant.textSignature ? { textSignature: visibleAssistant.textSignature } : {}),

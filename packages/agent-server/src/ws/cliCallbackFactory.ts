@@ -15,6 +15,7 @@ import { emitToolCallEvent, emitToolResultEvent } from '../events/chatEventUtils
 
 export interface CliToolCallbackOptions {
   sessionId: string;
+  requestId?: string;
   responseId: string;
   sessionHub: SessionHub;
   sendMessage: (message: ServerMessage) => void;
@@ -50,6 +51,7 @@ export interface CliToolCallbacks {
 export function createCliToolCallbacks(options: CliToolCallbackOptions): CliToolCallbacks {
   const {
     sessionId,
+    requestId,
     responseId,
     sessionHub,
     sendMessage,
@@ -103,6 +105,7 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
       callId,
       toolName,
       arguments: argsJson,
+      ...(requestId ? { requestId } : {}),
       ...(agentExchangeId ? { agentExchangeId } : {}),
     };
     sendMessage(message);
@@ -171,6 +174,7 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
       callId,
       toolName,
       ok,
+      ...(requestId ? { requestId } : {}),
       ...(result !== undefined ? { result } : {}),
       ...(errorObj ? { error: errorObj } : {}),
       ...(agentExchangeId ? { agentExchangeId } : {}),

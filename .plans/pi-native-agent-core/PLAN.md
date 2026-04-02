@@ -4,6 +4,8 @@
 
 Migrate assistant's native Pi provider from a custom agent loop built on `@mariozechner/pi-ai` (`streamSimple`) to `@mariozechner/pi-agent-core`'s `Agent` class. This is a greenfield rebuild of the pi-native chat path — no backwards compatibility required, breaking changes accepted during migration.
 
+Execution checklist: [implementation-checklist.md](/home/kevin/worktrees/assistant-pi-native-agent-core/.plans/pi-native-agent-core/implementation-checklist.md)
+
 ## Current State
 
 Assistant's `agent-server` package has four chat provider paths sharing a common abstraction layer:
@@ -57,25 +59,45 @@ User input → SessionHub → piNativeChat request adapter
                          AgentEvent stream
                               ↓
                          Event Listener / request adapter
-                         - → ServerMessage (WebSocket to UI)
-                         - → ChatEvent / EventStore (migration dependency)
-                         - → Pi session file (target-format persistence)
+                         - → ServerMessage (live UI, with session sequence/cursor)
+                         - → Pi session file (canonical persistence)
+                         - → Replay projector (session file → UI events after cursor)
                          - → Session/request state tracking
 ```
 
 Important distinction: one assistant request from `SessionHub` is not the same as one
 agent-core `turn`. `@mariozechner/pi-agent-core` emits `turn_start` / `turn_end` for each
 assistant response cycle, including follow-up cycles after tool results and queued
-steering/follow-up messages. The migration therefore needs a request-level adapter that groups
-multiple internal agent turns under one assistant `responseId` / request lifecycle.
+steering/follow-up messages. The migration therefore needs an outer request-group layer that can
+span multiple native pi turns. That grouping should be persisted in the same session file rather
+than inferred from a second replay store.
 
 ### Key Decisions
 
 - Agent-core owns the loop, tool dispatch, and streaming
 - Assistant owns event translation, session persistence, and UI transport
-- Current live/replay contracts still constrain the initial cut. `sessionHub`,
-  `HistoryProviderRegistry`, `EventStore`, and `buildChatMessagesFromEvents()` still expect
-  canonical `ChatEvent` streams, but those are migration constraints rather than target-state goals.
+- The native runtime keeps one live `Agent` per loaded session. It is reused across turns, dropped
+  on session eviction/process restart, and reconstructed from persisted messages via
+  `agent.replaceMessages()` when the session is loaded again.
+- Session-level model and thinking changes remain supported. They are persisted as explicit
+  session-file changes and apply at request boundaries: immediately when idle, otherwise to the
+  next request after the current run completes or is cancelled.
+- Persist outer assistant request boundaries in the same pi JSONL file as explicit custom entries
+  such as `assistant.request_start` / `assistant.request_end`. These provide UI/replay grouping for
+  one user-visible request across one or more native pi turns.
+- Imported/shared pi session files that do not contain assistant request metadata must still load.
+  In that case, replay synthesizes coarse outer request groups from the native history rather than
+  rejecting the transcript. This is an import-compatibility path, not a second runtime model.
+- Persist all user-visible interaction lifecycle state in the same pi JSONL file. In-memory waiter
+  state is only for the live blocked tool execution; replay/restart visibility must come from
+  durable session-file entries, not a separate interaction store.
+- Rework UI replay/reconnect in the same migration. The pi session file becomes the only durable
+  replay source; EventStore/ChatEvent are removed rather than carried as a temporary second source
+  of truth.
+- Introduce a session-local replay `sequence` plus resume `cursor` for projected UI events. The
+  client reconciles live and replayed events by sequence/cursor rather than payload-based dedup.
+- History edits operate on outer assistant request groups (`requestId`), not pi internal turns.
+  Replay cursors are invalidated by any transcript rewrite that changes those request-group spans.
 - `Agent.continue()` is not the generic session-resume primitive. Normal resumed sessions load
   prior messages with `agent.replaceMessages()` and then use `agent.prompt()` for the next user
   input. `continue()` is only valid when the last message is not an assistant message.
@@ -84,6 +106,9 @@ multiple internal agent turns under one assistant `responseId` / request lifecyc
   contract.
 - Tool migration can use thin internal adapters where unavoidable, but the target contract is
   native `AgentTool` implementations with agent-core hooks owning tool orchestration concerns.
+- Session persistence remains assistant-owned. The writer targets a coding-agent-compatible
+  session-file format where needed, but assistant does not import coding-agent `SessionManager` as
+  a core runtime dependency.
 
 ## Phase 1: Strip (End State)
 
@@ -127,7 +152,6 @@ path is wired and parity-tested.
 - **Agent exchange / inter-agent messaging** — `agentExchangeId`, callback routing
 - **Auth data source** — `~/.pi/agent/auth.json` via `AuthStorage`
 - **WebSocket transport** — `ServerMessage` types to UI clients
-- **EventStore** — migration dependency only; remove once replay no longer depends on `ChatEvent`
 - **Built-in tools** — rewrite to `AgentTool` interface but keep functionality
 - **System prompt building** — `systemPromptUpdater.ts`
 
@@ -147,19 +171,19 @@ Request-adapter contract:
 - Input: `{ sessionId, requestId/responseId, assistantTurnId, source, text|callbackPayload }`
 - Output responsibilities:
   - map agent-core events to assistant `ServerMessage`s
-  - emit assistant `ChatEvent`s while that layer still exists
   - persist assistant request boundaries independently of agent-core internal turns
+  - assign session-local replay `sequence` / `cursor` values for live and replay projection
   - update session/request state for cancellation, accumulated text, and usage
   - finalize exactly once on `agent_end`, abort, or error
 
 ### 3.2 Tools → AgentTool
 
-Phase this work:
+Move directly to native `AgentTool` construction:
 
-1. Wrap the existing `ToolHost` / built-in / plugin tool plumbing behind `AgentTool`
-   adapters so the new runtime can ship without rewriting the entire tool stack.
-2. Rewrite high-value tools to native `AgentTool` implementations only after the new loop,
-   replay, and persistence paths are stable.
+1. Rewrite built-in, plugin, MCP, and coding-tool registration so the runtime exposes scoped
+   `AgentTool`s directly.
+2. Reuse existing assistant business logic through assistant-local closure/context helpers where
+   needed, but do not keep `ToolHost` as a runtime execution bridge.
 
 The runtime contract still needs:
 - `execute(toolCallId, params, signal, onUpdate)` returning `AgentToolResult`
@@ -188,13 +212,21 @@ Event listener that translates agent-core events to assistant's UI protocol:
 | `turn_end` | internal turn bookkeeping; do not map directly to assistant request `turn_end` |
 | `agent_end` | finalization |
 
+Additional requirements:
+- every live UI event carries a session-local comparable `sequence`
+- every replay request uses an opaque `cursor` derived from that sequence space
+- replay projection must emit the same ordering model as live updates so the client can reconcile by
+  sequence instead of payload hashing
+- attachment bubbles, tool output blocks, and interaction UI artifacts must all be assigned stable
+  positions in that same projected ordering model
+
 ### 3.4 Session Writer (simplified rewrite)
 
 - End-state requirements:
   - preserve the coding-agent session-file entry graph (`id`, `parentId`, `custom`,
     `custom_message`, `session_info`, `model_change`, `thinking_level_change`)
-  - preserve assistant-only entries used today (`assistant.turn_start`, `assistant.turn_end`,
-    `assistant.event`, orphan tool-result handling)
+  - preserve assistant-owned entries needed for request grouping, interaction state, attribution,
+    orphan tool-result handling, and history editing
   - keep turn-history editing support
 - Do not map assistant request boundaries directly from agent-core `turn_start` / `turn_end`;
   those are internal assistant/tool cycles, not user-request boundaries.
@@ -208,6 +240,10 @@ Event listener that translates agent-core events to assistant's UI protocol:
 - Reserve `agent.continue()` for retry / queued-message scenarios where the last message is not
   an assistant message
 - `convertToLlm` handles any custom message types that remain in assistant state
+- Replay/reconnect reads projected UI events from the same session file after a per-session cursor
+- Remove payload-based replay dedup; client reconciliation is by session-local sequence/cursor
+- History-edit operations (`trim_before`, `trim_after`, request deletion, reset session) target the
+  outer `requestId` grouping used by the UI, not pi internal turns
 
 ### 3.6 Auth
 
@@ -217,30 +253,40 @@ Event listener that translates agent-core events to assistant's UI protocol:
 
 ## Open Questions
 
-- [ ] Do we still need EventStore/ChatEvent layer, or can AgentEvent replace it?
+- [x] Replay source — remove EventStore/ChatEvent from the target design and move UI replay onto
+  the pi session file in the same migration
 - [ ] Compaction: port from coding-agent later, or stub `transformContext` hook now?
-- [ ] Session file format: match coding-agent's JSONL exactly, or allow assistant-specific extensions?
-- [ ] How to handle interaction events (question elicitation) — side effects in `execute()` confirmed, but need to design the async response flow
-- [ ] Agent exchange ID tagging — where exactly to attach in the new event flow
-- [ ] Do we keep request-level turn boundaries based on current assistant semantics, or change the
-  product contract to expose agent-core internal turns? Current UI/history code assumes the former.
+- [x] Session file format — keep coding-agent-compatible JSONL semantics and use standard
+  `custom` / `custom_message` entries for assistant-specific state rather than inventing a second
+  format
+- [x] Interaction model — persist all user-visible interaction state in the pi session file; sync
+  waits may block in memory while live, but async completion/resume happens via durable entries and
+  a later normal request rather than reviving a blocked promise after restart
+- [x] Agent exchange model — use a durable cross-session `exchangeId` for each `agents_message`
+  invocation; persist it in the same pi session file while keeping normal per-session request
+  groups
+- [x] `convertToLlm` model — keep an assistant-local minimal converter; prefer standard `user`
+  messages for model-visible callback/agent input and keep metadata-only custom entries out of LLM
+  context
+- [x] Boundary model — persist outer assistant request groups for UI semantics while preserving raw
+  pi turns as the canonical inner execution history
 
 ## Sequencing
 
 1. Add `pi-agent-core` and `pi-coding-agent` dependencies and verify the actual exported APIs
-2. Build a new pi-native runtime with temporary internal adapters only where necessary:
+2. Build a new pi-native runtime with temporary internal helpers only where necessary:
    - agent-core loop
-   - existing tool-host bridge
-   - existing `ChatEvent` / EventStore emission
-   - existing session writer or a target-format replacement
+   - native `AgentTool` construction
+   - target-format session writer
+   - replay projector + sequence/cursor model
 3. Prove parity for:
    - streaming text / thinking / tool updates
    - `agents_message` sync + async callbacks
    - interruption / partial persistence
    - replay / reconnect / questionnaire recovery
-4. Route `provider === 'pi'` to the new path
-5. Remove old `chatRunCore.ts` / `piSdkProvider.ts` loop code
-6. Simplify tools, replay, and session writing after the runtime cutover is stable
+4. Route `provider === 'pi'` to the new path together with the new replay/UI recovery model
+5. Remove old `chatRunCore.ts` / `piSdkProvider.ts` loop code and EventStore-based replay
+6. Simplify tools and session writing after the runtime cutover is stable
 7. Strip CLI providers / legacy TTS only after the native path is the default
 8. (Later) Add CLI/Codex sidecars back as isolated modules
 9. (Later) Port compaction from coding-agent
