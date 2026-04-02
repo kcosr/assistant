@@ -1710,6 +1710,29 @@ button.settings-dropdown-item {
   box-shadow: var(--shadow-focus-ring);
 }
 
+.voice-settings-slider-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.voice-settings-slider-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.voice-settings-slider-value {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-settings-slider-input {
+  width: 100%;
+}
+
 /* ===== Panel Launcher ===== */
 .panel-launcher-overlay {
   position: fixed;

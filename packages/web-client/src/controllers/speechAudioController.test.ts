@@ -52,12 +52,20 @@ function createVoiceSettingsInputs(): {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceTtsGainSliderEl: HTMLInputElement;
+  voiceTtsGainValueEl: HTMLElement;
 } {
   const voiceMicInputSelectEl = document.createElement('select');
   const defaultOption = document.createElement('option');
   defaultOption.value = '';
   defaultOption.textContent = 'System default';
   voiceMicInputSelectEl.appendChild(defaultOption);
+  const voiceTtsGainSliderEl = document.createElement('input');
+  voiceTtsGainSliderEl.type = 'range';
+  voiceTtsGainSliderEl.min = '25';
+  voiceTtsGainSliderEl.max = '500';
+  voiceTtsGainSliderEl.step = '1';
+  voiceTtsGainSliderEl.value = '100';
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
@@ -66,6 +74,8 @@ function createVoiceSettingsInputs(): {
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
     voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
     voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+    voiceTtsGainSliderEl,
+    voiceTtsGainValueEl: document.createElement('span'),
   };
 }
 
@@ -79,6 +89,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     recognitionStartTimeoutMs: 30000,
     recognitionCompletionTimeoutMs: 60000,
     recognitionEndSilenceMs: 1200,
+    ttsGain: 1,
     ...overrides,
   };
 }
@@ -337,6 +348,47 @@ describe('AssistantNativeVoiceBridge', () => {
     expect(inputs.voiceMicInputSelectEl.value).toBe('11');
     expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
       selectedMicDeviceId: '11',
+    });
+  });
+
+  it('syncs the native tts gain slider and persists gain changes', () => {
+    ensureWebSocketGlobal();
+
+    const inputs = createVoiceSettingsInputs();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: false,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...inputs,
+      inputEl: document.createElement('input'),
+      getSocket: () => null,
+      getSessionId: () => 'session-a',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: {} as AssistantNativeVoiceBridge,
+    });
+
+    controller.attach();
+    controller.setVoiceSettings({
+      ...controller.voiceSettings,
+      ttsGain: 1.75,
+    });
+
+    expect(controller.voiceSettings.ttsGain).toBe(1.75);
+    expect(inputs.voiceTtsGainSliderEl.value).toBe('175');
+    expect(inputs.voiceTtsGainValueEl.textContent).toBe('175%');
+    expect(JSON.parse(localStorage.getItem('test-voice-settings') ?? '{}')).toMatchObject({
+      ttsGain: 1.75,
     });
   });
 
@@ -674,6 +726,8 @@ describe('SpeechAudioController.micButtonState', () => {
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceTtsGainSliderEl: document.createElement('input'),
+      voiceTtsGainValueEl: document.createElement('span'),
       inputEl: document.createElement('input'),
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},

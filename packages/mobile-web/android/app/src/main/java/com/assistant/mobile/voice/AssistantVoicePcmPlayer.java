@@ -20,6 +20,7 @@ final class AssistantVoicePcmPlayer {
     private Listener listener;
     private String activeRequestId = "";
     private int activeSampleRate = 0;
+    private float ttsGain = AssistantVoiceConfig.DEFAULT_TTS_GAIN;
     private boolean streamEnded = false;
     private int pendingWrites = 0;
     private int framesWritten = 0;
@@ -30,6 +31,12 @@ final class AssistantVoicePcmPlayer {
     void setListener(Listener listener) {
         synchronized (lock) {
             this.listener = listener;
+        }
+    }
+
+    void setTtsGain(float gain) {
+        synchronized (lock) {
+            ttsGain = normalizeTtsGain(gain);
         }
     }
 
@@ -97,12 +104,14 @@ final class AssistantVoicePcmPlayer {
 
     private void writeChunk(long taskGeneration, String requestId, byte[] chunk, int sampleRate) {
         AudioTrack track;
+        float chunkGain;
         synchronized (lock) {
             if (taskGeneration != generation || !matchesActiveRequestLocked(requestId)) {
                 pendingWrites = Math.max(0, pendingWrites - 1);
                 return;
             }
             track = ensureTrackLocked(sampleRate);
+            chunkGain = ttsGain;
             if (track == null) {
                 pendingWrites = Math.max(0, pendingWrites - 1);
                 maybeCompletePlaybackLocked();
@@ -110,11 +119,12 @@ final class AssistantVoicePcmPlayer {
             }
         }
 
+        byte[] adjustedChunk = applySoftwareGainPcm16(chunk, chunkGain);
         int offset = 0;
-        while (offset < chunk.length) {
+        while (offset < adjustedChunk.length) {
             int written;
             try {
-                written = track.write(chunk, offset, chunk.length - offset);
+                written = track.write(adjustedChunk, offset, adjustedChunk.length - offset);
             } catch (Exception error) {
                 break;
             }
@@ -126,11 +136,51 @@ final class AssistantVoicePcmPlayer {
 
         synchronized (lock) {
             if (taskGeneration == generation && matchesActiveRequestLocked(requestId)) {
-                framesWritten += chunk.length / 2;
+                framesWritten += adjustedChunk.length / 2;
             }
             pendingWrites = Math.max(0, pendingWrites - 1);
             maybeCompletePlaybackLocked();
         }
+    }
+
+    static float normalizeTtsGain(float gain) {
+        if (!Float.isFinite(gain) || gain <= 0f) {
+            return AssistantVoiceConfig.DEFAULT_TTS_GAIN;
+        }
+        if (gain < AssistantVoiceConfig.MIN_TTS_GAIN) {
+            return AssistantVoiceConfig.MIN_TTS_GAIN;
+        }
+        if (gain > AssistantVoiceConfig.MAX_TTS_GAIN) {
+            return AssistantVoiceConfig.MAX_TTS_GAIN;
+        }
+        return gain;
+    }
+
+    static byte[] applySoftwareGainPcm16(byte[] input, float gain) {
+        if (input == null || input.length == 0) {
+            return new byte[0];
+        }
+
+        float normalizedGain = normalizeTtsGain(gain);
+        if (Math.abs(normalizedGain - 1f) < 0.001f) {
+            return input;
+        }
+
+        byte[] output = input.clone();
+        int index = 0;
+        while (index + 1 < output.length) {
+            int low = output[index] & 0xFF;
+            int high = output[index + 1];
+            int sample = (high << 8) | low;
+            int scaled = Math.max(
+                Short.MIN_VALUE,
+                Math.min(Short.MAX_VALUE, (int) (sample * normalizedGain))
+            );
+            output[index] = (byte) (scaled & 0xFF);
+            output[index + 1] = (byte) ((scaled >> 8) & 0xFF);
+            index += 2;
+        }
+        return output;
     }
 
     private AudioTrack ensureTrackLocked(int sampleRate) {

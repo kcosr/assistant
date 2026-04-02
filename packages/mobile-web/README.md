@@ -150,6 +150,8 @@ The following patches are applied automatically on `android:sync`:
   Assistant session over the main Assistant websocket for live `chat_event` updates, plays
   `voice_speak` / `voice_ask` tool calls through `agent-voice-adapter`, and submits successful
   spoken replies back through the existing sessions message route.
+- Android-native voice settings now include a client-side `TTS gain` slider for native playback,
+  clamped to `25%`-`500%`, and applied as PCM software gain inside the Android player.
 - Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
   listening pass immediately; later prompts that arrive while a pass is active are rendered only
   and are not queued for delayed autoplay.

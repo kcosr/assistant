@@ -136,6 +136,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         micStreamer = new AssistantVoiceMicStreamer(this);
         config = AssistantVoiceConfig.load(this);
         micStreamer.setPreferredDeviceId(config.selectedMicDeviceId);
+        player.setTtsGain(config.ttsGain);
         player.setListener(requestId -> mainHandler.post(() -> handlePlaybackDrained(requestId)));
         createNotificationChannel();
         startInForeground();
@@ -211,6 +212,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (micStreamer != null) {
             micStreamer.setPreferredDeviceId(updated.selectedMicDeviceId);
         }
+        player.setTtsGain(updated.ttsGain);
 
         boolean preferredSessionChanged =
             !previous.preferredVoiceSessionId.equals(updated.preferredVoiceSessionId);

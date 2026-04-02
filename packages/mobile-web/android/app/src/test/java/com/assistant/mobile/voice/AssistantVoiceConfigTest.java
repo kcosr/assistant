@@ -1,8 +1,16 @@
 package com.assistant.mobile.voice;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import org.json.JSONObject;
 import org.junit.Test;
@@ -10,13 +18,6 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
-
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceConfigTest {
@@ -60,7 +61,30 @@ public final class AssistantVoiceConfigTest {
         assertTrue(updated.getSessionTitle("session-2").isEmpty());
     }
 
+    @Test
+    public void constructorClampsTtsGain() {
+        assertEquals(0.25f, createConfig(0.05f).ttsGain, 0.0001f);
+        assertEquals(5.0f, createConfig(9.0f).ttsGain, 0.0001f);
+    }
+
+    @Test
+    public void withVoiceSettingsReadsTtsGain() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("ttsGain", 1.8)
+        );
+
+        assertEquals(1.8f, updated.ttsGain, 0.0001f);
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
+        return createConfig(titles, 1.0f);
+    }
+
+    private static AssistantVoiceConfig createConfig(float ttsGain) {
+        return createConfig(Collections.emptyMap(), ttsGain);
+    }
+
+    private static AssistantVoiceConfig createConfig(Map<String, String> titles, float ttsGain) {
         return new AssistantVoiceConfig(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
             true,
@@ -76,7 +100,8 @@ public final class AssistantVoiceConfigTest {
             false,
             "",
             AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
-            AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL
+            AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
+            ttsGain
         );
     }
 

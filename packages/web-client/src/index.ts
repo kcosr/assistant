@@ -96,7 +96,9 @@ import {
 import {
   areVoiceSettingsEqual,
   DEFAULT_VOICE_ADAPTER_BASE_URL,
+  formatTtsGainPercentLabel,
   normalizeVoiceSettings,
+  ttsGainPercentToValue,
   type VoiceSettings,
 } from './utils/voiceSettings';
 import { getPanelContextKey } from './utils/panelContext';
@@ -386,6 +388,9 @@ async function main(): Promise<void> {
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
+    voiceTtsGainControl: voiceTtsGainControlEl,
+    voiceTtsGainSlider: voiceTtsGainSliderEl,
+    voiceTtsGainValue: voiceTtsGainValueEl,
     includeContextCheckbox: includeContextCheckboxEl,
     showContextCheckbox: showContextCheckboxEl,
     listInsertAtTopCheckbox: listInsertAtTopCheckboxEl,
@@ -493,7 +498,13 @@ async function main(): Promise<void> {
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  voiceTtsGainControlEl.hidden = !useNativeVoiceRuntime;
   const assistantBaseUrl = typeof window !== 'undefined' ? getApiBaseUrl() : '';
+
+  const syncTtsGainLabelFromSlider = (): void => {
+    const gain = ttsGainPercentToValue(voiceTtsGainSliderEl.value);
+    voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(gain);
+  };
 
   const initialPreferences = loadClientPreferences({
     voiceStorageKey: VOICE_SETTINGS_STORAGE_KEY,
@@ -1342,6 +1353,8 @@ async function main(): Promise<void> {
       voiceRecognitionStartTimeoutInputEl,
       voiceRecognitionCompletionTimeoutInputEl,
       voiceRecognitionEndSilenceInputEl,
+      voiceTtsGainSliderEl,
+      voiceTtsGainValueEl,
       initialIncludePanelContext: includePanelContext,
       initialBriefModeEnabled: briefModeEnabled,
       onIncludePanelContextChange: (enabled) => {
@@ -3407,6 +3420,7 @@ async function main(): Promise<void> {
       recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
       recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
       preferredVoiceSessionId: voicePreferredSessionSelectEl.value,
+      ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
     });
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
       return;
@@ -3428,6 +3442,8 @@ async function main(): Promise<void> {
     syncVoiceSettingsFromInputs,
   );
   voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceTtsGainSliderEl.addEventListener('input', syncTtsGainLabelFromSlider);
+  voiceTtsGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   const resetVoiceSettingsInputs = (): void => {
     const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
     audioModeSelectEl.value = settings.audioMode;
@@ -3445,6 +3461,8 @@ async function main(): Promise<void> {
     voiceRecognitionStartTimeoutInputEl.value = String(settings.recognitionStartTimeoutMs);
     voiceRecognitionCompletionTimeoutInputEl.value = String(settings.recognitionCompletionTimeoutMs);
     voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
+    voiceTtsGainSliderEl.value = String(Math.round(settings.ttsGain * 100));
+    voiceTtsGainValueEl.textContent = formatTtsGainPercentLabel(settings.ttsGain);
   };
   bindVoiceSettingsBlurResetHandlers({
     voiceRecognitionStartTimeoutInputEl,

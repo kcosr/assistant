@@ -47,9 +47,7 @@ public final class AssistantVoicePlugin extends Plugin {
                     return;
                 }
                 if (AssistantVoiceRuntimeService.BROADCAST_STATE_CHANGED.equals(intent.getAction())) {
-                    JSObject state = new JSObject();
-                    state.put("state", intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_STATE));
-                    notifyListeners("stateChanged", state, true);
+                    notifyListeners("stateChanged", buildStatePayload(), true);
                     return;
                 }
                 if (AssistantVoiceRuntimeService.BROADCAST_RUNTIME_ERROR.equals(intent.getAction())) {
@@ -318,6 +316,7 @@ public final class AssistantVoicePlugin extends Plugin {
         for (java.util.Map.Entry<String, String> entry : current.sessionTitles.entrySet()) {
             sessionTitles.put(entry.getKey(), entry.getValue());
         }
+        voiceSettings.put("ttsGain", (double) current.ttsGain);
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
@@ -326,6 +325,7 @@ public final class AssistantVoicePlugin extends Plugin {
         payload.put("selectedSession", selection.length() == 0 ? null : selection);
         payload.put("sessionTitles", sessionTitles);
         payload.put("inputContext", inputContext);
+        payload.put("effectiveTtsGain", (double) current.ttsGain);
 
         String error = AssistantVoiceConfig.loadRuntimeError(getContext());
         if (!error.isEmpty()) {
