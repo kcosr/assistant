@@ -1,26 +1,29 @@
-import type { ChatEvent, ProjectedTranscriptEvent } from '@assistant/shared';
-
-function getSourceEvent(event: ProjectedTranscriptEvent): ChatEvent | null {
-  const payload = event.payload as { sourceEvent?: unknown };
-  if (!payload.sourceEvent || typeof payload.sourceEvent !== 'object') {
-    return null;
-  }
-  return payload.sourceEvent as ChatEvent;
-}
+import {
+  safeValidateChatEvent,
+  type ChatEvent,
+  type ProjectedTranscriptEvent,
+} from '@assistant/shared';
 
 export function projectedTranscriptEventToChatEvent(
   event: ProjectedTranscriptEvent,
 ): ChatEvent | null {
-  const sourceEvent = getSourceEvent(event);
-  if (!sourceEvent) {
+  const timestamp = Date.parse(event.timestamp);
+  if (Number.isNaN(timestamp)) {
     return null;
   }
-  return {
-    ...sourceEvent,
+  const candidate = {
     id: event.eventId,
+    timestamp,
     sessionId: event.sessionId,
     turnId: event.requestId,
+    type: event.chatEventType,
+    payload: event.payload as ChatEvent['payload'],
+    ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
+      ? { responseId: event.responseId }
+      : {}),
   };
+  const parsed = safeValidateChatEvent(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export function projectedTranscriptToChatEvents(

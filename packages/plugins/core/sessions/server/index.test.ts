@@ -521,10 +521,9 @@ describe('sessions plugin operations', () => {
         sessionId: created.sessionId,
         requestId: 'turn-1',
         kind: 'request_start',
+        chatEventType: 'turn_start',
         payload: expect.objectContaining({
-          sourceEvent: expect.objectContaining({
-            type: 'turn_start',
-          }),
+          trigger: 'user',
         }),
       }),
     );
@@ -599,22 +598,14 @@ describe('sessions plugin operations', () => {
         expect.objectContaining({
           requestId: 'request-1',
           kind: 'user_message',
-          payload: expect.objectContaining({
-            sourceEvent: expect.objectContaining({
-              type: 'user_message',
-              payload: expect.objectContaining({ text: 'Hello from Pi' }),
-            }),
-          }),
+          chatEventType: 'user_message',
+          payload: expect.objectContaining({ text: 'Hello from Pi' }),
         }),
         expect.objectContaining({
           requestId: 'request-1',
           kind: 'assistant_message',
-          payload: expect.objectContaining({
-            sourceEvent: expect.objectContaining({
-              type: 'assistant_done',
-              payload: expect.objectContaining({ text: 'Pi reply' }),
-            }),
-          }),
+          chatEventType: 'assistant_done',
+          payload: expect.objectContaining({ text: 'Pi reply' }),
         }),
       ]),
     );

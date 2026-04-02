@@ -14,17 +14,9 @@ describe('projectedTranscriptToChatEvents', () => {
         requestId: 'request-1',
         eventId: 'event-1',
         kind: 'request_start',
+        chatEventType: 'turn_start',
         timestamp: '2026-03-31T00:00:00.000Z',
-        payload: {
-          sourceEvent: {
-            id: 'event-1',
-            timestamp: 1000,
-            sessionId: 'session-1',
-            turnId: 'request-1',
-            type: 'turn_start',
-            payload: { trigger: 'user' },
-          },
-        },
+        payload: { trigger: 'user' },
       },
       {
         sessionId: 'session-1',
@@ -33,18 +25,10 @@ describe('projectedTranscriptToChatEvents', () => {
         requestId: 'request-1',
         eventId: 'event-2',
         kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        responseId: 'response-1',
         timestamp: '2026-03-31T00:00:01.000Z',
-        payload: {
-          sourceEvent: {
-            id: 'event-2',
-            timestamp: 1001,
-            sessionId: 'session-1',
-            turnId: 'request-1',
-            responseId: 'response-1',
-            type: 'assistant_done',
-            payload: { text: 'Hello' },
-          },
-        },
+        payload: { text: 'Hello' },
       },
       {
         sessionId: 'session-1',
@@ -53,25 +37,17 @@ describe('projectedTranscriptToChatEvents', () => {
         requestId: 'request-1',
         eventId: 'event-3',
         kind: 'tool_output',
+        chatEventType: 'tool_output_chunk',
         timestamp: '2026-03-31T00:00:02.000Z',
         toolCallId: 'call-1',
-        payload: {
-          sourceEvent: {
-            id: 'event-3',
-            timestamp: 1002,
-            sessionId: 'session-1',
-            turnId: 'request-1',
-            type: 'tool_output_chunk',
-            payload: { toolCallId: 'call-1', toolName: 'bash', chunk: 'ls', offset: 2 },
-          },
-        },
+        payload: { toolCallId: 'call-1', toolName: 'bash', chunk: 'ls', offset: 2 },
       },
     ];
 
     expect(projectedTranscriptToChatEvents(projected)).toEqual([
       {
         id: 'event-1',
-        timestamp: 1000,
+        timestamp: Date.parse('2026-03-31T00:00:00.000Z'),
         sessionId: 'session-1',
         turnId: 'request-1',
         type: 'turn_start',
@@ -79,7 +55,7 @@ describe('projectedTranscriptToChatEvents', () => {
       },
       {
         id: 'event-2',
-        timestamp: 1001,
+        timestamp: Date.parse('2026-03-31T00:00:01.000Z'),
         sessionId: 'session-1',
         turnId: 'request-1',
         responseId: 'response-1',
@@ -88,7 +64,7 @@ describe('projectedTranscriptToChatEvents', () => {
       },
       {
         id: 'event-3',
-        timestamp: 1002,
+        timestamp: Date.parse('2026-03-31T00:00:02.000Z'),
         sessionId: 'session-1',
         turnId: 'request-1',
         type: 'tool_output_chunk',

@@ -267,17 +267,9 @@ describe('ServerMessageHandler typing indicator', () => {
         requestId: 'turn-1',
         eventId: 'transcript-1',
         kind: 'request_start',
+        chatEventType: 'turn_start',
         timestamp: '2026-04-01T00:00:00.000Z',
-        payload: {
-          sourceEvent: {
-            id: 'chat-1',
-            timestamp: Date.now(),
-            sessionId: 's-1',
-            turnId: 'turn-1',
-            type: 'turn_start',
-            payload: { trigger: 'user' },
-          },
-        },
+        payload: { trigger: 'user' },
       },
     });
 
@@ -334,17 +326,9 @@ describe('ServerMessageHandler typing indicator', () => {
         requestId: 'turn-1',
         eventId: 'transcript-1',
         kind: 'request_start',
+        chatEventType: 'turn_start',
         timestamp: '2026-04-01T00:00:00.000Z',
-        payload: {
-          sourceEvent: {
-            id: 'chat-1',
-            timestamp: Date.now(),
-            sessionId: 's-1',
-            turnId: 'turn-1',
-            type: 'turn_start',
-            payload: { trigger: 'user' },
-          },
-        },
+        payload: { trigger: 'user' },
       },
     });
 

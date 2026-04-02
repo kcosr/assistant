@@ -558,11 +558,7 @@ export const ProjectedTranscriptEventKindSchema = z.enum([
 ]);
 export type ProjectedTranscriptEventKind = z.infer<typeof ProjectedTranscriptEventKindSchema>;
 
-export const ProjectedTranscriptEventPayloadSchema = z
-  .object({
-    sourceEvent: ChatEventSchema,
-  })
-  .passthrough();
+export const ProjectedTranscriptEventPayloadSchema = z.record(z.string(), z.unknown());
 export type ProjectedTranscriptEventPayload = z.infer<typeof ProjectedTranscriptEventPayloadSchema>;
 
 export const ProjectedTranscriptEventSchema = z.object({
@@ -572,7 +568,9 @@ export const ProjectedTranscriptEventSchema = z.object({
   requestId: z.string(),
   eventId: z.string(),
   kind: ProjectedTranscriptEventKindSchema,
+  chatEventType: ChatEventTypeSchema,
   timestamp: z.string(),
+  responseId: z.string().optional(),
   messageId: z.string().optional(),
   toolCallId: z.string().optional(),
   interactionId: z.string().optional(),

@@ -52,11 +52,10 @@ describe('transcriptProjection', () => {
     expect(projected[1]).toMatchObject({
       requestId: 'request-1',
       sequence: 1,
+      chatEventType: 'assistant_chunk',
+      responseId: 'response-1',
       payload: {
-        sourceEvent: {
-          id: 'assistant-delta',
-          responseId: 'response-1',
-        },
+        text: 'Hi',
       },
     });
 

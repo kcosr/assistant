@@ -243,18 +243,10 @@ describe('server message validation', () => {
         requestId: 'request-1',
         eventId: 'event-1',
         kind: 'request_start',
+        chatEventType: 'turn_start',
         timestamp: '2026-04-01T12:00:00.000Z',
         payload: {
-          sourceEvent: {
-            id: 'event-1',
-            timestamp: 0,
-            sessionId: 'session-1',
-            turnId: 'request-1',
-            type: 'turn_start',
-            payload: {
-              trigger: 'user',
-            },
-          },
+          trigger: 'user',
         },
       },
     };
@@ -372,17 +364,9 @@ describe('session replay protocol', () => {
           requestId: 'request-1',
           eventId: 'event-1',
           kind: 'request_start',
+          chatEventType: 'turn_start',
           timestamp: '2026-04-02T12:00:00.000Z',
-          payload: {
-            sourceEvent: {
-              id: 'event-1',
-              timestamp: 123,
-              sessionId: 'session-1',
-              turnId: 'request-1',
-              type: 'turn_start',
-              payload: { trigger: 'user' },
-            },
-          },
+          payload: { trigger: 'user' },
         },
       ],
     });

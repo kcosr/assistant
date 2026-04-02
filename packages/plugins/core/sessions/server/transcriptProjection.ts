@@ -1,8 +1,4 @@
-import type {
-  ChatEvent,
-  ProjectedTranscriptEvent,
-  ProjectedTranscriptEventPayload,
-} from '@assistant/shared';
+import type { ChatEvent, ProjectedTranscriptEvent, ProjectedTranscriptEventPayload } from '@assistant/shared';
 
 type ReplayCursor = {
   revision: number;
@@ -30,34 +26,34 @@ function mapChatEventKind(event: ChatEvent): {
 } {
   switch (event.type) {
     case 'turn_start':
-      return { kind: 'request_start', payload: { sourceEvent: event } };
+      return { kind: 'request_start', payload: event.payload };
     case 'turn_end':
-      return { kind: 'request_end', payload: { sourceEvent: event } };
+      return { kind: 'request_end', payload: event.payload };
     case 'user_message':
     case 'user_audio':
       return {
         kind: 'user_message',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'assistant_chunk':
       return {
         kind: 'assistant_message',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'assistant_done':
       return {
         kind: 'assistant_message',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'thinking_chunk':
       return {
         kind: 'thinking',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'thinking_done':
       return {
         kind: 'thinking',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'custom_message':
     case 'summary_message':
@@ -65,42 +61,39 @@ function mapChatEventKind(event: ChatEvent): {
     case 'audio_done':
       return {
         kind: 'assistant_message',
-        payload: { sourceEvent: event },
+        payload: event.payload,
       };
     case 'tool_input_chunk':
-      return { kind: 'tool_input', payload: { sourceEvent: event } };
+      return { kind: 'tool_input', payload: event.payload };
     case 'tool_output_chunk':
-      return { kind: 'tool_output', payload: { sourceEvent: event } };
+      return { kind: 'tool_output', payload: event.payload };
     case 'tool_call':
-      return { kind: 'tool_call', payload: { sourceEvent: event } };
+      return { kind: 'tool_call', payload: event.payload };
     case 'tool_result':
-      return { kind: 'tool_result', payload: { sourceEvent: event } };
+      return { kind: 'tool_result', payload: event.payload };
     case 'interaction_request':
     case 'questionnaire_request':
-      return { kind: 'interaction_request', payload: { sourceEvent: event } };
+      return { kind: 'interaction_request', payload: event.payload };
     case 'interaction_pending':
     case 'questionnaire_reprompt':
     case 'questionnaire_update':
-      return { kind: 'interaction_update', payload: { sourceEvent: event } };
+      return { kind: 'interaction_update', payload: event.payload };
     case 'interaction_response':
     case 'questionnaire_submission':
-      return { kind: 'interaction_response', payload: { sourceEvent: event } };
+      return { kind: 'interaction_response', payload: event.payload };
     case 'agent_message':
-      return { kind: 'interaction_request', payload: { sourceEvent: event } };
+      return { kind: 'interaction_request', payload: event.payload };
     case 'agent_callback':
-      return { kind: 'interaction_response', payload: { sourceEvent: event } };
+      return { kind: 'interaction_response', payload: event.payload };
     case 'agent_switch':
-      return { kind: 'interaction_update', payload: { sourceEvent: event } };
+      return { kind: 'interaction_update', payload: event.payload };
     case 'interrupt':
-      return { kind: 'interrupt', payload: { sourceEvent: event } };
+      return { kind: 'interrupt', payload: event.payload };
     case 'error':
-      return { kind: 'error', payload: { sourceEvent: event } };
-    default:
-      return {
-        kind: 'assistant_message',
-        payload: { sourceEvent: event },
-      };
+      return { kind: 'error', payload: event.payload };
   }
+  const exhaustive: never = event;
+  return exhaustive;
 }
 
 function parseReplayCursor(cursor: string | undefined): ReplayCursor | null {
@@ -152,7 +145,11 @@ export function projectTranscriptEvents(options: {
       requestId,
       eventId: event.id,
       kind,
+      chatEventType: event.type,
       timestamp: new Date(event.timestamp).toISOString(),
+      ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
+        ? { responseId: event.responseId }
+        : {}),
       ...(typeof event.turnId === 'string' && event.turnId.trim().length > 0
         ? { piTurnId: event.turnId }
         : {}),
