@@ -1202,6 +1202,10 @@ export class PiSessionWriter {
     this.log = options.log ?? ((...args) => console.log('[pi-session]', ...args));
   }
 
+  getBaseDir(): string {
+    return this.baseDir;
+  }
+
   async clearSession(options: {
     summary: SessionSummary;
     updateAttributes?: (

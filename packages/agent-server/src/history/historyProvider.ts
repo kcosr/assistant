@@ -352,6 +352,44 @@ export class PiSessionHistoryProvider implements HistoryProvider {
   }
 }
 
+export async function loadCanonicalPiSessionEvents(options: {
+  sessionId: string;
+  attributes?: SessionAttributes;
+  providerId?: string | null;
+  baseDir?: string;
+}): Promise<ChatEvent[]> {
+  const { sessionId, attributes, providerId, baseDir } = options;
+  if (providerId !== 'pi' && providerId !== 'pi-cli') {
+    return [];
+  }
+  const sessionInfo = resolvePiSessionInfo(attributes);
+  if (!sessionInfo) {
+    return [];
+  }
+  const resolvedBaseDir = baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
+  const sessionPath = await findPiSessionFile(resolvedBaseDir, sessionInfo.cwd, sessionInfo.sessionId);
+  if (!sessionPath) {
+    return [];
+  }
+
+  let content: string;
+  try {
+    content = await fs.readFile(sessionPath, 'utf8');
+  } catch (err) {
+    const error = err as NodeJS.ErrnoException;
+    if (error.code !== 'ENOENT') {
+      console.error('[history] Failed to read Pi session file', {
+        sessionId: sessionInfo.sessionId,
+        path: sessionPath,
+        error: error.message,
+      });
+    }
+    return [];
+  }
+
+  return buildChatEventsFromPiSession(content, sessionId);
+}
+
 type CodexSessionCacheEntry = {
   mtimeMs: number;
   events: ChatEvent[];
@@ -1528,9 +1566,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       continue;
     }
     const customType = getString(entry['customType']);
-    if (customType === 'assistant.turn_end') {
+    if (customType === 'assistant.turn_end' || customType === 'assistant.request_end') {
       const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-      const turnId = data ? getString(data['turnId']) : '';
+      const turnId = data ? getString(data['requestId']) || getString(data['turnId']) : '';
       if (turnId) {
         explicitTurnEndIds.add(turnId);
       }
@@ -1757,9 +1795,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const customType = getString(entry['customType']);
       const timestamp = resolveTimestamp(entry);
       const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-      if (customType === 'assistant.turn_start' && data) {
+      if ((customType === 'assistant.turn_start' || customType === 'assistant.request_start') && data) {
         const version = Number(data['v']);
-        const turnIdFromEntry = getString(data['turnId']);
+        const turnIdFromEntry = getString(data['requestId']) || getString(data['turnId']);
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
@@ -1768,9 +1806,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
         continue;
       }
-      if (customType === 'assistant.turn_end' && data) {
+      if ((customType === 'assistant.turn_end' || customType === 'assistant.request_end') && data) {
         const version = Number(data['v']);
-        const turnIdFromEntry = getString(data['turnId']);
+        const turnIdFromEntry = getString(data['requestId']) || getString(data['turnId']);
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }

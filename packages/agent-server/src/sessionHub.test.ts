@@ -196,6 +196,47 @@ describe('SessionHub clearSession', () => {
     expect(updated?.attributes?.['providers']).toBeUndefined();
   });
 
+  it('deletes Pi session file when deleting a session', async () => {
+    const sessionsFile = createTempFile('session-hub-delete');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const baseDir = createTempDir('pi-sessions-delete');
+    const piSessionWriter = new PiSessionWriter({ baseDir });
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-delete-1',
+      agentId: 'general',
+    });
+    await sessionIndex.updateSessionAttributes(session.sessionId, {
+      providers: {
+        pi: {
+          sessionId: 'pi-session-delete-1',
+          cwd: '/home/kevin',
+        },
+      },
+    });
+
+    const encoded = encodePiCwd('/home/kevin');
+    const sessionDir = path.join(baseDir, encoded);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const sessionFile = path.join(
+      sessionDir,
+      '2026-02-04T00-00-00-000Z_pi-session-delete-1.jsonl',
+    );
+    await fs.writeFile(sessionFile, '{"type":"session"}\n', 'utf8');
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter,
+    });
+
+    await sessionHub.deleteSession(session.sessionId);
+
+    await expect(fs.stat(sessionFile)).rejects.toThrow();
+  });
+
   it('rewrites Pi history for turn edits and clears stale context usage', async () => {
     const sessionsFile = createTempFile('session-hub-edit-history');
     const sessionIndex = new SessionIndex(sessionsFile);
@@ -480,5 +521,90 @@ describe('SessionHub clearSession', () => {
     };
     expect(metadata.attachments).toHaveLength(1);
     expect(metadata.attachments[0]?.turnId).toBe('turn-2');
+  });
+});
+
+describe('SessionHub loadSessionEvents', () => {
+  it('loads Pi session history directly from the canonical Pi session file', async () => {
+    const sessionsFile = createTempFile('session-hub-load-events');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = createTempDir('pi-sessions-load-events');
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+
+    const session = await sessionIndex.createSession({
+      sessionId: 'session-load-events',
+      agentId: 'pi-agent',
+    });
+    let summary =
+      (await sessionIndex.updateSessionAttributes(session.sessionId, {
+        core: { workingDir: '/tmp/project-load-events' },
+      })) ?? session;
+
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter,
+    });
+
+    summary =
+      (await piSessionWriter.appendTurnStart({
+        summary,
+        turnId: 'request-1',
+        trigger: 'user',
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+      })) ?? summary;
+    summary =
+      (await piSessionWriter.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'First request' },
+          { role: 'assistant', content: 'First reply' },
+        ],
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+      })) ?? summary;
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'request-1',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+
+    const reloadedSummary = await sessionIndex.getSession(session.sessionId);
+    if (!reloadedSummary) {
+      throw new Error('Expected session summary to exist');
+    }
+
+    const events = await sessionHub.loadSessionEvents(reloadedSummary, true);
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'turn_start',
+          turnId: 'request-1',
+        }),
+        expect.objectContaining({
+          type: 'user_message',
+          payload: expect.objectContaining({ text: 'First request' }),
+        }),
+        expect.objectContaining({
+          type: 'assistant_done',
+          payload: expect.objectContaining({ text: 'First reply' }),
+        }),
+        expect.objectContaining({
+          type: 'turn_end',
+          turnId: 'request-1',
+        }),
+      ]),
+    );
   });
 });

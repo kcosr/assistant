@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CombinedPluginManifest } from '@assistant/shared';
+import type { CombinedPluginManifest, SessionReplayResponse } from '@assistant/shared';
 import { AgentRegistry } from '../../../../agent-server/src/agents';
 import type { ChatCompletionMessage } from '../../../../agent-server/src/chatCompletionTypes';
 import type { SessionSummary } from '../../../../agent-server/src/sessionIndex';
@@ -459,10 +459,9 @@ describe('sessions plugin operations', () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events'));
     const agentRegistry = new AgentRegistry([
       {
-        agentId: 'pi-agent',
-        displayName: 'Pi Agent',
-        description: 'Pi-backed agent',
-        chat: { provider: 'pi' },
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
       },
     ]);
     const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
@@ -497,7 +496,7 @@ describe('sessions plugin operations', () => {
     } as ToolContext;
 
     const created = (await plugin.operations?.create(
-      { agentId: 'pi-agent', sessionConfig: { workingDir: '/tmp/project' } },
+      { agentId: 'general', sessionConfig: { workingDir: '/tmp/project' } },
       ctx,
     )) as SessionSummary;
 
@@ -528,6 +527,96 @@ describe('sessions plugin operations', () => {
           }),
         }),
       }),
+    );
+  });
+
+  it('loads Pi replay events directly from canonical Pi session history', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-plugin-events-pi-'));
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, piSessionWriter });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    } as ToolContext;
+
+    const created = (await plugin.operations?.create(
+      { agentId: 'pi-agent', sessionConfig: { workingDir: '/tmp/project' } },
+      ctx,
+    )) as SessionSummary;
+
+    let summary = created;
+    summary =
+      (await piSessionWriter.appendTurnStart({
+        summary,
+        turnId: 'request-1',
+        trigger: 'user',
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+      })) ?? summary;
+    summary =
+      (await piSessionWriter.sync({
+        summary,
+        messages: [
+          { role: 'system', content: 'system' },
+          { role: 'user', content: 'Hello from Pi' },
+          { role: 'assistant', content: 'Pi reply' },
+        ],
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+      })) ?? summary;
+    await piSessionWriter.appendTurnEnd({
+      summary,
+      turnId: 'request-1',
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+    });
+
+    const result = (await plugin.operations?.events(
+      { sessionId: created.sessionId, force: true },
+      ctx,
+    )) as SessionReplayResponse;
+
+    expect(result.sessionId).toBe(created.sessionId);
+    expect(result.reset).toBe(true);
+    expect(result.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requestId: 'request-1',
+          kind: 'request_start',
+        }),
+        expect.objectContaining({
+          requestId: 'request-1',
+          kind: 'user_message',
+          payload: expect.objectContaining({
+            sourceEvent: expect.objectContaining({
+              type: 'user_message',
+              payload: expect.objectContaining({ text: 'Hello from Pi' }),
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          requestId: 'request-1',
+          kind: 'assistant_message',
+          payload: expect.objectContaining({
+            sourceEvent: expect.objectContaining({
+              type: 'assistant_done',
+              payload: expect.objectContaining({ text: 'Pi reply' }),
+            }),
+          }),
+        }),
+      ]),
     );
   });
 

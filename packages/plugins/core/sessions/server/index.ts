@@ -23,6 +23,7 @@ import { startSessionMessage } from '../../../../agent-server/src/sessionMessage
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
+import { loadCanonicalPiSessionEvents } from '../../../../agent-server/src/history/historyProvider';
 import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
@@ -424,12 +425,35 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             : undefined;
         const force = parsed['force'] === true;
         const revision = getRevisionFromUpdatedAt(existing.updatedAt);
+        const registry = requireAgentRegistry(ctx, sessionHub);
+        const agentId = existing.agentId;
+        const agent = agentId ? registry.getAgent(agentId) : undefined;
+        const providerId = agent?.chat?.provider ?? null;
+        if (providerId === 'pi' || providerId === 'pi-cli') {
+          const writer = sessionHub.getPiSessionWriter?.();
+          const events = await loadCanonicalPiSessionEvents({
+            sessionId,
+            providerId,
+            ...(existing.attributes ? { attributes: existing.attributes } : {}),
+            ...(writer ? { baseDir: writer.getBaseDir() } : {}),
+          });
+          const projected = projectTranscriptEvents({ sessionId, revision, events });
+          const sliced = sliceProjectedTranscript({
+            revision,
+            events: projected,
+            ...(afterCursor ? { afterCursor } : {}),
+            force,
+          });
+          return {
+            sessionId,
+            revision,
+            reset: sliced.reset,
+            ...(sliced.nextCursor ? { nextCursor: sliced.nextCursor } : {}),
+            events: sliced.events,
+          };
+        }
         const historyProvider = ctx.historyProvider;
         if (historyProvider) {
-          const registry = requireAgentRegistry(ctx, sessionHub);
-          const agentId = existing.agentId;
-          const agent = agentId ? registry.getAgent(agentId) : undefined;
-          const providerId = agent?.chat?.provider ?? null;
           const events = await historyProvider.getHistory({
             sessionId,
             ...(agentId ? { agentId } : {}),

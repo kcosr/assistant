@@ -20,6 +20,7 @@ import type {
 import { AgentRegistry } from './agents';
 import type { EventStore } from './events';
 import type { HistoryProviderRegistry } from './history/historyProvider';
+import { loadCanonicalPiSessionEvents } from './history/historyProvider';
 import { SessionIndex, type SessionSummary } from './sessionIndex';
 import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
@@ -482,12 +483,20 @@ export class SessionHub {
 
   async deleteSession(sessionId: string): Promise<SessionSummary | undefined> {
     console.log('[sessionHub] deleteSession', { sessionId });
+    const existing = await this.sessionIndex.getSession(sessionId);
     if (this.attachmentStore) {
       await this.attachmentStore.deleteSession(sessionId);
     }
     const summary = await this.sessionIndex.markSessionDeleted(sessionId);
     this.interactionRegistry.clearSession(sessionId);
     this.cliToolCallRendezvous.clearSession(sessionId);
+    if (existing && this.piSessionWriter) {
+      try {
+        await this.piSessionWriter.clearSession({ summary: existing });
+      } catch (err) {
+        console.error('[sessionHub] Failed to delete Pi session history', err);
+      }
+    }
     try {
       if (this.eventStore) {
         await this.eventStore.deleteSession(sessionId);
@@ -798,12 +807,21 @@ export class SessionHub {
     summary: SessionSummary,
     forceReload?: boolean,
   ): Promise<ChatEvent[]> {
-    if (!this.historyProvider) {
-      return [];
-    }
     const agentId = summary.agentId;
     const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
     const providerId = agent?.chat?.provider;
+    if (providerId === 'pi' || providerId === 'pi-cli') {
+      const directPiEvents = await loadCanonicalPiSessionEvents({
+        sessionId: summary.sessionId,
+        providerId,
+        ...(summary.attributes ? { attributes: summary.attributes } : {}),
+        ...(this.piSessionWriter ? { baseDir: this.piSessionWriter.getBaseDir() } : {}),
+      });
+      return directPiEvents;
+    }
+    if (!this.historyProvider) {
+      return [];
+    }
     return this.historyProvider.getHistory({
       sessionId: summary.sessionId,
       ...(agentId ? { agentId } : {}),
