@@ -671,6 +671,31 @@ final class AssistantVoiceConfig {
         );
     }
 
+    AssistantVoiceConfig withAudioMode(String mode) {
+        return new AssistantVoiceConfig(
+            mode,
+            autoListenEnabled,
+            selectedMicDeviceId,
+            recognitionStartTimeoutMs,
+            recognitionCompletionTimeoutMs,
+            recognitionEndSilenceMs,
+            selectedPanelId,
+            selectedSessionId,
+            preferredVoiceSessionId,
+            sessionTitles,
+            watchedSessionIds,
+            inputContextEnabled,
+            inputContextLine,
+            voiceAdapterBaseUrl,
+            assistantBaseUrl,
+            ttsGain,
+            recognitionCueEnabled,
+            recognitionCueGain,
+            startupPreRollMs,
+            mediaButtonsEnabled
+        );
+    }
+
     String getSessionTitle(String sessionId) {
         String normalized = normalizeOptional(sessionId);
         if (normalized.isEmpty()) {

@@ -19,7 +19,6 @@ import android.view.KeyEvent;
 
 import androidx.core.app.NotificationCompat;
 import androidx.media.app.NotificationCompat.MediaStyle;
-import androidx.core.content.ContextCompat;
 
 import com.assistant.mobile.MainActivity;
 import com.assistant.mobile.R;
@@ -58,6 +57,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
     static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
+    static final String ACTION_CYCLE_AUDIO_MODE = "com.assistant.mobile.voice.CYCLE_AUDIO_MODE";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
@@ -156,6 +156,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             .setAction(ACTION_TOGGLE_MEDIA_BUTTONS);
     }
 
+    public static Intent cycleAudioModeIntent(Context context) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_CYCLE_AUDIO_MODE);
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -173,7 +178,6 @@ public final class AssistantVoiceRuntimeService extends Service {
         syncMediaSession();
         if (!config.isEnabled()) {
             updateState(STATE_DISABLED, null);
-            stopSelf();
             return;
         }
         updateState(STATE_CONNECTING, null);
@@ -204,6 +208,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
             applyConfig(config.withMediaButtonsEnabled(!config.mediaButtonsEnabled));
+            return START_STICKY;
+        }
+        if (ACTION_CYCLE_AUDIO_MODE.equals(action)) {
+            applyConfig(config.withAudioMode(nextNotificationAudioMode(config.audioMode)));
             return START_STICKY;
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
@@ -264,7 +272,6 @@ public final class AssistantVoiceRuntimeService extends Service {
             disconnectAssistantSocket();
             syncMediaSession();
             updateState(STATE_DISABLED, null);
-            stopSelf();
             return;
         }
 
@@ -297,7 +304,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         } else if (preferredSessionChanged) {
             refreshNotification();
         } else if (!hasActiveInteraction()) {
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
         }
     }
 
@@ -501,9 +508,15 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopCurrentInteractionIntent(this),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
-        PendingIntent toggleMediaButtonsPendingIntent = PendingIntent.getService(
+        PendingIntent cycleAudioModePendingIntent = PendingIntent.getService(
             this,
             3,
+            cycleAudioModeIntent(this),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        PendingIntent toggleMediaButtonsPendingIntent = PendingIntent.getService(
+            this,
+            4,
             toggleMediaButtonsIntent(this),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
@@ -528,9 +541,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             launchPendingIntent,
             startListenPendingIntent,
             stopInteractionPendingIntent,
+            cycleAudioModePendingIntent,
             toggleMediaButtonsPendingIntent,
             showSpeakAction,
             showStopAction,
+            config.audioMode,
             config.mediaButtonsEnabled
         );
     }
@@ -542,9 +557,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         PendingIntent launchPendingIntent,
         PendingIntent startListenPendingIntent,
         PendingIntent stopInteractionPendingIntent,
+        PendingIntent cycleAudioModePendingIntent,
         PendingIntent toggleMediaButtonsPendingIntent,
         boolean showSpeakAction,
         boolean showStopAction,
+        String audioMode,
         boolean mediaButtonsEnabled
     ) {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
@@ -575,7 +592,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (showStopAction) {
             builder.addAction(
-                android.R.drawable.ic_media_pause,
+                R.drawable.ic_notification_stop,
                 context.getString(R.string.assistant_voice_notification_action_stop),
                 stopInteractionPendingIntent
             );
@@ -585,6 +602,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             resolveNotificationMediaButtonsActionIcon(mediaButtonsEnabled),
             "",
             toggleMediaButtonsPendingIntent
+        );
+        builder.addAction(
+            R.drawable.ic_notification_text_action,
+            resolveNotificationAudioModeActionLabel(context, audioMode),
+            cycleAudioModePendingIntent
         );
         if (compactActionCount > 0) {
             if (compactActionCount == 1) {
@@ -600,6 +622,30 @@ public final class AssistantVoiceRuntimeService extends Service {
         return mediaButtonsEnabled
             ? R.drawable.ic_notification_media_buttons_enabled
             : R.drawable.ic_notification_media_buttons_disabled;
+    }
+
+    static String resolveNotificationAudioModeActionLabel(Context context, String audioMode) {
+        switch (trim(audioMode)) {
+            case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
+                return context.getString(R.string.assistant_voice_notification_audio_mode_response);
+            case AssistantVoiceConfig.AUDIO_MODE_OFF:
+                return context.getString(R.string.assistant_voice_notification_audio_mode_off);
+            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
+            default:
+                return context.getString(R.string.assistant_voice_notification_audio_mode_tool);
+        }
+    }
+
+    static String nextNotificationAudioMode(String audioMode) {
+        switch (trim(audioMode)) {
+            case AssistantVoiceConfig.AUDIO_MODE_TOOL:
+                return AssistantVoiceConfig.AUDIO_MODE_RESPONSE;
+            case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
+                return AssistantVoiceConfig.AUDIO_MODE_OFF;
+            case AssistantVoiceConfig.AUDIO_MODE_OFF:
+            default:
+                return AssistantVoiceConfig.AUDIO_MODE_TOOL;
+        }
     }
 
     private void createNotificationChannel() {
@@ -1168,7 +1214,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             emitRuntimeError("Voice playback failed");
         }
         if (!hasActiveInteraction()) {
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
         }
     }
 
@@ -1204,7 +1250,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         clearActivePromptContext();
         if (!hasActiveInteraction()) {
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
         }
     }
 
@@ -1253,7 +1299,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         clearActivePromptContext();
         if (!hasActiveInteraction()) {
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
         }
 
         if (localStopCommand) {
@@ -1318,7 +1364,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     activeTtsRequestId = "";
                     clearActivePromptContext();
                     player.stop();
-                    updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+                    updateState(resolveInactiveState(), null);
                     emitRuntimeError("Voice playback request failed");
                 });
             }
@@ -1375,7 +1421,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         clearActivePromptContext();
         if (!hasActiveInteraction()) {
-            updateState(config.isEnabled() && isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
         }
     }
 
@@ -1421,7 +1467,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             playRecognitionCompletionCueIfNeeded(false);
             resetRecognitionCueState();
             clearActivePromptContext();
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
             emitRuntimeError("Microphone capture is unavailable");
             return;
         }
@@ -1478,7 +1524,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             playRecognitionCompletionCueIfNeeded(false);
             resetRecognitionCueState();
             clearActivePromptContext();
-            updateState(isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING, null);
+            updateState(resolveInactiveState(), null);
             emitRuntimeError("Microphone capture is unavailable");
         }
     }
@@ -1611,6 +1657,13 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private boolean hasActiveInteraction() {
         return !activeTtsRequestId.isEmpty() || !activeSttRequestId.isEmpty();
+    }
+
+    private String resolveInactiveState() {
+        if (!config.isEnabled()) {
+            return STATE_DISABLED;
+        }
+        return isRuntimeConnected() ? STATE_IDLE : STATE_CONNECTING;
     }
 
     private boolean isRuntimeConnected() {

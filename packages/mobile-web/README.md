@@ -169,6 +169,11 @@ The following patches are applied automatically on `android:sync`:
   supported Bluetooth/headset media button presses toggle the existing native start/stop voice flow
   based on runtime state. The toggle is persisted in native config and may compete with other media
   apps for headset button ownership while enabled.
+- The same persistent Android notification also exposes a voice-mode cycle action that shows the
+  current mode as `Off`, `Tool`, or `Response` and advances to the next mode when pressed. The
+  mode label is shown as the rightmost notification action after the icon buttons. `Off` now
+  leaves the foreground notification alive so the mode can be cycled back on without reopening the
+  web UI, while the direct Speak/Stop actions stay hidden when voice mode is disabled.
 - The recognition start cue is an arming cue that plays with a short native media preroll, fully
   drains, then waits a brief settle delay before native mic startup begins. The completion cue is
   deferred until recording has actually stopped, capture focus has been released, and a longer
