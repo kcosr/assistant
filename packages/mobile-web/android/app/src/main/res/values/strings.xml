@@ -14,10 +14,15 @@
     <string name="assistant_backend_delete_confirm_title">Delete backend</string>
     <string name="assistant_backend_delete_confirm_message">Remove %1$s from saved backends?</string>
     <string name="assistant_backend_delete_confirm_button">Delete</string>
-    <string name="assistant_voice_notification_title">Assistant voice mode</string>
-    <string name="assistant_voice_notification_text">Voice runtime active (%1$s)</string>
-    <string name="assistant_voice_notification_channel_name">Assistant voice mode</string>
-    <string name="assistant_voice_notification_channel_description">Foreground voice playback and listening for Assistant prompts.</string>
+    <string name="assistant_voice_notification_title">Voice (%1$s)</string>
+    <string name="assistant_voice_notification_state_disabled">Disabled</string>
+    <string name="assistant_voice_notification_state_connecting">Connecting</string>
+    <string name="assistant_voice_notification_state_idle">Idle</string>
+    <string name="assistant_voice_notification_state_speaking">Speaking</string>
+    <string name="assistant_voice_notification_state_listening">Listening</string>
+    <string name="assistant_voice_notification_state_error">Error</string>
+    <string name="assistant_voice_notification_channel_name">Assistant voice controls</string>
+    <string name="assistant_voice_notification_channel_description">Persistent Assistant voice playback and listening with Speak and Stop controls, including lock-screen visibility when allowed.</string>
     <string name="assistant_voice_notification_action_speak">Speak</string>
     <string name="assistant_voice_notification_action_stop">Stop</string>
 </resources>
