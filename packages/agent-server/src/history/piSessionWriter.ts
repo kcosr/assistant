@@ -80,6 +80,7 @@ type PiSessionCustomMessageEntry = PiSessionEntryBase & {
   content: string | unknown[];
   details?: unknown;
   display: boolean;
+  label?: string;
 };
 
 type PiSessionEntry =
@@ -1887,6 +1888,58 @@ export class PiSessionWriter {
         piSessionId: state.piSessionId,
         sessionFile: state.sessionFile,
       });
+      await this.appendEntries(state, [entry]);
+    });
+
+    state.leafId = nextLeafId;
+
+    return currentSummary === summary ? undefined : currentSummary;
+  }
+
+  async appendCustomMessage(options: {
+    summary: SessionSummary;
+    customType: string;
+    content: string | unknown[];
+    details?: unknown;
+    display?: boolean;
+    label?: string;
+    updateAttributes?: (
+      patch: SessionAttributesPatch,
+    ) => Promise<SessionSummary | undefined>;
+  }): Promise<SessionSummary | undefined> {
+    const { summary, customType, content, details, display = true, label, updateAttributes } =
+      options;
+
+    const trimmedCustomType = customType.trim();
+    if (!trimmedCustomType) {
+      return undefined;
+    }
+
+    let currentSummary = summary;
+    const stateInfo = await this.ensureSessionState({
+      summary: currentSummary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    currentSummary = stateInfo.summary;
+    const state = stateInfo.state;
+
+    const entry: PiSessionCustomMessageEntry = {
+      type: 'custom_message',
+      id: generateEntryId(),
+      parentId: state.leafId,
+      timestamp: this.now().toISOString(),
+      customType: trimmedCustomType,
+      content: cloneJson(content),
+      ...(details !== undefined ? { details: cloneJson(details) } : {}),
+      display,
+      ...(label?.trim() ? { label: label.trim() } : {}),
+    };
+
+    const nextLeafId = entry.id;
+    await this.queueWrite(state, async () => {
+      if (!state.flushed) {
+        await this.ensureSessionFile(state);
+      }
       await this.appendEntries(state, [entry]);
     });
 

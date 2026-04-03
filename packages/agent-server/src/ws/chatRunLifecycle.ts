@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { AssistantMessage as PiAssistantMessage, Message as PiSdkMessage } from '@mariozechner/pi-ai';
 import type {
   ChatEvent,
   ClientAudioCapabilities,
@@ -37,8 +37,51 @@ import { finalizeChatTurn } from '../chatTurnFinalization';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { resolveVisibleAssistantText } from '../piAssistantText';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
-import { buildMessagesForPiSync } from '../history/piSessionSync';
+import { buildMessagesForPiSync, resolveInterruptedPiSyncMessages } from '../history/piSessionSync';
 import type { AgentTool } from '../tools';
+
+const LATE_PROVIDER_TAIL_CUSTOM_TYPE = 'assistant.late_provider_tail';
+
+function isPiAssistantMessage(message: PiSdkMessage | undefined): message is PiAssistantMessage {
+  return message?.role === 'assistant';
+}
+
+function summarizeLateReplayMessage(message: ChatCompletionMessage): Record<string, unknown> {
+  const historyTimestampMs =
+    'historyTimestampMs' in message ? message.historyTimestampMs : undefined;
+  const piStopReason =
+    message.role === 'assistant' && isPiAssistantMessage(message.piSdkMessage)
+      ? message.piSdkMessage.stopReason
+      : undefined;
+  return {
+    role: message.role,
+    ...(typeof message.content === 'string' ? { content: message.content } : {}),
+    ...(message.role === 'tool' ? { toolCallId: message.tool_call_id } : {}),
+    ...(typeof historyTimestampMs === 'number' ? { historyTimestampMs } : {}),
+    ...(piStopReason ? { piStopReason } : {}),
+  };
+}
+
+function formatLateReplayTailWarning(options: {
+  droppedMessages: ChatCompletionMessage[];
+}): string {
+  const { droppedMessages } = options;
+  const summary = droppedMessages
+    .map((message) => {
+      if (message.role === 'tool') {
+        return `tool_result:${message.tool_call_id ?? 'unknown'}`;
+      }
+      if (message.role === 'assistant') {
+        const stopReason = isPiAssistantMessage(message.piSdkMessage)
+          ? message.piSdkMessage.stopReason
+          : 'assistant';
+        return `assistant:${stopReason}`;
+      }
+      return message.role;
+    })
+    .join(', ');
+  return `Dropped ${droppedMessages.length} late raw Pi replay message${droppedMessages.length === 1 ? '' : 's'} after interrupted request close: ${summary}`;
+}
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -92,6 +135,7 @@ async function persistInterruptedPiAssistantMessage(options: {
     fullText: string;
     piSdkMessage?: PiSdkMessage;
     piReplayMessages?: ChatCompletionMessage[];
+    piBaseReplayMessages?: ChatCompletionMessage[];
   };
   log: (...args: unknown[]) => void;
 }): Promise<void> {
@@ -123,14 +167,25 @@ async function persistInterruptedPiAssistantMessage(options: {
       piSdkMessage: runResult.piSdkMessage,
     };
     const replayMessages = runResult.piReplayMessages;
-    const messagesForPiSync =
-      replayMessages && replayMessages !== state.chatMessages
-        ? buildMessagesForPiSync({
-            stateMessages: state.chatMessages,
-            replayMessages,
-            finalAssistantMessage,
-          })
-        : [...state.chatMessages, finalAssistantMessage];
+    const baseReplayMessages = runResult.piBaseReplayMessages;
+    const interruptedSync = baseReplayMessages
+      ? resolveInterruptedPiSyncMessages({
+          baseMessages: baseReplayMessages,
+          ...(replayMessages ? { replayMessages } : {}),
+          finalAssistantMessage,
+        })
+      : {
+          messages:
+            replayMessages && replayMessages !== state.chatMessages
+              ? buildMessagesForPiSync({
+                  stateMessages: state.chatMessages,
+                  replayMessages,
+                  finalAssistantMessage,
+                })
+              : [...state.chatMessages, finalAssistantMessage],
+          droppedMessages: [] as ChatCompletionMessage[],
+        };
+    const messagesForPiSync = interruptedSync.messages;
     const updatedSummary = await piSessionWriter.sync({
       summary: state.summary,
       messages: messagesForPiSync,
@@ -141,6 +196,29 @@ async function persistInterruptedPiAssistantMessage(options: {
     });
     if (updatedSummary) {
       state.summary = updatedSummary;
+    }
+    state.chatMessages = messagesForPiSync;
+    if (interruptedSync.droppedMessages.length > 0) {
+      const diagnosticSummary = await piSessionWriter.appendCustomMessage({
+        summary: state.summary,
+        customType: LATE_PROVIDER_TAIL_CUSTOM_TYPE,
+        label: 'Pi replay warning',
+        content: formatLateReplayTailWarning({
+          droppedMessages: interruptedSync.droppedMessages,
+        }),
+        details: {
+          droppedMessages: interruptedSync.droppedMessages.map(summarizeLateReplayMessage),
+        },
+        display: true,
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+      });
+      if (diagnosticSummary) {
+        state.summary = diagnosticSummary;
+      }
+      log('dropped late raw Pi replay tail after interrupted turn', {
+        sessionId,
+        droppedMessages: interruptedSync.droppedMessages.map(summarizeLateReplayMessage),
+      });
     }
   } catch (err) {
     log('failed to sync interrupted Pi session history', err);

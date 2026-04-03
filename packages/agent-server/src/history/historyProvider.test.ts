@@ -464,6 +464,140 @@ describe('canonical Pi transcript loader', () => {
     expect(assistantIndex).toBeLessThan(toolResultIndex);
   });
 
+  it('keeps late-synced aborted Pi provider messages inside the explicit request they belong to', async () => {
+    const baseDir = await createTempDir('pi-session-transcript-aborted-tail');
+    const sessionId = 'session-transcript-aborted-tail';
+    const piSessionId = 'pi-session-transcript-aborted-tail';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-04-03T22-22-47-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start',
+        timestamp: '2026-04-03T22:22:47.901Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'user-overlay',
+        timestamp: '2026-04-03T22:22:47.901Z',
+        customType: 'assistant.user_message',
+        data: { payload: { text: 'again' }, turnId: 'request-1' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'tool-call-overlay',
+        timestamp: '2026-04-03T22:22:49.605Z',
+        customType: 'assistant.tool_call',
+        data: {
+          turnId: 'request-1',
+          responseId: 'resp-1',
+          payload: {
+            toolCallId: 'tool-1',
+            toolName: 'bash',
+            args: { command: 'sleep 5' },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'interrupt-overlay',
+        timestamp: '2026-04-03T22:22:53.739Z',
+        customType: 'assistant.interrupt',
+        data: {
+          turnId: 'request-1',
+          responseId: 'resp-1',
+          payload: { reason: 'user_cancel' },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'request-end',
+        timestamp: '2026-04-03T22:22:53.747Z',
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'request-1', status: 'interrupted' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'late-user',
+        timestamp: '2026-04-03T22:22:53.755Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'again' }],
+          timestamp: 1775254967903,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'late-assistant-toolcall',
+        timestamp: '2026-04-03T22:22:53.755Z',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'tool-1',
+              name: 'bash',
+              arguments: { command: 'sleep 5' },
+            },
+          ],
+          stopReason: 'toolUse',
+          timestamp: 1775254967908,
+          responseId: 'msg-response-1',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'late-tool-result',
+        timestamp: '2026-04-03T22:22:53.755Z',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'tool-1',
+          toolName: 'bash',
+          content: [{ type: 'text', text: 'Command aborted' }],
+          isError: false,
+          timestamp: 1775254973740,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'late-aborted-assistant',
+        timestamp: '2026-04-03T22:22:53.755Z',
+        message: {
+          role: 'assistant',
+          content: [],
+          stopReason: 'aborted',
+          timestamp: 1775254973740,
+          errorMessage: 'Request was aborted.',
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const events = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 7,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    expect(events.filter((event) => event.kind === 'request_start')).toHaveLength(1);
+    expect(events.filter((event) => event.kind === 'request_end')).toHaveLength(1);
+    expect(events.every((event) => event.requestId === 'request-1')).toBe(true);
+    expect(events.filter((event) => event.kind === 'user_message')).toHaveLength(1);
+    expect(events.filter((event) => event.kind === 'tool_call')).toHaveLength(1);
+    expect(events.filter((event) => event.kind === 'tool_result')).toHaveLength(1);
+  });
+
 });
 
 describe('ClaudeSessionHistoryProvider', () => {

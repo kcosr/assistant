@@ -1399,7 +1399,6 @@ function buildProjectedTranscriptFromPiSession(
     timestampMs: number;
     order: number;
   };
-
   const entries = parseJsonLines(content);
   const events: DirectProjectedEvent[] = [];
   const mirroredUserInputs = new Set<string>();
@@ -1558,6 +1557,8 @@ function buildProjectedTranscriptFromPiSession(
   let currentResponseId: string | null = null;
   let currentRequestExplicit = false;
   let currentRequestStartedAt: number | null = null;
+  let lastClosedExplicitRequestId: string | null = null;
+  let lastClosedExplicitRequestEndedAt: number | null = null;
   let nextSyntheticRequestId = 0;
   let nextDerivedId = 0;
 
@@ -1616,6 +1617,10 @@ function buildProjectedTranscriptFromPiSession(
     if (!currentRequestId) {
       return;
     }
+    if (currentRequestExplicit) {
+      lastClosedExplicitRequestId = currentRequestId;
+      lastClosedExplicitRequestEndedAt = timestamp;
+    }
     pushProjected({
       timestamp,
       requestId: currentRequestId,
@@ -1655,6 +1660,14 @@ function buildProjectedTranscriptFromPiSession(
   };
 
   const ensureRequest = (entry: Record<string, unknown>, timestamp: number): string => {
+    if (
+      !currentRequestId &&
+      lastClosedExplicitRequestId &&
+      lastClosedExplicitRequestEndedAt !== null &&
+      timestamp <= lastClosedExplicitRequestEndedAt
+    ) {
+      return lastClosedExplicitRequestId;
+    }
     if (!currentRequestId) {
       const requestId = getTurnId(entry) || `synthetic-request-${nextSyntheticRequestId++}`;
       startRequest(requestId, 'system', timestamp);
@@ -1662,7 +1675,10 @@ function buildProjectedTranscriptFromPiSession(
     return currentRequestId!;
   };
 
-  const ensureResponseId = (entry: Record<string, unknown>): string => {
+  const ensureResponseId = (entry: Record<string, unknown>, requestId?: string): string => {
+    if (!currentRequestId || (requestId && requestId !== currentRequestId)) {
+      return getResponseId(entry);
+    }
     const responseId = currentResponseId ?? getResponseId(entry);
     currentResponseId = responseId;
     return responseId;
@@ -1710,7 +1726,7 @@ function buildProjectedTranscriptFromPiSession(
       return;
     }
     const requestId = ensureRequest(entry, timestamp);
-    const responseId = ensureResponseId(entry);
+    const responseId = ensureResponseId(entry, requestId);
     pushProjected({
       timestamp,
       requestId,
@@ -1738,7 +1754,7 @@ function buildProjectedTranscriptFromPiSession(
       return;
     }
     const requestId = ensureRequest(entry, timestamp);
-    const responseId = ensureResponseId(entry);
+    const responseId = ensureResponseId(entry, requestId);
     pushProjected({
       timestamp,
       requestId,
@@ -2169,15 +2185,28 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
       const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
-      const requestId = currentRequestId && currentRequestExplicit
-        ? currentRequestId
-        : getTurnId(messageEntry) || `synthetic-${getString(entry['id']) || nextSyntheticRequestId++}`;
+      const closedExplicitRequestId =
+        !currentRequestId &&
+        lastClosedExplicitRequestId &&
+        lastClosedExplicitRequestEndedAt !== null &&
+        timestamp <= lastClosedExplicitRequestEndedAt
+          ? lastClosedExplicitRequestId
+          : null;
+      const requestId =
+        currentRequestId && currentRequestExplicit
+          ? currentRequestId
+          : closedExplicitRequestId ??
+            getTurnId(messageEntry) ??
+            `synthetic-${getString(entry['id']) || nextSyntheticRequestId++}`;
       const text = extractText(messageEntry);
       const meta = resolvePiUserMeta(messageEntry);
       if (meta?.source !== 'callback' && emittedUserInputs.has(getUserInputKey(requestId, text))) {
         continue;
       }
-      if (!currentRequestId || !currentRequestExplicit) {
+      if (!currentRequestId && !closedExplicitRequestId) {
+        endRequest(timestamp);
+        startRequest(requestId, meta?.source === 'callback' ? 'callback' : 'user', timestamp);
+      } else if (currentRequestId && !currentRequestExplicit) {
         endRequest(timestamp);
         startRequest(requestId, meta?.source === 'callback' ? 'callback' : 'user', timestamp);
       }
@@ -2224,13 +2253,25 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
       const interrupted = stopReason === 'aborted';
-      if (!currentRequestId) {
+      const closedExplicitRequestId =
+        !currentRequestId &&
+        lastClosedExplicitRequestId &&
+        lastClosedExplicitRequestEndedAt !== null &&
+        timestamp <= lastClosedExplicitRequestEndedAt
+          ? lastClosedExplicitRequestId
+          : null;
+      if (!currentRequestId && !closedExplicitRequestId) {
         const requestId = getTurnId(messageEntry) || `synthetic-request-${nextSyntheticRequestId++}`;
         startRequest(requestId, 'system', timestamp);
       }
-      const requestId = currentRequestId!;
-      const responseId: string = currentResponseId ?? getResponseId(messageEntry);
-      currentResponseId = responseId;
+      const requestId: string = currentRequestId ?? closedExplicitRequestId!;
+      const responseId: string | undefined =
+        currentRequestId === requestId
+          ? (currentResponseId ?? getResponseId(messageEntry))
+          : getResponseId(messageEntry);
+      if (currentRequestId === requestId) {
+        currentResponseId = responseId;
+      }
       const contentBlocks = messageEntry['content'];
       if (Array.isArray(contentBlocks)) {
         let thinkingBuffer = '';

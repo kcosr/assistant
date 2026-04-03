@@ -527,6 +527,49 @@ describe('PiSessionWriter', () => {
     expect(((last?.['data'] as Record<string, unknown> | undefined)?.['payload'] as Record<string, unknown> | undefined)?.['reason']).toBe('user_cancel');
   });
 
+  it('appends custom transcript messages for visible Pi diagnostics', async () => {
+    const baseDir = await createTempDir('pi-session-writer-custom-message');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-custom-message-1',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+
+    await writer.appendCustomMessage({
+      summary,
+      customType: 'assistant.late_provider_tail',
+      content: 'Dropped 2 late provider messages after request end.',
+      details: { droppedCount: 2 },
+      label: 'Pi replay warning',
+      display: true,
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    expect(files.length).toBe(1);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    const last = entries[entries.length - 1] as Record<string, unknown> | undefined;
+    expect(last).toMatchObject({
+      type: 'custom_message',
+      customType: 'assistant.late_provider_tail',
+      content: 'Dropped 2 late provider messages after request end.',
+      label: 'Pi replay warning',
+      display: true,
+      details: { droppedCount: 2 },
+    });
+  });
+
   it('appends explicit request boundary entries', async () => {
     const baseDir = await createTempDir('pi-session-writer-request-boundaries');
     const now = () => new Date('2026-02-01T00:00:00.000Z');

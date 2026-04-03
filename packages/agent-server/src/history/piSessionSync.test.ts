@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
-import { attachPiSdkMessageToLastAssistant, buildMessagesForPiSync } from './piSessionSync';
+import {
+  attachPiSdkMessageToLastAssistant,
+  buildMessagesForPiSync,
+  resolveInterruptedPiSyncMessages,
+} from './piSessionSync';
 
 describe('attachPiSdkMessageToLastAssistant', () => {
   it('attaches piSdkMessage to the last assistant message', () => {
@@ -83,5 +87,39 @@ describe('buildMessagesForPiSync', () => {
     });
 
     expect(result).toEqual([...replayMessages, finalAssistant]);
+  });
+});
+
+describe('resolveInterruptedPiSyncMessages', () => {
+  it('drops a late aborted replay tail and appends only the final interrupted assistant', () => {
+    const baseMessages: ChatCompletionMessage[] = [{ role: 'user', content: 'again' }];
+    const replayMessages: ChatCompletionMessage[] = [
+      ...baseMessages,
+      { role: 'assistant', content: '', tool_calls: [] },
+      { role: 'tool', tool_call_id: 'tool-1', content: 'Command aborted' },
+    ];
+    const finalAssistant = { role: 'assistant', content: 'Interrupted answer' } as const;
+
+    const result = resolveInterruptedPiSyncMessages({
+      baseMessages,
+      replayMessages,
+      finalAssistantMessage: finalAssistant,
+    });
+
+    expect(result.messages).toEqual([...baseMessages, finalAssistant]);
+    expect(result.droppedMessages).toEqual(replayMessages.slice(1));
+  });
+
+  it('keeps replay messages when they do not extend the base prefix', () => {
+    const baseMessages: ChatCompletionMessage[] = [{ role: 'user', content: 'again' }];
+    const replayMessages: ChatCompletionMessage[] = [{ role: 'user', content: 'different' }];
+
+    const result = resolveInterruptedPiSyncMessages({
+      baseMessages,
+      replayMessages,
+    });
+
+    expect(result.messages).toBe(replayMessages);
+    expect(result.droppedMessages).toEqual([]);
   });
 });

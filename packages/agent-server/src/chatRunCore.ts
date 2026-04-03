@@ -179,6 +179,7 @@ export interface ChatRunCoreResult {
   abortReason?: 'timeout' | 'aborted';
   piSdkMessage?: PiSdkMessage;
   piReplayMessages?: ChatCompletionMessage[];
+  piBaseReplayMessages?: ChatCompletionMessage[];
 }
 
 export class ChatRunError extends Error {
@@ -932,6 +933,7 @@ export async function runChatCompletionCore(
   let finalPiSdkMessage: PiSdkMessage | undefined;
   let lastPiSdkMessage: PiSdkMessage | undefined;
   let piReplayMessages: ChatCompletionMessage[] | undefined;
+  let piBaseReplayMessages: ChatCompletionMessage[] | undefined;
 
   if (provider === 'claude-cli') {
     const claudeConfig = resolveCliRuntimeConfig(
@@ -1424,6 +1426,7 @@ export async function runChatCompletionCore(
     const toolInputOffsets = new Map<string, number>();
     const toolOutputOffsets = new Map<string, number>();
     const toolOutputTexts = new Map<string, string>();
+    piBaseReplayMessages = piReplayMessages.slice();
     const piReplayAccumulator = piReplayMessages.slice();
     let toolIterationCount = 0;
     let hitToolIterationLimit = false;
@@ -1771,5 +1774,6 @@ export async function runChatCompletionCore(
       ? { piSdkMessage: resolvedPiSdkMessage }
       : {}),
     ...(provider === 'pi' && piReplayMessages ? { piReplayMessages } : {}),
+    ...(provider === 'pi' && piBaseReplayMessages ? { piBaseReplayMessages } : {}),
   };
 }
