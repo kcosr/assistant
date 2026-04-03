@@ -2,6 +2,7 @@ import type {
   AssistantTextPhase,
   ChatEvent,
   ChatEventType,
+  ProjectedTranscriptEvent,
   ServerMessage,
   SessionSubscriptionMask,
   ServerMessageType,
@@ -221,6 +222,22 @@ export class SessionConnectionRegistry {
       return false;
     }
 
+    if (message.type === 'transcript_event') {
+      const event = message.event;
+      if (mask.chatEventTypes && !mask.chatEventTypes.includes(event.chatEventType as ChatEventType)) {
+        return false;
+      }
+      const transcriptToolName = this.getTranscriptEventToolName(event);
+      if (transcriptToolName && mask.toolNames && !mask.toolNames.includes(transcriptToolName)) {
+        return false;
+      }
+      const transcriptPhase = this.getTranscriptEventAssistantPhase(event);
+      if (transcriptPhase && mask.messagePhases && !mask.messagePhases.includes(transcriptPhase)) {
+        return false;
+      }
+      return true;
+    }
+
     if (message.type !== 'chat_event') {
       // chatEventTypes only constrains chat_event payloads. Non-chat-event
       // messages are filtered solely by the dimensions that apply to them.
@@ -291,6 +308,32 @@ export class SessionConnectionRegistry {
       case 'assistant_chunk':
       case 'assistant_done':
         return event.payload.phase ?? null;
+      default:
+        return null;
+    }
+  }
+
+  private getTranscriptEventToolName(event: ProjectedTranscriptEvent): string | null {
+    switch (event.kind) {
+      case 'tool_call':
+      case 'tool_input':
+      case 'tool_output':
+      case 'tool_result': {
+        const toolName = event.payload['toolName'];
+        return typeof toolName === 'string' && toolName.trim().length > 0 ? toolName : null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  private getTranscriptEventAssistantPhase(event: ProjectedTranscriptEvent): AssistantTextPhase | null {
+    switch (event.kind) {
+      case 'assistant_message':
+      case 'thinking': {
+        const phase = event.payload['phase'];
+        return phase === 'commentary' || phase === 'final_answer' ? phase : null;
+      }
       default:
         return null;
     }

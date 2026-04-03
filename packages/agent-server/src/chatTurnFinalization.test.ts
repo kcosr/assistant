@@ -5,8 +5,7 @@ import type { EventStore } from './events';
 import type { LogicalSessionState, SessionHub } from './sessionHub';
 
 describe('finalizeChatTurn', () => {
-  it('clears the Pi transient overlay buffer after durable turn close', async () => {
-    const clearTransientSession = vi.fn(async () => undefined);
+  it('persists the Pi durable turn close without transient overlay cleanup', async () => {
     const appendTurnEnd = vi.fn(async () => undefined);
     const state: LogicalSessionState = {
       summary: {
@@ -35,7 +34,6 @@ describe('finalizeChatTurn', () => {
       subscribe: vi.fn(() => () => undefined),
       clearSession: vi.fn(async () => undefined),
       deleteSession: vi.fn(async () => undefined),
-      clearTransientSession,
     };
 
     const finalized = await finalizeChatTurn({
@@ -61,6 +59,5 @@ describe('finalizeChatTurn', () => {
         status: 'completed',
       }),
     );
-    expect(clearTransientSession).toHaveBeenCalledWith('session-1');
   });
 });

@@ -20,90 +20,6 @@ export interface EventStore {
   subscribe(sessionId: string, callback: (event: ChatEvent) => void): () => void;
   clearSession(sessionId: string): Promise<void>;
   deleteSession(sessionId: string): Promise<void>;
-  clearTransientSession?(sessionId: string): Promise<void>;
-}
-
-export class InMemoryOverlayEventBuffer {
-  private readonly eventsBySession = new Map<string, ChatEvent[]>();
-
-  async append(sessionId: string, event: ChatEvent): Promise<void> {
-    const trimmed = this.normaliseSessionId(sessionId);
-    const validated = this.validateEventForSession(trimmed, event);
-    const events = this.eventsBySession.get(trimmed) ?? [];
-    events.push(validated);
-    this.eventsBySession.set(trimmed, events);
-  }
-
-  async appendBatch(sessionId: string, events: ChatEvent[]): Promise<void> {
-    const trimmed = this.normaliseSessionId(sessionId);
-    if (events.length === 0) {
-      return;
-    }
-    const validated = events.map((event) => this.validateEventForSession(trimmed, event));
-    const existing = this.eventsBySession.get(trimmed) ?? [];
-    existing.push(...validated);
-    this.eventsBySession.set(trimmed, existing);
-  }
-
-  async getEvents(sessionId: string): Promise<ChatEvent[]> {
-    return [...(this.eventsBySession.get(this.normaliseSessionId(sessionId)) ?? [])];
-  }
-
-  async getEventsSince(sessionId: string, afterEventId: string): Promise<ChatEvent[]> {
-    const events = await this.getEvents(sessionId);
-    if (!afterEventId) {
-      return events;
-    }
-
-    let index = -1;
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      if (events[i]?.id === afterEventId) {
-        index = i;
-        break;
-      }
-    }
-
-    if (index === -1) {
-      return events;
-    }
-    return events.slice(index + 1);
-  }
-
-  async replaceEvents(sessionId: string, events: ChatEvent[]): Promise<void> {
-    const trimmed = this.normaliseSessionId(sessionId);
-    if (events.length === 0) {
-      this.eventsBySession.delete(trimmed);
-      return;
-    }
-    const validated = events.map((event) => this.validateEventForSession(trimmed, event));
-    this.eventsBySession.set(trimmed, [...validated]);
-  }
-
-  async clearSession(sessionId: string): Promise<void> {
-    this.eventsBySession.delete(this.normaliseSessionId(sessionId));
-  }
-
-  async deleteSession(sessionId: string): Promise<void> {
-    this.eventsBySession.delete(this.normaliseSessionId(sessionId));
-  }
-
-  private normaliseSessionId(sessionId: string): string {
-    const trimmed = sessionId.trim();
-    if (!trimmed) {
-      throw new Error('sessionId must not be empty');
-    }
-    return trimmed;
-  }
-
-  private validateEventForSession(sessionId: string, event: ChatEvent): ChatEvent {
-    const validated = validateChatEvent(event);
-    if (validated.sessionId.trim() !== sessionId) {
-      throw new Error(
-        `ChatEvent.sessionId "${validated.sessionId}" does not match target session "${sessionId}"`,
-      );
-    }
-    return validated;
-  }
 }
 
 type WriteTask = () => Promise<void>;
@@ -361,7 +277,6 @@ export class SessionScopedEventStore implements EventStore {
   constructor(
     private readonly base: EventStore,
     private readonly sessionHub: SessionHub,
-    private readonly overlayBuffer?: InMemoryOverlayEventBuffer,
   ) {}
 
   private isPiProvider(providerId: string | null | undefined): boolean {
@@ -421,9 +336,6 @@ export class SessionScopedEventStore implements EventStore {
       }
       this.assertEventSessionMatches(trimmed, event);
       if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
-        if (this.overlayBuffer) {
-          await this.overlayBuffer.append(trimmed, event);
-        }
         if (this.shouldMirrorPiEventToCustomLog(event)) {
           await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
         }
@@ -441,9 +353,6 @@ export class SessionScopedEventStore implements EventStore {
     }
     this.assertEventSessionMatches(trimmed, event);
     if (this.isPiProvider(this.resolveSessionProvider(summary))) {
-      if (this.overlayBuffer) {
-        await this.overlayBuffer.append(trimmed, event);
-      }
       if (this.shouldMirrorPiEventToCustomLog(event)) {
         await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
       }
@@ -471,9 +380,6 @@ export class SessionScopedEventStore implements EventStore {
         this.assertEventSessionMatches(trimmed, event);
       }
       if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
-        if (this.overlayBuffer) {
-          await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
-        }
         for (const event of overlayEvents) {
           if (this.shouldMirrorPiEventToCustomLog(event)) {
             await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
@@ -497,9 +403,6 @@ export class SessionScopedEventStore implements EventStore {
       this.assertEventSessionMatches(trimmed, event);
     }
     if (this.isPiProvider(this.resolveSessionProvider(summary))) {
-      if (this.overlayBuffer) {
-        await this.overlayBuffer.appendBatch(trimmed, overlayEvents);
-      }
       for (const event of overlayEvents) {
         if (this.shouldMirrorPiEventToCustomLog(event)) {
           await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
@@ -518,7 +421,7 @@ export class SessionScopedEventStore implements EventStore {
     const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
     const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
     if (summary && this.isPiProvider(this.resolveSessionProvider(summary))) {
-      return this.overlayBuffer?.getEvents(trimmed) ?? [];
+      return [];
     }
     const events = await this.base.getEvents(trimmed);
     return events.filter(isOverlayChatEvent);
@@ -532,7 +435,7 @@ export class SessionScopedEventStore implements EventStore {
     const activeSummary = this.sessionHub.getSessionState(trimmed)?.summary;
     const summary = activeSummary ?? (await this.sessionHub.getSessionIndex().getSession(trimmed));
     if (summary && this.isPiProvider(this.resolveSessionProvider(summary))) {
-      return this.overlayBuffer?.getEventsSince(trimmed, afterEventId) ?? [];
+      return [];
     }
     const events = await this.base.getEventsSince(trimmed, afterEventId);
     return events.filter(isOverlayChatEvent);
@@ -550,7 +453,6 @@ export class SessionScopedEventStore implements EventStore {
   async clearSession(sessionId: string): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
     if (!(await this.shouldPersist(trimmed))) {
-      await this.overlayBuffer?.clearSession(trimmed);
       return;
     }
     await this.base.clearSession(trimmed);
@@ -559,16 +461,10 @@ export class SessionScopedEventStore implements EventStore {
   async deleteSession(sessionId: string): Promise<void> {
     const trimmed = this.normaliseSessionId(sessionId);
     if (!(await this.shouldPersist(trimmed))) {
-      await this.overlayBuffer?.deleteSession(trimmed);
       return;
     }
     await this.base.deleteSession(trimmed);
   }
-
-  async clearTransientSession(sessionId: string): Promise<void> {
-    await this.overlayBuffer?.clearSession(this.normaliseSessionId(sessionId));
-  }
-
   private async shouldPersist(sessionId: string): Promise<boolean> {
     const activeSummary = this.sessionHub.getSessionState(sessionId)?.summary;
     if (activeSummary) {

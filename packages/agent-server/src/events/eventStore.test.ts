@@ -7,7 +7,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { ChatEvent } from '@assistant/shared';
 import {
   FileEventStore,
-  InMemoryOverlayEventBuffer,
   SessionScopedEventStore,
   type EventStore,
 } from './eventStore';
@@ -226,8 +225,6 @@ describe('SessionScopedEventStore', () => {
     ]);
 
     const appendAssistantEvent = vi.fn(async () => undefined);
-    const overlayBuffer = new InMemoryOverlayEventBuffer();
-
     const sessionHub = {
       getSessionState: () => undefined,
       getSessionIndex: () => ({
@@ -273,12 +270,12 @@ describe('SessionScopedEventStore', () => {
       deleteSession: vi.fn(async () => undefined),
     };
 
-    const store = new SessionScopedEventStore(baseStore, sessionHub, overlayBuffer);
+    const store = new SessionScopedEventStore(baseStore, sessionHub);
 
     const piEvent = createEvent({ id: 'e-pi', sessionId: 'pi-session', turnId: 'turn-pi' });
     await store.append('pi-session', piEvent);
     expect(baseStore.append).not.toHaveBeenCalledWith('pi-session', piEvent);
-    expect(await overlayBuffer.getEvents('pi-session')).toEqual([piEvent]);
+    expect(await store.getEvents('pi-session')).toEqual([]);
 
     const piInteraction: ChatEvent = {
       id: 'i-1',
@@ -421,7 +418,7 @@ describe('SessionScopedEventStore', () => {
     );
   });
 
-  it('keeps Pi transient replay overlays only in memory while mirroring UI-only events', async () => {
+  it('does not retain Pi transient replay overlays in the event store', async () => {
     const nowIso = new Date().toISOString();
     const summaries = new Map<string, SessionSummary>([
       [
@@ -477,8 +474,7 @@ describe('SessionScopedEventStore', () => {
       deleteSession: vi.fn(async () => undefined),
     };
 
-    const overlayBuffer = new InMemoryOverlayEventBuffer();
-    const store = new SessionScopedEventStore(baseStore, sessionHub, overlayBuffer);
+    const store = new SessionScopedEventStore(baseStore, sessionHub);
 
     const turnStart: ChatEvent = {
       id: 'turn-start-1',
@@ -517,7 +513,8 @@ describe('SessionScopedEventStore', () => {
     await store.appendBatch('pi-sdk-session', [turnStart, userMessage, interaction]);
 
     expect(baseStore.appendBatch).not.toHaveBeenCalled();
-    expect(await overlayBuffer.getEvents('pi-sdk-session')).toEqual([turnStart, userMessage, interaction]);
+    expect(await store.getEvents('pi-sdk-session')).toEqual([]);
+    expect(await store.getEventsSince('pi-sdk-session', '')).toEqual([]);
     expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
     expect(appendAssistantEvent).toHaveBeenNthCalledWith(
       1,

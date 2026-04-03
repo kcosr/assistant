@@ -127,7 +127,6 @@ export async function finalizeChatTurn(options: {
     if (updatedSummary) {
       state.summary = updatedSummary;
     }
-    await eventStore?.clearTransientSession?.(sessionId);
   } catch (err) {
     log('failed to persist terminal turn state into Pi session history', err);
   }

@@ -9,17 +9,33 @@ import type { ChatEvent } from '@assistant/shared';
 import {
   ClaudeSessionHistoryProvider,
   CodexSessionHistoryProvider,
-  PiSessionHistoryProvider,
+  type HistoryRequest,
+  loadCanonicalPiSessionEvents,
 } from './historyProvider';
 import type { AgentDefinition } from '../agents';
-import { InMemoryOverlayEventBuffer } from '../events';
 import type { EventStore } from '../events';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), `${prefix}-`));
 }
 
-describe('PiSessionHistoryProvider', () => {
+function createPiHistoryProvider(baseDir?: string): {
+  getHistory: (request: HistoryRequest) => Promise<ChatEvent[]>;
+  shouldPersist: (_request?: HistoryRequest) => false;
+} {
+  return {
+    getHistory: async (request) =>
+      loadCanonicalPiSessionEvents({
+        sessionId: request.sessionId,
+        ...(request.providerId ? { providerId: request.providerId } : {}),
+        ...(request.attributes ? { attributes: request.attributes } : {}),
+        ...(baseDir ? { baseDir } : {}),
+      }),
+    shouldPersist: () => false,
+  };
+}
+
+describe('canonical Pi session history loader', () => {
   it('maps Pi session entries into chat events', async () => {
     const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-1';
@@ -84,7 +100,7 @@ describe('PiSessionHistoryProvider', () => {
       },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -260,7 +276,7 @@ describe('PiSessionHistoryProvider', () => {
       },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -366,7 +382,7 @@ describe('PiSessionHistoryProvider', () => {
       chat: { provider: 'pi' },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -433,7 +449,7 @@ describe('PiSessionHistoryProvider', () => {
       chat: { provider: 'pi' },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -501,7 +517,7 @@ describe('PiSessionHistoryProvider', () => {
       },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -529,7 +545,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(userEvents).toHaveLength(1);
   });
 
-  it('merges overlay interaction events from the event store', async () => {
+  it('does not merge overlay interaction events from the event store', async () => {
     const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-2';
     const piSessionId = 'pi-session-2';
@@ -579,16 +595,6 @@ describe('PiSessionHistoryProvider', () => {
       },
     };
 
-    const eventStore: EventStore = {
-      append: async () => undefined,
-      appendBatch: async () => undefined,
-      getEvents: async () => [overlayEvent, pendingEvent],
-      getEventsSince: async () => [overlayEvent, pendingEvent],
-      subscribe: () => () => undefined,
-      clearSession: async () => undefined,
-      deleteSession: async () => undefined,
-    };
-
     const agent: AgentDefinition = {
       agentId: 'pi',
       displayName: 'Pi',
@@ -598,7 +604,7 @@ describe('PiSessionHistoryProvider', () => {
       },
     };
 
-    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -614,11 +620,11 @@ describe('PiSessionHistoryProvider', () => {
       },
     });
 
-    expect(events.some((event) => event.type === 'interaction_request')).toBe(true);
-    expect(events.some((event) => event.type === 'interaction_pending')).toBe(true);
+    expect(events.some((event) => event.type === 'interaction_request')).toBe(false);
+    expect(events.some((event) => event.type === 'interaction_pending')).toBe(false);
   });
 
-  it('merges in-flight turn events from the event store for replay', async () => {
+  it('does not merge in-flight turn events from the event store for replay', async () => {
     const baseDir = await createTempDir('pi-session-history-inflight');
     const sessionId = 'session-inflight';
     const piSessionId = 'pi-session-inflight';
@@ -639,49 +645,7 @@ describe('PiSessionHistoryProvider', () => {
       'utf8',
     );
 
-    const overlayEvents: ChatEvent[] = [
-      {
-        id: 'turn-start-1',
-        timestamp: 2000,
-        sessionId,
-        turnId: 'turn-active',
-        type: 'turn_start',
-        payload: { trigger: 'user' },
-      },
-      {
-        id: 'user-1',
-        timestamp: 2001,
-        sessionId,
-        turnId: 'turn-active',
-        type: 'user_message',
-        payload: { text: 'sleep 10' },
-      },
-      {
-        id: 'tool-1',
-        timestamp: 2002,
-        sessionId,
-        turnId: 'turn-active',
-        responseId: 'resp-active',
-        type: 'tool_call',
-        payload: {
-          toolCallId: 'call-active',
-          toolName: 'shell_command',
-          args: { command: 'sleep 10' },
-        },
-      },
-    ];
-
-    const eventStore: EventStore = {
-      append: async () => undefined,
-      appendBatch: async () => undefined,
-      getEvents: async () => overlayEvents,
-      getEventsSince: async () => overlayEvents,
-      subscribe: () => () => undefined,
-      clearSession: async () => undefined,
-      deleteSession: async () => undefined,
-    };
-
-    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -696,13 +660,13 @@ describe('PiSessionHistoryProvider', () => {
     });
 
     expect(events.some((event) => event.type === 'turn_start' && event.turnId === 'turn-active')).toBe(
-      true,
+      false,
     );
     expect(
       events.some(
         (event) => event.type === 'user_message' && event.turnId === 'turn-active' && event.payload.text === 'sleep 10',
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       events.some(
         (event) =>
@@ -710,7 +674,7 @@ describe('PiSessionHistoryProvider', () => {
           event.turnId === 'turn-active' &&
           event.payload.toolCallId === 'call-active',
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('drops transient replay overlays after provider history includes the completed turn', async () => {
@@ -761,49 +725,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const overlayEvents: ChatEvent[] = [
-      {
-        id: 'turn-start-1',
-        timestamp: 2000,
-        sessionId,
-        turnId: 'turn-active',
-        type: 'turn_start',
-        payload: { trigger: 'user' },
-      },
-      {
-        id: 'user-1',
-        timestamp: 2001,
-        sessionId,
-        turnId: 'turn-active',
-        type: 'user_message',
-        payload: { text: 'sleep 10' },
-      },
-      {
-        id: 'tool-1',
-        timestamp: 2002,
-        sessionId,
-        turnId: 'turn-active',
-        responseId: 'resp-active',
-        type: 'tool_call',
-        payload: {
-          toolCallId: 'call-active',
-          toolName: 'shell_command',
-          args: { command: 'sleep 10' },
-        },
-      },
-    ];
-
-    const eventStore: EventStore = {
-      append: async () => undefined,
-      appendBatch: async () => undefined,
-      getEvents: async () => overlayEvents,
-      getEventsSince: async () => overlayEvents,
-      subscribe: () => () => undefined,
-      clearSession: async () => undefined,
-      deleteSession: async () => undefined,
-    };
-
-    const provider = new PiSessionHistoryProvider({ baseDir, eventStore });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -826,8 +748,8 @@ describe('PiSessionHistoryProvider', () => {
     ).toHaveLength(1);
   });
 
-  it('treats sessions with provider metadata as external history', async () => {
-    const provider = new PiSessionHistoryProvider({});
+  it('always treats Pi sessions as external history', async () => {
+    const provider = createPiHistoryProvider();
 
     const shouldPersist = provider.shouldPersist?.({
       sessionId: 'session-1',
@@ -848,11 +770,11 @@ describe('PiSessionHistoryProvider', () => {
       providerId: 'pi-cli',
       attributes: {},
     });
-    expect(fallback).toBe(true);
+    expect(fallback).toBe(false);
   });
 
   it('disables sidecar persistence for providerId="pi" immediately', async () => {
-    const provider = new PiSessionHistoryProvider({});
+    const provider = createPiHistoryProvider();
 
     const before = provider.shouldPersist?.({
       sessionId: 'session-1',
@@ -878,17 +800,7 @@ describe('PiSessionHistoryProvider', () => {
 
   it('does not replay overlay-only Pi history when canonical session metadata is missing', async () => {
     const sessionId = 'session-fallback';
-    const userEvent: ChatEvent = {
-      id: 'event-1',
-      timestamp: Date.now(),
-      sessionId,
-      turnId: 'turn-1',
-      type: 'user_message',
-      payload: { text: 'Hello' },
-    };
-    const overlayBuffer = new InMemoryOverlayEventBuffer();
-    await overlayBuffer.append(sessionId, userEvent);
-    const provider = new PiSessionHistoryProvider({ overlayBuffer });
+    const provider = createPiHistoryProvider();
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -928,7 +840,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -993,7 +905,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1065,7 +977,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1233,7 +1145,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1450,7 +1362,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1595,7 +1507,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1700,7 +1612,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi-cli',
@@ -1815,7 +1727,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',
@@ -1946,7 +1858,7 @@ describe('PiSessionHistoryProvider', () => {
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
 
-    const provider = new PiSessionHistoryProvider({ baseDir });
+    const provider = createPiHistoryProvider(baseDir);
     const events = await provider.getHistory({
       sessionId,
       providerId: 'pi',

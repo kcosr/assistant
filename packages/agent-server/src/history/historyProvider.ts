@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { ChatEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
-import type { EventStore, InMemoryOverlayEventBuffer } from '../events';
+import type { EventStore } from '../events';
 import { getCodexSessionStore } from '../codexSessionStore';
 import {
   isOverlayChatEvent,
@@ -95,7 +95,6 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
     private readonly options: {
       baseDir?: string;
       eventStore?: EventStore;
-      overlayBuffer?: InMemoryOverlayEventBuffer;
     },
   ) {}
 
@@ -163,190 +162,6 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
     }
 
     const events = buildChatEventsFromClaudeSession(content, sessionId);
-    this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-    return mergeOverlayEvents(events, sessionId, this.options.eventStore);
-  }
-}
-
-type PiSessionCacheEntry = {
-  mtimeMs: number;
-  events: ChatEvent[];
-};
-
-export class PiSessionHistoryProvider implements HistoryProvider {
-  private readonly cache = new Map<string, PiSessionCacheEntry>();
-
-  constructor(
-    private readonly options: {
-      baseDir?: string;
-      eventStore?: EventStore;
-      overlayBuffer?: InMemoryOverlayEventBuffer;
-    },
-  ) {}
-
-  supports(providerId?: string | null): boolean {
-    return providerId === 'pi-cli' || providerId === 'pi';
-  }
-
-  shouldPersist(request: HistoryRequest): boolean {
-    if (request.providerId === 'pi') {
-      return false;
-    }
-    // Persist events until we have enough metadata to resolve the Pi session JSONL.
-    // This avoids a "blank transcript" gap before the Pi session file exists.
-    const sessionInfo = resolvePiSessionInfo(request.attributes);
-    return !sessionInfo;
-  }
-
-  async getHistory(request: HistoryRequest): Promise<ChatEvent[]> {
-    const { sessionId, force, after, providerId } = request;
-    const overlayBuffer = this.options.overlayBuffer;
-    const fallbackToEventStore = async (): Promise<ChatEvent[]> => {
-      if (!this.options.eventStore) {
-        return [];
-      }
-      if (after) {
-        return this.options.eventStore.getEventsSince(sessionId, after);
-      }
-      return this.options.eventStore.getEvents(sessionId);
-    };
-
-    const loadPiOverlayEvents = async (): Promise<ChatEvent[]> => {
-      if (!overlayBuffer) {
-        return [];
-      }
-      if (after) {
-        return overlayBuffer.getEventsSince(sessionId, after);
-      }
-      return overlayBuffer.getEvents(sessionId);
-    };
-
-    const mergePiOverlayEvents = async (baseEvents: ChatEvent[]): Promise<ChatEvent[]> => {
-      const overlayEvents = await loadPiOverlayEvents();
-      if (overlayEvents.length === 0) {
-        return baseEvents;
-      }
-      const retainedOverlayEvents = filterRedundantOverlayEvents(baseEvents, overlayEvents);
-      if (overlayBuffer && retainedOverlayEvents.length !== overlayEvents.length) {
-        await overlayBuffer.replaceEvents(sessionId, retainedOverlayEvents);
-      }
-      const alignedOverlayEvents = alignOverlayEvents(baseEvents, retainedOverlayEvents);
-      return mergeEventsByTimestamp(baseEvents, alignedOverlayEvents);
-    };
-
-    if (providerId === 'pi') {
-      const sessionInfo = resolvePiSessionInfo(request.attributes);
-      if (!sessionInfo) {
-        return [];
-      }
-      const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
-      const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
-      if (!sessionPath) {
-        return [];
-      }
-
-      let stats: { mtimeMs: number } | null = null;
-      try {
-        const stat = await fs.stat(sessionPath);
-        if (stat.isFile()) {
-          stats = { mtimeMs: stat.mtimeMs };
-        }
-      } catch (err) {
-        const error = err as NodeJS.ErrnoException;
-        if (error.code !== 'ENOENT') {
-          console.error('[history] Failed to stat Pi session file', {
-            sessionId: sessionInfo.sessionId,
-            path: sessionPath,
-            error: error.message,
-          });
-        }
-        this.cache.delete(sessionPath);
-        return [];
-      }
-
-      if (!stats) {
-        this.cache.delete(sessionPath);
-        return [];
-      }
-
-      const cached = this.cache.get(sessionPath);
-      if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-        return mergePiOverlayEvents(cached.events);
-      }
-
-      let content: string;
-      try {
-        content = await fs.readFile(sessionPath, 'utf8');
-      } catch (err) {
-        const error = err as NodeJS.ErrnoException;
-        console.error('[history] Failed to read Pi session file', {
-          sessionId: sessionInfo.sessionId,
-          path: sessionPath,
-          error: error.message,
-        });
-        this.cache.delete(sessionPath);
-        return [];
-      }
-
-      const events = buildChatEventsFromPiSession(content, sessionId);
-      this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
-      return mergePiOverlayEvents(events);
-    }
-
-    const sessionInfo = resolvePiSessionInfo(request.attributes);
-    if (!sessionInfo) {
-      return fallbackToEventStore();
-    }
-    const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
-    const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
-    if (!sessionPath) {
-      return fallbackToEventStore();
-    }
-
-    let stats: { mtimeMs: number } | null = null;
-    try {
-      const stat = await fs.stat(sessionPath);
-      if (stat.isFile()) {
-        stats = { mtimeMs: stat.mtimeMs };
-      }
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      if (error.code !== 'ENOENT') {
-        console.error('[history] Failed to stat Pi session file', {
-          sessionId: sessionInfo.sessionId,
-          path: sessionPath,
-          error: error.message,
-        });
-      }
-      this.cache.delete(sessionPath);
-      return [];
-    }
-
-    if (!stats) {
-      this.cache.delete(sessionPath);
-      return [];
-    }
-
-    const cached = this.cache.get(sessionPath);
-    if (!force && cached && cached.mtimeMs === stats.mtimeMs) {
-      return mergeOverlayEvents(cached.events, sessionId, this.options.eventStore);
-    }
-
-    let content: string;
-    try {
-      content = await fs.readFile(sessionPath, 'utf8');
-    } catch (err) {
-      const error = err as NodeJS.ErrnoException;
-      console.error('[history] Failed to read Pi session file', {
-        sessionId: sessionInfo.sessionId,
-        path: sessionPath,
-        error: error.message,
-      });
-      this.cache.delete(sessionPath);
-      return [];
-    }
-
-    const events = buildChatEventsFromPiSession(content, sessionId);
     this.cache.set(sessionPath, { mtimeMs: stats.mtimeMs, events });
     return mergeOverlayEvents(events, sessionId, this.options.eventStore);
   }

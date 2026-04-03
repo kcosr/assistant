@@ -10,7 +10,7 @@ import { AgentRegistry } from '../agents';
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
 import { buildChatMessagesFromEvents } from '../sessionChatMessages';
-import { PiSessionHistoryProvider } from './historyProvider';
+import { loadCanonicalPiSessionEvents } from './historyProvider';
 import { PiSessionWriter } from './piSessionWriter';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -1361,14 +1361,13 @@ describe('PiSessionWriter', () => {
       },
     });
 
-    const historyProvider = new PiSessionHistoryProvider({ baseDir });
     const attributes = summary.attributes;
     expect(attributes).toBeDefined();
-    const events = await historyProvider.getHistory({
+    const events = await loadCanonicalPiSessionEvents({
       sessionId: summary.sessionId,
       providerId: 'pi',
       attributes: attributes!,
-      force: true,
+      baseDir,
     });
     const rebuiltMessages = buildChatMessagesFromEvents(
       events,
