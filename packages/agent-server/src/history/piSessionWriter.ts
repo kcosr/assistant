@@ -1262,6 +1262,36 @@ function filterEntriesByDroppedRanges(
     .map((entry) => cloneJson(entry));
 }
 
+function isConversationalEntry(entry: PiSessionEntryRecord): boolean {
+  if (entry.type === 'message' || entry.type === 'toolcall' || entry.type === 'toolresult') {
+    return true;
+  }
+  if (entry.type !== 'custom' && entry.type !== 'custom_message') {
+    return false;
+  }
+  const customType = typeof entry['customType'] === 'string' ? entry['customType'].trim() : '';
+  return customType.startsWith(ASSISTANT_CUSTOM_TYPE_PREFIX);
+}
+
+function filterConversationalEntriesOutsideRanges(
+  entries: PiSessionEntryRecord[],
+  keptRanges: Array<Pick<PiRequestSpan, 'startIndex' | 'endIndex'>>,
+): PiSessionEntryRecord[] {
+  if (keptRanges.length === 0) {
+    return entries
+      .filter((entry) => !isConversationalEntry(entry))
+      .map((entry) => cloneJson(entry));
+  }
+  return entries
+    .filter((entry, index) => {
+      if (!isConversationalEntry(entry)) {
+        return true;
+      }
+      return keptRanges.some((range) => index >= range.startIndex && index <= range.endIndex);
+    })
+    .map((entry) => cloneJson(entry));
+}
+
 function rechainEntries(entries: PiSessionEntryRecord[]): PiSessionEntryRecord[] {
   let parentId: string | null = null;
   return entries.map((entry) => {
@@ -1387,12 +1417,19 @@ export class PiSessionWriter {
       return { summary: stateInfo.summary, changed: false, droppedRequestIds: [] };
     }
 
-    const filteredEntries =
+    const filteredEntriesRaw =
       action === 'trim_after'
         ? records.entries
             .slice(0, droppedRanges[0]!.startIndex)
             .map((entry) => cloneJson(entry))
         : filterEntriesByDroppedRanges(records.entries, droppedRanges);
+    const filteredEntries =
+      hadExplicitRequestSpans
+        ? filterConversationalEntriesOutsideRanges(
+            filteredEntriesRaw,
+            collectExplicitRequestSpans(filteredEntriesRaw),
+          )
+        : filteredEntriesRaw;
     const keptEntries =
       hadExplicitRequestSpans
         ? rechainEntries(filteredEntries)
