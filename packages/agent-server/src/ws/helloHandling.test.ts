@@ -193,4 +193,59 @@ describe('handleHello', () => {
     expect(close).not.toHaveBeenCalled();
     expect(Array.from(sessionHub.getConnectionSubscriptions(connection))).toEqual([]);
   });
+
+  it('awaits async subscription callbacks before processing the next subscription', async () => {
+    const sessionsFile = createTempFile('hello-handling-awaits-subscription-callback-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([]);
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+    });
+
+    const sessionA = await sessionIndex.createSession({ agentId: 'general' });
+    const sessionB = await sessionIndex.createSession({ agentId: 'general' });
+
+    const connection: SessionConnection = {
+      sendServerMessageFromHub: () => {},
+      sendErrorFromHub: () => {},
+    };
+
+    const order: string[] = [];
+
+    await handleHello({
+      message: {
+        type: 'hello',
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
+        subscriptions: [{ sessionId: sessionA.sessionId }, { sessionId: sessionB.sessionId }],
+      },
+      clientHelloReceived: false,
+      setClientHelloReceived: () => {},
+      setClientAudioCapabilities: () => {},
+      connection,
+      sessionHub,
+      onSessionSubscribed: async (state) => {
+        order.push(`start:${state.summary.sessionId}`);
+        await Promise.resolve();
+        order.push(`end:${state.summary.sessionId}`);
+      },
+      sendMessage: (message) => {
+        if (message.type === 'subscribed') {
+          order.push(`subscribed:${message.sessionId}`);
+        }
+      },
+      sendError: vi.fn(),
+      close: vi.fn(),
+    });
+
+    expect(order).toEqual([
+      `subscribed:${sessionA.sessionId}`,
+      `start:${sessionA.sessionId}`,
+      `end:${sessionA.sessionId}`,
+      `subscribed:${sessionB.sessionId}`,
+      `start:${sessionB.sessionId}`,
+      `end:${sessionB.sessionId}`,
+    ]);
+  });
 });

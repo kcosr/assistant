@@ -12,6 +12,7 @@ import {
   resetLiveTranscriptSessionState,
   seedLiveTranscriptSessionState,
 } from '../../../../agent-server/src/events/chatEventUtils';
+import { getPiTranscriptRevision } from '../../../../agent-server/src/history/piTranscriptRevision';
 import type { SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { PiSessionWriter } from '../../../../agent-server/src/history/piSessionWriter';
 import { SessionHub } from '../../../../agent-server/src/sessionHub';
@@ -587,6 +588,7 @@ describe('sessions plugin operations', () => {
       updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
     });
 
+    const bumpedSummary = await sessionHub.recordSessionActivity(created.sessionId, 'pi replay revision bump');
     const result = (await plugin.operations?.events(
       { sessionId: created.sessionId, force: true },
       ctx,
@@ -594,6 +596,7 @@ describe('sessions plugin operations', () => {
 
     expect(result.sessionId).toBe(created.sessionId);
     expect(result.reset).toBe(true);
+    expect(result.revision).toBe(getPiTranscriptRevision(bumpedSummary?.attributes));
     expect(result.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -652,7 +655,7 @@ describe('sessions plugin operations', () => {
         trigger: 'user',
         updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
       })) ?? summary;
-    const liveRevision = Math.max(0, summary.revision ?? 0);
+    const liveRevision = getPiTranscriptRevision(summary.attributes);
     seedLiveTranscriptSessionState({
       sessionId: created.sessionId,
       revision: liveRevision,

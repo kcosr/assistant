@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type {
   ChatEvent,
+  ClientHelloMessage,
   ClientPanelEventMessage,
   ClientSubscribeMessage,
   ClientUnsubscribeMessage,
@@ -12,6 +13,7 @@ import type {
   ClientSetSessionModelMessage,
   ServerMessage,
 } from '@assistant/shared';
+import { CURRENT_PROTOCOL_VERSION } from '@assistant/shared';
 
 import { SessionRuntime, type SessionRuntimeOptions } from './sessionRuntime';
 import type { WsTransport } from './wsTransport';
@@ -208,6 +210,73 @@ describe('SessionRuntime subscription message handlers', () => {
         toolNames: ['voice_speak'],
       },
     });
+  });
+
+  it('syncs Pi live transcript state before session_ready on subscribe', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-pi-subscribe-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi Agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'pi-agent' });
+    const { runtime, transportSent } = createRuntime({ sessionHub });
+    const prepareSpy = vi
+      .spyOn(runtime as never, 'prepareSubscribedSessionState')
+      .mockImplementation(async (state) => state);
+
+    const message: ClientSubscribeMessage = {
+      type: 'subscribe',
+      sessionId: summary.sessionId,
+    };
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleSubscribe(message);
+
+    expect(prepareSpy).toHaveBeenCalledTimes(1);
+    expect(transportSent.map((entry) => entry.type)).toEqual(['subscribed', 'session_ready']);
+  });
+
+  it('syncs Pi live transcript state before session_ready on hello subscriptions', async () => {
+    const sessionsFile = createTempFile('subscription-runtime-pi-hello-sessions');
+    const sessionIndex = new SessionIndex(sessionsFile);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi Agent',
+        chat: {
+          provider: 'pi',
+          models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const summary = await sessionIndex.createSession({ agentId: 'pi-agent' });
+    const { runtime, transportSent } = createRuntime({ sessionHub });
+    const prepareSpy = vi
+      .spyOn(runtime as never, 'prepareSubscribedSessionState')
+      .mockImplementation(async (state) => state);
+
+    const message: ClientHelloMessage = {
+      type: 'hello',
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      subscriptions: [{ sessionId: summary.sessionId }],
+    };
+
+    // @ts-expect-error accessing private method for test
+    await runtime.handleHello(message);
+
+    expect(prepareSpy).toHaveBeenCalledTimes(1);
+    expect(transportSent.map((entry) => entry.type)).toEqual(['subscribed', 'session_ready']);
   });
 
   it('handleUnsubscribe unsubscribes from the requested session', async () => {

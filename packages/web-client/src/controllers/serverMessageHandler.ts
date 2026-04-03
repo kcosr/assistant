@@ -103,6 +103,25 @@ export class ServerMessageHandler {
     this.activeRequestsBySession.clear();
   }
 
+  private isDebugEnabled(): boolean {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    try {
+      const stored = window.localStorage?.getItem('aiAssistantWsDebug');
+      return stored === '1' || stored === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private debugLog(message: string, data: Record<string, unknown>): void {
+    if (!this.isDebugEnabled()) {
+      return;
+    }
+    console.log(`[client][transcript] ${message}`, data);
+  }
+
   private syncSessionRequestActivity(sessionId: string): void {
     const activeRequests = this.activeRequestsBySession.get(sessionId);
     const hasActiveRequest = !!activeRequests && activeRequests.size > 0;
@@ -163,15 +182,46 @@ export class ServerMessageHandler {
     this.syncSessionRequestActivity(sessionId);
 
     if (this.options.shouldBufferTranscriptEvent?.(sessionId)) {
+      this.debugLog('buffer_event_hydrating', {
+        sessionId,
+        eventId: event.eventId,
+        kind: event.kind,
+        chatEventType: event.chatEventType,
+        revision: event.revision,
+        sequence: event.sequence,
+      });
       this.options.bufferTranscriptEvent?.(sessionId, event);
       return;
     }
 
     const runtime = this.options.getChatRuntimeForSession(sessionId);
     if (!runtime) {
+      this.debugLog('buffer_event_runtime_missing', {
+        sessionId,
+        eventId: event.eventId,
+        kind: event.kind,
+        chatEventType: event.chatEventType,
+        revision: event.revision,
+        sequence: event.sequence,
+      });
+      this.options.bufferTranscriptEvent?.(sessionId, event);
       return;
     }
-    runtime.chatRenderer.handleNewProjectedEvent(event);
+    const applyResult = runtime.chatRenderer.handleNewProjectedEvent(event);
+    this.debugLog('apply_event', {
+      sessionId,
+      eventId: event.eventId,
+      kind: event.kind,
+      chatEventType: event.chatEventType,
+      revision: event.revision,
+      sequence: event.sequence,
+      applyResult,
+    });
+    if (applyResult === 'reload') {
+      this.options.bufferTranscriptEvent?.(sessionId, event);
+      void this.options.loadSessionTranscript(sessionId, { force: true });
+      return;
+    }
     if (this.options.isChatPanelVisible(sessionId)) {
       if (event.kind === 'request_start') {
         runtime.chatScrollManager.scrollToBottom();

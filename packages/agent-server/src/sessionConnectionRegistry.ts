@@ -22,6 +22,25 @@ export class SessionConnectionRegistry {
     { supported: boolean; enabled: boolean }
   >();
 
+  private logTranscriptBroadcast(
+    message: ServerMessage,
+    sessionId: string,
+    recipients: Array<{ connectionId: string; delivered: boolean; reason?: string }>,
+  ): void {
+    if (message.type !== 'transcript_event') {
+      return;
+    }
+    console.log('[ws][transcript_broadcast]', {
+      sessionId,
+      eventId: message.event.eventId,
+      kind: message.event.kind,
+      chatEventType: message.event.chatEventType,
+      revision: message.event.revision,
+      sequence: message.event.sequence,
+      recipients,
+    });
+  }
+
   private withSessionId(message: ServerMessage, sessionId: string): ServerMessage {
     switch (message.type) {
       case 'text_delta':
@@ -300,13 +319,18 @@ export class SessionConnectionRegistry {
 
   broadcastToSession(sessionId: string, message: ServerMessage): void {
     const messageWithSessionId = this.withSessionId(message, sessionId);
+    const recipients: Array<{ connectionId: string; delivered: boolean; reason?: string }> = [];
     this.forEachInSession(sessionId, (connection) => {
+      const connectionId = typeof connection.id === 'string' ? connection.id.trim() : 'unknown';
       const mask = this.getSubscriptionMask(connection, sessionId);
       if (!this.matchesSubscriptionMask(messageWithSessionId, mask)) {
+        recipients.push({ connectionId, delivered: false, reason: 'mask' });
         return;
       }
+      recipients.push({ connectionId, delivered: true });
       connection.sendServerMessageFromHub(messageWithSessionId);
     });
+    this.logTranscriptBroadcast(messageWithSessionId, sessionId, recipients);
   }
 
   broadcastToSessionExcluding(

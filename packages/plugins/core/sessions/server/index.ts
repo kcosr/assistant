@@ -24,6 +24,7 @@ import { ToolError, type ToolContext } from '../../../../agent-server/src/tools'
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
 import { loadCanonicalPiTranscriptEvents } from '../../../../agent-server/src/history/historyProvider';
+import { getPiTranscriptRevision } from '../../../../agent-server/src/history/piTranscriptRevision';
 import {
   getActiveLiveTranscriptRevision,
   mergeBufferedLiveTranscriptEvents,
@@ -88,6 +89,13 @@ function parseOptionalNullableString(value: unknown, field: string): string | nu
 
 function getSessionRevision(summary: SessionSummary): number {
   return Math.max(0, summary.revision ?? 0);
+}
+
+function getTranscriptRevision(summary: SessionSummary, providerId: string | null | undefined): number {
+  if (providerId === 'pi' || providerId === 'pi-cli') {
+    return getPiTranscriptRevision(summary.attributes);
+  }
+  return getSessionRevision(summary);
 }
 
 function requireSessionId(raw: unknown): string {
@@ -427,11 +435,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ? afterCursorRaw.trim()
             : undefined;
         const force = parsed['force'] === true;
-        const revision = getSessionRevision(existing);
         const registry = requireAgentRegistry(ctx, sessionHub);
         const agentId = existing.agentId;
         const agent = agentId ? registry.getAgent(agentId) : undefined;
         const providerId = agent?.chat?.provider ?? null;
+        const revision = getTranscriptRevision(existing, providerId);
         if (providerId === 'pi' || providerId === 'pi-cli') {
           const writer = sessionHub.getPiSessionWriter?.();
           const replayRevision = getActiveLiveTranscriptRevision(sessionId) ?? revision;
@@ -650,11 +658,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
         try {
           const summary = await sessionHub.clearSession(sessionId);
+          const agent = summary.agentId ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId) : undefined;
           return {
             sessionId,
             cleared: true,
             updatedAt: summary.updatedAt,
-            revision: getSessionRevision(summary),
+            revision: getTranscriptRevision(summary, agent?.chat?.provider),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to clear session';
@@ -683,13 +692,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             action,
             requestId,
           });
+          const agent = summary.agentId ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId) : undefined;
           return {
             sessionId,
             action,
             requestId,
             changed,
             updatedAt: summary.updatedAt,
-            revision: getSessionRevision(summary),
+            revision: getTranscriptRevision(summary, agent?.chat?.provider),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to edit session history';

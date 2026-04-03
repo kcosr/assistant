@@ -17,7 +17,7 @@ export interface HandleHelloOptions {
   setInteractionState?: (state: { supported: boolean; enabled: boolean }) => void;
   connection: SessionConnection;
   sessionHub: SessionHub;
-  onSessionSubscribed?: (state: LogicalSessionState) => void;
+  onSessionSubscribed?: (state: LogicalSessionState) => Promise<void> | void;
   sendMessage: (message: ServerMessage) => void;
   sendError: (
     code: string,
@@ -85,7 +85,7 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
         ...(subscription.mask ? { mask: subscription.mask } : {}),
       };
       sendMessage(subscribedMessage);
-      onSessionSubscribed?.(state);
+      await onSessionSubscribed?.(state);
     }
   } catch (err) {
     sendError(

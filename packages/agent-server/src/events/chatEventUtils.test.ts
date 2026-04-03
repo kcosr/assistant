@@ -53,7 +53,16 @@ function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli', sessionId = 
       revision: 1,
       deleted: false,
       agentId,
-      attributes: {},
+      attributes:
+        provider === 'pi' || provider === 'pi-cli'
+          ? {
+              providers: {
+                [provider]: {
+                  transcriptRevision: 1,
+                },
+              },
+            }
+          : {},
     },
     chatMessages: [],
   } as unknown as LogicalSessionState;
@@ -317,6 +326,142 @@ describe('chatEventUtils live broadcast behavior', () => {
     expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
   });
 
+  it('does not reseed live Pi transcript revision on ordinary summary revision bumps', async () => {
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-live-stable-revision-'));
+    const cwd = '/home/kevin';
+    const sessionId = 'pi-live-stable-revision';
+    const piSessionId = 'pi-live-stable-revision-file';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const sessionPath = path.join(sessionDir, `2026-04-02T00-00-00-000Z_${piSessionId}.jsonl`);
+    await fs.writeFile(
+      sessionPath,
+      [
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-start',
+          timestamp: '2026-04-02T00:00:00.000Z',
+          customType: 'assistant.request_start',
+          data: { v: 1, requestId: 'request-1', trigger: 'user' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-user',
+          timestamp: '2026-04-02T00:00:01.000Z',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'hello' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-assistant',
+          timestamp: '2026-04-02T00:00:02.000Z',
+          message: {
+            role: 'assistant',
+            id: 'response-1',
+            content: [{ type: 'text', text: 'reply' }],
+          },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-end',
+          timestamp: '2026-04-02T00:00:03.000Z',
+          customType: 'assistant.request_end',
+          data: { v: 1, requestId: 'request-1', status: 'completed' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const appendAssistantEvent = vi.fn(async (options: { updateAttributes?: (patch: unknown) => Promise<unknown> }) => {
+      await options.updateAttributes?.({
+        piSessionFile: sessionPath,
+        piSessionId,
+      });
+    });
+    const broadcastToSession = vi.fn();
+    const agentRegistry = {
+      getAgent: vi.fn(() => ({ id: 'agent-pi', chat: { provider: 'pi' } })),
+    } as unknown as AgentRegistry;
+    const state = {
+      summary: {
+        sessionId,
+        agentId: 'agent-pi',
+        revision: 7,
+        attributes: {
+          providers: {
+            pi: { sessionId: piSessionId, cwd, transcriptRevision: 7 },
+          },
+        },
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    const latestSummary = {
+      ...state.summary,
+      revision: 8,
+    };
+    const sessionHub: SessionHub = {
+      getSessionState: vi.fn(() => state),
+      getSessionIndex: vi.fn(() => ({
+        getSession: vi.fn(async () => latestSummary),
+      })),
+      getAgentRegistry: vi.fn(() => agentRegistry),
+      getPiSessionWriter: vi.fn(() => ({
+        appendAssistantEvent,
+        getBaseDir: () => baseDir,
+      })),
+      updateSessionAttributes: vi.fn(async () => latestSummary),
+      broadcastToSession,
+    } as unknown as SessionHub;
+
+    seedLiveTranscriptSessionState({
+      sessionId,
+      revision: 7,
+      nextSequence: 4,
+    });
+
+    try {
+      const synced = await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub,
+        sessionId,
+        summary: state.summary,
+      });
+
+      expect(synced).toMatchObject({ revision: 8 });
+
+      await appendAndBroadcastChatEvents(
+        { sessionHub, sessionId },
+        [
+          {
+            id: 'evt-next',
+            sessionId,
+            turnId: 'request-2',
+            responseId: 'response-2',
+            timestamp: Date.now(),
+            type: 'assistant_done',
+            payload: { text: 'next reply' },
+          },
+        ],
+      );
+
+      expect(broadcastToSession).toHaveBeenCalledWith(
+        sessionId,
+        expect.objectContaining({
+          type: 'transcript_event',
+          event: expect.objectContaining({
+            revision: 7,
+            sequence: 4,
+          }),
+        }),
+      );
+    } finally {
+      resetLiveTranscriptSessionState(sessionId);
+      await fs.rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
   it('realigns stale Pi live transcript revision and sequence from canonical history', async () => {
     const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-live-sync-'));
     const cwd = '/home/kevin';
@@ -417,6 +562,7 @@ describe('chatEventUtils live broadcast behavior', () => {
             pi: {
               sessionId: piSessionId,
               cwd,
+              transcriptRevision: 7,
             },
           },
         },
@@ -442,7 +588,7 @@ describe('chatEventUtils live broadcast behavior', () => {
 
     seedLiveTranscriptSessionState({
       sessionId,
-      revision: 3,
+      revision: 7,
       nextSequence: 36,
     });
 
@@ -521,6 +667,21 @@ describe('chatEventUtils live broadcast behavior', () => {
     );
 
     state.summary.revision = 2;
+    const providers =
+      ((state.summary.attributes as Record<string, unknown> | undefined)?.['providers'] as
+        | Record<string, unknown>
+        | undefined) ?? {};
+    const piProvider = (providers['pi'] as Record<string, unknown> | undefined) ?? {};
+    state.summary.attributes = {
+      ...(state.summary.attributes ?? {}),
+      ['providers']: {
+        ...providers,
+        ['pi']: {
+          ...piProvider,
+          transcriptRevision: 2,
+        },
+      },
+    };
     resetLiveTranscriptSessionState('sequence-reset-explicit');
 
     await appendAndBroadcastChatEvents(

@@ -46,8 +46,11 @@
 - Fixed refreshed Pi sessions so replay hydration is single-flight and primes the live transcript sequence, preventing post-refresh live turns from wiping visible history or restarting transcript sequencing from zero.
 - Fixed refreshed Pi sessions so the next live turn re-aligns transcript revision and sequence from canonical Pi history before emitting websocket transcript events, preventing post-refresh submits from being dropped as stale.
 - Fixed refreshed Pi sessions so a mid-stream reload reconstructs the active in-flight turn from transient live transcript state on the first refresh without persisting streaming chunk noise into the Pi session log.
+- Fixed refreshed Pi transcript delivery so pre-runtime live events buffer instead of being dropped and live sequence gaps trigger a forced transcript reload instead of leaving the page stranded on a stale in-flight turn.
+- Fixed refreshed Pi subscriptions so `hello` and `subscribe` re-seed live transcript state from canonical Pi history before marking the session ready, preventing mid-stream reloads from attaching to stale sequence state.
 - Fixed native Pi tool streaming so cumulative partial tool output is converted into true deltas instead of duplicating earlier lines until the final tool result arrives.
 - Fixed live Pi assistant and request-end transcript emission to bypass the old EventStore gate, restoring immediate in-page rendering of submitted turns instead of only showing them after replay refresh.
+- Fixed Pi live transcript revision handling so ordinary session revision bumps no longer make the client reset to only the newest turn during live rendering.
 
 ### Removed
 

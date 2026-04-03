@@ -86,6 +86,8 @@ export interface ChatRendererOptions {
   }) => void;
 }
 
+export type ProjectedTranscriptApplyResult = 'applied' | 'ignored' | 'reload';
+
 const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
 const ATTACHMENT_TOOL_NAME = 'attachment_send';
 
@@ -613,7 +615,7 @@ export class ChatRenderer {
   replayProjectedEvents(
     events: ProjectedTranscriptEvent[],
     options: { reset?: boolean } = {},
-  ): void {
+  ): ProjectedTranscriptApplyResult {
     const normalized = dedupeProjectedTranscriptEvents(events);
     if (options.reset) {
       this.resetProjectedTranscriptState();
@@ -622,18 +624,18 @@ export class ChatRenderer {
       if (options.reset) {
         this.renderStoredProjectedTranscript();
       }
-      return;
+      return 'applied';
     }
 
     const incomingRevision = normalized[normalized.length - 1]?.revision ?? null;
     if (incomingRevision === null) {
-      return;
+      return 'ignored';
     }
     if (
       this.projectedTranscriptRevision !== null &&
       incomingRevision < this.projectedTranscriptRevision
     ) {
-      return;
+      return 'ignored';
     }
 
     const revisionEvents = normalized.filter((event) => event.revision === incomingRevision);
@@ -648,7 +650,7 @@ export class ChatRenderer {
         this.projectedTranscriptEvents.set(event.sequence, event);
       }
       this.renderStoredProjectedTranscript();
-      return;
+      return 'applied';
     }
 
     const highestSequence = this.getHighestProjectedSequence();
@@ -676,17 +678,18 @@ export class ChatRenderer {
 
     if (requiresReplay) {
       this.renderStoredProjectedTranscript();
-      return;
+      return 'reload';
     }
 
     for (const event of appendedEvents) {
       this.renderProjectedEvent(event);
     }
     this.syncTypingIndicatorFromTurnState();
+    return 'applied';
   }
 
-  handleNewProjectedEvent(event: ProjectedTranscriptEvent): void {
-    this.replayProjectedEvents([event]);
+  handleNewProjectedEvent(event: ProjectedTranscriptEvent): ProjectedTranscriptApplyResult {
+    return this.replayProjectedEvents([event]);
   }
 
   clear(): void {

@@ -17,6 +17,11 @@ import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCo
 import type { SessionSummary } from '../sessionIndex';
 import { encodeAssistantTextSignature } from '../llm/piSdkProvider';
 import { buildProviderAttributesPatch, getProviderAttributes } from './providerAttributes';
+import {
+  buildPiTranscriptRevisionPatch,
+  getNextPiTranscriptRevision,
+  getPiTranscriptRevision,
+} from './piTranscriptRevision';
 
 type PiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -1318,7 +1323,12 @@ export class PiSessionWriter {
 
     if (updateAttributes) {
       try {
-        const updated = await updateAttributes({ providers: null });
+        const updated = await updateAttributes(
+          buildPiTranscriptRevisionPatch({
+            revision: getNextPiTranscriptRevision(summary.attributes),
+            clearSessionReference: true,
+          }),
+        );
         return updated;
       } catch (err) {
         this.log('Failed to clear Pi provider attributes', err);
@@ -1386,7 +1396,22 @@ export class PiSessionWriter {
     });
 
     this.sessions.delete(summary.sessionId);
-    return { summary: stateInfo.summary, changed: true, droppedRequestIds };
+    let currentSummary = stateInfo.summary;
+    if (updateAttributes) {
+      try {
+        const updated = await updateAttributes(
+          buildPiTranscriptRevisionPatch({
+            revision: getNextPiTranscriptRevision(currentSummary.attributes),
+          }),
+        );
+        if (updated) {
+          currentSummary = updated;
+        }
+      } catch (err) {
+        this.log('Failed to update Pi transcript revision after history rewrite', err);
+      }
+    }
+    return { summary: currentSummary, changed: true, droppedRequestIds };
   }
 
   async sync(options: {
@@ -1859,6 +1884,7 @@ export class PiSessionWriter {
         const patch = buildProviderAttributesPatch('pi', {
           sessionId: piSessionId,
           cwd,
+          transcriptRevision: getPiTranscriptRevision(currentSummary.attributes),
         });
         const updated = await updateAttributes(patch);
         if (updated) {

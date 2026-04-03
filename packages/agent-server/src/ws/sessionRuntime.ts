@@ -71,7 +71,11 @@ import { handleChatToolCalls as handleChatToolCallsInternal } from './toolCallHa
 import { updateSystemPromptWithTools } from '../systemPromptUpdater';
 import { filterSessionSkills, getSelectedSessionSkillIds } from '../sessionConfig';
 import type { WsTransport } from './wsTransport';
-import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
+import {
+  appendAndBroadcastChatEvents,
+  createChatEventBase,
+  syncLiveTranscriptSessionStateFromPiHistory,
+} from '../events/chatEventUtils';
 import { loadCanonicalPiTranscriptEvents } from '../history/historyProvider';
 import { processUserMessage } from '../chatProcessor';
 import {
@@ -280,6 +284,9 @@ export class SessionRuntime {
   }
 
   private async handleHello(message: ClientHelloMessage): Promise<void> {
+    this.log('hello received', {
+      subscriptions: (message.subscriptions ?? []).map((subscription) => subscription.sessionId),
+    });
     await handleHelloMessage({
       message,
       clientHelloReceived: this.clientHelloReceived,
@@ -295,8 +302,9 @@ export class SessionRuntime {
       },
       connection: this.connection,
       sessionHub: this.sessionHub,
-      onSessionSubscribed: (state) => {
-        this.sendSessionReadyMessage(state);
+      onSessionSubscribed: async (state) => {
+        const subscribedState = await this.prepareSubscribedSessionState(state);
+        this.sendSessionReadyMessage(subscribedState);
       },
       sendMessage: (serverMessage) => {
         this.sendToClient(serverMessage);
@@ -834,14 +842,16 @@ export class SessionRuntime {
     }
 
     try {
+      this.log('subscribe request', { sessionId: trimmed });
       const state = await this.sessionHub.subscribeConnection(this.connection, trimmed, message.mask);
+      const subscribedState = await this.prepareSubscribedSessionState(state);
       const subscribedMessage: ServerSubscribedMessage = {
         type: 'subscribed',
-        sessionId: state.summary.sessionId,
+        sessionId: subscribedState.summary.sessionId,
         ...(message.mask ? { mask: message.mask } : {}),
       };
       this.sendToClient(subscribedMessage);
-      this.sendSessionReadyMessage(state);
+      this.sendSessionReadyMessage(subscribedState);
     } catch (err) {
       this.log('failed to subscribe connection to session', err);
       this.sendError(
@@ -861,6 +871,7 @@ export class SessionRuntime {
       return;
     }
 
+    this.log('unsubscribe request', { sessionId: trimmed });
     this.sessionHub.unsubscribeConnection(this.connection, trimmed);
     this.readySessionIds.delete(trimmed);
 
@@ -1256,6 +1267,32 @@ export class SessionRuntime {
 
     this.sendToClient(readyMessage);
     this.readySessionIds.add(sessionId);
+  }
+
+  private async prepareSubscribedSessionState(
+    state: LogicalSessionState,
+  ): Promise<LogicalSessionState> {
+    const agentId = state.summary.agentId;
+    const agent = agentId ? this.sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
+    const providerId = agent?.chat?.provider;
+    if (providerId !== 'pi' && providerId !== 'pi-cli') {
+      return state;
+    }
+
+    try {
+      const updatedSummary = await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub: this.sessionHub,
+        sessionId: state.summary.sessionId,
+        summary: state.summary,
+      });
+      if (updatedSummary) {
+        state.summary = { ...state.summary, ...updatedSummary };
+      }
+    } catch (err) {
+      this.log('failed to sync live transcript state for subscribed session', err);
+    }
+
+    return state;
   }
 
   private async handleTextInputWithChatCompletions(message: ClientTextInputMessage): Promise<void> {

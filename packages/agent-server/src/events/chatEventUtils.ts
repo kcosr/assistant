@@ -11,6 +11,7 @@ import type { EventStore } from './eventStore';
 import type { SessionHub } from '../sessionHub';
 import type { SessionSummary } from '../sessionIndex';
 import { loadCanonicalPiTranscriptEvents } from '../history/historyProvider';
+import { getPiTranscriptRevision } from '../history/piTranscriptRevision';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for emitting tool_call and tool_result ChatEvents.
@@ -480,13 +481,7 @@ export function getActiveLiveTranscriptRevision(sessionId: string): number | und
     return undefined;
   }
   const state = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(trimmed));
-  if (!state) {
-    return undefined;
-  }
-  if (state.activeRequestId || state.replayOverlay.length > 0) {
-    return state.revision;
-  }
-  return undefined;
+  return state?.revision;
 }
 
 export function mergeBufferedLiveTranscriptEvents(options: {
@@ -538,12 +533,8 @@ export async function syncLiveTranscriptSessionStateFromPiHistory(options: {
     return latestSummary;
   }
 
-  const revision = Math.max(0, latestSummary.revision ?? 0);
+  const revision = getPiTranscriptRevision(latestSummary.attributes as SessionAttributes | undefined);
   const existingState = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(trimmed));
-  if (existingState && existingState.revision === revision) {
-    return latestSummary;
-  }
-
   const writer = options.sessionHub.getPiSessionWriter?.();
   const projected = await loadCanonicalPiTranscriptEvents({
     sessionId: trimmed,
@@ -554,6 +545,13 @@ export async function syncLiveTranscriptSessionStateFromPiHistory(options: {
       : {}),
     ...(writer ? { baseDir: writer.getBaseDir() } : {}),
   });
+  if (existingState) {
+    const hasActiveLiveState =
+      !!existingState.activeRequestId || existingState.replayOverlay.length > 0;
+    if (hasActiveLiveState || existingState.nextSequence === projected.length) {
+      return latestSummary;
+    }
+  }
   seedLiveTranscriptSessionState({
     sessionId: trimmed,
     revision,
@@ -567,7 +565,16 @@ function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: strin
   if (typeof sessionHub.getSessionState !== 'function') {
     return 0;
   }
-  return Math.max(0, sessionHub.getSessionState(sessionId)?.summary.revision ?? 0);
+  const summary = sessionHub.getSessionState(sessionId)?.summary;
+  if (!summary) {
+    return 0;
+  }
+  const agent = summary.agentId ? sessionHub.getAgentRegistry().getAgent(summary.agentId) : undefined;
+  const providerId = agent?.chat?.provider;
+  if (providerId === 'pi' || providerId === 'pi-cli') {
+    return getPiTranscriptRevision(summary.attributes);
+  }
+  return Math.max(0, summary.revision ?? 0);
 }
 
 function getDirectPiPersistenceState(sessionHub: SessionHub, sessionId: string): {

@@ -366,6 +366,22 @@ async function main(): Promise<void> {
     return created;
   }
 
+  function isTranscriptDebugEnabled(): boolean {
+    try {
+      const stored = window.localStorage?.getItem('aiAssistantWsDebug');
+      return stored === '1' || stored === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  function logTranscriptDebug(message: string, data: Record<string, unknown>): void {
+    if (!isTranscriptDebugEnabled()) {
+      return;
+    }
+    console.log(`[client][replay] ${message}`, data);
+  }
+
   function clearSessionTranscriptState(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -390,6 +406,12 @@ async function main(): Promise<void> {
     }
     const pendingEvents = dedupeProjectedTranscriptEvents(replayState.bufferedEvents);
     replayState.bufferedEvents = [];
+    logTranscriptDebug('flush_buffered_events', {
+      sessionId: trimmed,
+      bufferedCount: pendingEvents.length,
+      targetRevision: revision ?? null,
+      replayRevision: replayState.revision,
+    });
     if (pendingEvents.length === 0) {
       return;
     }
@@ -401,6 +423,11 @@ async function main(): Promise<void> {
     ) {
       replayState.loaded = false;
       replayState.cursor = null;
+      logTranscriptDebug('flush_requires_reload', {
+        sessionId: trimmed,
+        targetRevision: revision,
+        latestBufferedRevision,
+      });
       void loadSessionTranscript(trimmed, { force: true });
       return;
     }
@@ -4097,7 +4124,19 @@ async function main(): Promise<void> {
     }
     const forceReload = options?.force === true;
     const replayState = getOrCreateSessionTranscriptReplayState(trimmed);
+    logTranscriptDebug('load_start', {
+      sessionId: trimmed,
+      forceReload,
+      loaded: replayState.loaded,
+      hydratingCount: replayState.hydratingCount,
+      cursor: replayState.cursor,
+      revision: replayState.revision,
+    });
     if (!forceReload && replayState.loaded && !replayState.cursor) {
+      logTranscriptDebug('load_skip_loaded', {
+        sessionId: trimmed,
+        revision: replayState.revision,
+      });
       return;
     }
     const runtime = getChatRuntimeForSession(trimmed);
@@ -4152,6 +4191,14 @@ async function main(): Promise<void> {
         const projectedEvents = dedupeProjectedTranscriptEvents(
           Array.isArray(replay.events) ? replay.events : [],
         );
+        logTranscriptDebug('load_response', {
+          sessionId: trimmed,
+          eventCount: projectedEvents.length,
+          revision: replay.revision,
+          reset: replay.reset,
+          nextCursor: replay.nextCursor ?? null,
+          activeForceReload,
+        });
         if (typeof replay.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
           replayState.cursor = replay.nextCursor.trim();
         } else {
@@ -4178,6 +4225,10 @@ async function main(): Promise<void> {
         flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision);
       } catch (error) {
         console.error('Failed to fetch session events', sessionId, error);
+        logTranscriptDebug('load_error', {
+          sessionId: trimmed,
+          error: String(error),
+        });
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
         replayState.loaded = false;

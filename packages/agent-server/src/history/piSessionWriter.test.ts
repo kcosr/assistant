@@ -104,6 +104,14 @@ describe('PiSessionWriter', () => {
       },
     });
 
+    expect(summary.attributes).toMatchObject({
+      providers: {
+        pi: {
+          transcriptRevision: 1,
+        },
+      },
+    });
+
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
     const files = await fs.readdir(sessionDir);
@@ -772,6 +780,13 @@ describe('PiSessionWriter', () => {
 
     expect(result.changed).toBe(true);
     expect(result.droppedRequestIds).toEqual(['turn-1']);
+    expect(result.summary.attributes).toMatchObject({
+      providers: {
+        pi: {
+          transcriptRevision: 2,
+        },
+      },
+    });
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -854,6 +869,13 @@ describe('PiSessionWriter', () => {
 
     expect(result.changed).toBe(true);
     expect(result.droppedRequestIds).toEqual(['turn-1']);
+    expect(result.summary.attributes).toMatchObject({
+      providers: {
+        pi: {
+          transcriptRevision: 2,
+        },
+      },
+    });
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);

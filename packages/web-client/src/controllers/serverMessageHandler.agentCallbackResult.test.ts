@@ -305,6 +305,97 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(handleNewProjectedEvent).not.toHaveBeenCalled();
   });
 
+  it('buffers transcript events when the chat runtime is not ready yet', async () => {
+    const bufferTranscriptEvent = vi.fn();
+    const { handler } = makeHandler({
+      getChatRuntimeForSession: () => null,
+      isChatPanelVisible: () => true,
+      shouldBufferTranscriptEvent: () => false,
+      bufferTranscriptEvent,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 101,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-01T00:00:00.000Z',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(bufferTranscriptEvent).toHaveBeenCalledWith(
+      's-1',
+      expect.objectContaining({
+        sessionId: 's-1',
+        requestId: 'turn-1',
+        eventId: 'transcript-1',
+      }),
+    );
+  });
+
+  it('forces a transcript reload when the renderer detects a live sequence gap', async () => {
+    const handleNewProjectedEvent = vi.fn(() => 'reload');
+    const loadSessionTranscript = vi.fn(async () => {});
+    const bufferTranscriptEvent = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        handleNewProjectedEvent,
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom: vi.fn(),
+        autoScrollIfEnabled: vi.fn(),
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+
+    const { handler } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      isChatPanelVisible: () => true,
+      loadSessionTranscript,
+      bufferTranscriptEvent,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 101,
+        sequence: 3,
+        requestId: 'turn-1',
+        eventId: 'transcript-gap',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        timestamp: '2026-04-01T00:00:00.000Z',
+        payload: { text: 'chunk', phase: 'response' },
+        responseId: 'response-1',
+      },
+    });
+
+    expect(bufferTranscriptEvent).toHaveBeenCalledWith(
+      's-1',
+      expect.objectContaining({
+        eventId: 'transcript-gap',
+      }),
+    );
+    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+  });
+
   it('renders transcript events through the chat renderer path', async () => {
     const handleNewProjectedEvent = vi.fn();
     const scrollToBottom = vi.fn();

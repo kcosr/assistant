@@ -299,6 +299,38 @@ describe('ChatRenderer', () => {
     expect(messages[0]?.textContent).toContain('hello');
   });
 
+  it('requests reload when a live projected event arrives with a sequence gap', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents([
+      createProjectedEvent(0, {
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      createProjectedEvent(1, {
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'hello' },
+      }),
+    ]);
+
+    const result = renderer.handleNewProjectedEvent(
+      createProjectedEvent(3, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        responseId: 'r1',
+        payload: { text: 'late chunk', phase: 'response' },
+      }),
+    );
+
+    expect(result).toBe('reload');
+  });
+
   it('replays events into the expected DOM structure', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
