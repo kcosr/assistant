@@ -69,8 +69,6 @@ import {
   type InteractionResponseDraft,
   type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
-import { projectedTranscriptEventToChatEvent } from '../utils/projectedTranscript';
-
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
   getExpandToolOutput?: () => boolean;
@@ -470,11 +468,199 @@ export class ChatRenderer {
   }
 
   renderProjectedEvent(event: ProjectedTranscriptEvent): void {
-    const chatEvent = projectedTranscriptEventToChatEvent(event);
-    if (!chatEvent) {
+    const timestamp = Date.parse(event.timestamp);
+    if (Number.isNaN(timestamp)) {
       return;
     }
-    this.renderEvent(chatEvent);
+    const projectedBase = {
+      id: event.eventId,
+      timestamp,
+      sessionId: event.sessionId,
+      turnId: event.requestId,
+      ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
+        ? { responseId: event.responseId }
+        : {}),
+    };
+
+    switch (event.chatEventType) {
+      case 'turn_start':
+        this.handleTurnStart({
+          ...projectedBase,
+          type: 'turn_start',
+          payload: event.payload as TurnStartEvent['payload'],
+        });
+        break;
+      case 'turn_end':
+        this.handleTurnEnd({
+          ...projectedBase,
+          type: 'turn_end',
+          payload: event.payload as TurnEndEvent['payload'],
+        });
+        break;
+      case 'user_message':
+        this.handleUserMessage({
+          ...projectedBase,
+          type: 'user_message',
+          payload: event.payload as UserMessageEvent['payload'],
+        });
+        break;
+      case 'user_audio':
+        this.handleUserAudio({
+          ...projectedBase,
+          type: 'user_audio',
+          payload: event.payload as UserAudioEvent['payload'],
+        });
+        break;
+      case 'assistant_chunk':
+        this.handleAssistantChunk({
+          ...projectedBase,
+          type: 'assistant_chunk',
+          payload: event.payload as AssistantChunkEvent['payload'],
+        });
+        break;
+      case 'assistant_done':
+        this.handleAssistantDone({
+          ...projectedBase,
+          type: 'assistant_done',
+          payload: event.payload as AssistantDoneEvent['payload'],
+        });
+        break;
+      case 'thinking_chunk':
+        this.handleThinkingChunk({
+          ...projectedBase,
+          type: 'thinking_chunk',
+          payload: event.payload as ThinkingChunkEvent['payload'],
+        });
+        break;
+      case 'thinking_done':
+        this.handleThinkingDone({
+          ...projectedBase,
+          type: 'thinking_done',
+          payload: event.payload as ThinkingDoneEvent['payload'],
+        });
+        break;
+      case 'custom_message':
+        this.handleCustomMessage({
+          ...projectedBase,
+          type: 'custom_message',
+          payload: event.payload as CustomMessageEvent['payload'],
+        });
+        break;
+      case 'summary_message':
+        this.handleSummaryMessage({
+          ...projectedBase,
+          type: 'summary_message',
+          payload: event.payload as SummaryMessageEvent['payload'],
+        });
+        break;
+      case 'tool_call':
+        this.handleToolCall({
+          ...projectedBase,
+          type: 'tool_call',
+          payload: event.payload as ToolCallEvent['payload'],
+        });
+        break;
+      case 'tool_input_chunk':
+        this.handleToolInputChunk({
+          ...projectedBase,
+          type: 'tool_input_chunk',
+          payload: event.payload as ToolInputChunkEvent['payload'],
+        });
+        break;
+      case 'tool_output_chunk':
+        this.handleToolOutputChunk({
+          ...projectedBase,
+          type: 'tool_output_chunk',
+          payload: event.payload as ToolOutputChunkEvent['payload'],
+        });
+        break;
+      case 'tool_result':
+        this.handleToolResult({
+          ...projectedBase,
+          type: 'tool_result',
+          payload: event.payload as ToolResultEvent['payload'],
+        });
+        break;
+      case 'interaction_request':
+        this.handleInteractionRequest({
+          ...projectedBase,
+          type: 'interaction_request',
+          payload: event.payload as InteractionRequestEvent['payload'],
+        });
+        break;
+      case 'interaction_response':
+        this.handleInteractionResponse({
+          ...projectedBase,
+          type: 'interaction_response',
+          payload: event.payload as InteractionResponseEvent['payload'],
+        });
+        break;
+      case 'interaction_pending':
+        this.handleInteractionPending({
+          ...projectedBase,
+          type: 'interaction_pending',
+          payload: event.payload as InteractionPendingEvent['payload'],
+        });
+        break;
+      case 'questionnaire_request':
+        this.handleQuestionnaireRequest({
+          ...projectedBase,
+          type: 'questionnaire_request',
+          payload: event.payload as QuestionnaireRequestEvent['payload'],
+        });
+        break;
+      case 'questionnaire_reprompt':
+        this.handleQuestionnaireReprompt({
+          ...projectedBase,
+          type: 'questionnaire_reprompt',
+          payload: event.payload as QuestionnaireRepromptEvent['payload'],
+        });
+        break;
+      case 'questionnaire_submission':
+        this.handleQuestionnaireSubmission({
+          ...projectedBase,
+          type: 'questionnaire_submission',
+          payload: event.payload as QuestionnaireSubmissionEvent['payload'],
+        });
+        break;
+      case 'questionnaire_update':
+        this.handleQuestionnaireUpdate({
+          ...projectedBase,
+          type: 'questionnaire_update',
+          payload: event.payload as QuestionnaireUpdateEvent['payload'],
+        });
+        break;
+      case 'agent_message':
+        this.handleAgentMessage({
+          ...projectedBase,
+          type: 'agent_message',
+          payload: event.payload as AgentMessageEvent['payload'],
+        });
+        break;
+      case 'agent_callback':
+        this.handleAgentCallback({
+          ...projectedBase,
+          type: 'agent_callback',
+          payload: event.payload as AgentCallbackEvent['payload'],
+        });
+        break;
+      case 'interrupt':
+        this.handleInterrupt({
+          ...projectedBase,
+          type: 'interrupt',
+          payload: event.payload as InterruptEvent['payload'],
+        });
+        break;
+      case 'error':
+        this.handleError({
+          ...projectedBase,
+          type: 'error',
+          payload: event.payload as ErrorEvent['payload'],
+        });
+        break;
+      default:
+        break;
+    }
   }
 
   replayProjectedEvents(events: ProjectedTranscriptEvent[]): void {

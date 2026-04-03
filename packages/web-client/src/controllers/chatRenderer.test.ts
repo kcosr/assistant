@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ChatEvent } from '@assistant/shared';
+import type { ChatEvent, ProjectedTranscriptEvent } from '@assistant/shared';
 import { ChatRenderer } from './chatRenderer';
 import * as attachmentActions from '../utils/attachmentActions';
 import { setToolOutputBlockNearViewport } from '../utils/toolOutputRenderer';
@@ -27,6 +27,77 @@ function createBaseEvent<T extends ChatEvent['type']>(
 }
 
 describe('ChatRenderer', () => {
+  it('replays projected transcript events into the expected DOM structure', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    const events: ProjectedTranscriptEvent[] = [
+      {
+        sessionId: 's1',
+        revision: 1,
+        sequence: 0,
+        requestId: 't1',
+        eventId: 'e0',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: new Date(1000).toISOString(),
+        payload: { trigger: 'user' },
+      },
+      {
+        sessionId: 's1',
+        revision: 1,
+        sequence: 1,
+        requestId: 't1',
+        eventId: 'e1',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        timestamp: new Date(1001).toISOString(),
+        payload: { text: 'Projected hello' },
+      },
+      {
+        sessionId: 's1',
+        revision: 1,
+        sequence: 2,
+        requestId: 't1',
+        eventId: 'e2',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        timestamp: new Date(1002).toISOString(),
+        responseId: 'r1',
+        payload: { text: 'Projected reply' },
+      },
+      {
+        sessionId: 's1',
+        revision: 1,
+        sequence: 3,
+        requestId: 't1',
+        eventId: 'e3',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: new Date(1003).toISOString(),
+        payload: {},
+      },
+    ];
+
+    renderer.replayProjectedEvents(events);
+
+    const turn = container.querySelector<HTMLDivElement>('.turn');
+    expect(turn?.dataset['turnId']).toBe('t1');
+    expect(turn?.classList.contains('turn-complete')).toBe(true);
+
+    const userMessage = turn?.querySelector<HTMLDivElement>('.message.user');
+    expect(userMessage?.textContent).toContain('Projected hello');
+
+    const assistantText = turn?.querySelector<HTMLDivElement>('.assistant-text');
+    expect(assistantText?.textContent).toContain('Projected reply');
+    expect(assistantText?.dataset['eventId']).toBe('e2');
+  });
+
   it('replays events into the expected DOM structure', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
