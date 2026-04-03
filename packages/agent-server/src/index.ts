@@ -9,7 +9,13 @@ import { DEFAULT_PLUGIN_INSTANCE_ID, resolvePluginInstanceDataDir } from './plug
 import { DefaultPluginRegistry, PluginToolHost, type PluginRegistry } from './plugins/registry';
 import { SessionIndex } from './sessionIndex';
 import { SessionHub } from './sessionHub';
-import { CompositeToolHost, createToolHost, type McpServerConfig, type ToolHost } from './tools';
+import {
+  CodingToolHost,
+  CompositeToolHost,
+  createToolHost,
+  type McpServerConfig,
+  type ToolHost,
+} from './tools';
 import { loadEnvConfig, type EnvConfig } from './envConfig';
 import { createHttpServer } from './http/server';
 import { MultiplexedConnection } from './ws/multiplexedConnection';
@@ -111,6 +117,16 @@ export async function startServer(
   );
 
   const toolHosts: ToolHost[] = [baseToolHost];
+
+  const codingPluginConfig = appConfig?.plugins?.['coding'];
+  if (codingPluginConfig?.enabled) {
+    toolHosts.push(
+      new CodingToolHost({
+        dataDir: config.dataDir,
+        pluginConfig: codingPluginConfig,
+      }),
+    );
+  }
 
   if (pluginRegistry) {
     const pluginToolHost = new PluginToolHost(pluginRegistry);

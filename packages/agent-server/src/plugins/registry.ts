@@ -11,9 +11,9 @@ import { ToolError, createAgentTool } from '../tools';
 import type { PanelEventHandler, PluginModule, PluginToolDefinition, ToolPlugin } from './types';
 import type { HttpRouteHandler } from '../http/types';
 import { createPluginOperationSurface, normalizeToolPrefix } from './operations';
-import { createCodingPlugin } from './coding';
 
 const CORE_PANEL_TYPES = new Set(['sessions']);
+const CORE_HANDLED_PLUGIN_IDS = new Set(['coding']);
 
 export interface PluginRegistry {
   initialize(config: AppConfig, dataDir: string, options?: { configDir?: string }): Promise<void>;
@@ -63,7 +63,7 @@ export class DefaultPluginRegistry implements PluginRegistry {
   private initialised = false;
 
   constructor() {
-    this.factories = new Map<string, () => ToolPlugin>([['coding', createCodingPlugin]]);
+    this.factories = new Map<string, () => ToolPlugin>();
   }
 
   private resolvePluginRoots(): string[] {
@@ -313,6 +313,11 @@ export class DefaultPluginRegistry implements PluginRegistry {
         continue;
       }
 
+      if (CORE_HANDLED_PLUGIN_IDS.has(name)) {
+        availableIds.add(name);
+        continue;
+      }
+
       let plugin: ToolPlugin | null = null;
       let manifest: CombinedPluginManifest | undefined;
       let publicDir: string | undefined;
@@ -403,6 +408,11 @@ export class DefaultPluginRegistry implements PluginRegistry {
 
     const registrations: RegisteredPlugin[] = [];
     const activeIds = new Set<string>();
+    for (const [name, pluginConfig] of Object.entries(pluginsConfig)) {
+      if (pluginConfig?.enabled && CORE_HANDLED_PLUGIN_IDS.has(name)) {
+        activeIds.add(name);
+      }
+    }
     let remaining = pending;
     let madeProgress = true;
 

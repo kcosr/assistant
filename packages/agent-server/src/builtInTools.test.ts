@@ -373,6 +373,41 @@ describe('registerBuiltInSessionTools', () => {
     expect(stored?.content.toString('utf8')).toBe('path sourced bytes');
   });
 
+  it('stores bytes from relative path sources resolved from the session working dir', async () => {
+    const store = new AttachmentStore(await createTempDir('built-in-tools-relative-path-bytes'));
+    const host = createHost(store);
+    const workingDir = await createTempDir('built-in-tools-session-working-dir');
+    const sourcePath = path.join(workingDir, 'report.txt');
+    await fs.writeFile(sourcePath, 'relative path sourced bytes', 'utf8');
+
+    const result = (await host.callTool(
+      'attachment_send',
+      JSON.stringify({
+        fileName: 'report.txt',
+        path: 'report.txt',
+      }),
+      createContext({
+        sessionHub: {
+          getSessionState: () => ({
+            summary: {
+              sessionId: 'session-1',
+              createdAt: '',
+              updatedAt: '',
+              attributes: { core: { workingDir } },
+            },
+          }),
+        } as never,
+      }),
+    )) as {
+      attachment: {
+        attachmentId: string;
+      };
+    };
+
+    const stored = await store.getAttachmentFile('session-1', result.attachment.attachmentId);
+    expect(stored?.content.toString('utf8')).toBe('relative path sourced bytes');
+  });
+
   it('rejects attachments larger than 4 MB', async () => {
     const store = new AttachmentStore(await createTempDir('built-in-tools-too-large'));
     const host = createHost(store);
@@ -422,7 +457,7 @@ describe('registerBuiltInSessionTools', () => {
       ),
     ).rejects.toMatchObject({
       code: 'invalid_arguments',
-      message: 'path must be an absolute path',
+      message: 'Relative attachment paths require a session working directory',
     });
   });
 

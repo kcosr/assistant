@@ -22,6 +22,7 @@ export {
 } from './tools/chatCompletionMapping';
 export { filterToolsByAllowlist, filterToolsForAgent, matchesGlobPattern } from './tools/scoping';
 export { McpToolHost } from './tools/mcpToolHost';
+export { CodingToolHost } from './tools/codingToolHost';
 
 import type {
   AgentTool,

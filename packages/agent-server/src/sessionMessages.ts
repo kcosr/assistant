@@ -255,6 +255,7 @@ export async function startSessionMessage(options: {
       toolCalls,
       baseToolHost: toolHost,
       sessionToolHost: scopedToolHost,
+      agentTools,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),

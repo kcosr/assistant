@@ -20,6 +20,7 @@
 ### Changed
 
 - Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
+- Changed coding tool registration to use a core `CodingToolHost` in the main tool catalog instead of routing coding tools through the plugin registry wrapper.
 - Changed Pi session replay to project transcript events directly from canonical Pi JSONL instead of reconstructing ChatEvent history first.
 - Changed live transcript_event delivery to project directly on the server with request-context tracking across batches instead of reusing replay batch projection.
 - Changed the web client transcript renderer to consume projected transcript kinds directly instead of reconstructing legacy chat-event wrappers internally.
@@ -70,6 +71,8 @@
 - Fixed Pi request-history `trim_after` edits so they remove orphan conversational tail entries outside explicit request markers, and clear stale client typing/request state before the forced transcript reload.
 - Fixed attachment metadata corruption from concurrent `attachment_send` calls by serializing per-session attachment mutations and writing `metadata.json` atomically, preventing inline preview failures and 500 download/open responses.
 - Fixed live tool-input rendering so streamed partial JSON for tools like `bash`, `write`, `read`, `find`, `grep`, and `agents_message` is rendered from semantic partial arguments instead of raw JSON until the final tool call arrives.
+- Fixed filesystem-backed `attachment_send` calls to accept relative paths resolved from the session working directory, matching the cwd-oriented behavior of Pi coding tools.
+- Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
 
 ### Removed
 

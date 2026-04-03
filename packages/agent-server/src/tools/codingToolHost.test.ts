@@ -13,9 +13,8 @@ import type {
   createWriteTool as createWriteToolType,
 } from '@mariozechner/pi-coding-agent';
 
-import type { ToolContext } from '../../tools';
-import type { PluginConfig } from '../types';
-import { createCodingPlugin } from './index';
+import type { ToolContext } from './types';
+import { CodingToolHost } from './codingToolHost';
 
 type CodingAgentModule = {
   createBashTool: typeof createBashToolType;
@@ -35,26 +34,27 @@ function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
 }
 
-describe('coding plugin tools', () => {
-  it('wires write and read tools through the plugin', async () => {
-    const dataDir = createTempDir('coding-plugin-tools');
+describe('CodingToolHost', () => {
+  it('wires write and read tools through the host', async () => {
+    const dataDir = createTempDir('coding-tool-host-tools');
 
-    const pluginConfig: PluginConfig = {
-      enabled: true,
-      mode: 'local',
-      local: {
-        workspaceRoot: path.join(dataDir, 'workspaces'),
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+        local: {
+          workspaceRoot: path.join(dataDir, 'workspaces'),
+        },
       },
-    };
+      loadCodingAgentModule,
+    });
 
-    const plugin = createCodingPlugin({ loadCodingAgentModule });
-    await plugin.initialize(dataDir, pluginConfig);
-
-    const ctx: ToolContext = { sessionId: 'plugin-session', signal: new AbortController().signal };
-    const nativeTools = await plugin.getAgentTools?.(ctx);
-    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
-    const readTool = nativeTools?.find((tool) => tool.name === 'read');
-    const lsTool = nativeTools?.find((tool) => tool.name === 'ls');
+    const ctx: ToolContext = { sessionId: 'coding-session', signal: new AbortController().signal };
+    const nativeTools = await host.listAgentTools(ctx);
+    const writeTool = nativeTools.find((tool) => tool.name === 'write');
+    const readTool = nativeTools.find((tool) => tool.name === 'read');
+    const lsTool = nativeTools.find((tool) => tool.name === 'ls');
 
     if (!writeTool || !readTool || !lsTool) {
       throw new Error('Expected write, read, and ls tools to be registered');
@@ -76,26 +76,27 @@ describe('coding plugin tools', () => {
   });
 
   it('exposes a find tool that searches files relative to the search path', async () => {
-    const dataDir = createTempDir('coding-plugin-find');
+    const dataDir = createTempDir('coding-tool-host-find');
 
-    const pluginConfig: PluginConfig = {
-      enabled: true,
-      mode: 'local',
-      local: {
-        workspaceRoot: path.join(dataDir, 'workspaces'),
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+        local: {
+          workspaceRoot: path.join(dataDir, 'workspaces'),
+        },
       },
-    };
-
-    const plugin = createCodingPlugin({ loadCodingAgentModule });
-    await plugin.initialize(dataDir, pluginConfig);
+      loadCodingAgentModule,
+    });
 
     const ctx: ToolContext = {
-      sessionId: 'plugin-find-session',
+      sessionId: 'coding-find-session',
       signal: new AbortController().signal,
     };
-    const nativeTools = await plugin.getAgentTools?.(ctx);
-    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
-    const findTool = nativeTools?.find((tool) => tool.name === 'find');
+    const nativeTools = await host.listAgentTools(ctx);
+    const writeTool = nativeTools.find((tool) => tool.name === 'write');
+    const findTool = nativeTools.find((tool) => tool.name === 'find');
 
     if (!writeTool || !findTool) {
       throw new Error('Expected write and find tools to be registered');
@@ -117,31 +118,32 @@ describe('coding plugin tools', () => {
   });
 
   it('aborts bash tool execution when context signal aborts', async () => {
-    const dataDir = createTempDir('coding-plugin-bash-abort');
+    const dataDir = createTempDir('coding-tool-host-bash-abort');
 
-    const pluginConfig: PluginConfig = {
-      enabled: true,
-      mode: 'local',
-      local: {
-        workspaceRoot: path.join(dataDir, 'workspaces'),
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+        local: {
+          workspaceRoot: path.join(dataDir, 'workspaces'),
+        },
       },
-    };
+      loadCodingAgentModule,
+    });
 
-    const plugin = createCodingPlugin({ loadCodingAgentModule });
-    await plugin.initialize(dataDir, pluginConfig);
-
-    const nativeTools = await plugin.getAgentTools?.({
-      sessionId: 'plugin-bash-abort-session',
+    const nativeTools = await host.listAgentTools({
+      sessionId: 'coding-bash-abort-session',
       signal: new AbortController().signal,
     });
-    const bashTool = nativeTools?.find((tool) => tool.name === 'bash');
+    const bashTool = nativeTools.find((tool) => tool.name === 'bash');
     if (!bashTool) {
       throw new Error('Expected bash tool to be registered');
     }
 
     const abortController = new AbortController();
     const ctx: ToolContext = {
-      sessionId: 'plugin-bash-abort-session',
+      sessionId: 'coding-bash-abort-session',
       signal: abortController.signal,
     };
 
@@ -157,20 +159,21 @@ describe('coding plugin tools', () => {
   });
 
   it('uses session working dir for local-mode relative file tools and bash when configured with the macro', async () => {
-    const dataDir = createTempDir('coding-plugin-session-cwd');
+    const dataDir = createTempDir('coding-tool-host-session-cwd');
     const sessionWorkingDir = path.join(dataDir, 'picked-worktree');
     const outsidePath = path.join(dataDir, 'outside.txt');
 
-    const pluginConfig: PluginConfig = {
-      enabled: true,
-      mode: 'local',
-      local: {
-        workspaceRoot: '${session.workingDir}',
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+        local: {
+          workspaceRoot: '${session.workingDir}',
+        },
       },
-    };
-
-    const plugin = createCodingPlugin({ loadCodingAgentModule });
-    await plugin.initialize(dataDir, pluginConfig);
+      loadCodingAgentModule,
+    });
 
     const sessionSummary = {
       sessionId: 'coding-session',
@@ -196,10 +199,10 @@ describe('coding plugin tools', () => {
       } as never,
     };
 
-    const nativeTools = await plugin.getAgentTools?.(ctx);
-    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
-    const readTool = nativeTools?.find((tool) => tool.name === 'read');
-    const bashTool = nativeTools?.find((tool) => tool.name === 'bash');
+    const nativeTools = await host.listAgentTools(ctx);
+    const writeTool = nativeTools.find((tool) => tool.name === 'write');
+    const readTool = nativeTools.find((tool) => tool.name === 'read');
+    const bashTool = nativeTools.find((tool) => tool.name === 'bash');
 
     if (!writeTool || !readTool || !bashTool) {
       throw new Error('Expected write, read, and bash tools to be registered');
@@ -220,5 +223,28 @@ describe('coding plugin tools', () => {
     expect((bashPwd.details as { fullOutputPath?: string } | undefined)?.fullOutputPath).toBeUndefined();
     expect((bashPwd.content[0] as { text?: string }).text?.trim().split('\n')[0]).toBe(sessionWorkingDir);
     expect(outsideContent).toBe('outside file');
+  });
+
+  it('rejects unknown tool names through callTool', async () => {
+    const dataDir = createTempDir('coding-tool-host-unknown');
+    const host = new CodingToolHost({
+      dataDir,
+      pluginConfig: {
+        enabled: true,
+        mode: 'local',
+      },
+      loadCodingAgentModule,
+    });
+
+    await expect(
+      host.callTool(
+        'unknown_tool',
+        '{}',
+        { sessionId: 'coding-session', signal: new AbortController().signal },
+      ),
+    ).rejects.toMatchObject({
+      code: 'tool_not_found',
+      message: 'Tool not found: unknown_tool',
+    });
   });
 });

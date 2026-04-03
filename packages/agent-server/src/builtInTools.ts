@@ -9,6 +9,7 @@ import type { AgentDefinition, AgentRegistry } from './agents';
 import type { AgentTool, BuiltInToolDefinition, ToolContext, ToolHost } from './tools';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import { createScopedToolHost } from './tools';
+import { resolveSessionWorkingDir } from './tools/sessionWorkingDir';
 import { handleChatToolCalls as handleChatToolCallsInternal } from './ws/toolCallHandling';
 import { resolveAgentSession } from './sessionResolution';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
@@ -142,9 +143,6 @@ function parseAttachmentSendArgs(raw: unknown): AttachmentSendArgs {
   if (!attachmentPath) {
     throw createToolError('invalid_arguments', 'path must not be empty');
   }
-  if (!path.isAbsolute(attachmentPath)) {
-    throw createToolError('invalid_arguments', 'path must be an absolute path');
-  }
   return {
     ...(title ? { title } : {}),
     fileName,
@@ -221,6 +219,25 @@ async function materializeAttachmentBytes(
   }
 }
 
+async function resolveAttachmentPath(
+  rawPath: string,
+  ctx: ToolContext,
+): Promise<string> {
+  if (path.isAbsolute(rawPath)) {
+    return rawPath;
+  }
+
+  const workingDir = await resolveSessionWorkingDir(ctx);
+  if (workingDir) {
+    return path.resolve(workingDir, rawPath);
+  }
+
+  throw createToolError(
+    'invalid_arguments',
+    'Relative attachment paths require a session working directory',
+  );
+}
+
 function buildAttachmentPreview(options: {
   bytes: Buffer;
   contentType: string;
@@ -269,16 +286,23 @@ async function handleAttachmentSend(
   }
 
   const args = parseAttachmentSendArgs(raw);
-  const { bytes, inferredContentType } = await materializeAttachmentBytes(args);
+  const resolvedArgs =
+    'path' in args
+      ? {
+          ...args,
+          path: await resolveAttachmentPath(args.path, ctx),
+        }
+      : args;
+  const { bytes, inferredContentType } = await materializeAttachmentBytes(resolvedArgs);
   ensureAttachmentSize(bytes.byteLength);
 
-  const contentType = args.contentType ?? inferredContentType;
+  const contentType = resolvedArgs.contentType ?? inferredContentType;
   const stored = await store.createAttachment({
     sessionId,
     requestId,
     toolCallId,
-    fileName: args.fileName,
-    ...(args.title ? { title: args.title } : {}),
+    fileName: resolvedArgs.fileName,
+    ...(resolvedArgs.title ? { title: resolvedArgs.title } : {}),
     contentType,
     bytes,
   });
@@ -636,6 +660,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
         toolCalls,
         baseToolHost,
         sessionToolHost: callerScopedToolHost,
+        agentTools: callerAgentTools,
         sessionHub,
         envConfig,
         ...(eventStore ? { eventStore } : {}),
@@ -874,6 +899,7 @@ export async function handleAgentMessage(
       toolCalls,
       baseToolHost,
       sessionToolHost: scopedToolHost,
+      agentTools,
       sessionHub,
       envConfig,
       ...(eventStore ? { eventStore } : {}),

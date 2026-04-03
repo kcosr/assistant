@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { ServerToolCallStartMessage, ServerToolResultMessage } from '@assistant/shared';
 
-import { ToolError, type ToolContext, type ToolHost } from '../tools';
+import { ToolError, type AgentTool, type ToolContext, type ToolHost } from '../tools';
 import type { InteractionRequest, UserResponse } from '../tools/types';
 import type { RateLimiter } from '../rateLimit';
 import type { SessionHub, LogicalSessionState } from '../sessionHub';
@@ -359,8 +359,9 @@ export async function handleChatToolCalls(options: {
   sessionId: string;
   state: LogicalSessionState;
   toolCalls: ChatCompletionToolCallState[];
-  baseToolHost: ToolHost;
-  sessionToolHost: ToolHost;
+  baseToolHost?: ToolHost;
+  sessionToolHost?: ToolHost;
+  agentTools?: AgentTool[];
   sessionHub: SessionHub;
   toolCallRateLimiter?: RateLimiter;
   maxToolCallsPerMinute: number;
@@ -388,6 +389,7 @@ export async function handleChatToolCalls(options: {
     toolCalls,
     baseToolHost,
     sessionToolHost,
+    agentTools,
     sessionHub,
     envConfig,
     toolCallRateLimiter,
@@ -400,6 +402,13 @@ export async function handleChatToolCalls(options: {
     searchService,
     forwardChunksTo,
   } = options;
+
+  const agentToolByName = new Map<string, AgentTool>();
+  for (const tool of agentTools ?? []) {
+    if (!agentToolByName.has(tool.name)) {
+      agentToolByName.set(tool.name, tool);
+    }
+  }
 
   const shouldEmitChatEvents = !!eventStore;
   const turnId = state.activeChatRun?.turnId;
@@ -430,6 +439,7 @@ export async function handleChatToolCalls(options: {
   for (const call of toolCalls) {
     // Track cumulative offset for tool output streaming
     let toolOutputOffset = 0;
+    let nativeToolStreamText = '';
 
     const interactionAvailability = sessionHub.getInteractionAvailability(sessionId);
 
@@ -444,7 +454,7 @@ export async function handleChatToolCalls(options: {
       sessionIndex: sessionHub.getSessionIndex(),
       envConfig,
       sessionHub,
-      baseToolHost,
+      ...(baseToolHost ? { baseToolHost } : {}),
       ...(eventStore ? { eventStore } : {}),
       ...(scheduledSessionService ? { scheduledSessionService } : {}),
       ...(searchService ? { searchService } : {}),
@@ -603,7 +613,41 @@ export async function handleChatToolCalls(options: {
       | undefined;
 
     try {
-      result = await sessionToolHost.callTool(call.name, argsJson, toolContext);
+      const nativeTool = agentToolByName.get(call.name);
+      if (nativeTool) {
+        let parsedArgs: unknown = {};
+        try {
+          parsedArgs = argsJson ? (JSON.parse(argsJson) as unknown) : {};
+        } catch {
+          throw new ToolError('invalid_arguments', 'Tool arguments were not valid JSON');
+        }
+        result = await nativeTool.execute(call.id, parsedArgs, toolContext.signal, (partialResult) => {
+          const details =
+            partialResult.details && typeof partialResult.details === 'object'
+              ? (partialResult.details as Record<string, unknown>)
+              : undefined;
+          const textContent = partialResult.content
+            .filter((item) => item.type === 'text' && typeof item.text === 'string')
+            .map((item) => item.text)
+            .join('');
+          const delta =
+            textContent.length > 0 && textContent.startsWith(nativeToolStreamText)
+              ? textContent.slice(nativeToolStreamText.length)
+              : textContent;
+          nativeToolStreamText = textContent;
+          if (delta.length === 0 && details === undefined) {
+            return;
+          }
+          toolContext.onUpdate?.({
+            delta,
+            ...(details ? { details } : {}),
+          });
+        });
+      } else if (sessionToolHost) {
+        result = await sessionToolHost.callTool(call.name, argsJson, toolContext);
+      } else {
+        throw new ToolError('tool_not_found', `Tool not found: ${call.name}`);
+      }
       // If the result has an explicit `ok` field, use that; otherwise assume success
       if (result && typeof result === 'object' && 'ok' in result) {
         ok = (result as { ok: unknown }).ok === true;

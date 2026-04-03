@@ -1365,7 +1365,7 @@ export class SessionRuntime {
       ttsBackendFactory: this.ttsBackendFactory,
       eventStore: this.eventStore,
       handleChatToolCalls: (sessionId, state, toolCalls) =>
-        this.handleChatToolCalls(sessionId, state, toolCalls, sessionToolHostForRun),
+        this.handleChatToolCalls(sessionId, state, toolCalls, sessionToolHostForRun, agentToolsForRun),
       setActiveRunState: (active) => {
         this.activeRunStates.set(active.sessionId, active);
       },
@@ -1392,6 +1392,7 @@ export class SessionRuntime {
     state: LogicalSessionState,
     toolCalls: ChatCompletionToolCallState[],
     sessionToolHost: ToolHost,
+    agentTools?: AgentTool[],
   ): Promise<void> {
     return handleChatToolCallsInternal({
       sessionId,
@@ -1399,6 +1400,7 @@ export class SessionRuntime {
       toolCalls,
       baseToolHost: this.baseToolHost,
       sessionToolHost,
+      ...(agentTools ? { agentTools } : {}),
       sessionHub: this.sessionHub,
       eventStore: this.eventStore,
       maxToolCallsPerMinute: this.config.maxToolCallsPerMinute,
