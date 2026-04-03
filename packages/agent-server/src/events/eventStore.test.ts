@@ -224,7 +224,6 @@ describe('SessionScopedEventStore', () => {
       ],
     ]);
 
-    const appendAssistantEvent = vi.fn(async () => undefined);
     const sessionHub = {
       getSessionState: () => undefined,
       getSessionIndex: () => ({
@@ -253,11 +252,6 @@ describe('SessionScopedEventStore', () => {
           providerEntry && typeof providerEntry === 'object' && !Array.isArray(providerEntry);
         return summary.agentId !== 'pi' || !hasExternalInfo;
       },
-      getPiSessionWriter: () =>
-        ({
-          appendAssistantEvent,
-        }) as unknown as { appendAssistantEvent: typeof appendAssistantEvent },
-      updateSessionAttributes: vi.fn(async () => summaries.get('pi-session')),
     } as unknown as SessionHub;
 
     const baseStore: EventStore = {
@@ -296,13 +290,6 @@ describe('SessionScopedEventStore', () => {
     };
     await store.append('pi-session', piInteraction);
     expect(baseStore.append).not.toHaveBeenCalledWith('pi-session', piInteraction);
-    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
-    expect(appendAssistantEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        summary: summaries.get('pi-session'),
-        eventType: 'interaction_request',
-      }),
-    );
 
     const piPending: ChatEvent = {
       id: 'i-2',
@@ -318,20 +305,13 @@ describe('SessionScopedEventStore', () => {
     };
     await store.append('pi-session', piPending);
     expect(baseStore.append).not.toHaveBeenCalledWith('pi-session', piPending);
-    expect(appendAssistantEvent).toHaveBeenCalledTimes(2);
-    expect(appendAssistantEvent).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        summary: summaries.get('pi-session'),
-        eventType: 'interaction_pending',
-      }),
-    );
 
     const codexEvent = createEvent({ id: 'e-codex', sessionId: 'codex-session' });
     await store.append('codex-session', codexEvent);
     expect(baseStore.append).toHaveBeenCalledWith('codex-session', codexEvent);
   });
 
-  it('mirrors overlay events into Pi session JSONL and skips persistence for providerId=pi', async () => {
+  it('skips EventStore persistence for Pi provider overlay events', async () => {
     const nowIso = new Date().toISOString();
     const summaries = new Map<string, SessionSummary>([
       [
@@ -353,8 +333,6 @@ describe('SessionScopedEventStore', () => {
       ],
     ]);
 
-    const appendAssistantEvent = vi.fn(async () => undefined);
-
     const sessionHub = {
       getSessionState: () => undefined,
       getSessionIndex: () => ({
@@ -370,11 +348,6 @@ describe('SessionScopedEventStore', () => {
           },
         ]),
       shouldPersistSessionEvents: () => false,
-      getPiSessionWriter: () =>
-        ({
-          appendAssistantEvent,
-        }) as unknown as { appendAssistantEvent: typeof appendAssistantEvent },
-      updateSessionAttributes: vi.fn(async () => summaries.get('pi-sdk-session')),
     } as unknown as SessionHub;
 
     const baseStore: EventStore = {
@@ -409,13 +382,6 @@ describe('SessionScopedEventStore', () => {
 
     await store.append('pi-sdk-session', interaction);
     expect(baseStore.append).not.toHaveBeenCalled();
-    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
-    expect(appendAssistantEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        summary: summaries.get('pi-sdk-session'),
-        eventType: 'interaction_request',
-      }),
-    );
   });
 
   it('does not retain Pi transient replay overlays in the event store', async () => {
@@ -440,8 +406,6 @@ describe('SessionScopedEventStore', () => {
       ],
     ]);
 
-    const appendAssistantEvent = vi.fn(async () => undefined);
-
     const sessionHub = {
       getSessionState: () => undefined,
       getSessionIndex: () => ({
@@ -457,11 +421,6 @@ describe('SessionScopedEventStore', () => {
           },
         ]),
       shouldPersistSessionEvents: () => false,
-      getPiSessionWriter: () =>
-        ({
-          appendAssistantEvent,
-        }) as unknown as { appendAssistantEvent: typeof appendAssistantEvent },
-      updateSessionAttributes: vi.fn(async () => summaries.get('pi-sdk-session')),
     } as unknown as SessionHub;
 
     const baseStore: EventStore = {
@@ -515,13 +474,5 @@ describe('SessionScopedEventStore', () => {
     expect(baseStore.appendBatch).not.toHaveBeenCalled();
     expect(await store.getEvents('pi-sdk-session')).toEqual([]);
     expect(await store.getEventsSince('pi-sdk-session', '')).toEqual([]);
-    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
-    expect(appendAssistantEvent).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        summary: summaries.get('pi-sdk-session'),
-        eventType: 'interaction_request',
-      }),
-    );
   });
 });

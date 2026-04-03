@@ -39,6 +39,7 @@
 
 - Removed legacy Pi session replay support for assistant-specific `assistant.input` and `assistant.turn_*` entries; canonical Pi history now expects request boundaries and model-visible agent inputs as normal `message` records.
 - Removed attachment-store `turnId` metadata; attachments are now owned only by `requestId` plus `toolCallId`.
+- Removed dead Pi EventStore overlay mirroring; Pi sessions now ignore EventStore persistence on the canonical path instead of duplicating overlay writes into the Pi transcript log.
 ## [0.17.5] - 2026-04-01
 
 ### Breaking Changes

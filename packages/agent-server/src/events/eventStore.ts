@@ -8,7 +8,6 @@ import { safeValidateChatEvent, validateChatEvent } from '@assistant/shared';
 import type { SessionHub } from '../sessionHub';
 import type { SessionSummary } from '../sessionIndex';
 import {
-  PERSISTENT_OVERLAY_CHAT_EVENT_TYPES,
   isOverlayChatEvent,
 } from './overlayEventTypes';
 
@@ -263,17 +262,6 @@ export class FileEventStore implements EventStore {
 }
 
 export class SessionScopedEventStore implements EventStore {
-  private readonly piCustomMirroredEventTypes = new Set<string>([
-    ...PERSISTENT_OVERLAY_CHAT_EVENT_TYPES,
-    'agent_message',
-    'agent_callback',
-    'agent_switch',
-    'interrupt',
-    'error',
-    'custom_message',
-    'summary_message',
-  ]);
-
   constructor(
     private readonly base: EventStore,
     private readonly sessionHub: SessionHub,
@@ -290,29 +278,6 @@ export class SessionScopedEventStore implements EventStore {
     }
     const agent = this.sessionHub.getAgentRegistry().getAgent(agentId);
     return agent?.chat?.provider ?? null;
-  }
-
-  private async mirrorOverlayEventToPiSession(
-    sessionId: string,
-    summary: SessionSummary,
-    event: ChatEvent,
-  ): Promise<void> {
-    const writer = this.sessionHub.getPiSessionWriter?.();
-    if (!writer) {
-      return;
-    }
-    await writer.appendAssistantEvent({
-      summary,
-      eventType: event.type,
-      payload: event.payload,
-      ...(event.turnId ? { turnId: event.turnId } : {}),
-      ...(event.responseId ? { responseId: event.responseId } : {}),
-      updateAttributes: (patch) => this.sessionHub.updateSessionAttributes(sessionId, patch),
-    });
-  }
-
-  private shouldMirrorPiEventToCustomLog(event: ChatEvent): boolean {
-    return this.piCustomMirroredEventTypes.has(event.type);
   }
 
   private assertEventSessionMatches(sessionId: string, event: ChatEvent): void {
@@ -336,9 +301,6 @@ export class SessionScopedEventStore implements EventStore {
       }
       this.assertEventSessionMatches(trimmed, event);
       if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
-        if (this.shouldMirrorPiEventToCustomLog(event)) {
-          await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
-        }
         return;
       }
       return this.base.append(trimmed, event);
@@ -353,9 +315,6 @@ export class SessionScopedEventStore implements EventStore {
     }
     this.assertEventSessionMatches(trimmed, event);
     if (this.isPiProvider(this.resolveSessionProvider(summary))) {
-      if (this.shouldMirrorPiEventToCustomLog(event)) {
-        await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
-      }
       return;
     }
     return this.base.append(trimmed, event);
@@ -380,11 +339,6 @@ export class SessionScopedEventStore implements EventStore {
         this.assertEventSessionMatches(trimmed, event);
       }
       if (this.isPiProvider(this.resolveSessionProvider(activeSummary))) {
-        for (const event of overlayEvents) {
-          if (this.shouldMirrorPiEventToCustomLog(event)) {
-            await this.mirrorOverlayEventToPiSession(trimmed, activeSummary, event);
-          }
-        }
         return;
       }
       return this.base.appendBatch(trimmed, overlayEvents);
@@ -403,11 +357,6 @@ export class SessionScopedEventStore implements EventStore {
       this.assertEventSessionMatches(trimmed, event);
     }
     if (this.isPiProvider(this.resolveSessionProvider(summary))) {
-      for (const event of overlayEvents) {
-        if (this.shouldMirrorPiEventToCustomLog(event)) {
-          await this.mirrorOverlayEventToPiSession(trimmed, summary, event);
-        }
-      }
       return;
     }
     return this.base.appendBatch(trimmed, overlayEvents);
