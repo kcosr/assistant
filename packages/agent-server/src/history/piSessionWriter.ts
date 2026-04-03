@@ -1387,7 +1387,12 @@ export class PiSessionWriter {
       return { summary: stateInfo.summary, changed: false, droppedRequestIds: [] };
     }
 
-    const filteredEntries = filterEntriesByDroppedRanges(records.entries, droppedRanges);
+    const filteredEntries =
+      action === 'trim_after'
+        ? records.entries
+            .slice(0, droppedRanges[0]!.startIndex)
+            .map((entry) => cloneJson(entry))
+        : filterEntriesByDroppedRanges(records.entries, droppedRanges);
     const keptEntries =
       hadExplicitRequestSpans
         ? rechainEntries(filteredEntries)

@@ -128,6 +128,70 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
   });
 
+  it('clears active request state before reloading after session history changes', async () => {
+    const runtime = {
+      chatRenderer: {
+        clear: vi.fn(),
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+        handleNewProjectedEvent: vi.fn(),
+      },
+      chatScrollManager: {
+        scrollToBottom: vi.fn(),
+        autoScrollIfEnabled: vi.fn(),
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+    const setChatPanelStatusForSession = vi.fn();
+    const {
+      handler,
+      typingIndicators,
+      loadSessionTranscript,
+      resetSessionTranscriptState,
+    } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      setChatPanelStatusForSession,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'req-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-03T00:00:00.000Z',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(true);
+
+    await handler.handle({
+      type: 'session_history_changed',
+      sessionId: 's-1',
+      updatedAt: '2026-04-03T00:01:00.000Z',
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(false);
+    expect(resetSessionTranscriptState).toHaveBeenCalledWith('s-1');
+    expect(runtime.chatRenderer.hideTypingIndicator).toHaveBeenCalledTimes(1);
+    expect(runtime.chatRenderer.clear).toHaveBeenCalledTimes(1);
+    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'idle');
+    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+  });
+
   it('forces transcript reload when a session becomes ready', async () => {
     const { handler, refreshSessions, loadSessionTranscript } = makeHandler();
 

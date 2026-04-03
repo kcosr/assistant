@@ -613,6 +613,13 @@ export class ServerMessageHandler {
       case 'session_history_changed': {
         const sessionId = message.sessionId;
         if (sessionId) {
+          this.markRequestFinished(sessionId, undefined);
+          this.options.hideSessionTypingIndicator(sessionId);
+          this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+          this.options.resetSessionTranscriptState?.(sessionId);
+          const runtime = this.options.getChatRuntimeForSession(sessionId);
+          runtime?.chatRenderer.hideTypingIndicator();
+          runtime?.chatRenderer.clear();
           void this.options.loadSessionTranscript(sessionId, { force: true });
         }
         void this.options.refreshSessions(this.options.getSelectedSessionId());

@@ -983,6 +983,85 @@ describe('PiSessionWriter', () => {
     expect(entries[0]).not.toHaveProperty('parentId');
   });
 
+  it('removes orphan tail entries when trimming after an explicit request', async () => {
+    const baseDir = await createTempDir('pi-session-writer-trim-after-orphan-tail');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-trim-after-orphan-tail',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'se' },
+        { role: 'assistant', content: '' },
+      ],
+      updateAttributes,
+    });
+
+    const result = await writer.rewriteHistoryByRequest({
+      summary,
+      action: 'trim_after',
+      requestId: 'turn-1',
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.droppedRequestIds).toEqual(['turn-1']);
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const content = await fs.readFile(filePath, 'utf8');
+    const entries = parseJsonLines(content);
+
+    expect(JSON.stringify(entries)).not.toContain('turn-1');
+    expect(JSON.stringify(entries)).not.toContain('"se"');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.['type']).toBe('session');
+  });
+
   it('synthesizes request groups when explicit request markers are missing', async () => {
     const baseDir = await createTempDir('pi-session-writer-request-synthetic-groups');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
