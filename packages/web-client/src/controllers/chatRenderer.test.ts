@@ -44,6 +44,112 @@ function createProjectedEvent(
   };
 }
 
+function mapLegacyKind(event: ChatEvent): ProjectedTranscriptEvent['kind'] {
+  switch (event.type) {
+    case 'turn_start':
+      return 'request_start';
+    case 'turn_end':
+      return 'request_end';
+    case 'user_message':
+    case 'user_audio':
+      return 'user_message';
+    case 'assistant_chunk':
+    case 'assistant_done':
+    case 'custom_message':
+    case 'summary_message':
+    case 'audio_chunk':
+    case 'audio_done':
+      return 'assistant_message';
+    case 'thinking_chunk':
+    case 'thinking_done':
+      return 'thinking';
+    case 'tool_call':
+      return 'tool_call';
+    case 'tool_input_chunk':
+      return 'tool_input';
+    case 'tool_output_chunk':
+      return 'tool_output';
+    case 'tool_result':
+      return 'tool_result';
+    case 'interaction_request':
+    case 'questionnaire_request':
+    case 'agent_message':
+      return 'interaction_request';
+    case 'interaction_pending':
+    case 'questionnaire_reprompt':
+    case 'questionnaire_update':
+    case 'agent_switch':
+      return 'interaction_update';
+    case 'interaction_response':
+    case 'questionnaire_submission':
+    case 'agent_callback':
+      return 'interaction_response';
+    case 'interrupt':
+      return 'interrupt';
+    case 'error':
+      return 'error';
+  }
+}
+
+function toProjectedEvent(event: ChatEvent, sequence: number): ProjectedTranscriptEvent {
+  const payload = event.payload as Record<string, unknown>;
+  const base: ProjectedTranscriptEvent = {
+    sessionId: event.sessionId,
+    revision: 1,
+    sequence,
+    requestId:
+      (typeof event.turnId === 'string' && event.turnId.trim().length > 0
+        ? event.turnId
+        : event.responseId) ?? `request:${event.id}`,
+    eventId: event.id,
+    kind: mapLegacyKind(event),
+    chatEventType: event.type,
+    timestamp: new Date(event.timestamp).toISOString(),
+    payload,
+    ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
+      ? { responseId: event.responseId }
+      : {}),
+  };
+
+  if (typeof payload['toolCallId'] === 'string') {
+    base.toolCallId = payload['toolCallId'];
+  }
+  if (typeof payload['interactionId'] === 'string') {
+    base.interactionId = payload['interactionId'];
+  }
+  if (typeof payload['messageId'] === 'string') {
+    base.messageId = payload['messageId'];
+  }
+  if (typeof payload['exchangeId'] === 'string') {
+    base.exchangeId = payload['exchangeId'];
+  }
+
+  return base;
+}
+
+const rendererSequenceState = new WeakMap<ChatRenderer, number>();
+
+function resetLegacySequence(renderer: ChatRenderer, nextSequence = 0): void {
+  rendererSequenceState.set(renderer, nextSequence);
+}
+
+function getNextLegacySequence(renderer: ChatRenderer): number {
+  const nextSequence = rendererSequenceState.get(renderer) ?? 0;
+  rendererSequenceState.set(renderer, nextSequence + 1);
+  return nextSequence;
+}
+
+function replayLegacyEvents(renderer: ChatRenderer, events: ChatEvent[]): void {
+  renderer.replayProjectedEvents(events.map((event, sequence) => toProjectedEvent(event, sequence)), {
+    reset: true,
+  });
+  resetLegacySequence(renderer, events.length);
+}
+
+function renderLegacyEvent(renderer: ChatRenderer, event: ChatEvent): void {
+  renderer.handleNewProjectedEvent(toProjectedEvent(event, getNextLegacySequence(renderer)));
+}
+
 describe('ChatRenderer', () => {
   it('replays projected transcript events into the expected DOM structure', () => {
     const container = document.createElement('div');
@@ -274,7 +380,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const turn = container.querySelector<HTMLDivElement>('.turn');
     expect(turn).not.toBeNull();
@@ -346,7 +452,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-voice',
@@ -417,7 +523,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-voice-error',
@@ -470,7 +576,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-attachment',
@@ -543,7 +649,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-attachment-error',
@@ -633,7 +739,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn-truncated',
         turnId: 't-attachment-truncated',
@@ -728,7 +834,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn-expand-fail',
         turnId: 't-attachment-expand-fail',
@@ -801,7 +907,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn-open-fail',
         turnId: 't-open-fail',
@@ -867,7 +973,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn-history',
         turnId: 't-attachment-history',
@@ -926,7 +1032,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e-turn-history-content',
         turnId: 't-attachment-history-content',
@@ -972,7 +1078,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e-audio-turn-start',
         turnId: 't-audio',
@@ -980,7 +1086,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_audio', {
         id: 'e-audio',
         turnId: 't-audio',
@@ -1011,7 +1117,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_audio', {
         id: 'e-audio-context',
         turnId: 't-audio-context',
@@ -1037,7 +1143,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_audio', {
         id: 'e-audio-context-visible',
         turnId: 't-audio-context-visible',
@@ -1063,7 +1169,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e-voice-live-turn-start',
         turnId: 't-voice-live',
@@ -1071,7 +1177,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e-voice-live',
         turnId: 't-voice-live',
@@ -1100,7 +1206,7 @@ describe('ChatRenderer', () => {
     const renderer = new ChatRenderer(container);
     const timestamp = new Date('2026-03-29T15:26:00.000Z').getTime();
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e-turn',
         turnId: 't-turn',
@@ -1109,7 +1215,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_message', {
         id: 'e-user',
         turnId: 't-turn',
@@ -1141,7 +1247,7 @@ describe('ChatRenderer', () => {
     const renderer = new ChatRenderer(container);
     renderer.setTurnDividerActionHandler(onTurnDividerActivate);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e-turn-1',
         turnId: 't-turn-1',
@@ -1149,14 +1255,14 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'user' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_message', {
         id: 'e-user-1',
         turnId: 't-turn-1',
         payload: { text: 'First' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e-turn-2',
         turnId: 't-turn-2',
@@ -1164,7 +1270,7 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'user' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_message', {
         id: 'e-user-2',
         turnId: 't-turn-2',
@@ -1197,7 +1303,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1208,7 +1314,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -1243,7 +1349,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('assistant_done', {
         id: 'e-commentary',
         payload: {
@@ -1284,7 +1390,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1295,7 +1401,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -1328,7 +1434,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1342,7 +1448,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -1379,7 +1485,7 @@ describe('ChatRenderer', () => {
     renderer.hideTypingIndicator();
     expect(renderer.hasActiveOutput()).toBe(false);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1394,7 +1500,7 @@ describe('ChatRenderer', () => {
     renderer.markOutputCancelled();
     expect(renderer.hasActiveOutput()).toBe(false);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -1415,7 +1521,7 @@ describe('ChatRenderer', () => {
     renderer.showTypingIndicator();
     expect(renderer.hasActiveOutput()).toBe(true);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('assistant_done', {
         id: 'e-final',
         payload: {
@@ -1434,7 +1540,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'turn-1',
         turnId: 'turn-1',
@@ -1446,7 +1552,7 @@ describe('ChatRenderer', () => {
       true,
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_end', {
         id: 'turn-1-end',
         turnId: 'turn-1',
@@ -1465,7 +1571,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'turn-replay',
         turnId: 'turn-replay',
@@ -1493,7 +1599,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'turn-replay',
         turnId: 'turn-replay',
@@ -1525,7 +1631,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'turn-pending',
         turnId: 'turn-pending',
@@ -1533,7 +1639,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_pending', {
         id: 'pending-1',
         turnId: 'turn-pending',
@@ -1561,7 +1667,7 @@ describe('ChatRenderer', () => {
       getAgentDisplayName: () => 'Source Agent',
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e0',
         turnId: 't1',
@@ -1593,7 +1699,7 @@ describe('ChatRenderer', () => {
       getAgentDisplayName: () => 'Coding Agent',
     });
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('turn_start', {
         id: 'e0',
         turnId: 't1',
@@ -1643,13 +1749,13 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         payload: { text: 'Hello ' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         payload: { text: 'world' },
@@ -1660,7 +1766,7 @@ describe('ChatRenderer', () => {
     expect(assistantText).not.toBeNull();
     expect(assistantText?.textContent).toContain('Hello world');
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_done', {
         id: 'e3',
         payload: { text: 'Hello world!' },
@@ -1679,7 +1785,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         payload: { text: 'Hello **wor' },
@@ -1688,7 +1794,7 @@ describe('ChatRenderer', () => {
     let assistantText = container.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText?.querySelector('strong')?.textContent).toBe('wor');
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         payload: { text: 'ld**' },
@@ -1707,7 +1813,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
@@ -1715,7 +1821,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         responseId: 'r1',
@@ -1740,7 +1846,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
@@ -1748,7 +1854,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         responseId: 'r1',
@@ -1760,7 +1866,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_done', {
         id: 'e3',
         responseId: 'r1',
@@ -1779,21 +1885,21 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e1',
         responseId: 'r1',
         payload: { text: 'Drink water', phase: 'final_answer' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_chunk', {
         id: 'e2',
         responseId: 'r1',
         payload: { text: ' now', phase: 'final_answer' },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('assistant_done', {
         id: 'e3',
         responseId: 'r1',
@@ -1814,7 +1920,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'e0',
         turnId: 't-turn',
@@ -1822,7 +1928,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interrupt', {
         id: 'e1',
         turnId: 't-turn',
@@ -1846,7 +1952,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_message', {
         id: 'e1',
         turnId: 't1',
@@ -1863,7 +1969,7 @@ describe('ChatRenderer', () => {
     expect(container.querySelector('.message.user')).toBeNull();
 
     // Rendering after clear should work normally again.
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('user_message', {
         id: 'e2',
         turnId: 't2',
@@ -1883,7 +1989,7 @@ describe('ChatRenderer', () => {
     });
 
     // First, render the tool_call
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1899,7 +2005,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('pending')).toBe(true);
 
     // Stream some output chunks
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -1917,7 +2023,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('hello');
 
     // Stream more output
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e3',
         payload: {
@@ -1934,7 +2040,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('hello world');
 
     // Complete the tool
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_result', {
         id: 'e4',
         payload: {
@@ -1956,7 +2062,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e1',
         payload: {
@@ -1970,7 +2076,7 @@ describe('ChatRenderer', () => {
 
     expect(container.querySelector('.tool-output-block')).toBeNull();
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -2026,7 +2132,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const interaction = container.querySelector<HTMLElement>('.interaction-standalone');
     expect(interaction).not.toBeNull();
@@ -2082,7 +2188,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const interaction = container.querySelector<HTMLElement>(
       '[data-questionnaire-request-id="qr1"]',
@@ -2102,7 +2208,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('questionnaire_submission', {
         id: 'q-submitted',
         payload: {
@@ -2148,7 +2254,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('questionnaire_request', {
         id: 'q-request',
         turnId: 't-request',
@@ -2214,7 +2320,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.handleNewEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 'cb-turn-start',
         turnId: 't-callback',
@@ -2222,7 +2328,7 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'callback' },
       }),
     );
-    renderer.handleNewEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('agent_callback', {
         id: 'cb-1',
         turnId: 't-callback',
@@ -2254,7 +2360,7 @@ describe('ChatRenderer', () => {
       sendQuestionnaireSubmit,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('questionnaire_request', {
         id: 'q1',
         payload: {
@@ -2295,7 +2401,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('questionnaire_request', {
         id: 'q1',
         payload: {
@@ -2364,7 +2470,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     expect(container.querySelector('.tool-output-block')).not.toBeNull();
     expect(container.querySelector('.interaction-standalone')).not.toBeNull();
@@ -2409,7 +2515,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const toolCalls = container.querySelector<HTMLDivElement>('.tool-calls');
     const interaction = container.querySelector<HTMLDivElement>('.interaction-standalone');
@@ -2438,7 +2544,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -2448,7 +2554,7 @@ describe('ChatRenderer', () => {
         },
       }),
     );
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e2',
         payload: {
@@ -2462,7 +2568,7 @@ describe('ChatRenderer', () => {
     const grouped = container.querySelectorAll('.tool-call-group');
     expect(grouped.length).toBeGreaterThan(0);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_request', {
         id: 'e3',
         payload: {
@@ -2571,7 +2677,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const toolBlock = container.querySelector<HTMLDivElement>('.tool-output-block');
     expect(toolBlock).not.toBeNull();
@@ -2586,7 +2692,7 @@ describe('ChatRenderer', () => {
     const group = container.querySelector<HTMLDivElement>('.tool-call-group');
     expect(group).toBeNull();
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_response', {
         id: 'e4',
         payload: {
@@ -2612,7 +2718,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -2658,7 +2764,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('interaction_request', {
         id: 'e1',
         responseId: undefined,
@@ -2685,7 +2791,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -2738,7 +2844,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('interaction_request', {
         id: 'e1',
         responseId: undefined,
@@ -2796,7 +2902,7 @@ describe('ChatRenderer', () => {
       }),
     ];
 
-    renderer.replayEvents(events);
+    replayLegacyEvents(renderer, events);
 
     const response = container.querySelector<HTMLDivElement>('.assistant-response');
     expect(response).not.toBeNull();
@@ -2825,7 +2931,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -2837,7 +2943,7 @@ describe('ChatRenderer', () => {
     );
 
     // First chunk
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -2854,7 +2960,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('first');
 
     // Duplicate chunk (same offset) - should be ignored
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e3',
         payload: {
@@ -2872,7 +2978,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('first');
 
     // Stale chunk (lower offset) - should be ignored
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e4',
         payload: {
@@ -2888,7 +2994,7 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).not.toContain('stale');
 
     // Valid next chunk (higher offset) - should be appended
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e5',
         payload: {
@@ -2914,7 +3020,7 @@ describe('ChatRenderer', () => {
     });
 
     // First, create the response container via a turn_start
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
         id: 't1',
         turnId: 'turn1',
@@ -2923,7 +3029,7 @@ describe('ChatRenderer', () => {
     );
 
     // Stream input chunks before tool_call arrives
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_input_chunk', {
         id: 'e1',
         turnId: 'turn1',
@@ -2943,7 +3049,7 @@ describe('ChatRenderer', () => {
     expect(toolBlock?.classList.contains('streaming-input')).toBe(true);
 
     // Stream more input
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_input_chunk', {
         id: 'e2',
         turnId: 'turn1',
@@ -2963,7 +3069,7 @@ describe('ChatRenderer', () => {
     expect(inputBody?.classList.contains('streaming')).toBe(true);
 
     // Now the final tool_call event arrives with complete args
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e3',
         turnId: 'turn1',
@@ -2987,7 +3093,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3039,7 +3145,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3087,7 +3193,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3098,7 +3204,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -3134,7 +3240,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3145,7 +3251,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_request', {
         id: 'e2',
         payload: {
@@ -3162,7 +3268,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_response', {
         id: 'e3',
         payload: {
@@ -3210,7 +3316,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3221,7 +3327,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -3259,7 +3365,7 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -3270,7 +3376,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_output_chunk', {
         id: 'e2',
         payload: {
@@ -3296,7 +3402,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_input_chunk', {
         id: 'e1',
         payload: {
@@ -3308,7 +3414,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('tool_input_chunk', {
         id: 'e2',
         payload: {
@@ -3334,7 +3440,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container);
 
-    renderer.replayEvents([
+    replayLegacyEvents(renderer, [
       createBaseEvent('custom_message', {
         id: 'e-custom',
         turnId: 't-custom',
@@ -3432,7 +3538,7 @@ describe('ChatRenderer', () => {
     const focusInput = vi.fn();
     renderer.setFocusInputHandler(focusInput);
 
-    renderer.renderEvent(
+    renderLegacyEvent(renderer, 
       createBaseEvent('interaction_request', {
         id: 'e1',
         payload: {
@@ -3511,7 +3617,7 @@ it('renders multiple questionnaires in the same response without removing earlie
     }),
   ];
 
-  renderer.replayEvents(events);
+  replayLegacyEvents(renderer, events);
 
   const questionnaires = container.querySelectorAll('.interaction-questionnaire');
   expect(questionnaires.length).toBe(2);
@@ -3534,7 +3640,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   const renderer = new ChatRenderer(container);
 
   // First questionnaire
-  renderer.handleNewEvent(
+  renderLegacyEvent(renderer, 
     createBaseEvent('interaction_request', {
       id: 'e1',
       turnId: 'turn1',
@@ -3554,7 +3660,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   );
 
   // Response to first
-  renderer.handleNewEvent(
+  renderLegacyEvent(renderer, 
     createBaseEvent('interaction_response', {
       id: 'e2',
       payload: {
@@ -3567,7 +3673,7 @@ it('renders multiple questionnaires via handleNewEvent without removing earlier 
   );
 
   // Second questionnaire
-  renderer.handleNewEvent(
+  renderLegacyEvent(renderer, 
     createBaseEvent('interaction_request', {
       id: 'e3',
       turnId: 'turn1',

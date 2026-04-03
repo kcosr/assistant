@@ -28,8 +28,6 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'thinking_done',
   'user_message',
   'user_audio',
-  'transcript_delta',
-  'transcript_done',
   'tool_call',
   'tool_call_start',
   'tool_output_delta',
@@ -527,18 +525,6 @@ export const ServerUserAudioMessageSchema = z.object({
   requestId: z.string().optional(),
 });
 
-export const ServerTranscriptDeltaMessageSchema = z.object({
-  type: z.literal('transcript_delta'),
-  transcriptId: z.string(),
-  delta: z.string().min(1),
-});
-
-export const ServerTranscriptDoneMessageSchema = z.object({
-  type: z.literal('transcript_done'),
-  transcriptId: z.string(),
-  text: z.string(),
-});
-
 export const ProjectedTranscriptEventKindSchema = z.enum([
   'request_start',
   'request_end',
@@ -859,8 +845,6 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerThinkingDoneMessageSchema,
   ServerUserMessageMessageSchema,
   ServerUserAudioMessageSchema,
-  ServerTranscriptDeltaMessageSchema,
-  ServerTranscriptDoneMessageSchema,
   ServerToolCallMessageSchema,
   ServerToolCallStartMessageSchema,
   ServerToolOutputDeltaMessageSchema,
@@ -892,8 +876,6 @@ export type ServerThinkingDeltaMessage = z.infer<typeof ServerThinkingDeltaMessa
 export type ServerThinkingDoneMessage = z.infer<typeof ServerThinkingDoneMessageSchema>;
 export type ServerUserMessageMessage = z.infer<typeof ServerUserMessageMessageSchema>;
 export type ServerUserAudioMessage = z.infer<typeof ServerUserAudioMessageSchema>;
-export type ServerTranscriptDeltaMessage = z.infer<typeof ServerTranscriptDeltaMessageSchema>;
-export type ServerTranscriptDoneMessage = z.infer<typeof ServerTranscriptDoneMessageSchema>;
 export type ServerToolCallMessage = z.infer<typeof ServerToolCallMessageSchema>;
 export type ServerToolCallStartMessage = z.infer<typeof ServerToolCallStartMessageSchema>;
 export type ServerToolOutputDeltaMessage = z.infer<typeof ServerToolOutputDeltaMessageSchema>;

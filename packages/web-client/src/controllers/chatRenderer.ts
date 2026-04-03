@@ -5,7 +5,6 @@ import type {
   AgentMessageEvent,
   AssistantChunkEvent,
   AssistantDoneEvent,
-  ChatEvent,
   CustomMessageEvent,
   ErrorEvent,
   InteractionRequestEvent,
@@ -340,137 +339,36 @@ export class ChatRenderer {
     this.setTypingIndicatorVisible(this.activeTurnIds.size > 0);
   }
 
-  renderEvent(event: ChatEvent): void {
+  renderProjectedEvent(event: ProjectedTranscriptEvent): void {
     if (
-      event.type === 'tool_call' ||
-      event.type === 'assistant_chunk' ||
-      event.type === 'assistant_done' ||
-      event.type === 'interaction_request' ||
-      event.type === 'questionnaire_request'
+      event.chatEventType === 'tool_call' ||
+      event.chatEventType === 'assistant_chunk' ||
+      event.chatEventType === 'assistant_done' ||
+      event.chatEventType === 'interaction_request' ||
+      event.chatEventType === 'questionnaire_request'
     ) {
-      const toolCallId =
-        (event.type === 'tool_call' ||
-          event.type === 'interaction_request' ||
-          event.type === 'questionnaire_request') &&
-        event.payload &&
-        typeof event.payload === 'object'
-          ? ((event.payload as { toolCallId?: string }).toolCallId ?? null)
-          : null;
-      this.debugLog('event', {
-        type: event.type,
-        id: event.id,
+      this.debugLog('projected_event', {
+        type: event.chatEventType,
+        id: event.eventId,
         timestamp: event.timestamp,
-        turnId: event.turnId ?? null,
+        requestId: event.requestId,
         responseId: event.responseId ?? null,
-        toolCallId,
+        toolCallId: event.toolCallId ?? null,
         phase:
-          event.type === 'assistant_chunk' || event.type === 'assistant_done'
-            ? (event.payload.phase ?? null)
+          event.chatEventType === 'assistant_chunk' || event.chatEventType === 'assistant_done'
+            ? ((event.payload as { phase?: string }).phase ?? null)
             : null,
         textPreview:
-          event.type === 'assistant_chunk' || event.type === 'assistant_done'
-            ? this.previewText(event.payload.text)
+          event.chatEventType === 'assistant_chunk' || event.chatEventType === 'assistant_done'
+            ? this.previewText(
+                typeof (event.payload as { text?: unknown }).text === 'string'
+                  ? ((event.payload as { text: string }).text ?? '')
+                  : '',
+              )
             : null,
       });
     }
 
-    switch (event.type) {
-      case 'turn_start':
-        this.handleTurnStart(event);
-        break;
-      case 'turn_end':
-        this.handleTurnEnd(event);
-        break;
-      case 'user_message':
-        this.handleUserMessage(event);
-        break;
-      case 'user_audio':
-        this.handleUserAudio(event);
-        break;
-      case 'assistant_chunk':
-        this.handleAssistantChunk(event);
-        break;
-      case 'assistant_done':
-        this.handleAssistantDone(event);
-        break;
-      case 'thinking_chunk':
-        this.handleThinkingChunk(event);
-        break;
-      case 'thinking_done':
-        this.handleThinkingDone(event);
-        break;
-      case 'custom_message':
-        this.handleCustomMessage(event);
-        break;
-      case 'summary_message':
-        this.handleSummaryMessage(event);
-        break;
-      case 'tool_call':
-        this.handleToolCall(event);
-        break;
-      case 'tool_input_chunk':
-        this.handleToolInputChunk(event);
-        break;
-      case 'tool_output_chunk':
-        this.handleToolOutputChunk(event);
-        break;
-      case 'tool_result':
-        this.handleToolResult(event);
-        break;
-      case 'interaction_request':
-        this.handleInteractionRequest(event);
-        break;
-      case 'interaction_response':
-        this.handleInteractionResponse(event);
-        break;
-      case 'interaction_pending':
-        this.handleInteractionPending(event);
-        break;
-      case 'questionnaire_request':
-        this.handleQuestionnaireRequest(event);
-        break;
-      case 'questionnaire_reprompt':
-        this.handleQuestionnaireReprompt(event);
-        break;
-      case 'questionnaire_submission':
-        this.handleQuestionnaireSubmission(event);
-        break;
-      case 'questionnaire_update':
-        this.handleQuestionnaireUpdate(event);
-        break;
-      case 'agent_message':
-        this.handleAgentMessage(event);
-        break;
-      case 'agent_callback':
-        this.handleAgentCallback(event);
-        break;
-      case 'interrupt':
-        this.handleInterrupt(event);
-        break;
-      case 'error':
-        this.handleError(event);
-        break;
-      default:
-        // Event types that are not currently rendered (agent_switch, audio_*).
-        break;
-    }
-  }
-
-  replayEvents(events: ChatEvent[]): void {
-    this.clear();
-    this._isReplaying = true;
-    for (const event of events) {
-      this.renderEvent(event);
-    }
-    this._isReplaying = false;
-    this.syncTypingIndicatorFromTurnState();
-  }
-
-  handleNewEvent(event: ChatEvent): void {
-    this.renderEvent(event);
-  }
-
-  renderProjectedEvent(event: ProjectedTranscriptEvent): void {
     const timestamp = Date.parse(event.timestamp);
     if (Number.isNaN(timestamp)) {
       return;

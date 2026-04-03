@@ -7,7 +7,7 @@ Browser-based chat client for the AI Assistant.
 - [Features](#features)
 - [Building](#building)
 - [Web-Specific Implementation](#web-specific-implementation)
-- [Protocol Messages (v2)](#protocol-messages-v2)
+- [Protocol Messages](#protocol-messages)
 - [Browser APIs Used](#browser-apis-used)
 - [Files](#files)
 
@@ -75,9 +75,9 @@ Auto-scroll triggers on:
 - Toggle button shows `▲`/`▼`
 - CSS class `.controls-collapsed` hides child elements
 
-## Protocol Messages (v2)
+## Protocol Messages
 
-The web client uses protocol v2 with **multiplexed connections** - a single WebSocket can subscribe to multiple sessions.
+The web client uses protocol v5 with **multiplexed connections**. A single WebSocket can subscribe to multiple sessions.
 
 ### Connection Model
 
@@ -123,6 +123,7 @@ All session-specific messages include `sessionId` field.
 | `thinking_done`     | Complete thinking content              |
 | `text_delta`        | Streaming text chunk                   |
 | `text_done`         | Complete response text                 |
+| `transcript_event`  | Canonical projected transcript event   |
 | `tool_call_start`   | Tool call started                      |
 | `tool_output_delta` | Tool output streaming                  |
 | `tool_result`       | Tool call complete                     |

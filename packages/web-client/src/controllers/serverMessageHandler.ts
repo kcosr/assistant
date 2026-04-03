@@ -413,8 +413,6 @@ export class ServerMessageHandler {
       case 'agent_callback_result': {
         break;
       }
-      case 'transcript_delta':
-      case 'transcript_done':
       case 'modes_updated': {
         break;
       }
