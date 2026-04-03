@@ -73,6 +73,7 @@
 - Fixed live tool-input rendering so streamed partial JSON for tools like `bash`, `write`, `read`, `find`, `grep`, and `agents_message` is rendered from semantic partial arguments instead of raw JSON until the final tool call arrives.
 - Fixed filesystem-backed `attachment_send` calls to accept relative paths resolved from the session working directory, matching the cwd-oriented behavior of Pi coding tools.
 - Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
+- Fixed sender-side session typing indicators so transcript replay no longer re-applies stale optimistic local typing after a turn has already completed.
 
 ### Removed
 

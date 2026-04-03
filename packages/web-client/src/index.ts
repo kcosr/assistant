@@ -141,6 +141,7 @@ import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils
 import {
   dedupeProjectedTranscriptEvents,
   finishTranscriptHydration,
+  shouldShowTypingIndicatorAfterReplay,
 } from './utils/transcriptReplay';
 import {
   createWindowSlot,
@@ -4357,7 +4358,9 @@ async function main(): Promise<void> {
         await loadSessionTranscript(trimmed, { force: true });
       }
     }
-    const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
+    const shouldShowTyping = shouldShowTypingIndicatorAfterReplay({
+      hasActiveOutput: chatRenderer.hasActiveOutput(),
+    });
     if (shouldShowTyping) {
       showSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'busy');

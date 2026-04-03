@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ProjectedTranscriptEvent } from '@assistant/shared';
-import { dedupeProjectedTranscriptEvents, finishTranscriptHydration } from './transcriptReplay';
+import {
+  dedupeProjectedTranscriptEvents,
+  finishTranscriptHydration,
+  shouldShowTypingIndicatorAfterReplay,
+} from './transcriptReplay';
 
 function createEvent(
   sequence: number,
@@ -63,5 +67,23 @@ describe('finishTranscriptHydration', () => {
     finishTranscriptHydration(state, () => {});
 
     expect(state.hydratingCount).toBe(0);
+  });
+});
+
+describe('shouldShowTypingIndicatorAfterReplay', () => {
+  it('does not preserve stale optimistic typing when replay has no active output', () => {
+    expect(
+      shouldShowTypingIndicatorAfterReplay({
+        hasActiveOutput: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps typing visible when replay still has active output', () => {
+    expect(
+      shouldShowTypingIndicatorAfterReplay({
+        hasActiveOutput: true,
+      }),
+    ).toBe(true);
   });
 });

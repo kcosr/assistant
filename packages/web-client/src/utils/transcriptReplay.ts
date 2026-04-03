@@ -43,3 +43,12 @@ export function finishTranscriptHydration(
   state.hydratingCount = Math.max(0, state.hydratingCount - 1);
   flushBufferedEvents();
 }
+
+export function shouldShowTypingIndicatorAfterReplay(options: {
+  hasActiveOutput: boolean;
+}): boolean {
+  // Once replay finishes, the rendered transcript is authoritative. Any earlier
+  // optimistic local typing state should not survive if the transcript shows no
+  // active request/output.
+  return options.hasActiveOutput;
+}
