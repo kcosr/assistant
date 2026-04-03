@@ -302,6 +302,10 @@ export class ChatRenderer {
     return false;
   }
 
+  hasActiveRequest(): boolean {
+    return this.activeRequestIds.size > 0;
+  }
+
   markOutputCancelled(): void {
     this.interruptPendingToolBlocks();
   }

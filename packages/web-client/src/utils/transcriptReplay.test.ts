@@ -71,18 +71,18 @@ describe('finishTranscriptHydration', () => {
 });
 
 describe('shouldShowTypingIndicatorAfterReplay', () => {
-  it('does not preserve stale optimistic typing when replay has no active output', () => {
+  it('does not preserve stale optimistic typing when replay has no active request', () => {
     expect(
       shouldShowTypingIndicatorAfterReplay({
-        hasActiveOutput: false,
+        hasActiveRequest: false,
       }),
     ).toBe(false);
   });
 
-  it('keeps typing visible when replay still has active output', () => {
+  it('keeps typing visible when replay still has an active request', () => {
     expect(
       shouldShowTypingIndicatorAfterReplay({
-        hasActiveOutput: true,
+        hasActiveRequest: true,
       }),
     ).toBe(true);
   });

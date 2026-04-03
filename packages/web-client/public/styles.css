@@ -5253,6 +5253,8 @@ textarea.interaction-input {
 
 .tool-output-block.expanded .tool-output-content .markdown-content pre {
   margin-top: 0;
+  display: block;
+  width: 100%;
 }
 
 /* Tool output input/result sections */
@@ -5967,7 +5969,7 @@ textarea.interaction-input {
   border-top: 1px solid var(--color-border-subtle);
   align-items: center;
   gap: var(--spacing-xs);
-  padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-md);
+  padding: calc(var(--spacing-xs) + 2px) var(--spacing-lg) var(--spacing-md);
   --input-bar-max-width: 100%;
 }
 

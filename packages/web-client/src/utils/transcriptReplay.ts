@@ -45,10 +45,10 @@ export function finishTranscriptHydration(
 }
 
 export function shouldShowTypingIndicatorAfterReplay(options: {
-  hasActiveOutput: boolean;
+  hasActiveRequest: boolean;
 }): boolean {
   // Once replay finishes, the rendered transcript is authoritative. Any earlier
   // optimistic local typing state should not survive if the transcript shows no
-  // active request/output.
-  return options.hasActiveOutput;
+  // active request.
+  return options.hasActiveRequest;
 }

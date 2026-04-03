@@ -69,5 +69,18 @@ describe('chat layout styles', () => {
     expect(css).toContain('position: absolute;');
     expect(css).toContain('top: -1px;');
     expect(css).toContain('height: 2px;');
+    expect(css).toContain('padding: calc(var(--spacing-xs) + 2px) var(--spacing-lg) var(--spacing-md);');
+  });
+
+  it('keeps markdown code blocks full width inside tool output content', () => {
+    const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const blockStart = css.indexOf('.tool-output-block.expanded .tool-output-content .markdown-content pre {');
+    const nextBlockStart = css.indexOf('\n\n.', blockStart);
+    const preBlock = blockStart >= 0 ? css.slice(blockStart, nextBlockStart >= 0 ? nextBlockStart : undefined) : '';
+
+    expect(preBlock).toContain('.tool-output-block.expanded .tool-output-content .markdown-content pre {');
+    expect(preBlock).toContain('display: block;');
+    expect(preBlock).toContain('width: 100%;');
   });
 });

@@ -125,13 +125,16 @@ export class ServerMessageHandler {
   private syncSessionRequestActivity(sessionId: string): void {
     const activeRequests = this.activeRequestsBySession.get(sessionId);
     const hasActiveRequest = !!activeRequests && activeRequests.size > 0;
+    const runtime = this.options.getChatRuntimeForSession(sessionId);
     if (hasActiveRequest) {
       this.options.showSessionTypingIndicator(sessionId);
       this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
+      runtime?.chatRenderer.showTypingIndicator();
       return;
     }
     this.options.hideSessionTypingIndicator(sessionId);
     this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+    runtime?.chatRenderer.hideTypingIndicator();
   }
 
   private markRequestStarted(sessionId: string, requestId: string | undefined): void {

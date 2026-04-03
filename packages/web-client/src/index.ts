@@ -4373,14 +4373,16 @@ async function main(): Promise<void> {
       }
     }
     const shouldShowTyping = shouldShowTypingIndicatorAfterReplay({
-      hasActiveOutput: chatRenderer.hasActiveOutput(),
+      hasActiveRequest: chatRenderer.hasActiveRequest(),
     });
     if (shouldShowTyping) {
       showSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'busy');
+      chatRenderer.showTypingIndicator();
     } else {
       hideSessionTypingIndicator(trimmed);
       setChatPanelStatusForSession(trimmed, 'idle');
+      chatRenderer.hideTypingIndicator();
     }
     getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
   }

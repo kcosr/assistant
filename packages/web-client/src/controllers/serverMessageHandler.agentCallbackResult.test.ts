@@ -115,6 +115,73 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(typingIndicators.has('s-1')).toBe(false);
   });
 
+  it('keeps chat typing indicator in sync with request activity', async () => {
+    const runtime = {
+      chatRenderer: {
+        clear: vi.fn(),
+        hideTypingIndicator: vi.fn(),
+        showTypingIndicator: vi.fn(),
+        handleNewProjectedEvent: vi.fn(() => 'applied'),
+      },
+      chatScrollManager: {
+        scrollToBottom: vi.fn(),
+        autoScrollIfEnabled: vi.fn(),
+      },
+      elements: {
+        chatPanel: null,
+        chatLog: document.createElement('div'),
+        scrollToBottomButtonEl: document.createElement('button'),
+        toggleToolOutputButton: null,
+        toggleToolExpandButton: null,
+        toggleThinkingButton: null,
+      },
+      dispose: vi.fn(),
+    } as unknown as ChatRuntime;
+    const setChatPanelStatusForSession = vi.fn();
+    const { handler, typingIndicators } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      setChatPanelStatusForSession,
+    });
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'req-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-03T00:00:00.000Z',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(true);
+    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'busy');
+    expect(runtime.chatRenderer.showTypingIndicator).toHaveBeenCalledTimes(1);
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 1,
+        requestId: 'turn-1',
+        eventId: 'req-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: '2026-04-03T00:00:05.000Z',
+        payload: {},
+      },
+    });
+
+    expect(typingIndicators.has('s-1')).toBe(false);
+    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'idle');
+    expect(runtime.chatRenderer.hideTypingIndicator).toHaveBeenCalledTimes(1);
+  });
+
   it('forces transcript reload when session history changes', async () => {
     const { handler, refreshSessions, loadSessionTranscript } = makeHandler();
 

@@ -41,6 +41,7 @@
 
 ### Fixed
 
+- Fixed chat typing-state drift so the chat-log typing dots, session busy state, and input activity bar all follow the same active-request state after live updates and replay.
 - Fixed attachment persistence to enforce the 4 MB size cap in the store as well as the tool layer, preventing oversized writes from non-tool callers. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
