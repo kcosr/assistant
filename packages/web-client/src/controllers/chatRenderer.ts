@@ -1,12 +1,8 @@
 import type {
   AttachmentDescriptor,
   AttachmentToolResult,
-  AgentCallbackEvent,
-  AgentMessageEvent,
   AssistantChunkEvent,
   AssistantDoneEvent,
-  CustomMessageEvent,
-  ErrorEvent,
   InteractionRequestEvent,
   InteractionResponseEvent,
   InteractionPendingEvent,
@@ -16,17 +12,7 @@ import type {
   QuestionnaireUpdateEvent,
   ThinkingChunkEvent,
   ThinkingDoneEvent,
-  ToolCallEvent,
-  ToolInputChunkEvent,
-  ToolOutputChunkEvent,
-  ToolResultEvent,
-  SummaryMessageEvent,
-  TurnEndEvent,
   ProjectedTranscriptEvent,
-  TurnStartEvent,
-  InterruptEvent,
-  UserAudioEvent,
-  UserMessageEvent,
 } from '@assistant/shared';
 import {
   isAttachmentToolResult,
@@ -106,6 +92,16 @@ const ATTACHMENT_TOOL_NAME = 'attachment_send';
 type AttachmentExpansionState =
   | { status: 'loading' }
   | { status: 'ready'; fullText: string; expanded: boolean };
+
+type RenderedTranscriptEvent<TPayload> = {
+  id: string;
+  timestamp: number;
+  sessionId: string;
+  turnId?: string;
+  responseId?: string;
+  payload: TPayload;
+  chatEventType: ProjectedTranscriptEvent['chatEventType'];
+};
 
 function parseJsonRecord(value: string): Record<string, unknown> | null {
   const trimmed = value.trim();
@@ -378,188 +374,177 @@ export class ChatRenderer {
       timestamp,
       sessionId: event.sessionId,
       turnId: event.requestId,
+      chatEventType: event.chatEventType,
       ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
         ? { responseId: event.responseId }
         : {}),
     };
 
-    switch (event.chatEventType) {
-      case 'turn_start':
+    switch (event.kind) {
+      case 'request_start':
         this.handleTurnStart({
           ...projectedBase,
-          type: 'turn_start',
-          payload: event.payload as TurnStartEvent['payload'],
+          payload: event.payload as { trigger?: string },
         });
         break;
-      case 'turn_end':
+      case 'request_end':
         this.handleTurnEnd({
           ...projectedBase,
-          type: 'turn_end',
-          payload: event.payload as TurnEndEvent['payload'],
+          payload: event.payload as Record<string, unknown>,
         });
         break;
       case 'user_message':
+        if (event.chatEventType === 'user_audio') {
+          this.handleUserAudio({
+            ...projectedBase,
+            payload: event.payload as { transcription: string; durationMs: number },
+          });
+          break;
+        }
         this.handleUserMessage({
           ...projectedBase,
-          type: 'user_message',
-          payload: event.payload as UserMessageEvent['payload'],
+          payload: event.payload as { text: string; fromAgentId?: string },
         });
         break;
-      case 'user_audio':
-        this.handleUserAudio({
-          ...projectedBase,
-          type: 'user_audio',
-          payload: event.payload as UserAudioEvent['payload'],
-        });
+      case 'assistant_message':
+        if (event.chatEventType === 'assistant_chunk') {
+          this.handleAssistantChunk({
+            ...projectedBase,
+            payload: event.payload as AssistantChunkEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'assistant_done') {
+          this.handleAssistantDone({
+            ...projectedBase,
+            payload: event.payload as AssistantDoneEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'custom_message') {
+          this.handleCustomMessage({
+            ...projectedBase,
+            payload: event.payload as { text?: string; label?: string },
+          });
+          break;
+        }
+        if (event.chatEventType === 'summary_message') {
+          this.handleSummaryMessage({
+            ...projectedBase,
+            payload: event.payload as { text?: string; summaryType?: string },
+          });
+        }
         break;
-      case 'assistant_chunk':
-        this.handleAssistantChunk({
-          ...projectedBase,
-          type: 'assistant_chunk',
-          payload: event.payload as AssistantChunkEvent['payload'],
-        });
-        break;
-      case 'assistant_done':
-        this.handleAssistantDone({
-          ...projectedBase,
-          type: 'assistant_done',
-          payload: event.payload as AssistantDoneEvent['payload'],
-        });
-        break;
-      case 'thinking_chunk':
+      case 'thinking':
+        if (event.chatEventType === 'thinking_done') {
+          this.handleThinkingDone({
+            ...projectedBase,
+            payload: event.payload as ThinkingDoneEvent['payload'],
+          });
+          break;
+        }
         this.handleThinkingChunk({
           ...projectedBase,
-          type: 'thinking_chunk',
           payload: event.payload as ThinkingChunkEvent['payload'],
-        });
-        break;
-      case 'thinking_done':
-        this.handleThinkingDone({
-          ...projectedBase,
-          type: 'thinking_done',
-          payload: event.payload as ThinkingDoneEvent['payload'],
-        });
-        break;
-      case 'custom_message':
-        this.handleCustomMessage({
-          ...projectedBase,
-          type: 'custom_message',
-          payload: event.payload as CustomMessageEvent['payload'],
-        });
-        break;
-      case 'summary_message':
-        this.handleSummaryMessage({
-          ...projectedBase,
-          type: 'summary_message',
-          payload: event.payload as SummaryMessageEvent['payload'],
         });
         break;
       case 'tool_call':
         this.handleToolCall({
           ...projectedBase,
-          type: 'tool_call',
-          payload: event.payload as ToolCallEvent['payload'],
+          payload: event.payload as { toolCallId: string; toolName: string; args?: Record<string, unknown> },
         });
         break;
-      case 'tool_input_chunk':
+      case 'tool_input':
         this.handleToolInputChunk({
           ...projectedBase,
-          type: 'tool_input_chunk',
-          payload: event.payload as ToolInputChunkEvent['payload'],
+          payload: event.payload as { toolCallId: string; toolName: string; chunk: string; offset: number },
         });
         break;
-      case 'tool_output_chunk':
+      case 'tool_output':
         this.handleToolOutputChunk({
           ...projectedBase,
-          type: 'tool_output_chunk',
-          payload: event.payload as ToolOutputChunkEvent['payload'],
+          payload: event.payload as { toolCallId: string; toolName: string; chunk: string; offset: number },
         });
         break;
       case 'tool_result':
         this.handleToolResult({
           ...projectedBase,
-          type: 'tool_result',
-          payload: event.payload as ToolResultEvent['payload'],
+          payload: event.payload as { toolCallId: string; result?: unknown; error?: { code: string; message: string } },
         });
         break;
       case 'interaction_request':
+        if (event.chatEventType === 'questionnaire_request') {
+          this.handleQuestionnaireRequest({
+            ...projectedBase,
+            payload: event.payload as QuestionnaireRequestEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'agent_message') {
+          this.handleAgentMessage({
+            ...projectedBase,
+            payload: event.payload as Record<string, unknown>,
+          });
+          break;
+        }
         this.handleInteractionRequest({
           ...projectedBase,
-          type: 'interaction_request',
           payload: event.payload as InteractionRequestEvent['payload'],
         });
         break;
+      case 'interaction_update':
+        if (event.chatEventType === 'interaction_pending') {
+          this.handleInteractionPending({
+            ...projectedBase,
+            payload: event.payload as InteractionPendingEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'questionnaire_reprompt') {
+          this.handleQuestionnaireReprompt({
+            ...projectedBase,
+            payload: event.payload as QuestionnaireRepromptEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'questionnaire_update') {
+          this.handleQuestionnaireUpdate({
+            ...projectedBase,
+            payload: event.payload as QuestionnaireUpdateEvent['payload'],
+          });
+        }
+        break;
       case 'interaction_response':
+        if (event.chatEventType === 'questionnaire_submission') {
+          this.handleQuestionnaireSubmission({
+            ...projectedBase,
+            payload: event.payload as QuestionnaireSubmissionEvent['payload'],
+          });
+          break;
+        }
+        if (event.chatEventType === 'agent_callback') {
+          this.handleAgentCallback({
+            ...projectedBase,
+            payload: event.payload as { messageId: string; fromAgentId: string; fromSessionId: string; result: string },
+          });
+          break;
+        }
         this.handleInteractionResponse({
           ...projectedBase,
-          type: 'interaction_response',
           payload: event.payload as InteractionResponseEvent['payload'],
-        });
-        break;
-      case 'interaction_pending':
-        this.handleInteractionPending({
-          ...projectedBase,
-          type: 'interaction_pending',
-          payload: event.payload as InteractionPendingEvent['payload'],
-        });
-        break;
-      case 'questionnaire_request':
-        this.handleQuestionnaireRequest({
-          ...projectedBase,
-          type: 'questionnaire_request',
-          payload: event.payload as QuestionnaireRequestEvent['payload'],
-        });
-        break;
-      case 'questionnaire_reprompt':
-        this.handleQuestionnaireReprompt({
-          ...projectedBase,
-          type: 'questionnaire_reprompt',
-          payload: event.payload as QuestionnaireRepromptEvent['payload'],
-        });
-        break;
-      case 'questionnaire_submission':
-        this.handleQuestionnaireSubmission({
-          ...projectedBase,
-          type: 'questionnaire_submission',
-          payload: event.payload as QuestionnaireSubmissionEvent['payload'],
-        });
-        break;
-      case 'questionnaire_update':
-        this.handleQuestionnaireUpdate({
-          ...projectedBase,
-          type: 'questionnaire_update',
-          payload: event.payload as QuestionnaireUpdateEvent['payload'],
-        });
-        break;
-      case 'agent_message':
-        this.handleAgentMessage({
-          ...projectedBase,
-          type: 'agent_message',
-          payload: event.payload as AgentMessageEvent['payload'],
-        });
-        break;
-      case 'agent_callback':
-        this.handleAgentCallback({
-          ...projectedBase,
-          type: 'agent_callback',
-          payload: event.payload as AgentCallbackEvent['payload'],
         });
         break;
       case 'interrupt':
         this.handleInterrupt({
           ...projectedBase,
-          type: 'interrupt',
-          payload: event.payload as InterruptEvent['payload'],
+          payload: event.payload as { reason?: string },
         });
         break;
       case 'error':
         this.handleError({
           ...projectedBase,
-          type: 'error',
-          payload: event.payload as ErrorEvent['payload'],
+          payload: event.payload as { code: string; message: string },
         });
-        break;
-      default:
         break;
     }
   }
@@ -766,7 +751,7 @@ export class ChatRenderer {
     this.focusInputHandler?.();
   }
 
-  private handleTurnStart(event: TurnStartEvent): void {
+  private handleTurnStart(event: RenderedTranscriptEvent<{ trigger?: string }>): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     this.getOrCreateTurnContainer(turnId, event.timestamp);
     this.activeRequestIds.add(turnId);
@@ -775,7 +760,7 @@ export class ChatRenderer {
     }
   }
 
-  private handleTurnEnd(event: TurnEndEvent): void {
+  private handleTurnEnd(event: RenderedTranscriptEvent<Record<string, unknown>>): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.turnElements.get(turnId);
     if (turnEl) {
@@ -787,7 +772,9 @@ export class ChatRenderer {
     }
   }
 
-  private handleUserMessage(event: UserMessageEvent): void {
+  private handleUserMessage(
+    event: RenderedTranscriptEvent<{ text: string; fromAgentId?: string }>,
+  ): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
@@ -809,7 +796,9 @@ export class ChatRenderer {
 
   }
 
-  private handleUserAudio(event: UserAudioEvent): void {
+  private handleUserAudio(
+    event: RenderedTranscriptEvent<{ transcription: string; durationMs: number }>,
+  ): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
@@ -829,12 +818,17 @@ export class ChatRenderer {
     bubble.setAttribute('aria-label', 'Spoken user message');
   }
 
-  private getRenderableUserText(event: UserMessageEvent | UserAudioEvent): string {
-    const rawText = event.type === 'user_audio' ? event.payload.transcription : event.payload.text;
+  private getRenderableUserText(
+    event:
+      | RenderedTranscriptEvent<{ text: string; fromAgentId?: string }>
+      | RenderedTranscriptEvent<{ transcription: string; durationMs: number }>,
+  ): string {
+    const rawText =
+      'transcription' in event.payload ? event.payload.transcription : event.payload.text;
     return stripContextLine(rawText);
   }
 
-  private handleAssistantChunk(event: AssistantChunkEvent): void {
+  private handleAssistantChunk(event: RenderedTranscriptEvent<AssistantChunkEvent['payload']>): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
       return;
@@ -883,7 +877,7 @@ export class ChatRenderer {
     });
   }
 
-  private handleAssistantDone(event: AssistantDoneEvent): void {
+  private handleAssistantDone(event: RenderedTranscriptEvent<AssistantDoneEvent['payload']>): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
       return;
@@ -973,7 +967,7 @@ export class ChatRenderer {
     });
   }
 
-  private handleThinkingChunk(event: ThinkingChunkEvent): void {
+  private handleThinkingChunk(event: RenderedTranscriptEvent<ThinkingChunkEvent['payload']>): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
       return;
@@ -999,7 +993,7 @@ export class ChatRenderer {
     thinkingEl.dataset['renderer'] = 'unified';
   }
 
-  private handleThinkingDone(event: ThinkingDoneEvent): void {
+  private handleThinkingDone(event: RenderedTranscriptEvent<ThinkingDoneEvent['payload']>): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
       return;
@@ -1052,7 +1046,9 @@ export class ChatRenderer {
     return wrapper;
   }
 
-  private handleCustomMessage(event: CustomMessageEvent): void {
+  private handleCustomMessage(
+    event: RenderedTranscriptEvent<{ text?: string; label?: string }>,
+  ): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
@@ -1066,7 +1062,9 @@ export class ChatRenderer {
     messageEl.dataset['renderer'] = 'unified';
   }
 
-  private handleSummaryMessage(event: SummaryMessageEvent): void {
+  private handleSummaryMessage(
+    event: RenderedTranscriptEvent<{ text?: string; summaryType?: string }>,
+  ): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
     const text = event.payload.text ?? '';
@@ -1089,7 +1087,13 @@ export class ChatRenderer {
     messageEl.dataset['renderer'] = 'unified';
   }
 
-  private handleToolCall(event: ToolCallEvent): void {
+  private handleToolCall(
+    event: RenderedTranscriptEvent<{
+      toolCallId: string;
+      toolName: string;
+      args?: Record<string, unknown>;
+    }>,
+  ): void {
     const responseId = this.getResponseId(event.responseId);
     const callId = event.payload.toolCallId;
     const toolName = event.payload.toolName;
@@ -1287,7 +1291,14 @@ export class ChatRenderer {
     }
   }
 
-  private handleToolInputChunk(event: ToolInputChunkEvent): void {
+  private handleToolInputChunk(
+    event: RenderedTranscriptEvent<{
+      toolCallId: string;
+      toolName: string;
+      chunk: string;
+      offset: number;
+    }>,
+  ): void {
     const callId = event.payload.toolCallId;
     const chunk = event.payload.chunk;
     const offset = event.payload.offset;
@@ -1396,7 +1407,14 @@ export class ChatRenderer {
     this.updateToolCallGroupForBlock(block);
   }
 
-  private handleToolOutputChunk(event: ToolOutputChunkEvent): void {
+  private handleToolOutputChunk(
+    event: RenderedTranscriptEvent<{
+      toolCallId: string;
+      toolName: string;
+      chunk: string;
+      offset: number;
+    }>,
+  ): void {
     const callId = event.payload.toolCallId;
     const chunk = event.payload.chunk;
     const offset = event.payload.offset;
@@ -1439,7 +1457,13 @@ export class ChatRenderer {
     this.updateToolCallGroupForBlock(block);
   }
 
-  private handleToolResult(event: ToolResultEvent): void {
+  private handleToolResult(
+    event: RenderedTranscriptEvent<{
+      toolCallId: string;
+      result?: unknown;
+      error?: { code: string; message: string };
+    }>,
+  ): void {
     const callId = event.payload.toolCallId;
     const responseId = this.getResponseId(event.responseId);
 
@@ -1651,7 +1675,9 @@ export class ChatRenderer {
     this.updateToolCallGroupForBlock(block);
   }
 
-  private handleInteractionRequest(event: InteractionRequestEvent): void {
+  private handleInteractionRequest(
+    event: RenderedTranscriptEvent<InteractionRequestEvent['payload']>,
+  ): void {
     const payload = event.payload;
     const interactionId = payload.interactionId;
     const toolCallId = payload.toolCallId;
@@ -1703,7 +1729,9 @@ export class ChatRenderer {
     }
   }
 
-  private handleInteractionResponse(event: InteractionResponseEvent): void {
+  private handleInteractionResponse(
+    event: RenderedTranscriptEvent<InteractionResponseEvent['payload']>,
+  ): void {
     const payload = event.payload;
     const interactionId = payload.interactionId;
     const element = this.interactionElements.get(interactionId);
@@ -1718,7 +1746,9 @@ export class ChatRenderer {
     this.pendingInteractionResponses.set(interactionId, payload);
   }
 
-  private handleInteractionPending(event: InteractionPendingEvent): void {
+  private handleInteractionPending(
+    event: RenderedTranscriptEvent<InteractionPendingEvent['payload']>,
+  ): void {
     if (this._isReplaying) {
       return;
     }
@@ -1730,7 +1760,9 @@ export class ChatRenderer {
     }
   }
 
-  private handleQuestionnaireRequest(event: QuestionnaireRequestEvent): void {
+  private handleQuestionnaireRequest(
+    event: RenderedTranscriptEvent<QuestionnaireRequestEvent['payload']>,
+  ): void {
     const payload = event.payload;
     this.questionnaireRequests.set(payload.questionnaireRequestId, payload);
     this.questionnaireToolCalls.add(payload.toolCallId);
@@ -1755,7 +1787,9 @@ export class ChatRenderer {
     }
   }
 
-  private handleQuestionnaireReprompt(event: QuestionnaireRepromptEvent): void {
+  private handleQuestionnaireReprompt(
+    event: RenderedTranscriptEvent<QuestionnaireRepromptEvent['payload']>,
+  ): void {
     this.questionnaireReprompts.set(event.payload.questionnaireRequestId, event.payload);
     if (this.questionnaireResponses.has(event.payload.questionnaireRequestId)) {
       return;
@@ -1777,7 +1811,9 @@ export class ChatRenderer {
     });
   }
 
-  private handleQuestionnaireSubmission(event: QuestionnaireSubmissionEvent): void {
+  private handleQuestionnaireSubmission(
+    event: RenderedTranscriptEvent<QuestionnaireSubmissionEvent['payload']>,
+  ): void {
     const response: InteractionResponseDraft = {
       action: 'submit',
       input: event.payload.answers,
@@ -1801,7 +1837,9 @@ export class ChatRenderer {
     });
   }
 
-  private handleQuestionnaireUpdate(event: QuestionnaireUpdateEvent): void {
+  private handleQuestionnaireUpdate(
+    event: RenderedTranscriptEvent<QuestionnaireUpdateEvent['payload']>,
+  ): void {
     const response: InteractionResponseDraft = {
       action: 'cancel',
       ...(event.payload.reason ? { reason: event.payload.reason } : {}),
@@ -1901,7 +1939,9 @@ export class ChatRenderer {
     this.updateToolInteractionState(block);
   }
 
-  private createToolBlockForInteraction(event: InteractionRequestEvent): HTMLDivElement | null {
+  private createToolBlockForInteraction(
+    event: RenderedTranscriptEvent<InteractionRequestEvent['payload']>,
+  ): HTMLDivElement | null {
     const payload = event.payload;
     const responseId = this.getResponseId(event.responseId);
     const responseEl = this.getOrCreateToolCallContainer(
@@ -1933,7 +1973,10 @@ export class ChatRenderer {
     return block;
   }
 
-  private renderStandaloneInteraction(event: InteractionRequestEvent, enabled: boolean): void {
+  private renderStandaloneInteraction(
+    event: RenderedTranscriptEvent<InteractionRequestEvent['payload']>,
+    enabled: boolean,
+  ): void {
     const payload = event.payload;
     this.ungroupToolBlockIfNeeded(payload.toolCallId);
     const responseId = this.getResponseId(event.responseId);
@@ -2331,13 +2374,20 @@ export class ChatRenderer {
     });
   }
 
-  private handleAgentMessage(_event: AgentMessageEvent): void {
+  private handleAgentMessage(_event: RenderedTranscriptEvent<Record<string, unknown>>): void {
     // agents_message tool blocks handle the display for both sync and async modes.
     // Skip rendering agent_message events entirely - they're just for tracking.
     // The tool block will register the messageId when tool_result arrives.
   }
 
-  private handleAgentCallback(event: AgentCallbackEvent): void {
+  private handleAgentCallback(
+    event: RenderedTranscriptEvent<{
+      messageId: string;
+      fromAgentId: string;
+      fromSessionId: string;
+      result: string;
+    }>,
+  ): void {
     const messageId = event.payload.messageId;
     const messageEl = this.agentMessageElements.get(messageId);
     if (!messageEl) {
@@ -2405,7 +2455,12 @@ export class ChatRenderer {
   }
 
   private renderQuestionnaireCallbackMessage(
-    event: AgentCallbackEvent,
+    event: RenderedTranscriptEvent<{
+      messageId: string;
+      fromAgentId: string;
+      fromSessionId: string;
+      result: string;
+    }>,
     payload: QuestionnaireCallbackPayload,
   ): void {
     const turnId = this.getTurnId(event.turnId, event.id);
@@ -2426,7 +2481,7 @@ export class ChatRenderer {
 
   // Interrupts and errors are rendered as indicators on the current turn.
 
-  private handleInterrupt(event: InterruptEvent): void {
+  private handleInterrupt(event: RenderedTranscriptEvent<{ reason?: string }>): void {
     if (event.turnId) {
       this.activeRequestIds.delete(event.turnId);
     } else {
@@ -2452,7 +2507,9 @@ export class ChatRenderer {
     }
   }
 
-  private handleError(event: ErrorEvent): void {
+  private handleError(
+    event: RenderedTranscriptEvent<{ code: string; message: string }>,
+  ): void {
     if (event.turnId) {
       this.activeRequestIds.delete(event.turnId);
     } else {
