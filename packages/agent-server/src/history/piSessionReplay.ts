@@ -24,6 +24,18 @@ function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function getAssistantOverlayEventType(customType: unknown): string {
+  const trimmed = getString(customType).trim();
+  if (!trimmed.startsWith('assistant.')) {
+    return '';
+  }
+  const eventType = trimmed.slice('assistant.'.length);
+  if (!eventType || eventType === 'request_start' || eventType === 'request_end') {
+    return '';
+  }
+  return eventType;
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -425,8 +437,8 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
   for (const entry of entries) {
     const entryType = getString(entry['type']);
     if (entryType === 'custom') {
-      const customType = getString(entry['customType']);
-      if (customType !== 'assistant.event') {
+      const overlayEventType = getAssistantOverlayEventType(entry['customType']);
+      if (!overlayEventType) {
         continue;
       }
       const data = isRecord(entry['data']) ? entry['data'] : null;
@@ -434,7 +446,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
       const turnId = getString(data['turnId']).trim();
-      const chatEventType = getString(data['chatEventType']);
       const payload = isRecord(data['payload']) ? data['payload'] : null;
       const responseId = getString(data['responseId']).trim() || undefined;
 
@@ -442,7 +453,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
 
-      if (chatEventType === 'agent_callback') {
+      if (overlayEventType === 'agent_callback') {
         closeOpenAssistantToolCalls();
         const historyTimestampMs = resolveTimestamp(entry);
         const text =
@@ -488,7 +499,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
 
       const historyTimestampMs = resolveTimestamp(entry);
 
-      if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+      if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
         closeOpenAssistantToolCalls();
         const text =
           getString(payload['text']).trim() || getString(payload['transcription']).trim();
@@ -506,7 +517,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
 
-      if (chatEventType === 'tool_call') {
+      if (overlayEventType === 'tool_call') {
         const toolCallId = getString(payload['toolCallId']).trim();
         const toolName = getString(payload['toolName']).trim();
         const args = isRecord(payload['args']) ? payload['args'] : {};
@@ -527,7 +538,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
 
-      if (chatEventType === 'tool_result') {
+      if (overlayEventType === 'tool_result') {
         closeOpenAssistantToolCalls();
         const toolCallId = getString(payload['toolCallId']).trim();
         if (!toolCallId) {
@@ -552,7 +563,7 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         continue;
       }
 
-      if (chatEventType === 'interrupt') {
+      if (overlayEventType === 'interrupt') {
         flushPendingInterruptedToolCalls(turnId, historyTimestampMs);
       }
 

@@ -1422,7 +1422,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       }
       continue;
     }
-    if (customType !== 'assistant.event') {
+    const overlayEventType = getAssistantOverlayEventType(customType);
+    if (!overlayEventType) {
       continue;
     }
     const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
@@ -1430,9 +1431,8 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     if (!payload) {
       continue;
     }
-    const chatEventType = getString(data?.['chatEventType']);
     const timestamp = resolveTimestamp(entry);
-    if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+    if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
       const text =
         typeof payload['text'] === 'string'
           ? payload['text']
@@ -1445,7 +1445,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       }
       continue;
     }
-    if (chatEventType === 'thinking_done') {
+    if (overlayEventType === 'thinking_done') {
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
       if (text) {
         mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, text));
@@ -1453,7 +1453,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       }
       continue;
     }
-    if (chatEventType === 'assistant_done') {
+    if (overlayEventType === 'assistant_done') {
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
       if (text) {
         mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, text));
@@ -1703,15 +1703,15 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         }
         continue;
       }
-      if (customType !== 'assistant.event') {
+      const overlayEventType = getAssistantOverlayEventType(customType);
+      if (!overlayEventType) {
         continue;
       }
-      const chatEventType = data ? getString(data['chatEventType']) : '';
       const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
       const turnIdFromEntry = data ? getString(data['turnId']) : '';
       const responseIdFromEntry = data ? getString(data['responseId']) : '';
 
-      if (chatEventType === 'turn_start') {
+      if (overlayEventType === 'turn_start') {
         if (!turnIdFromEntry || emittedTurnStarts.has(turnIdFromEntry)) {
           continue;
         }
@@ -1723,7 +1723,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         );
         continue;
       }
-      if (chatEventType === 'turn_end') {
+      if (overlayEventType === 'turn_end') {
         if (!turnIdFromEntry) {
           continue;
         }
@@ -1745,7 +1745,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         continue;
       }
 
-      if (chatEventType === 'agent_callback' && payload) {
+      if (overlayEventType === 'agent_callback' && payload) {
         const messageId = getString(payload['messageId']) || randomUUID();
         const exchangeId = getString(payload['exchangeId']);
         const fromAgentId = getString(payload['fromAgentId']);
@@ -1773,10 +1773,10 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         continue;
       }
 
-      if (chatEventType && isOverlayChatEventType(chatEventType) && payload) {
+      if (isOverlayChatEventType(overlayEventType) && payload) {
         const turnId = turnIdFromEntry || currentTurnId || '';
         const responseId = responseIdFromEntry || '';
-        if ((chatEventType === 'user_message' || chatEventType === 'user_audio') && turnId) {
+        if ((overlayEventType === 'user_message' || overlayEventType === 'user_audio') && turnId) {
           const text =
             typeof payload['text'] === 'string'
               ? payload['text']
@@ -1787,7 +1787,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             emittedUserInputs.add(getUserInputKey(turnId, text));
           }
         }
-        if (chatEventType === 'tool_call') {
+        if (overlayEventType === 'tool_call') {
           const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
           const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
           const args = isRecord(payload['args']) ? (payload['args'] as Record<string, unknown>) : {};
@@ -1796,7 +1796,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             resolveToolMeta(toolCallId, toolName, args);
           }
         }
-        if (chatEventType === 'tool_result') {
+        if (overlayEventType === 'tool_result') {
           const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
           if (toolCallId) {
             emittedToolResults.add(toolCallId);
@@ -1808,14 +1808,14 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           sessionId,
           ...(turnId ? { turnId } : {}),
           ...(responseId ? { responseId } : {}),
-          type: chatEventType,
+          type: overlayEventType,
           // Payload comes from a previously validated ChatEvent (when written).
           payload: payload as unknown,
         } as ChatEvent);
         continue;
       }
 
-      if (chatEventType === 'assistant_done' && payload) {
+      if (overlayEventType === 'assistant_done' && payload) {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text.trim()) {
           continue;
@@ -1845,7 +1845,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         continue;
       }
 
-      if (chatEventType === 'interrupt') {
+      if (overlayEventType === 'interrupt') {
         const reason =
           payload && typeof payload['reason'] === 'string' ? (payload['reason'] as string) : '';
         if (!reason) {
@@ -2284,7 +2284,8 @@ function buildProjectedTranscriptFromPiSession(
     if (getString(entry['type']) !== 'custom') {
       continue;
     }
-    if (getString(entry['customType']) !== 'assistant.event') {
+    const overlayEventType = getAssistantOverlayEventType(entry['customType']);
+    if (!overlayEventType) {
       continue;
     }
     const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
@@ -2292,9 +2293,8 @@ function buildProjectedTranscriptFromPiSession(
     if (!payload) {
       continue;
     }
-    const chatEventType = data ? getString(data['chatEventType']) : '';
     const timestamp = resolveTimestamp(entry);
-    if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+    if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
       const text =
         typeof payload['text'] === 'string'
           ? payload['text']
@@ -2307,7 +2307,7 @@ function buildProjectedTranscriptFromPiSession(
       }
       continue;
     }
-    if (chatEventType === 'thinking_done') {
+    if (overlayEventType === 'thinking_done') {
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
       if (text) {
         mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, text));
@@ -2315,7 +2315,7 @@ function buildProjectedTranscriptFromPiSession(
       }
       continue;
     }
-    if (chatEventType === 'assistant_done') {
+    if (overlayEventType === 'assistant_done') {
       const text = typeof payload['text'] === 'string' ? payload['text'] : '';
       if (text) {
         mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, text));
@@ -2599,10 +2599,10 @@ function buildProjectedTranscriptFromPiSession(
         endRequest(timestamp);
         continue;
       }
-      if (customType !== 'assistant.event') {
+      const overlayEventType = getAssistantOverlayEventType(customType);
+      if (!overlayEventType) {
         continue;
       }
-      const chatEventType = data ? getString(data['chatEventType']) : '';
       const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
       const requestIdFromEntry = data ? getString(data['turnId']) : '';
       const responseIdFromEntry = data ? getString(data['responseId']) : '';
@@ -2611,7 +2611,7 @@ function buildProjectedTranscriptFromPiSession(
       }
       const payloadRecord: Record<string, unknown> = payload;
 
-      if (chatEventType === 'agent_callback') {
+      if (overlayEventType === 'agent_callback') {
         const messageId =
           getString(payloadRecord['messageId']) || getString(entry['id']) || randomUUID();
         const exchangeIdRaw = getString(payloadRecord['exchangeId']);
@@ -2642,7 +2642,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+      if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
         const text =
           typeof payload['text'] === 'string'
             ? payload['text']
@@ -2667,7 +2667,7 @@ function buildProjectedTranscriptFromPiSession(
           timestamp,
           requestId,
           kind: 'user_message',
-          chatEventType,
+          chatEventType: overlayEventType,
           payload,
           responseId: responseIdFromEntry || undefined,
         });
@@ -2675,7 +2675,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'tool_call') {
+      if (overlayEventType === 'tool_call') {
         const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
         const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
         const args = isRecord(payload['args']) ? (payload['args'] as Record<string, unknown>) : {};
@@ -2700,7 +2700,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'tool_result') {
+      if (overlayEventType === 'tool_result') {
         const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
         if (toolCallId) {
           emittedToolResults.add(toolCallId);
@@ -2718,7 +2718,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'assistant_done') {
+      if (overlayEventType === 'assistant_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text.trim()) {
           continue;
@@ -2758,7 +2758,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'thinking_done') {
+      if (overlayEventType === 'thinking_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text) {
           continue;
@@ -2787,7 +2787,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'interrupt') {
+      if (overlayEventType === 'interrupt') {
         const reason =
           payload && typeof payload['reason'] === 'string' ? (payload['reason'] as string) : '';
         if (!reason) {
@@ -2810,13 +2810,16 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'interaction_request' || chatEventType === 'questionnaire_request') {
+      if (
+        overlayEventType === 'interaction_request' ||
+        overlayEventType === 'questionnaire_request'
+      ) {
         const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
         pushProjected({
           timestamp,
           requestId,
           kind: 'interaction_request',
-          chatEventType,
+          chatEventType: overlayEventType,
           payload,
           responseId: responseIdFromEntry || undefined,
           ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
@@ -2830,16 +2833,16 @@ function buildProjectedTranscriptFromPiSession(
       }
 
       if (
-        chatEventType === 'interaction_pending' ||
-        chatEventType === 'questionnaire_reprompt' ||
-        chatEventType === 'questionnaire_update'
+        overlayEventType === 'interaction_pending' ||
+        overlayEventType === 'questionnaire_reprompt' ||
+        overlayEventType === 'questionnaire_update'
       ) {
         const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
         pushProjected({
           timestamp,
           requestId,
           kind: 'interaction_update',
-          chatEventType,
+          chatEventType: overlayEventType,
           payload,
           responseId: responseIdFromEntry || undefined,
           ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
@@ -2848,13 +2851,16 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'interaction_response' || chatEventType === 'questionnaire_submission') {
+      if (
+        overlayEventType === 'interaction_response' ||
+        overlayEventType === 'questionnaire_submission'
+      ) {
         const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
         pushProjected({
           timestamp,
           requestId,
           kind: 'interaction_response',
-          chatEventType,
+          chatEventType: overlayEventType,
           payload,
           responseId: responseIdFromEntry || undefined,
           ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
@@ -2863,7 +2869,7 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (chatEventType === 'error') {
+      if (overlayEventType === 'error') {
         const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
         pushProjected({
           timestamp,
@@ -3975,4 +3981,23 @@ function getString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function getAssistantOverlayEventType(customType: unknown): ChatEvent['type'] | null {
+  const trimmed = getString(customType);
+  if (!trimmed || !trimmed.startsWith('assistant.')) {
+    return null;
+  }
+  const eventType = trimmed.slice('assistant.'.length);
+  if (!eventType || eventType === 'request_start' || eventType === 'request_end') {
+    return null;
+  }
+  if (
+    eventType === 'assistant_done' ||
+    eventType === 'thinking_done' ||
+    isOverlayChatEventType(eventType)
+  ) {
+    return eventType as ChatEvent['type'];
+  }
+  return null;
 }

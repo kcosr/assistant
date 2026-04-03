@@ -127,6 +127,7 @@ const ORPHAN_TOOL_RESULT_CUSTOM_TYPE = 'assistant.orphan_tool_result';
 const ASSISTANT_REQUEST_START_CUSTOM_TYPE = 'assistant.request_start';
 const ASSISTANT_REQUEST_END_CUSTOM_TYPE = 'assistant.request_end';
 const ASSISTANT_REQUEST_BOUNDARY_VERSION = 1 as const;
+const ASSISTANT_CUSTOM_TYPE_PREFIX = 'assistant.';
 
 type PiSessionHeaderRecord = Record<string, unknown> & {
   type: 'session';
@@ -165,6 +166,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function toAssistantCustomType(eventType: ChatEvent['type']): string {
+  return `${ASSISTANT_CUSTOM_TYPE_PREFIX}${eventType}`;
 }
 
 function normalizeThinkingLevel(value?: string): PiThinkingLevel | null {
@@ -1614,9 +1619,8 @@ export class PiSessionWriter {
       id: generateEntryId(),
       parentId: state.leafId,
       timestamp: this.now().toISOString(),
-      customType: 'assistant.event',
+      customType: toAssistantCustomType(eventType),
       data: {
-        chatEventType: eventType,
         payload,
         ...(typeof turnId === 'string' && turnId.trim() ? { turnId: turnId.trim() } : {}),
         ...(typeof responseId === 'string' && responseId.trim()

@@ -474,7 +474,7 @@ describe('PiSessionWriter', () => {
     expect(userTexts).toContain('follow-up two');
   });
 
-  it('appends assistant.event custom entries without affecting message sync', async () => {
+  it('appends explicit assistant custom entries without affecting message sync', async () => {
     const baseDir = await createTempDir('pi-session-writer-custom');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -517,8 +517,8 @@ describe('PiSessionWriter', () => {
 
     const last = entries[entries.length - 1] as Record<string, unknown> | undefined;
     expect(last?.['type']).toBe('custom');
-    expect(last?.['customType']).toBe('assistant.event');
-    expect((last?.['data'] as Record<string, unknown> | undefined)?.['chatEventType']).toBe('interrupt');
+    expect(last?.['customType']).toBe('assistant.interrupt');
+    expect(((last?.['data'] as Record<string, unknown> | undefined)?.['payload'] as Record<string, unknown> | undefined)?.['reason']).toBe('user_cancel');
   });
 
   it('appends explicit request boundary entries', async () => {

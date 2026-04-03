@@ -230,9 +230,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:14:33.494Z',
-        customType: 'assistant.event',
+        customType: 'assistant.agent_callback',
         data: {
-          chatEventType: 'agent_callback',
           payload: {
             messageId: 'questionnaire-1',
             fromAgentId: 'unknown',
@@ -253,9 +252,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:15:50.635Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_audio',
         data: {
-          chatEventType: 'user_audio',
           payload: {
             transcription: "i mean didn't you already get answers to the questionnaire",
           },
@@ -299,9 +297,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:14:33.494Z',
-        customType: 'assistant.event',
+        customType: 'assistant.agent_callback',
         data: {
-          chatEventType: 'agent_callback',
           payload: {
             messageId: 'questionnaire-1',
             fromAgentId: 'unknown',
@@ -331,9 +328,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:16:20.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: {
             text: 'follow-up',
           },
@@ -380,9 +376,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:44.100Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_audio',
         data: {
-          chatEventType: 'user_audio',
           payload: { transcription: 'no message will send a message after create' },
           turnId: 'turn-interrupted',
         },
@@ -390,9 +385,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:44.200Z',
-        customType: 'assistant.event',
+        customType: 'assistant.assistant_chunk',
         data: {
-          chatEventType: 'assistant_chunk',
           payload: { text: 'Partial text that should not replay', phase: 'commentary' },
           turnId: 'turn-interrupted',
           responseId: 'resp-interrupted',
@@ -401,9 +395,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:44.300Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'call-1',
             toolName: 'agents.js create',
@@ -416,9 +409,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:45.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           payload: {
             toolCallId: 'call-1',
             error: {
@@ -433,9 +425,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:45.050Z',
-        customType: 'assistant.event',
+        customType: 'assistant.interrupt',
         data: {
-          chatEventType: 'interrupt',
           payload: { reason: 'user_cancel' },
           turnId: 'turn-interrupted',
           responseId: 'resp-interrupted',
@@ -487,9 +478,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:06:18.208Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: { text: "what's the date?" },
           turnId: 'turn-date',
         },
@@ -497,9 +487,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:06:35.712Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'toolu_015Nb6oGWeBgkM83vjVhPTDa',
             toolName: 'bash',
@@ -512,9 +501,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:06:35.723Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           payload: {
             toolCallId: 'toolu_015Nb6oGWeBgkM83vjVhPTDa',
             result: {
@@ -623,9 +611,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:40:00.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: { text: 'check the date' },
           turnId: 'turn-orphan',
         },
@@ -633,9 +620,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:40:00.100Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'call-orphan',
             toolName: 'bash',
@@ -648,9 +634,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:40:00.200Z',
-        customType: 'assistant.event',
+        customType: 'assistant.interrupt',
         data: {
-          chatEventType: 'interrupt',
           payload: { reason: 'user_cancel' },
           turnId: 'turn-orphan',
           responseId: 'resp-orphan',

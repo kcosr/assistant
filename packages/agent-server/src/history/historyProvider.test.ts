@@ -307,9 +307,8 @@ describe('canonical Pi session history loader', () => {
         id: 'event-1',
         parentId: null,
         timestamp: '2026-01-20T00:00:02.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.agent_callback',
         data: {
-          chatEventType: 'agent_callback',
           payload: {
             messageId: 'mid-1',
             fromAgentId: 'agent-a',
@@ -323,9 +322,8 @@ describe('canonical Pi session history loader', () => {
         id: 'event-interaction-1',
         parentId: null,
         timestamp: '2026-01-20T00:00:02.500Z',
-        customType: 'assistant.event',
+        customType: 'assistant.interaction_request',
         data: {
-          chatEventType: 'interaction_request',
           payload: {
             toolCallId: 'call-1',
             toolName: 'questions_ask',
@@ -344,9 +342,8 @@ describe('canonical Pi session history loader', () => {
         id: 'event-partial-1',
         parentId: null,
         timestamp: '2026-01-20T00:00:02.750Z',
-        customType: 'assistant.event',
+        customType: 'assistant.assistant_done',
         data: {
-          chatEventType: 'assistant_done',
           payload: {
             text: 'Interrupted partial',
             interrupted: true,
@@ -359,9 +356,8 @@ describe('canonical Pi session history loader', () => {
         id: 'event-2',
         parentId: null,
         timestamp: '2026-01-20T00:00:03.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.interrupt',
         data: {
-          chatEventType: 'interrupt',
           payload: { reason: 'user_cancel' },
         },
       }),
@@ -1043,9 +1039,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.001Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_start',
         data: {
-          chatEventType: 'turn_start',
           payload: { trigger: 'user' },
           turnId: 'turn-voice',
         },
@@ -1053,9 +1048,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.002Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_audio',
         data: {
-          chatEventType: 'user_audio',
           payload: { transcription: 'run sleep for ten seconds', durationMs: 221 },
           turnId: 'turn-voice',
         },
@@ -1063,9 +1057,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:01.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'tool-voice',
             toolName: 'bash',
@@ -1131,9 +1124,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.001Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_start',
         data: {
-          chatEventType: 'turn_start',
           payload: { trigger: 'user' },
           turnId: 'turn-voice',
         },
@@ -1141,9 +1133,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.002Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_audio',
         data: {
-          chatEventType: 'user_audio',
           payload: { transcription: 'run sleep for ten seconds', durationMs: 221 },
           turnId: 'turn-voice',
         },
@@ -1151,9 +1142,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:01.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'tool-voice',
             toolName: 'bash',
@@ -1166,9 +1156,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:11.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           payload: {
             toolCallId: 'tool-voice',
             result: { ok: true, output: '', exitCode: 0 },
@@ -1180,9 +1169,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:12.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.assistant_done',
         data: {
-          chatEventType: 'assistant_done',
           payload: { text: 'Done! The sleep completed.' },
           turnId: 'turn-voice',
           responseId: 'resp-voice',
@@ -1230,9 +1218,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:12.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_end',
         data: {
-          chatEventType: 'turn_end',
           payload: {},
           turnId: 'turn-voice',
         },
@@ -1325,9 +1312,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.001Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_start',
         data: {
-          chatEventType: 'turn_start',
           payload: { trigger: 'user' },
           turnId: 'turn-thinking',
         },
@@ -1335,9 +1321,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.002Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: { text: "what's the date?" },
           turnId: 'turn-thinking',
         },
@@ -1345,9 +1330,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:01.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.thinking_done',
         data: {
-          chatEventType: 'thinking_done',
           payload: { text: thinkingText },
           turnId: 'turn-thinking',
           responseId: 'resp-thinking-event',
@@ -1356,9 +1340,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:01.100Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'tool-thinking',
             toolName: 'bash',
@@ -1371,9 +1354,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:02.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           payload: {
             toolCallId: 'tool-thinking',
             result: { ok: true, output: 'Monday, March 30, 2026\n', exitCode: 0 },
@@ -1385,9 +1367,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:03.000Z',
-        customType: 'assistant.event',
+        customType: 'assistant.assistant_done',
         data: {
-          chatEventType: 'assistant_done',
           payload: { text: 'Today is Monday, March 30, 2026.' },
           turnId: 'turn-thinking',
           responseId: 'resp-thinking-event',
@@ -1453,9 +1434,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:03.006Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_end',
         data: {
-          chatEventType: 'turn_end',
           payload: {},
           turnId: 'turn-thinking',
         },
@@ -1526,9 +1506,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.001Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: { text: firstPrompt },
           turnId: 'turn-1',
         },
@@ -1536,9 +1515,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.002Z',
-        customType: 'assistant.event',
+        customType: 'assistant.thinking_done',
         data: {
-          chatEventType: 'thinking_done',
           payload: { text: firstThinking },
           turnId: 'turn-1',
           responseId: 'resp-1',
@@ -1547,9 +1525,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.003Z',
-        customType: 'assistant.event',
+        customType: 'assistant.assistant_done',
         data: {
-          chatEventType: 'assistant_done',
           payload: { text: firstCommentary, phase: 'commentary' },
           turnId: 'turn-1',
           responseId: 'resp-1',
@@ -1570,9 +1547,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:10.001Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_audio',
         data: {
-          chatEventType: 'user_audio',
           payload: { transcription: secondPrompt, durationMs: 250 },
           turnId: 'turn-2',
         },
@@ -1774,9 +1750,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T14:46:16.782Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           turnId: 'turn-worktree',
           responseId: 'resp-worktree',
           payload: {
@@ -1789,9 +1764,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T14:46:16.942Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           turnId: 'turn-worktree',
           responseId: 'resp-worktree',
           payload: {
@@ -1889,9 +1863,8 @@ describe('canonical Pi session history loader', () => {
         type: 'custom',
         id: 'tool-call-overlay',
         timestamp: '2026-03-31T14:46:16.782Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           turnId: 'request-worktree',
           responseId: 'resp-worktree',
           payload: {
@@ -1905,9 +1878,8 @@ describe('canonical Pi session history loader', () => {
         type: 'custom',
         id: 'tool-result-overlay',
         timestamp: '2026-03-31T14:46:16.942Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_result',
         data: {
-          chatEventType: 'tool_result',
           turnId: 'request-worktree',
           responseId: 'resp-worktree',
           payload: {
@@ -2005,9 +1977,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T16:41:34.482Z',
-        customType: 'assistant.event',
+        customType: 'assistant.user_message',
         data: {
-          chatEventType: 'user_message',
           payload: {
             text: 'review the worktrees skill and tell me when you are ready',
           },
@@ -2017,9 +1988,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T16:41:40.029Z',
-        customType: 'assistant.event',
+        customType: 'assistant.thinking_done',
         data: {
-          chatEventType: 'thinking_done',
           payload: { text: `${thinkingText}\n\n` },
           turnId: 'turn-thinking',
           responseId: 'resp-overlay-thinking',
@@ -2028,9 +1998,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T16:41:40.118Z',
-        customType: 'assistant.event',
+        customType: 'assistant.tool_call',
         data: {
-          chatEventType: 'tool_call',
           payload: {
             toolCallId: 'tool-thinking',
             toolName: 'read',
@@ -2065,9 +2034,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T16:41:44.685Z',
-        customType: 'assistant.event',
+        customType: 'assistant.turn_end',
         data: {
-          chatEventType: 'turn_end',
           payload: {},
           turnId: 'turn-thinking',
         },
