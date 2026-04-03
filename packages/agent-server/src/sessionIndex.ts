@@ -62,6 +62,11 @@ export interface SessionSummary {
    * Optional last-known runtime context usage for Pi-backed sessions.
    */
   contextUsage?: SessionContextUsage;
+  /**
+   * Monotonic session-local revision used to invalidate replay cursors and
+   * reset transcript sequencing after history rewrites.
+   */
+  revision?: number;
 }
 
 export class SessionIndex {
@@ -72,6 +77,15 @@ export class SessionIndex {
 
   constructor(filePath: string) {
     this.filePath = filePath;
+  }
+
+  private getNextRevision(summary?: SessionSummary): number {
+    return Math.max(0, summary?.revision ?? 0) + 1;
+  }
+
+  private touchSummary(summary: SessionSummary, timestamp: string): void {
+    summary.updatedAt = timestamp;
+    summary.revision = this.getNextRevision(summary);
   }
 
   async listSessions(): Promise<SessionSummary[]> {
@@ -105,7 +119,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     existing.agentId = agentId;
     this.sessions.set(sessionId, existing);
 
@@ -146,7 +160,7 @@ export class SessionIndex {
     } else {
       delete summary.attributes;
     }
-    summary.updatedAt = timestamp;
+    this.touchSummary(summary, timestamp);
     this.sessions.set(trimmedId, summary);
 
     const record: SessionIndexRecord = {
@@ -209,6 +223,7 @@ export class SessionIndex {
       ...(attributes ? { attributes } : {}),
       createdAt: timestamp,
       updatedAt: timestamp,
+      revision: 1,
     };
     this.sessions.set(id, summary);
 
@@ -235,7 +250,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    summary.updatedAt = timestamp;
+    this.touchSummary(summary, timestamp);
     if (lastSnippet !== undefined) {
       summary.lastSnippet = lastSnippet;
     }
@@ -266,7 +281,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     if (contextUsage === null) {
       delete existing.contextUsage;
     } else {
@@ -296,11 +311,13 @@ export class SessionIndex {
         sessionId,
         createdAt: timestamp,
         updatedAt: timestamp,
+        revision: 1,
       };
     } else {
       summary = {
         ...existing,
         updatedAt: timestamp,
+        revision: this.getNextRevision(existing),
       };
     }
 
@@ -348,7 +365,7 @@ export class SessionIndex {
       normalisedName = null;
     }
 
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     this.sessions.set(sessionId, existing);
 
     const record: SessionIndexRecord = {
@@ -412,7 +429,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     this.sessions.set(sessionId, existing);
 
     const record: SessionIndexRecord = {
@@ -436,7 +453,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     if (model === null) {
       delete existing.model;
     } else {
@@ -467,7 +484,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     if (thinking === null) {
       delete existing.thinking;
     } else {
@@ -497,7 +514,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     if (pinnedAt === null) {
       delete existing.pinnedAt;
     } else {
@@ -528,7 +545,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     delete existing.lastSnippet;
     delete existing.contextUsage;
     this.sessions.set(sessionId, existing);
@@ -556,7 +573,7 @@ export class SessionIndex {
     }
 
     const timestamp = new Date().toISOString();
-    existing.updatedAt = timestamp;
+    this.touchSummary(existing, timestamp);
     delete existing.lastSnippet;
     delete existing.contextUsage;
     this.sessions.set(sessionId, existing);

@@ -81,9 +81,8 @@ function parseOptionalNullableString(value: unknown, field: string): string | nu
   return value;
 }
 
-function getRevisionFromUpdatedAt(updatedAt: string): number {
-  const revision = Date.parse(updatedAt);
-  return Number.isFinite(revision) && revision >= 0 ? revision : Date.now();
+function getSessionRevision(summary: SessionSummary): number {
+  return Math.max(0, summary.revision ?? 0);
 }
 
 function requireSessionId(raw: unknown): string {
@@ -424,7 +423,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             ? afterCursorRaw.trim()
             : undefined;
         const force = parsed['force'] === true;
-        const revision = getRevisionFromUpdatedAt(existing.updatedAt);
+        const revision = getSessionRevision(existing);
         const registry = requireAgentRegistry(ctx, sessionHub);
         const agentId = existing.agentId;
         const agent = agentId ? registry.getAgent(agentId) : undefined;
@@ -656,7 +655,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             sessionId,
             cleared: true,
             updatedAt: summary.updatedAt,
-            revision: getRevisionFromUpdatedAt(summary.updatedAt),
+            revision: getSessionRevision(summary),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to clear session';
@@ -691,7 +690,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             requestId,
             changed,
             updatedAt: summary.updatedAt,
-            revision: getRevisionFromUpdatedAt(summary.updatedAt),
+            revision: getSessionRevision(summary),
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to edit session history';

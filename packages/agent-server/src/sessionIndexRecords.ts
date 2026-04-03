@@ -117,8 +117,10 @@ export function loadSessionIndexFromFileContent(
           sessionId,
           createdAt: timestamp,
           updatedAt: timestamp,
+          revision: 0,
         };
       }
+      let consumedRecord = false;
 
       if (parsed.type === 'session_created') {
         const created = parsed as {
@@ -152,12 +154,14 @@ export function loadSessionIndexFromFileContent(
             summary.attributes = nextAttributes;
           }
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_updated') {
         const updated = parsed as { lastSnippet?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
         if (typeof updated.lastSnippet === 'string') {
           summary.lastSnippet = updated.lastSnippet;
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_deleted') {
         sessions.delete(sessionId);
         continue;
@@ -169,16 +173,19 @@ export function loadSessionIndexFromFileContent(
         } else if (typeof renamed.name === 'string') {
           summary.name = renamed.name;
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_agent_set') {
         const agentSet = parsed as { agentId?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
         if (typeof agentSet.agentId === 'string' && agentSet.agentId.length > 0) {
           summary.agentId = agentSet.agentId;
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_cleared') {
         summary.updatedAt = timestamp;
         delete summary.lastSnippet;
         delete summary.contextUsage;
+        consumedRecord = true;
       } else if (parsed.type === 'session_pinned') {
         const pinned = parsed as { pinnedAt?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
@@ -187,6 +194,7 @@ export function loadSessionIndexFromFileContent(
         } else if (typeof pinned.pinnedAt === 'string') {
           summary.pinnedAt = pinned.pinnedAt;
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_model_set') {
         const modelSet = parsed as { model?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
@@ -196,6 +204,7 @@ export function loadSessionIndexFromFileContent(
           summary.model = modelSet.model;
         }
         delete summary.contextUsage;
+        consumedRecord = true;
       } else if (parsed.type === 'session_thinking_set') {
         const thinkingSet = parsed as { thinking?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
@@ -207,6 +216,7 @@ export function loadSessionIndexFromFileContent(
         ) {
           summary.thinking = thinkingSet.thinking;
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_attributes_patch') {
         const patchRecord = parsed as { patch?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
@@ -221,6 +231,7 @@ export function loadSessionIndexFromFileContent(
             delete summary.attributes;
           }
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_context_usage_set') {
         const contextUsageRecord = parsed as { contextUsage?: unknown } & typeof parsed;
         summary.updatedAt = timestamp;
@@ -234,13 +245,18 @@ export function loadSessionIndexFromFileContent(
             summary.contextUsage = parsedContextUsage.data;
           }
         }
+        consumedRecord = true;
       } else if (parsed.type === 'session_history_edited') {
         summary.updatedAt = timestamp;
         delete summary.lastSnippet;
         delete summary.contextUsage;
+        consumedRecord = true;
       }
 
-      sessions.set(sessionId, summary);
+      if (consumedRecord) {
+        summary.revision = Math.max(0, summary.revision ?? 0) + 1;
+        sessions.set(sessionId, summary);
+      }
     } catch {
       console.error('Failed to parse session index line', line);
     }

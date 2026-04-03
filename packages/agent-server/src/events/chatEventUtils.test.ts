@@ -20,7 +20,7 @@ function createEventStore(): EventStore {
   };
 }
 
-function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli') {
+function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli', sessionId = 's1') {
   const broadcastToSession = vi.fn();
   const agentId = provider === 'claude-cli' ? 'general' : provider;
   const agentRegistry = new AgentRegistry([
@@ -36,10 +36,11 @@ function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli') {
   ]);
   const state: LogicalSessionState = {
     summary: {
-      sessionId: 's1',
+      sessionId,
       title: 'Test',
       createdAt: '',
       updatedAt: '2026-04-02T00:00:00.000Z',
+      revision: 1,
       deleted: false,
       agentId,
       attributes: {},
@@ -51,7 +52,7 @@ function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli') {
     getAgentRegistry: vi.fn(() => agentRegistry),
     broadcastToSession,
   } as unknown as SessionHub;
-  return { sessionHub, broadcastToSession };
+  return { sessionHub, broadcastToSession, state };
 }
 
 describe('chatEventUtils live broadcast behavior', () => {
@@ -109,6 +110,52 @@ describe('chatEventUtils live broadcast behavior', () => {
         kind: 'tool_output',
         toolCallId: 'tool-1',
       },
+    });
+  });
+
+  it('resets live transcript sequence when the session revision changes', async () => {
+    const eventStore = createEventStore();
+    const { sessionHub, broadcastToSession, state } = createSessionHub('pi', 'sequence-reset');
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'sequence-reset' },
+      [
+        {
+          id: 'evt-a',
+          sessionId: 'sequence-reset',
+          turnId: 'req-1',
+          responseId: 'resp-1',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'before rewrite' },
+        },
+      ],
+    );
+
+    state.summary.revision = 2;
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'sequence-reset' },
+      [
+        {
+          id: 'evt-b',
+          sessionId: 'sequence-reset',
+          turnId: 'req-2',
+          responseId: 'resp-2',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'after rewrite' },
+        },
+      ],
+    );
+
+    expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { revision: 1, sequence: 0 },
+    });
+    expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { revision: 2, sequence: 0 },
     });
   });
 

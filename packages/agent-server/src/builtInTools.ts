@@ -254,12 +254,13 @@ async function handleAttachmentSend(
   previewCharLimit: number,
 ): Promise<AttachmentToolResult> {
   const sessionId = ctx.sessionId?.trim();
+  const requestId = ctx.requestId?.trim();
   const turnId = ctx.turnId?.trim();
   const toolCallId = ctx.toolCallId?.trim();
-  if (!sessionId || !turnId || !toolCallId) {
+  if (!sessionId || !requestId || !toolCallId) {
     throw createToolError(
       'attachment_context_unavailable',
-      'attachment_send requires sessionId, turnId, and toolCallId',
+      'attachment_send requires sessionId, requestId, and toolCallId',
     );
   }
 
@@ -275,7 +276,8 @@ async function handleAttachmentSend(
   const contentType = args.contentType ?? inferredContentType;
   const stored = await store.createAttachment({
     sessionId,
-    turnId,
+    requestId,
+    ...(turnId ? { turnId } : {}),
     toolCallId,
     fileName: args.fileName,
     ...(args.title ? { title: args.title } : {}),
@@ -796,6 +798,7 @@ export async function handleAgentMessage(
         ...createChatEventBase({
           sessionId: callerSessionId,
           ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+          ...(ctx.requestId ? { requestId: ctx.requestId } : {}),
           ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
         }),
         type: 'agent_message',
@@ -835,6 +838,7 @@ export async function handleAgentMessage(
       sessionId,
       ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
       ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
+      ...(ctx.requestId ? { requestId: ctx.requestId } : {}),
       ...(ctx.responseId ? { responseId: ctx.responseId } : {}),
       agentRegistry,
       sessionIndex,

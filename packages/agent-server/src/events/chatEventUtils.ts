@@ -348,15 +348,19 @@ export interface ChatEventContext {
   sessionId: string;
 }
 
-const liveTranscriptSequenceBySession = new Map<string, number>();
+const liveTranscriptStateBySession = new Map<
+  string,
+  {
+    revision: number;
+    nextSequence: number;
+  }
+>();
 
 function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {
   if (typeof sessionHub.getSessionState !== 'function') {
-    return Date.now();
+    return 0;
   }
-  const updatedAt = sessionHub.getSessionState(sessionId)?.summary.updatedAt;
-  const parsed = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : Date.now();
+  return Math.max(0, sessionHub.getSessionState(sessionId)?.summary.revision ?? 0);
 }
 
 function broadcastProjectedTranscriptEvents(
@@ -368,13 +372,17 @@ function broadcastProjectedTranscriptEvents(
     return;
   }
   const revision = getProjectedTranscriptRevision(sessionHub, sessionId);
-  const startSequence = liveTranscriptSequenceBySession.get(sessionId) ?? 0;
+  const liveState = liveTranscriptStateBySession.get(sessionId);
+  const startSequence = liveState && liveState.revision === revision ? liveState.nextSequence : 0;
   const projected = projectTranscriptEvents({ sessionId, revision, events }).map((event, index) => ({
     ...event,
     revision,
     sequence: startSequence + index,
   }));
-  liveTranscriptSequenceBySession.set(sessionId, startSequence + projected.length);
+  liveTranscriptStateBySession.set(sessionId, {
+    revision,
+    nextSequence: startSequence + projected.length,
+  });
   for (const event of projected) {
     const message: ServerMessage = {
       type: 'transcript_event',

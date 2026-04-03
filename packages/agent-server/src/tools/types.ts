@@ -120,6 +120,11 @@ export interface ToolContext {
    */
   turnId?: string;
   /**
+   * Outer request-group identifier for the current chat run.
+   * Tools should use this for durable ownership and history-edit cleanup.
+   */
+  requestId?: string;
+  /**
    * Response ID for the current chat run. Used for emitting ChatEvents.
    */
   responseId?: string;

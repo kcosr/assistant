@@ -146,6 +146,7 @@ describe('registerBuiltInSessionTools', () => {
       sessionId: 'session-1',
       signal: new AbortController().signal,
       turnId: 'turn-1',
+      requestId: 'request-1',
       toolCallId: 'tool-call-1',
       ...overrides,
     };
@@ -252,6 +253,7 @@ describe('registerBuiltInSessionTools', () => {
     expect(result.attachment.previewText).toContain('# Hello');
 
     const stored = await store.getAttachment('session-1', result.attachment.attachmentId);
+    expect(stored?.requestId).toBe('request-1');
     expect(stored?.turnId).toBe('turn-1');
     expect(stored?.toolCallId).toBe('tool-call-1');
   });

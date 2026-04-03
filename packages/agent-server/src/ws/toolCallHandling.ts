@@ -166,13 +166,24 @@ export async function executeInteraction(options: {
     sessionHub: SessionHub;
     eventStore?: EventStore;
     turnId?: string;
+    requestId?: string;
     responseId?: string;
     signal?: AbortSignal;
   };
 }): Promise<unknown> {
   const {
     request,
-    context: { sessionId, callId, toolName, sessionHub, eventStore, turnId, responseId, signal },
+    context: {
+      sessionId,
+      callId,
+      toolName,
+      sessionHub,
+      eventStore,
+      turnId,
+      requestId: _requestId,
+      responseId,
+      signal,
+    },
   } = options;
   const registry = sessionHub.getInteractionRegistry();
 
@@ -427,6 +438,7 @@ export async function handleChatToolCalls(options: {
       sessionId,
       toolCallId: call.id,
       ...(turnId ? { turnId } : {}),
+      ...(requestId ? { requestId } : {}),
       ...(responseId ? { responseId } : {}),
       agentRegistry: sessionHub.getAgentRegistry(),
       sessionIndex: sessionHub.getSessionIndex(),
@@ -450,6 +462,7 @@ export async function handleChatToolCalls(options: {
             toolName: call.name,
             sessionHub,
             ...(turnId ? { turnId } : {}),
+            ...(requestId ? { requestId } : {}),
             ...(responseId ? { responseId } : {}),
             ...(eventStore ? { eventStore } : {}),
             ...(abortSignal ? { signal: abortSignal } : {}),

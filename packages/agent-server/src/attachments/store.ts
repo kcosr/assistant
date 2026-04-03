@@ -7,7 +7,8 @@ import { MAX_ATTACHMENT_SIZE_BYTES, formatAttachmentTooLargeMessage } from './co
 export interface StoredAttachmentRecord {
   attachmentId: string;
   sessionId: string;
-  turnId: string;
+  requestId: string;
+  turnId?: string;
   toolCallId: string;
   fileName: string;
   title?: string;
@@ -30,7 +31,8 @@ export class AttachmentStore {
 
   async createAttachment(options: {
     sessionId: string;
-    turnId: string;
+    requestId: string;
+    turnId?: string;
     toolCallId: string;
     fileName: string;
     title?: string;
@@ -39,7 +41,11 @@ export class AttachmentStore {
     now?: Date;
   }): Promise<StoredAttachmentRecord> {
     const sessionId = normalizeRequired(options.sessionId, 'sessionId');
-    const turnId = normalizeRequired(options.turnId, 'turnId');
+    const requestId = normalizeRequired(options.requestId, 'requestId');
+    const turnId =
+      typeof options.turnId === 'string' && options.turnId.trim().length > 0
+        ? options.turnId.trim()
+        : undefined;
     const toolCallId = normalizeRequired(options.toolCallId, 'toolCallId');
     const fileName = normalizeRequired(options.fileName, 'fileName');
     const contentType = normalizeRequired(options.contentType, 'contentType');
@@ -62,7 +68,8 @@ export class AttachmentStore {
     const record: StoredAttachmentRecord = {
       attachmentId,
       sessionId,
-      turnId,
+      requestId,
+      ...(turnId ? { turnId } : {}),
       toolCallId,
       fileName,
       ...(options.title ? { title: options.title } : {}),
@@ -122,23 +129,29 @@ export class AttachmentStore {
     return true;
   }
 
-  async deleteByTurnIds(sessionId: string, turnIds: string[]): Promise<number> {
+  async deleteByRequestIds(sessionId: string, requestIds: string[]): Promise<number> {
     const normalizedSessionId = normalizeRequired(sessionId, 'sessionId');
-    const normalizedTurnIds = new Set(
-      turnIds.map((turnId) => normalizeRequired(turnId, 'turnId')).filter((turnId) => turnId.length > 0),
+    const normalizedRequestIds = new Set(
+      requestIds
+        .map((requestId) => normalizeRequired(requestId, 'requestId'))
+        .filter((requestId) => requestId.length > 0),
     );
-    if (normalizedTurnIds.size === 0) {
+    if (normalizedRequestIds.size === 0) {
       return 0;
     }
     const index = await this.readIndex(normalizedSessionId);
-    const toDelete = index.attachments.filter((record) => normalizedTurnIds.has(record.turnId));
+    const toDelete = index.attachments.filter((record) =>
+      normalizedRequestIds.has(record.requestId),
+    );
     if (toDelete.length === 0) {
       return 0;
     }
     await Promise.all(
       toDelete.map((record) => this.deleteStoredFile(normalizedSessionId, record.storageFileName)),
     );
-    index.attachments = index.attachments.filter((record) => !normalizedTurnIds.has(record.turnId));
+    index.attachments = index.attachments.filter(
+      (record) => !normalizedRequestIds.has(record.requestId),
+    );
     await this.writeOrDeleteIndex(normalizedSessionId, index);
     return toDelete.length;
   }
@@ -221,7 +234,8 @@ function isStoredAttachmentRecord(value: unknown): value is StoredAttachmentReco
   return (
     typeof record['attachmentId'] === 'string' &&
     typeof record['sessionId'] === 'string' &&
-    typeof record['turnId'] === 'string' &&
+    typeof record['requestId'] === 'string' &&
+    (record['turnId'] === undefined || typeof record['turnId'] === 'string') &&
     typeof record['toolCallId'] === 'string' &&
     typeof record['fileName'] === 'string' &&
     typeof record['contentType'] === 'string' &&

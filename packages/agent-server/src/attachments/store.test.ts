@@ -18,6 +18,7 @@ describe('AttachmentStore', () => {
 
     const created = await store.createAttachment({
       sessionId: 'session-1',
+      requestId: 'request-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
@@ -35,12 +36,13 @@ describe('AttachmentStore', () => {
     expect(file?.content.toString('utf8')).toBe('hello world');
   });
 
-  it('deletes attachments by dropped turn ids', async () => {
+  it('deletes attachments by dropped request ids', async () => {
     const baseDir = await createTempDir('attachment-store-turn-delete');
     const store = new AttachmentStore(baseDir);
 
     const first = await store.createAttachment({
       sessionId: 'session-1',
+      requestId: 'request-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'first.txt',
@@ -49,6 +51,7 @@ describe('AttachmentStore', () => {
     });
     const second = await store.createAttachment({
       sessionId: 'session-1',
+      requestId: 'request-2',
       turnId: 'turn-2',
       toolCallId: 'tool-2',
       fileName: 'second.txt',
@@ -56,7 +59,7 @@ describe('AttachmentStore', () => {
       bytes: Buffer.from('second', 'utf8'),
     });
 
-    const deletedCount = await store.deleteByTurnIds('session-1', ['turn-1']);
+    const deletedCount = await store.deleteByRequestIds('session-1', ['request-1']);
 
     expect(deletedCount).toBe(1);
     expect(await store.getAttachment('session-1', first.attachmentId)).toBeNull();
@@ -69,6 +72,7 @@ describe('AttachmentStore', () => {
 
     await store.createAttachment({
       sessionId: 'session-1',
+      requestId: 'request-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
@@ -87,6 +91,7 @@ describe('AttachmentStore', () => {
 
     const created = await store.createAttachment({
       sessionId: 'session-1',
+      requestId: 'request-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
@@ -108,6 +113,7 @@ describe('AttachmentStore', () => {
     await expect(
       store.createAttachment({
         sessionId: 'session-1',
+        requestId: 'request-1',
         turnId: 'turn-1',
         toolCallId: 'tool-1',
         fileName: 'big.txt',

@@ -391,6 +391,7 @@ describe('SessionHub clearSession', () => {
     });
     await attachmentStore.createAttachment({
       sessionId: session.sessionId,
+      requestId: 'turn-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
@@ -467,6 +468,7 @@ describe('SessionHub clearSession', () => {
     });
     await attachmentStore.createAttachment({
       sessionId: session.sessionId,
+      requestId: 'turn-1',
       turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'first.txt',
@@ -500,6 +502,7 @@ describe('SessionHub clearSession', () => {
     });
     const kept = await attachmentStore.createAttachment({
       sessionId: session.sessionId,
+      requestId: 'turn-2',
       turnId: 'turn-2',
       toolCallId: 'tool-2',
       fileName: 'second.txt',
@@ -517,9 +520,10 @@ describe('SessionHub clearSession', () => {
     expect(await attachmentStore.getAttachment(session.sessionId, kept.attachmentId)).not.toBeNull();
     const metadataPath = path.join(attachmentDir, session.sessionId, 'metadata.json');
     const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {
-      attachments: Array<{ turnId: string }>;
+      attachments: Array<{ requestId: string; turnId?: string }>;
     };
     expect(metadata.attachments).toHaveLength(1);
+    expect(metadata.attachments[0]?.requestId).toBe('turn-2');
     expect(metadata.attachments[0]?.turnId).toBe('turn-2');
   });
 });

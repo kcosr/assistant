@@ -638,7 +638,7 @@ export class SessionHub {
     }
 
     if (this.attachmentStore && result.droppedRequestIds.length > 0) {
-      await this.attachmentStore.deleteByTurnIds(sessionId, result.droppedRequestIds);
+      await this.attachmentStore.deleteByRequestIds(sessionId, result.droppedRequestIds);
     }
 
     if (this.eventStore) {
@@ -664,6 +664,7 @@ export class SessionHub {
       type: 'session_history_changed',
       sessionId,
       updatedAt: summary.updatedAt,
+      revision: summary.revision,
     };
     this.connections.broadcastToSession(sessionId, changedMessage);
 
