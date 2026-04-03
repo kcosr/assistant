@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { ChatEvent, SessionAttributes } from '@assistant/shared';
+import type { ChatEvent, ProjectedTranscriptEvent, SessionAttributes } from '@assistant/shared';
 
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
@@ -167,29 +167,27 @@ export class ClaudeSessionHistoryProvider implements HistoryProvider {
   }
 }
 
-export async function loadCanonicalPiSessionEvents(options: {
-  sessionId: string;
+async function readCanonicalPiSessionContent(options: {
   attributes?: SessionAttributes;
   providerId?: string | null;
   baseDir?: string;
-}): Promise<ChatEvent[]> {
-  const { sessionId, attributes, providerId, baseDir } = options;
+}): Promise<string | null> {
+  const { attributes, providerId, baseDir } = options;
   if (providerId !== 'pi' && providerId !== 'pi-cli') {
-    return [];
+    return null;
   }
   const sessionInfo = resolvePiSessionInfo(attributes);
   if (!sessionInfo) {
-    return [];
+    return null;
   }
   const resolvedBaseDir = baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
   const sessionPath = await findPiSessionFile(resolvedBaseDir, sessionInfo.cwd, sessionInfo.sessionId);
   if (!sessionPath) {
-    return [];
+    return null;
   }
 
-  let content: string;
   try {
-    content = await fs.readFile(sessionPath, 'utf8');
+    return await fs.readFile(sessionPath, 'utf8');
   } catch (err) {
     const error = err as NodeJS.ErrnoException;
     if (error.code !== 'ENOENT') {
@@ -199,10 +197,45 @@ export async function loadCanonicalPiSessionEvents(options: {
         error: error.message,
       });
     }
+    return null;
+  }
+}
+
+export async function loadCanonicalPiSessionEvents(options: {
+  sessionId: string;
+  attributes?: SessionAttributes;
+  providerId?: string | null;
+  baseDir?: string;
+}): Promise<ChatEvent[]> {
+  const { sessionId, attributes, providerId, baseDir } = options;
+  const content = await readCanonicalPiSessionContent({
+    ...(attributes ? { attributes } : {}),
+    ...(providerId !== undefined ? { providerId } : {}),
+    ...(baseDir ? { baseDir } : {}),
+  });
+  if (!content) {
     return [];
   }
-
   return buildChatEventsFromPiSession(content, sessionId);
+}
+
+export async function loadCanonicalPiTranscriptEvents(options: {
+  sessionId: string;
+  revision: number;
+  attributes?: SessionAttributes;
+  providerId?: string | null;
+  baseDir?: string;
+}): Promise<ProjectedTranscriptEvent[]> {
+  const { sessionId, revision, attributes, providerId, baseDir } = options;
+  const content = await readCanonicalPiSessionContent({
+    ...(attributes ? { attributes } : {}),
+    ...(providerId !== undefined ? { providerId } : {}),
+    ...(baseDir ? { baseDir } : {}),
+  });
+  if (!content) {
+    return [];
+  }
+  return buildProjectedTranscriptFromPiSession(content, sessionId, revision);
 }
 
 type CodexSessionCacheEntry = {
@@ -2226,6 +2259,1043 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     endTurn(finalTimestamp);
   }
   return dedupeSortedPiReplayEvents(sortEventsByTimestamp(events));
+}
+
+function buildProjectedTranscriptFromPiSession(
+  content: string,
+  sessionId: string,
+  revision: number,
+): ProjectedTranscriptEvent[] {
+  type DirectProjectedEvent = ProjectedTranscriptEvent & {
+    timestampMs: number;
+    order: number;
+  };
+
+  const entries = parseJsonLines(content);
+  const events: DirectProjectedEvent[] = [];
+  const mirroredUserInputs = new Set<string>();
+  const mirroredUserInputTexts = new Set<string>();
+  const mirroredAssistantDone = new Set<string>();
+  const mirroredAssistantTexts = new Set<string>();
+  const mirroredThinkingDone = new Set<string>();
+  const mirroredThinkingTexts = new Set<string>();
+
+  for (const entry of entries) {
+    if (getString(entry['type']) !== 'custom') {
+      continue;
+    }
+    if (getString(entry['customType']) !== 'assistant.event') {
+      continue;
+    }
+    const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+    const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
+    if (!payload) {
+      continue;
+    }
+    const chatEventType = data ? getString(data['chatEventType']) : '';
+    const timestamp = resolveTimestamp(entry);
+    if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+      const text =
+        typeof payload['text'] === 'string'
+          ? payload['text']
+          : typeof payload['transcription'] === 'string'
+            ? payload['transcription']
+            : '';
+      if (text) {
+        mirroredUserInputs.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredUserInputTexts.add(normalizeCoverageText(text));
+      }
+      continue;
+    }
+    if (chatEventType === 'thinking_done') {
+      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+      if (text) {
+        mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredThinkingTexts.add(normalizeCoverageText(text));
+      }
+      continue;
+    }
+    if (chatEventType === 'assistant_done') {
+      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+      if (text) {
+        mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, text));
+        mirroredAssistantTexts.add(normalizeCoverageText(text));
+      }
+    }
+  }
+
+  const emittedRequestStarts = new Set<string>();
+  const emittedUserInputs = new Set<string>();
+  const emittedAssistantDone = new Set<string>();
+  const emittedThinkingDone = new Set<string>();
+  const emittedToolCalls = new Set<string>();
+  const emittedToolResults = new Set<string>();
+  const toolCallMeta = new Map<string, { toolName: string; args: Record<string, unknown> }>();
+  let currentRequestId: string | null = null;
+  let currentResponseId: string | null = null;
+  let currentRequestExplicit = false;
+  let currentRequestStartedAt: number | null = null;
+  let nextSyntheticRequestId = 0;
+  let nextDerivedId = 0;
+
+  const normalizeTrigger = (value: unknown): 'user' | 'system' | 'callback' => {
+    return value === 'callback' ? 'callback' : value === 'user' ? 'user' : 'system';
+  };
+
+  const pushProjected = (options: {
+    timestamp: number;
+    requestId: string;
+    kind: ProjectedTranscriptEvent['kind'];
+    chatEventType: ProjectedTranscriptEvent['chatEventType'];
+    payload: Record<string, unknown>;
+    eventId?: string | undefined;
+    responseId?: string | undefined;
+    messageId?: string | undefined;
+    toolCallId?: string | undefined;
+    interactionId?: string | undefined;
+    exchangeId?: string | undefined;
+  }): void => {
+    const {
+      timestamp,
+      requestId,
+      kind,
+      chatEventType,
+      payload,
+      eventId,
+      responseId,
+      messageId,
+      toolCallId,
+      interactionId,
+      exchangeId,
+    } = options;
+    events.push({
+      sessionId,
+      revision,
+      sequence: 0,
+      requestId,
+      eventId: eventId?.trim() || `pi-projected-${nextDerivedId++}`,
+      kind,
+      chatEventType,
+      timestamp: new Date(timestamp).toISOString(),
+      ...(responseId ? { responseId } : {}),
+      ...(messageId ? { messageId } : {}),
+      ...(toolCallId ? { toolCallId } : {}),
+      ...(interactionId ? { interactionId } : {}),
+      ...(exchangeId ? { exchangeId } : {}),
+      piTurnId: requestId,
+      payload,
+      timestampMs: timestamp,
+      order: events.length,
+    });
+  };
+
+  const endRequest = (timestamp: number): void => {
+    if (!currentRequestId) {
+      return;
+    }
+    pushProjected({
+      timestamp,
+      requestId: currentRequestId,
+      kind: 'request_end',
+      chatEventType: 'turn_end',
+      payload: {},
+    });
+    currentRequestId = null;
+    currentResponseId = null;
+    currentRequestExplicit = false;
+    currentRequestStartedAt = null;
+  };
+
+  const startRequest = (
+    requestId: string,
+    trigger: 'user' | 'system' | 'callback',
+    timestamp: number,
+    explicit = false,
+    eventId?: string,
+  ): void => {
+    currentRequestId = requestId;
+    currentResponseId = null;
+    currentRequestExplicit = explicit;
+    currentRequestStartedAt = timestamp;
+    if (emittedRequestStarts.has(requestId)) {
+      return;
+    }
+    pushProjected({
+      timestamp,
+      requestId,
+      kind: 'request_start',
+      chatEventType: 'turn_start',
+      payload: { trigger },
+      ...(eventId ? { eventId } : {}),
+    });
+    emittedRequestStarts.add(requestId);
+  };
+
+  const ensureRequest = (entry: Record<string, unknown>, timestamp: number): string => {
+    if (!currentRequestId) {
+      const requestId = getTurnId(entry) || `synthetic-request-${nextSyntheticRequestId++}`;
+      startRequest(requestId, 'system', timestamp);
+    }
+    return currentRequestId!;
+  };
+
+  const ensureResponseId = (entry: Record<string, unknown>): string => {
+    const responseId = currentResponseId ?? getResponseId(entry);
+    currentResponseId = responseId;
+    return responseId;
+  };
+
+  const resolveToolMeta = (
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): { toolName: string; args: Record<string, unknown> } => {
+    const existing = toolCallMeta.get(toolCallId);
+    const mergedName = toolName || existing?.toolName || '';
+    const mergedArgs =
+      Object.keys(args).length > 0 ? args : (existing?.args ?? ({} as Record<string, unknown>));
+    if (mergedName) {
+      toolCallMeta.set(toolCallId, { toolName: mergedName, args: mergedArgs });
+    }
+    return { toolName: mergedName, args: mergedArgs };
+  };
+
+  const getUserInputKey = (requestId: string, text: string): string => `${requestId}|${text}`;
+  const getAssistantDoneKey = (
+    requestId: string,
+    text: string,
+    phase?: 'commentary' | 'final_answer',
+    textSignature?: string,
+  ): string => `${requestId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
+  const getThinkingDoneKey = (requestId: string, text: string): string =>
+    `${requestId}|${text.trimEnd()}`;
+  const isOutOfOrderForExplicitRequest = (timestamp: number): boolean =>
+    currentRequestExplicit && currentRequestStartedAt !== null && timestamp < currentRequestStartedAt;
+
+  const emitToolCall = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): void => {
+    if (!toolCallId) {
+      return;
+    }
+    const meta = resolveToolMeta(toolCallId, toolName, args);
+    if (!meta.toolName || emittedToolCalls.has(toolCallId)) {
+      return;
+    }
+    const requestId = ensureRequest(entry, timestamp);
+    const responseId = ensureResponseId(entry);
+    pushProjected({
+      timestamp,
+      requestId,
+      kind: 'tool_call',
+      chatEventType: 'tool_call',
+      payload: {
+        toolCallId,
+        toolName: meta.toolName,
+        args: meta.args,
+      },
+      responseId,
+      toolCallId,
+    });
+    emittedToolCalls.add(toolCallId);
+  };
+
+  const emitToolResult = (
+    entry: Record<string, unknown>,
+    timestamp: number,
+    toolCallId: string,
+    result: unknown,
+    error?: { code: string; message: string },
+  ): void => {
+    if (!toolCallId || emittedToolResults.has(toolCallId)) {
+      return;
+    }
+    const requestId = ensureRequest(entry, timestamp);
+    const responseId = ensureResponseId(entry);
+    pushProjected({
+      timestamp,
+      requestId,
+      kind: 'tool_result',
+      chatEventType: 'tool_result',
+      payload: {
+        toolCallId,
+        result,
+        ...(error ? { error } : {}),
+      },
+      responseId,
+      toolCallId,
+    });
+    emittedToolResults.add(toolCallId);
+  };
+
+  const resolvePiUserMeta = (
+    messageEntry: Record<string, unknown>,
+  ): {
+    source: 'user' | 'agent' | 'callback';
+    fromAgentId?: string;
+    fromSessionId?: string;
+    visibility?: 'visible' | 'hidden';
+  } | null => {
+    const meta = isRecord(messageEntry['meta']) ? messageEntry['meta'] : null;
+    if (!meta) {
+      return null;
+    }
+    const source = (getString(meta['source']) ?? '').trim();
+    if (source !== 'user' && source !== 'agent' && source !== 'callback') {
+      return null;
+    }
+    const visibility = (getString(meta['visibility']) ?? '').trim();
+    return {
+      source,
+      ...(isNonEmptyString(meta['fromAgentId'])
+        ? { fromAgentId: (getString(meta['fromAgentId']) ?? '').trim() }
+        : {}),
+      ...(isNonEmptyString(meta['fromSessionId'])
+        ? { fromSessionId: (getString(meta['fromSessionId']) ?? '').trim() }
+        : {}),
+      ...(visibility === 'visible' || visibility === 'hidden' ? { visibility } : {}),
+    };
+  };
+
+  for (const entry of entries) {
+    const entryType = getString(entry['type']);
+    if (entryType === 'session' || entryType === 'session_header') {
+      continue;
+    }
+
+    if (entryType === 'custom') {
+      const customType = getString(entry['customType']);
+      const timestamp = resolveTimestamp(entry);
+      const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
+      if (customType === 'assistant.request_start' && data) {
+        const version = Number(data['v']);
+        const requestIdFromEntry = getString(data['requestId']);
+        if (version !== 1 || !requestIdFromEntry) {
+          continue;
+        }
+        endRequest(timestamp);
+        startRequest(
+          requestIdFromEntry,
+          normalizeTrigger(data['trigger']),
+          timestamp,
+          true,
+          getString(entry['id']) || undefined,
+        );
+        continue;
+      }
+      if (customType === 'assistant.request_end' && data) {
+        const version = Number(data['v']);
+        const requestIdFromEntry = getString(data['requestId']);
+        if (version !== 1 || !requestIdFromEntry) {
+          continue;
+        }
+        if (currentRequestId !== requestIdFromEntry) {
+          startRequest(requestIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
+        }
+        endRequest(timestamp);
+        continue;
+      }
+      if (customType !== 'assistant.event') {
+        continue;
+      }
+      const chatEventType = data ? getString(data['chatEventType']) : '';
+      const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
+      const requestIdFromEntry = data ? getString(data['turnId']) : '';
+      const responseIdFromEntry = data ? getString(data['responseId']) : '';
+      if (!payload) {
+        continue;
+      }
+      const payloadRecord: Record<string, unknown> = payload;
+
+      if (chatEventType === 'agent_callback') {
+        const messageId =
+          getString(payloadRecord['messageId']) || getString(entry['id']) || randomUUID();
+        const exchangeIdRaw = getString(payloadRecord['exchangeId']);
+        const exchangeId = exchangeIdRaw ? exchangeIdRaw.trim() || undefined : undefined;
+        const fromAgentId = getString(payloadRecord['fromAgentId']);
+        const fromSessionId = getString(payloadRecord['fromSessionId']);
+        const result = getString(payloadRecord['result']);
+        if (!fromSessionId || !result) {
+          continue;
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interaction_response',
+          chatEventType: 'agent_callback',
+          payload: {
+            messageId,
+            ...(exchangeId ? { exchangeId } : {}),
+            fromAgentId: fromAgentId || 'unknown',
+            fromSessionId,
+            result,
+          },
+          responseId: responseIdFromEntry || undefined,
+          messageId,
+          ...(exchangeId ? { exchangeId } : {}),
+        });
+        continue;
+      }
+
+      if (chatEventType === 'user_message' || chatEventType === 'user_audio') {
+        const text =
+          typeof payload['text'] === 'string'
+            ? payload['text']
+            : typeof payload['transcription'] === 'string'
+              ? payload['transcription']
+              : '';
+        if (!text) {
+          continue;
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        if (
+          mirroredUserInputs.has(getTimestampedTextCoverageKey(timestamp, text)) ||
+          (isOutOfOrderForExplicitRequest(timestamp) &&
+            mirroredUserInputTexts.has(normalizeCoverageText(text)))
+        ) {
+          continue;
+        }
+        if (emittedUserInputs.has(getUserInputKey(requestId, text))) {
+          continue;
+        }
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'user_message',
+          chatEventType,
+          payload,
+          responseId: responseIdFromEntry || undefined,
+        });
+        emittedUserInputs.add(getUserInputKey(requestId, text));
+        continue;
+      }
+
+      if (chatEventType === 'tool_call') {
+        const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+        const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
+        const args = isRecord(payload['args']) ? (payload['args'] as Record<string, unknown>) : {};
+        if (toolCallId) {
+          emittedToolCalls.add(toolCallId);
+          resolveToolMeta(toolCallId, toolName, args);
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'tool_call',
+          chatEventType: 'tool_call',
+          payload: {
+            toolCallId,
+            toolName,
+            args,
+          },
+          responseId: responseIdFromEntry || undefined,
+          ...(toolCallId ? { toolCallId } : {}),
+        });
+        continue;
+      }
+
+      if (chatEventType === 'tool_result') {
+        const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+        if (toolCallId) {
+          emittedToolResults.add(toolCallId);
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'tool_result',
+          chatEventType: 'tool_result',
+          payload,
+          responseId: responseIdFromEntry || undefined,
+          ...(toolCallId ? { toolCallId } : {}),
+        });
+        continue;
+      }
+
+      if (chatEventType === 'assistant_done') {
+        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+        if (!text.trim()) {
+          continue;
+        }
+        const phase =
+          payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
+            ? payload['phase']
+            : undefined;
+        const textSignature =
+          typeof payload['textSignature'] === 'string' ? payload['textSignature'] : undefined;
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        if (
+          mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, text)) ||
+          (isOutOfOrderForExplicitRequest(timestamp) &&
+            mirroredAssistantTexts.has(normalizeCoverageText(text)))
+        ) {
+          continue;
+        }
+        const assistantDoneKey = getAssistantDoneKey(requestId, text, phase, textSignature);
+        if (emittedAssistantDone.has(assistantDoneKey)) {
+          continue;
+        }
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'assistant_message',
+          chatEventType: 'assistant_done',
+          payload: {
+            text,
+            ...(phase ? { phase } : {}),
+            ...(textSignature ? { textSignature } : {}),
+            ...(payload['interrupted'] === true ? { interrupted: true } : {}),
+          },
+          responseId: responseIdFromEntry || undefined,
+        });
+        emittedAssistantDone.add(assistantDoneKey);
+        continue;
+      }
+
+      if (chatEventType === 'thinking_done') {
+        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+        if (!text) {
+          continue;
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        if (
+          mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, text)) ||
+          (isOutOfOrderForExplicitRequest(timestamp) &&
+            mirroredThinkingTexts.has(normalizeCoverageText(text)))
+        ) {
+          continue;
+        }
+        const thinkingKey = getThinkingDoneKey(requestId, text);
+        if (emittedThinkingDone.has(thinkingKey)) {
+          continue;
+        }
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'thinking',
+          chatEventType: 'thinking_done',
+          payload: { text },
+          responseId: responseIdFromEntry || undefined,
+        });
+        emittedThinkingDone.add(thinkingKey);
+        continue;
+      }
+
+      if (chatEventType === 'interrupt') {
+        const reason =
+          payload && typeof payload['reason'] === 'string' ? (payload['reason'] as string) : '';
+        if (!reason) {
+          continue;
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interrupt',
+          chatEventType: 'interrupt',
+          payload: {
+            reason:
+              reason === 'user_cancel' || reason === 'timeout' || reason === 'error'
+                ? reason
+                : 'user_cancel',
+          },
+          responseId: responseIdFromEntry || undefined,
+        });
+        continue;
+      }
+
+      if (chatEventType === 'interaction_request' || chatEventType === 'questionnaire_request') {
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interaction_request',
+          chatEventType,
+          payload,
+          responseId: responseIdFromEntry || undefined,
+          ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
+          ...(typeof payload['interactionId'] === 'string'
+            ? { interactionId: payload['interactionId'] }
+            : typeof payload['sourceInteractionId'] === 'string'
+              ? { interactionId: payload['sourceInteractionId'] }
+              : {}),
+        });
+        continue;
+      }
+
+      if (
+        chatEventType === 'interaction_pending' ||
+        chatEventType === 'questionnaire_reprompt' ||
+        chatEventType === 'questionnaire_update'
+      ) {
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interaction_update',
+          chatEventType,
+          payload,
+          responseId: responseIdFromEntry || undefined,
+          ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
+          ...(typeof payload['interactionId'] === 'string' ? { interactionId: payload['interactionId'] } : {}),
+        });
+        continue;
+      }
+
+      if (chatEventType === 'interaction_response' || chatEventType === 'questionnaire_submission') {
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interaction_response',
+          chatEventType,
+          payload,
+          responseId: responseIdFromEntry || undefined,
+          ...(typeof payload['toolCallId'] === 'string' ? { toolCallId: payload['toolCallId'] } : {}),
+          ...(typeof payload['interactionId'] === 'string' ? { interactionId: payload['interactionId'] } : {}),
+        });
+        continue;
+      }
+
+      if (chatEventType === 'error') {
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'error',
+          chatEventType: 'error',
+          payload,
+          responseId: responseIdFromEntry || undefined,
+        });
+      }
+      continue;
+    }
+
+    if (entryType === 'compaction' || entryType === 'branch_summary') {
+      const timestamp = resolveTimestamp(entry);
+      endRequest(timestamp);
+      const requestId = getTurnId(entry) || `synthetic-request-${nextSyntheticRequestId++}`;
+      startRequest(requestId, 'system', timestamp);
+      pushProjected({
+        timestamp,
+        requestId,
+        kind: 'assistant_message',
+        chatEventType: 'summary_message',
+        payload: {
+          text: extractText(entry),
+          summaryType: entryType === 'compaction' ? 'compaction' : 'branch_summary',
+        },
+      });
+      endRequest(timestamp);
+      continue;
+    }
+
+    if (entryType === 'custom_message') {
+      const timestamp = resolveTimestamp(entry);
+      const requestId =
+        currentRequestId ?? getTurnId(entry) ?? `synthetic-request-${nextSyntheticRequestId++}`;
+      if (!currentRequestId) {
+        endRequest(timestamp);
+        startRequest(requestId, 'system', timestamp);
+      }
+      const label = extractLabel(entry);
+      pushProjected({
+        timestamp,
+        requestId,
+        kind: 'assistant_message',
+        chatEventType: 'custom_message',
+        payload: {
+          text: extractText(entry),
+          ...(label ? { label } : {}),
+        },
+      });
+      if (!currentRequestId) {
+        endRequest(timestamp);
+      }
+      continue;
+    }
+
+    if (entryType === 'tool_execution_start' || entryType === 'tool_execution_update') {
+      const timestamp = resolveTimestamp(entry);
+      const toolCallId = getToolCallId(entry);
+      const toolName =
+        getString(entry['toolName']) ||
+        getString(entry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(entry['args'] ?? entry['input'] ?? entry['arguments']);
+      emitToolCall(entry, timestamp, toolCallId, toolName, args);
+      continue;
+    }
+
+    if (entryType === 'tool_execution_end') {
+      const timestamp = resolveTimestamp(entry);
+      const toolCallId = getToolCallId(entry);
+      const toolName =
+        getString(entry['toolName']) ||
+        getString(entry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(entry['args'] ?? entry['input'] ?? entry['arguments']);
+      emitToolCall(entry, timestamp, toolCallId, toolName, args);
+      const isError = entry['isError'] === true;
+      const error = isError
+        ? extractToolError(entry) ?? {
+            code: 'tool_error',
+            message: 'Tool call failed',
+          }
+        : undefined;
+      const result = extractToolResult(entry);
+      emitToolResult(entry, timestamp, toolCallId, result, error);
+      continue;
+    }
+
+    const messageEntry = resolveMessageEntry(entry);
+    const role = getString(messageEntry['role']);
+    if (role === 'user') {
+      if (currentRequestExplicit && !currentRequestId) {
+        continue;
+      }
+      const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
+      const requestId = currentRequestId && currentRequestExplicit
+        ? currentRequestId
+        : getTurnId(messageEntry) || `synthetic-${getString(entry['id']) || nextSyntheticRequestId++}`;
+      const text = extractText(messageEntry);
+      const meta = resolvePiUserMeta(messageEntry);
+      if (
+        mirroredUserInputs.has(getTimestampedTextCoverageKey(timestamp, text)) ||
+        (isOutOfOrderForExplicitRequest(timestamp) &&
+          mirroredUserInputTexts.has(normalizeCoverageText(text)))
+      ) {
+        continue;
+      }
+      if (meta?.source !== 'callback' && emittedUserInputs.has(getUserInputKey(requestId, text))) {
+        continue;
+      }
+      if (!currentRequestId || !currentRequestExplicit) {
+        endRequest(timestamp);
+        startRequest(requestId, meta?.source === 'callback' ? 'callback' : 'user', timestamp);
+      }
+      if (meta?.source === 'callback') {
+        const messageId = getString(entry['id']) || randomUUID();
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'interaction_request',
+          chatEventType: 'agent_message',
+          payload: {
+            messageId,
+            targetAgentId: 'callback',
+            targetSessionId: sessionId,
+            message: text,
+            wait: false,
+          },
+          messageId,
+        });
+        continue;
+      }
+      emittedUserInputs.add(getUserInputKey(requestId, text));
+      pushProjected({
+        timestamp,
+        requestId,
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: {
+          text,
+          ...(meta?.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+          ...(meta?.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+        },
+      });
+      continue;
+    }
+
+    if (role === 'assistant') {
+      if (currentRequestExplicit && !currentRequestId) {
+        continue;
+      }
+      const timestamp = resolveTimestamp(messageEntry, entry);
+      const stopReason = getString(messageEntry['stopReason']);
+      if (stopReason === 'error') {
+        continue;
+      }
+      const interrupted = stopReason === 'aborted';
+      if (!currentRequestId) {
+        const requestId = getTurnId(messageEntry) || `synthetic-request-${nextSyntheticRequestId++}`;
+        startRequest(requestId, 'system', timestamp);
+      }
+      const requestId = currentRequestId!;
+      const responseId: string = currentResponseId ?? getResponseId(messageEntry);
+      currentResponseId = responseId;
+      const contentBlocks = messageEntry['content'];
+      if (Array.isArray(contentBlocks)) {
+        let thinkingBuffer = '';
+        let textBuffer = '';
+        let textPhase: 'commentary' | 'final_answer' | undefined;
+        let textSignature: string | undefined;
+
+        const flushThinking = (): void => {
+          if (!thinkingBuffer) {
+            return;
+          }
+          if (
+            mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingBuffer)) ||
+            (isOutOfOrderForExplicitRequest(timestamp) &&
+              mirroredThinkingTexts.has(normalizeCoverageText(thinkingBuffer)))
+          ) {
+            thinkingBuffer = '';
+            return;
+          }
+          const thinkingKey = getThinkingDoneKey(requestId, thinkingBuffer);
+          if (emittedThinkingDone.has(thinkingKey)) {
+            thinkingBuffer = '';
+            return;
+          }
+          pushProjected({
+            timestamp,
+            requestId,
+            kind: 'thinking',
+            chatEventType: 'thinking_done',
+            payload: { text: thinkingBuffer },
+            responseId,
+          });
+          emittedThinkingDone.add(thinkingKey);
+          thinkingBuffer = '';
+        };
+
+        const flushText = (): void => {
+          if (!textBuffer) {
+            return;
+          }
+          if (
+            mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, textBuffer)) ||
+            (isOutOfOrderForExplicitRequest(timestamp) &&
+              mirroredAssistantTexts.has(normalizeCoverageText(textBuffer)))
+          ) {
+            textBuffer = '';
+            textPhase = undefined;
+            textSignature = undefined;
+            return;
+          }
+          const assistantKey = getAssistantDoneKey(requestId, textBuffer, textPhase, textSignature);
+          if (emittedAssistantDone.has(assistantKey)) {
+            textBuffer = '';
+            textPhase = undefined;
+            textSignature = undefined;
+            return;
+          }
+          pushProjected({
+            timestamp,
+            requestId,
+            kind: 'assistant_message',
+            chatEventType: 'assistant_done',
+            payload: {
+              text: textBuffer,
+              ...(interrupted ? { interrupted: true } : {}),
+              ...(textPhase ? { phase: textPhase } : {}),
+              ...(textSignature ? { textSignature } : {}),
+            },
+            responseId,
+          });
+          emittedAssistantDone.add(assistantKey);
+          textBuffer = '';
+          textPhase = undefined;
+          textSignature = undefined;
+        };
+
+        for (const item of contentBlocks) {
+          if (!item || typeof item !== 'object') {
+            const text = extractTextValue(item);
+            if (text) {
+              textBuffer += text;
+            }
+            continue;
+          }
+          if (!isRecord(item)) {
+            continue;
+          }
+          const block: Record<string, unknown> = item;
+          const blockType = typeof block['type'] === 'string' ? block['type'] : '';
+          const type = blockType.toLowerCase();
+          if (type === 'thinking' || type === 'analysis' || type === 'reasoning') {
+            const text = extractTextValue(block['thinking'] ?? block['text'] ?? block['content']);
+            if (text) {
+              thinkingBuffer += text;
+            }
+            continue;
+          }
+          if (type === 'text') {
+            const assistantText = extractAssistantTextBlock(block);
+            if (assistantText.text) {
+              if (
+                textBuffer &&
+                (textPhase !== assistantText.phase || textSignature !== assistantText.textSignature)
+              ) {
+                flushText();
+              }
+              textBuffer += assistantText.text;
+              textPhase = assistantText.phase;
+              textSignature = assistantText.textSignature;
+            }
+            continue;
+          }
+          if (['toolcall', 'tool_call', 'tool_use', 'tooluse'].includes(type)) {
+            flushThinking();
+            flushText();
+            const toolCallId = getString(block['id']) || getString(block['toolCallId']) || randomUUID();
+            const toolName =
+              getString(block['name']) || getString(block['toolName']) || getString(block['tool']) || '';
+            const args = coerceArgs(block['arguments'] ?? block['args'] ?? block['input']);
+            emitToolCall(messageEntry, timestamp, toolCallId, toolName, args);
+            continue;
+          }
+          const assistantText = extractAssistantTextBlock(block);
+          if (assistantText.text) {
+            if (
+              textBuffer &&
+              (textPhase !== assistantText.phase || textSignature !== assistantText.textSignature)
+            ) {
+              flushText();
+            }
+            textBuffer += assistantText.text;
+            textPhase = assistantText.phase;
+            textSignature = assistantText.textSignature;
+          }
+        }
+
+        flushThinking();
+        flushText();
+      } else {
+        const thinkingText = extractThinking(messageEntry);
+        if (thinkingText) {
+          if (
+            !mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingText)) &&
+            !(isOutOfOrderForExplicitRequest(timestamp) &&
+              mirroredThinkingTexts.has(normalizeCoverageText(thinkingText)))
+          ) {
+            const thinkingKey = getThinkingDoneKey(requestId, thinkingText);
+            if (!emittedThinkingDone.has(thinkingKey)) {
+              pushProjected({
+                timestamp,
+                requestId,
+                kind: 'thinking',
+                chatEventType: 'thinking_done',
+                payload: { text: thinkingText },
+                responseId,
+              });
+              emittedThinkingDone.add(thinkingKey);
+            }
+          }
+        }
+        const toolCalls = extractToolCalls(messageEntry);
+        for (const call of toolCalls) {
+          emitToolCall(messageEntry, timestamp, call.toolCallId, call.toolName, call.args);
+        }
+        const assistantText = extractText(messageEntry);
+        if (assistantText) {
+          if (
+            !mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, assistantText)) &&
+            !(isOutOfOrderForExplicitRequest(timestamp) &&
+              mirroredAssistantTexts.has(normalizeCoverageText(assistantText)))
+          ) {
+            const assistantKey = getAssistantDoneKey(requestId, assistantText);
+            if (!emittedAssistantDone.has(assistantKey)) {
+              pushProjected({
+                timestamp,
+                requestId,
+                kind: 'assistant_message',
+                chatEventType: 'assistant_done',
+                payload: {
+                  text: assistantText,
+                  ...(interrupted ? { interrupted: true } : {}),
+                },
+                responseId,
+              });
+              emittedAssistantDone.add(assistantKey);
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    if (role === 'toolResult' || role === 'tool_result' || entryType === 'tool_result') {
+      if (currentRequestExplicit && !currentRequestId) {
+        continue;
+      }
+      const timestamp = resolveTimestamp(messageEntry, entry);
+      const toolCallId = getToolCallId(messageEntry);
+      const toolResult = extractToolResult(messageEntry);
+      const toolName =
+        getString(messageEntry['toolName']) ||
+        getString(messageEntry['tool']) ||
+        toolCallMeta.get(toolCallId)?.toolName ||
+        '';
+      const args = coerceArgs(messageEntry['args'] ?? messageEntry['input'] ?? messageEntry['arguments']);
+      emitToolCall(messageEntry, timestamp, toolCallId, toolName, args);
+      const error = extractToolError(messageEntry);
+      emitToolResult(messageEntry, timestamp, toolCallId, toolResult, error);
+      continue;
+    }
+  }
+
+  const shouldCloseAtEof = (): boolean => {
+    if (!currentRequestId) {
+      return false;
+    }
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (!event || event.requestId !== currentRequestId) {
+        continue;
+      }
+      return (
+        event.chatEventType === 'assistant_done' ||
+        event.chatEventType === 'summary_message' ||
+        event.chatEventType === 'custom_message' ||
+        event.chatEventType === 'agent_callback'
+      );
+    }
+    return false;
+  };
+
+  if (shouldCloseAtEof()) {
+    endRequest(Date.now());
+  }
+
+  const dedupedAssistant = new Set<string>();
+  const dedupedThinking = new Set<string>();
+  return events
+    .slice()
+    .sort((left, right) =>
+      left.timestampMs === right.timestampMs ? left.order - right.order : left.timestampMs - right.timestampMs,
+    )
+    .filter((event) => {
+      if (event.chatEventType === 'assistant_done') {
+        const key = `${event.requestId}|${String(event.payload['text'] ?? '')}|${String(event.payload['phase'] ?? '')}|${String(event.payload['textSignature'] ?? '')}`;
+        if (dedupedAssistant.has(key)) {
+          return false;
+        }
+        dedupedAssistant.add(key);
+      }
+      if (event.chatEventType === 'thinking_done') {
+        const key = `${event.requestId}|${String(event.payload['text'] ?? '').trimEnd()}`;
+        if (dedupedThinking.has(key)) {
+          return false;
+        }
+        dedupedThinking.add(key);
+      }
+      return true;
+    })
+    .map((event, index) => ({
+      ...event,
+      sequence: index,
+    }))
+    .map(({ timestampMs: _timestampMs, order: _order, ...event }) => event);
 }
 
 function buildChatEventsFromCodexSession(content: string, sessionId: string): ChatEvent[] {

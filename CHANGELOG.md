@@ -16,6 +16,7 @@
 
 ### Changed
 
+- Changed Pi session replay to project transcript events directly from canonical Pi JSONL instead of reconstructing ChatEvent history first.
 - Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed Android voice notifications to use a public lock-screen-visible channel, compact `Voice (State)` titles, and synced session titles for the preferred or active session. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))
@@ -32,6 +33,7 @@
 ### Removed
 
 - Removed legacy Pi session replay support for assistant-specific `assistant.input` and `assistant.turn_*` entries; canonical Pi history now expects request boundaries and model-visible agent inputs as normal `message` records.
+- Removed attachment-store `turnId` metadata; attachments are now owned only by `requestId` plus `toolCallId`.
 ## [0.17.5] - 2026-04-01
 
 ### Breaking Changes

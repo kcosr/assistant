@@ -148,7 +148,6 @@ describe('HTTP attachment routes', () => {
     const created = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'report.txt',
       contentType: 'text/plain',
@@ -176,7 +175,6 @@ describe('HTTP attachment routes', () => {
     const created = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-html',
       fileName: 'report.html',
       contentType: 'text/html; charset=utf-8',

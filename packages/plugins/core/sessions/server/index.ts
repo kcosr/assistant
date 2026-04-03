@@ -23,7 +23,7 @@ import { startSessionMessage } from '../../../../agent-server/src/sessionMessage
 import { ToolError, type ToolContext } from '../../../../agent-server/src/tools';
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
-import { loadCanonicalPiSessionEvents } from '../../../../agent-server/src/history/historyProvider';
+import { loadCanonicalPiTranscriptEvents } from '../../../../agent-server/src/history/historyProvider';
 import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
@@ -429,13 +429,13 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const providerId = agent?.chat?.provider ?? null;
         if (providerId === 'pi' || providerId === 'pi-cli') {
           const writer = sessionHub.getPiSessionWriter?.();
-          const events = await loadCanonicalPiSessionEvents({
+          const projected = await loadCanonicalPiTranscriptEvents({
             sessionId,
+            revision,
             providerId,
             ...(existing.attributes ? { attributes: existing.attributes } : {}),
             ...(writer ? { baseDir: writer.getBaseDir() } : {}),
           });
-          const projected = projectTranscriptEvents({ sessionId, revision, events });
           const sliced = sliceProjectedTranscript({
             revision,
             events: projected,

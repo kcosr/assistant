@@ -254,7 +254,6 @@ describe('registerBuiltInSessionTools', () => {
 
     const stored = await store.getAttachment('session-1', result.attachment.attachmentId);
     expect(stored?.requestId).toBe('request-1');
-    expect(stored?.turnId).toBe('turn-1');
     expect(stored?.toolCallId).toBe('tool-call-1');
   });
 

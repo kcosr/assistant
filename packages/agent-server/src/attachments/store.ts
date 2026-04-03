@@ -8,7 +8,6 @@ export interface StoredAttachmentRecord {
   attachmentId: string;
   sessionId: string;
   requestId: string;
-  turnId?: string;
   toolCallId: string;
   fileName: string;
   title?: string;
@@ -32,7 +31,6 @@ export class AttachmentStore {
   async createAttachment(options: {
     sessionId: string;
     requestId: string;
-    turnId?: string;
     toolCallId: string;
     fileName: string;
     title?: string;
@@ -42,10 +40,6 @@ export class AttachmentStore {
   }): Promise<StoredAttachmentRecord> {
     const sessionId = normalizeRequired(options.sessionId, 'sessionId');
     const requestId = normalizeRequired(options.requestId, 'requestId');
-    const turnId =
-      typeof options.turnId === 'string' && options.turnId.trim().length > 0
-        ? options.turnId.trim()
-        : undefined;
     const toolCallId = normalizeRequired(options.toolCallId, 'toolCallId');
     const fileName = normalizeRequired(options.fileName, 'fileName');
     const contentType = normalizeRequired(options.contentType, 'contentType');
@@ -69,7 +63,6 @@ export class AttachmentStore {
       attachmentId,
       sessionId,
       requestId,
-      ...(turnId ? { turnId } : {}),
       toolCallId,
       fileName,
       ...(options.title ? { title: options.title } : {}),
@@ -235,7 +228,6 @@ function isStoredAttachmentRecord(value: unknown): value is StoredAttachmentReco
     typeof record['attachmentId'] === 'string' &&
     typeof record['sessionId'] === 'string' &&
     typeof record['requestId'] === 'string' &&
-    (record['turnId'] === undefined || typeof record['turnId'] === 'string') &&
     typeof record['toolCallId'] === 'string' &&
     typeof record['fileName'] === 'string' &&
     typeof record['contentType'] === 'string' &&

@@ -11,6 +11,7 @@ import {
   CodexSessionHistoryProvider,
   type HistoryRequest,
   loadCanonicalPiSessionEvents,
+  loadCanonicalPiTranscriptEvents,
 } from './historyProvider';
 import type { AgentDefinition } from '../agents';
 import type { EventStore } from '../events';
@@ -36,6 +37,97 @@ function createPiHistoryProvider(baseDir?: string): {
 }
 
 describe('canonical Pi session history loader', () => {
+  it('projects canonical Pi session entries directly into transcript events', async () => {
+    const baseDir = await createTempDir('pi-session-transcript');
+    const sessionId = 'session-transcript-1';
+    const piSessionId = 'pi-session-transcript-1';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-user',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'hello there' }] },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-assistant',
+        timestamp: '2026-01-18T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-1',
+          content: [{ type: 'text', text: 'hi back' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-end',
+        timestamp: '2026-01-18T00:00:03.000Z',
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'request-1', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const events = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 7,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        revision: 7,
+        sequence: 0,
+        requestId: 'request-1',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      expect.objectContaining({
+        revision: 7,
+        sequence: 1,
+        requestId: 'request-1',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'hello there' },
+      }),
+      expect.objectContaining({
+        revision: 7,
+        sequence: 2,
+        requestId: 'request-1',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        payload: { text: 'hi back' },
+      }),
+      expect.objectContaining({
+        revision: 7,
+        sequence: 3,
+        requestId: 'request-1',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        payload: {},
+      }),
+    ]);
+  });
+
   it('maps Pi session entries into chat events', async () => {
     const baseDir = await createTempDir('pi-session-history');
     const sessionId = 'session-1';
@@ -1767,6 +1859,122 @@ describe('canonical Pi session history loader', () => {
         event.type === 'tool_result' &&
         event.turnId === 'turn-worktree' &&
         event.payload.toolCallId === 'tool-worktree',
+    );
+
+    expect(assistantIndex).toBeGreaterThanOrEqual(0);
+    expect(toolCallIndex).toBeGreaterThanOrEqual(0);
+    expect(toolResultIndex).toBeGreaterThanOrEqual(0);
+    expect(assistantIndex).toBeLessThan(toolCallIndex);
+    expect(assistantIndex).toBeLessThan(toolResultIndex);
+  });
+
+  it('orders canonical assistant narration before earlier-appended tool overlay in transcript replay', async () => {
+    const baseDir = await createTempDir('pi-session-transcript-replay-order');
+    const sessionId = 'session-transcript-replay-order';
+    const piSessionId = 'pi-session-transcript-replay-order';
+    const cwd = '/home/kevin/assistant';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-03-31T14-21-05-772Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start',
+        timestamp: '2026-03-31T14:46:13.150Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-worktree', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'tool-call-overlay',
+        timestamp: '2026-03-31T14:46:16.782Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_call',
+          turnId: 'request-worktree',
+          responseId: 'resp-worktree',
+          payload: {
+            toolCallId: 'tool-worktree',
+            toolName: 'bash',
+            args: { command: 'git worktree add ...' },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'tool-result-overlay',
+        timestamp: '2026-03-31T14:46:16.942Z',
+        customType: 'assistant.event',
+        data: {
+          chatEventType: 'tool_result',
+          turnId: 'request-worktree',
+          responseId: 'resp-worktree',
+          payload: {
+            toolCallId: 'tool-worktree',
+            result: { ok: true, output: 'created' },
+          },
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'assistant-msg',
+        timestamp: '2026-03-31T14:46:24.756Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-worktree',
+          timestamp: '2026-03-31T14:46:13.160Z',
+          content: [
+            { type: 'text', text: 'The repo is ready. Creating the worktree now:' },
+            {
+              type: 'toolCall',
+              id: 'tool-worktree',
+              name: 'bash',
+              arguments: { command: 'git worktree add ...' },
+            },
+          ],
+          stopReason: 'toolUse',
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-end',
+        timestamp: '2026-03-31T14:46:24.900Z',
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'request-worktree', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const projected = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 2,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    const assistantIndex = projected.findIndex(
+      (event) =>
+        event.chatEventType === 'assistant_done' &&
+        event.requestId === 'request-worktree' &&
+        event.payload['text'] === 'The repo is ready. Creating the worktree now:',
+    );
+    const toolCallIndex = projected.findIndex(
+      (event) =>
+        event.chatEventType === 'tool_call' &&
+        event.requestId === 'request-worktree' &&
+        event.toolCallId === 'tool-worktree',
+    );
+    const toolResultIndex = projected.findIndex(
+      (event) =>
+        event.chatEventType === 'tool_result' &&
+        event.requestId === 'request-worktree' &&
+        event.toolCallId === 'tool-worktree',
     );
 
     expect(assistantIndex).toBeGreaterThanOrEqual(0);

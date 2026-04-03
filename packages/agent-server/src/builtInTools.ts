@@ -255,7 +255,6 @@ async function handleAttachmentSend(
 ): Promise<AttachmentToolResult> {
   const sessionId = ctx.sessionId?.trim();
   const requestId = ctx.requestId?.trim();
-  const turnId = ctx.turnId?.trim();
   const toolCallId = ctx.toolCallId?.trim();
   if (!sessionId || !requestId || !toolCallId) {
     throw createToolError(
@@ -277,7 +276,6 @@ async function handleAttachmentSend(
   const stored = await store.createAttachment({
     sessionId,
     requestId,
-    ...(turnId ? { turnId } : {}),
     toolCallId,
     fileName: args.fileName,
     ...(args.title ? { title: args.title } : {}),

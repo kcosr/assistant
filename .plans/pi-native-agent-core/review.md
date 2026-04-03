@@ -1,167 +1,117 @@
-# Migration Review
+# Pi Native Agent Core Migration Review
 
-This review checks the plan docs against the current assistant runtime and the actual APIs in
-`../pi-mono`.
+Reviewed on 2026-04-02 against the current `feat/pi-native-agent-core` worktree, using the
+documents in `.plans/pi-native-agent-core/` as the target contract.
 
-Applied decisions after the PI second pass:
+Detailed sub-reviews:
 
-- define a concrete request-adapter boundary in the plan
-- keep the target end state single-path; no long-lived fallback/dual-routing design
-- align session files with `~/.pi/agent/sessions/`
-- keep one live `Agent` runtime per loaded session; rebuild from persisted messages after eviction/restart
-- keep model/thinking changes supported with request-boundary semantics, plus explicit persisted
-  change entries
-- use direct imports from `@mariozechner/pi-coding-agent` as the long-term source of truth for
-  coding tools
-- keep session persistence assistant-owned rather than importing coding-agent `SessionManager`
-- persist outer assistant request grouping in the same pi JSONL file instead of using a separate
-  replay/correlation store
-- persist all user-visible interaction lifecycle state in that same pi JSONL file as well
-- use one durable cross-session `exchangeId` for each `agents_message` invocation while keeping
-  normal per-session request groups
-- keep `convertToLlm` assistant-local and minimal; model-visible callback/agent input should be
-  normal `user` messages, not custom metadata messages
-- use native `AgentTool` directly as the runtime contract; rewrite tool construction rather than
-  keeping `ToolHost` as the first-cut execution bridge
-- spell out generated plugin-operation migration details instead of treating plugins as one generic
-  bucket: naming/capabilities, `Type.Unsafe()` schema wrapping, coercion parity, result shaping,
-  and narrowed execution context
-- move UI replay/reconnect onto the pi session file in the same migration instead of carrying
-  EventStore forward
-- add a session-local replay `sequence` plus resume `cursor` so the client reconciles live and
-  replayed events without payload-based dedup hacks
-- make that sequence/cursor ordering authoritative for attachment/tool-result reconciliation too,
-  so the UI no longer rebuilds those bubbles via replay-time guesswork
-- make history edits anchor on outer assistant request groups, not pi internal turns, so transcript
-  controls operate on the same visible boundary the user sees
-- keep a narrow import-compatibility path for shared pi/coding-agent logs that lack assistant
-  request metadata: synthesize coarse request groups on replay, then materialize assistant request
-  markers on rewrite
-- keep turn-history editing in scope for the first cut
-- add an explicit parity test matrix before switching `provider === 'pi'`
-- keep agent-core tool execution sequential in the first cut unless concurrency is proven safe
+- `review-runtime-tools.md`
+- `review-replay-history.md`
+- `review-client.md`
 
-## Main corrections
+## Overall Status
 
-### 1. Agent-core turn semantics do not match assistant request semantics
+The branch has real migration progress:
 
-`@mariozechner/pi-agent-core` emits `turn_start` / `turn_end` for each internal assistant cycle,
-including tool-result follow-up cycles and queued steering/follow-up messages:
+- `@mariozechner/pi-agent-core` and `@mariozechner/pi-coding-agent` are added.
+- `AuthStorage`-backed API key resolution is in place.
+- projected transcript protocol types, session replay APIs, and request-group history edit APIs are
+  implemented.
+- the web client can load and render `transcript_event` payloads.
+- targeted runtime, replay, protocol, and client tests are currently passing.
 
-- `../pi-mono/packages/agent/src/agent-loop.ts`
-- `../pi-mono/packages/agent/src/types.ts`
+The branch is still a hybrid, not the target architecture from the plan. The native Pi path still
+routes through the old chat loop and old tool/replay abstractions, and the new transcript layer is
+still projecting legacy `ChatEvent` semantics rather than using the session file as the direct UI
+source of truth.
 
-Assistant currently treats one `processUserMessage()` invocation as one outer request with one
-assistant `responseId` / `turnId` envelope:
+## Findings
 
-- `packages/agent-server/src/chatProcessor.ts`
-- `packages/agent-server/src/ws/chatRunLifecycle.ts`
+- High: the native cutover is not complete, so `provider === 'pi'` still runs through the legacy
+  runtime contract instead of a clean `piNativeChat` path. `processUserMessage()` still delegates
+  to `runChatCompletionCore()` in `packages/agent-server/src/chatProcessor.ts:596`, and
+  `chatRunCore.ts` still owns the `Agent` instantiation, manual turn handling, tool iteration
+  guard, EventStore emission, TTS wiring, and dual-format state updates in
+  `packages/agent-server/src/chatRunCore.ts:1295`. Tool execution is still mediated through the
+  old `ToolHost` surface in `packages/agent-server/src/tools/types.ts:196` and
+  `packages/agent-server/src/tools.ts:154`, with plugin and MCP tools wrapped back into that bridge
+  in `packages/agent-server/src/plugins/registry.ts:560` and
+  `packages/agent-server/src/tools/mcpToolHost.ts:200`.
 
-Implication: the migration needs a request-level adapter. Do not map agent-core turn events
-directly to assistant request boundaries.
+- High: replay for Pi sessions still depends on reconstructing legacy `ChatEvent` history, then
+  projecting that into the new wire format, which is not the planned session-file-native replay
+  model. The sessions plugin loads Pi replay through `loadCanonicalPiSessionEvents()` in
+  `packages/plugins/core/sessions/server/index.ts:432`, which calls
+  `buildChatEventsFromPiSession()` in `packages/agent-server/src/history/historyProvider.ts:1368`.
+  The session writer is still mirroring legacy chat events into the Pi log via
+  `appendAssistantEvent()` in `packages/agent-server/src/history/piSessionWriter.ts:1552`. This
+  means the new replay transport exists, but the durable source is still a ChatEvent-shaped overlay
+  encoded inside the Pi session file.
 
-### 2. `agent.continue()` is not the generic resume primitive
+- High: the client replay contract is not actually incremental or sequence-driven yet. After the
+  first transcript load, `loadSessionTranscript()` returns early in
+  `packages/web-client/src/index.ts:4059`, so `afterCursor` is effectively unused. When replay does
+  run, the client clears and re-renders whatever slice it received in
+  `packages/web-client/src/index.ts:4102` instead of reconciling by `(revision, sequence)`. The
+  renderer still routes projected events back through legacy `chatEventType` handling in
+  `packages/web-client/src/controllers/chatRenderer.ts:470`, and the live handler simply appends
+  arrival-order events in `packages/web-client/src/controllers/serverMessageHandler.ts:143`. The
+  plan’s cursor/revision/sequence reconciliation model is therefore not enforced client-side yet.
 
-Actual `Agent.continue()` only works when the last message is not an assistant message:
+- Medium: `revision` and live `sequence` are not durable enough for reliable stale-cursor and
+  rewrite handling. Replay revision is still derived from `updatedAt` timestamps in
+  `packages/plugins/core/sessions/server/index.ts:84` and reused in
+  `packages/plugins/core/sessions/server/index.ts:427`, so it is not an explicit persisted counter.
+  Live projected sequence numbers are stored in a process-local map in
+  `packages/agent-server/src/events/chatEventUtils.ts:351` and are not reset when
+  `session_history_changed` is broadcast from `packages/agent-server/src/sessionHub.ts:663`. That
+  leaves the current implementation vulnerable to sequence-space drift across rewrites and process
+  restarts.
 
-- `../pi-mono/packages/agent/src/agent.ts`
+- Medium: request-group ownership is still incomplete. `attachment_send` still requires `turnId`
+  and stores attachment ownership by turn in `packages/agent-server/src/builtInTools.ts:250`, and
+  the attachment store itself is still keyed by `turnId` in
+  `packages/agent-server/src/attachments/store.ts:31`. History rewrite cleanup still deletes by
+  turn ids in `packages/agent-server/src/sessionHub.ts:640`. That conflicts with the plan’s
+  `requestId + toolCallId` ownership model and will not clean up synthesized request groups
+  deterministically.
 
-Normal session resume should be:
+- Medium: agent-to-agent replay correlation still does not preserve a durable exchange id.
+  `exchangeId` is present in the protocol in `packages/shared/src/protocol.ts:563`, but the
+  projector still derives it from `messageId` for `agent_message` and `agent_callback` in
+  `packages/plugins/core/sessions/server/transcriptProjection.ts:198`. That is weaker than the
+  planned cross-session `exchangeId` contract for caller, target, and callback request groups.
 
-1. load prior messages
-2. `agent.replaceMessages(messages)`
-3. wait for next user input
-4. `agent.prompt(nextUserInput)`
+## Notable Completed Work
 
-Reserve `continue()` for retry / queued-message cases.
+- `packages/agent-server/src/llm/piSdkProvider.ts` now resolves API keys through `AuthStorage`.
+- `packages/agent-server/src/tools.ts` and related tests added an `AgentTool`-shaped wrapper path.
+- `packages/agent-server/src/history/piSessionWriter.ts` now writes explicit
+  `assistant.request_start` / `assistant.request_end` boundaries and supports request-group history
+  edits.
+- `packages/plugins/core/sessions/server/index.ts`,
+  `packages/plugins/core/sessions/server/transcriptProjection.ts`, and
+  `packages/shared/src/protocol.ts` define the projected transcript replay API and wire schema.
+- `packages/web-client/src/index.ts`,
+  `packages/web-client/src/controllers/serverMessageHandler.ts`, and
+  `packages/web-client/src/controllers/chatRenderer.ts` now handle projected transcript replay.
+- The in-progress worktree also removes the old `chat_event` wire path and deletes
+  `packages/web-client/src/utils/chatEventReplayDedup.ts`, which is aligned with the target
+  direction even though the internal replay model is still legacy-backed.
 
-### 3. Tool execution mapping is richer than the original plan assumed
+## Validation
 
-Actual agent-core tool execution produces:
+I ran these targeted suites and they passed:
 
-- `tool_execution_start`
-- zero or more `tool_execution_update`
-- `tool_execution_end`
-- then `message_start` / `message_end` for the resulting `toolResult` message
+- `npx vitest --run packages/shared/src/protocol.test.ts packages/agent-server/src/events/chatEventUtils.test.ts packages/agent-server/src/sessionConnectionRegistry.test.ts packages/plugins/core/sessions/server/index.test.ts packages/plugins/core/sessions/server/transcriptProjection.test.ts packages/web-client/src/controllers/serverMessageHandler.agentCallbackResult.test.ts packages/web-client/src/controllers/chatRenderer.test.ts`
+- `npx vitest --run packages/agent-server/src/chatProcessor.test.ts packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts packages/agent-server/src/tools.test.ts packages/agent-server/src/plugins/registry.test.ts packages/agent-server/src/history/piSessionWriter.test.ts`
 
-References:
+## Near-Term Gaps
 
-- `../pi-mono/packages/agent/src/agent-loop.ts`
-- `../pi-mono/packages/agent/src/types.ts`
-
-Implication: the event bridge and writer must handle both the execution events and the final
-`toolResult` message if replay/persistence should stay compatible.
-
-### 4. EventStore is still on the critical path today
-
-Today replay still depends on `ChatEvent` reconstruction:
-
-- `packages/agent-server/src/sessionHub.ts`
-- `packages/agent-server/src/sessionChatMessages.ts`
-- `packages/agent-server/src/history/historyProvider.ts`
-- `packages/web-client/src/utils/chatEventReplayDedup.ts`
-- `packages/web-client/src/controllers/chatRenderer.ts`
-
-For `provider === 'pi'`, `PiSessionHistoryProvider` also merges overlay events while the Pi session
-file is missing or being tailed. That means EventStore/overlay behavior cannot be dropped as part
-of the loop migration alone.
-
-Decision update: absorb the replay/UI rewrite into the main migration and remove this dependency
-instead of preserving it as scaffolding. The new replay model also needs an explicit session-local
-sequence/cursor so live updates, replay, and attachment/tool-result rendering all reconcile in one
-ordering space.
-
-### 5. Session-writer simplification was overstated
-
-The current writer is complex partly because of dual-format translation, but it also still owns:
-
-- coding-agent-compatible entry chaining (`id`, `parentId`)
-- assistant-specific `custom` / `custom_message` entries
-- explicit assistant request boundaries
-- turn-history editing support
-- provider attribute/session-file discovery
-
-References:
-
-- `packages/agent-server/src/history/piSessionWriter.ts`
-- `packages/agent-server/src/sessionHub.ts`
-- `../pi-mono/packages/coding-agent/src/core/session-manager.ts`
-
-Implication: the target should be "smaller target-format writer", not "plain append-only JSONL
-logger".
-
-### 6. Tool migration originally looked adapter-first
-
-Current assistant tool execution still flows through `ToolHost`, `ToolContext`, approvals,
-interactions, and plugin operation surfaces:
-
-- `packages/agent-server/src/tools/types.ts`
-- `packages/agent-server/src/ws/toolCallHandling.ts`
-- `packages/agent-server/src/plugins/operations.ts`
-- `packages/agent-server/src/builtInTools.ts`
-
-Decision update: after deeper review, move directly to native `AgentTool` construction instead of
-keeping `ToolHost` as the runtime bridge.
-
-### 7. Strip-first sequencing is too risky
-
-The current runtime is still driven by:
-
-- `packages/agent-server/src/chatProcessor.ts`
-- `packages/agent-server/src/chatRunCore.ts`
-- `packages/agent-server/src/ws/chatRunLifecycle.ts`
-- `packages/agent-server/src/ws/sessionRuntime.ts`
-
-Removing CLI/TTS/shared infrastructure before the new native path is wired would increase risk
-without shortening the critical path materially.
-
-## Recommended migration order
-
-1. Add `pi-agent-core` and `pi-coding-agent`, then lock actual API assumptions in the plan.
-2. Build a new pi-native runtime, native `AgentTool` layer, session writer, replay projector, and
-   client sequence/cursor reconciliation together.
-3. Move reconnect/replay onto the pi session file with a session-local sequence/cursor model.
-4. Prove parity for streaming, tools, interruption, replay, and `agents_message`.
-5. Route `provider === 'pi'` to the new path.
-6. Remove old pi loop code and EventStore-based replay.
-7. Strip CLI/TTS only after the native path is stable.
+- Finish the actual runtime cutover away from `chatRunCore` / `processUserMessage`.
+- Remove `ToolHost`, `eventStore`, and `historyProvider` from the target Pi runtime contract.
+- Make replay projection session-file-native instead of ChatEvent-native.
+- Make revision explicit and persistent, and make live/replay reconciliation actually use
+  `sequence` and `cursor`.
+- Move attachment ownership and cleanup fully to `requestId` plus `toolCallId`.
+- Persist and project a real `exchangeId` for `agents_message`.

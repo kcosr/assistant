@@ -19,7 +19,6 @@ describe('AttachmentStore', () => {
     const created = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
       title: 'Note',
@@ -43,7 +42,6 @@ describe('AttachmentStore', () => {
     const first = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'first.txt',
       contentType: 'text/plain',
@@ -52,7 +50,6 @@ describe('AttachmentStore', () => {
     const second = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-2',
-      turnId: 'turn-2',
       toolCallId: 'tool-2',
       fileName: 'second.txt',
       contentType: 'text/plain',
@@ -73,7 +70,6 @@ describe('AttachmentStore', () => {
     await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
       contentType: 'text/plain',
@@ -92,7 +88,6 @@ describe('AttachmentStore', () => {
     const created = await store.createAttachment({
       sessionId: 'session-1',
       requestId: 'request-1',
-      turnId: 'turn-1',
       toolCallId: 'tool-1',
       fileName: 'note.txt',
       contentType: 'text/plain',
@@ -114,7 +109,6 @@ describe('AttachmentStore', () => {
       store.createAttachment({
         sessionId: 'session-1',
         requestId: 'request-1',
-        turnId: 'turn-1',
         toolCallId: 'tool-1',
         fileName: 'big.txt',
         contentType: 'text/plain',
