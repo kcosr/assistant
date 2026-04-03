@@ -19,6 +19,7 @@ import type { ChatRuntime } from '../chat/runtime';
 export interface InputRuntimeElements {
   contextPreviewEl: HTMLElement | null;
   pendingMessageListEl: HTMLElement | null;
+  activityBarEl?: HTMLElement | null;
   form: HTMLFormElement;
   inputEl: HTMLInputElement;
   clearButtonEl: HTMLButtonElement;

@@ -826,6 +826,81 @@ describe('ChatRenderer', () => {
     );
   });
 
+  it('renders image attachments inline with thumbnail preview and open/download actions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(window);
+    const downloadSpy = vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e-turn-image',
+        turnId: 't-attachment-image',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-image',
+        turnId: 't-attachment-image',
+        responseId: 'r-attachment-image',
+        payload: {
+          toolCallId: 'tc-attachment-image',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'photo.png',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-image',
+        turnId: 't-attachment-image',
+        responseId: 'r-attachment-image',
+        payload: {
+          toolCallId: 'tc-attachment-image',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-image',
+              fileName: 'photo.png',
+              contentType: 'image/png',
+              size: 2048,
+              downloadUrl: '/api/attachments/session-1/att-image?download=1',
+              previewType: 'none',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const bubble = container.querySelector<HTMLDivElement>('.attachment-tool-bubble');
+    const image = bubble?.querySelector<HTMLImageElement>('.attachment-tool-preview-image');
+    expect(image).not.toBeNull();
+    expect(image?.getAttribute('src')).toContain('/api/attachments/session-1/att-image');
+
+    const buttons = Array.from(
+      bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? [],
+    );
+    expect(buttons.map((button) => button.textContent)).toEqual(['Open', 'Download']);
+
+    buttons[0]?.click();
+    expect(openSpy).toHaveBeenCalledWith(
+      'http://localhost:3000/api/attachments/session-1/att-image',
+      '_blank',
+      'noopener,noreferrer',
+    );
+
+    buttons[1]?.click();
+    expect(downloadSpy).toHaveBeenCalledWith(
+      '/api/attachments/session-1/att-image?download=1',
+      'photo.png',
+    );
+  });
+
   it('shows truncated previews with an expand action and renders full text inline after fetch', async () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

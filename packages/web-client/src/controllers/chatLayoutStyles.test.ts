@@ -57,4 +57,15 @@ describe('chat layout styles', () => {
     expect(preBlock).toContain('width: fit-content;');
     expect(preBlock).toContain('max-width: 100%;');
   });
+
+  it('defines an animated input activity bar above the composer', () => {
+    const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
+    const css = readFileSync(cssPath, 'utf8');
+
+    expect(css).toContain('.input-activity-bar {');
+    expect(css).toContain('.input-activity-bar.visible {');
+    expect(css).toContain('.input-activity-bar.visible::before {');
+    expect(css).toContain('@keyframes input-activity-bar-slide');
+    expect(css).toContain('height: 3px;');
+  });
 });

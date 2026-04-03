@@ -3,6 +3,7 @@ import type { ToolDescriptor } from './types';
 const ALWAYS_ALLOWED_TOOL_NAMES = new Set<string>([
   'panels_list',
   'panels_selected',
+  'panels_tree',
   'panels_event',
 ]);
 

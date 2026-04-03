@@ -35,6 +35,7 @@ function getInputPanelElements(container: HTMLElement): InputRuntimeElements {
     pendingMessageListEl: container.querySelector<HTMLElement>(
       '[data-role="pending-message-list"]',
     ),
+    activityBarEl: container.querySelector<HTMLElement>('[data-role="input-activity-bar"]'),
     form: requireElement<HTMLFormElement>(container, '[data-role="input-form"]', 'input form'),
     inputEl: requireElement<HTMLInputElement>(container, '[data-role="input-text"]', 'input text'),
     submitButtonEl: container.querySelector<HTMLButtonElement>('[data-role="input-submit"]'),

@@ -145,6 +145,11 @@ describe('Session tool scoping integration', () => {
         description: 'List sessions',
         parameters: {},
       },
+      {
+        name: 'panels_tree',
+        description: 'Render the current panel tree',
+        parameters: {},
+      },
     ];
     const toolHost = new StaticToolHost(baseTools);
 
@@ -169,7 +174,7 @@ describe('Session tool scoping integration', () => {
     const { specs } = await runtime.resolveChatCompletionTools(state, scopedHost);
 
     const toolNames = specs.map((tool) => tool.function.name).sort();
-    expect(toolNames).toEqual(['system_sessions_list', 'todo_add']);
+    expect(toolNames).toEqual(['panels_tree', 'system_sessions_list', 'todo_add']);
   });
 
   it('agent with capabilityAllowlist only sees matching capability tools plus system tools', async () => {

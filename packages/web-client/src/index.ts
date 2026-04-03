@@ -1637,6 +1637,7 @@ async function main(): Promise<void> {
         clearSessionTranscriptState(previousSessionId);
         // Reset panel state when switching sessions to prevent lingering state from previous session
         entry.runtime.chatRenderer.hideTypingIndicator();
+        entry.dom.inputElements.activityBarEl?.classList.remove('visible');
         entry.inputRuntime.speechAudioController?.syncMicButtonState();
         // Set panel to idle immediately; will update to correct state after transcript loads
         if (panelHostController && sessionId) {
@@ -2517,6 +2518,7 @@ async function main(): Promise<void> {
       serverMessageHandler?.resetRealtimeState();
       for (const entry of chatPanelsById.values()) {
         entry.runtime.chatRenderer.hideTypingIndicator();
+        entry.dom.inputElements.activityBarEl?.classList.remove('visible');
         entry.inputRuntime.speechAudioController?.onConnectionLostCleanup();
         if (entry.bindingSessionId) {
           setChatPanelStatusForSession(entry.bindingSessionId, 'idle');
@@ -3314,6 +3316,18 @@ async function main(): Promise<void> {
   function hideSessionTypingIndicator(sessionId: string): void {
     sessionsWithActiveTyping.delete(sessionId);
     sessionTypingIndicatorController?.hide(sessionId);
+  }
+
+  function setInputActivityBarVisibleForSession(sessionId: string, visible: boolean): void {
+    const normalized = normalizeSessionId(sessionId);
+    if (!normalized) {
+      return;
+    }
+    for (const entry of chatPanelsById.values()) {
+      if (entry.bindingSessionId === normalized) {
+        entry.dom.inputElements.activityBarEl?.classList.toggle('visible', visible);
+      }
+    }
   }
 
   wirePreferencesCheckboxes({
@@ -4573,6 +4587,7 @@ async function main(): Promise<void> {
         panelHostController.setPanelMetadata(entry.panelId, { status });
       }
     }
+    setInputActivityBarVisibleForSession(normalized, status === 'busy');
   };
 
   const setSessionsPanelBadge = (badge: string | undefined): void => {

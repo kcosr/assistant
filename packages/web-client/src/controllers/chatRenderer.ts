@@ -24,6 +24,7 @@ import {
   fetchAttachmentTextContent,
   getAttachmentContentUrl,
   openHtmlAttachmentInBrowser,
+  resolveAttachmentUrl,
 } from '../utils/attachmentActions';
 import { applyMarkdownToElement } from '../utils/markdown';
 import { createCopyDropdown } from './markdownViewerController';
@@ -3099,6 +3100,10 @@ export class ChatRenderer {
     return attachment.previewType === 'text' || attachment.previewType === 'markdown';
   }
 
+  private isImageAttachmentPreviewable(attachment: AttachmentDescriptor): boolean {
+    return attachment.contentType.trim().toLowerCase().startsWith('image/');
+  }
+
   private renderMarkdownAttachmentAsPlainText(markdownText: string): string {
     const temp = document.createElement('div');
     applyMarkdownToElement(temp, markdownText);
@@ -3173,7 +3178,14 @@ export class ChatRenderer {
     previewEl.style.display = 'block';
     previewEl.classList.toggle('expanded', options?.expanded === true);
 
-    if (attachment.previewType === 'markdown') {
+    if (this.isImageAttachmentPreviewable(attachment)) {
+      const image = document.createElement('img');
+      image.className = 'attachment-tool-preview-image';
+      image.src = resolveAttachmentUrl(getAttachmentContentUrl(attachment.downloadUrl));
+      image.alt = attachment.title || attachment.fileName;
+      image.loading = 'lazy';
+      previewEl.appendChild(image);
+    } else if (attachment.previewType === 'markdown') {
       contentEl.className = 'attachment-tool-preview-content markdown-content';
       applyMarkdownToElement(contentEl, contentText);
     } else {
@@ -3282,6 +3294,8 @@ export class ChatRenderer {
       previewEl.classList.remove('expanded');
       if (typeof expandedText === 'string') {
         this.renderAttachmentPreviewContent(previewEl, attachment, expandedText, { expanded: true });
+      } else if (this.isImageAttachmentPreviewable(attachment)) {
+        this.renderAttachmentPreviewContent(previewEl, attachment, '', {});
       } else if (
         this.isAttachmentInlinePreviewable(attachment) &&
         typeof attachment.previewText === 'string'
@@ -3371,6 +3385,22 @@ export class ChatRenderer {
           this.resolveAttachmentCopyText(bubble, attachment),
         );
         actionsEl.appendChild(copyButton);
+      }
+
+      if (this.isImageAttachmentPreviewable(attachment)) {
+        const openImageButton = this.createAttachmentActionButton('Open', () => {
+          this.clearAttachmentToolActionError(bubble);
+          const resolvedUrl = resolveAttachmentUrl(getAttachmentContentUrl(attachment.downloadUrl));
+          if (!resolvedUrl) {
+            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
+            return;
+          }
+          const opened = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+          if (!opened) {
+            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
+          }
+        });
+        actionsEl.appendChild(openImageButton);
       }
 
       const downloadButton = this.createAttachmentActionButton('Download', () => {
