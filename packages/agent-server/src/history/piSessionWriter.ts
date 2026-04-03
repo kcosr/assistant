@@ -1126,36 +1126,10 @@ function collectSyntheticRequestSpans(entries: PiSessionEntryRecord[]): PiReques
 
 function collectRequestSpans(entries: PiSessionEntryRecord[]): PiRequestSpan[] {
   const explicitSpans = collectExplicitRequestSpans(entries);
-  if (explicitSpans.length === 0) {
-    return collectSyntheticRequestSpans(entries);
+  if (explicitSpans.length > 0) {
+    return explicitSpans;
   }
-
-  const spans: PiRequestSpan[] = [...explicitSpans];
-  let cursor = 0;
-  for (const explicitSpan of explicitSpans) {
-    if (cursor < explicitSpan.startIndex) {
-      const uncovered = entries.slice(cursor, explicitSpan.startIndex);
-      const syntheticSpans = collectSyntheticRequestSpans(uncovered).map((span) => ({
-        requestId: span.requestId,
-        startIndex: span.startIndex + cursor,
-        endIndex: span.endIndex + cursor,
-      }));
-      spans.push(...syntheticSpans);
-    }
-    cursor = explicitSpan.endIndex + 1;
-  }
-  if (cursor < entries.length) {
-    const uncovered = entries.slice(cursor);
-    const syntheticSpans = collectSyntheticRequestSpans(uncovered).map((span) => ({
-      requestId: span.requestId,
-      startIndex: span.startIndex + cursor,
-      endIndex: span.endIndex + cursor,
-    }));
-    spans.push(...syntheticSpans);
-  }
-
-  spans.sort((left, right) => left.startIndex - right.startIndex);
-  return spans;
+  return collectSyntheticRequestSpans(entries);
 }
 
 function hasExplicitRequestSpans(entries: PiSessionEntryRecord[]): boolean {
