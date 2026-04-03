@@ -56,6 +56,7 @@
 - Fixed canonical Pi replay so duplicate request-start markers no longer orphan the active request/response state or split later tool activity onto a fresh synthetic response.
 - Fixed Pi transcript/session cleanup so clearing a Pi-backed session removes provider transcript metadata entirely, Pi agent subscription failures surface as normal run errors, and mixed-revision buffered replay now forces a reload instead of silently dropping buffered events.
 - Fixed refreshed Pi transcript buffering so reset replay treats already-covered buffered events as stale, preventing same-revision overlap from trapping the client in an infinite replay/reload loop and flashing the chat view.
+- Fixed live Pi bash tool input streaming so tool input chunks use end offsets consistently, preventing reload-during-run cases from dropping the opening command text and rendering only a trailing fragment like `}`.
 
 ### Removed
 

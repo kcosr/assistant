@@ -1526,6 +1526,7 @@ export async function runChatCompletionCore(
             const block = partial.content[assistantEvent.contentIndex];
             if (block?.type === 'toolCall' && shouldEmitChatEvents && turnId) {
               const currentOffset = toolInputOffsets.get(block.id) ?? 0;
+              const nextOffset = currentOffset + assistantEvent.delta.length;
               emitToolInputChunkEvent({
                 sessionHub,
                 sessionId,
@@ -1534,9 +1535,9 @@ export async function runChatCompletionCore(
                 toolCallId: block.id,
                 toolName: block.name,
                 chunk: assistantEvent.delta,
-                offset: currentOffset,
+                offset: nextOffset,
               });
-              toolInputOffsets.set(block.id, currentOffset + assistantEvent.delta.length);
+              toolInputOffsets.set(block.id, nextOffset);
             }
           }
           return;

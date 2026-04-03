@@ -1438,6 +1438,182 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('emits tool input chunk offsets as end positions', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    mockPiAgentPrompt.mockImplementationOnce(async ({ emit }) => {
+      const partialToolCall = {
+        role: 'assistant' as const,
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'bash',
+            arguments: { command: 'printf hi' },
+          },
+        ],
+        api: 'openai-responses',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        stopReason: 'toolUse' as const,
+        timestamp: Date.now(),
+      };
+
+      await emit({
+        type: 'message_update',
+        message: partialToolCall,
+        assistantMessageEvent: {
+          type: 'toolcall_start',
+          contentIndex: 0,
+          partial: partialToolCall,
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: partialToolCall,
+        assistantMessageEvent: {
+          type: 'toolcall_delta',
+          contentIndex: 0,
+          delta: '{"command":',
+          partial: partialToolCall,
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: partialToolCall,
+        assistantMessageEvent: {
+          type: 'toolcall_delta',
+          contentIndex: 0,
+          delta: '"printf hi"}',
+          partial: partialToolCall,
+        },
+      });
+
+      const assistantMessage = {
+        ...partialToolCall,
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'bash',
+            arguments: { command: 'printf hi' },
+          },
+        ],
+      };
+      await emit({ type: 'message_end', message: assistantMessage });
+      await emit({
+        type: 'tool_execution_start',
+        toolCallId: 'call-1',
+        toolName: 'bash',
+        args: { command: 'printf hi' },
+      });
+      await emit({
+        type: 'tool_execution_end',
+        toolCallId: 'call-1',
+        toolName: 'bash',
+        args: { command: 'printf hi' },
+        result: { content: [{ type: 'text', text: 'hi' }], details: { ok: true } },
+        isError: false,
+      });
+      await emit({
+        type: 'message_end',
+        message: {
+          role: 'toolResult' as const,
+          toolCallId: 'call-1',
+          toolName: 'bash',
+          content: [{ type: 'text', text: 'hi' }],
+          details: { ok: true },
+          isError: false,
+          timestamp: Date.now(),
+        },
+      });
+      await emit({
+        type: 'turn_end',
+        message: assistantMessage,
+        toolResults: [],
+      });
+    });
+
+    const broadcast: ServerMessage[] = [];
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+          },
+        ]),
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: async () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Run the tool', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      agentTools: [],
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    const toolInputEvents = broadcast.filter(
+      (message): message is Extract<ServerMessage, { type: 'transcript_event' }> =>
+        message.type === 'transcript_event' && message.event.kind === 'tool_input',
+    );
+
+    expect(toolInputEvents).toHaveLength(2);
+    expect(toolInputEvents[0]?.event.payload).toMatchObject({
+      toolCallId: 'call-1',
+      chunk: '{"command":',
+      offset: 11,
+    });
+    expect(toolInputEvents[1]?.event.payload).toMatchObject({
+      toolCallId: 'call-1',
+      chunk: '"printf hi"}',
+      offset: 23,
+    });
+  });
+
   it('syncs the aborted Pi assistant message before closing an interrupted turn', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
