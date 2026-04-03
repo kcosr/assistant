@@ -6,11 +6,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { AssistantMessage } from '@mariozechner/pi-ai';
 
-import { AgentRegistry } from '../agents';
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
-import { buildChatMessagesFromEvents } from '../sessionChatMessages';
-import { loadCanonicalPiSessionEvents } from './historyProvider';
+import { loadCanonicalPiReplayMessages } from './piSessionReplay';
 import { PiSessionWriter } from './piSessionWriter';
 
 async function createTempDir(prefix: string): Promise<string> {
@@ -1377,18 +1375,11 @@ describe('PiSessionWriter', () => {
 
     const attributes = summary.attributes;
     expect(attributes).toBeDefined();
-    const events = await loadCanonicalPiSessionEvents({
-      sessionId: summary.sessionId,
-      providerId: 'pi',
-      attributes: attributes!,
-      baseDir,
-    });
-    const rebuiltMessages = buildChatMessagesFromEvents(
-      events,
-      new AgentRegistry([]),
-      summary.agentId,
-      [],
-    );
+    const rebuiltMessages =
+      (await loadCanonicalPiReplayMessages({
+        summary: { ...summary, attributes: attributes! },
+        baseDir,
+      })) ?? [];
 
     const resumedWriter = new PiSessionWriter({ baseDir, now });
     await resumedWriter.sync({

@@ -36,6 +36,7 @@
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi replay so late raw provider messages already mirrored into explicit app turns no longer get reassigned onto a newer turn during reload ([#82](https://github.com/kcosr/assistant/pull/82))
 - Fixed interrupted Pi turns so visible aborted assistant output is synced into the Pi session file before turn close, preserving interrupted reload replay for assistant text, thinking, and tool-call content ([#82](https://github.com/kcosr/assistant/pull/82))
+- Fixed direct Pi transcript persistence helpers to fall back cleanly when lightweight SessionHub shims do not expose cached-session accessors.
 
 ### Removed
 

@@ -366,6 +366,9 @@ function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: strin
 function getDirectPiPersistenceState(sessionHub: SessionHub, sessionId: string): {
   summary: NonNullable<ReturnType<SessionHub['getSessionState']>>['summary'];
 } | null {
+  if (typeof sessionHub.getSessionState !== 'function') {
+    return null;
+  }
   const state = sessionHub.getSessionState(sessionId);
   const summary = state?.summary;
   if (!summary?.agentId) {
