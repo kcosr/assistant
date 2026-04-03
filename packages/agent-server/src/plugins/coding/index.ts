@@ -1,15 +1,17 @@
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
-import {
-  createBashTool,
-  createEditTool,
-  createFindTool,
-  createGrepTool,
-  createLsTool,
-  createReadTool,
-  createWriteTool,
+import type {
+  createBashTool as createBashToolType,
+  createEditTool as createEditToolType,
+  createFindTool as createFindToolType,
+  createGrepTool as createGrepToolType,
+  createLsTool as createLsToolType,
+  createReadTool as createReadToolType,
+  createWriteTool as createWriteToolType,
 } from '@mariozechner/pi-coding-agent';
 
 import type { AgentTool, ToolContext } from '../../tools';
@@ -28,6 +30,18 @@ const CODING_PLUGIN_MANIFEST: CombinedPluginManifest = {
 type CodingToolName = 'bash' | 'read' | 'write' | 'edit' | 'ls' | 'find' | 'grep';
 
 type NativeTool = AgentTool & { name: CodingToolName };
+type CodingAgentModule = {
+  createBashTool: typeof createBashToolType;
+  createReadTool: typeof createReadToolType;
+  createWriteTool: typeof createWriteToolType;
+  createEditTool: typeof createEditToolType;
+  createLsTool: typeof createLsToolType;
+  createFindTool: typeof createFindToolType;
+  createGrepTool: typeof createGrepToolType;
+};
+type CodingPluginOptions = {
+  loadCodingAgentModule?: () => Promise<CodingAgentModule>;
+};
 
 const SESSION_WORKING_DIR_MACRO = '${session.workingDir}';
 const DEFAULT_WORKSPACE_DIRNAME = 'coding-workspaces';
@@ -80,23 +94,64 @@ function withCapabilities(tool: NativeTool): NativeTool {
   };
 }
 
-function createNativeTools(cwd: string): Record<CodingToolName, NativeTool> {
+let codingAgentModulePromise: Promise<CodingAgentModule> | null = null;
+
+function resolveCodingAgentEntrypoint(): string {
+  const packageSuffix = path.join(
+    'node_modules',
+    '@mariozechner',
+    'pi-coding-agent',
+    'dist',
+    'index.js',
+  );
+  const candidates = [
+    path.resolve(process.cwd(), packageSuffix),
+    path.resolve(__dirname, '..', '..', '..', '..', '..', packageSuffix),
+    path.resolve(__dirname, '..', '..', '..', '..', '..', '..', packageSuffix),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new ToolError(
+    'tool_unavailable',
+    'Unable to resolve @mariozechner/pi-coding-agent runtime entrypoint',
+  );
+}
+
+async function loadCodingAgentModule(): Promise<CodingAgentModule> {
+  if (!codingAgentModulePromise) {
+    const entrypointUrl = pathToFileURL(resolveCodingAgentEntrypoint()).href;
+    codingAgentModulePromise = (0, eval)(
+      `import(${JSON.stringify(entrypointUrl)})`,
+    ) as Promise<CodingAgentModule>;
+  }
+  return codingAgentModulePromise;
+}
+
+function createNativeTools(
+  module: CodingAgentModule,
+  cwd: string,
+): Record<CodingToolName, NativeTool> {
   return {
-    bash: withCapabilities(createBashTool(cwd) as NativeTool),
-    read: withCapabilities(createReadTool(cwd) as NativeTool),
-    write: withCapabilities(createWriteTool(cwd) as NativeTool),
-    edit: withCapabilities(createEditTool(cwd) as NativeTool),
-    ls: withCapabilities(createLsTool(cwd) as NativeTool),
-    find: withCapabilities(createFindTool(cwd) as NativeTool),
-    grep: withCapabilities(createGrepTool(cwd) as NativeTool),
+    bash: withCapabilities(module.createBashTool(cwd) as NativeTool),
+    read: withCapabilities(module.createReadTool(cwd) as NativeTool),
+    write: withCapabilities(module.createWriteTool(cwd) as NativeTool),
+    edit: withCapabilities(module.createEditTool(cwd) as NativeTool),
+    ls: withCapabilities(module.createLsTool(cwd) as NativeTool),
+    find: withCapabilities(module.createFindTool(cwd) as NativeTool),
+    grep: withCapabilities(module.createGrepTool(cwd) as NativeTool),
   };
 }
 
-const DESCRIPTOR_TOOLS = createNativeTools(process.cwd());
-
-export function createCodingPlugin(): ToolPlugin {
+export function createCodingPlugin(options?: CodingPluginOptions): ToolPlugin {
   let currentPluginConfig: CodingPluginConfig | undefined;
   let currentDataDir: string | undefined;
+  const tools: PluginToolDefinition[] = [];
+  const loadModule = options?.loadCodingAgentModule ?? loadCodingAgentModule;
 
   function requireInitialized(): { dataDir: string; pluginConfig?: CodingPluginConfig } {
     if (!currentDataDir) {
@@ -163,7 +218,8 @@ export function createCodingPlugin(): ToolPlugin {
   ): Promise<unknown> {
     ensureNotAborted(ctx);
     const cwd = await resolveToolCwd(ctx);
-    const tool = createNativeTools(cwd)[toolName];
+    const module = await loadModule();
+    const tool = createNativeTools(module, cwd)[toolName];
     let streamedText = '';
     try {
       const result = await tool.execute(
@@ -196,26 +252,14 @@ export function createCodingPlugin(): ToolPlugin {
     }
   }
 
-  const tools: PluginToolDefinition[] = (
-    Object.keys(DESCRIPTOR_TOOLS) as Array<CodingToolName>
-  ).map((toolName) => {
-    const tool = DESCRIPTOR_TOOLS[toolName];
-    return {
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.parameters as PluginToolDefinition['inputSchema'],
-      ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
-      handler: (args, ctx) => executeNativeTool(toolName, args, ctx),
-    };
-  });
-
   return {
     name: 'coding',
     manifest: CODING_PLUGIN_MANIFEST,
     tools,
     async getAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
       const cwd = await resolveToolCwd(ctx);
-      return Object.values(createNativeTools(cwd));
+      const module = await loadModule();
+      return Object.values(createNativeTools(module, cwd));
     },
     async initialize(dataDir: string, pluginConfig?: PluginConfig): Promise<void> {
       currentDataDir = dataDir;
@@ -225,6 +269,20 @@ export function createCodingPlugin(): ToolPlugin {
           'invalid_plugin_config',
           `Unsupported coding plugin mode: ${currentPluginConfig.mode}`,
         );
+      }
+      if (tools.length === 0) {
+        const module = await loadModule();
+        const descriptorTools = createNativeTools(module, process.cwd());
+        for (const toolName of Object.keys(descriptorTools) as Array<CodingToolName>) {
+          const tool = descriptorTools[toolName];
+          tools.push({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.parameters as PluginToolDefinition['inputSchema'],
+            ...(tool.capabilities ? { capabilities: tool.capabilities } : {}),
+            handler: (args, ctx) => executeNativeTool(toolName, args, ctx),
+          });
+        }
       }
     },
   };

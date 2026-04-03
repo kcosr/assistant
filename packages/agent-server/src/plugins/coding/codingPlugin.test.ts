@@ -3,10 +3,33 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+import type {
+  createBashTool as createBashToolType,
+  createEditTool as createEditToolType,
+  createFindTool as createFindToolType,
+  createGrepTool as createGrepToolType,
+  createLsTool as createLsToolType,
+  createReadTool as createReadToolType,
+  createWriteTool as createWriteToolType,
+} from '@mariozechner/pi-coding-agent';
 
 import type { ToolContext } from '../../tools';
 import type { PluginConfig } from '../types';
 import { createCodingPlugin } from './index';
+
+type CodingAgentModule = {
+  createBashTool: typeof createBashToolType;
+  createReadTool: typeof createReadToolType;
+  createWriteTool: typeof createWriteToolType;
+  createEditTool: typeof createEditToolType;
+  createLsTool: typeof createLsToolType;
+  createFindTool: typeof createFindToolType;
+  createGrepTool: typeof createGrepToolType;
+};
+
+async function loadCodingAgentModule(): Promise<CodingAgentModule> {
+  return (await import('@mariozechner/pi-coding-agent')) as CodingAgentModule;
+}
 
 function createTempDir(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}`);
@@ -24,7 +47,7 @@ describe('coding plugin tools', () => {
       },
     };
 
-    const plugin = createCodingPlugin();
+    const plugin = createCodingPlugin({ loadCodingAgentModule });
     await plugin.initialize(dataDir, pluginConfig);
 
     const ctx: ToolContext = { sessionId: 'plugin-session', signal: new AbortController().signal };
@@ -63,7 +86,7 @@ describe('coding plugin tools', () => {
       },
     };
 
-    const plugin = createCodingPlugin();
+    const plugin = createCodingPlugin({ loadCodingAgentModule });
     await plugin.initialize(dataDir, pluginConfig);
 
     const ctx: ToolContext = {
@@ -104,7 +127,7 @@ describe('coding plugin tools', () => {
       },
     };
 
-    const plugin = createCodingPlugin();
+    const plugin = createCodingPlugin({ loadCodingAgentModule });
     await plugin.initialize(dataDir, pluginConfig);
 
     const nativeTools = await plugin.getAgentTools?.({
@@ -146,7 +169,7 @@ describe('coding plugin tools', () => {
       },
     };
 
-    const plugin = createCodingPlugin();
+    const plugin = createCodingPlugin({ loadCodingAgentModule });
     await plugin.initialize(dataDir, pluginConfig);
 
     const sessionSummary = {
