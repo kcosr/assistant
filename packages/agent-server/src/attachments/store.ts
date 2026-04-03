@@ -23,6 +23,7 @@ type SessionAttachmentIndex = {
 
 export class AttachmentStore {
   private readonly baseDir: string;
+  private readonly sessionMutationChains = new Map<string, Promise<void>>();
 
   constructor(baseDir: string) {
     this.baseDir = baseDir;
@@ -51,32 +52,37 @@ export class AttachmentStore {
     const sessionDir = this.getSessionDir(sessionId);
     const filesDir = path.join(sessionDir, 'files');
     const storageFileName = attachmentId;
-    const metadataPath = this.getMetadataPath(sessionId);
+    return this.runSessionMutation(sessionId, async () => {
+      await fs.mkdir(filesDir, { recursive: true });
+      const index = await this.readIndex(sessionId);
+      if (index.attachments.some((record) => record.toolCallId === toolCallId)) {
+        throw new Error(`Attachment already exists for tool call: ${toolCallId}`);
+      }
 
-    await fs.mkdir(filesDir, { recursive: true });
-    const index = await this.readIndex(sessionId);
-    if (index.attachments.some((record) => record.toolCallId === toolCallId)) {
-      throw new Error(`Attachment already exists for tool call: ${toolCallId}`);
-    }
+      const record: StoredAttachmentRecord = {
+        attachmentId,
+        sessionId,
+        requestId,
+        toolCallId,
+        fileName,
+        ...(options.title ? { title: options.title } : {}),
+        contentType,
+        size: options.bytes.byteLength,
+        createdAt,
+        storageFileName,
+      };
 
-    const record: StoredAttachmentRecord = {
-      attachmentId,
-      sessionId,
-      requestId,
-      toolCallId,
-      fileName,
-      ...(options.title ? { title: options.title } : {}),
-      contentType,
-      size: options.bytes.byteLength,
-      createdAt,
-      storageFileName,
-    };
-
-    const filePath = path.join(filesDir, storageFileName);
-    await fs.writeFile(filePath, options.bytes);
-    index.attachments.push(record);
-    await fs.writeFile(metadataPath, JSON.stringify(index, null, 2), 'utf8');
-    return record;
+      const filePath = path.join(filesDir, storageFileName);
+      try {
+        await fs.writeFile(filePath, options.bytes);
+        index.attachments.push(record);
+        await this.writeMetadata(sessionId, index);
+      } catch (error) {
+        await this.deleteStoredFile(sessionId, storageFileName);
+        throw error;
+      }
+      return record;
+    });
   }
 
   async getAttachment(sessionId: string, attachmentId: string): Promise<StoredAttachmentRecord | null> {
@@ -111,15 +117,17 @@ export class AttachmentStore {
   async deleteAttachment(sessionId: string, attachmentId: string): Promise<boolean> {
     const normalizedSessionId = normalizeRequired(sessionId, 'sessionId');
     const normalizedAttachmentId = normalizeRequired(attachmentId, 'attachmentId');
-    const index = await this.readIndex(normalizedSessionId);
-    const record = index.attachments.find((item) => item.attachmentId === normalizedAttachmentId);
-    if (!record) {
-      return false;
-    }
-    await this.deleteStoredFile(normalizedSessionId, record.storageFileName);
-    index.attachments = index.attachments.filter((item) => item.attachmentId !== normalizedAttachmentId);
-    await this.writeOrDeleteIndex(normalizedSessionId, index);
-    return true;
+    return this.runSessionMutation(normalizedSessionId, async () => {
+      const index = await this.readIndex(normalizedSessionId);
+      const record = index.attachments.find((item) => item.attachmentId === normalizedAttachmentId);
+      if (!record) {
+        return false;
+      }
+      await this.deleteStoredFile(normalizedSessionId, record.storageFileName);
+      index.attachments = index.attachments.filter((item) => item.attachmentId !== normalizedAttachmentId);
+      await this.writeOrDeleteIndex(normalizedSessionId, index);
+      return true;
+    });
   }
 
   async deleteByRequestIds(sessionId: string, requestIds: string[]): Promise<number> {
@@ -132,26 +140,30 @@ export class AttachmentStore {
     if (normalizedRequestIds.size === 0) {
       return 0;
     }
-    const index = await this.readIndex(normalizedSessionId);
-    const toDelete = index.attachments.filter((record) =>
-      normalizedRequestIds.has(record.requestId),
-    );
-    if (toDelete.length === 0) {
-      return 0;
-    }
-    await Promise.all(
-      toDelete.map((record) => this.deleteStoredFile(normalizedSessionId, record.storageFileName)),
-    );
-    index.attachments = index.attachments.filter(
-      (record) => !normalizedRequestIds.has(record.requestId),
-    );
-    await this.writeOrDeleteIndex(normalizedSessionId, index);
-    return toDelete.length;
+    return this.runSessionMutation(normalizedSessionId, async () => {
+      const index = await this.readIndex(normalizedSessionId);
+      const toDelete = index.attachments.filter((record) =>
+        normalizedRequestIds.has(record.requestId),
+      );
+      if (toDelete.length === 0) {
+        return 0;
+      }
+      await Promise.all(
+        toDelete.map((record) => this.deleteStoredFile(normalizedSessionId, record.storageFileName)),
+      );
+      index.attachments = index.attachments.filter(
+        (record) => !normalizedRequestIds.has(record.requestId),
+      );
+      await this.writeOrDeleteIndex(normalizedSessionId, index);
+      return toDelete.length;
+    });
   }
 
   async deleteSession(sessionId: string): Promise<void> {
     const normalizedSessionId = normalizeRequired(sessionId, 'sessionId');
-    await fs.rm(this.getSessionDir(normalizedSessionId), { recursive: true, force: true });
+    await this.runSessionMutation(normalizedSessionId, async () => {
+      await fs.rm(this.getSessionDir(normalizedSessionId), { recursive: true, force: true });
+    });
   }
 
   private getSessionDir(sessionId: string): string {
@@ -195,8 +207,7 @@ export class AttachmentStore {
       }
       return;
     }
-    await fs.mkdir(this.getSessionDir(sessionId), { recursive: true });
-    await fs.writeFile(metadataPath, JSON.stringify(index, null, 2), 'utf8');
+    await this.writeMetadata(sessionId, index);
   }
 
   private async deleteStoredFile(sessionId: string, storageFileName: string): Promise<void> {
@@ -206,6 +217,38 @@ export class AttachmentStore {
       const error = err as NodeJS.ErrnoException;
       if (error.code !== 'ENOENT') {
         throw err;
+      }
+    }
+  }
+
+  private async writeMetadata(sessionId: string, index: SessionAttachmentIndex): Promise<void> {
+    const sessionDir = this.getSessionDir(sessionId);
+    const metadataPath = this.getMetadataPath(sessionId);
+    const tempPath = path.join(sessionDir, `metadata.${randomUUID()}.tmp`);
+    await fs.mkdir(sessionDir, { recursive: true });
+    try {
+      await fs.writeFile(tempPath, JSON.stringify(index, null, 2), 'utf8');
+      await fs.rename(tempPath, metadataPath);
+    } finally {
+      await fs.unlink(tempPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') {
+          throw error;
+        }
+      });
+    }
+  }
+
+  private async runSessionMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    const normalizedSessionId = normalizeRequired(sessionId, 'sessionId');
+    const previous = this.sessionMutationChains.get(normalizedSessionId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    const tracked = next.then(() => undefined, () => undefined);
+    this.sessionMutationChains.set(normalizedSessionId, tracked);
+    try {
+      return await next;
+    } finally {
+      if (this.sessionMutationChains.get(normalizedSessionId) === tracked) {
+        this.sessionMutationChains.delete(normalizedSessionId);
       }
     }
   }

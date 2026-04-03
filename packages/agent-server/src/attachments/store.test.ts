@@ -118,4 +118,38 @@ describe('AttachmentStore', () => {
 
     await expect(fs.stat(path.join(baseDir, 'session-1'))).rejects.toThrow();
   });
+
+  it('serializes concurrent writes for the same session', async () => {
+    const baseDir = await createTempDir('attachment-store-concurrent');
+    const store = new AttachmentStore(baseDir);
+    const sessionId = 'session-1';
+
+    const created = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        store.createAttachment({
+          sessionId,
+          requestId: `request-${index}`,
+          toolCallId: `tool-${index}`,
+          fileName: `file-${index}.txt`,
+          contentType: 'text/plain',
+          bytes: Buffer.from(`attachment-${index}`, 'utf8'),
+        }),
+      ),
+    );
+
+    const metadataPath = path.join(baseDir, sessionId, 'metadata.json');
+    const rawMetadata = await fs.readFile(metadataPath, 'utf8');
+    const parsed = JSON.parse(rawMetadata) as { attachments?: Array<{ attachmentId: string }> };
+    expect(parsed.attachments).toHaveLength(20);
+    expect(
+      new Set(parsed.attachments?.map((attachment) => attachment.attachmentId)).size,
+    ).toBe(20);
+
+    await Promise.all(
+      created.map(async (attachment, index) => {
+        const file = await store.getAttachmentFile(sessionId, attachment.attachmentId);
+        expect(file?.content.toString('utf8')).toBe(`attachment-${index}`);
+      }),
+    );
+  });
 });
