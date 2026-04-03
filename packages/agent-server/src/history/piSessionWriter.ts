@@ -1115,6 +1115,70 @@ function collectRequestSpans(entries: PiSessionEntryRecord[]): PiRequestSpan[] {
   return collectSyntheticRequestSpans(entries);
 }
 
+function hasExplicitRequestSpans(entries: PiSessionEntryRecord[]): boolean {
+  return collectExplicitRequestSpans(entries).length > 0;
+}
+
+function getSyntheticRequestTrigger(entry: PiSessionEntryRecord): PiTurnTrigger {
+  if (entry.type === 'custom_message') {
+    return 'callback';
+  }
+  return 'user';
+}
+
+function resolveEntryTimestamp(entry: PiSessionEntryRecord | undefined, fallback: string): string {
+  const timestamp = entry && typeof entry['timestamp'] === 'string' ? entry['timestamp'].trim() : '';
+  return timestamp || fallback;
+}
+
+function materializeExplicitRequestBoundaries(options: {
+  entries: PiSessionEntryRecord[];
+  spans: PiRequestSpan[];
+  fallbackTimestamp: string;
+}): PiSessionEntryRecord[] {
+  const { entries, spans, fallbackTimestamp } = options;
+  if (spans.length === 0) {
+    return entries.map((entry) => cloneJson(entry));
+  }
+
+  const materialized: PiSessionEntryRecord[] = [];
+  for (const span of spans) {
+    const spanEntries = entries.slice(span.startIndex, span.endIndex + 1).map((entry) => cloneJson(entry));
+    if (spanEntries.length === 0) {
+      continue;
+    }
+    const firstEntry = spanEntries[0]!;
+    const lastEntry = spanEntries[spanEntries.length - 1]!;
+    materialized.push({
+      type: 'custom',
+      id: generateEntryId(),
+      parentId: null,
+      timestamp: resolveEntryTimestamp(firstEntry, fallbackTimestamp),
+      customType: ASSISTANT_REQUEST_START_CUSTOM_TYPE,
+      data: {
+        v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
+        requestId: span.requestId,
+        trigger: getSyntheticRequestTrigger(firstEntry),
+      },
+    });
+    materialized.push(...spanEntries);
+    materialized.push({
+      type: 'custom',
+      id: generateEntryId(),
+      parentId: null,
+      timestamp: resolveEntryTimestamp(lastEntry, fallbackTimestamp),
+      customType: ASSISTANT_REQUEST_END_CUSTOM_TYPE,
+      data: {
+        v: ASSISTANT_REQUEST_BOUNDARY_VERSION,
+        requestId: span.requestId,
+        status: 'completed',
+      },
+    });
+  }
+
+  return materialized;
+}
+
 function resolveOpenRequestIdFromEntries(entries: PiSessionEntryRecord[]): string | null {
   let openRequestId: string | null = null;
   for (const entry of entries) {
@@ -1274,6 +1338,7 @@ export class PiSessionWriter {
     }
 
     const spans = collectRequestSpans(records.entries);
+    const hadExplicitRequestSpans = hasExplicitRequestSpans(records.entries);
 
     const droppedRanges = selectDroppedRequestRanges({
       spans,
@@ -1285,7 +1350,17 @@ export class PiSessionWriter {
       return { summary: stateInfo.summary, changed: false, droppedRequestIds: [] };
     }
 
-    const keptEntries = rechainEntries(filterEntriesByDroppedRanges(records.entries, droppedRanges));
+    const filteredEntries = filterEntriesByDroppedRanges(records.entries, droppedRanges);
+    const keptEntries =
+      hadExplicitRequestSpans
+        ? rechainEntries(filteredEntries)
+        : rechainEntries(
+            materializeExplicitRequestBoundaries({
+              entries: filteredEntries,
+              spans: collectSyntheticRequestSpans(filteredEntries),
+              fallbackTimestamp: this.now().toISOString(),
+            }),
+          );
     const tempFilePath = `${state.sessionFile}.tmp-${randomUUID()}`;
 
     await this.queueWrite(state, async () => {

@@ -7,8 +7,14 @@ final class AssistantVoiceEventParser {
         if (eventJson == null || eventJson.trim().isEmpty()) {
             return null;
         }
-        String eventType = trim(findStringField(eventJson, "type", 0));
-        String eventId = trim(findStringField(eventJson, "id", 0));
+        String eventType = trim(findStringField(eventJson, "chatEventType", 0));
+        if (eventType.isEmpty()) {
+            eventType = trim(findStringField(eventJson, "type", 0));
+        }
+        String eventId = trim(findStringField(eventJson, "eventId", 0));
+        if (eventId.isEmpty()) {
+            eventId = trim(findStringField(eventJson, "id", 0));
+        }
         String sessionId = trim(findStringField(eventJson, "sessionId", 0));
         String payloadJson = extractObjectField(eventJson, "payload", 0);
         if (eventId.isEmpty() || sessionId.isEmpty() || payloadJson.isEmpty()) {

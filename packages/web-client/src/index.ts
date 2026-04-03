@@ -4425,6 +4425,9 @@ async function main(): Promise<void> {
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
     refreshSessions,
     loadSessionTranscript,
+    resetSessionTranscriptState: (sessionId) => {
+      clearSessionTranscriptState(sessionId);
+    },
     shouldBufferTranscriptEvent: (sessionId) =>
       (sessionTranscriptReplayState.get(sessionId.trim())?.hydratingCount ?? 0) > 0,
     bufferTranscriptEvent: (sessionId, event) => {

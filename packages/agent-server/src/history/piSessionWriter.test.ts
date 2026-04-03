@@ -1033,6 +1033,21 @@ describe('PiSessionWriter', () => {
 
     expect(result.changed).toBe(true);
     expect(result.droppedRequestIds.length).toBeGreaterThan(0);
+
+    const rewrittenContent = await fs.readFile(filePath, 'utf8');
+    const rewrittenEntries = parseJsonLines(rewrittenContent);
+    const requestStartEntries = rewrittenEntries.filter(
+      (entry) =>
+        entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start',
+    );
+    const requestEndEntries = rewrittenEntries.filter(
+      (entry) =>
+        entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end',
+    );
+
+    expect(requestStartEntries.length).toBeGreaterThan(0);
+    expect(requestEndEntries.length).toBeGreaterThan(0);
+    expect(JSON.stringify(rewrittenEntries)).toContain(requestId as string);
   });
 
   it('rejects history rewrites when the anchor request does not exist', async () => {

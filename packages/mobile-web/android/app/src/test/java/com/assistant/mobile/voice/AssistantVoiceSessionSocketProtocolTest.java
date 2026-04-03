@@ -15,9 +15,9 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         );
 
         assertTrue(payload.contains("\"type\":\"hello\""));
-        assertTrue(payload.contains("\"protocolVersion\":3"));
+        assertTrue(payload.contains("\"protocolVersion\":5"));
         assertTrue(payload.contains("\"subscriptions\":[{\"sessionId\":\"session-123\""));
-        assertTrue(payload.contains("\"serverMessageTypes\":[\"chat_event\"]"));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
         assertTrue(payload.contains("\"chatEventTypes\":[\"tool_call\"]"));
         assertTrue(payload.contains("\"toolNames\":[\"voice_speak\",\"voice_ask\"]"));
     }
@@ -31,7 +31,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
 
         assertTrue(payload.contains("\"type\":\"subscribe\""));
         assertTrue(payload.contains("\"sessionId\":\"session-123\""));
-        assertTrue(payload.contains("\"serverMessageTypes\":[\"chat_event\"]"));
+        assertTrue(payload.contains("\"serverMessageTypes\":[\"transcript_event\"]"));
         assertTrue(payload.contains("\"chatEventTypes\":[\"assistant_done\"]"));
         assertTrue(payload.contains("\"messagePhases\":[\"final_answer\"]"));
     }
@@ -47,12 +47,11 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     @Test
     public void parsePlaybackMessageReturnsVoicePromptForMatchingSession() {
         String message = "{"
-            + "\"type\":\"chat_event\","
-            + "\"sessionId\":\"session-123\","
+            + "\"type\":\"transcript_event\","
             + "\"event\":{"
-            + "\"id\":\"event-1\","
+            + "\"eventId\":\"event-1\","
             + "\"sessionId\":\"session-123\","
-            + "\"type\":\"tool_call\","
+            + "\"chatEventType\":\"tool_call\","
             + "\"payload\":{"
             + "\"toolName\":\"voice_speak\","
             + "\"toolCallId\":\"call-1\","
@@ -75,12 +74,11 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     @Test
     public void parsePlaybackMessageReturnsPromptForAnySession() {
         String message = "{"
-            + "\"type\":\"chat_event\","
-            + "\"sessionId\":\"session-other\","
+            + "\"type\":\"transcript_event\","
             + "\"event\":{"
-            + "\"id\":\"event-3\","
+            + "\"eventId\":\"event-3\","
             + "\"sessionId\":\"session-other\","
-            + "\"type\":\"tool_call\","
+            + "\"chatEventType\":\"tool_call\","
             + "\"payload\":{"
             + "\"toolName\":\"voice_speak\","
             + "\"toolCallId\":\"call-3\","
@@ -99,12 +97,11 @@ public final class AssistantVoiceSessionSocketProtocolTest {
     @Test
     public void parsePlaybackMessageReturnsAssistantResponseForMatchingSession() {
         String message = "{"
-            + "\"type\":\"chat_event\","
-            + "\"sessionId\":\"session-123\","
+            + "\"type\":\"transcript_event\","
             + "\"event\":{"
-            + "\"id\":\"event-2\","
+            + "\"eventId\":\"event-2\","
             + "\"sessionId\":\"session-123\","
-            + "\"type\":\"assistant_done\","
+            + "\"chatEventType\":\"assistant_done\","
             + "\"payload\":{"
             + "\"phase\":\"final_answer\","
             + "\"text\":\"Final response text\""

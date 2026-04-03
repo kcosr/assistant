@@ -7,7 +7,7 @@ final class AssistantVoiceSessionSocketProtocol {
 
     static String buildHelloMessage(List<String> sessionIds, String audioMode) {
         String subscriptions = buildSubscriptionsJson(sessionIds, audioMode);
-        return "{\"type\":\"hello\",\"protocolVersion\":3,\"subscriptions\":" + subscriptions + "}";
+        return "{\"type\":\"hello\",\"protocolVersion\":5,\"subscriptions\":" + subscriptions + "}";
     }
 
     static String buildSubscribeMessage(String sessionId, String audioMode) {
@@ -31,7 +31,7 @@ final class AssistantVoiceSessionSocketProtocol {
         }
 
         String messageType = trim(findStringField(rawMessage, "type", 0));
-        if (!"chat_event".equals(messageType)) {
+        if (!"transcript_event".equals(messageType)) {
             return null;
         }
 
@@ -91,13 +91,13 @@ final class AssistantVoiceSessionSocketProtocol {
         String normalizedAudioMode = trim(audioMode);
         if (AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(normalizedAudioMode)) {
             return "{"
-                + "\"serverMessageTypes\":[\"chat_event\"],"
+                + "\"serverMessageTypes\":[\"transcript_event\"],"
                 + "\"chatEventTypes\":[\"assistant_done\"],"
                 + "\"messagePhases\":[\"final_answer\"]"
                 + "}";
         }
         return "{"
-            + "\"serverMessageTypes\":[\"chat_event\"],"
+            + "\"serverMessageTypes\":[\"transcript_event\"],"
             + "\"chatEventTypes\":[\"tool_call\"],"
             + "\"toolNames\":[\"voice_speak\",\"voice_ask\"]"
             + "}";

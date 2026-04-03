@@ -49,6 +49,7 @@ export interface ServerMessageHandlerOptions {
   supportsAudioOutput: () => boolean;
   refreshSessions: (preferredSessionId?: string | null) => Promise<void>;
   loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
+  resetSessionTranscriptState?: (sessionId: string) => void;
   shouldBufferTranscriptEvent?: (sessionId: string) => boolean;
   bufferTranscriptEvent?: (sessionId: string, event: ProjectedTranscriptEvent) => void;
   renderAgentSidebar: () => void;
@@ -477,6 +478,7 @@ export class ServerMessageHandler {
       case 'session_cleared': {
         const sessionId = message.sessionId;
         if (sessionId) {
+          this.options.resetSessionTranscriptState?.(sessionId);
           const runtime = this.options.getChatRuntimeForSession(sessionId);
           if (runtime) {
             runtime.chatRenderer.clear();
@@ -492,6 +494,7 @@ export class ServerMessageHandler {
       }
       case 'session_deleted': {
         const sessionId = message.sessionId;
+        this.options.resetSessionTranscriptState?.(sessionId);
         if (this.options.getSelectedSessionId() === sessionId) {
           this.options.setSelectedSessionId(null);
         }

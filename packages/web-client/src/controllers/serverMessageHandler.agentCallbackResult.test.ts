@@ -19,6 +19,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
   const bufferTranscriptEvent = vi.fn();
+  const resetSessionTranscriptState = vi.fn();
 
   const options: ServerMessageHandlerOptions = {
     statusEl: document.createElement('div'),
@@ -35,6 +36,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
     supportsAudioOutput: () => false,
     refreshSessions,
     loadSessionTranscript,
+    resetSessionTranscriptState,
     shouldBufferTranscriptEvent: () => false,
     bufferTranscriptEvent,
     renderAgentSidebar: () => {},
@@ -64,7 +66,14 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
 
   const handler = new ServerMessageHandler(options);
 
-  return { handler, typingIndicators, refreshSessions, loadSessionTranscript, bufferTranscriptEvent };
+  return {
+    handler,
+    typingIndicators,
+    refreshSessions,
+    loadSessionTranscript,
+    bufferTranscriptEvent,
+    resetSessionTranscriptState,
+  };
 }
 
 describe('ServerMessageHandler typing indicator', () => {
@@ -132,6 +141,68 @@ describe('ServerMessageHandler typing indicator', () => {
 
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
     expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+  });
+
+  it('clears cached transcript state when a session is cleared', async () => {
+    const resetScrollState = vi.fn();
+    const updateScrollButtonVisibility = vi.fn();
+    const syncMicButtonState = vi.fn();
+    const runtime = {
+      chatRenderer: {
+        clear: vi.fn(),
+      },
+      chatScrollManager: {
+        resetScrollState,
+        updateScrollButtonVisibility,
+      },
+      elements: {
+        chatLog: document.createElement('div'),
+      },
+    } as unknown as ChatRuntime;
+    const {
+      handler,
+      refreshSessions,
+      resetSessionTranscriptState,
+    } = makeHandler({
+      getChatRuntimeForSession: () => runtime,
+      getSpeechAudioControllerForSession: () =>
+        ({ syncMicButtonState } as unknown as SpeechAudioController),
+    });
+
+    await handler.handle({
+      type: 'session_cleared',
+      sessionId: 's-1',
+    });
+
+    expect(resetSessionTranscriptState).toHaveBeenCalledWith('s-1');
+    expect(runtime.chatRenderer.clear).toHaveBeenCalledTimes(1);
+    expect(resetScrollState).toHaveBeenCalledTimes(1);
+    expect(updateScrollButtonVisibility).toHaveBeenCalledTimes(1);
+    expect(syncMicButtonState).toHaveBeenCalledTimes(1);
+    expect(refreshSessions).toHaveBeenCalledWith('s-1');
+  });
+
+  it('clears cached transcript state when a session is deleted', async () => {
+    let selectedSessionId: string | null = 's-1';
+    const {
+      handler,
+      refreshSessions,
+      resetSessionTranscriptState,
+    } = makeHandler({
+      getSelectedSessionId: () => selectedSessionId,
+      setSelectedSessionId: (sessionId) => {
+        selectedSessionId = sessionId;
+      },
+    });
+
+    await handler.handle({
+      type: 'session_deleted',
+      sessionId: 's-1',
+    });
+
+    expect(resetSessionTranscriptState).toHaveBeenCalledWith('s-1');
+    expect(selectedSessionId).toBeNull();
+    expect(refreshSessions).toHaveBeenCalledWith(null);
   });
 
   it('scrolls visible chat panels to bottom on turn_start', async () => {
