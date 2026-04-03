@@ -1,7 +1,5 @@
-import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import type { CombinedPluginManifest } from '@assistant/shared';
 import type {
@@ -96,38 +94,11 @@ function withCapabilities(tool: NativeTool): NativeTool {
 
 let codingAgentModulePromise: Promise<CodingAgentModule> | null = null;
 
-function resolveCodingAgentEntrypoint(): string {
-  const packageSuffix = path.join(
-    'node_modules',
-    '@mariozechner',
-    'pi-coding-agent',
-    'dist',
-    'index.js',
-  );
-  const candidates = [
-    path.resolve(process.cwd(), packageSuffix),
-    path.resolve(__dirname, '..', '..', '..', '..', '..', packageSuffix),
-    path.resolve(__dirname, '..', '..', '..', '..', '..', '..', packageSuffix),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  throw new ToolError(
-    'tool_unavailable',
-    'Unable to resolve @mariozechner/pi-coding-agent runtime entrypoint',
-  );
-}
-
 async function loadCodingAgentModule(): Promise<CodingAgentModule> {
   if (!codingAgentModulePromise) {
-    const entrypointUrl = pathToFileURL(resolveCodingAgentEntrypoint()).href;
-    codingAgentModulePromise = (0, eval)(
-      `import(${JSON.stringify(entrypointUrl)})`,
-    ) as Promise<CodingAgentModule>;
+    codingAgentModulePromise = import('@mariozechner/pi-coding-agent').then(
+      (module) => module as CodingAgentModule,
+    );
   }
   return codingAgentModulePromise;
 }

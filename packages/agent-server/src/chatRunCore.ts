@@ -1448,7 +1448,7 @@ export async function runChatCompletionCore(
         ...(getAgentExchangeId(state, getAgentExchangeIdFn)
           ? { agentExchangeId: getAgentExchangeId(state, getAgentExchangeIdFn) }
           : {}),
-        ...(result.details !== undefined ? { result: result.details } : {}),
+        result,
         ...(event.isError
           ? {
               error: {
@@ -1467,7 +1467,7 @@ export async function runChatCompletionCore(
           turnId,
           responseId,
           toolCallId: event.toolCallId,
-          result: result.details ?? null,
+          result,
           ...(event.isError
             ? {
                 error: {
