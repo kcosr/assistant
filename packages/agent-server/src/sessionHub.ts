@@ -20,7 +20,6 @@ import type {
 import { AgentRegistry } from './agents';
 import type { EventStore } from './events';
 import type { HistoryProviderRegistry } from './history/historyProvider';
-import { loadCanonicalPiSessionEvents } from './history/historyProvider';
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import { SessionIndex, type SessionSummary } from './sessionIndex';
 import type { PluginRegistry } from './plugins/registry';
@@ -828,13 +827,7 @@ export class SessionHub {
     const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
     const providerId = agent?.chat?.provider;
     if (providerId === 'pi' || providerId === 'pi-cli') {
-      const directPiEvents = await loadCanonicalPiSessionEvents({
-        sessionId: summary.sessionId,
-        providerId,
-        ...(summary.attributes ? { attributes: summary.attributes } : {}),
-        ...(this.piSessionWriter ? { baseDir: this.piSessionWriter.getBaseDir() } : {}),
-      });
-      return directPiEvents;
+      return [];
     }
     if (!this.historyProvider) {
       return [];

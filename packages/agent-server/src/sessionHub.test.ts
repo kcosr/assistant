@@ -524,8 +524,8 @@ describe('SessionHub clearSession', () => {
   });
 });
 
-describe('SessionHub loadSessionEvents', () => {
-  it('loads Pi session history directly from the canonical Pi session file', async () => {
+describe('SessionHub loadSessionMessages', () => {
+  it('loads Pi replay messages directly from the canonical Pi session file', async () => {
     const sessionsFile = createTempFile('session-hub-load-events');
     const sessionIndex = new SessionIndex(sessionsFile);
     const agentRegistry = new AgentRegistry([
@@ -584,27 +584,12 @@ describe('SessionHub loadSessionEvents', () => {
       throw new Error('Expected session summary to exist');
     }
 
-    const events = await sessionHub.loadSessionEvents(reloadedSummary, true);
+    const state = await sessionHub.ensureSessionState(reloadedSummary.sessionId, reloadedSummary, true);
+    const messages = state.chatMessages;
 
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'turn_start',
-          turnId: 'request-1',
-        }),
-        expect.objectContaining({
-          type: 'user_message',
-          payload: expect.objectContaining({ text: 'First request' }),
-        }),
-        expect.objectContaining({
-          type: 'assistant_done',
-          payload: expect.objectContaining({ text: 'First reply' }),
-        }),
-        expect.objectContaining({
-          type: 'turn_end',
-          turnId: 'request-1',
-        }),
-      ]),
-    );
+    expect(messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'First request' }),
+      expect.objectContaining({ role: 'assistant', content: 'First reply' }),
+    ]);
   });
 });
