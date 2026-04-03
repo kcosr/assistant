@@ -26,6 +26,7 @@ import {
   openHtmlAttachmentInBrowser,
 } from '../utils/attachmentActions';
 import { applyMarkdownToElement } from '../utils/markdown';
+import { createCopyDropdown } from './markdownViewerController';
 import { clearEmptySessionHint } from '../utils/emptySessionHint';
 import {
   appendMessage,
@@ -3098,6 +3099,69 @@ export class ChatRenderer {
     return attachment.previewType === 'text' || attachment.previewType === 'markdown';
   }
 
+  private renderMarkdownAttachmentAsPlainText(markdownText: string): string {
+    const temp = document.createElement('div');
+    applyMarkdownToElement(temp, markdownText);
+    temp.querySelectorAll('.markdown-code-copy-wrapper').forEach((element) => element.remove());
+    return temp.textContent ?? '';
+  }
+
+  private async resolveAttachmentCopyText(
+    bubble: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+  ): Promise<string> {
+    const expansionState = this.attachmentExpansionStates.get(bubble);
+    if (expansionState?.status === 'ready') {
+      return expansionState.fullText;
+    }
+    if (typeof attachment.previewText === 'string' && attachment.previewTruncated !== true) {
+      return attachment.previewText;
+    }
+    return fetchAttachmentTextContent(getAttachmentContentUrl(attachment.downloadUrl));
+  }
+
+  private createAttachmentCopyDropdown(
+    bubble: HTMLDivElement,
+    attachment: AttachmentDescriptor,
+  ): HTMLElement {
+    return createCopyDropdown({
+      classPrefix: 'attachment-tool-copy',
+      compact: true,
+      getPlainText: async () => {
+        const fullText = await this.resolveAttachmentCopyText(bubble, attachment);
+        return this.renderMarkdownAttachmentAsPlainText(fullText);
+      },
+      getMarkdown: async () => this.resolveAttachmentCopyText(bubble, attachment),
+    });
+  }
+
+  private wireAttachmentCopyButton(
+    bubble: HTMLDivElement,
+    button: HTMLButtonElement,
+    getText: () => Promise<string>,
+  ): void {
+    button.addEventListener('click', () => {
+      const originalLabel = button.textContent ?? 'Copy';
+      button.disabled = true;
+      button.textContent = 'Copying…';
+      void getText()
+        .then((text) => navigator.clipboard.writeText(text))
+        .then(() => {
+          button.textContent = 'Copied';
+          window.setTimeout(() => {
+            button.disabled = false;
+            button.textContent = originalLabel;
+          }, 1500);
+        })
+        .catch((error) => {
+          console.error('[attachments] Failed to copy attachment', error);
+          button.disabled = false;
+          button.textContent = originalLabel;
+          this.showAttachmentToolActionError(button.closest<HTMLDivElement>('.attachment-tool-bubble') ?? bubble, 'Failed to copy attachment.');
+        });
+    });
+  }
+
   private renderAttachmentPreviewContent(
     previewEl: HTMLDivElement,
     attachment: AttachmentDescriptor,
@@ -3297,6 +3361,16 @@ export class ChatRenderer {
           this.renderAttachmentToolBubble(bubble, attachment);
         });
         actionsEl.appendChild(collapseButton);
+      }
+
+      if (attachment.previewType === 'markdown') {
+        actionsEl.appendChild(this.createAttachmentCopyDropdown(bubble, attachment));
+      } else if (attachment.previewType === 'text') {
+        const copyButton = this.createAttachmentActionButton('Copy', () => {});
+        this.wireAttachmentCopyButton(bubble, copyButton, () =>
+          this.resolveAttachmentCopyText(bubble, attachment),
+        );
+        actionsEl.appendChild(copyButton);
       }
 
       const downloadButton = this.createAttachmentActionButton('Download', () => {

@@ -905,7 +905,7 @@ describe('ChatRenderer', () => {
       Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['Collapse', 'Download']);
+    ).toEqual(['Collapse', 'Copy', 'Download']);
 
     const collapseButton = bubble?.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
     expect(collapseButton?.textContent).toBe('Collapse');
@@ -919,7 +919,157 @@ describe('ChatRenderer', () => {
       Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['Expand', 'Download']);
+    ).toEqual(['Expand', 'Copy', 'Download']);
+  });
+
+  it('copies plain text attachments using the full attachment content', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const fetchSpy = vi
+      .spyOn(attachmentActions, 'fetchAttachmentTextContent')
+      .mockResolvedValue('hello world and beyond');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e-turn-copy',
+        turnId: 't-attachment-copy',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-copy',
+        turnId: 't-attachment-copy',
+        responseId: 'r-attachment-copy',
+        payload: {
+          toolCallId: 'tc-attachment-copy',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.txt',
+            text: 'hello world and beyond',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-copy',
+        turnId: 't-attachment-copy',
+        responseId: 'r-attachment-copy',
+        payload: {
+          toolCallId: 'tc-attachment-copy',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-copy',
+              fileName: 'note.txt',
+              contentType: 'text/plain',
+              size: 22,
+              downloadUrl: '/api/attachments/session-1/att-copy?download=1',
+              previewType: 'text',
+              previewText: 'hello',
+              previewTruncated: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const copyButton = container.querySelector<HTMLButtonElement>('.attachment-tool-actions button');
+    expect(copyButton?.textContent).toBe('Expand');
+    const actualCopyButton = container.querySelectorAll<HTMLButtonElement>(
+      '.attachment-tool-actions button',
+    )[1];
+    expect(actualCopyButton?.textContent).toBe('Copy');
+    actualCopyButton?.click();
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith('/api/attachments/session-1/att-copy');
+      expect(writeText).toHaveBeenCalledWith('hello world and beyond');
+    });
+  });
+
+  it('copies markdown attachments as plain text or raw markdown', async () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e-turn-markdown-copy',
+        turnId: 't-attachment-markdown-copy',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e-attachment-call-markdown-copy',
+        turnId: 't-attachment-markdown-copy',
+        responseId: 'r-attachment-markdown-copy',
+        payload: {
+          toolCallId: 'tc-attachment-markdown-copy',
+          toolName: 'attachment_send',
+          args: {
+            fileName: 'note.md',
+            text: '# Hello\n\nWorld',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e-attachment-result-markdown-copy',
+        turnId: 't-attachment-markdown-copy',
+        responseId: 'r-attachment-markdown-copy',
+        payload: {
+          toolCallId: 'tc-attachment-markdown-copy',
+          result: {
+            ok: true,
+            attachment: {
+              attachmentId: 'att-markdown-copy',
+              fileName: 'note.md',
+              contentType: 'text/markdown',
+              size: 14,
+              downloadUrl: '/api/attachments/session-1/att-markdown-copy?download=1',
+              previewType: 'markdown',
+              previewText: '# Hello\n\nWorld',
+            },
+          },
+        },
+      }),
+    ]);
+
+    const mainCopyButton = container.querySelector<HTMLButtonElement>('.attachment-tool-copy-main-button');
+    expect(mainCopyButton?.textContent).toBe('Copy');
+    mainCopyButton?.click();
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalled();
+    });
+    expect(writeText.mock.calls[0]?.[0]).toContain('Hello');
+    expect(writeText.mock.calls[0]?.[0]).toContain('World');
+    expect(writeText.mock.calls[0]?.[0]).not.toContain('#');
+
+    const toggleButton = container.querySelector<HTMLButtonElement>(
+      '.attachment-tool-copy-toggle-button',
+    );
+    toggleButton?.click();
+    const markdownItem = container.querySelector<HTMLButtonElement>('.attachment-tool-copy-menu-item');
+    markdownItem?.click();
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenLastCalledWith('# Hello\n\nWorld');
+    });
   });
 
   it('shows attachment expand failures inline and keeps the expand action available', async () => {
@@ -990,7 +1140,7 @@ describe('ChatRenderer', () => {
       Array.from(bubble?.querySelectorAll<HTMLButtonElement>('.attachment-tool-actions button') ?? []).map(
         (button) => button.textContent,
       ),
-    ).toEqual(['Expand', 'Download']);
+    ).toEqual(['Expand', 'Copy', 'Download']);
   });
 
   it('shows attachment action failures inline without dropping the attachment bubble', async () => {

@@ -23,9 +23,9 @@ interface CopyDropdownOptions {
   /** CSS class prefix for styling (e.g., 'collection-note-copy' or 'collapsible-section-copy') */
   classPrefix: string;
   /** Get plain text to copy */
-  getPlainText: () => string;
+  getPlainText: () => string | Promise<string>;
   /** Get markdown to copy (if not provided or returns same as plain text, option is disabled) */
-  getMarkdown?: () => string;
+  getMarkdown?: () => string | Promise<string>;
   /** Optional: make it compact (smaller for inline use) */
   compact?: boolean;
 }
@@ -139,11 +139,13 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
     event.preventDefault();
     event.stopPropagation();
     setMenuOpen(false);
-    void copyToClipboard(getPlainText()).then((ok) => {
-      if (ok) {
-        showCopySuccess();
-      }
-    });
+    void Promise.resolve(getPlainText())
+      .then((text) => copyToClipboard(text))
+      .then((ok) => {
+        if (ok) {
+          showCopySuccess();
+        }
+      });
   });
 
   markdownItem.addEventListener('click', (event) => {
@@ -153,11 +155,13 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
       return;
     }
     setMenuOpen(false);
-    void copyToClipboard(getMarkdown!()).then((ok) => {
-      if (ok) {
-        showCopySuccess();
-      }
-    });
+    void Promise.resolve(getMarkdown!())
+      .then((text) => copyToClipboard(text))
+      .then((ok) => {
+        if (ok) {
+          showCopySuccess();
+        }
+      });
   });
 
   return wrapper;

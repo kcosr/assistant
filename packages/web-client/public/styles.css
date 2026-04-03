@@ -5769,6 +5769,84 @@ textarea.interaction-input {
   cursor: default;
 }
 
+.attachment-tool-copy-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-bg-elevated);
+  color: var(--color-text-secondary);
+}
+
+.attachment-tool-copy-button {
+  padding: 0 var(--spacing-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.attachment-tool-copy-button:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.attachment-tool-copy-main-button {
+  min-height: 28px;
+}
+
+.attachment-tool-copy-toggle-button {
+  min-width: 26px;
+  border-left: 1px solid var(--color-border-subtle);
+  padding-inline: 0;
+}
+
+.attachment-tool-copy-toggle-button::after {
+  content: '▾';
+  font-size: 9px;
+}
+
+.attachment-tool-copy-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--spacing-xs);
+  min-width: 160px;
+  background-color: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-xs) 0;
+  z-index: 10;
+  display: none;
+}
+
+.attachment-tool-copy-menu.open {
+  display: block;
+}
+
+.attachment-tool-copy-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attachment-tool-copy-menu-item:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
 /* ===== Input Panel ===== */
 .input-panel {
   display: flex;

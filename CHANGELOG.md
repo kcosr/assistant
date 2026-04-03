@@ -12,6 +12,7 @@
 
 - Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Added configurable `attachment_send` preview snippet limits plus inline expand/collapse for truncated attachment previews in chat. ([#88](https://github.com/kcosr/assistant/pull/88))
+- Added inline attachment copy actions for `attachment_send`, including plain-text copy and markdown plain/raw copy dropdowns in attachment bubbles.
 - Added rooted per-agent `contextFiles` prompt injection with config-relative roots, root-confined glob includes, startup preload caching, fail-fast file validation, and system-prompt insertion after instruction skills.
 - Added Android native voice `TTS gain` settings with a 25%-500% playback control, Android PCM software gain, runtime gain reporting, and an Android source-tree `android:test` entrypoint that syncs Capacitor before Gradle tests. ([#87](https://github.com/kcosr/assistant/pull/87))
 - Added Android native recognition cues with configurable cue gain and startup pre-roll settings, persistent notification toggles for media-button capture and `Off/Tool/Response` voice mode cycling, and a local spoken `stop` abort path. ([#89](https://github.com/kcosr/assistant/pull/89))
