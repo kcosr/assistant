@@ -363,6 +363,25 @@ function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: strin
   return Math.max(0, sessionHub.getSessionState(sessionId)?.summary.revision ?? 0);
 }
 
+function getDirectPiPersistenceState(sessionHub: SessionHub, sessionId: string): {
+  summary: NonNullable<ReturnType<SessionHub['getSessionState']>>['summary'];
+} | null {
+  const state = sessionHub.getSessionState(sessionId);
+  const summary = state?.summary;
+  if (!summary?.agentId) {
+    return null;
+  }
+  const agent = sessionHub.getAgentRegistry().getAgent(summary.agentId);
+  const providerId = agent?.chat?.provider;
+  if (providerId !== 'pi' && providerId !== 'pi-cli') {
+    return null;
+  }
+  if (!sessionHub.getPiSessionWriter?.()) {
+    return null;
+  }
+  return { summary };
+}
+
 function resolveLiveRequestId(event: ChatEvent, activeRequestId: string | null): string {
   const explicit = typeof event.turnId === 'string' ? event.turnId.trim() : '';
   if (explicit) {
@@ -600,8 +619,29 @@ export async function appendAndBroadcastChatEvents(
     return;
   }
 
+  const piState = getDirectPiPersistenceState(sessionHub, sessionId);
   try {
-    if (events.length === 1) {
+    if (piState) {
+      const writer = sessionHub.getPiSessionWriter?.();
+      if (writer) {
+        for (const event of events) {
+          if (event.type === 'turn_start' || event.type === 'turn_end') {
+            continue;
+          }
+          const updatedSummary = await writer.appendAssistantEvent({
+            summary: piState.summary,
+            eventType: event.type,
+            payload: event.payload,
+            ...(event.turnId ? { turnId: event.turnId } : {}),
+            ...(event.responseId ? { responseId: event.responseId } : {}),
+            updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+          });
+          if (updatedSummary) {
+            piState.summary = updatedSummary;
+          }
+        }
+      }
+    } else if (events.length === 1) {
       const [single] = events;
       if (!single) {
         return;

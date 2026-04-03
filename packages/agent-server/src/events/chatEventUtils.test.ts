@@ -23,6 +23,7 @@ function createEventStore(): EventStore {
 
 function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli', sessionId = 's1') {
   const broadcastToSession = vi.fn();
+  const appendAssistantEvent = vi.fn(async () => undefined);
   const agentId = provider === 'claude-cli' ? 'general' : provider;
   const agentRegistry = new AgentRegistry([
     {
@@ -51,15 +52,22 @@ function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli', sessionId = 
   const sessionHub: SessionHub = {
     getSessionState: vi.fn(() => state),
     getAgentRegistry: vi.fn(() => agentRegistry),
+    getPiSessionWriter: vi.fn(() =>
+      provider === 'pi' || provider === 'pi-cli'
+        ? ({
+            appendAssistantEvent,
+          } as unknown)
+        : undefined,
+    ),
     broadcastToSession,
   } as unknown as SessionHub;
-  return { sessionHub, broadcastToSession, state };
+  return { sessionHub, broadcastToSession, state, appendAssistantEvent };
 }
 
 describe('chatEventUtils live broadcast behavior', () => {
   it('broadcasts transcript_event for persisted pi events', async () => {
     const eventStore = createEventStore();
-    const { sessionHub, broadcastToSession } = createSessionHub('pi');
+    const { sessionHub, broadcastToSession, appendAssistantEvent } = createSessionHub('pi');
 
     await appendAndBroadcastChatEvents(
       { eventStore, sessionHub, sessionId: 's1' },
@@ -76,7 +84,8 @@ describe('chatEventUtils live broadcast behavior', () => {
       ],
     );
 
-    expect(eventStore.append).toHaveBeenCalledTimes(1);
+    expect(eventStore.append).not.toHaveBeenCalled();
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
     expect(broadcastToSession).toHaveBeenCalledTimes(1);
     expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
       type: 'transcript_event',
@@ -116,7 +125,7 @@ describe('chatEventUtils live broadcast behavior', () => {
 
   it('resets live transcript sequence when the session revision changes', async () => {
     const eventStore = createEventStore();
-    const { sessionHub, broadcastToSession, state } = createSessionHub('pi', 'sequence-reset');
+    const { sessionHub, broadcastToSession, state, appendAssistantEvent } = createSessionHub('pi', 'sequence-reset');
 
     await appendAndBroadcastChatEvents(
       { eventStore, sessionHub, sessionId: 'sequence-reset' },
@@ -158,6 +167,7 @@ describe('chatEventUtils live broadcast behavior', () => {
       type: 'transcript_event',
       event: { revision: 2, sequence: 0 },
     });
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(2);
   });
 
   it('carries active request context across live transcript batches', async () => {
