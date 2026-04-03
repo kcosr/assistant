@@ -10,7 +10,12 @@ vi.mock('@mariozechner/pi-ai', () => ({
   streamSimple: vi.fn(),
 }));
 
+vi.mock('@mariozechner/pi-ai/oauth', () => ({
+  getOAuthApiKey: vi.fn(),
+}));
+
 import { getModels, getProviders, streamSimple } from '@mariozechner/pi-ai';
+import { getOAuthApiKey } from '@mariozechner/pi-ai/oauth';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import {
@@ -69,7 +74,7 @@ describe('resolvePiSdkModel', () => {
 });
 
 describe('resolvePiSdkAuthApiKey', () => {
-  it('resolves keys through AuthStorage', async () => {
+  it('resolves api_key credentials from auth.json', async () => {
     const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-'));
     process.env['PI_CODING_AGENT_DIR'] = tempDir;
@@ -95,6 +100,73 @@ describe('resolvePiSdkAuthApiKey', () => {
           providerId: 'anthropic',
         }),
       ).resolves.toBe('resolved-key');
+    } finally {
+      if (originalAgentDir === undefined) {
+        delete process.env['PI_CODING_AGENT_DIR'];
+      } else {
+        process.env['PI_CODING_AGENT_DIR'] = originalAgentDir;
+      }
+    }
+  });
+
+  it('resolves openai-codex oauth credentials from auth.json using canonical provider ids', async () => {
+    const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-auth-oauth-'));
+    process.env['PI_CODING_AGENT_DIR'] = tempDir;
+
+    try {
+      await fs.writeFile(
+        path.join(tempDir, 'auth.json'),
+        JSON.stringify(
+          {
+            'OpenAI-Codex': {
+              type: 'oauth',
+              access: 'old-access',
+              refresh: 'old-refresh',
+              expires: Date.now() + 60_000,
+              accountId: 'acct-123',
+            },
+          },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      vi.mocked(getOAuthApiKey).mockResolvedValue({
+        apiKey: 'resolved-oauth-key',
+        newCredentials: {
+          access: 'new-access',
+          refresh: 'new-refresh',
+          expires: Date.now() + 120_000,
+        },
+      } as never);
+
+      await expect(
+        resolvePiSdkAuthApiKey({
+          providerId: 'openai-codex',
+        }),
+      ).resolves.toBe('resolved-oauth-key');
+
+      expect(getOAuthApiKey).toHaveBeenCalledWith(
+        'openai-codex',
+        expect.objectContaining({
+          'openai-codex': expect.objectContaining({
+            access: 'old-access',
+            refresh: 'old-refresh',
+          }),
+        }),
+      );
+
+      const persisted = JSON.parse(await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8')) as Record<
+        string,
+        { access?: string; refresh?: string; accountId?: string }
+      >;
+      expect(persisted['OpenAI-Codex']).toMatchObject({
+        access: 'new-access',
+        refresh: 'new-refresh',
+        accountId: 'acct-123',
+      });
     } finally {
       if (originalAgentDir === undefined) {
         delete process.env['PI_CODING_AGENT_DIR'];

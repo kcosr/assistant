@@ -1352,6 +1352,7 @@ export async function runChatCompletionCore(
                 message.role === 'assistant' ||
                 message.role === 'toolResult',
             ) as PiSdkMessage[],
+          getApiKey: async () => runtime.requestConfig.apiKey,
           streamFn: async (model, context, options) =>
             (await loadPiAiModule()).streamSimple(model, context, {
               ...options,

@@ -57,6 +57,7 @@
 - Fixed Pi transcript/session cleanup so clearing a Pi-backed session removes provider transcript metadata entirely, Pi agent subscription failures surface as normal run errors, and mixed-revision buffered replay now forces a reload instead of silently dropping buffered events.
 - Fixed refreshed Pi transcript buffering so reset replay treats already-covered buffered events as stale, preventing same-revision overlap from trapping the client in an infinite replay/reload loop and flashing the chat view.
 - Fixed live Pi bash tool input streaming so tool input chunks use end offsets consistently, preventing reload-during-run cases from dropping the opening command text and rendering only a trailing fragment like `}`.
+- Fixed Pi `openai-codex` OAuth resolution so the native Pi runtime reads `~/.pi/agent/auth.json` directly again, canonicalizes OAuth provider ids, and exposes the resolved key through `pi-agent-core`'s `getApiKey` path instead of depending on `pi-coding-agent` `AuthStorage`.
 
 ### Removed
 

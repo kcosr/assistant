@@ -16,6 +16,7 @@ import type {
 import type { AssistantTextPhase } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
+import { resolvePiAgentAuthApiKey } from './piAgentAuth';
 
 export interface PiToolCallStartInfo {
   id: string;
@@ -42,33 +43,13 @@ export interface PiAssistantTextBlock {
 }
 
 type PiAiModule = typeof import('@mariozechner/pi-ai');
-type PiCodingAgentModule = typeof import('@mariozechner/pi-coding-agent');
 let piAiModulePromise: Promise<PiAiModule> | null = null;
-let piCodingAgentModulePromise: Promise<PiCodingAgentModule> | null = null;
-type AuthStorageInstance = {
-  getApiKey(providerId: string): Promise<string | undefined>;
-};
-let piAuthStoragePromise: Promise<AuthStorageInstance> | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
     piAiModulePromise = import('@mariozechner/pi-ai');
   }
   return piAiModulePromise;
-}
-
-async function loadPiCodingAgentModule(): Promise<PiCodingAgentModule> {
-  if (!piCodingAgentModulePromise) {
-    piCodingAgentModulePromise = import('@mariozechner/pi-coding-agent');
-  }
-  return piCodingAgentModulePromise;
-}
-
-async function getPiAuthStorage(): Promise<AuthStorageInstance> {
-  if (!piAuthStoragePromise) {
-    piAuthStoragePromise = loadPiCodingAgentModule().then((module) => module.AuthStorage.create());
-  }
-  return piAuthStoragePromise;
 }
 
 export async function resolvePiSdkAuthApiKey(options: {
@@ -81,15 +62,10 @@ export async function resolvePiSdkAuthApiKey(options: {
     return undefined;
   }
 
-  try {
-    return await (await getPiAuthStorage()).getApiKey(trimmedProviderId);
-  } catch (err) {
-    log?.('[pi-sdk] Failed to resolve API key from AuthStorage', {
-      providerId: trimmedProviderId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return undefined;
-  }
+  return resolvePiAgentAuthApiKey({
+    providerId: trimmedProviderId,
+    ...(log ? { log } : {}),
+  });
 }
 
 function createEmptyUsage(): Usage {

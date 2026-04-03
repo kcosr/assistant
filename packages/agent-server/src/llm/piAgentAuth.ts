@@ -97,13 +97,11 @@ export async function resolvePiAgentAuthApiKey(options: {
   log?: (...args: unknown[]) => void;
 }): Promise<string | undefined> {
   const { providerId, log } = options;
-
-  // Only attempt to load auth.json for the providers we explicitly support.
-  // (Avoid surprising behavior for other providers.)
-  const providerLower = providerId.toLowerCase();
-  if (providerLower !== 'anthropic' && providerLower !== 'openai-codex') {
+  const trimmedProviderId = providerId.trim();
+  if (!trimmedProviderId) {
     return undefined;
   }
+  const providerLower = trimmedProviderId.toLowerCase();
 
   const agentDir = getPiAgentDir();
   const authPath = path.join(agentDir, 'auth.json');
@@ -133,12 +131,12 @@ export async function resolvePiAgentAuthApiKey(options: {
 
   const { type: _type, ...oauthCred } = credential;
   const credsByProvider: Record<string, OAuthCredentials> = {
-    [providerKey]: oauthCred as OAuthCredentials,
+    [providerLower]: oauthCred as OAuthCredentials,
   };
 
   try {
     const { getOAuthApiKey } = await loadOAuthModule();
-    const resolved = await getOAuthApiKey(providerKey as any, credsByProvider as any);
+    const resolved = await getOAuthApiKey(providerLower as any, credsByProvider as any);
     if (!resolved) {
       return undefined;
     }
@@ -154,7 +152,7 @@ export async function resolvePiAgentAuthApiKey(options: {
     return apiKey;
   } catch (err) {
     log?.('[pi-auth] Failed to resolve OAuth api key', {
-      providerId: providerKey,
+      providerId: providerLower,
       error: err instanceof Error ? err.message : String(err),
     });
     return undefined;
