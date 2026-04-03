@@ -876,7 +876,7 @@ describe('PiSessionHistoryProvider', () => {
     expect(after).toBe(false);
   });
 
-  it('replays the in-memory Pi overlay when Pi session metadata is missing', async () => {
+  it('does not replay overlay-only Pi history when canonical session metadata is missing', async () => {
     const sessionId = 'session-fallback';
     const userEvent: ChatEvent = {
       id: 'event-1',
@@ -895,8 +895,7 @@ describe('PiSessionHistoryProvider', () => {
       attributes: {},
     });
 
-    expect(events.length).toBe(1);
-    expect(events[0]?.type).toBe('user_message');
+    expect(events).toEqual([]);
   });
 
   it('splits thinking blocks around tool calls', async () => {

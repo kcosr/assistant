@@ -237,12 +237,12 @@ export class PiSessionHistoryProvider implements HistoryProvider {
     if (providerId === 'pi') {
       const sessionInfo = resolvePiSessionInfo(request.attributes);
       if (!sessionInfo) {
-        return loadPiOverlayEvents();
+        return [];
       }
       const baseDir = this.options.baseDir ?? path.join(os.homedir(), '.pi', 'agent', 'sessions');
       const sessionPath = await findPiSessionFile(baseDir, sessionInfo.cwd, sessionInfo.sessionId);
       if (!sessionPath) {
-        return loadPiOverlayEvents();
+        return [];
       }
 
       let stats: { mtimeMs: number } | null = null;
@@ -261,12 +261,12 @@ export class PiSessionHistoryProvider implements HistoryProvider {
           });
         }
         this.cache.delete(sessionPath);
-        return loadPiOverlayEvents();
+        return [];
       }
 
       if (!stats) {
         this.cache.delete(sessionPath);
-        return loadPiOverlayEvents();
+        return [];
       }
 
       const cached = this.cache.get(sessionPath);
@@ -285,7 +285,7 @@ export class PiSessionHistoryProvider implements HistoryProvider {
           error: error.message,
         });
         this.cache.delete(sessionPath);
-        return loadPiOverlayEvents();
+        return [];
       }
 
       const events = buildChatEventsFromPiSession(content, sessionId);
