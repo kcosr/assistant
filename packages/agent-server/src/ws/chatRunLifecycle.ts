@@ -323,7 +323,7 @@ export async function handleTextInputWithChatCompletions(options: {
       },
     ];
 
-    void appendAndBroadcastChatEvents(
+    await appendAndBroadcastChatEvents(
       {
         ...(eventStore ? { eventStore } : {}),
         sessionHub,

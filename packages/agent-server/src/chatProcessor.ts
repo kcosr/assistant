@@ -439,7 +439,7 @@ export async function processUserMessage(
       }
     }
 
-    void appendAndBroadcastChatEvents(
+    await appendAndBroadcastChatEvents(
       {
         ...(eventStore ? { eventStore } : {}),
         sessionHub,

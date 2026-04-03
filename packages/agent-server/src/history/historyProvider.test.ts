@@ -299,6 +299,139 @@ describe('canonical Pi transcript loader', () => {
     expect(assistantIndex).toBeLessThan(toolCallIndex);
     expect(assistantIndex).toBeLessThan(toolResultIndex);
   });
+
+  it('projects in-flight overlay chunk events for mid-stream Pi refresh replay', async () => {
+    const baseDir = await createTempDir('pi-session-transcript-inflight');
+    const sessionId = 'session-transcript-inflight';
+    const piSessionId = 'pi-session-transcript-inflight';
+    const cwd = '/home/kevin/assistant';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-04-03T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start',
+        timestamp: '2026-04-03T00:00:00.000Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-live', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'user-overlay',
+        timestamp: '2026-04-03T00:00:00.010Z',
+        customType: 'assistant.user_message',
+        data: {
+          turnId: 'request-live',
+          payload: { text: 'stream this reply' },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'thinking-overlay',
+        timestamp: '2026-04-03T00:00:00.020Z',
+        customType: 'assistant.thinking_chunk',
+        data: {
+          turnId: 'request-live',
+          responseId: 'resp-live',
+          payload: { text: 'Thinking…' },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'assistant-overlay',
+        timestamp: '2026-04-03T00:00:00.030Z',
+        customType: 'assistant.assistant_chunk',
+        data: {
+          turnId: 'request-live',
+          responseId: 'resp-live',
+          payload: { text: 'partial reply', phase: 'final_answer' },
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'tool-output-overlay',
+        timestamp: '2026-04-03T00:00:00.040Z',
+        customType: 'assistant.tool_output_chunk',
+        data: {
+          turnId: 'request-live',
+          responseId: 'resp-live',
+          payload: {
+            toolCallId: 'tool-live',
+            toolName: 'bash',
+            chunk: 'line 1\\n',
+            offset: 0,
+            stream: 'stdout',
+          },
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const projected = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 9,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    expect(projected).toEqual([
+      expect.objectContaining({
+        revision: 9,
+        sequence: 0,
+        requestId: 'request-live',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+      }),
+      expect.objectContaining({
+        revision: 9,
+        sequence: 1,
+        requestId: 'request-live',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'stream this reply' },
+      }),
+      expect.objectContaining({
+        revision: 9,
+        sequence: 2,
+        requestId: 'request-live',
+        kind: 'thinking',
+        chatEventType: 'thinking_chunk',
+        payload: { text: 'Thinking…' },
+      }),
+      expect.objectContaining({
+        revision: 9,
+        sequence: 3,
+        requestId: 'request-live',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        responseId: 'resp-live',
+        payload: { text: 'partial reply', phase: 'final_answer' },
+      }),
+      expect.objectContaining({
+        revision: 9,
+        sequence: 4,
+        requestId: 'request-live',
+        kind: 'tool_output',
+        chatEventType: 'tool_output_chunk',
+        toolCallId: 'tool-live',
+        responseId: 'resp-live',
+        payload: {
+          toolCallId: 'tool-live',
+          toolName: 'bash',
+          chunk: 'line 1\\n',
+          offset: 0,
+          stream: 'stdout',
+        },
+      }),
+    ]);
+  });
 });
 
 describe('ClaudeSessionHistoryProvider', () => {

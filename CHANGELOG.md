@@ -45,6 +45,7 @@
 - Fixed refreshed Pi sessions so restored chat bindings are re-subscribed on websocket open and continue receiving live transcript updates without requiring another UI change.
 - Fixed refreshed Pi sessions so replay hydration is single-flight and primes the live transcript sequence, preventing post-refresh live turns from wiping visible history or restarting transcript sequencing from zero.
 - Fixed refreshed Pi sessions so the next live turn re-aligns transcript revision and sequence from canonical Pi history before emitting websocket transcript events, preventing post-refresh submits from being dropped as stale.
+- Fixed refreshed Pi sessions so a mid-stream reload reconstructs the active in-flight turn from canonical transcript chunks on the first refresh instead of leaving the turn missing until completion.
 - Fixed native Pi tool streaming so cumulative partial tool output is converted into true deltas instead of duplicating earlier lines until the final tool result arrives.
 - Fixed live Pi assistant and request-end transcript emission to bypass the old EventStore gate, restoring immediate in-page rendering of submitted turns instead of only showing them after replay refresh.
 

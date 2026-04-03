@@ -1399,47 +1399,141 @@ function buildProjectedTranscriptFromPiSession(
   const mirroredThinkingDone = new Set<string>();
   const mirroredThinkingTexts = new Set<string>();
 
+  function resolvePiUserMeta(
+    messageEntry: Record<string, unknown>,
+  ): {
+    source: 'user' | 'agent' | 'callback';
+    fromAgentId?: string;
+    fromSessionId?: string;
+    visibility?: 'visible' | 'hidden';
+  } | null {
+    const meta = isRecord(messageEntry['meta']) ? messageEntry['meta'] : null;
+    if (!meta) {
+      return null;
+    }
+    const source = (getString(meta['source']) ?? '').trim();
+    if (source !== 'user' && source !== 'agent' && source !== 'callback') {
+      return null;
+    }
+    const visibility = (getString(meta['visibility']) ?? '').trim();
+    return {
+      source,
+      ...(isNonEmptyString(meta['fromAgentId'])
+        ? { fromAgentId: (getString(meta['fromAgentId']) ?? '').trim() }
+        : {}),
+      ...(isNonEmptyString(meta['fromSessionId'])
+        ? { fromSessionId: (getString(meta['fromSessionId']) ?? '').trim() }
+        : {}),
+      ...(visibility === 'visible' || visibility === 'hidden' ? { visibility } : {}),
+    };
+  }
+
   for (const entry of entries) {
-    if (getString(entry['type']) !== 'custom') {
-      continue;
-    }
-    const overlayEventType = getAssistantOverlayEventType(entry['customType']);
-    if (!overlayEventType) {
-      continue;
-    }
-    const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-    const payload = data && isRecord(data['payload']) ? (data['payload'] as Record<string, unknown>) : null;
-    if (!payload) {
-      continue;
-    }
-    const timestamp = resolveTimestamp(entry);
-    if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
-      const text =
-        typeof payload['text'] === 'string'
-          ? payload['text']
-          : typeof payload['transcription'] === 'string'
-            ? payload['transcription']
-            : '';
-      if (text) {
-        mirroredUserInputs.add(getTimestampedTextCoverageKey(timestamp, text));
-        mirroredUserInputTexts.add(normalizeCoverageText(text));
+    const messageEntry = resolveMessageEntry(entry);
+    const role = getString(messageEntry['role']);
+    if (role === 'user') {
+      const meta = resolvePiUserMeta(messageEntry);
+      if (meta?.source === 'callback') {
+        continue;
       }
+      const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
+      const text = extractText(messageEntry);
+      if (!text) {
+        continue;
+      }
+      mirroredUserInputs.add(getTimestampedTextCoverageKey(timestamp, text));
+      mirroredUserInputTexts.add(normalizeCoverageText(text));
       continue;
     }
-    if (overlayEventType === 'thinking_done') {
-      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-      if (text) {
-        mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, text));
-        mirroredThinkingTexts.add(normalizeCoverageText(text));
-      }
+
+    if (role !== 'assistant') {
       continue;
     }
-    if (overlayEventType === 'assistant_done') {
-      const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-      if (text) {
-        mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, text));
-        mirroredAssistantTexts.add(normalizeCoverageText(text));
+
+    const timestamp = resolveTimestamp(messageEntry, entry);
+    const contentBlocks = messageEntry['content'];
+    if (Array.isArray(contentBlocks)) {
+      let thinkingBuffer = '';
+      let textBuffer = '';
+      let textPhase: 'commentary' | 'final_answer' | undefined;
+      let textSignature: string | undefined;
+
+      const flushThinking = (): void => {
+        if (!thinkingBuffer) {
+          return;
+        }
+        mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, thinkingBuffer));
+        mirroredThinkingTexts.add(normalizeCoverageText(thinkingBuffer));
+        thinkingBuffer = '';
+      };
+
+      const flushText = (): void => {
+        if (!textBuffer) {
+          return;
+        }
+        mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, textBuffer));
+        mirroredAssistantTexts.add(normalizeCoverageText(textBuffer));
+        textBuffer = '';
+        textPhase = undefined;
+        textSignature = undefined;
+      };
+
+      for (const item of contentBlocks) {
+        if (!item || typeof item !== 'object') {
+          const text = extractTextValue(item);
+          if (text) {
+            textBuffer += text;
+          }
+          continue;
+        }
+        if (!isRecord(item)) {
+          continue;
+        }
+        const block: Record<string, unknown> = item;
+        const blockType = typeof block['type'] === 'string' ? block['type'] : '';
+        const type = blockType.toLowerCase();
+        if (type === 'thinking' || type === 'analysis' || type === 'reasoning') {
+          const text = extractTextValue(block['thinking'] ?? block['text'] ?? block['content']);
+          if (text) {
+            thinkingBuffer += text;
+          }
+          continue;
+        }
+        if (type === 'text') {
+          const assistantText = extractAssistantTextBlock(block);
+          if (assistantText.text) {
+            if (
+              textBuffer &&
+              (textPhase !== assistantText.phase || textSignature !== assistantText.textSignature)
+            ) {
+              flushText();
+            }
+            textBuffer += assistantText.text;
+            textPhase = assistantText.phase;
+            textSignature = assistantText.textSignature;
+          }
+          continue;
+        }
+        flushThinking();
+        flushText();
       }
+
+      flushThinking();
+      flushText();
+      continue;
+    }
+
+    const thinkingText = extractTextValue(
+      messageEntry['thinking'] ?? messageEntry['reasoning'] ?? messageEntry['analysis'],
+    );
+    if (thinkingText) {
+      mirroredThinkingDone.add(getTimestampedTextCoverageKey(timestamp, thinkingText));
+      mirroredThinkingTexts.add(normalizeCoverageText(thinkingText));
+    }
+    const assistantText = extractText(messageEntry);
+    if (assistantText) {
+      mirroredAssistantDone.add(getTimestampedTextCoverageKey(timestamp, assistantText));
+      mirroredAssistantTexts.add(normalizeCoverageText(assistantText));
     }
   }
 
@@ -1651,35 +1745,6 @@ function buildProjectedTranscriptFromPiSession(
     emittedToolResults.add(toolCallId);
   };
 
-  const resolvePiUserMeta = (
-    messageEntry: Record<string, unknown>,
-  ): {
-    source: 'user' | 'agent' | 'callback';
-    fromAgentId?: string;
-    fromSessionId?: string;
-    visibility?: 'visible' | 'hidden';
-  } | null => {
-    const meta = isRecord(messageEntry['meta']) ? messageEntry['meta'] : null;
-    if (!meta) {
-      return null;
-    }
-    const source = (getString(meta['source']) ?? '').trim();
-    if (source !== 'user' && source !== 'agent' && source !== 'callback') {
-      return null;
-    }
-    const visibility = (getString(meta['visibility']) ?? '').trim();
-    return {
-      source,
-      ...(isNonEmptyString(meta['fromAgentId'])
-        ? { fromAgentId: (getString(meta['fromAgentId']) ?? '').trim() }
-        : {}),
-      ...(isNonEmptyString(meta['fromSessionId'])
-        ? { fromSessionId: (getString(meta['fromSessionId']) ?? '').trim() }
-        : {}),
-      ...(visibility === 'visible' || visibility === 'hidden' ? { visibility } : {}),
-    };
-  };
-
   for (const entry of entries) {
     const entryType = getString(entry['type']);
     if (entryType === 'session' || entryType === 'session_header') {
@@ -1837,6 +1902,31 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
+      if (overlayEventType === 'assistant_chunk') {
+        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+        if (!text) {
+          continue;
+        }
+        const phase =
+          payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
+            ? payload['phase']
+            : undefined;
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'assistant_message',
+          chatEventType: 'assistant_chunk',
+          payload: {
+            text,
+            ...(phase ? { phase } : {}),
+            ...(payload['interrupted'] === true ? { interrupted: true } : {}),
+          },
+          responseId: responseIdFromEntry || undefined,
+        });
+        continue;
+      }
+
       if (overlayEventType === 'assistant_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text.trim()) {
@@ -1877,6 +1967,23 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
+      if (overlayEventType === 'thinking_chunk') {
+        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
+        if (!text) {
+          continue;
+        }
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: 'thinking',
+          chatEventType: 'thinking_chunk',
+          payload: { text },
+          responseId: responseIdFromEntry || undefined,
+        });
+        continue;
+      }
+
       if (overlayEventType === 'thinking_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text) {
@@ -1903,6 +2010,37 @@ function buildProjectedTranscriptFromPiSession(
           responseId: responseIdFromEntry || undefined,
         });
         emittedThinkingDone.add(thinkingKey);
+        continue;
+      }
+
+      if (overlayEventType === 'tool_input_chunk' || overlayEventType === 'tool_output_chunk') {
+        const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
+        const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
+        const chunk = typeof payload['chunk'] === 'string' ? payload['chunk'] : '';
+        const offset =
+          typeof payload['offset'] === 'number' && Number.isFinite(payload['offset'])
+            ? payload['offset']
+            : 0;
+        if (!toolCallId || !chunk) {
+          continue;
+        }
+        resolveToolMeta(toolCallId, toolName, {});
+        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        pushProjected({
+          timestamp,
+          requestId,
+          kind: overlayEventType === 'tool_input_chunk' ? 'tool_input' : 'tool_output',
+          chatEventType: overlayEventType,
+          payload: {
+            toolCallId,
+            toolName,
+            chunk,
+            offset,
+            ...(typeof payload['stream'] === 'string' ? { stream: payload['stream'] } : {}),
+          },
+          responseId: responseIdFromEntry || undefined,
+          toolCallId,
+        });
         continue;
       }
 
@@ -2161,14 +2299,6 @@ function buildProjectedTranscriptFromPiSession(
           if (!thinkingBuffer) {
             return;
           }
-          if (
-            mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingBuffer)) ||
-            (isOutOfOrderForExplicitRequest(timestamp) &&
-              mirroredThinkingTexts.has(normalizeCoverageText(thinkingBuffer)))
-          ) {
-            thinkingBuffer = '';
-            return;
-          }
           const thinkingKey = getThinkingDoneKey(requestId, thinkingBuffer);
           if (emittedThinkingDone.has(thinkingKey)) {
             thinkingBuffer = '';
@@ -2188,16 +2318,6 @@ function buildProjectedTranscriptFromPiSession(
 
         const flushText = (): void => {
           if (!textBuffer) {
-            return;
-          }
-          if (
-            mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, textBuffer)) ||
-            (isOutOfOrderForExplicitRequest(timestamp) &&
-              mirroredAssistantTexts.has(normalizeCoverageText(textBuffer)))
-          ) {
-            textBuffer = '';
-            textPhase = undefined;
-            textSignature = undefined;
             return;
           }
           const assistantKey = getAssistantDoneKey(requestId, textBuffer, textPhase, textSignature);
@@ -2291,23 +2411,17 @@ function buildProjectedTranscriptFromPiSession(
       } else {
         const thinkingText = extractThinking(messageEntry);
         if (thinkingText) {
-          if (
-            !mirroredThinkingDone.has(getTimestampedTextCoverageKey(timestamp, thinkingText)) &&
-            !(isOutOfOrderForExplicitRequest(timestamp) &&
-              mirroredThinkingTexts.has(normalizeCoverageText(thinkingText)))
-          ) {
-            const thinkingKey = getThinkingDoneKey(requestId, thinkingText);
-            if (!emittedThinkingDone.has(thinkingKey)) {
-              pushProjected({
-                timestamp,
-                requestId,
-                kind: 'thinking',
-                chatEventType: 'thinking_done',
-                payload: { text: thinkingText },
-                responseId,
-              });
-              emittedThinkingDone.add(thinkingKey);
-            }
+          const thinkingKey = getThinkingDoneKey(requestId, thinkingText);
+          if (!emittedThinkingDone.has(thinkingKey)) {
+            pushProjected({
+              timestamp,
+              requestId,
+              kind: 'thinking',
+              chatEventType: 'thinking_done',
+              payload: { text: thinkingText },
+              responseId,
+            });
+            emittedThinkingDone.add(thinkingKey);
           }
         }
         const toolCalls = extractToolCalls(messageEntry);
@@ -2316,26 +2430,20 @@ function buildProjectedTranscriptFromPiSession(
         }
         const assistantText = extractText(messageEntry);
         if (assistantText) {
-          if (
-            !mirroredAssistantDone.has(getTimestampedTextCoverageKey(timestamp, assistantText)) &&
-            !(isOutOfOrderForExplicitRequest(timestamp) &&
-              mirroredAssistantTexts.has(normalizeCoverageText(assistantText)))
-          ) {
-            const assistantKey = getAssistantDoneKey(requestId, assistantText);
-            if (!emittedAssistantDone.has(assistantKey)) {
-              pushProjected({
-                timestamp,
-                requestId,
-                kind: 'assistant_message',
-                chatEventType: 'assistant_done',
-                payload: {
-                  text: assistantText,
-                  ...(interrupted ? { interrupted: true } : {}),
-                },
-                responseId,
-              });
-              emittedAssistantDone.add(assistantKey);
-            }
+          const assistantKey = getAssistantDoneKey(requestId, assistantText);
+          if (!emittedAssistantDone.has(assistantKey)) {
+            pushProjected({
+              timestamp,
+              requestId,
+              kind: 'assistant_message',
+              chatEventType: 'assistant_done',
+              payload: {
+                text: assistantText,
+                ...(interrupted ? { interrupted: true } : {}),
+              },
+              responseId,
+            });
+            emittedAssistantDone.add(assistantKey);
           }
         }
       }
@@ -3105,8 +3213,12 @@ function getAssistantOverlayEventType(customType: unknown): ChatEvent['type'] | 
     return null;
   }
   if (
+    eventType === 'assistant_chunk' ||
     eventType === 'assistant_done' ||
+    eventType === 'thinking_chunk' ||
     eventType === 'thinking_done' ||
+    eventType === 'tool_input_chunk' ||
+    eventType === 'tool_output_chunk' ||
     isOverlayChatEventType(eventType)
   ) {
     return eventType as ChatEvent['type'];
