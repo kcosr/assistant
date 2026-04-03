@@ -369,31 +369,37 @@ export interface ChatEventContext {
   sessionId: string;
 }
 
-const liveTranscriptStateBySession = new Map<
-  string,
-  {
-    revision: number;
-    nextSequence: number;
-    activeRequestId: string | null;
-    replayOverlay: ProjectedTranscriptEvent[];
-  }
->();
-
-function normalizeLiveTranscriptState(
-  state:
-    | {
-        revision: number;
-        nextSequence: number;
-        activeRequestId: string | null;
-        replayOverlay?: ProjectedTranscriptEvent[];
-      }
-    | undefined,
-): {
+type LiveTranscriptSessionState = {
   revision: number;
   nextSequence: number;
   activeRequestId: string | null;
   replayOverlay: ProjectedTranscriptEvent[];
-} | null {
+};
+
+const LIVE_TRANSCRIPT_STATE_GLOBAL_KEY = '__assistantLiveTranscriptStateBySession';
+
+function getLiveTranscriptStateStore(): Map<string, LiveTranscriptSessionState> {
+  const scope = globalThis as typeof globalThis & {
+    [LIVE_TRANSCRIPT_STATE_GLOBAL_KEY]?: Map<string, LiveTranscriptSessionState>;
+  };
+  if (!scope[LIVE_TRANSCRIPT_STATE_GLOBAL_KEY]) {
+    scope[LIVE_TRANSCRIPT_STATE_GLOBAL_KEY] = new Map<string, LiveTranscriptSessionState>();
+  }
+  return scope[LIVE_TRANSCRIPT_STATE_GLOBAL_KEY];
+}
+
+// Use a process-global store instead of a module-local singleton because the compiled
+// server can load this module through multiple import paths (runtime + plugin replay),
+// and reconnect/replay must see the same in-flight Pi overlay state.
+const liveTranscriptStateBySession = getLiveTranscriptStateStore();
+
+function normalizeLiveTranscriptState(
+  state:
+    | (LiveTranscriptSessionState & {
+        replayOverlay?: ProjectedTranscriptEvent[];
+      })
+    | undefined,
+): LiveTranscriptSessionState | null {
   if (!state) {
     return null;
   }
