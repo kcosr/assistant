@@ -72,8 +72,13 @@ import { updateSystemPromptWithTools } from '../systemPromptUpdater';
 import { filterSessionSkills, getSelectedSessionSkillIds } from '../sessionConfig';
 import type { WsTransport } from './wsTransport';
 import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
+import { loadCanonicalPiTranscriptEvents } from '../history/historyProvider';
 import { processUserMessage } from '../chatProcessor';
-import { buildQuestionnaireCallbackText, getQuestionnaireState } from '../questionnaires';
+import {
+  buildQuestionnaireCallbackText,
+  getQuestionnaireState,
+  getQuestionnaireStateFromTranscriptEvents,
+} from '../questionnaires';
 
 export interface SessionRuntimeOptions {
   transport: WsTransport;
@@ -438,6 +443,22 @@ export class SessionRuntime {
     if (!state) {
       this.sendError('session_not_ready', 'Session binding is not initialised yet');
       return undefined;
+    }
+
+    const agent = state.summary.agentId
+      ? this.sessionHub.getAgentRegistry().getAgent(state.summary.agentId)
+      : undefined;
+    const providerId = agent?.chat?.provider;
+    if (providerId === 'pi' || providerId === 'pi-cli') {
+      const piSessionWriter = this.sessionHub.getPiSessionWriter?.();
+      const events = await loadCanonicalPiTranscriptEvents({
+        sessionId,
+        revision: 0,
+        providerId,
+        ...(state.summary.attributes ? { attributes: state.summary.attributes } : {}),
+        ...(piSessionWriter ? { baseDir: piSessionWriter.getBaseDir() } : {}),
+      });
+      return getQuestionnaireStateFromTranscriptEvents(events, questionnaireRequestId);
     }
 
     const events = this.sessionHub.shouldPersistSessionEvents(state.summary)

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ChatEvent } from '@assistant/shared';
+import type { ChatEvent, ProjectedTranscriptEvent } from '@assistant/shared';
 
-import { buildQuestionnaireCallbackText, getQuestionnaireState } from './questionnaires';
+import {
+  buildQuestionnaireCallbackText,
+  getQuestionnaireState,
+  getQuestionnaireStateFromTranscriptEvents,
+} from './questionnaires';
 
 describe('questionnaires', () => {
   it('reduces questionnaire lifecycle events into the latest state', () => {
@@ -83,5 +87,81 @@ describe('questionnaires', () => {
     expect(text).toContain('interaction-id="i&gt;1"');
     expect(text).toContain('&lt;');
     expect(text).toContain('&apos;');
+  });
+
+  it('reduces projected transcript questionnaire events into the latest state', () => {
+    const events: ProjectedTranscriptEvent[] = [
+      {
+        sessionId: 's1',
+        revision: 3,
+        sequence: 0,
+        requestId: 'request-1',
+        eventId: 'e1',
+        kind: 'interaction_request',
+        chatEventType: 'questionnaire_request',
+        timestamp: '2026-03-29T12:00:00.000Z',
+        toolCallId: 'tool-1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tool-1',
+          toolName: 'questions_ask',
+          mode: 'async',
+          schema: {
+            title: 'Profile',
+            fields: [{ id: 'name', type: 'text', label: 'Name', required: true }],
+          },
+          status: 'pending',
+          createdAt: '2026-03-29T12:00:00.000Z',
+        },
+      },
+      {
+        sessionId: 's1',
+        revision: 3,
+        sequence: 1,
+        requestId: 'request-1',
+        eventId: 'e2',
+        kind: 'interaction_update',
+        chatEventType: 'questionnaire_reprompt',
+        timestamp: '2026-03-29T12:01:00.000Z',
+        toolCallId: 'tool-1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tool-1',
+          status: 'pending',
+          updatedAt: '2026-03-29T12:01:00.000Z',
+          errorSummary: 'Please correct the highlighted fields.',
+          fieldErrors: { name: 'This field is required.' },
+          initialValues: { name: '' },
+        },
+      },
+      {
+        sessionId: 's1',
+        revision: 3,
+        sequence: 2,
+        requestId: 'request-2',
+        eventId: 'e3',
+        kind: 'interaction_response',
+        chatEventType: 'questionnaire_submission',
+        timestamp: '2026-03-29T12:02:00.000Z',
+        toolCallId: 'tool-1',
+        interactionId: 'i1',
+        payload: {
+          questionnaireRequestId: 'qr1',
+          toolCallId: 'tool-1',
+          status: 'submitted',
+          submittedAt: '2026-03-29T12:02:00.000Z',
+          interactionId: 'i1',
+          answers: { name: 'Ada' },
+        },
+      },
+    ];
+
+    const state = getQuestionnaireStateFromTranscriptEvents(events, 'qr1');
+    expect(state?.status).toBe('submitted');
+    if (!state || state.status !== 'submitted') {
+      return;
+    }
+    expect(state.submission.answers).toEqual({ name: 'Ada' });
+    expect(state.reprompt?.fieldErrors).toEqual({ name: 'This field is required.' });
   });
 });

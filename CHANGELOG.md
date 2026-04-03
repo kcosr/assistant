@@ -22,6 +22,7 @@
 - Changed canonical Pi custom transcript entries to use explicit `assistant.<event_type>` records instead of the generic `assistant.event` envelope.
 - Changed Pi session restore in SessionHub to load canonical Pi replay messages directly instead of reconstructing `chatMessages` through ChatEvent replay.
 - Changed server-side Pi transcript persistence helpers to write canonical Pi custom entries directly instead of routing those writes through EventStore mirroring.
+- Changed Pi questionnaire recovery to load canonical projected transcript events directly instead of reconstructing questionnaire state from Pi ChatEvent replay.
 - Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed Android voice notifications to use a public lock-screen-visible channel, compact `Voice (State)` titles, and synced session titles for the preferred or active session. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))
