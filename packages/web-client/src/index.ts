@@ -342,6 +342,8 @@ async function main(): Promise<void> {
     cursor: string | null;
     revision: number | null;
     bufferedEvents: ProjectedTranscriptEvent[];
+    loadPromise: Promise<void> | null;
+    pendingForceReload: boolean;
   };
   const sessionTranscriptReplayState = new Map<string, SessionTranscriptReplayState>();
 
@@ -357,6 +359,8 @@ async function main(): Promise<void> {
       cursor: null,
       revision: null,
       bufferedEvents: [],
+      loadPromise: null,
+      pendingForceReload: false,
     };
     sessionTranscriptReplayState.set(trimmed, created);
     return created;
@@ -4100,77 +4104,101 @@ async function main(): Promise<void> {
     if (!runtime) {
       return;
     }
-    replayState.hydratingCount += 1;
-    if (forceReload) {
-      replayState.cursor = null;
-      replayState.bufferedEvents = [];
+    if (replayState.loadPromise) {
+      if (forceReload) {
+        replayState.pendingForceReload = true;
+      }
+      await replayState.loadPromise;
+      return;
     }
+
+    const activeForceReload = forceReload || replayState.pendingForceReload;
+    replayState.pendingForceReload = false;
     const chatLogEl = runtime.elements.chatLog;
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
-    const replayCursor = !forceReload ? replayState.cursor : undefined;
-    // Unified events are the single source of truth for transcript replay.
-    try {
-      const eventsResponse = await apiFetch(sessionsOperationPath('events'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: trimmed,
-          ...(replayCursor ? { afterCursor: replayCursor } : {}),
-          ...(forceReload ? { force: true } : {}),
-        }),
-      });
-      if (!eventsResponse.ok) {
-        console.error('Failed to fetch session events', sessionId, eventsResponse.status);
+
+    const loadPromise = (async () => {
+      replayState.hydratingCount += 1;
+      if (activeForceReload) {
+        replayState.cursor = null;
+      }
+      const replayCursor = !activeForceReload ? replayState.cursor : undefined;
+      // Unified events are the single source of truth for transcript replay.
+      try {
+        const eventsResponse = await apiFetch(sessionsOperationPath('events'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: trimmed,
+            ...(replayCursor ? { afterCursor: replayCursor } : {}),
+            ...(activeForceReload ? { force: true } : {}),
+          }),
+        });
+        if (!eventsResponse.ok) {
+          console.error('Failed to fetch session events', sessionId, eventsResponse.status);
+          chatRenderer.clear();
+          ensureEmptySessionHint(chatLogEl);
+          replayState.loaded = false;
+          replayState.cursor = null;
+          replayState.revision = null;
+          return;
+        }
+
+        const replay = await readSessionOperationResult<SessionReplayResponse>(eventsResponse);
+        if (!replay) {
+          throw new Error('Session events response did not include a replay payload');
+        }
+        const projectedEvents = dedupeProjectedTranscriptEvents(
+          Array.isArray(replay.events) ? replay.events : [],
+        );
+        if (typeof replay.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
+          replayState.cursor = replay.nextCursor.trim();
+        } else {
+          replayState.cursor = null;
+        }
+        replayState.revision = replay.revision;
+
+        const shouldResetTranscript = activeForceReload || replay.reset || !replayState.loaded;
+        if (shouldResetTranscript) {
+          if (projectedEvents.length > 0) {
+            chatRenderer.replayProjectedEvents(projectedEvents, { reset: true });
+            chatScrollManager.scrollToBottom();
+          } else {
+            chatRenderer.clear();
+            ensureEmptySessionHint(chatLogEl);
+          }
+        } else if (projectedEvents.length > 0) {
+          chatRenderer.replayProjectedEvents(projectedEvents);
+          chatScrollManager.autoScrollIfEnabled();
+        }
+
+        replayState.loaded = true;
+
+        flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision);
+      } catch (error) {
+        console.error('Failed to fetch session events', sessionId, error);
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
         replayState.loaded = false;
         replayState.cursor = null;
         replayState.revision = null;
-        return;
+      } finally {
+        replayState.hydratingCount = Math.max(0, replayState.hydratingCount - 1);
       }
-
-      const replay = await readSessionOperationResult<SessionReplayResponse>(eventsResponse);
-      if (!replay) {
-        throw new Error('Session events response did not include a replay payload');
-      }
-      const projectedEvents = dedupeProjectedTranscriptEvents(
-        Array.isArray(replay.events) ? replay.events : [],
-      );
-      if (typeof replay.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
-        replayState.cursor = replay.nextCursor.trim();
-      } else {
-        replayState.cursor = null;
-      }
-      replayState.revision = replay.revision;
-
-      const shouldResetTranscript = forceReload || replay.reset || !replayState.loaded;
-      if (shouldResetTranscript) {
-        if (projectedEvents.length > 0) {
-          chatRenderer.replayProjectedEvents(projectedEvents, { reset: true });
-          chatScrollManager.scrollToBottom();
-        } else {
-          chatRenderer.clear();
-          ensureEmptySessionHint(chatLogEl);
-        }
-      } else if (projectedEvents.length > 0) {
-        chatRenderer.replayProjectedEvents(projectedEvents);
-        chatScrollManager.autoScrollIfEnabled();
-      }
-
-      replayState.loaded = true;
-
-      flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision);
-    } catch (error) {
-      console.error('Failed to fetch session events', sessionId, error);
-      chatRenderer.clear();
-      ensureEmptySessionHint(chatLogEl);
-      replayState.loaded = false;
-      replayState.cursor = null;
-      replayState.revision = null;
+    })();
+    replayState.loadPromise = loadPromise;
+    try {
+      await loadPromise;
     } finally {
-      replayState.hydratingCount = Math.max(0, replayState.hydratingCount - 1);
+      if (replayState.loadPromise === loadPromise) {
+        replayState.loadPromise = null;
+      }
+      if (replayState.pendingForceReload) {
+        await loadSessionTranscript(trimmed, { force: true });
+      }
     }
+
     const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
     if (shouldShowTyping) {
       showSessionTypingIndicator(trimmed);

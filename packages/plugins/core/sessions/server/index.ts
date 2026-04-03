@@ -24,6 +24,7 @@ import { ToolError, type ToolContext } from '../../../../agent-server/src/tools'
 import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
 import { loadCanonicalPiTranscriptEvents } from '../../../../agent-server/src/history/historyProvider';
+import { seedLiveTranscriptSessionState } from '../../../../agent-server/src/events/chatEventUtils';
 import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
@@ -435,6 +436,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             providerId,
             ...(existing.attributes ? { attributes: existing.attributes } : {}),
             ...(writer ? { baseDir: writer.getBaseDir() } : {}),
+          });
+          seedLiveTranscriptSessionState({
+            sessionId,
+            revision,
+            nextSequence: projected.length,
           });
           const sliced = sliceProjectedTranscript({
             revision,

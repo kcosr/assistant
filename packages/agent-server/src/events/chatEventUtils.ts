@@ -378,6 +378,23 @@ export function resetLiveTranscriptSessionState(sessionId: string): void {
   liveTranscriptStateBySession.delete(trimmed);
 }
 
+export function seedLiveTranscriptSessionState(options: {
+  sessionId: string;
+  revision: number;
+  nextSequence: number;
+  activeRequestId?: string | null;
+}): void {
+  const trimmed = options.sessionId.trim();
+  if (!trimmed) {
+    return;
+  }
+  liveTranscriptStateBySession.set(trimmed, {
+    revision: Math.max(0, options.revision),
+    nextSequence: Math.max(0, options.nextSequence),
+    activeRequestId: options.activeRequestId ?? null,
+  });
+}
+
 function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {
   if (typeof sessionHub.getSessionState !== 'function') {
     return 0;

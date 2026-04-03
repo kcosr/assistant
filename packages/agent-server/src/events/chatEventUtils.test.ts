@@ -8,6 +8,7 @@ import {
   emitInteractionPendingEvent,
   emitToolOutputChunkEvent,
   resetLiveTranscriptSessionState,
+  seedLiveTranscriptSessionState,
 } from './chatEventUtils';
 
 function createEventStore(): EventStore {
@@ -215,6 +216,48 @@ describe('chatEventUtils live broadcast behavior', () => {
       event: { revision: 1, sequence: 1 },
     });
     expect(appendAssistantEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues live transcript sequencing from a replay-seeded state', async () => {
+    const eventStore = createEventStore();
+    const { sessionHub, broadcastToSession, state, appendAssistantEvent } = createSessionHub(
+      'pi',
+      'seeded-live-state',
+    );
+
+    seedLiveTranscriptSessionState({
+      sessionId: 'seeded-live-state',
+      revision: 4,
+      nextSequence: 9,
+    });
+    state.summary.revision = 5;
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'seeded-live-state' },
+      [
+        {
+          id: 'evt-seeded',
+          sessionId: 'seeded-live-state',
+          turnId: 'req-seeded',
+          responseId: 'resp-seeded',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'seeded append' },
+        },
+      ],
+    );
+
+    expect(broadcastToSession).toHaveBeenCalledWith(
+      'seeded-live-state',
+      expect.objectContaining({
+        type: 'transcript_event',
+        event: expect.objectContaining({
+          revision: 4,
+          sequence: 9,
+        }),
+      }),
+    );
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
   });
 
   it('resets live transcript sequence after explicit live transcript invalidation', async () => {
