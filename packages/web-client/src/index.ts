@@ -138,7 +138,10 @@ import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
-import { dedupeProjectedTranscriptEvents } from './utils/transcriptReplay';
+import {
+  dedupeProjectedTranscriptEvents,
+  finishTranscriptHydration,
+} from './utils/transcriptReplay';
 import {
   createWindowSlot,
   getClientWindowId,
@@ -4257,6 +4260,7 @@ async function main(): Promise<void> {
     const chatScrollManager = runtime.chatScrollManager;
 
     const loadPromise = (async () => {
+      let hydrationFinished = false;
       replayState.hydratingCount += 1;
       if (activeForceReload) {
         replayState.cursor = null;
@@ -4321,7 +4325,10 @@ async function main(): Promise<void> {
 
         replayState.loaded = true;
 
-        flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision);
+        finishTranscriptHydration(replayState, () =>
+          flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision),
+        );
+        hydrationFinished = true;
       } catch (error) {
         console.error('Failed to fetch session events', sessionId, error);
         logTranscriptDebug('load_error', {
@@ -4334,7 +4341,9 @@ async function main(): Promise<void> {
         replayState.cursor = null;
         replayState.revision = null;
       } finally {
-        replayState.hydratingCount = Math.max(0, replayState.hydratingCount - 1);
+        if (!hydrationFinished) {
+          replayState.hydratingCount = Math.max(0, replayState.hydratingCount - 1);
+        }
       }
     })();
     replayState.loadPromise = loadPromise;

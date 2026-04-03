@@ -35,3 +35,11 @@ export function dedupeProjectedTranscriptEvents(
   }
   return deduped;
 }
+
+export function finishTranscriptHydration(
+  state: { hydratingCount: number },
+  flushBufferedEvents: () => void,
+): void {
+  state.hydratingCount = Math.max(0, state.hydratingCount - 1);
+  flushBufferedEvents();
+}
