@@ -103,6 +103,31 @@ describe('DefaultPluginRegistry', () => {
     await registry.shutdown();
   });
 
+  it('treats core-handled coding as available without warning about an unknown plugin', async () => {
+    const dataDir = createTempDataDir('plugin-registry-coding-core');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const config: AppConfig = {
+      agents: [],
+      profiles: [],
+      plugins: {
+        coding: { enabled: true, mode: 'local' },
+      },
+      mcpServers: [],
+      attachments: {
+        previewSnippetChars: 512,
+      },
+    };
+
+    const registry = new DefaultPluginRegistry();
+    await registry.initialize(config, dataDir);
+
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('Unknown plugins in config: coding'));
+
+    warnSpy.mockRestore();
+    await registry.shutdown();
+  });
+
   it('logs a consolidated warning for plugin config issues', async () => {
     const dataDir = createTempDataDir('plugin-registry-warnings');
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
