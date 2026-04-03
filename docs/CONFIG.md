@@ -329,38 +329,22 @@ relative file paths and `bash` commands anchor to the session picker’s working
   "plugins": {
     "coding": {
       "enabled": true,
-      "mode": "sidecar",
+      "mode": "local",
       "local": {
         "workspaceRoot": "/path/to/workspaces"
-      },
-      "sidecar": {
-        "socketPath": "/var/run/assistant/coding-sidecar.sock",
-        "waitForReadyMs": 10000,
-        "auth": {
-          "token": "${SIDECAR_AUTH_TOKEN}",
-          "required": false
-        }
       }
     }
   }
 }
 ```
 
-| Field                             | Type    | Description                                                                                                                                          |
-| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mode`                            | string  | Execution mode: `local` or `sidecar`.                                                                                                                |
-| `local.workspaceRoot`             | string  | Root directory for local workspaces. In `local` mode, `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
-| `local.allowOutsideWorkspaceRoot` | boolean | When `true`, allow file operations outside `local.workspaceRoot` (unsafe).                                                                           |
-| `sidecar.socketPath`              | string  | Unix socket path for the sidecar (host path).                                                                                                        |
-| `sidecar.tcp.host`                | string  | TCP host for sidecar access (optional; use with `sidecar.tcp.port`).                                                                                 |
-| `sidecar.tcp.port`                | number  | TCP port for sidecar access.                                                                                                                         |
-| `sidecar.waitForReadyMs`          | number  | Wait time before failing readiness checks (milliseconds).                                                                                            |
-| `sidecar.auth.token`              | string  | Bearer token sent as `Authorization: Bearer <token>`.                                                                                                |
-| `sidecar.auth.required`           | boolean | When `true`, sidecar rejects requests without a valid token.                                                                                         |
+| Field                 | Type   | Description                                                                                                                        |
+| --------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                | string | Execution mode. Only `local` is supported.                                                                                         |
+| `local.workspaceRoot` | string | Root directory for local workspaces. `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
 
 Notes:
-
-- Configure exactly one endpoint: `sidecar.socketPath` or `sidecar.tcp` (host/port).
+- Coding tools now execute directly through the imported `@mariozechner/pi-coding-agent` local tool implementations.
 
 ##### Agents plugin tools (when enabled)
 

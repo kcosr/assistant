@@ -12,7 +12,6 @@
     "@types/ws": "^8.5.12"
   },
   "dependencies": {
-    "@assistant/coding-executor": "*",
     "@assistant/shared": "*",
     "@mariozechner/pi-agent-core": "^0.62.0",
     "@mariozechner/pi-ai": "^0.62.0",

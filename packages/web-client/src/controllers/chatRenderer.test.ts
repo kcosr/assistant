@@ -3164,10 +3164,13 @@ describe('ChatRenderer', () => {
       }) as ChatEvent,
     );
 
-    // Input section should have accumulated text
+    // Input section should render the semantic command preview during streaming
     const inputBody = toolBlock?.querySelector('.tool-output-input-body');
-    expect(inputBody?.textContent).toContain('{"command": "echo hello"}');
+    expect(inputBody?.textContent).toContain('echo hello');
+    expect(inputBody?.textContent).not.toContain('"command"');
     expect(inputBody?.classList.contains('streaming')).toBe(true);
+    const headerLabel = toolBlock?.querySelector<HTMLElement>('.tool-output-label');
+    expect(headerLabel?.textContent).toContain('echo hello');
 
     // Now the final tool_call event arrives with complete args
     renderLegacyEvent(renderer, 
@@ -3238,6 +3241,50 @@ describe('ChatRenderer', () => {
     header?.click();
     expect(toolBlock.classList.contains('expanded')).toBe(false);
     expect(toolBlock.querySelector('.tool-output-input-body')).toBeNull();
+  });
+
+  it('renders write tool streaming input as file content instead of raw JSON', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getExpandToolOutput: () => true,
+    });
+
+    renderLegacyEvent(renderer,
+      createBaseEvent('turn_start', {
+        id: 't1',
+        turnId: 'turn1',
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    renderLegacyEvent(renderer,
+      createBaseEvent('tool_input_chunk', {
+        id: 'e-write-1',
+        turnId: 'turn1',
+        responseId: 'resp1',
+        payload: {
+          toolCallId: 'tc-write-stream',
+          toolName: 'write',
+          chunk: '{"path":"notes.md","content":"# Title\\nLine',
+          offset: 42,
+        },
+      }) as ChatEvent,
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>(
+      '[data-tool-call-id="tc-write-stream"]',
+    );
+    expect(toolBlock).not.toBeNull();
+    const inputLabel = toolBlock?.querySelector<HTMLElement>('.tool-output-section-label');
+    expect(inputLabel?.textContent).toContain('Content');
+    const inputBody = toolBlock?.querySelector<HTMLElement>('.tool-output-input-body');
+    expect(inputBody?.textContent).toContain('# Title');
+    expect(inputBody?.textContent).toContain('Line');
+    expect(inputBody?.textContent).not.toContain('"path"');
+    const headerLabel = toolBlock?.querySelector<HTMLElement>('.tool-output-label');
+    expect(headerLabel?.textContent).toContain('notes.md');
   });
 
   it('renders bash tool input with a command view and JSON toggle on expand', () => {

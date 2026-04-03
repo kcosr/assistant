@@ -18,7 +18,7 @@ const CORE_PANEL_TYPES = new Set(['sessions']);
 export interface PluginRegistry {
   initialize(config: AppConfig, dataDir: string, options?: { configDir?: string }): Promise<void>;
   getTools(): PluginToolDefinition[];
-  getAgentTools?(ctx: ToolContext): AgentTool[];
+  getAgentTools?(ctx: ToolContext): Promise<AgentTool[]>;
   getHttpRoutes?(): HttpRouteHandler[];
   getManifests?(): CombinedPluginManifest[];
   getRegisteredPlugins?(): RegisteredPluginInfo[];
@@ -557,9 +557,14 @@ export class DefaultPluginRegistry implements PluginRegistry {
     return tools;
   }
 
-  getAgentTools(ctx: ToolContext): AgentTool[] {
+  async getAgentTools(ctx: ToolContext): Promise<AgentTool[]> {
     const tools: AgentTool[] = [];
     for (const registration of this.plugins) {
+      const nativeTools = await registration.plugin.getAgentTools?.(ctx);
+      if (nativeTools) {
+        tools.push(...nativeTools);
+        continue;
+      }
       for (const tool of registration.plugin.tools) {
         tools.push(
           createAgentTool({

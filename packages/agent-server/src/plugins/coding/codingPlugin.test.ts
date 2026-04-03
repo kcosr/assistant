@@ -27,56 +27,29 @@ describe('coding plugin tools', () => {
     const plugin = createCodingPlugin();
     await plugin.initialize(dataDir, pluginConfig);
 
-    const writeTool = plugin.tools.find((tool) => tool.name === 'write');
-    const readTool = plugin.tools.find((tool) => tool.name === 'read');
-    const lsTool = plugin.tools.find((tool) => tool.name === 'ls');
+    const ctx: ToolContext = { sessionId: 'plugin-session', signal: new AbortController().signal };
+    const nativeTools = await plugin.getAgentTools?.(ctx);
+    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
+    const readTool = nativeTools?.find((tool) => tool.name === 'read');
+    const lsTool = nativeTools?.find((tool) => tool.name === 'ls');
 
     if (!writeTool || !readTool || !lsTool) {
       throw new Error('Expected write, read, and ls tools to be registered');
     }
 
-    const ctx: ToolContext = { sessionId: 'plugin-session', signal: new AbortController().signal };
-
     const content = 'line-one\nline-two';
-    const writeResult = (await writeTool.handler({ path: 'plugin.txt', content }, ctx)) as {
-      ok?: boolean;
-    };
+    const writeResult = await writeTool.execute('call-write', { path: 'plugin.txt', content }, ctx.signal);
 
-    expect(writeResult.ok).toBe(true);
+    expect(Array.isArray(writeResult.content)).toBe(true);
 
-    const readResult = (await readTool.handler({ path: 'plugin.txt' }, ctx)) as {
-      type?: string;
-      content?: string;
-    };
+    const readResult = await readTool.execute('call-read', { path: 'plugin.txt' }, ctx.signal);
 
-    expect(readResult.type).toBe('text');
-    expect(readResult.content).toContain('line-one');
+    expect(readResult.content[0]?.type).toBe('text');
+    expect((readResult.content[0] as { text?: string }).text).toContain('line-one');
 
-    const lsResult = (await lsTool.handler({}, ctx)) as {
-      output?: string;
-    };
+    const lsResult = await lsTool.execute('call-ls', {}, ctx.signal);
 
-    expect(typeof lsResult.output).toBe('string');
-    expect(lsResult.output).toContain('plugin.txt');
-  });
-
-  it('initializes in sidecar mode when configured', async () => {
-    const dataDir = createTempDir('coding-plugin-sidecar');
-
-    const pluginConfig: PluginConfig = {
-      enabled: true,
-      mode: 'sidecar',
-      sidecar: {
-        socketPath: '/var/run/assistant/coding-sidecar.sock',
-      },
-    };
-
-    const plugin = createCodingPlugin();
-    await plugin.initialize(dataDir, pluginConfig);
-
-    expect(plugin.name).toBe('coding');
-    expect(plugin.tools.length).toBeGreaterThan(0);
-    expect(plugin.tools.find((tool) => tool.name === 'grep')).toBeDefined();
+    expect((lsResult.content[0] as { text?: string }).text).toContain('plugin.txt');
   });
 
   it('exposes a find tool that searches files relative to the search path', async () => {
@@ -93,29 +66,31 @@ describe('coding plugin tools', () => {
     const plugin = createCodingPlugin();
     await plugin.initialize(dataDir, pluginConfig);
 
-    const writeTool = plugin.tools.find((tool) => tool.name === 'write');
-    const findTool = plugin.tools.find((tool) => tool.name === 'find');
+    const ctx: ToolContext = {
+      sessionId: 'plugin-find-session',
+      signal: new AbortController().signal,
+    };
+    const nativeTools = await plugin.getAgentTools?.(ctx);
+    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
+    const findTool = nativeTools?.find((tool) => tool.name === 'find');
 
     if (!writeTool || !findTool) {
       throw new Error('Expected write and find tools to be registered');
     }
 
-    const ctx: ToolContext = {
-      sessionId: 'plugin-find-session',
-      signal: new AbortController().signal,
-    };
+    await writeTool.execute('write-a', { path: 'src/a.ts', content: 'a' }, ctx.signal);
+    await writeTool.execute('write-b', { path: 'src/nested/b.ts', content: 'b' }, ctx.signal);
+    await writeTool.execute('write-c', { path: 'notes/readme.md', content: 'ignore' }, ctx.signal);
 
-    await writeTool.handler({ path: 'src/a.ts', content: 'a' }, ctx);
-    await writeTool.handler({ path: 'src/nested/b.ts', content: 'b' }, ctx);
-    await writeTool.handler({ path: 'notes/readme.md', content: 'ignore' }, ctx);
+    const result = await findTool.execute(
+      'find-ts',
+      { pattern: '**/*.ts', path: 'src' },
+      ctx.signal,
+    );
+    const text = (result.content[0] as { text?: string }).text ?? '';
 
-    const result = (await findTool.handler({ pattern: '**/*.ts', path: 'src' }, ctx)) as {
-      files?: string[];
-    };
-
-    expect(Array.isArray(result.files)).toBe(true);
-    expect(result.files).toContain('a.ts');
-    expect(result.files).toContain('nested/b.ts');
+    expect(text).toContain('a.ts');
+    expect(text).toContain('nested/b.ts');
   });
 
   it('aborts bash tool execution when context signal aborts', async () => {
@@ -132,7 +107,11 @@ describe('coding plugin tools', () => {
     const plugin = createCodingPlugin();
     await plugin.initialize(dataDir, pluginConfig);
 
-    const bashTool = plugin.tools.find((tool) => tool.name === 'bash');
+    const nativeTools = await plugin.getAgentTools?.({
+      sessionId: 'plugin-bash-abort-session',
+      signal: new AbortController().signal,
+    });
+    const bashTool = nativeTools?.find((tool) => tool.name === 'bash');
     if (!bashTool) {
       throw new Error('Expected bash tool to be registered');
     }
@@ -143,14 +122,15 @@ describe('coding plugin tools', () => {
       signal: abortController.signal,
     };
 
-    const promise = bashTool.handler({ command: 'node -e "setTimeout(() => {}, 100000)"' }, ctx);
+    const promise = bashTool.execute(
+      'abort-call',
+      { command: 'node -e "setTimeout(() => {}, 100000)"' },
+      ctx.signal,
+    );
 
     abortController.abort();
 
-    await expect(promise).rejects.toMatchObject({
-      code: 'tool_aborted',
-      message: 'Tool execution aborted',
-    });
+    await expect(promise).rejects.toThrow(/aborted/i);
   });
 
   it('uses session working dir for local-mode relative file tools and bash when configured with the macro', async () => {
@@ -163,20 +143,11 @@ describe('coding plugin tools', () => {
       mode: 'local',
       local: {
         workspaceRoot: '${session.workingDir}',
-        allowOutsideWorkspaceRoot: true,
       },
     };
 
     const plugin = createCodingPlugin();
     await plugin.initialize(dataDir, pluginConfig);
-
-    const writeTool = plugin.tools.find((tool) => tool.name === 'write');
-    const readTool = plugin.tools.find((tool) => tool.name === 'read');
-    const bashTool = plugin.tools.find((tool) => tool.name === 'bash');
-
-    if (!writeTool || !readTool || !bashTool) {
-      throw new Error('Expected write, read, and bash tools to be registered');
-    }
 
     const sessionSummary = {
       sessionId: 'coding-session',
@@ -202,26 +173,29 @@ describe('coding plugin tools', () => {
       } as never,
     };
 
-    await writeTool.handler({ path: 'relative.txt', content: 'relative file' }, ctx);
-    const readRelative = (await readTool.handler({ path: 'relative.txt' }, ctx)) as {
-      type?: string;
-      content?: string;
-    };
-    const bashPwd = (await bashTool.handler({ command: 'pwd' }, ctx)) as {
-      exitCode?: number;
-      output?: string;
-    };
+    const nativeTools = await plugin.getAgentTools?.(ctx);
+    const writeTool = nativeTools?.find((tool) => tool.name === 'write');
+    const readTool = nativeTools?.find((tool) => tool.name === 'read');
+    const bashTool = nativeTools?.find((tool) => tool.name === 'bash');
 
-    await writeTool.handler({ path: outsidePath, content: 'outside file' }, ctx);
+    if (!writeTool || !readTool || !bashTool) {
+      throw new Error('Expected write, read, and bash tools to be registered');
+    }
+
+    await writeTool.execute('relative-write', { path: 'relative.txt', content: 'relative file' }, ctx.signal);
+    const readRelative = await readTool.execute('relative-read', { path: 'relative.txt' }, ctx.signal);
+    const bashPwd = await bashTool.execute('pwd-call', { command: 'pwd' }, ctx.signal);
+
+    await writeTool.execute('outside-write', { path: outsidePath, content: 'outside file' }, ctx.signal);
     const outsideContent = await fs.readFile(outsidePath, 'utf8');
 
-    expect(readRelative.type).toBe('text');
-    expect(readRelative.content).toContain('relative file');
+    expect(readRelative.content[0]?.type).toBe('text');
+    expect((readRelative.content[0] as { text?: string }).text).toContain('relative file');
     expect(await fs.readFile(path.join(sessionWorkingDir, 'relative.txt'), 'utf8')).toBe(
       'relative file',
     );
-    expect(bashPwd.exitCode).toBe(0);
-    expect(bashPwd.output?.trim().split('\n')[0]).toBe(sessionWorkingDir);
+    expect((bashPwd.details as { fullOutputPath?: string } | undefined)?.fullOutputPath).toBeUndefined();
+    expect((bashPwd.content[0] as { text?: string }).text?.trim().split('\n')[0]).toBe(sessionWorkingDir);
     expect(outsideContent).toBe('outside file');
   });
 });

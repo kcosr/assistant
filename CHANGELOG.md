@@ -6,6 +6,7 @@
 
 - Removed `sessions.mirrorPiSessionHistory`; Pi-backed sessions now always persist canonical Pi JSONL history for replay, reload, and request-group editing.
 - Changed the websocket protocol to require protocol version `5` and use `transcript_event` as the only event-stream server message; `chat_event` is no longer emitted or accepted in subscription masks.
+- Removed coding-plugin sidecar mode and sidecar-specific config; coding tools now run locally from the session workspace through imported `@mariozechner/pi-coding-agent` tool implementations.
 
 ### Added
 
@@ -18,6 +19,7 @@
 
 ### Changed
 
+- Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
 - Changed Pi session replay to project transcript events directly from canonical Pi JSONL instead of reconstructing ChatEvent history first.
 - Changed live transcript_event delivery to project directly on the server with request-context tracking across batches instead of reusing replay batch projection.
 - Changed the web client transcript renderer to consume projected transcript kinds directly instead of reconstructing legacy chat-event wrappers internally.
@@ -64,6 +66,7 @@
 - Fixed Pi `openai-codex` OAuth resolution so the native Pi runtime reads `~/.pi/agent/auth.json` directly again, canonicalizes OAuth provider ids, and exposes the resolved key through `pi-agent-core`'s `getApiKey` path instead of depending on `pi-coding-agent` `AuthStorage`.
 - Fixed Pi request-history `trim_after` edits so they remove orphan conversational tail entries outside explicit request markers, and clear stale client typing/request state before the forced transcript reload.
 - Fixed attachment metadata corruption from concurrent `attachment_send` calls by serializing per-session attachment mutations and writing `metadata.json` atomically, preventing inline preview failures and 500 download/open responses.
+- Fixed live tool-input rendering so streamed partial JSON for tools like `bash`, `write`, `read`, `find`, `grep`, and `agents_message` is rendered from semantic partial arguments instead of raw JSON until the final tool call arrives.
 
 ### Removed
 

@@ -1422,6 +1422,10 @@ export class ChatRenderer {
 
     // Update the input section with streaming args
     updateToolOutputBlockStreamingInput(block, newBuffer);
+    const headerLabel = extractToolCallLabel(toolName, newBuffer);
+    if (headerLabel) {
+      updateToolOutputBlockLabel(block, headerLabel);
+    }
 
     this.updateToolCallGroupForBlock(block);
   }

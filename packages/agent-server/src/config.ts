@@ -651,29 +651,10 @@ export const PluginConfigSchema = z
       })
       .optional(),
     workspaceRoot: NonEmptyTrimmedStringSchema.optional(),
-    mode: z.enum(['local', 'sidecar']).optional(),
+    mode: z.literal('local').optional(),
     local: z
       .object({
         workspaceRoot: NonEmptyTrimmedStringSchema.optional(),
-        allowOutsideWorkspaceRoot: z.boolean().optional(),
-      })
-      .optional(),
-    sidecar: z
-      .object({
-        socketPath: NonEmptyTrimmedStringSchema.optional(),
-        tcp: z
-          .object({
-            host: NonEmptyTrimmedStringSchema,
-            port: z.number().int().positive(),
-          })
-          .optional(),
-        waitForReadyMs: z.number().int().positive().optional(),
-        auth: z
-          .object({
-            token: NonEmptyTrimmedStringSchema.optional(),
-            required: z.boolean().optional(),
-          })
-          .optional(),
       })
       .optional(),
     spotify: z

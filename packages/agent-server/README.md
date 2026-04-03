@@ -733,11 +733,12 @@ The coding plugin provides tools for working with the configured workspace root 
 | `write` | Write content to a file in the workspace, creating parent directories if needed and overwriting existing files. |
 | `edit`  | Edit a file by replacing an exact text match; the old text must be unique within the file.                      |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a “/” suffix for directories.         |
+| `find`  | Find files by glob pattern relative to the current workspace, respecting ignore files and truncation limits.     |
+| `grep`  | Search file contents for matching lines with file paths and line numbers, with truncation for large results.     |
 
-In `local` mode, `plugins.coding.local.workspaceRoot` may be set to `${session.workingDir}`. When
-present, relative coding-tool paths and `bash` commands resolve from the session’s
-`attributes.core.workingDir`; absolute paths stay literal when
-`plugins.coding.local.allowOutsideWorkspaceRoot` is `true`.
+`plugins.coding.local.workspaceRoot` may be set to `${session.workingDir}`. When present,
+relative coding-tool paths and `bash` commands resolve from the session’s
+`attributes.core.workingDir`.
 
 `ls` parameters:
 

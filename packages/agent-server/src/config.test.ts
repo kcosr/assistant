@@ -129,7 +129,6 @@ describe('loadConfig', () => {
           mode: 'local',
           local: {
             workspaceRoot: '/var/lib/assistant/coding-workspaces',
-            allowOutsideWorkspaceRoot: true,
           },
         },
       },
@@ -144,44 +143,6 @@ describe('loadConfig', () => {
     expect(codingPlugin?.enabled).toBe(true);
     expect(codingPlugin?.mode).toBe('local');
     expect(codingPlugin?.local?.workspaceRoot).toBe('/var/lib/assistant/coding-workspaces');
-    expect(codingPlugin?.local?.allowOutsideWorkspaceRoot).toBe(true);
-  });
-
-  it('parses coding plugin configuration for sidecar mode', async () => {
-    const filePath = createTempFile('config-coding-plugin-sidecar');
-    const configJson = {
-      plugins: {
-        coding: {
-          enabled: true,
-          mode: 'sidecar',
-          sidecar: {
-            tcp: {
-              host: '127.0.0.1',
-              port: 8765,
-            },
-            waitForReadyMs: 5000,
-            auth: {
-              token: 'test-token',
-              required: true,
-            },
-          },
-        },
-      },
-    };
-
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
-
-    const config = loadConfig(filePath);
-    const codingPlugin = config.plugins['coding'];
-
-    expect(codingPlugin).toBeDefined();
-    expect(codingPlugin?.enabled).toBe(true);
-    expect(codingPlugin?.mode).toBe('sidecar');
-    expect(codingPlugin?.sidecar?.tcp?.host).toBe('127.0.0.1');
-    expect(codingPlugin?.sidecar?.tcp?.port).toBe(8765);
-    expect(codingPlugin?.sidecar?.waitForReadyMs).toBe(5000);
-    expect(codingPlugin?.sidecar?.auth?.token).toBe('test-token');
-    expect(codingPlugin?.sidecar?.auth?.required).toBe(true);
   });
 
   it('resolves contextFiles roots relative to the config directory', async () => {
@@ -836,36 +797,6 @@ describe('loadConfig', () => {
     expect(codingPlugin?.local?.workspaceRoot).toBe('/home/testuser/local-workspaces');
   });
 
-  it('substitutes env vars in plugin sidecar config paths', async () => {
-    const filePath = createTempFile('config-plugin-sidecar');
-    const configJson = {
-      plugins: {
-        coding: {
-          enabled: true,
-          mode: 'sidecar',
-          sidecar: {
-            socketPath: '${XDG_RUNTIME_DIR}/assistant/coding-sidecar.sock',
-            auth: {
-              token: '${HOME}/token',
-              required: false,
-            },
-          },
-        },
-      },
-    };
-
-    process.env['HOME'] = '/home/testuser';
-    process.env['XDG_RUNTIME_DIR'] = '/run/user/1000';
-
-    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
-
-    const config = loadConfig(filePath);
-    const codingPlugin = config.plugins['coding'];
-
-    expect(codingPlugin?.sidecar?.socketPath).toBe('/run/user/1000/assistant/coding-sidecar.sock');
-    expect(codingPlugin?.sidecar?.auth?.token).toBe('/home/testuser/token');
-  });
-
   it('substitutes env vars in plugin source path', async () => {
     const filePath = createTempFile('config-plugin-source');
     const configJson = {
@@ -1076,16 +1007,6 @@ describe('loadConfig', () => {
           local: {
             workspaceRoot: '/tmp/workspaces',
           },
-          sidecar: {
-            tcp: {
-              host: '127.0.0.1',
-              port: 8765,
-            },
-            waitForReadyMs: 2500,
-            auth: {
-              required: false,
-            },
-          },
         },
       },
     };
@@ -1097,8 +1018,5 @@ describe('loadConfig', () => {
     expect(config.sessions?.maxCached).toBe(100);
     expect(config.plugins['coding']?.enabled).toBe(true);
     expect(config.plugins['coding']?.local?.workspaceRoot).toBe('/tmp/workspaces');
-    expect(config.plugins['coding']?.sidecar?.tcp?.port).toBe(8765);
-    expect(config.plugins['coding']?.sidecar?.waitForReadyMs).toBe(2500);
-    expect(config.plugins['coding']?.sidecar?.auth?.required).toBe(false);
   });
 });

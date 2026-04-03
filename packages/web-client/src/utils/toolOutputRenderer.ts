@@ -1,4 +1,5 @@
 import { applyMarkdownToElement } from './markdown';
+import { parse as parsePartialJson } from 'partial-json';
 
 export interface ToolOutputBlockOptions {
   callId: string;
@@ -66,6 +67,16 @@ type ToolOutputInputState =
   | { kind: 'formatted'; argsJson: string }
   | { kind: 'custom'; text: string; label: string };
 
+interface ToolInputPreview {
+  headerLabel: string;
+  label: string;
+  formattedText: string;
+  renderMode: 'raw' | 'markdown' | 'code' | 'json';
+  language?: string;
+  prettyJson?: string;
+  rawJson?: string;
+}
+
 interface ToolOutputBlockState {
   readonly headerButton: HTMLButtonElement;
   readonly toggleIcon: HTMLSpanElement;
@@ -96,6 +107,154 @@ function createHeaderLabel(toolName: string, headerLabel?: string): string {
     return headerLabel.trim();
   }
   return toolName;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function tryParseToolArgs(argsJson: string): { args: Record<string, unknown>; complete: boolean } | null {
+  if (argsJson.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(argsJson) as unknown;
+    return isRecord(parsed) ? { args: parsed, complete: true } : null;
+  } catch {
+    try {
+      const parsed = parsePartialJson(argsJson) as unknown;
+      return isRecord(parsed) ? { args: parsed, complete: false } : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function formatReadLabel(args: Record<string, unknown>): string {
+  const rawPath = typeof args['path'] === 'string' ? args['path'] : '';
+  const offset = typeof args['offset'] === 'number' ? args['offset'] : undefined;
+  const limit = typeof args['limit'] === 'number' ? args['limit'] : undefined;
+  if (!rawPath) {
+    return '';
+  }
+  if (offset === undefined && limit === undefined) {
+    return rawPath;
+  }
+  const startLine = offset ?? 1;
+  const endLine =
+    limit !== undefined && Number.isFinite(limit) ? `${startLine + Math.max(limit, 1) - 1}` : '';
+  return `${rawPath}:${startLine}${endLine ? `-${endLine}` : ''}`;
+}
+
+function getToolInputPreview(toolName: string, argsJson: string): ToolInputPreview {
+  const parsed = tryParseToolArgs(argsJson);
+  if (!parsed) {
+    return {
+      headerLabel: '',
+      label: 'Input',
+      formattedText: argsJson,
+      renderMode: 'raw',
+    };
+  }
+
+  const { args, complete } = parsed;
+  const rawJson = complete ? JSON.stringify(args) : undefined;
+  const prettyJson = complete ? JSON.stringify(args, null, 2) : undefined;
+
+  if (toolName === 'agents_message' && typeof args['content'] === 'string') {
+    return {
+      headerLabel: '',
+      label: 'Sent',
+      formattedText: args['content'],
+      renderMode: 'markdown',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  if (toolName === 'write' && typeof args['content'] === 'string') {
+    return {
+      headerLabel: typeof args['path'] === 'string' ? args['path'] : '',
+      label: 'Content',
+      formattedText: args['content'],
+      renderMode: 'code',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  if (toolName === 'bash' && typeof args['command'] === 'string') {
+    return {
+      headerLabel: args['command'],
+      label: 'Command',
+      formattedText: args['command'],
+      renderMode: 'code',
+      language: 'bash',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  if (toolName === 'read') {
+    const headerLabel = formatReadLabel(args);
+    if (headerLabel) {
+      return {
+        headerLabel,
+        label: 'Path',
+        formattedText: headerLabel,
+        renderMode: 'code',
+        ...(prettyJson ? { prettyJson } : {}),
+        ...(rawJson ? { rawJson } : {}),
+      };
+    }
+  }
+
+  if (toolName === 'edit' && typeof args['path'] === 'string') {
+    return {
+      headerLabel: args['path'],
+      label: 'Path',
+      formattedText: args['path'],
+      renderMode: 'code',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  if (toolName === 'ls' && typeof args['path'] === 'string') {
+    return {
+      headerLabel: args['path'],
+      label: 'Path',
+      formattedText: args['path'],
+      renderMode: 'code',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  if ((toolName === 'find' || toolName === 'grep') && typeof args['pattern'] === 'string') {
+    return {
+      headerLabel: args['pattern'],
+      label: 'Pattern',
+      formattedText: args['pattern'],
+      renderMode: 'code',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
+  const fallbackHeaderLabel = Object.values(args).find(
+    (value): value is string => typeof value === 'string' && value.length > 0,
+  );
+
+  return {
+    headerLabel: fallbackHeaderLabel ?? '',
+    label: 'Input',
+    formattedText: prettyJson ?? argsJson,
+    renderMode: complete ? 'json' : 'raw',
+    ...(prettyJson ? { prettyJson } : {}),
+    ...(rawJson ? { rawJson } : {}),
+  };
 }
 
 function getToolCallGroupStatusLabel(state: ToolCallGroupState): string {
@@ -374,14 +533,24 @@ function renderToolOutputInput(state: ToolOutputBlockState): void {
   }
 
   if (state.input.kind === 'streaming') {
+    const preview = getToolInputPreview(state.toolName, state.input.text);
     const labelRow = document.createElement('div');
     labelRow.className = 'tool-output-section-label';
-    labelRow.textContent = state.input.label;
+    labelRow.textContent = preview.label || state.input.label;
     inputSection.appendChild(labelRow);
 
     const inputBody = document.createElement('div');
     inputBody.className = 'tool-output-input-body streaming';
-    inputBody.textContent = state.input.text;
+    if (preview.renderMode === 'markdown') {
+      inputBody.classList.add('markdown-content');
+      applyMarkdownToElement(inputBody, preview.formattedText);
+    } else if (preview.renderMode === 'code') {
+      inputBody.classList.add('markdown-content');
+      const language = preview.language ?? '';
+      applyMarkdownToElement(inputBody, `\`\`\`${language}\n${preview.formattedText}\n\`\`\``);
+    } else {
+      inputBody.textContent = preview.formattedText;
+    }
     inputSection.appendChild(inputBody);
     return;
   }
@@ -400,44 +569,18 @@ function renderToolOutputInput(state: ToolOutputBlockState): void {
   }
 
   const argsJson = state.input.argsJson;
-  const toolName = state.toolName;
-  let formattedText = '';
-  let label = 'Input';
-  let isAgentMessage = false;
-  let isPlainTextInput = false;
-  let inputLanguage: string | undefined;
-  let rawJson = '';
-  let prettyJson = '';
-
   if (argsJson.trim().length === 0) {
     return;
   }
-
-  try {
-    const argsRecord = JSON.parse(argsJson) as Record<string, unknown>;
-    rawJson = JSON.stringify(argsRecord);
-    prettyJson = JSON.stringify(argsRecord, null, 2);
-
-    if (toolName === 'agents_message' && typeof argsRecord['content'] === 'string') {
-      formattedText = argsRecord['content'];
-      label = 'Sent';
-      isAgentMessage = true;
-    } else if (toolName === 'write' && typeof argsRecord['content'] === 'string') {
-      formattedText = argsRecord['content'];
-      label = 'Content';
-      isPlainTextInput = true;
-    } else if (toolName === 'bash' && typeof argsRecord['command'] === 'string') {
-      formattedText = argsRecord['command'] as string;
-      label = 'Command';
-      inputLanguage = 'bash';
-    } else {
-      formattedText = prettyJson;
-    }
-  } catch {
-    formattedText = argsJson;
-    rawJson = argsJson;
-    prettyJson = argsJson;
-  }
+  const toolName = state.toolName;
+  const preview = getToolInputPreview(toolName, argsJson);
+  const formattedText = preview.formattedText;
+  const label = preview.label;
+  const isAgentMessage = preview.renderMode === 'markdown';
+  const isPlainTextInput = preview.renderMode === 'code' && toolName === 'write';
+  const inputLanguage = preview.language;
+  const rawJson = preview.rawJson ?? '';
+  const prettyJson = preview.prettyJson ?? argsJson;
 
   const labelRow = document.createElement('div');
   labelRow.className = 'tool-output-section-label';
@@ -721,14 +864,8 @@ export function updateToolOutputBlockStreamingInput(
   if (!state) {
     return;
   }
-  state.input = { kind: 'streaming', text, label };
-  const mountedBody = state.inputSection.querySelector<HTMLDivElement>('.tool-output-input-body.streaming');
-  const mountedLabel = state.inputSection.querySelector<HTMLDivElement>('.tool-output-section-label');
-  if (mountedBody && mountedLabel) {
-    mountedBody.textContent = text;
-    mountedLabel.textContent = label;
-    return;
-  }
+  const preview = getToolInputPreview(state.toolName, text);
+  state.input = { kind: 'streaming', text, label: preview.label || label };
   syncToolOutputBlockContent(block);
 }
 
@@ -916,31 +1053,7 @@ export function formatByteSize(bytes: number): string {
  * Extract a human-readable label from tool call arguments.
  */
 export function extractToolCallLabel(toolName: string, argsJson: string): string {
-  try {
-    const args = JSON.parse(argsJson) as Record<string, unknown>;
-
-    if (toolName === 'bash' && typeof args['command'] === 'string') {
-      // Return full command - CSS handles truncation with ellipsis
-      return args['command'] as string;
-    }
-
-    if (
-      (toolName === 'read' || toolName === 'write' || toolName === 'edit') &&
-      typeof args['path'] === 'string'
-    ) {
-      return args['path'] as string;
-    }
-
-    // For other tools, show first string argument
-    for (const value of Object.values(args)) {
-      if (typeof value === 'string' && value.length > 0) {
-        return value;
-      }
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return '';
+  return getToolInputPreview(toolName, argsJson).headerLabel;
 }
 
 /**

@@ -8,7 +8,7 @@ import type { PluginConfig as AppPluginConfig } from '../config';
 import type { SessionHub } from '../sessionHub';
 import type { SessionIndex } from '../sessionIndex';
 import type { HttpRouteHandler } from '../http/types';
-import type { ToolContext } from '../tools';
+import type { AgentTool, ToolContext } from '../tools';
 import type { SessionConnection } from '../ws/sessionConnection';
 
 export interface PluginToolDefinition {
@@ -109,6 +109,11 @@ export interface ToolPlugin {
    * Tools exposed by this plugin.
    */
   tools: PluginToolDefinition[];
+  /**
+   * Optional native pi-agent tool list for runtimes that can execute AgentTool
+   * directly without bridging through PluginToolDefinition handlers.
+   */
+  getAgentTools?: (ctx: ToolContext) => Promise<AgentTool[]>;
 
   /**
    * Optional search provider for global search.
