@@ -25,15 +25,3 @@ export function projectedTranscriptEventToChatEvent(
   const parsed = safeValidateChatEvent(candidate);
   return parsed.success ? parsed.data : null;
 }
-
-export function projectedTranscriptToChatEvents(
-  events: ProjectedTranscriptEvent[],
-): ChatEvent[] {
-  return events.flatMap((event): ChatEvent[] => {
-    const replayedEvent = projectedTranscriptEventToChatEvent(event);
-    if (!replayedEvent) {
-      return [];
-    }
-    return [replayedEvent];
-  });
-}
