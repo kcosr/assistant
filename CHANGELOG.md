@@ -31,6 +31,7 @@
 
 ### Removed
 
+- Removed legacy Pi session replay support for assistant-specific `assistant.input` and `assistant.turn_*` entries; canonical Pi history now expects request boundaries and model-visible agent inputs as normal `message` records.
 ## [0.17.5] - 2026-04-01
 
 ### Breaking Changes

@@ -611,6 +611,33 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it('requires a history provider for non-Pi replay', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-generic'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = (await plugin.operations?.create({ agentId: 'general' }, ctx)) as SessionSummary;
+
+    await expect(
+      plugin.operations?.events({ sessionId: created.sessionId, force: true }, ctx),
+    ).rejects.toThrow('Session replay history is not available for this provider');
+  });
+
   it('passes spoken input metadata through the message route', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-message-audio'));
     const agentRegistry = new AgentRegistry([]);

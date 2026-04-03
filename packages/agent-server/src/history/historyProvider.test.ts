@@ -352,8 +352,8 @@ describe('canonical Pi session history loader', () => {
         id: 'turn-start-1',
         parentId: null,
         timestamp: '2026-01-21T00:00:00.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-explicit-1', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-explicit-1', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'message',
@@ -378,8 +378,8 @@ describe('canonical Pi session history loader', () => {
         id: 'turn-end-1',
         parentId: 'msg-assistant-1',
         timestamp: '2026-01-21T00:00:03.000Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-explicit-1', status: 'completed' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-explicit-1', status: 'completed' },
       }),
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
@@ -697,10 +697,10 @@ describe('canonical Pi session history loader', () => {
     const filePath = path.join(sessionDir, `2026-01-19T00-00-00-000Z_${piSessionId}.jsonl`);
     const lines = [
       JSON.stringify({
-        customType: 'assistant.turn_start',
+        customType: 'assistant.request_start',
         type: 'custom',
         timestamp: new Date(1000).toISOString(),
-        data: { v: 1, turnId: 'turn-active', trigger: 'user' },
+        data: { v: 1, requestId: 'turn-active', trigger: 'user' },
       }),
       JSON.stringify({
         message: {
@@ -726,10 +726,10 @@ describe('canonical Pi session history loader', () => {
         timestamp: new Date(1002).toISOString(),
       }),
       JSON.stringify({
-        customType: 'assistant.turn_end',
+        customType: 'assistant.request_end',
         type: 'custom',
         timestamp: new Date(1003).toISOString(),
-        data: { v: 1, turnId: 'turn-active' },
+        data: { v: 1, requestId: 'turn-active' },
       }),
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
@@ -945,8 +945,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-voice', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-voice', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1033,8 +1033,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-voice', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-voice', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1148,8 +1148,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:12.001Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-voice', status: 'completed' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-voice', status: 'completed' },
       }),
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
@@ -1227,8 +1227,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-thinking', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-thinking', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1355,8 +1355,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:03.005Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-thinking', status: 'completed' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-thinking', status: 'completed' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1428,8 +1428,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-1', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-1', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1466,14 +1466,14 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:00.004Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-1', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-1', status: 'interrupted' },
       }),
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:10.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-2', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-2', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1510,8 +1510,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-01-18T00:00:10.002Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-2', status: 'completed' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-2', status: 'completed' },
       }),
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
@@ -1676,8 +1676,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T14:46:13.150Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-worktree', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-worktree', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -1730,8 +1730,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T14:46:24.900Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-worktree', status: 'completed' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-worktree', status: 'completed' },
       }),
     ];
     await fs.writeFile(filePath, lines.join('\n'), 'utf8');
@@ -1791,8 +1791,8 @@ describe('canonical Pi session history loader', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T16:41:34.478Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-thinking', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-thinking', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',

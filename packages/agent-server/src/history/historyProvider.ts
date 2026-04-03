@@ -1381,9 +1381,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       continue;
     }
     const customType = getString(entry['customType']);
-    if (customType === 'assistant.turn_end' || customType === 'assistant.request_end') {
+    if (customType === 'assistant.request_end') {
       const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-      const turnId = data ? getString(data['requestId']) || getString(data['turnId']) : '';
+      const turnId = data ? getString(data['requestId']) : '';
       if (turnId) {
         explicitTurnEndIds.add(turnId);
       }
@@ -1638,9 +1638,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const customType = getString(entry['customType']);
       const timestamp = resolveTimestamp(entry);
       const data = isRecord(entry['data']) ? (entry['data'] as Record<string, unknown>) : null;
-      if ((customType === 'assistant.turn_start' || customType === 'assistant.request_start') && data) {
+      if (customType === 'assistant.request_start' && data) {
         const version = Number(data['v']);
-        const turnIdFromEntry = getString(data['requestId']) || getString(data['turnId']);
+        const turnIdFromEntry = getString(data['requestId']);
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
@@ -1649,9 +1649,9 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         startTurn(turnIdFromEntry, normalizeTrigger(data['trigger']), timestamp, true);
         continue;
       }
-      if ((customType === 'assistant.turn_end' || customType === 'assistant.request_end') && data) {
+      if (customType === 'assistant.request_end' && data) {
         const version = Number(data['v']);
-        const turnIdFromEntry = getString(data['requestId']) || getString(data['turnId']);
+        const turnIdFromEntry = getString(data['requestId']);
         if (version !== 1 || !turnIdFromEntry) {
           continue;
         }
@@ -1859,65 +1859,6 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
     }
 
     if (entryType === 'custom_message') {
-      const customType = getString(entry['customType']);
-      if (customType === 'assistant.input') {
-        const timestamp = resolveTimestamp(entry);
-        const details = isRecord(entry['details']) ? (entry['details'] as Record<string, unknown>) : null;
-        const kind = details ? getString(details['kind']) : '';
-        const text = extractText(entry).trim();
-        if (!text) {
-          continue;
-        }
-        if (kind === 'agent') {
-          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
-          if (!currentTurnId || !currentTurnExplicit) {
-            endTurn(timestamp);
-            startTurn(turnId, 'user', timestamp);
-          }
-          const fromAgentId = details ? getString(details['fromAgentId']) : '';
-          const fromSessionId = details ? getString(details['fromSessionId']) : '';
-          events.push({
-            id: randomUUID(),
-            timestamp,
-            sessionId,
-            turnId,
-            type: 'user_message',
-            payload: {
-              text,
-              ...(fromAgentId ? { fromAgentId } : {}),
-              ...(fromSessionId ? { fromSessionId } : {}),
-            },
-          });
-          continue;
-        }
-
-        if (kind === 'callback') {
-          const exchangeId = getString(entry['agentExchangeId']);
-          const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
-          if (!currentTurnId || !currentTurnExplicit) {
-            endTurn(timestamp);
-            startTurn(turnId, 'callback', timestamp);
-          }
-          events.push({
-            id: randomUUID(),
-            timestamp,
-            sessionId,
-            turnId,
-            type: 'agent_message',
-            payload: {
-              messageId: getString(entry['id']) || randomUUID(),
-              ...(exchangeId ? { exchangeId } : {}),
-              targetAgentId: 'callback',
-              targetSessionId: sessionId,
-              message: text,
-              wait: false,
-            },
-          });
-          continue;
-        }
-
-        // Unknown assistant.input shape - fall back to a generic custom_message event.
-      }
       const timestamp = resolveTimestamp(entry);
       const turnId = currentTurnId ?? getTurnId(entry);
       const label = extractLabel(entry);

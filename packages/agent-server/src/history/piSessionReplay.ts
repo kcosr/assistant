@@ -166,28 +166,6 @@ async function findPiSessionFile(
   return path.join(sessionDir, matches[matches.length - 1]!);
 }
 
-function toUserMeta(entry: Record<string, unknown>): ChatCompletionMessageMeta | undefined {
-  const details = isRecord(entry['details']) ? entry['details'] : null;
-  if (!details) {
-    return undefined;
-  }
-  const kind = getString(details['kind']);
-  if (kind !== 'agent' && kind !== 'callback') {
-    return undefined;
-  }
-  const meta: ChatCompletionMessageMeta = {
-    source: kind,
-    ...(isNonEmptyString(details['fromAgentId']) ? { fromAgentId: details['fromAgentId'].trim() } : {}),
-    ...(isNonEmptyString(details['fromSessionId'])
-      ? { fromSessionId: details['fromSessionId'].trim() }
-      : {}),
-  };
-  if (kind === 'callback') {
-    meta.visibility = entry['display'] === false ? 'hidden' : 'visible';
-  }
-  return meta;
-}
-
 function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletionMessageMeta | undefined {
   const meta = isRecord(message['meta']) ? message['meta'] : null;
   if (!meta) {
@@ -219,14 +197,14 @@ function extractInterruptedTurnIds(entries: Array<Record<string, unknown>>): Set
     if (getString(entry['type']) !== 'custom') {
       continue;
     }
-    if (getString(entry['customType']) !== 'assistant.turn_end') {
+    if (getString(entry['customType']) !== 'assistant.request_end') {
       continue;
     }
     const data = isRecord(entry['data']) ? entry['data'] : null;
     if (!data) {
       continue;
     }
-    const turnId = getString(data['turnId']).trim();
+    const turnId = getString(data['requestId']).trim();
     const status = getString(data['status']).trim();
     if (turnId && status === 'interrupted') {
       interruptedTurnIds.add(turnId);
@@ -287,18 +265,6 @@ function collectCanonicalReplayCoverage(
   const toolResultIds = new Set<string>();
 
   for (const entry of entries) {
-    if (
-      entry['type'] === 'custom_message' &&
-      getString(entry['customType']) === 'assistant.input'
-    ) {
-      const text = extractTextValue(entry['content']).trim();
-      const meta = toUserMeta(entry);
-      if (text && meta?.source === 'callback') {
-        callbackInputTexts.add(text);
-      }
-      continue;
-    }
-
     const message = entry['type'] === 'message' && isRecord(entry['message']) ? entry['message'] : null;
     if (!message) {
       continue;
@@ -458,26 +424,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
 
   for (const entry of entries) {
     const entryType = getString(entry['type']);
-    if (entryType === 'custom_message') {
-      closeOpenAssistantToolCalls();
-      if (getString(entry['customType']) !== 'assistant.input') {
-        continue;
-      }
-      const text = extractTextValue(entry['content']).trim();
-      if (!text) {
-        continue;
-      }
-      const meta = toUserMeta(entry);
-      const historyTimestampMs = resolveTimestamp(entry);
-      messages.push({
-        role: 'user',
-        content: text,
-        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-        ...(meta ? { meta } : {}),
-      });
-      continue;
-    }
-
     if (entryType === 'custom') {
       const customType = getString(entry['customType']);
       if (customType !== 'assistant.event') {

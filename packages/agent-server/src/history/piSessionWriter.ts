@@ -855,9 +855,8 @@ async function loadExistingPiSessionState(
       }
     }
     if (entryType === 'custom_message') {
-      // Count assistant-injected inputs as "messages" for sync deduplication.
       const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
-      if (customType === 'assistant.input' || customType === ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
+      if (customType === ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
         messageCount += 1;
         messageSignatures.push(
           signatureFromCustomMessageEntry({
@@ -878,20 +877,16 @@ async function loadExistingPiSessionState(
         entry['data'] && typeof entry['data'] === 'object' && !Array.isArray(entry['data'])
           ? (entry['data'] as Record<string, unknown>)
           : undefined;
-      const turnId =
-        data && typeof data['turnId'] === 'string' && data['turnId'].trim().length > 0
-          ? data['turnId'].trim()
+      const requestId =
+        data && typeof data['requestId'] === 'string' && data['requestId'].trim().length > 0
+          ? data['requestId'].trim()
           : null;
-      if (
-        (customType === ASSISTANT_REQUEST_START_CUSTOM_TYPE ||
-          customType === 'assistant.turn_start') &&
-        turnId
-      ) {
-        openRequestId = turnId;
+      if (customType === ASSISTANT_REQUEST_START_CUSTOM_TYPE && requestId) {
+        openRequestId = requestId;
       } else if (
-        (customType === ASSISTANT_REQUEST_END_CUSTOM_TYPE || customType === 'assistant.turn_end') &&
-        turnId &&
-        openRequestId === turnId
+        customType === ASSISTANT_REQUEST_END_CUSTOM_TYPE &&
+        requestId &&
+        openRequestId === requestId
       ) {
         openRequestId = null;
       }
@@ -1009,9 +1004,7 @@ function getRequestBoundaryRecord(
   const customType = typeof entry['customType'] === 'string' ? entry['customType'] : '';
   if (
     customType !== ASSISTANT_REQUEST_START_CUSTOM_TYPE &&
-    customType !== ASSISTANT_REQUEST_END_CUSTOM_TYPE &&
-    customType !== 'assistant.turn_start' &&
-    customType !== 'assistant.turn_end'
+    customType !== ASSISTANT_REQUEST_END_CUSTOM_TYPE
   ) {
     return null;
   }
@@ -1021,9 +1014,7 @@ function getRequestBoundaryRecord(
     typeof data['requestId'] === 'string' &&
     data['requestId'].trim().length > 0
       ? data['requestId'].trim()
-      : data && typeof data['turnId'] === 'string' && data['turnId'].trim().length > 0
-        ? data['turnId'].trim()
-        : '';
+      : '';
   if (!requestId) {
     return null;
   }
@@ -1034,10 +1025,7 @@ function getRequestBoundaryRecord(
   const status =
     statusRaw === 'completed' || statusRaw === 'interrupted' ? statusRaw : undefined;
   return {
-    kind:
-      customType === ASSISTANT_REQUEST_START_CUSTOM_TYPE || customType === 'assistant.turn_start'
-        ? 'start'
-        : 'end',
+    kind: customType === ASSISTANT_REQUEST_START_CUSTOM_TYPE ? 'start' : 'end',
     requestId,
     ...(trigger ? { trigger } : {}),
     ...(status ? { status } : {}),
@@ -1089,9 +1077,6 @@ function isSyntheticRequestBoundaryEntry(entry: PiSessionEntryRecord): boolean {
   if (entry.type === 'message') {
     const message = isRecord(entry['message']) ? entry['message'] : null;
     return typeof message?.['role'] === 'string' && message['role'] === 'user';
-  }
-  if (entry.type === 'custom_message') {
-    return typeof entry['customType'] === 'string' && entry['customType'] === 'assistant.input';
   }
   return false;
 }
@@ -1147,10 +1132,6 @@ function getSyntheticRequestTrigger(entry: PiSessionEntryRecord): PiTurnTrigger 
     if (message && getUserMessageMetaSource(message['meta']) === 'callback') {
       return 'callback';
     }
-  }
-  if (entry.type === 'custom_message') {
-    const details = isRecord(entry['details']) ? entry['details'] : null;
-    return getString(details?.['kind']) === 'callback' ? 'callback' : 'user';
   }
   return 'user';
 }

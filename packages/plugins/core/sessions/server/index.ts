@@ -409,7 +409,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       events: async (args, ctx): Promise<SessionReplayResponse> => {
         const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
-        const eventStore = ctx.eventStore;
         const parsed = asObject(args);
         const sessionId = requireSessionId(parsed['sessionId']);
         const existing = await sessionIndex.getSession(sessionId);
@@ -452,36 +451,20 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           };
         }
         const historyProvider = ctx.historyProvider;
-        if (historyProvider) {
-          const events = await historyProvider.getHistory({
-            sessionId,
-            ...(agentId ? { agentId } : {}),
-            ...(agent ? { agent } : {}),
-            providerId,
-            ...(existing.attributes ? { attributes: existing.attributes } : {}),
-            ...(force ? { force } : {}),
-          });
-          const projected = projectTranscriptEvents({ sessionId, revision, events });
-          const sliced = sliceProjectedTranscript({
-            revision,
-            events: projected,
-            ...(afterCursor ? { afterCursor } : {}),
-            force,
-          });
-          return {
-            sessionId,
-            revision,
-            reset: sliced.reset,
-            ...(sliced.nextCursor ? { nextCursor: sliced.nextCursor } : {}),
-            events: sliced.events,
-          };
+        if (!historyProvider) {
+          throw new ToolError(
+            'session_history_unavailable',
+            'Session replay history is not available for this provider',
+          );
         }
-
-        if (!eventStore) {
-          throw new ToolError('event_store_unavailable', 'Event store is not available');
-        }
-
-        const events = await eventStore.getEvents(sessionId);
+        const events = await historyProvider.getHistory({
+          sessionId,
+          ...(agentId ? { agentId } : {}),
+          ...(agent ? { agent } : {}),
+          providerId,
+          ...(existing.attributes ? { attributes: existing.attributes } : {}),
+          ...(force ? { force } : {}),
+        });
         const projected = projectTranscriptEvents({ sessionId, revision, events });
         const sliced = sliceProjectedTranscript({
           revision,

@@ -247,8 +247,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:15:33.320Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-callback', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-callback', status: 'interrupted' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -265,8 +265,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:15:51.000Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-followup', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-followup', status: 'interrupted' },
       }),
     ].join('\n');
 
@@ -343,8 +343,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-04-01T00:16:21.000Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-followup', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-followup', status: 'interrupted' },
       }),
     ].join('\n');
 
@@ -374,8 +374,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:44.000Z',
-        customType: 'assistant.turn_start',
-        data: { v: 1, turnId: 'turn-interrupted', trigger: 'user' },
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'turn-interrupted', trigger: 'user' },
       }),
       JSON.stringify({
         type: 'custom',
@@ -444,8 +444,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T22:02:45.060Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-interrupted', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-interrupted', status: 'interrupted' },
       }),
     ].join('\n');
 
@@ -530,8 +530,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:06:39.314Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-date', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-date', status: 'interrupted' },
       }),
       JSON.stringify({
         type: 'message',
@@ -659,8 +659,8 @@ describe('buildCanonicalPiReplayMessages', () => {
       JSON.stringify({
         type: 'custom',
         timestamp: '2026-03-31T23:40:00.201Z',
-        customType: 'assistant.turn_end',
-        data: { v: 1, turnId: 'turn-orphan', status: 'interrupted' },
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'turn-orphan', status: 'interrupted' },
       }),
     ].join('\n');
 

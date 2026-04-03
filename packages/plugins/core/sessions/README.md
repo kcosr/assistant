@@ -123,13 +123,13 @@ Clear session history.
 
 ### `sessions_history-edit`
 
-Edit Pi-backed session history at explicit turn boundaries.
+Edit Pi-backed session history at explicit request boundaries.
 
 **Parameters:**
 
 - `sessionId` (string, required): Session id.
-- `action` (string, required): One of `trim_before`, `trim_after`, or `delete_turn`.
-- `turnId` (string, required): Explicit turn id anchor.
+- `action` (string, required): One of `trim_before`, `trim_after`, or `delete_request`.
+- `requestId` (string, required): Explicit request id anchor.
 
 **HTTP:** `POST /api/plugins/sessions/operations/history-edit`
 
