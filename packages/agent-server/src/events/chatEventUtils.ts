@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ChatEvent, ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ProjectedTranscriptEvent, ServerMessage } from '@assistant/shared';
 
 import type { EventStore } from './eventStore';
 import type { SessionHub } from '../sessionHub';
-import { projectTranscriptEvents } from '../../../plugins/core/sessions/server/transcriptProjection';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for emitting tool_call and tool_result ChatEvents.
@@ -353,6 +352,7 @@ const liveTranscriptStateBySession = new Map<
   {
     revision: number;
     nextSequence: number;
+    activeRequestId: string | null;
   }
 >();
 
@@ -363,27 +363,190 @@ function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: strin
   return Math.max(0, sessionHub.getSessionState(sessionId)?.summary.revision ?? 0);
 }
 
-function broadcastProjectedTranscriptEvents(
-  sessionHub: SessionHub,
-  sessionId: string,
-  events: ChatEvent[],
-): void {
+function resolveLiveRequestId(event: ChatEvent, activeRequestId: string | null): string {
+  const explicit = typeof event.turnId === 'string' ? event.turnId.trim() : '';
+  if (explicit) {
+    return explicit;
+  }
+  const responseId = typeof event.responseId === 'string' ? event.responseId.trim() : '';
+  if (responseId) {
+    return responseId;
+  }
+  if (activeRequestId) {
+    return activeRequestId;
+  }
+  return `request:${event.id}`;
+}
+
+function mapChatEventKind(event: ChatEvent): {
+  kind: ProjectedTranscriptEvent['kind'];
+  payload: ProjectedTranscriptEvent['payload'];
+} {
+  switch (event.type) {
+    case 'turn_start':
+      return { kind: 'request_start', payload: event.payload };
+    case 'turn_end':
+      return { kind: 'request_end', payload: event.payload };
+    case 'user_message':
+    case 'user_audio':
+      return { kind: 'user_message', payload: event.payload };
+    case 'assistant_chunk':
+    case 'assistant_done':
+    case 'custom_message':
+    case 'summary_message':
+    case 'audio_chunk':
+    case 'audio_done':
+      return { kind: 'assistant_message', payload: event.payload };
+    case 'thinking_chunk':
+    case 'thinking_done':
+      return { kind: 'thinking', payload: event.payload };
+    case 'tool_input_chunk':
+      return { kind: 'tool_input', payload: event.payload };
+    case 'tool_output_chunk':
+      return { kind: 'tool_output', payload: event.payload };
+    case 'tool_call':
+      return { kind: 'tool_call', payload: event.payload };
+    case 'tool_result':
+      return { kind: 'tool_result', payload: event.payload };
+    case 'interaction_request':
+    case 'questionnaire_request':
+    case 'agent_message':
+      return { kind: 'interaction_request', payload: event.payload };
+    case 'interaction_pending':
+    case 'questionnaire_reprompt':
+    case 'questionnaire_update':
+    case 'agent_switch':
+      return { kind: 'interaction_update', payload: event.payload };
+    case 'interaction_response':
+    case 'questionnaire_submission':
+    case 'agent_callback':
+      return { kind: 'interaction_response', payload: event.payload };
+    case 'interrupt':
+      return { kind: 'interrupt', payload: event.payload };
+    case 'error':
+      return { kind: 'error', payload: event.payload };
+  }
+  const exhaustive: never = event;
+  return exhaustive;
+}
+
+function extractStableIds(event: ChatEvent): Partial<ProjectedTranscriptEvent> {
+  switch (event.type) {
+    case 'tool_call':
+    case 'tool_input_chunk':
+    case 'tool_output_chunk':
+    case 'tool_result':
+      return { toolCallId: event.payload.toolCallId };
+    case 'interaction_request':
+    case 'interaction_response':
+      return {
+        toolCallId: event.payload.toolCallId,
+        interactionId: event.payload.interactionId,
+      };
+    case 'interaction_pending':
+      return { toolCallId: event.payload.toolCallId };
+    case 'questionnaire_request':
+      return {
+        toolCallId: event.payload.toolCallId,
+        interactionId: event.payload.sourceInteractionId,
+      };
+    case 'questionnaire_submission':
+    case 'questionnaire_reprompt':
+    case 'questionnaire_update':
+      return {
+        toolCallId: event.payload.toolCallId,
+        interactionId:
+          'interactionId' in event.payload && typeof event.payload.interactionId === 'string'
+            ? event.payload.interactionId
+            : undefined,
+      };
+    case 'agent_message':
+    case 'agent_callback':
+      return {
+        messageId: event.payload.messageId,
+        ...(typeof event.payload.exchangeId === 'string' && event.payload.exchangeId.trim().length > 0
+          ? { exchangeId: event.payload.exchangeId }
+          : { exchangeId: event.payload.messageId }),
+      };
+    default:
+      return {};
+  }
+}
+
+function buildLiveProjectedTranscriptEvents(options: {
+  sessionId: string;
+  revision: number;
+  startSequence: number;
+  activeRequestId: string | null;
+  events: ChatEvent[];
+}): {
+  events: ProjectedTranscriptEvent[];
+  nextSequence: number;
+  activeRequestId: string | null;
+} {
+  const { sessionId, revision, startSequence, events } = options;
+  let activeRequestId = options.activeRequestId;
+  let nextSequence = startSequence;
+  const projected: ProjectedTranscriptEvent[] = [];
+
+  for (const event of events) {
+    if (event.type === 'turn_start') {
+      activeRequestId = resolveLiveRequestId(event, activeRequestId);
+    }
+
+    const requestId = resolveLiveRequestId(event, activeRequestId);
+    const { kind, payload } = mapChatEventKind(event);
+    projected.push({
+      sessionId,
+      revision,
+      sequence: nextSequence,
+      requestId,
+      eventId: event.id,
+      kind,
+      chatEventType: event.type,
+      timestamp: new Date(event.timestamp).toISOString(),
+      ...(typeof event.responseId === 'string' && event.responseId.trim().length > 0
+        ? { responseId: event.responseId }
+        : {}),
+      ...(typeof event.turnId === 'string' && event.turnId.trim().length > 0
+        ? { piTurnId: event.turnId }
+        : {}),
+      ...extractStableIds(event),
+      payload,
+    });
+    nextSequence += 1;
+
+    if (event.type === 'turn_end' && activeRequestId === requestId) {
+      activeRequestId = null;
+    }
+  }
+
+  return { events: projected, nextSequence, activeRequestId };
+}
+
+function broadcastProjectedTranscriptEvents(sessionHub: SessionHub, sessionId: string, events: ChatEvent[]): void {
   if (!events.length) {
     return;
   }
   const revision = getProjectedTranscriptRevision(sessionHub, sessionId);
   const liveState = liveTranscriptStateBySession.get(sessionId);
-  const startSequence = liveState && liveState.revision === revision ? liveState.nextSequence : 0;
-  const projected = projectTranscriptEvents({ sessionId, revision, events }).map((event, index) => ({
-    ...event,
+  const nextState =
+    liveState && liveState.revision === revision
+      ? liveState
+      : { revision, nextSequence: 0, activeRequestId: null as string | null };
+  const projected = buildLiveProjectedTranscriptEvents({
+    sessionId,
     revision,
-    sequence: startSequence + index,
-  }));
+    startSequence: nextState.nextSequence,
+    activeRequestId: nextState.activeRequestId,
+    events,
+  });
   liveTranscriptStateBySession.set(sessionId, {
     revision,
-    nextSequence: startSequence + projected.length,
+    nextSequence: projected.nextSequence,
+    activeRequestId: projected.activeRequestId,
   });
-  for (const event of projected) {
+  for (const event of projected.events) {
     const message: ServerMessage = {
       type: 'transcript_event',
       event,

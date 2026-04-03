@@ -5,6 +5,7 @@ import type { EventStore } from './eventStore';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import {
   appendAndBroadcastChatEvents,
+  emitInteractionPendingEvent,
   emitToolOutputChunkEvent,
 } from './chatEventUtils';
 
@@ -156,6 +157,49 @@ describe('chatEventUtils live broadcast behavior', () => {
     expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
       type: 'transcript_event',
       event: { revision: 2, sequence: 0 },
+    });
+  });
+
+  it('carries active request context across live transcript batches', async () => {
+    const eventStore = createEventStore();
+    const { sessionHub, broadcastToSession } = createSessionHub('pi', 'live-request-context');
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'live-request-context' },
+      [
+        {
+          id: 'evt-start',
+          sessionId: 'live-request-context',
+          turnId: 'req-ctx',
+          timestamp: Date.now(),
+          type: 'turn_start',
+          payload: { trigger: 'user' },
+        },
+      ],
+    );
+
+    emitInteractionPendingEvent({
+      sessionHub,
+      sessionId: 'live-request-context',
+      toolCallId: 'tool-ctx',
+      toolName: 'questions',
+      pending: true,
+    });
+
+    expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: {
+        requestId: 'req-ctx',
+        kind: 'request_start',
+      },
+    });
+    expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: {
+        requestId: 'req-ctx',
+        kind: 'interaction_update',
+        toolCallId: 'tool-ctx',
+      },
     });
   });
 

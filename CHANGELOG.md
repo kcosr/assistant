@@ -17,6 +17,7 @@
 ### Changed
 
 - Changed Pi session replay to project transcript events directly from canonical Pi JSONL instead of reconstructing ChatEvent history first.
+- Changed live transcript_event delivery to project directly on the server with request-context tracking across batches instead of reusing replay batch projection.
 - Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed Android voice notifications to use a public lock-screen-visible channel, compact `Voice (State)` titles, and synced session titles for the preferred or active session. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))
