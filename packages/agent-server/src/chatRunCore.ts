@@ -26,7 +26,6 @@ import {
   type ThinkingLevel as PiAgentThinkingLevel,
 } from '@mariozechner/pi-agent-core';
 import {
-  streamSimple,
   type AssistantMessage,
   type AssistantMessageEvent,
   type Message as PiSdkMessage,
@@ -74,6 +73,16 @@ import type { AgentTool as NativeAgentTool } from './tools';
 
 type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
+type PiAiModule = typeof import('@mariozechner/pi-ai');
+
+let piAiModulePromise: Promise<PiAiModule> | null = null;
+
+async function loadPiAiModule(): Promise<PiAiModule> {
+  if (!piAiModulePromise) {
+    piAiModulePromise = import('@mariozechner/pi-ai');
+  }
+  return piAiModulePromise;
+}
 
 export interface ChatRunOutputAdapter {
   send: (message: ServerMessage) => void;
@@ -1300,8 +1309,8 @@ export async function runChatCompletionCore(
                 message.role === 'assistant' ||
                 message.role === 'toolResult',
             ) as PiSdkMessage[],
-          streamFn: (model, context, options) =>
-            streamSimple(model, context, {
+          streamFn: async (model, context, options) =>
+            (await loadPiAiModule()).streamSimple(model, context, {
               ...options,
               ...(runtime.requestConfig.apiKey ? { apiKey: runtime.requestConfig.apiKey } : {}),
               ...(runtime.requestConfig.temperature !== undefined

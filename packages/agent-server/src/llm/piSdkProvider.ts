@@ -13,7 +13,6 @@ import type {
   ToolResultMessage,
   Usage,
 } from '@mariozechner/pi-ai';
-import { AuthStorage } from '@mariozechner/pi-coding-agent';
 import type { AssistantTextPhase } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -43,8 +42,13 @@ export interface PiAssistantTextBlock {
 }
 
 type PiAiModule = typeof import('@mariozechner/pi-ai');
+type PiCodingAgentModule = typeof import('@mariozechner/pi-coding-agent');
 let piAiModulePromise: Promise<PiAiModule> | null = null;
-let piAuthStorage: AuthStorage | null = null;
+let piCodingAgentModulePromise: Promise<PiCodingAgentModule> | null = null;
+type AuthStorageInstance = {
+  getApiKey(providerId: string): Promise<string | undefined>;
+};
+let piAuthStoragePromise: Promise<AuthStorageInstance> | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
@@ -53,11 +57,18 @@ async function loadPiAiModule(): Promise<PiAiModule> {
   return piAiModulePromise;
 }
 
-function getPiAuthStorage(): AuthStorage {
-  if (!piAuthStorage) {
-    piAuthStorage = AuthStorage.create();
+async function loadPiCodingAgentModule(): Promise<PiCodingAgentModule> {
+  if (!piCodingAgentModulePromise) {
+    piCodingAgentModulePromise = import('@mariozechner/pi-coding-agent');
   }
-  return piAuthStorage;
+  return piCodingAgentModulePromise;
+}
+
+async function getPiAuthStorage(): Promise<AuthStorageInstance> {
+  if (!piAuthStoragePromise) {
+    piAuthStoragePromise = loadPiCodingAgentModule().then((module) => module.AuthStorage.create());
+  }
+  return piAuthStoragePromise;
 }
 
 export async function resolvePiSdkAuthApiKey(options: {
@@ -71,7 +82,7 @@ export async function resolvePiSdkAuthApiKey(options: {
   }
 
   try {
-    return await getPiAuthStorage().getApiKey(trimmedProviderId);
+    return await (await getPiAuthStorage()).getApiKey(trimmedProviderId);
   } catch (err) {
     log?.('[pi-sdk] Failed to resolve API key from AuthStorage', {
       providerId: trimmedProviderId,
