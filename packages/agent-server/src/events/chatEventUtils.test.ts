@@ -7,6 +7,7 @@ import {
   appendAndBroadcastChatEvents,
   emitInteractionPendingEvent,
   emitToolOutputChunkEvent,
+  resetLiveTranscriptSessionState,
 } from './chatEventUtils';
 
 function createEventStore(): EventStore {
@@ -123,7 +124,7 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
   });
 
-  it('resets live transcript sequence when the session revision changes', async () => {
+  it('keeps live transcript sequence stable across ordinary session revision changes', async () => {
     const eventStore = createEventStore();
     const { sessionHub, broadcastToSession, state, appendAssistantEvent } = createSessionHub('pi', 'sequence-reset');
 
@@ -165,9 +166,56 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
     expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
       type: 'transcript_event',
-      event: { revision: 2, sequence: 0 },
+      event: { revision: 1, sequence: 1 },
     });
     expect(appendAssistantEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('resets live transcript sequence after explicit live transcript invalidation', async () => {
+    const eventStore = createEventStore();
+    const { sessionHub, broadcastToSession, state } = createSessionHub('pi', 'sequence-reset-explicit');
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'sequence-reset-explicit' },
+      [
+        {
+          id: 'evt-a',
+          sessionId: 'sequence-reset-explicit',
+          turnId: 'req-1',
+          responseId: 'resp-1',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'before rewrite' },
+        },
+      ],
+    );
+
+    state.summary.revision = 2;
+    resetLiveTranscriptSessionState('sequence-reset-explicit');
+
+    await appendAndBroadcastChatEvents(
+      { eventStore, sessionHub, sessionId: 'sequence-reset-explicit' },
+      [
+        {
+          id: 'evt-b',
+          sessionId: 'sequence-reset-explicit',
+          turnId: 'req-2',
+          responseId: 'resp-2',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'after rewrite' },
+        },
+      ],
+    );
+
+    expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { revision: 1, sequence: 0 },
+    });
+    expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { revision: 2, sequence: 0 },
+    });
   });
 
   it('carries active request context across live transcript batches', async () => {

@@ -34,6 +34,7 @@ import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
 import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
+import { resetLiveTranscriptSessionState } from './events/chatEventUtils';
 import {
   CliToolCallRendezvous,
   type CliToolCallMatchOptions,
@@ -483,6 +484,7 @@ export class SessionHub {
 
   async deleteSession(sessionId: string): Promise<SessionSummary | undefined> {
     console.log('[sessionHub] deleteSession', { sessionId });
+    resetLiveTranscriptSessionState(sessionId);
     const existing = await this.sessionIndex.getSession(sessionId);
     if (this.attachmentStore) {
       await this.attachmentStore.deleteSession(sessionId);
@@ -550,6 +552,7 @@ export class SessionHub {
 
   async clearSession(sessionId: string): Promise<SessionSummary> {
     console.log('[sessionHub] clearSession', { sessionId });
+    resetLiveTranscriptSessionState(sessionId);
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -605,6 +608,7 @@ export class SessionHub {
     requestId: string;
   }): Promise<{ summary: SessionSummary; changed: boolean; droppedRequestIds: string[] }> {
     const { sessionId, action, requestId } = options;
+    resetLiveTranscriptSessionState(sessionId);
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {
       throw new Error(`Session not found: ${sessionId}`);

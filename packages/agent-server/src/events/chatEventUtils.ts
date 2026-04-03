@@ -356,6 +356,14 @@ const liveTranscriptStateBySession = new Map<
   }
 >();
 
+export function resetLiveTranscriptSessionState(sessionId: string): void {
+  const trimmed = sessionId.trim();
+  if (!trimmed) {
+    return;
+  }
+  liveTranscriptStateBySession.delete(trimmed);
+}
+
 function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {
   if (typeof sessionHub.getSessionState !== 'function') {
     return 0;
@@ -550,12 +558,9 @@ function broadcastProjectedTranscriptEvents(sessionHub: SessionHub, sessionId: s
   if (!events.length) {
     return;
   }
-  const revision = getProjectedTranscriptRevision(sessionHub, sessionId);
   const liveState = liveTranscriptStateBySession.get(sessionId);
-  const nextState =
-    liveState && liveState.revision === revision
-      ? liveState
-      : { revision, nextSequence: 0, activeRequestId: null as string | null };
+  const revision = liveState?.revision ?? getProjectedTranscriptRevision(sessionHub, sessionId);
+  const nextState = liveState ?? { revision, nextSequence: 0, activeRequestId: null as string | null };
   const projected = buildLiveProjectedTranscriptEvents({
     sessionId,
     revision,

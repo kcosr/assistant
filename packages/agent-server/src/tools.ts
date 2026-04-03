@@ -90,6 +90,13 @@ export function createAgentTool(options: {
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
     label: options.label ?? options.description,
     execute: async (toolCallId, params, signal, onUpdate) => {
+      const activeRun =
+        context.sessionHub && context.sessionId
+          ? context.sessionHub.getSessionState(context.sessionId)?.activeChatRun
+          : undefined;
+      const turnId = context.turnId ?? activeRun?.turnId;
+      const requestId = context.requestId ?? activeRun?.requestId;
+      const responseId = context.responseId ?? activeRun?.responseId;
       let streamedText = '';
       let latestDetails: unknown = undefined;
       const legacyOnUpdate = context.onUpdate;
@@ -118,6 +125,9 @@ export function createAgentTool(options: {
         ...context,
         signal: signal ?? context.signal,
         toolCallId,
+        ...(turnId ? { turnId } : {}),
+        ...(requestId ? { requestId } : {}),
+        ...(responseId ? { responseId } : {}),
         ...(updateBridge ? { onUpdate: updateBridge } : {}),
       };
 

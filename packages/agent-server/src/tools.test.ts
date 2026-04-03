@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BuiltInToolHost,
   CompositeToolHost,
+  createAgentTool,
   createToolHost,
   filterToolsForAgent,
   filterToolsByAllowlist,
@@ -256,6 +257,54 @@ describe('filterToolsForAgent', () => {
       undefined,
     );
     expect(filtered).toEqual([]);
+  });
+});
+
+describe('createAgentTool', () => {
+  it('fills request-scoped context from the active session run at execute time', async () => {
+    const handler = vi.fn(async (_args: unknown, ctx: ToolContext) => ({
+      requestId: ctx.requestId,
+      responseId: ctx.responseId,
+      turnId: ctx.turnId,
+      toolCallId: ctx.toolCallId,
+    }));
+    const tool = createAgentTool({
+      name: 'attachment_send',
+      description: 'Attachment send',
+      parameters: {},
+      context: {
+        signal: new AbortController().signal,
+        sessionId: 'session-1',
+        sessionHub: {
+          getSessionState: vi.fn(() => ({
+            activeChatRun: {
+              requestId: 'request-1',
+              responseId: 'response-1',
+              turnId: 'turn-1',
+            },
+          })),
+        } as never,
+      },
+      handler,
+    });
+
+    const result = await tool.execute('tool-1', { fileName: 'sample.md' });
+
+    expect(handler).toHaveBeenCalledWith(
+      { fileName: 'sample.md' },
+      expect.objectContaining({
+        requestId: 'request-1',
+        responseId: 'response-1',
+        turnId: 'turn-1',
+        toolCallId: 'tool-1',
+      }),
+    );
+    expect(result.details).toEqual({
+      requestId: 'request-1',
+      responseId: 'response-1',
+      turnId: 'turn-1',
+      toolCallId: 'tool-1',
+    });
   });
 });
 
