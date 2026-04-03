@@ -7,6 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CombinedPluginManifest, SessionReplayResponse } from '@assistant/shared';
 import { AgentRegistry } from '../../../../agent-server/src/agents';
 import type { ChatCompletionMessage } from '../../../../agent-server/src/chatCompletionTypes';
+import {
+  appendAndBroadcastChatEvents,
+  resetLiveTranscriptSessionState,
+  seedLiveTranscriptSessionState,
+} from '../../../../agent-server/src/events/chatEventUtils';
 import type { SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { PiSessionWriter } from '../../../../agent-server/src/history/piSessionWriter';
 import { SessionHub } from '../../../../agent-server/src/sessionHub';
@@ -609,6 +614,132 @@ describe('sessions plugin operations', () => {
         }),
       ]),
     );
+  });
+
+  it('merges transient live Pi chunks into replay without persisting them to the Pi log', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi-live'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-plugin-events-pi-live-'));
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, piSessionWriter });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    } as ToolContext;
+
+    const created = (await plugin.operations?.create(
+      { agentId: 'pi-agent', sessionConfig: { workingDir: '/tmp/project' } },
+      ctx,
+    )) as SessionSummary;
+
+    let summary = created;
+    summary =
+      (await piSessionWriter.appendTurnStart({
+        summary,
+        turnId: 'request-live',
+        trigger: 'user',
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
+      })) ?? summary;
+    const liveRevision = Math.max(0, summary.revision ?? 0);
+    seedLiveTranscriptSessionState({
+      sessionId: created.sessionId,
+      revision: liveRevision,
+      nextSequence: 1,
+      activeRequestId: 'request-live',
+    });
+
+    await appendAndBroadcastChatEvents(
+      { sessionHub, sessionId: created.sessionId },
+      [
+        {
+          id: 'user-live',
+          sessionId: created.sessionId,
+          turnId: 'request-live',
+          timestamp: Date.now(),
+          type: 'user_message',
+          payload: { text: 'stream this reply' },
+        },
+        {
+          id: 'thinking-live',
+          sessionId: created.sessionId,
+          turnId: 'request-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'thinking_chunk',
+          payload: { text: 'Thinking…' },
+        },
+        {
+          id: 'assistant-live',
+          sessionId: created.sessionId,
+          turnId: 'request-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'assistant_chunk',
+          payload: { text: 'partial reply', phase: 'final_answer' },
+        },
+      ],
+    );
+    const bumpedSummary = await sessionHub.recordSessionActivity(created.sessionId, 'stream this reply');
+    expect(Math.max(0, bumpedSummary?.revision ?? 0)).toBeGreaterThan(liveRevision);
+
+    const result = (await plugin.operations?.events(
+      { sessionId: created.sessionId, force: true },
+      ctx,
+    )) as SessionReplayResponse;
+
+    try {
+      expect(result.revision).toBe(liveRevision);
+      expect(result.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            requestId: 'request-live',
+            kind: 'request_start',
+          }),
+          expect.objectContaining({
+            requestId: 'request-live',
+            kind: 'user_message',
+            chatEventType: 'user_message',
+            payload: expect.objectContaining({ text: 'stream this reply' }),
+          }),
+          expect.objectContaining({
+            requestId: 'request-live',
+            kind: 'thinking',
+            chatEventType: 'thinking_chunk',
+            responseId: 'resp-live',
+            payload: expect.objectContaining({ text: 'Thinking…' }),
+          }),
+          expect.objectContaining({
+            requestId: 'request-live',
+            kind: 'assistant_message',
+            chatEventType: 'assistant_chunk',
+            responseId: 'resp-live',
+            payload: expect.objectContaining({ text: 'partial reply' }),
+          }),
+        ]),
+      );
+      const sessionRootEntries = await fs.readdir(baseDir, { recursive: true });
+      const jsonlRelative = sessionRootEntries.find(
+        (entry) => typeof entry === 'string' && entry.endsWith('.jsonl'),
+      );
+      expect(jsonlRelative).toBeDefined();
+      const fileContent = await fs.readFile(path.join(baseDir, jsonlRelative as string), 'utf8');
+      expect(fileContent).not.toContain('assistant.assistant_chunk');
+      expect(fileContent).not.toContain('assistant.thinking_chunk');
+    } finally {
+      resetLiveTranscriptSessionState(created.sessionId);
+    }
   });
 
   it('requires a history provider for non-Pi replay', async () => {

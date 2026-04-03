@@ -1902,31 +1902,6 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (overlayEventType === 'assistant_chunk') {
-        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-        if (!text) {
-          continue;
-        }
-        const phase =
-          payload['phase'] === 'commentary' || payload['phase'] === 'final_answer'
-            ? payload['phase']
-            : undefined;
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
-        pushProjected({
-          timestamp,
-          requestId,
-          kind: 'assistant_message',
-          chatEventType: 'assistant_chunk',
-          payload: {
-            text,
-            ...(phase ? { phase } : {}),
-            ...(payload['interrupted'] === true ? { interrupted: true } : {}),
-          },
-          responseId: responseIdFromEntry || undefined,
-        });
-        continue;
-      }
-
       if (overlayEventType === 'assistant_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text.trim()) {
@@ -1967,23 +1942,6 @@ function buildProjectedTranscriptFromPiSession(
         continue;
       }
 
-      if (overlayEventType === 'thinking_chunk') {
-        const text = typeof payload['text'] === 'string' ? payload['text'] : '';
-        if (!text) {
-          continue;
-        }
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
-        pushProjected({
-          timestamp,
-          requestId,
-          kind: 'thinking',
-          chatEventType: 'thinking_chunk',
-          payload: { text },
-          responseId: responseIdFromEntry || undefined,
-        });
-        continue;
-      }
-
       if (overlayEventType === 'thinking_done') {
         const text = typeof payload['text'] === 'string' ? payload['text'] : '';
         if (!text) {
@@ -2010,37 +1968,6 @@ function buildProjectedTranscriptFromPiSession(
           responseId: responseIdFromEntry || undefined,
         });
         emittedThinkingDone.add(thinkingKey);
-        continue;
-      }
-
-      if (overlayEventType === 'tool_input_chunk' || overlayEventType === 'tool_output_chunk') {
-        const toolCallId = typeof payload['toolCallId'] === 'string' ? payload['toolCallId'] : '';
-        const toolName = typeof payload['toolName'] === 'string' ? payload['toolName'] : '';
-        const chunk = typeof payload['chunk'] === 'string' ? payload['chunk'] : '';
-        const offset =
-          typeof payload['offset'] === 'number' && Number.isFinite(payload['offset'])
-            ? payload['offset']
-            : 0;
-        if (!toolCallId || !chunk) {
-          continue;
-        }
-        resolveToolMeta(toolCallId, toolName, {});
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
-        pushProjected({
-          timestamp,
-          requestId,
-          kind: overlayEventType === 'tool_input_chunk' ? 'tool_input' : 'tool_output',
-          chatEventType: overlayEventType,
-          payload: {
-            toolCallId,
-            toolName,
-            chunk,
-            offset,
-            ...(typeof payload['stream'] === 'string' ? { stream: payload['stream'] } : {}),
-          },
-          responseId: responseIdFromEntry || undefined,
-          toolCallId,
-        });
         continue;
       }
 
@@ -3213,12 +3140,8 @@ function getAssistantOverlayEventType(customType: unknown): ChatEvent['type'] | 
     return null;
   }
   if (
-    eventType === 'assistant_chunk' ||
     eventType === 'assistant_done' ||
-    eventType === 'thinking_chunk' ||
     eventType === 'thinking_done' ||
-    eventType === 'tool_input_chunk' ||
-    eventType === 'tool_output_chunk' ||
     isOverlayChatEventType(eventType)
   ) {
     return eventType as ChatEvent['type'];

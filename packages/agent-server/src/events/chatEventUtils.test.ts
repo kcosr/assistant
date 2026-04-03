@@ -11,6 +11,7 @@ import {
   appendAndBroadcastChatEvents,
   emitInteractionPendingEvent,
   emitToolOutputChunkEvent,
+  getBufferedLiveTranscriptEvents,
   resetLiveTranscriptSessionState,
   seedLiveTranscriptSessionState,
   syncLiveTranscriptSessionStateFromPiHistory,
@@ -174,6 +175,57 @@ describe('chatEventUtils live broadcast behavior', () => {
         toolCallId: 'tool-1',
       },
     });
+  });
+
+  it('keeps Pi streaming chunks in the transient live overlay instead of persisting them', async () => {
+    const { sessionHub, broadcastToSession, appendAssistantEvent } = createSessionHub(
+      'pi',
+      'pi-transient-overlay',
+    );
+
+    await appendAndBroadcastChatEvents(
+      { sessionHub, sessionId: 'pi-transient-overlay' },
+      [
+        {
+          id: 'evt-thinking',
+          sessionId: 'pi-transient-overlay',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'thinking_chunk',
+          payload: { text: 'thinking' },
+        },
+        {
+          id: 'evt-assistant',
+          sessionId: 'pi-transient-overlay',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'assistant_chunk',
+          payload: { text: 'partial' },
+        },
+      ],
+    );
+
+    expect(appendAssistantEvent).not.toHaveBeenCalled();
+    expect(broadcastToSession).toHaveBeenCalledTimes(2);
+    expect(
+      getBufferedLiveTranscriptEvents({
+        sessionId: 'pi-transient-overlay',
+        revision: 1,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        requestId: 'req-live',
+        chatEventType: 'thinking_chunk',
+        sequence: 0,
+      }),
+      expect.objectContaining({
+        requestId: 'req-live',
+        chatEventType: 'assistant_chunk',
+        sequence: 1,
+      }),
+    ]);
   });
 
   it('keeps live transcript sequence stable across ordinary session revision changes', async () => {

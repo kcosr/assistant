@@ -374,8 +374,48 @@ const liveTranscriptStateBySession = new Map<
     revision: number;
     nextSequence: number;
     activeRequestId: string | null;
+    replayOverlay: ProjectedTranscriptEvent[];
   }
 >();
+
+function normalizeLiveTranscriptState(
+  state:
+    | {
+        revision: number;
+        nextSequence: number;
+        activeRequestId: string | null;
+        replayOverlay?: ProjectedTranscriptEvent[];
+      }
+    | undefined,
+): {
+  revision: number;
+  nextSequence: number;
+  activeRequestId: string | null;
+  replayOverlay: ProjectedTranscriptEvent[];
+} | null {
+  if (!state) {
+    return null;
+  }
+  return {
+    revision: Math.max(0, state.revision),
+    nextSequence: Math.max(0, state.nextSequence),
+    activeRequestId: state.activeRequestId ?? null,
+    replayOverlay: Array.isArray(state.replayOverlay) ? [...state.replayOverlay] : [],
+  };
+}
+
+function isTransientPiReplayEventType(eventType: ChatEvent['type']): boolean {
+  return (
+    eventType === 'assistant_chunk' ||
+    eventType === 'thinking_chunk' ||
+    eventType === 'tool_input_chunk' ||
+    eventType === 'tool_output_chunk'
+  );
+}
+
+function shouldPersistPiAssistantEvent(event: ChatEvent): boolean {
+  return !isTransientPiReplayEventType(event.type);
+}
 
 export function resetLiveTranscriptSessionState(sessionId: string): void {
   const trimmed = sessionId.trim();
@@ -395,11 +435,83 @@ export function seedLiveTranscriptSessionState(options: {
   if (!trimmed) {
     return;
   }
+  const existing = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(trimmed));
+  const preservedOverlay =
+    existing && existing.revision === Math.max(0, options.revision) ? existing.replayOverlay : [];
+  const highestOverlaySequence = preservedOverlay.reduce(
+    (highest, event) => Math.max(highest, event.sequence),
+    -1,
+  );
   liveTranscriptStateBySession.set(trimmed, {
     revision: Math.max(0, options.revision),
-    nextSequence: Math.max(0, options.nextSequence),
-    activeRequestId: options.activeRequestId ?? null,
+    nextSequence: Math.max(0, options.nextSequence, highestOverlaySequence + 1),
+    activeRequestId:
+      options.activeRequestId ??
+      (existing && existing.revision === Math.max(0, options.revision)
+        ? existing.activeRequestId
+        : null),
+    replayOverlay: preservedOverlay,
   });
+}
+
+export function getBufferedLiveTranscriptEvents(options: {
+  sessionId: string;
+  revision: number;
+}): ProjectedTranscriptEvent[] {
+  const trimmed = options.sessionId.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const state = liveTranscriptStateBySession.get(trimmed);
+  const normalized = normalizeLiveTranscriptState(state);
+  if (
+    !normalized ||
+    normalized.revision !== Math.max(0, options.revision) ||
+    normalized.replayOverlay.length === 0
+  ) {
+    return [];
+  }
+  return [...normalized.replayOverlay].sort((left, right) => left.sequence - right.sequence);
+}
+
+export function getActiveLiveTranscriptRevision(sessionId: string): number | undefined {
+  const trimmed = sessionId.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const state = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(trimmed));
+  if (!state) {
+    return undefined;
+  }
+  if (state.activeRequestId || state.replayOverlay.length > 0) {
+    return state.revision;
+  }
+  return undefined;
+}
+
+export function mergeBufferedLiveTranscriptEvents(options: {
+  sessionId: string;
+  revision: number;
+  events: ProjectedTranscriptEvent[];
+}): ProjectedTranscriptEvent[] {
+  const overlay = getBufferedLiveTranscriptEvents({
+    sessionId: options.sessionId,
+    revision: options.revision,
+  });
+  if (overlay.length === 0) {
+    return options.events;
+  }
+
+  const mergedBySequence = new Map<number, ProjectedTranscriptEvent>();
+  for (const event of options.events) {
+    mergedBySequence.set(event.sequence, event);
+  }
+  for (const event of overlay) {
+    if (!mergedBySequence.has(event.sequence)) {
+      mergedBySequence.set(event.sequence, event);
+    }
+  }
+  return [...mergedBySequence.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
 export async function syncLiveTranscriptSessionStateFromPiHistory(options: {
@@ -427,7 +539,7 @@ export async function syncLiveTranscriptSessionStateFromPiHistory(options: {
   }
 
   const revision = Math.max(0, latestSummary.revision ?? 0);
-  const existingState = liveTranscriptStateBySession.get(trimmed);
+  const existingState = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(trimmed));
   if (existingState && existingState.revision === revision) {
     return latestSummary;
   }
@@ -645,9 +757,10 @@ function broadcastProjectedTranscriptEvents(sessionHub: SessionHub, sessionId: s
   if (!events.length) {
     return;
   }
-  const liveState = liveTranscriptStateBySession.get(sessionId);
+  const liveState = normalizeLiveTranscriptState(liveTranscriptStateBySession.get(sessionId));
   const revision = liveState?.revision ?? getProjectedTranscriptRevision(sessionHub, sessionId);
-  const nextState = liveState ?? { revision, nextSequence: 0, activeRequestId: null as string | null };
+  const nextState =
+    liveState ?? { revision, nextSequence: 0, activeRequestId: null as string | null, replayOverlay: [] };
   const projected = buildLiveProjectedTranscriptEvents({
     sessionId,
     revision,
@@ -655,10 +768,30 @@ function broadcastProjectedTranscriptEvents(sessionHub: SessionHub, sessionId: s
     activeRequestId: nextState.activeRequestId,
     events,
   });
+  const replayOverlay = [...nextState.replayOverlay];
+  for (const [index, sourceEvent] of events.entries()) {
+    const projectedEvent = projected.events[index];
+    if (!projectedEvent) {
+      continue;
+    }
+    if (isTransientPiReplayEventType(sourceEvent.type)) {
+      const existingIndex = replayOverlay.findIndex((event) => event.sequence === projectedEvent.sequence);
+      if (existingIndex === -1) {
+        replayOverlay.push(projectedEvent);
+      } else {
+        replayOverlay[existingIndex] = projectedEvent;
+      }
+      continue;
+    }
+    if (sourceEvent.type === 'turn_end') {
+      replayOverlay.length = 0;
+    }
+  }
   liveTranscriptStateBySession.set(sessionId, {
     revision,
     nextSequence: projected.nextSequence,
     activeRequestId: projected.activeRequestId,
+    replayOverlay,
   });
   for (const event of projected.events) {
     const message: ServerMessage = {
@@ -720,6 +853,9 @@ export async function appendAndBroadcastChatEvents(
       const writer = sessionHub.getPiSessionWriter?.();
       if (writer) {
         for (const event of events) {
+          if (!shouldPersistPiAssistantEvent(event)) {
+            continue;
+          }
           if (event.type === 'turn_start' || event.type === 'turn_end') {
             continue;
           }
