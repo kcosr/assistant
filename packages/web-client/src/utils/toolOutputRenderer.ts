@@ -77,6 +77,12 @@ interface ToolInputPreview {
   rawJson?: string;
 }
 
+interface ToolResultPreview {
+  formattedText: string;
+  renderMode: 'raw' | 'markdown' | 'code';
+  language?: string;
+}
+
 interface ToolOutputBlockState {
   readonly headerButton: HTMLButtonElement;
   readonly toggleIcon: HTMLSpanElement;
@@ -147,6 +153,69 @@ function formatReadLabel(args: Record<string, unknown>): string {
   return `${rawPath}:${startLine}${endLine ? `-${endLine}` : ''}`;
 }
 
+function inferLanguageFromPath(filePath: string): string | undefined {
+  const lower = filePath.trim().toLowerCase();
+  if (!lower) {
+    return undefined;
+  }
+  if (lower.endsWith('.ts') || lower.endsWith('.tsx')) {
+    return 'typescript';
+  }
+  if (lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) {
+    return 'javascript';
+  }
+  if (lower.endsWith('.json')) {
+    return 'json';
+  }
+  if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+    return 'markdown';
+  }
+  if (lower.endsWith('.py')) {
+    return 'python';
+  }
+  if (lower.endsWith('.yml') || lower.endsWith('.yaml')) {
+    return 'yaml';
+  }
+  if (lower.endsWith('.css')) {
+    return 'css';
+  }
+  if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+    return 'xml';
+  }
+  if (lower.endsWith('.xml') || lower.endsWith('.svg')) {
+    return 'xml';
+  }
+  if (lower.endsWith('.sql')) {
+    return 'sql';
+  }
+  if (
+    lower.endsWith('.sh') ||
+    lower.endsWith('.bash') ||
+    lower.endsWith('.zsh')
+  ) {
+    return 'bash';
+  }
+  return undefined;
+}
+
+function formatEditPreview(oldText: string, newText: string): string {
+  const removed = oldText.split('\n').map((line) => `-${line}`);
+  const added = newText.split('\n').map((line) => `+${line}`);
+  return [...removed, ...added].join('\n');
+}
+
+function tryParseJsonRecord(rawJson: string | undefined): Record<string, unknown> | null {
+  if (!rawJson || rawJson.trim().length === 0) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(rawJson) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function getToolInputPreview(toolName: string, argsJson: string): ToolInputPreview {
   const parsed = tryParseToolArgs(argsJson);
   if (!parsed) {
@@ -210,6 +279,23 @@ function getToolInputPreview(toolName: string, argsJson: string): ToolInputPrevi
     }
   }
 
+  if (
+    toolName === 'edit' &&
+    typeof args['path'] === 'string' &&
+    typeof args['oldText'] === 'string' &&
+    typeof args['newText'] === 'string'
+  ) {
+    return {
+      headerLabel: args['path'],
+      label: 'Change',
+      formattedText: formatEditPreview(args['oldText'], args['newText']),
+      renderMode: 'code',
+      language: 'diff',
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
+
   if (toolName === 'edit' && typeof args['path'] === 'string') {
     return {
       headerLabel: args['path'],
@@ -255,6 +341,63 @@ function getToolInputPreview(toolName: string, argsJson: string): ToolInputPrevi
     ...(prettyJson ? { prettyJson } : {}),
     ...(rawJson ? { rawJson } : {}),
   };
+}
+
+function getToolResultPreview(options: {
+  toolName: string;
+  outputText: string;
+  outputStatus?: ToolOutputStatus;
+  argsJson?: string;
+}): ToolResultPreview | null {
+  const { toolName, outputText, outputStatus, argsJson } = options;
+  const parsedArgs = argsJson ? tryParseToolArgs(argsJson) : null;
+  const parsedResult = tryParseJsonRecord(outputStatus?.rawJson);
+  const details = parsedResult && isRecord(parsedResult['details']) ? parsedResult['details'] : null;
+
+  if (toolName === 'edit') {
+    const diff = typeof details?.['diff'] === 'string' ? details['diff'] : '';
+    if (diff.trim().length > 0) {
+      return {
+        formattedText: diff,
+        renderMode: 'code',
+        language: 'diff',
+      };
+    }
+  }
+
+  if (toolName === 'read') {
+    const readPath =
+      parsedArgs && typeof parsedArgs.args['path'] === 'string' ? parsedArgs.args['path'] : '';
+    const readLanguage = readPath ? inferLanguageFromPath(readPath) : undefined;
+    return {
+      formattedText: outputText,
+      renderMode: 'code',
+      ...(readLanguage ? { language: readLanguage } : {}),
+    };
+  }
+
+  if (toolName === 'bash' || toolName === 'shell' || toolName === 'sh') {
+    return {
+      formattedText: outputText,
+      renderMode: 'code',
+    };
+  }
+
+  if (toolName === 'find' || toolName === 'grep' || toolName === 'ls') {
+    return {
+      formattedText: outputText,
+      renderMode: 'code',
+    };
+  }
+
+  if (toolName === 'write') {
+    return {
+      formattedText: outputText,
+      renderMode: 'raw',
+    };
+  }
+
+  return null;
 }
 
 function getToolCallGroupStatusLabel(state: ToolCallGroupState): string {
@@ -707,8 +850,14 @@ function renderToolOutputResult(state: ToolOutputBlockState): void {
 
   const isMarkdownResult = toolName === 'notes_read' || toolName === 'notes_show';
   const isAgentMessage = toolName === 'agents_message';
-  const isBashTool = toolName === 'bash' || toolName === 'shell' || toolName === 'sh';
   const useStreamingPlainText = canUseStreamingPlainTextOutput(status, toolName);
+  const argsJson = state.input.kind === 'formatted' ? state.input.argsJson : undefined;
+  const resultPreview = getToolResultPreview({
+    toolName,
+    outputText: trimmed,
+    ...(status ? { outputStatus: status } : {}),
+    ...(argsJson ? { argsJson } : {}),
+  });
 
   if (useStreamingPlainText) {
     const pre = document.createElement('pre');
@@ -723,11 +872,24 @@ function renderToolOutputResult(state: ToolOutputBlockState): void {
     outputBody.classList.add('markdown-content');
     formattedMarkdown = trimmed;
     applyMarkdownToElement(outputBody, formattedMarkdown);
+  } else if (resultPreview?.renderMode === 'raw') {
+    const pre = document.createElement('pre');
+    pre.className = 'tool-output-streaming-pre';
+    pre.textContent = resultPreview.formattedText;
+    outputBody.appendChild(pre);
+    formattedMarkdown = resultPreview.formattedText;
+  } else if (resultPreview?.renderMode === 'code') {
+    outputBody.classList.add('markdown-content');
+    formattedMarkdown = resultPreview.language
+      ? `\`\`\`${resultPreview.language}\n${resultPreview.formattedText}\n\`\`\``
+      : `\`\`\`\n${resultPreview.formattedText}\n\`\`\``;
+    applyMarkdownToElement(outputBody, formattedMarkdown);
+  } else if (resultPreview?.renderMode === 'markdown') {
+    outputBody.classList.add('markdown-content');
+    formattedMarkdown = resultPreview.formattedText;
+    applyMarkdownToElement(outputBody, formattedMarkdown);
   } else {
-    const language = isBashTool ? 'bash' : undefined;
-    formattedMarkdown = language
-      ? `\`\`\`${language}\n${trimmed}\n\`\`\``
-      : `\`\`\`\n${trimmed}\n\`\`\``;
+    formattedMarkdown = `\`\`\`\n${trimmed}\n\`\`\``;
     applyMarkdownToElement(outputBody, formattedMarkdown);
   }
 

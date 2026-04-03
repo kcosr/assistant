@@ -3380,6 +3380,144 @@ describe('ChatRenderer', () => {
     expect(toolBlock.querySelector('.tool-output-output-body')).toBeNull();
   });
 
+  it('renders bash tool results from output content instead of echoing the command', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-bash-output',
+          toolName: 'bash',
+          args: { command: 'printf "abc\\n"' },
+        },
+      }),
+    );
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-bash-output',
+          result: {
+            content: [{ type: 'text', text: 'abc\n' }],
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-bash-output"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('abc');
+    expect(outputBody?.textContent).not.toContain('printf');
+  });
+
+  it('renders read tool results as file content', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-read-output',
+          toolName: 'read',
+          args: { path: 'src/example.ts' },
+        },
+      }),
+    );
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-read-output',
+          result: {
+            content: [{ type: 'text', text: 'const value = 1;\n' }],
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-read-output"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const inputBody = toolBlock.querySelector<HTMLElement>('.tool-output-input-body');
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(inputBody?.textContent).toContain('src/example.ts');
+    expect(outputBody?.textContent).toContain('const value = 1;');
+  });
+
+  it('renders edit tool results as a diff instead of the success summary', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-edit-output',
+          toolName: 'edit',
+          args: { path: 'a.txt', oldText: 'world', newText: 'planet' },
+        },
+      }),
+    );
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-edit-output',
+          result: {
+            content: [{ type: 'text', text: 'Successfully replaced text in a.txt.' }],
+            details: {
+              diff: ' 1 hello\n-2 world\n+2 planet',
+              firstChangedLine: 2,
+            },
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-edit-output"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    const header = toolBlock.querySelector<HTMLButtonElement>('.tool-output-header');
+    header?.click();
+
+    const inputBody = toolBlock.querySelector<HTMLElement>('.tool-output-input-body');
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(inputBody?.textContent).toContain('-world');
+    expect(inputBody?.textContent).toContain('+planet');
+    expect(outputBody?.textContent).toContain('-2 world');
+    expect(outputBody?.textContent).toContain('+2 planet');
+    expect(outputBody?.textContent).not.toContain('Successfully replaced text');
+  });
+
   it('keeps inline tool interactions across collapse and expand', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
