@@ -154,5 +154,5 @@ Delete a session.
 | `sessions_events`             | Fetch session events        |
 | `sessions_message`            | Send a message to a session |
 | `sessions_clear`              | Clear session history       |
-| `sessions_history-edit`       | Edit Pi-backed session history at turn boundaries |
+| `sessions_history-edit`       | Edit Pi-backed session history at request boundaries |
 | `sessions_delete`             | Delete a session            |
