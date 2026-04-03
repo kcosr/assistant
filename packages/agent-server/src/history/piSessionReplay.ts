@@ -6,7 +6,6 @@ import path from 'node:path';
 import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
-import { getAgentCallbackText } from '../chatEventText';
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
@@ -22,18 +21,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
-}
-
-function getAssistantOverlayEventType(customType: unknown): string {
-  const trimmed = getString(customType).trim();
-  if (!trimmed.startsWith('assistant.')) {
-    return '';
-  }
-  const eventType = trimmed.slice('assistant.'.length);
-  if (!eventType || eventType === 'request_start' || eventType === 'request_end') {
-    return '';
-  }
-  return eventType;
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -203,373 +190,12 @@ function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletion
   return resolved;
 }
 
-function extractInterruptedTurnIds(entries: Array<Record<string, unknown>>): Set<string> {
-  const interruptedTurnIds = new Set<string>();
-  for (const entry of entries) {
-    if (getString(entry['type']) !== 'custom') {
-      continue;
-    }
-    if (getString(entry['customType']) !== 'assistant.request_end') {
-      continue;
-    }
-    const data = isRecord(entry['data']) ? entry['data'] : null;
-    if (!data) {
-      continue;
-    }
-    const turnId = getString(data['requestId']).trim();
-    const status = getString(data['status']).trim();
-    if (turnId && status === 'interrupted') {
-      interruptedTurnIds.add(turnId);
-    }
-  }
-  return interruptedTurnIds;
-}
-
-type CanonicalReplayCoverage = {
-  users: Array<{
-    text: string;
-    historyTimestampMs?: number;
-  }>;
-  callbackInputTexts: Set<string>;
-  toolCallIds: Set<string>;
-  toolResultIds: Set<string>;
-};
-
-function collectAssistantToolCallIds(message: Record<string, unknown>): string[] {
-  const ids: string[] = [];
-  const content = message['content'];
-  if (Array.isArray(content)) {
-    for (const block of content) {
-      if (!isRecord(block)) {
-        continue;
-      }
-      const type = getString(block['type']).trim().toLowerCase();
-      if (type !== 'toolcall' && type !== 'tool_call') {
-        continue;
-      }
-      const id = getString(block['id']).trim() || getString(block['toolCallId']).trim();
-      if (id) {
-        ids.push(id);
-      }
-    }
-  }
-  const toolCalls = message['tool_calls'];
-  if (Array.isArray(toolCalls)) {
-    for (const block of toolCalls) {
-      if (!isRecord(block)) {
-        continue;
-      }
-      const id = getString(block['id']).trim() || getString(block['toolCallId']).trim();
-      if (id) {
-        ids.push(id);
-      }
-    }
-  }
-  return ids;
-}
-
-function collectCanonicalReplayCoverage(
-  entries: Array<Record<string, unknown>>,
-): CanonicalReplayCoverage {
-  const users: CanonicalReplayCoverage['users'] = [];
-  const callbackInputTexts = new Set<string>();
-  const toolCallIds = new Set<string>();
-  const toolResultIds = new Set<string>();
-
-  for (const entry of entries) {
-    const message = entry['type'] === 'message' && isRecord(entry['message']) ? entry['message'] : null;
-    if (!message) {
-      continue;
-    }
-
-    const role = getString(message['role']);
-    if (role === 'user') {
-      const text = extractMessageText(message);
-      if (!text) {
-        continue;
-      }
-      const meta = toUserMetaFromMessage(message);
-      const historyTimestampMs = resolveTimestamp(message, entry);
-      users.push({
-        text,
-        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-      });
-      if (meta?.source === 'callback') {
-        callbackInputTexts.add(text);
-      }
-      continue;
-    }
-
-    if (role === 'assistant') {
-      for (const id of collectAssistantToolCallIds(message)) {
-        toolCallIds.add(id);
-      }
-      continue;
-    }
-
-    if (role === 'toolResult' || role === 'tool_result') {
-      const toolCallId = getString(message['toolCallId']).trim();
-      if (toolCallId) {
-        toolResultIds.add(toolCallId);
-      }
-    }
-  }
-
-  return {
-    users,
-    callbackInputTexts,
-    toolCallIds,
-    toolResultIds,
-  };
-}
-
-function hasMatchingCanonicalUserMessage(
-  coverage: CanonicalReplayCoverage,
-  text: string,
-  historyTimestampMs?: number,
-): boolean {
-  if (!text) {
-    return false;
-  }
-  if (historyTimestampMs === undefined) {
-    return coverage.users.some((entry) => entry.text === text);
-  }
-  return coverage.users.some(
-    (entry) =>
-      entry.text === text &&
-      entry.historyTimestampMs !== undefined &&
-      Math.abs(entry.historyTimestampMs - historyTimestampMs) <= 1000,
-  );
-}
-
 export function buildCanonicalPiReplayMessages(content: string): ChatCompletionMessage[] {
   const entries = parseJsonLines(content);
   const messages: ChatCompletionMessage[] = [];
-  const interruptedTurnIds = extractInterruptedTurnIds(entries);
-  const canonicalCoverage = collectCanonicalReplayCoverage(entries);
-  let openAssistantToolCallResponseId: string | null = null;
-  const pendingInterruptedToolCallsByTurn = new Map<string, Set<string>>();
-
-  const closeOpenAssistantToolCalls = (): void => {
-    openAssistantToolCallResponseId = null;
-  };
-
-  const markPendingInterruptedToolCall = (turnId: string, toolCallId: string): void => {
-    const pending = pendingInterruptedToolCallsByTurn.get(turnId);
-    if (pending) {
-      pending.add(toolCallId);
-      return;
-    }
-    pendingInterruptedToolCallsByTurn.set(turnId, new Set([toolCallId]));
-  };
-
-  const clearPendingInterruptedToolCall = (turnId: string, toolCallId: string): void => {
-    const pending = pendingInterruptedToolCallsByTurn.get(turnId);
-    if (!pending) {
-      return;
-    }
-    pending.delete(toolCallId);
-    if (pending.size === 0) {
-      pendingInterruptedToolCallsByTurn.delete(turnId);
-    }
-  };
-
-  const flushPendingInterruptedToolCalls = (
-    turnId: string,
-    historyTimestampMs?: number,
-  ): void => {
-    const pending = pendingInterruptedToolCallsByTurn.get(turnId);
-    if (!pending || pending.size === 0) {
-      return;
-    }
-    closeOpenAssistantToolCalls();
-    for (const toolCallId of pending) {
-      messages.push({
-        role: 'tool',
-        tool_call_id: toolCallId,
-        content: JSON.stringify({
-          ok: false,
-          error: {
-            code: 'tool_interrupted',
-            message: 'Tool call was interrupted before a result was recorded.',
-          },
-        }),
-        ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-      });
-    }
-    pendingInterruptedToolCallsByTurn.delete(turnId);
-  };
-
-  const appendInterruptedToolCall = (options: {
-    toolCallId: string;
-    toolName: string;
-    args: Record<string, unknown>;
-    responseId?: string;
-    historyTimestampMs?: number;
-  }): void => {
-    const { toolCallId, toolName, args, responseId, historyTimestampMs } = options;
-    const toolCall = {
-      id: toolCallId,
-      type: 'function' as const,
-      function: {
-        name: toolName,
-        arguments: JSON.stringify(args),
-      },
-    };
-    const lastMessage = messages[messages.length - 1];
-    if (
-      lastMessage?.role === 'assistant' &&
-      Array.isArray(lastMessage.tool_calls) &&
-      openAssistantToolCallResponseId === (responseId ?? null)
-    ) {
-      lastMessage.tool_calls.push(toolCall);
-      return;
-    }
-    messages.push({
-      role: 'assistant',
-      content: '',
-      tool_calls: [toolCall],
-      ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-    });
-    openAssistantToolCallResponseId = responseId ?? null;
-  };
 
   for (const entry of entries) {
     const entryType = getString(entry['type']);
-    if (entryType === 'custom') {
-      const overlayEventType = getAssistantOverlayEventType(entry['customType']);
-      if (!overlayEventType) {
-        continue;
-      }
-      const data = isRecord(entry['data']) ? entry['data'] : null;
-      if (!data) {
-        continue;
-      }
-      const turnId = getString(data['turnId']).trim();
-      const payload = isRecord(data['payload']) ? data['payload'] : null;
-      const responseId = getString(data['responseId']).trim() || undefined;
-
-      if (!payload) {
-        continue;
-      }
-
-      if (overlayEventType === 'agent_callback') {
-        closeOpenAssistantToolCalls();
-        const historyTimestampMs = resolveTimestamp(entry);
-        const text =
-          getAgentCallbackText({
-            type: 'agent_callback',
-            payload: {
-              result: getString(payload['result']),
-              ...(isNonEmptyString(payload['fromAgentId'])
-                ? { fromAgentId: getString(payload['fromAgentId']).trim() }
-                : {}),
-            },
-          } as Parameters<typeof getAgentCallbackText>[0]) ?? '';
-        if (!text) {
-          continue;
-        }
-        if (canonicalCoverage.callbackInputTexts.has(text)) {
-          continue;
-        }
-        if (hasMatchingCanonicalUserMessage(canonicalCoverage, text, historyTimestampMs)) {
-          continue;
-        }
-        messages.push({
-          role: 'user',
-          content: text,
-          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-          meta: {
-            source: 'callback',
-            ...(isNonEmptyString(payload['fromAgentId'])
-              ? { fromAgentId: getString(payload['fromAgentId']).trim() }
-              : {}),
-            ...(isNonEmptyString(payload['fromSessionId'])
-              ? { fromSessionId: getString(payload['fromSessionId']).trim() }
-              : {}),
-            visibility: 'visible',
-          },
-        });
-        continue;
-      }
-
-      if (!turnId || !interruptedTurnIds.has(turnId)) {
-        continue;
-      }
-
-      const historyTimestampMs = resolveTimestamp(entry);
-
-      if (overlayEventType === 'user_message' || overlayEventType === 'user_audio') {
-        closeOpenAssistantToolCalls();
-        const text =
-          getString(payload['text']).trim() || getString(payload['transcription']).trim();
-        if (!text) {
-          continue;
-        }
-        if (hasMatchingCanonicalUserMessage(canonicalCoverage, text, historyTimestampMs)) {
-          continue;
-        }
-        messages.push({
-          role: 'user',
-          content: text,
-          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-        });
-        continue;
-      }
-
-      if (overlayEventType === 'tool_call') {
-        const toolCallId = getString(payload['toolCallId']).trim();
-        const toolName = getString(payload['toolName']).trim();
-        const args = isRecord(payload['args']) ? payload['args'] : {};
-        if (!toolCallId || !toolName) {
-          continue;
-        }
-        if (canonicalCoverage.toolCallIds.has(toolCallId)) {
-          continue;
-        }
-        appendInterruptedToolCall({
-          toolCallId,
-          toolName,
-          args,
-          ...(responseId ? { responseId } : {}),
-          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-        });
-        markPendingInterruptedToolCall(turnId, toolCallId);
-        continue;
-      }
-
-      if (overlayEventType === 'tool_result') {
-        closeOpenAssistantToolCalls();
-        const toolCallId = getString(payload['toolCallId']).trim();
-        if (!toolCallId) {
-          continue;
-        }
-        clearPendingInterruptedToolCall(turnId, toolCallId);
-        if (canonicalCoverage.toolResultIds.has(toolCallId)) {
-          continue;
-        }
-        const error = isRecord(payload['error']) ? payload['error'] : undefined;
-        const result = payload['result'];
-        messages.push({
-          role: 'tool',
-          tool_call_id: toolCallId,
-          content: JSON.stringify({
-            ok: !error,
-            result,
-            error,
-          }),
-          ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
-        });
-        continue;
-      }
-
-      if (overlayEventType === 'interrupt') {
-        flushPendingInterruptedToolCalls(turnId, historyTimestampMs);
-      }
-
-      continue;
-    }
-
     const message = entryType === 'message' && isRecord(entry['message']) ? entry['message'] : null;
     if (!message) {
       continue;
@@ -577,7 +203,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
 
     const role = getString(message['role']);
     if (role === 'user') {
-      closeOpenAssistantToolCalls();
       const text = extractMessageText(message);
       if (!text) {
         continue;
@@ -594,7 +219,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
     }
 
     if (role === 'assistant') {
-      closeOpenAssistantToolCalls();
       const piSdkMessage = message as unknown as PiSdkMessage;
       const blocks = extractAssistantTextBlocksFromPiMessage(piSdkMessage);
       const finalAnswerTexts = blocks
@@ -616,7 +240,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
     }
 
     if (role === 'toolResult' || role === 'tool_result') {
-      closeOpenAssistantToolCalls();
       const toolCallId = getString(message['toolCallId']);
       if (!toolCallId) {
         continue;
@@ -633,10 +256,6 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
         ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
       });
     }
-  }
-
-  for (const [turnId] of pendingInterruptedToolCallsByTurn) {
-    flushPendingInterruptedToolCalls(turnId);
   }
 
   return messages;
