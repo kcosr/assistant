@@ -88,4 +88,33 @@ describe('transcriptProjection', () => {
     expect(sliced.reset).toBe(true);
     expect(sliced.nextCursor).toBeUndefined();
   });
+
+  it('prefers explicit exchangeId for agent message correlation', () => {
+    const projected = projectTranscriptEvents({
+      sessionId: 'session-1',
+      revision: 3,
+      events: [
+        {
+          id: 'agent-msg',
+          timestamp: 1000,
+          sessionId: 'session-1',
+          turnId: 'request-1',
+          type: 'agent_message',
+          payload: {
+            messageId: 'message-1',
+            exchangeId: 'exchange-1',
+            targetAgentId: 'agent-b',
+            targetSessionId: 'session-b',
+            message: 'hello',
+            wait: false,
+          },
+        },
+      ],
+    });
+
+    expect(projected[0]).toMatchObject({
+      messageId: 'message-1',
+      exchangeId: 'exchange-1',
+    });
+  });
 });

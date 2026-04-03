@@ -462,6 +462,7 @@ interface AsyncAgentMessageContext {
   sessionId: string;
   sessionState: Awaited<ReturnType<SessionHub['ensureSessionState']>>;
   content: string;
+  exchangeId: string;
   responseId: string;
   messageId: string;
   fromSessionId: string | undefined;
@@ -495,6 +496,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     sessionId,
     sessionState,
     content,
+    exchangeId,
     responseId,
     messageId,
     fromSessionId,
@@ -532,6 +534,7 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
           agentMessageContext: {
             fromSessionId,
             ...(fromAgentId ? { fromAgentId } : {}),
+            exchangeId,
             responseId,
           },
         }
@@ -662,9 +665,11 @@ async function executeAsyncAgentMessage(ctx: AsyncAgentMessageContext): Promise<
     const callbackAgentMessageContext = {
       fromSessionId: sessionId,
       ...(agent.agentId ? { fromAgentId: agent.agentId } : {}),
+      exchangeId,
       responseId: result.responseId,
       callbackEvent: {
         messageId,
+        exchangeId,
         ...(agent.agentId ? { fromAgentId: agent.agentId } : {}),
         fromSessionId: sessionId,
         result: text,
@@ -760,6 +765,7 @@ export async function handleAgentMessage(
 
   const fromSessionId = ctx.sessionId;
   const fromAgentId = await getCurrentAgentIdFromContext(ctx, sessionIndex);
+  const exchangeId = randomUUID();
   const messageId = randomUUID();
 
   let resolved;
@@ -804,6 +810,7 @@ export async function handleAgentMessage(
         type: 'agent_message',
         payload: {
           messageId,
+          exchangeId,
           targetAgentId: agent.agentId,
           targetSessionId: sessionId,
           message: parsed.content,
@@ -902,6 +909,7 @@ export async function handleAgentMessage(
       sessionId,
       sessionState,
       content: parsed.content,
+      exchangeId,
       responseId,
       messageId,
       fromSessionId,
@@ -945,6 +953,7 @@ export async function handleAgentMessage(
         mode: 'async' as const,
         status: 'queued' as const,
         responseId,
+        exchangeId,
         messageId,
       };
     }
@@ -954,6 +963,7 @@ export async function handleAgentMessage(
       mode: 'sync' as const,
       status: 'queued' as const,
       responseId,
+      exchangeId,
       messageId,
     };
   }
@@ -965,6 +975,7 @@ export async function handleAgentMessage(
       sessionId,
       sessionState,
       content: parsed.content,
+      exchangeId,
       responseId,
       messageId,
       fromSessionId,
@@ -1000,6 +1011,7 @@ export async function handleAgentMessage(
       mode: 'async' as const,
       status: 'started' as const,
       responseId,
+      exchangeId,
       messageId,
     };
   }
@@ -1034,6 +1046,7 @@ export async function handleAgentMessage(
       agentMessageContext: {
         fromSessionId,
         ...(fromAgentId ? { fromAgentId } : {}),
+        exchangeId,
       },
       ...(eventStore ? { eventStore } : {}),
       externalAbortSignal: timeoutController.signal,
@@ -1068,6 +1081,7 @@ export async function handleAgentMessage(
       mode: 'sync' as const,
       status: 'complete' as const,
       responseId: result.responseId,
+      exchangeId,
       response: result.response,
       truncated: result.truncated,
       durationMs: result.durationMs,

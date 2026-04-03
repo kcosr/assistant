@@ -321,6 +321,7 @@ export type ToolOutputChunkPayload = z.infer<typeof ToolOutputChunkPayloadSchema
 
 export const AgentMessagePayloadSchema = z.object({
   messageId: z.string(),
+  exchangeId: z.string().optional(),
   targetAgentId: z.string(),
   targetSessionId: z.string(),
   message: z.string(),
@@ -330,6 +331,7 @@ export type AgentMessagePayload = z.infer<typeof AgentMessagePayloadSchema>;
 
 export const AgentCallbackPayloadSchema = z.object({
   messageId: z.string(),
+  exchangeId: z.string().optional(),
   fromAgentId: z.string(),
   fromSessionId: z.string(),
   result: z.string(),

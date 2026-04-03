@@ -1686,6 +1686,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
 
       if (chatEventType === 'agent_callback' && payload) {
         const messageId = getString(payload['messageId']) || randomUUID();
+        const exchangeId = getString(payload['exchangeId']);
         const fromAgentId = getString(payload['fromAgentId']);
         const fromSessionId = getString(payload['fromSessionId']);
         const result = getString(payload['result']);
@@ -1702,6 +1703,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
           type: 'agent_callback',
           payload: {
             messageId,
+            ...(exchangeId ? { exchangeId } : {}),
             fromAgentId: fromAgentId || 'unknown',
             fromSessionId,
             result,
@@ -1862,6 +1864,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         }
 
         if (kind === 'callback') {
+          const exchangeId = getString(entry['agentExchangeId']);
           const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(entry);
           if (!currentTurnId || !currentTurnExplicit) {
             endTurn(timestamp);
@@ -1875,6 +1878,7 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
             type: 'agent_message',
             payload: {
               messageId: getString(entry['id']) || randomUUID(),
+              ...(exchangeId ? { exchangeId } : {}),
               targetAgentId: 'callback',
               targetSessionId: sessionId,
               message: text,

@@ -199,7 +199,9 @@ function extractStableIds(event: ChatEvent): Partial<ProjectedTranscriptEvent> {
     case 'agent_callback':
       return {
         messageId: event.payload.messageId,
-        exchangeId: event.payload.messageId,
+        ...(typeof event.payload.exchangeId === 'string' && event.payload.exchangeId.trim().length > 0
+          ? { exchangeId: event.payload.exchangeId }
+          : { exchangeId: event.payload.messageId }),
       };
     default:
       return {};

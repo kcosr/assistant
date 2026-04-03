@@ -176,9 +176,11 @@ export interface ChatProcessorOptions {
   agentMessageContext?: {
     fromSessionId: string;
     fromAgentId?: string;
+    exchangeId?: string;
     responseId?: string;
     callbackEvent?: {
       messageId: string;
+      exchangeId?: string;
       fromAgentId?: string;
       fromSessionId: string;
       result: string;
@@ -280,7 +282,7 @@ export async function processUserMessage(
   const startTime = Date.now();
   const responseId = options.responseId ?? randomUUID();
   const requestId = requestIdOption ?? responseId;
-  const agentExchangeId = agentMessageContext?.responseId;
+  const agentExchangeId = agentMessageContext?.exchangeId ?? agentMessageContext?.responseId;
 
   console.log('[chatProcessor] processUserMessage start', {
     sessionId,
@@ -320,6 +322,9 @@ export async function processUserMessage(
           eventType: 'agent_callback',
           payload: {
             messageId: agentMessageContext.callbackEvent.messageId,
+            ...(agentMessageContext.callbackEvent.exchangeId
+              ? { exchangeId: agentMessageContext.callbackEvent.exchangeId }
+              : {}),
             ...(agentMessageContext.callbackEvent.fromAgentId
               ? { fromAgentId: agentMessageContext.callbackEvent.fromAgentId }
               : {}),
@@ -363,6 +368,9 @@ export async function processUserMessage(
         type: 'agent_callback',
         payload: {
           messageId: agentMessageContext.callbackEvent.messageId,
+          ...(agentMessageContext.callbackEvent.exchangeId
+            ? { exchangeId: agentMessageContext.callbackEvent.exchangeId }
+            : {}),
           fromAgentId: agentMessageContext.callbackEvent.fromAgentId ?? 'unknown',
           fromSessionId: agentMessageContext.callbackEvent.fromSessionId,
           result: agentMessageContext.callbackEvent.result,
