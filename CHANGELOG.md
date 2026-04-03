@@ -15,6 +15,7 @@
 - Added inline attachment copy actions for `attachment_send`, including plain-text copy and markdown plain/raw copy dropdowns in attachment bubbles.
 - Added an animated activity bar above chat inputs while a bound session is busy.
 - Added inline thumbnail previews and open actions for image attachments sent through `attachment_send`.
+- Added in-app overlay viewing for inline image attachments, including thumbnail tap-to-open and a close button.
 - Added rooted per-agent `contextFiles` prompt injection with config-relative roots, root-confined glob includes, startup preload caching, fail-fast file validation, and system-prompt insertion after instruction skills.
 - Added Android native voice `TTS gain` settings with a 25%-500% playback control, Android PCM software gain, runtime gain reporting, and an Android source-tree `android:test` entrypoint that syncs Capacitor before Gradle tests. ([#87](https://github.com/kcosr/assistant/pull/87))
 - Added Android native recognition cues with configurable cue gain and startup pre-roll settings, persistent notification toggles for media-button capture and `Off/Tool/Response` voice mode cycling, and a local spoken `stop` abort path. ([#89](https://github.com/kcosr/assistant/pull/89))

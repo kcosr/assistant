@@ -213,6 +213,8 @@ export class ChatRenderer {
   >();
   private readonly projectedTranscriptEvents = new Map<number, ProjectedTranscriptEvent>();
   private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
+  private attachmentImageViewerOverlay: HTMLDivElement | null = null;
+  private attachmentImageViewerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
   // Track text segment index per response.
   private readonly textSegmentIndex = new Map<string, number>();
   private readonly needsNewTextSegment = new Set<string>();
@@ -3167,6 +3169,78 @@ export class ChatRenderer {
     });
   }
 
+  private closeAttachmentImageViewer(): void {
+    this.attachmentImageViewerOverlay?.remove();
+    this.attachmentImageViewerOverlay = null;
+    if (this.attachmentImageViewerEscapeHandler) {
+      document.removeEventListener('keydown', this.attachmentImageViewerEscapeHandler);
+      this.attachmentImageViewerEscapeHandler = null;
+    }
+  }
+
+  private openAttachmentImageViewer(attachment: AttachmentDescriptor): void {
+    const resolvedUrl = resolveAttachmentUrl(getAttachmentContentUrl(attachment.downloadUrl));
+    if (!resolvedUrl) {
+      return;
+    }
+
+    this.closeAttachmentImageViewer();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-dialog-overlay attachment-image-viewer-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'attachment-image-viewer-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-label', attachment.title || attachment.fileName);
+
+    const header = document.createElement('div');
+    header.className = 'attachment-image-viewer-header';
+
+    const title = document.createElement('div');
+    title.className = 'attachment-image-viewer-title';
+    title.textContent = attachment.title || attachment.fileName;
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'attachment-image-viewer-close';
+    closeButton.setAttribute('aria-label', 'Close image preview');
+    closeButton.textContent = 'Close';
+    closeButton.addEventListener('click', () => {
+      this.closeAttachmentImageViewer();
+    });
+
+    const body = document.createElement('div');
+    body.className = 'attachment-image-viewer-body';
+
+    const image = document.createElement('img');
+    image.className = 'attachment-image-viewer-image';
+    image.src = resolvedUrl;
+    image.alt = attachment.title || attachment.fileName;
+
+    body.appendChild(image);
+    header.append(title, closeButton);
+    dialog.append(header, body);
+    overlay.appendChild(dialog);
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        this.closeAttachmentImageViewer();
+      }
+    });
+
+    this.attachmentImageViewerEscapeHandler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeAttachmentImageViewer();
+      }
+    };
+    document.addEventListener('keydown', this.attachmentImageViewerEscapeHandler);
+    document.body.appendChild(overlay);
+    this.attachmentImageViewerOverlay = overlay;
+    closeButton.focus();
+  }
+
   private renderAttachmentPreviewContent(
     previewEl: HTMLDivElement,
     attachment: AttachmentDescriptor,
@@ -3184,6 +3258,18 @@ export class ChatRenderer {
       image.src = resolveAttachmentUrl(getAttachmentContentUrl(attachment.downloadUrl));
       image.alt = attachment.title || attachment.fileName;
       image.loading = 'lazy';
+      image.tabIndex = 0;
+      image.role = 'button';
+      image.setAttribute('aria-label', `Open ${attachment.title || attachment.fileName}`);
+      image.addEventListener('click', () => {
+        this.openAttachmentImageViewer(attachment);
+      });
+      image.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          this.openAttachmentImageViewer(attachment);
+        }
+      });
       previewEl.appendChild(image);
     } else if (attachment.previewType === 'markdown') {
       contentEl.className = 'attachment-tool-preview-content markdown-content';
@@ -3390,15 +3476,7 @@ export class ChatRenderer {
       if (this.isImageAttachmentPreviewable(attachment)) {
         const openImageButton = this.createAttachmentActionButton('Open', () => {
           this.clearAttachmentToolActionError(bubble);
-          const resolvedUrl = resolveAttachmentUrl(getAttachmentContentUrl(attachment.downloadUrl));
-          if (!resolvedUrl) {
-            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
-            return;
-          }
-          const opened = window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
-          if (!opened) {
-            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
-          }
+          this.openAttachmentImageViewer(attachment);
         });
         actionsEl.appendChild(openImageButton);
       }

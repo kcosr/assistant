@@ -831,7 +831,6 @@ describe('ChatRenderer', () => {
     container.className = 'chat-log';
     document.body.appendChild(container);
 
-    const openSpy = vi.spyOn(window, 'open').mockReturnValue(window);
     const downloadSpy = vi.spyOn(attachmentActions, 'downloadAttachment').mockResolvedValue();
 
     const renderer = new ChatRenderer(container, {
@@ -887,12 +886,18 @@ describe('ChatRenderer', () => {
     );
     expect(buttons.map((button) => button.textContent)).toEqual(['Open', 'Download']);
 
+    image?.click();
+    let overlay = document.body.querySelector<HTMLElement>('.attachment-image-viewer-overlay');
+    expect(overlay).not.toBeNull();
+    expect(
+      overlay?.querySelector<HTMLImageElement>('.attachment-image-viewer-image')?.getAttribute('src'),
+    ).toContain('/api/attachments/session-1/att-image');
+    overlay?.querySelector<HTMLButtonElement>('.attachment-image-viewer-close')?.click();
+    expect(document.body.querySelector('.attachment-image-viewer-overlay')).toBeNull();
+
     buttons[0]?.click();
-    expect(openSpy).toHaveBeenCalledWith(
-      'http://localhost:3000/api/attachments/session-1/att-image',
-      '_blank',
-      'noopener,noreferrer',
-    );
+    overlay = document.body.querySelector<HTMLElement>('.attachment-image-viewer-overlay');
+    expect(overlay).not.toBeNull();
 
     buttons[1]?.click();
     expect(downloadSpy).toHaveBeenCalledWith(

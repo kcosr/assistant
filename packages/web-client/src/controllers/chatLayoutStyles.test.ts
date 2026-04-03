@@ -66,6 +66,8 @@ describe('chat layout styles', () => {
     expect(css).toContain('.input-activity-bar.visible {');
     expect(css).toContain('.input-activity-bar.visible::before {');
     expect(css).toContain('@keyframes input-activity-bar-slide');
-    expect(css).toContain('height: 3px;');
+    expect(css).toContain('position: absolute;');
+    expect(css).toContain('top: -1px;');
+    expect(css).toContain('height: 2px;');
   });
 });

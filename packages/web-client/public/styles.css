@@ -5765,6 +5765,90 @@ textarea.interaction-input {
   object-fit: contain;
   background: color-mix(in srgb, var(--color-bg-elevated) 82%, transparent);
   box-shadow: var(--shadow-sm);
+  cursor: zoom-in;
+}
+
+.attachment-tool-preview-image:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.attachment-image-viewer-overlay {
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  background: color-mix(in srgb, black 68%, transparent);
+  z-index: 1200;
+}
+
+.attachment-image-viewer-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: min(92vw, 980px);
+  max-height: min(90vh, 920px);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-default);
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, black 6%);
+  box-shadow: var(--shadow-lg);
+}
+
+.attachment-image-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.attachment-image-viewer-title {
+  min-width: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-image-viewer-close {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-muted);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.attachment-image-viewer-close:hover {
+  border-color: var(--color-border-default);
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.attachment-image-viewer-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+}
+
+.attachment-image-viewer-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(min(90vh, 920px) - 110px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-bg-base) 86%, transparent);
+  box-shadow: var(--shadow-md);
 }
 
 .attachment-tool-preview-status {
@@ -5875,6 +5959,7 @@ textarea.interaction-input {
 }
 
 .chat-input-panel {
+  position: relative;
   flex: 0 0 auto;
   border-top: 1px solid var(--color-border-subtle);
   align-items: center;
@@ -5990,21 +6075,23 @@ textarea.interaction-input {
 }
 
 .input-activity-bar {
-  width: 100%;
-  max-width: var(--input-bar-max-width);
-  height: 3px;
+  position: absolute;
+  top: -1px;
+  left: var(--spacing-lg);
+  right: var(--spacing-lg);
+  height: 2px;
   border-radius: 999px;
   overflow: hidden;
   background:
     linear-gradient(
       90deg,
       transparent 0%,
-      color-mix(in srgb, var(--color-accent) 24%, transparent) 50%,
+      color-mix(in srgb, var(--color-accent) 20%, var(--color-border-subtle)) 50%,
       transparent 100%
     ),
-    var(--color-bg-muted);
+    color-mix(in srgb, var(--color-border-subtle) 88%, transparent);
   opacity: 0;
-  transform: scaleX(0.96);
+  transform: scaleX(0.94);
   transform-origin: center;
   transition:
     opacity 160ms ease,
@@ -6021,9 +6108,9 @@ textarea.interaction-input {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    color-mix(in srgb, var(--color-accent) 40%, white 12%) 22%,
+    color-mix(in srgb, var(--color-accent) 74%, var(--color-text-primary) 6%) 22%,
     var(--color-accent) 50%,
-    color-mix(in srgb, var(--color-accent) 40%, white 12%) 78%,
+    color-mix(in srgb, var(--color-accent) 74%, var(--color-text-primary) 6%) 78%,
     transparent 100%
   );
   transform: translateX(-140%);
