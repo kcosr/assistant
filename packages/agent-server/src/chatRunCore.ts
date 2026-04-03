@@ -1428,7 +1428,9 @@ export async function runChatCompletionCore(
     let toolIterationCount = 0;
     let hitToolIterationLimit = false;
 
-    const emitToolResultMessage = (event: Extract<AgentEvent, { type: 'tool_execution_end' }>) => {
+    const emitToolResultMessage = async (
+      event: Extract<AgentEvent, { type: 'tool_execution_end' }>,
+    ): Promise<void> => {
       const result = event.result as {
         content?: Array<{ type?: string; text?: string }>;
         details?: unknown;
@@ -1458,7 +1460,7 @@ export async function runChatCompletionCore(
       };
       output.send(toolResultMessage);
       if (shouldEmitChatEvents && turnId) {
-        emitToolResultEvent({
+        await emitToolResultEvent({
           ...(eventStore ? { eventStore } : {}),
           sessionHub,
           sessionId,
@@ -1582,7 +1584,7 @@ export async function runChatCompletionCore(
           toolOutputOffsets.set(event.toolCallId, 0);
           toolOutputTexts.set(event.toolCallId, '');
           if (shouldEmitChatEvents && turnId) {
-            emitToolCallEvent({
+            await emitToolCallEvent({
               ...(eventStore ? { eventStore } : {}),
               sessionHub,
               sessionId,
@@ -1630,7 +1632,7 @@ export async function runChatCompletionCore(
         case 'tool_execution_end':
           toolOutputOffsets.delete(event.toolCallId);
           toolOutputTexts.delete(event.toolCallId);
-          emitToolResultMessage(event);
+          await emitToolResultMessage(event);
           if (onToolCallMetric) {
             onToolCallMetric(event.toolName, 0);
           }

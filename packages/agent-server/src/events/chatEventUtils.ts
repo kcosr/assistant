@@ -112,7 +112,7 @@ export interface EmitToolInputChunkParams {
 /**
  * Emit a tool_call ChatEvent and broadcast to clients.
  */
-export function emitToolCallEvent(params: EmitToolCallEventParams): void {
+export function emitToolCallEvent(params: EmitToolCallEventParams): Promise<void> {
   const { eventStore, sessionHub, sessionId, turnId, responseId, toolCallId, toolName, args } =
     params;
 
@@ -132,7 +132,7 @@ export function emitToolCallEvent(params: EmitToolCallEventParams): void {
     },
   ];
 
-  void appendAndBroadcastChatEvents(
+  return appendAndBroadcastChatEvents(
     {
       ...(eventStore ? { eventStore } : {}),
       sessionHub,
@@ -199,7 +199,7 @@ export function emitToolInputChunkEvent(params: EmitToolInputChunkParams): void 
 /**
  * Emit a tool_result ChatEvent and broadcast to clients.
  */
-export function emitToolResultEvent(params: EmitToolResultEventParams): void {
+export function emitToolResultEvent(params: EmitToolResultEventParams): Promise<void> {
   const { eventStore, sessionHub, sessionId, turnId, responseId, toolCallId, result, error } =
     params;
 
@@ -219,7 +219,7 @@ export function emitToolResultEvent(params: EmitToolResultEventParams): void {
     },
   ];
 
-  void appendAndBroadcastChatEvents(
+  return appendAndBroadcastChatEvents(
     {
       ...(eventStore ? { eventStore } : {}),
       sessionHub,

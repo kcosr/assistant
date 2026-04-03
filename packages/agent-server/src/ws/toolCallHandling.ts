@@ -538,7 +538,7 @@ export async function handleChatToolCalls(options: {
         // Ignore parse errors and fall back to empty args object.
       }
 
-      emitToolCallEvent({
+      await emitToolCallEvent({
         eventStore,
         sessionHub,
         sessionId,
@@ -656,7 +656,7 @@ export async function handleChatToolCalls(options: {
     sessionHub.broadcastToSession(sessionId, toolResultMessage);
 
     if (shouldEmitChatEvents && eventStore && turnId && responseId) {
-      emitToolResultEvent({
+      await emitToolResultEvent({
         eventStore,
         sessionHub,
         sessionId,

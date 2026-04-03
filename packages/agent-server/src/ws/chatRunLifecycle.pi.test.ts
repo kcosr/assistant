@@ -1614,6 +1614,168 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('emits live Pi tool_call before tool_result even when tool persistence is delayed', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    mockPiAgentPrompt.mockImplementationOnce(async ({ emit }) => {
+      const assistantMessage = {
+        role: 'assistant' as const,
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-order',
+            name: 'agents_message',
+            arguments: {
+              agentId: 'coding',
+              content: 'Run ls',
+              mode: 'async',
+            },
+          },
+        ],
+        api: 'openai-responses',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        stopReason: 'toolUse' as const,
+        timestamp: Date.now(),
+      };
+
+      await emit({ type: 'message_end', message: assistantMessage });
+      await emit({
+        type: 'tool_execution_start',
+        toolCallId: 'call-order',
+        toolName: 'agents_message',
+        args: {
+          agentId: 'coding',
+          content: 'Run ls',
+          mode: 'async',
+        },
+      });
+      await emit({
+        type: 'tool_execution_end',
+        toolCallId: 'call-order',
+        toolName: 'agents_message',
+        args: {
+          agentId: 'coding',
+          content: 'Run ls',
+          mode: 'async',
+        },
+        result: {
+          content: [{ type: 'text', text: 'Waiting for response' }],
+          details: {
+            mode: 'async',
+            status: 'started',
+            messageId: 'msg-1',
+            exchangeId: 'ex-1',
+          },
+        },
+        isError: false,
+      });
+      await emit({
+        type: 'message_end',
+        message: {
+          role: 'toolResult' as const,
+          toolCallId: 'call-order',
+          toolName: 'agents_message',
+          content: [{ type: 'text', text: 'Waiting for response' }],
+          details: {
+            mode: 'async',
+            status: 'started',
+            messageId: 'msg-1',
+            exchangeId: 'ex-1',
+          },
+          isError: false,
+          timestamp: Date.now(),
+        },
+      });
+      await emit({
+        type: 'turn_end',
+        message: assistantMessage,
+        toolResults: [],
+      });
+    });
+
+    const broadcast: ServerMessage[] = [];
+    const summary = {
+      sessionId: 's-order',
+      title: 'Order Test',
+      createdAt: '',
+      updatedAt: '',
+      deleted: false,
+      agentId: 'pi',
+      attributes: {},
+    };
+    const state: LogicalSessionState = {
+      summary,
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    const writer = {
+      appendAssistantEvent: vi.fn(async (options: { eventType: string }) => {
+        if (options.eventType === 'tool_call') {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        return summary;
+      }),
+    };
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+          },
+        ]),
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: async () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => writer as never,
+      getSessionState: (sessionId: string) => (sessionId === 's-order' ? state : undefined),
+    } as unknown as SessionHub;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Run the agent tool', sessionId: 's-order' },
+      state,
+      sessionId: 's-order',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      agentTools: [],
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    const toolEventTypes = broadcast
+      .filter(
+        (message): message is Extract<ServerMessage, { type: 'transcript_event' }> =>
+          message.type === 'transcript_event' &&
+          (message.event.chatEventType === 'tool_call' || message.event.chatEventType === 'tool_result'),
+      )
+      .map((message) => message.event.chatEventType);
+
+    expect(toolEventTypes).toEqual(['tool_call', 'tool_result']);
+  });
+
   it('syncs the aborted Pi assistant message before closing an interrupted turn', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,

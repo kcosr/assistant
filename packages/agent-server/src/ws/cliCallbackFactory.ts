@@ -112,7 +112,7 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
 
     // Emit tool_call ChatEvent
     if (shouldEmitChatEvents && eventStore && turnId) {
-      emitToolCallEvent({
+      await emitToolCallEvent({
         eventStore,
         sessionHub,
         sessionId,
@@ -183,7 +183,7 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
 
     // Emit tool_result ChatEvent
     if (shouldEmitChatEvents && eventStore && turnId) {
-      emitToolResultEvent({
+      await emitToolResultEvent({
         eventStore,
         sessionHub,
         sessionId,
