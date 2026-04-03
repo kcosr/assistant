@@ -22,6 +22,10 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 describe('PiSessionWriter', () => {
   it('writes pi-mono compatible session files with model/thinking and tool calls', async () => {
     const baseDir = await createTempDir('pi-session-writer');
@@ -1047,7 +1051,9 @@ describe('PiSessionWriter', () => {
     });
 
     expect(result.changed).toBe(true);
-    expect(result.droppedRequestIds).toEqual(['turn-1']);
+    expect(result.droppedRequestIds[0]).toBe('turn-1');
+    expect(result.droppedRequestIds).toHaveLength(2);
+    expect(result.droppedRequestIds[1]).toMatch(/^synthetic-/);
 
     const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
     const sessionDir = path.join(baseDir, encodedCwd);
@@ -1166,6 +1172,120 @@ describe('PiSessionWriter', () => {
     expect(JSON.stringify(entries)).not.toContain('second turn');
     expect(entries.some((entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_start')).toBe(true);
     expect(entries.some((entry) => entry['type'] === 'custom' && entry['customType'] === 'assistant.request_end')).toBe(true);
+  });
+
+  it('can trim after a synthetic orphan request between explicit requests', async () => {
+    const baseDir = await createTempDir('pi-session-writer-trim-after-synthetic-gap');
+    const now = () => new Date('2026-02-01T00:00:00.000Z');
+    const writer = new PiSessionWriter({ baseDir, now });
+
+    const summary: SessionSummary = {
+      sessionId: 'session-trim-after-synthetic-gap',
+      agentId: 'pi',
+      createdAt: now().toISOString(),
+      updatedAt: now().toISOString(),
+      attributes: {
+        core: { workingDir: '/tmp/project' },
+      },
+    };
+    const updateAttributes = async (patch: Record<string, unknown>) => {
+      summary.attributes = {
+        ...(summary.attributes ?? {}),
+        ...(patch as Record<string, unknown>),
+      } as NonNullable<SessionSummary['attributes']>;
+      return summary;
+    };
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-1',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-1',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'se' },
+        { role: 'assistant', content: '' },
+      ],
+      updateAttributes,
+    });
+
+    await writer.appendTurnStart({
+      summary,
+      turnId: 'turn-2',
+      trigger: 'user',
+      updateAttributes,
+    });
+    await writer.sync({
+      summary,
+      messages: [
+        { role: 'system', content: 'system' },
+        { role: 'user', content: 'first turn' },
+        { role: 'assistant', content: 'First reply' },
+        { role: 'user', content: 'se' },
+        { role: 'assistant', content: '' },
+        { role: 'user', content: 'second turn' },
+        { role: 'assistant', content: 'Second reply' },
+      ],
+      updateAttributes,
+    });
+    await writer.appendTurnEnd({
+      summary,
+      turnId: 'turn-2',
+      status: 'completed',
+      updateAttributes,
+    });
+
+    const encodedCwd = `--${'/tmp/project'.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    const files = await fs.readdir(sessionDir);
+    const filePath = path.join(sessionDir, files[0]!);
+    const beforeEntries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+    const orphanUserEntry = beforeEntries.find(
+      (entry) =>
+        entry['type'] === 'message' &&
+        isRecord(entry['message']) &&
+        entry['message']['role'] === 'user' &&
+        JSON.stringify(entry['message']).includes('"se"'),
+    );
+    expect(orphanUserEntry).toBeTruthy();
+    const orphanRequestId = `synthetic-${String(orphanUserEntry!['id'])}`;
+
+    const result = await writer.rewriteHistoryByRequest({
+      summary,
+      action: 'trim_after',
+      requestId: orphanRequestId,
+      updateAttributes,
+    });
+
+    expect(result.changed).toBe(true);
+    expect(result.droppedRequestIds).toContain(orphanRequestId);
+    expect(result.droppedRequestIds).toContain('turn-2');
+
+    const entries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
+    expect(JSON.stringify(entries)).toContain('first turn');
+    expect(JSON.stringify(entries)).not.toContain('"se"');
+    expect(JSON.stringify(entries)).not.toContain('second turn');
   });
 
   it('synthesizes request groups when explicit request markers are missing', async () => {
