@@ -277,7 +277,7 @@ export async function processUserMessage(
 
   // Emit ChatEvents unless logType is 'none'. 'callback' emits events but skips user_message.
   const logType = agentMessageContext?.logType;
-  const shouldEmitChatEvents = !!eventStore && logType !== 'none';
+  const shouldPersistLegacyEvents = !!eventStore && logType !== 'none';
 
   const startTime = Date.now();
   const responseId = options.responseId ?? randomUUID();
@@ -297,7 +297,8 @@ export async function processUserMessage(
   const agentId = state.summary.agentId;
   const agent = agentId ? sessionHub.getAgentRegistry().getAgent(agentId) : undefined;
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
-  const turnId = shouldEmitChatEvents || chatProvider === 'pi' ? randomUUID() : undefined;
+  const shouldEmitChatEvents = shouldPersistLegacyEvents || chatProvider === 'pi';
+  const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
   const piSessionWriter = sessionHub.getPiSessionWriter?.();
   if (piSessionWriter && chatProvider === 'pi' && turnId) {
     const trigger: TurnStartTrigger =
@@ -313,7 +314,7 @@ export async function processUserMessage(
         state.summary = updatedSummary;
       }
       if (
-        !shouldEmitChatEvents &&
+        !shouldPersistLegacyEvents &&
         agentMessageContext?.logType === 'callback' &&
         agentMessageContext.callbackEvent
       ) {
@@ -711,7 +712,7 @@ export async function processUserMessage(
       });
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
-      if (shouldEmitChatEvents && eventStore && turnId) {
+      if (shouldEmitChatEvents && turnId) {
         const assistantDoneEvents = buildAssistantDoneEvents({
           sessionId,
           turnId,
@@ -744,7 +745,7 @@ export async function processUserMessage(
         ];
         void appendAndBroadcastChatEvents(
           {
-            eventStore,
+            ...(eventStore ? { eventStore } : {}),
             sessionHub,
             sessionId,
           },

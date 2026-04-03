@@ -85,10 +85,10 @@ export async function finalizeChatTurn(options: {
     });
   }
 
-  if (eventStore && overlayEvents.length > 0) {
+  if (overlayEvents.length > 0 && (eventStore || piTurnEndStatus)) {
     await appendAndBroadcastChatEvents(
       {
-        eventStore,
+        ...(eventStore ? { eventStore } : {}),
         sessionHub,
         sessionId,
       },

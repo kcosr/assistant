@@ -629,6 +629,123 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('broadcasts live transcript events for Pi assistant output without an EventStore', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async () => ({
+      text: 'hello there',
+      toolCalls: [],
+      aborted: false,
+      assistantMessage: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'text',
+            text: 'hello there',
+            textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+          },
+        ],
+        api: 'openai-responses',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: 'stop',
+        timestamp: Date.now(),
+      } as never,
+    }));
+
+    const broadcast: ServerMessage[] = [];
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+          },
+        ]),
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: async () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'hello', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    const transcriptEvents = broadcast.filter(
+      (message): message is Extract<ServerMessage, { type: 'transcript_event' }> =>
+        message.type === 'transcript_event',
+    );
+
+    expect(transcriptEvents.some((message) => message.event.kind === 'request_start')).toBe(true);
+    expect(
+      transcriptEvents.some(
+        (message) =>
+          message.event.kind === 'user_message' &&
+          (message.event.payload as { text?: string }).text === 'hello',
+      ),
+    ).toBe(true);
+    expect(
+      transcriptEvents.some(
+        (message) =>
+          message.event.kind === 'assistant_message' &&
+          message.event.chatEventType === 'assistant_done' &&
+          (message.event.payload as { text?: string }).text === 'hello there',
+      ),
+    ).toBe(true);
+    expect(transcriptEvents.some((message) => message.event.kind === 'request_end')).toBe(true);
+  });
+
   it('does not dedupe a new Pi user turn solely because the text matches the last replayed user message', async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-replay-repeat-'));
     const baseDir = path.join(os.homedir(), '.pi', 'agent', 'sessions', encodePiCwd(cwd));

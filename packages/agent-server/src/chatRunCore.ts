@@ -510,7 +510,7 @@ function createChatRunStreamHandlers(options: {
     };
     output.send(message);
 
-    if (shouldEmitChatEvents && eventStore && turnId) {
+    if (shouldEmitChatEvents && turnId) {
       const events: ChatEvent[] = [
         {
           ...createChatEventBase({
@@ -524,7 +524,7 @@ function createChatRunStreamHandlers(options: {
       ];
       void appendAndBroadcastChatEvents(
         {
-          eventStore,
+          ...(eventStore ? { eventStore } : {}),
           sessionHub,
           sessionId,
         },
@@ -552,7 +552,7 @@ function createChatRunStreamHandlers(options: {
     };
     output.send(message);
 
-    if (shouldEmitChatEvents && eventStore && turnId) {
+    if (shouldEmitChatEvents && turnId) {
       const events: ChatEvent[] = [
         {
           ...createChatEventBase({
@@ -566,7 +566,7 @@ function createChatRunStreamHandlers(options: {
       ];
       void appendAndBroadcastChatEvents(
         {
-          eventStore,
+          ...(eventStore ? { eventStore } : {}),
           sessionHub,
           sessionId,
         },
@@ -599,7 +599,7 @@ function createChatRunStreamHandlers(options: {
     output.send(message);
     recordAssistantChunk(deltaText, textSoFar, phase);
 
-    if (shouldEmitChatEvents && eventStore && turnId) {
+    if (shouldEmitChatEvents && turnId) {
       const events: ChatEvent[] = [
         {
           ...createChatEventBase({
@@ -616,7 +616,7 @@ function createChatRunStreamHandlers(options: {
       ];
       void appendAndBroadcastChatEvents(
         {
-          eventStore,
+          ...(eventStore ? { eventStore } : {}),
           sessionHub,
           sessionId,
         },
@@ -1456,9 +1456,9 @@ export async function runChatCompletionCore(
           : {}),
       };
       output.send(toolResultMessage);
-      if (shouldEmitChatEvents && eventStore && turnId) {
+      if (shouldEmitChatEvents && turnId) {
         emitToolResultEvent({
-          eventStore,
+          ...(eventStore ? { eventStore } : {}),
           sessionHub,
           sessionId,
           turnId,
@@ -1576,9 +1576,9 @@ export async function runChatCompletionCore(
           });
           toolOutputOffsets.set(event.toolCallId, 0);
           toolOutputTexts.set(event.toolCallId, '');
-          if (shouldEmitChatEvents && eventStore && turnId) {
+          if (shouldEmitChatEvents && turnId) {
             emitToolCallEvent({
-              eventStore,
+              ...(eventStore ? { eventStore } : {}),
               sessionHub,
               sessionId,
               turnId,

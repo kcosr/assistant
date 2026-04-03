@@ -250,8 +250,8 @@ export async function handleTextInputWithChatCompletions(options: {
   const { agentType, provider: chatProvider } = resolveChatProvider(agent);
   const piSessionWriter = sessionHub.getPiSessionWriter?.();
 
-  const shouldEmitChatEvents = !!eventStore;
-  const turnId = shouldEmitChatEvents || chatProvider === 'pi' ? randomUUID() : undefined;
+  const shouldEmitChatEvents = !!eventStore || chatProvider === 'pi';
+  const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
 
   if (piSessionWriter && chatProvider === 'pi' && turnId) {
     try {
@@ -509,7 +509,7 @@ export async function handleTextInputWithChatCompletions(options: {
       };
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
-      if (shouldEmitChatEvents && eventStore && turnId) {
+      if (shouldEmitChatEvents && turnId) {
         const events = buildAssistantDoneEvents({
           sessionId,
           turnId,
@@ -542,7 +542,7 @@ export async function handleTextInputWithChatCompletions(options: {
         }
         void appendAndBroadcastChatEvents(
           {
-            eventStore,
+            ...(eventStore ? { eventStore } : {}),
             sessionHub,
             sessionId,
           },

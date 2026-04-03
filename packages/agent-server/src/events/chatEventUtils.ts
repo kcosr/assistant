@@ -11,7 +11,7 @@ import type { SessionHub } from '../sessionHub';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface EmitToolCallEventParams {
-  eventStore: EventStore;
+  eventStore?: EventStore;
   sessionHub: SessionHub;
   sessionId: string;
   turnId: string;
@@ -22,7 +22,7 @@ export interface EmitToolCallEventParams {
 }
 
 export interface EmitToolResultEventParams {
-  eventStore: EventStore;
+  eventStore?: EventStore;
   sessionHub: SessionHub;
   sessionId: string;
   turnId: string;
@@ -124,7 +124,14 @@ export function emitToolCallEvent(params: EmitToolCallEventParams): void {
     },
   ];
 
-  void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+  void appendAndBroadcastChatEvents(
+    {
+      ...(eventStore ? { eventStore } : {}),
+      sessionHub,
+      sessionId,
+    },
+    events,
+  );
 }
 
 /**
@@ -204,7 +211,14 @@ export function emitToolResultEvent(params: EmitToolResultEventParams): void {
     },
   ];
 
-  void appendAndBroadcastChatEvents({ eventStore, sessionHub, sessionId }, events);
+  void appendAndBroadcastChatEvents(
+    {
+      ...(eventStore ? { eventStore } : {}),
+      sessionHub,
+      sessionId,
+    },
+    events,
+  );
 }
 
 export function emitInteractionRequestEvent(params: EmitInteractionRequestEventParams): void {
