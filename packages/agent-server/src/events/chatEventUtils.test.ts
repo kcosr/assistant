@@ -1,3 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { AgentRegistry } from '../agents';
@@ -9,6 +13,7 @@ import {
   emitToolOutputChunkEvent,
   resetLiveTranscriptSessionState,
   seedLiveTranscriptSessionState,
+  syncLiveTranscriptSessionStateFromPiHistory,
 } from './chatEventUtils';
 
 function createEventStore(): EventStore {
@@ -258,6 +263,190 @@ describe('chatEventUtils live broadcast behavior', () => {
       }),
     );
     expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('realigns stale Pi live transcript revision and sequence from canonical history', async () => {
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-live-sync-'));
+    const cwd = '/home/kevin';
+    const sessionId = 'pi-live-sync';
+    const piSessionId = 'pi-live-sync-file';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const sessionPath = path.join(sessionDir, `2026-04-02T00-00-00-000Z_${piSessionId}.jsonl`);
+    await fs.writeFile(
+      sessionPath,
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: piSessionId,
+          timestamp: '2026-04-02T00:00:00.000Z',
+          cwd,
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-start',
+          parentId: null,
+          timestamp: '2026-04-02T00:00:01.000Z',
+          customType: 'assistant.request_start',
+          data: { v: 1, requestId: 'request-1', trigger: 'user' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-user',
+          parentId: 'req-start',
+          timestamp: '2026-04-02T00:00:02.000Z',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'hello there' }],
+            timestamp: 1,
+          },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-assistant',
+          parentId: 'msg-user',
+          timestamp: '2026-04-02T00:00:03.000Z',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'hi back' }],
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'stop',
+            timestamp: 2,
+          },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-end',
+          parentId: 'msg-assistant',
+          timestamp: '2026-04-02T00:00:04.000Z',
+          customType: 'assistant.request_end',
+          data: { v: 1, requestId: 'request-1', status: 'completed' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const broadcastToSession = vi.fn();
+    const appendAssistantEvent = vi.fn(async () => undefined);
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'pi',
+        description: 'pi',
+        chat: {
+          provider: 'pi',
+          models: ['openai-codex/gpt-5.4'],
+        },
+      },
+    ]);
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId,
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '2026-04-02T00:00:00.000Z',
+        revision: 3,
+        deleted: false,
+        agentId: 'pi',
+        attributes: {
+          providers: {
+            pi: {
+              sessionId: piSessionId,
+              cwd,
+            },
+          },
+        },
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    const latestSummary = {
+      ...state.summary,
+      revision: 7,
+    };
+    const sessionHub: SessionHub = {
+      getSessionState: vi.fn(() => state),
+      getSessionIndex: vi.fn(() => ({
+        getSession: vi.fn(async () => latestSummary),
+      })),
+      getAgentRegistry: vi.fn(() => agentRegistry),
+      getPiSessionWriter: vi.fn(() => ({
+        appendAssistantEvent,
+        getBaseDir: () => baseDir,
+      })),
+      broadcastToSession,
+    } as unknown as SessionHub;
+
+    seedLiveTranscriptSessionState({
+      sessionId,
+      revision: 3,
+      nextSequence: 36,
+    });
+
+    try {
+      const synced = await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub,
+        sessionId,
+        summary: state.summary,
+      });
+
+      expect(synced).toMatchObject({ revision: 7 });
+
+      await appendAndBroadcastChatEvents(
+        { sessionHub, sessionId },
+        [
+          {
+            id: 'evt-start',
+            sessionId,
+            turnId: 'request-2',
+            timestamp: Date.now(),
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+          {
+            id: 'evt-user',
+            sessionId,
+            turnId: 'request-2',
+            timestamp: Date.now(),
+            type: 'user_message',
+            payload: { text: 'second turn' },
+          },
+        ],
+      );
+
+      expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+        type: 'transcript_event',
+        event: {
+          revision: 7,
+          sequence: 4,
+          requestId: 'request-2',
+          kind: 'request_start',
+        },
+      });
+      expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
+        type: 'transcript_event',
+        event: {
+          revision: 7,
+          sequence: 5,
+          requestId: 'request-2',
+          kind: 'user_message',
+          payload: { text: 'second turn' },
+        },
+      });
+    } finally {
+      resetLiveTranscriptSessionState(sessionId);
+    }
   });
 
   it('resets live transcript sequence after explicit live transcript invalidation', async () => {

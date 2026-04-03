@@ -193,6 +193,35 @@ describe('ConnectionManager', () => {
     }
   });
 
+  it('does not send duplicate subscribe messages for an already subscribed session', () => {
+    ensureWebSocketGlobal();
+    const send = vi.fn();
+    const socket = { readyState: WebSocket.OPEN, send } as unknown as WebSocket;
+
+    const manager = new ConnectionManager({
+      createWebSocketUrl: () => 'ws://localhost',
+      setStatus: () => undefined,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      supportsAudioOutput: () => false,
+      onMessage: () => undefined,
+      getInteractionEnabled: () => true,
+      getSocket: () => socket,
+      setSocket: () => undefined,
+      onConnectionLostCleanup: () => undefined,
+      reconnectDelayMs: 1000,
+      maxReconnectDelayMs: 2000,
+    });
+
+    manager.subscribe('session-a');
+    manager.subscribe('session-a');
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0]?.[0] ?? '{}')).toEqual({
+      type: 'subscribe',
+      sessionId: 'session-a',
+    });
+  });
+
   it('does not reconnect when socket is already open', () => {
     ensureWebSocketGlobal();
     const socket = { readyState: WebSocket.OPEN } as unknown as WebSocket;

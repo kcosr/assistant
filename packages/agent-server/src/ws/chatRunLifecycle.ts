@@ -16,7 +16,11 @@ import type { EnvConfig } from '../envConfig';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
 import type { TtsBackendFactory } from '../tts/types';
 import type { EventStore } from '../events';
-import { appendAndBroadcastChatEvents, createChatEventBase } from '../events/chatEventUtils';
+import {
+  appendAndBroadcastChatEvents,
+  createChatEventBase,
+  syncLiveTranscriptSessionStateFromPiHistory,
+} from '../events/chatEventUtils';
 
 import type { SessionConnection } from './sessionConnection';
 import { buildExternalCallbackUrl, postExternalUserInput } from '../externalAgents';
@@ -252,6 +256,21 @@ export async function handleTextInputWithChatCompletions(options: {
 
   const shouldEmitChatEvents = !!eventStore || chatProvider === 'pi';
   const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
+
+  if (chatProvider === 'pi') {
+    try {
+      const updatedSummary = await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub,
+        sessionId,
+        summary: state.summary,
+      });
+      if (updatedSummary) {
+        state.summary = { ...state.summary, ...updatedSummary };
+      }
+    } catch (err) {
+      log('failed to align live Pi transcript state', err);
+    }
+  }
 
   if (piSessionWriter && chatProvider === 'pi' && turnId) {
     try {

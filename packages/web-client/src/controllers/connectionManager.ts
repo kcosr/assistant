@@ -160,6 +160,9 @@ export class ConnectionManager {
       return;
     }
 
+    if (this.subscribedSessions.has(trimmed)) {
+      return;
+    }
     this.subscribedSessions.add(trimmed);
 
     const socket = this.options.getSocket();
@@ -180,6 +183,9 @@ export class ConnectionManager {
       return;
     }
 
+    if (!this.subscribedSessions.has(trimmed)) {
+      return;
+    }
     this.subscribedSessions.delete(trimmed);
 
     const socket = this.options.getSocket();

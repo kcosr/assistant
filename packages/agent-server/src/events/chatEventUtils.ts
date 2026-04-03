@@ -1,9 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ChatEvent, ProjectedTranscriptEvent, ServerMessage } from '@assistant/shared';
+import type {
+  ChatEvent,
+  ProjectedTranscriptEvent,
+  ServerMessage,
+  SessionAttributes,
+} from '@assistant/shared';
 
 import type { EventStore } from './eventStore';
 import type { SessionHub } from '../sessionHub';
+import type { SessionSummary } from '../sessionIndex';
+import { loadCanonicalPiTranscriptEvents } from '../history/historyProvider';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for emitting tool_call and tool_result ChatEvents.
@@ -393,6 +400,55 @@ export function seedLiveTranscriptSessionState(options: {
     nextSequence: Math.max(0, options.nextSequence),
     activeRequestId: options.activeRequestId ?? null,
   });
+}
+
+export async function syncLiveTranscriptSessionStateFromPiHistory(options: {
+  sessionHub: SessionHub;
+  sessionId: string;
+  summary?: Pick<SessionSummary, 'sessionId' | 'agentId' | 'attributes' | 'revision'>;
+}): Promise<Pick<SessionSummary, 'sessionId' | 'agentId' | 'attributes' | 'revision'> | undefined> {
+  const trimmed = options.sessionId.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const latestSummary =
+    (await options.sessionHub.getSessionIndex().getSession(trimmed)) ??
+    options.summary ??
+    options.sessionHub.getSessionState(trimmed)?.summary;
+  if (!latestSummary?.agentId) {
+    return latestSummary;
+  }
+
+  const agent = options.sessionHub.getAgentRegistry().getAgent(latestSummary.agentId);
+  const providerId = agent?.chat?.provider;
+  if (providerId !== 'pi' && providerId !== 'pi-cli') {
+    return latestSummary;
+  }
+
+  const revision = Math.max(0, latestSummary.revision ?? 0);
+  const existingState = liveTranscriptStateBySession.get(trimmed);
+  if (existingState && existingState.revision === revision) {
+    return latestSummary;
+  }
+
+  const writer = options.sessionHub.getPiSessionWriter?.();
+  const projected = await loadCanonicalPiTranscriptEvents({
+    sessionId: trimmed,
+    revision,
+    providerId,
+    ...(latestSummary.attributes
+      ? { attributes: latestSummary.attributes as SessionAttributes }
+      : {}),
+    ...(writer ? { baseDir: writer.getBaseDir() } : {}),
+  });
+  seedLiveTranscriptSessionState({
+    sessionId: trimmed,
+    revision,
+    nextSequence: projected.length,
+  });
+
+  return latestSummary;
 }
 
 function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {

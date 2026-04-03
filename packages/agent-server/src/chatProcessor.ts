@@ -23,7 +23,11 @@ import type { SkillSummary } from './skills';
 import { updateSystemPromptWithTools } from './systemPromptUpdater';
 import type { TtsBackendFactory } from './tts/types';
 import type { EventStore } from './events';
-import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chatEventUtils';
+import {
+  appendAndBroadcastChatEvents,
+  createChatEventBase,
+  syncLiveTranscriptSessionStateFromPiHistory,
+} from './events/chatEventUtils';
 import {
   createBroadcastOutputAdapter,
   createTtsSession,
@@ -300,6 +304,20 @@ export async function processUserMessage(
   const shouldEmitChatEvents = shouldPersistLegacyEvents || chatProvider === 'pi';
   const turnId = shouldEmitChatEvents ? randomUUID() : undefined;
   const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  if (chatProvider === 'pi') {
+    try {
+      const updatedSummary = await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub,
+        sessionId,
+        summary: state.summary,
+      });
+      if (updatedSummary) {
+        state.summary = { ...state.summary, ...updatedSummary };
+      }
+    } catch (err) {
+      log('failed to align live Pi transcript state', err);
+    }
+  }
   if (piSessionWriter && chatProvider === 'pi' && turnId) {
     const trigger: TurnStartTrigger =
       agentMessageContext?.logType === 'callback' ? 'callback' : 'user';
