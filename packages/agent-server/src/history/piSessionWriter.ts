@@ -1323,12 +1323,24 @@ export class PiSessionWriter {
 
     if (updateAttributes) {
       try {
-        const updated = await updateAttributes(
-          buildPiTranscriptRevisionPatch({
-            revision: getNextPiTranscriptRevision(summary.attributes),
-            clearSessionReference: true,
-          }),
+        const providersEntry = summary.attributes?.['providers'];
+        const providers =
+          providersEntry && isRecord(providersEntry)
+            ? (providersEntry as Record<string, unknown>)
+            : null;
+        const remainingProviderKeys = Object.keys(providers ?? {}).filter(
+          (key) => key !== 'pi' && key !== 'pi-cli',
         );
+        const updated = await updateAttributes({
+          ...(remainingProviderKeys.length === 0
+            ? { providers: null }
+            : {
+                providers: {
+                  pi: null,
+                  'pi-cli': null,
+                },
+              }),
+        });
         return updated;
       } catch (err) {
         this.log('Failed to clear Pi provider attributes', err);

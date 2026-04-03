@@ -1636,13 +1636,13 @@ function buildProjectedTranscriptFromPiSession(
     explicit = false,
     eventId?: string,
   ): void => {
+    if (emittedRequestStarts.has(requestId)) {
+      return;
+    }
     currentRequestId = requestId;
     currentResponseId = null;
     currentRequestExplicit = explicit;
     currentRequestStartedAt = timestamp;
-    if (emittedRequestStarts.has(requestId)) {
-      return;
-    }
     pushProjected({
       timestamp,
       requestId,
@@ -1769,6 +1769,12 @@ function buildProjectedTranscriptFromPiSession(
         const version = Number(data['v']);
         const requestIdFromEntry = getString(data['requestId']);
         if (version !== 1 || !requestIdFromEntry) {
+          continue;
+        }
+        if (emittedRequestStarts.has(requestIdFromEntry)) {
+          if (currentRequestId === requestIdFromEntry) {
+            currentRequestExplicit = true;
+          }
           continue;
         }
         endRequest(timestamp);

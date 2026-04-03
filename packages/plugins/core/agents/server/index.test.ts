@@ -367,10 +367,12 @@ describe('agents plugin operations', () => {
         expect.objectContaining({
           fromSessionId: targetSession.sessionId,
           fromAgentId: 'worker',
+          exchangeId: expect.any(String),
           responseId: 'worker-resp-1',
           logType: 'callback',
           callbackEvent: {
             messageId: expect.any(String),
+            exchangeId: expect.any(String),
             fromSessionId: targetSession.sessionId,
             fromAgentId: 'worker',
             result: 'Worker finished the task',
@@ -564,10 +566,12 @@ describe('agents plugin operations', () => {
         expect.objectContaining({
           fromSessionId: targetSession.sessionId,
           fromAgentId: 'worker',
+          exchangeId: expect.any(String),
           responseId: 'worker-resp-queued',
           logType: 'callback',
           callbackEvent: {
             messageId: expect.any(String),
+            exchangeId: expect.any(String),
             fromSessionId: targetSession.sessionId,
             fromAgentId: 'worker',
             result: 'Worker finished queued task',

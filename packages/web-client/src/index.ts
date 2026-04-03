@@ -405,7 +405,6 @@ async function main(): Promise<void> {
       return;
     }
     const pendingEvents = dedupeProjectedTranscriptEvents(replayState.bufferedEvents);
-    replayState.bufferedEvents = [];
     logTranscriptDebug('flush_buffered_events', {
       sessionId: trimmed,
       bufferedCount: pendingEvents.length,
@@ -423,22 +422,40 @@ async function main(): Promise<void> {
     ) {
       replayState.loaded = false;
       replayState.cursor = null;
+      replayState.pendingForceReload = true;
       logTranscriptDebug('flush_requires_reload', {
         sessionId: trimmed,
         targetRevision: revision,
         latestBufferedRevision,
       });
-      void loadSessionTranscript(trimmed, { force: true });
       return;
     }
     const eventsToApply =
       typeof revision === 'number'
         ? pendingEvents.filter((event) => event.revision === revision)
         : pendingEvents;
+    const unresolvedEvents =
+      typeof revision === 'number'
+        ? pendingEvents.filter((event) => event.revision > revision)
+        : [];
     if (eventsToApply.length === 0) {
+      replayState.bufferedEvents = unresolvedEvents;
       return;
     }
-    chatRenderer.replayProjectedEvents(eventsToApply);
+    const applyResult = chatRenderer.replayProjectedEvents(eventsToApply);
+    if (applyResult === 'reload') {
+      replayState.loaded = false;
+      replayState.cursor = null;
+      replayState.pendingForceReload = true;
+      replayState.bufferedEvents = pendingEvents;
+      logTranscriptDebug('flush_renderer_requested_reload', {
+        sessionId: trimmed,
+        bufferedCount: pendingEvents.length,
+        targetRevision: revision ?? null,
+      });
+      return;
+    }
+    replayState.bufferedEvents = unresolvedEvents;
     chatScrollManager.autoScrollIfEnabled();
   }
 

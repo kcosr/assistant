@@ -331,6 +331,32 @@ describe('ChatRenderer', () => {
     expect(result).toBe('reload');
   });
 
+  it('requests reload when a replay batch mixes transcript revisions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const result = renderer.replayProjectedEvents([
+      createProjectedEvent(0, {
+        revision: 1,
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      createProjectedEvent(0, {
+        revision: 2,
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+        eventId: 'mixed-revision-event',
+      }),
+    ]);
+
+    expect(result).toBe('reload');
+  });
+
   it('replays events into the expected DOM structure', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

@@ -627,7 +627,13 @@ export class ChatRenderer {
       return 'applied';
     }
 
-    const incomingRevision = normalized[normalized.length - 1]?.revision ?? null;
+    const revisions = Array.from(new Set(normalized.map((event) => event.revision))).sort(
+      (left, right) => left - right,
+    );
+    if (revisions.length > 1) {
+      return 'reload';
+    }
+    const incomingRevision = revisions[0] ?? null;
     if (incomingRevision === null) {
       return 'ignored';
     }
@@ -638,7 +644,7 @@ export class ChatRenderer {
       return 'ignored';
     }
 
-    const revisionEvents = normalized.filter((event) => event.revision === incomingRevision);
+    const revisionEvents = normalized;
     if (
       this.projectedTranscriptRevision === null ||
       incomingRevision > this.projectedTranscriptRevision ||

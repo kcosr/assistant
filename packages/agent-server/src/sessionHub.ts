@@ -551,7 +551,6 @@ export class SessionHub {
   }
 
   async clearSession(sessionId: string): Promise<SessionSummary> {
-    console.log('[sessionHub] clearSession', { sessionId });
     resetLiveTranscriptSessionState(sessionId);
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {

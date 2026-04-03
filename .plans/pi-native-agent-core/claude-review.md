@@ -259,6 +259,55 @@ always truthy when `shouldEmitChatEvents` is true for Pi sessions.
 
 **File**: `sessionRuntime.ts:~1167`
 
+---
+
+## Assistant Triage Follow-Up
+
+Reviewed against the current branch after the later Pi cutover work. Some findings are still
+live, some are now stale, and a few are lower-priority robustness issues rather than blockers.
+
+### Still actionable now
+
+1. `historyProvider.ts` `startRequest` mutates replay state before the duplicate-request guard.
+   That can still reset `currentResponseId` on a deduped `request_start`.
+
+2. `chatRunCore.ts` still passes an `async` callback to `piAgentRuntime.agent.subscribe(...)`.
+   Upstream `@mariozechner/pi-agent-core` `subscribe` is synchronous and does not await
+   listener promises, so callback failures can escape the surrounding `prompt()` control flow.
+
+3. Client replay robustness still needs tightening:
+   - buffered transcript events are cleared before a forced reload succeeds in
+     `packages/web-client/src/index.ts`
+   - `replayProjectedEvents()` in `packages/web-client/src/controllers/chatRenderer.ts`
+     still collapses mixed-revision batches to the last revision in the batch
+
+4. `SessionHub.clearSession()` still leaves `providers.pi` / `providers.pi-cli`
+   transcript metadata behind instead of removing the Pi provider state entirely.
+
+5. `agents_message` callback contract/tests are out of sync around `exchangeId`.
+   The runtime now includes it in callback context; tests and docs need to match the intended
+   end-state contract.
+
+### Valid but lower priority
+
+- `liveTranscriptStateBySession` cleanup / overlay growth concerns
+- tool output offset semantics consistency
+- long-running replay/load recursion hardening
+
+### Now stale after later cutover work
+
+- Earlier findings tied to persisted streaming chunk entries (`assistant_chunk`,
+  `thinking_chunk`, `tool_*_chunk`) are obsolete. That path was removed in favor of transient
+  in-memory overlay plus canonical replay messages.
+
+### Priority order
+
+1. Fix `historyProvider.ts` request-start mutation ordering
+2. Fix Pi async subscribe error propagation in `chatRunCore.ts`
+3. Fix `SessionHub.clearSession()` provider metadata cleanup
+4. Lock the `agents_message` `exchangeId` contract and align tests
+5. Harden client buffered replay / mixed-revision handling
+
 A `new AbortController()` is created for `toolContext.signal` but never stored or
 aborted. Tools that register listeners on the signal hold references to the
 controller.

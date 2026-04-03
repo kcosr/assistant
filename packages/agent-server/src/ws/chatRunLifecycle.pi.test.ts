@@ -1176,6 +1176,98 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     ]);
   });
 
+  it('surfaces Pi subscription callback failures through sendError', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockResolvedValueOnce({
+      text: 'This chunk will fail to broadcast',
+      toolCalls: [],
+      aborted: false,
+      assistantMessage: createAssistantMessage({
+        text: 'This chunk will fail to broadcast',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        api: 'openai-responses',
+      }) as never,
+    });
+
+    const eventStore = createTestEventStore();
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi',
+        displayName: 'Pi',
+        description: 'Pi',
+        chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+      },
+    ]);
+
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () => agentRegistry,
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        if (message.type === 'text_delta') {
+          throw new Error('broadcast failed');
+        }
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    const sendError = vi.fn();
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError,
+      log: () => undefined,
+      eventStore,
+    });
+
+    expect(sendError).toHaveBeenCalledWith(
+      'upstream_error',
+      'Chat backend error',
+      expect.objectContaining({
+        error: expect.stringContaining('broadcast failed'),
+      }),
+      { retryable: true },
+    );
+  });
+
   it('emits incremental tool output deltas for cumulative Pi partial tool updates', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,

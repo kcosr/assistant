@@ -1477,7 +1477,10 @@ export async function runChatCompletionCore(
       }
     };
 
-    const subscription = piAgentRuntime.agent.subscribe(async (event) => {
+    let subscriptionError: unknown = null;
+    let subscriptionWork = Promise.resolve();
+
+    const handleAgentEvent = async (event: AgentEvent): Promise<void> => {
       switch (event.type) {
         case 'message_update': {
           const partial = event.message;
@@ -1631,17 +1634,45 @@ export async function runChatCompletionCore(
           }
           return;
       }
+    };
+
+    const subscription = piAgentRuntime.agent.subscribe((event) => {
+      subscriptionWork = subscriptionWork
+        .then(async () => {
+          if (subscriptionError) {
+            return;
+          }
+          await handleAgentEvent(event);
+        })
+        .catch((error) => {
+          if (subscriptionError) {
+            return;
+          }
+          subscriptionError = error;
+          piAgentRuntime.agent.abort();
+        });
     });
 
     const onAbort = () => {
       piAgentRuntime.agent.abort();
     };
     abortController.signal.addEventListener('abort', onAbort, { once: true });
+    let promptError: unknown = null;
     try {
       await piAgentRuntime.agent.prompt(promptMessage);
+    } catch (error) {
+      promptError = error;
     } finally {
       abortController.signal.removeEventListener('abort', onAbort);
       subscription();
+      await subscriptionWork;
+    }
+
+    if (subscriptionError) {
+      throw subscriptionError;
+    }
+    if (promptError) {
+      throw promptError;
     }
 
     piReplayMessages = piReplayAccumulator.slice();

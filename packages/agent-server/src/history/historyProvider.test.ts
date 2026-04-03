@@ -262,6 +262,94 @@ describe('canonical Pi transcript loader', () => {
     );
   });
 
+  it('does not reset the active response when a duplicate request_start is replayed', async () => {
+    const baseDir = await createTempDir('pi-session-transcript-duplicate-request-start');
+    const sessionId = 'session-transcript-duplicate-request-start';
+    const piSessionId = 'pi-session-transcript-duplicate-request-start';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start-1',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-user',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        message: { role: 'user', content: [{ type: 'text', text: 'hello there' }] },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'assistant-msg',
+        timestamp: '2026-01-18T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Starting work' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start-duplicate',
+        timestamp: '2026-01-18T00:00:02.500Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'tool-call-overlay',
+        timestamp: '2026-01-18T00:00:03.000Z',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'toolCall',
+              id: 'tool-1',
+              name: 'bash',
+              arguments: { command: 'pwd' },
+            },
+          ],
+        },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const events = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 7,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    const requestStarts = events.filter((event) => event.kind === 'request_start');
+    expect(requestStarts).toHaveLength(1);
+
+    const assistantMessage = events.find((event) => event.kind === 'assistant_message');
+    const toolCall = events.find((event) => event.kind === 'tool_call');
+    expect(assistantMessage?.responseId).toEqual(expect.any(String));
+    expect(toolCall).toEqual(
+      expect.objectContaining({
+        requestId: 'request-1',
+        responseId: assistantMessage?.responseId,
+        payload: expect.objectContaining({
+          toolCallId: 'tool-1',
+          toolName: 'bash',
+        }),
+      }),
+    );
+  });
+
   it('orders canonical assistant narration before earlier-appended tool overlay in transcript replay', async () => {
     const baseDir = await createTempDir('pi-session-transcript-replay-order');
     const sessionId = 'session-transcript-replay-order';

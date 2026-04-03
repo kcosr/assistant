@@ -53,6 +53,8 @@
 - Fixed live Pi assistant and request-end transcript emission to bypass the old EventStore gate, restoring immediate in-page rendering of submitted turns instead of only showing them after replay refresh.
 - Fixed Pi live transcript revision handling so ordinary session revision bumps no longer make the client reset to only the newest turn during live rendering.
 - Fixed Pi request-history replay after middle-request deletion so partial `providers.pi-cli` transcript revision aliases no longer hide the canonical Pi session file and collapse the visible transcript to zero events.
+- Fixed canonical Pi replay so duplicate request-start markers no longer orphan the active request/response state or split later tool activity onto a fresh synthetic response.
+- Fixed Pi transcript/session cleanup so clearing a Pi-backed session removes provider transcript metadata entirely, Pi agent subscription failures surface as normal run errors, and mixed-revision buffered replay now forces a reload instead of silently dropping buffered events.
 
 ### Removed
 
