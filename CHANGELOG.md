@@ -49,6 +49,7 @@
 - Fixed refreshed Pi sessions so restored chat bindings are re-subscribed on websocket open and continue receiving live transcript updates without requiring another UI change.
 - Fixed refreshed Pi sessions so replay hydration is single-flight and primes the live transcript sequence, preventing post-refresh live turns from wiping visible history or restarting transcript sequencing from zero.
 - Fixed Pi coding-tool rendering so imported `bash`, `read`, `edit`, `find`, `grep`, and `ls` results use semantic output views again, including diff rendering for `edit` and actual stdout/file-content display for `bash` and `read`.
+- Fixed assistant markdown code blocks to shrink-wrap to their content up to the available message width instead of always stretching full-width.
 - Fixed refreshed Pi sessions so the next live turn re-aligns transcript revision and sequence from canonical Pi history before emitting websocket transcript events, preventing post-refresh submits from being dropped as stale.
 - Fixed refreshed Pi sessions so a mid-stream reload reconstructs the active in-flight turn from transient live transcript state on the first refresh without persisting streaming chunk noise into the Pi session log.
 - Fixed refreshed Pi transcript delivery so pre-runtime live events buffer instead of being dropped and live sequence gaps trigger a forced transcript reload instead of leaving the page stranded on a stale in-flight turn.

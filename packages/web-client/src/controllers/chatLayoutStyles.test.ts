@@ -44,4 +44,17 @@ describe('chat layout styles', () => {
     expect(interruptedBlock).not.toContain('padding-left: var(--spacing-xl);');
     expect(interruptedBlock).not.toContain('margin-top: calc(-1 * var(--spacing-md));');
   });
+
+  it('lets markdown code blocks shrink to fit their content up to full width', () => {
+    const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const blockStart = css.lastIndexOf('.markdown-content pre {');
+    const nextBlockStart = css.indexOf('\n\n.', blockStart);
+    const preBlock = blockStart >= 0 ? css.slice(blockStart, nextBlockStart >= 0 ? nextBlockStart : undefined) : '';
+
+    expect(preBlock).toContain('.markdown-content pre {');
+    expect(preBlock).toContain('display: inline-block;');
+    expect(preBlock).toContain('width: fit-content;');
+    expect(preBlock).toContain('max-width: 100%;');
+  });
 });

@@ -5447,6 +5447,10 @@ textarea.interaction-input {
 .markdown-content pre {
   margin: 1em 0;
   padding: 0;
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  vertical-align: top;
   overflow: visible;
   border-radius: var(--radius-md);
   background-color: var(--color-code-bg);
