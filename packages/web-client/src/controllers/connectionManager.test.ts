@@ -141,6 +141,58 @@ describe('ConnectionManager', () => {
     );
   });
 
+  it('allows post-open subscription updates after the initial hello', () => {
+    ensureWebSocketGlobal();
+    MockWebSocket.reset();
+
+    const originalWebSocket = globalThis.WebSocket;
+    (globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket =
+      MockWebSocket as unknown as typeof WebSocket;
+
+    let activeSocket: WebSocket | null = null;
+    let manager: ConnectionManager;
+    manager = new ConnectionManager({
+      createWebSocketUrl: () => 'ws://localhost',
+      setStatus: () => undefined,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
+      supportsAudioOutput: () => false,
+      onMessage: () => undefined,
+      getInteractionEnabled: () => true,
+      onOpen: () => {
+        manager.subscribe('session-after-open');
+      },
+      getSocket: () => activeSocket,
+      setSocket: (socket) => {
+        activeSocket = socket;
+      },
+      onConnectionLostCleanup: () => undefined,
+      reconnectDelayMs: 1000,
+      maxReconnectDelayMs: 2000,
+    });
+
+    try {
+      manager.connect();
+
+      const socket = MockWebSocket.instances[0];
+      if (!socket) {
+        throw new Error('Expected ConnectionManager to create a socket');
+      }
+      socket.dispatch('open');
+
+      expect(socket.sent).toHaveLength(2);
+      expect(JSON.parse(socket.sent[0] ?? '{}')).toMatchObject({
+        type: 'hello',
+        subscriptions: [],
+      });
+      expect(JSON.parse(socket.sent[1] ?? '{}')).toEqual({
+        type: 'subscribe',
+        sessionId: 'session-after-open',
+      });
+    } finally {
+      (globalThis as unknown as { WebSocket: typeof WebSocket }).WebSocket = originalWebSocket;
+    }
+  });
+
   it('does not reconnect when socket is already open', () => {
     ensureWebSocketGlobal();
     const socket = { readyState: WebSocket.OPEN } as unknown as WebSocket;

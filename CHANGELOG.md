@@ -42,6 +42,8 @@
 - Fixed native Pi tool execution to hydrate `requestId`/`responseId`/`turnId` from the active run at execute time, restoring `attachment_send` and other request-scoped tools.
 - Fixed Pi transcript replay dropping visible user turns when canonical `user` messages coexisted with overlay request markers.
 - Fixed live Pi submit handling so the sending client immediately receives request-start and user-turn transcript events instead of waiting for assistant output or refresh.
+- Fixed refreshed Pi sessions so restored chat bindings are re-subscribed on websocket open and continue receiving live transcript updates without requiring another UI change.
+- Fixed native Pi tool streaming so cumulative partial tool output is converted into true deltas instead of duplicating earlier lines until the final tool result arrives.
 
 ### Removed
 

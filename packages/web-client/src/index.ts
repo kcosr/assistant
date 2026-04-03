@@ -2399,6 +2399,7 @@ async function main(): Promise<void> {
       void handleServerMessage(data);
     },
     onOpen: () => {
+      updateSessionSubscriptions();
       panelWorkspace?.publishPanelInventory();
     },
     getSocket: () => socket,
@@ -2420,6 +2421,7 @@ async function main(): Promise<void> {
     reconnectDelayMs: RECONNECT_DELAY_MS,
     maxReconnectDelayMs: MAX_RECONNECT_DELAY_MS,
   });
+  updateSessionSubscriptions();
 
   function cancelQueuedMessage(messageId: string): void {
     const currentSocket = socket;

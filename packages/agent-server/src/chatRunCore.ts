@@ -84,6 +84,49 @@ async function loadPiAiModule(): Promise<PiAiModule> {
   return piAiModulePromise;
 }
 
+function extractToolOutputText(result: unknown): string {
+  if (typeof result === 'string') {
+    return result;
+  }
+  if (!result || typeof result !== 'object') {
+    return '';
+  }
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return '';
+  }
+  const chunks: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') {
+      continue;
+    }
+    const typedBlock = block as { type?: unknown; text?: unknown };
+    if (typedBlock.type === 'text' && typeof typedBlock.text === 'string') {
+      chunks.push(typedBlock.text);
+    }
+  }
+  return chunks.join('');
+}
+
+function computeToolOutputDelta(previousText: string, nextText: string): string {
+  if (!nextText) {
+    return '';
+  }
+  if (!previousText) {
+    return nextText;
+  }
+  if (nextText.startsWith(previousText)) {
+    return nextText.slice(previousText.length);
+  }
+  const maxOverlap = Math.min(previousText.length, nextText.length, 8192);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    if (previousText.slice(-overlap) === nextText.slice(0, overlap)) {
+      return nextText.slice(overlap);
+    }
+  }
+  return nextText;
+}
+
 export interface ChatRunOutputAdapter {
   send: (message: ServerMessage) => void;
 }
@@ -1379,6 +1422,7 @@ export async function runChatCompletionCore(
 
     const toolInputOffsets = new Map<string, number>();
     const toolOutputOffsets = new Map<string, number>();
+    const toolOutputTexts = new Map<string, string>();
     const piReplayAccumulator = piReplayMessages.slice();
     let toolIterationCount = 0;
     let hitToolIterationLimit = false;
@@ -1531,6 +1575,7 @@ export async function runChatCompletionCore(
               : {}),
           });
           toolOutputOffsets.set(event.toolCallId, 0);
+          toolOutputTexts.set(event.toolCallId, '');
           if (shouldEmitChatEvents && eventStore && turnId) {
             emitToolCallEvent({
               eventStore,
@@ -1550,15 +1595,16 @@ export async function runChatCompletionCore(
             content?: Array<{ type?: string; text?: string }>;
             details?: Record<string, unknown>;
           };
-          const delta = partialResult.content
-            ?.filter((block) => block.type === 'text' && typeof block.text === 'string')
-            .map((block) => block.text as string)
-            .join('');
+          const previousText = toolOutputTexts.get(event.toolCallId) ?? '';
+          const nextText = extractToolOutputText(partialResult);
+          const delta = computeToolOutputDelta(previousText, nextText);
           if (!delta) {
+            toolOutputTexts.set(event.toolCallId, nextText);
             return;
           }
           const currentOffset = toolOutputOffsets.get(event.toolCallId) ?? 0;
           const streamValue = partialResult.details?.['stream'];
+          const nextOffset = currentOffset + delta.length;
           emitToolOutputChunkEvent({
             sessionHub,
             sessionId,
@@ -1567,15 +1613,18 @@ export async function runChatCompletionCore(
             toolCallId: event.toolCallId,
             toolName: event.toolName,
             chunk: delta,
-            offset: currentOffset + delta.length,
+            offset: nextOffset,
             ...(streamValue === 'stdout' || streamValue === 'stderr' || streamValue === 'output'
               ? { stream: streamValue }
               : {}),
           });
-          toolOutputOffsets.set(event.toolCallId, currentOffset + delta.length);
+          toolOutputOffsets.set(event.toolCallId, nextOffset);
+          toolOutputTexts.set(event.toolCallId, nextText);
           return;
         }
         case 'tool_execution_end':
+          toolOutputOffsets.delete(event.toolCallId);
+          toolOutputTexts.delete(event.toolCallId);
           emitToolResultMessage(event);
           if (onToolCallMetric) {
             onToolCallMetric(event.toolName, 0);
