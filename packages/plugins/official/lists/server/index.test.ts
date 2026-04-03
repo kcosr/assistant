@@ -150,6 +150,41 @@ describe('lists plugin operations', () => {
     expect(searchWithTags.length).toBe(1);
     expect(searchWithTags[0]?.title).toBe('First Item');
 
+    const searchByTagsOnly = (await ops['items-search'](
+      {
+        tags: ['shopping'],
+        tagMatch: 'all',
+      },
+      ctx,
+    )) as ListItem[];
+    expect(searchByTagsOnly.length).toBe(1);
+    expect(searchByTagsOnly[0]?.title).toBe('First Item');
+
+    const searchByBlankQueryAndTags = (await ops['items-search'](
+      {
+        query: '   ',
+        tags: ['shopping'],
+      },
+      ctx,
+    )) as ListItem[];
+    expect(searchByBlankQueryAndTags.length).toBe(1);
+    expect(searchByBlankQueryAndTags[0]?.title).toBe('First Item');
+
+    const searchByListOnly = (await ops['items-search'](
+      {
+        listId: 'reading',
+      },
+      ctx,
+    )) as ListItem[];
+    expect(searchByListOnly.map((item) => item.title).sort()).toEqual(['First Item', 'Second Item']);
+
+    await expect(ops['items-search']({}, ctx)).rejects.toThrowError(
+      /items-search requires query text, listId, or at least one tag/,
+    );
+    await expect(ops['items-search']({ query: '   ' }, ctx)).rejects.toThrowError(
+      /items-search requires query text, listId, or at least one tag/,
+    );
+
     const fetchedItem = (await ops['item-get'](
       {
         id: firstItem.id,

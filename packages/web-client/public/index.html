@@ -276,10 +276,7 @@
             <div class="settings-dropdown-item">
               <label for="global-aql-tag-chip-click-select">
                 Tag chip click (global AQL)
-                <select
-                  id="global-aql-tag-chip-click-select"
-                  aria-label="Tag chip click behavior"
-                >
+                <select id="global-aql-tag-chip-click-select" aria-label="Tag chip click behavior">
                   <option value="append-and">Append with AND</option>
                   <option value="replace">Replace query</option>
                 </select>
@@ -412,6 +409,49 @@
               step="1"
             />
           </label>
+          <label
+            id="voice-recognition-cue-control"
+            class="settings-dropdown-item"
+            for="voice-recognition-cue-checkbox"
+            hidden
+          >
+            <input type="checkbox" id="voice-recognition-cue-checkbox" checked />
+            Recognition cues
+          </label>
+          <div id="voice-recognition-cue-gain-control" class="voice-settings-slider-field" hidden>
+            <div class="voice-settings-slider-header">
+              <span class="list-item-form-label-text">Recognition cue gain</span>
+              <span id="voice-recognition-cue-gain-value" class="voice-settings-slider-value">
+                100%
+              </span>
+            </div>
+            <input
+              type="range"
+              id="voice-recognition-cue-gain-slider"
+              class="voice-settings-slider-input"
+              min="25"
+              max="500"
+              step="1"
+              value="100"
+            />
+          </div>
+          <div id="voice-startup-pre-roll-control" class="voice-settings-slider-field" hidden>
+            <div class="voice-settings-slider-header">
+              <span class="list-item-form-label-text">Startup pre-roll (ms)</span>
+              <span id="voice-startup-pre-roll-value" class="voice-settings-slider-value">
+                512 ms
+              </span>
+            </div>
+            <input
+              type="range"
+              id="voice-startup-pre-roll-slider"
+              class="voice-settings-slider-input"
+              min="0"
+              max="4096"
+              step="1"
+              value="512"
+            />
+          </div>
           <div id="voice-tts-gain-control" class="voice-settings-slider-field" hidden>
             <div class="voice-settings-slider-header">
               <span class="list-item-form-label-text">TTS gain</span>
@@ -629,9 +669,7 @@
                   stroke-linecap="round"
                   stroke-linejoin="round"
                 >
-                  <path
-                    d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"
-                  />
+                  <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" />
                 </svg>
               </button>
               <button

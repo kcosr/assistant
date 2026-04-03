@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.KeyEvent;
 
 import com.assistant.mobile.R;
 
@@ -20,6 +21,7 @@ import org.robolectric.annotation.Config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceRuntimeServiceTest {
@@ -35,8 +37,12 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "cycle-mode"),
+            createServicePendingIntent(context, "toggle"),
             true,
-            true
+            true,
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            false
         );
         Bundle extras = notification.extras;
 
@@ -49,14 +55,18 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(extras.getCharSequence(Notification.EXTRA_TEXT))
         );
         assertNotNull(notification.actions);
-        assertEquals(2, notification.actions.length);
+        assertEquals(3, notification.actions.length);
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_speak),
+            context.getString(R.string.assistant_voice_notification_action_stop),
             notification.actions[0].title
         );
         assertEquals(
-            context.getString(R.string.assistant_voice_notification_action_stop),
-            notification.actions[1].title
+            R.drawable.ic_notification_media_buttons_disabled,
+            notification.actions[1].icon
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_tool,
+            notification.actions[2].icon
         );
     }
 
@@ -108,8 +118,12 @@ public final class AssistantVoiceRuntimeServiceTest {
             createActivityPendingIntent(context, "launch"),
             createServicePendingIntent(context, "listen"),
             createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "cycle-mode"),
+            createServicePendingIntent(context, "toggle"),
             true,
-            false
+            false,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            true
         );
 
         assertEquals(
@@ -117,6 +131,331 @@ public final class AssistantVoiceRuntimeServiceTest {
             String.valueOf(notification.extras.getCharSequence(Notification.EXTRA_TITLE))
         );
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT));
+        assertEquals(3, notification.actions.length);
+        assertEquals(
+            context.getString(R.string.assistant_voice_notification_action_speak),
+            notification.actions[0].title
+        );
+        assertEquals(
+            R.drawable.ic_notification_media_buttons_enabled,
+            notification.actions[1].icon
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_response,
+            notification.actions[2].icon
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildNotificationShowsModeToggleWhenVoiceIsDisabled() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Notification notification = AssistantVoiceRuntimeService.buildNotification(
+            context,
+            AssistantVoiceRuntimeService.STATE_DISABLED,
+            "",
+            createActivityPendingIntent(context, "launch"),
+            createServicePendingIntent(context, "listen"),
+            createServicePendingIntent(context, "stop"),
+            createServicePendingIntent(context, "cycle-mode"),
+            createServicePendingIntent(context, "toggle"),
+            false,
+            false,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false
+        );
+
+        assertEquals(2, notification.actions.length);
+        assertEquals(
+            R.drawable.ic_notification_media_buttons_disabled,
+            notification.actions[0].icon
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_off,
+            notification.actions[1].icon
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveNotificationAudioModeActionIconMatchesMode() {
+        assertEquals(
+            R.drawable.ic_notification_mode_tool,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_TOOL
+            )
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_response,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            )
+        );
+        assertEquals(
+            R.drawable.ic_notification_mode_off,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_OFF
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveDisplayedNotificationAudioModeForcesOffWhenDisabled() {
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceRuntimeService.STATE_DISABLED,
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE
+            )
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceRuntimeService.resolveDisplayedNotificationAudioMode(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                AssistantVoiceConfig.AUDIO_MODE_TOOL
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void cycleAudioModeIntentCarriesDisplayedMode() {
+        Context context = RuntimeEnvironment.getApplication();
+
+        Intent intent = AssistantVoiceRuntimeService.cycleAudioModeIntent(
+            context,
+            AssistantVoiceConfig.AUDIO_MODE_OFF
+        );
+
+        assertEquals(
+            AssistantVoiceRuntimeService.ACTION_CYCLE_AUDIO_MODE,
+            intent.getAction()
+        );
+        assertTrue(intent.hasExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE));
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveMediaSessionPlaybackStateTreatsListeningAndSpeakingAsPlaying() {
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_LISTENING
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PLAYING,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_SPEAKING
+            )
+        );
+        assertEquals(
+            android.media.session.PlaybackState.STATE_PAUSED,
+            AssistantVoiceRuntimeService.resolveMediaSessionPlaybackState(
+                AssistantVoiceRuntimeService.STATE_IDLE
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldHandleMediaButtonKeyEventRequiresInitialActionDown() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldHandleMediaButtonKeyEvent(
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldHandleMediaButtonKeyEvent(
+                new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopForMediaButtonToggleWhenInteractionIsActive() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                true
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_LISTENING,
+                false
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStopForMediaButtonToggle(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                true
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
+                AssistantVoiceRuntimeService.STATE_IDLE,
+                false
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldToggleMediaButtonToStop(
+                AssistantVoiceRuntimeService.STATE_LISTENING,
+                false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void nextNotificationAudioModeCyclesThroughAllModes() {
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_TOOL)
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_OFF,
+            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_RESPONSE)
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_OFF)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUsePositiveRecognitionCueRequiresSuccessfulNonEmptySpeech() {
+        assertEquals(true, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "hello"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(true, "  "));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldUsePositiveRecognitionCue(false, "hello"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldHandleRecognizedStopCommandMatchesExactStopWord() {
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop"));
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, " Stop. "));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop now"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, ""));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(false, "stop"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldPlayQueuedRecognitionCompletionCueMatchesStoppedRequest() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "request-1",
+                " request-1 "
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "request-1",
+                "request-2"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldPlayQueuedRecognitionCompletionCue(
+                "",
+                "request-1"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldScheduleQueuedRecognitionCompletionCueAfterResultMatchesEarlierStop() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                " request-1 ",
+                "request-1"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                "",
+                "request-1"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldScheduleQueuedRecognitionCompletionCueAfterResult(
+                "request-2",
+                "request-1"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionArmingCueRequestIdRoundTripsThroughPlaybackMarker() {
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId(" request-1 ");
+
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId(playbackRequestId)
+        );
+        assertEquals("", AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId("tts-1"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldStartRecognitionAfterArmingCueMatchesPendingRecognitionRequest() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "request-1",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-1")
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "request-1",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-2")
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldStartRecognitionAfterArmingCue(
+                "",
+                AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-1")
+            )
+        );
     }
 
     private static PendingIntent createActivityPendingIntent(Context context, String action) {

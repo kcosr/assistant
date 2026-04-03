@@ -159,6 +159,28 @@ The following patches are applied automatically on `android:sync`:
   spoken replies back through the existing sessions message route.
 - Android-native voice settings now include a client-side `TTS gain` slider for native playback,
   clamped to `25%`-`500%`, and applied as PCM software gain inside the Android player.
+- Android-native recognition also plays positive/negative PCM cue tones on the same native media
+  path for ready, success, timeout/no-speech, error, and manual-stop events, with an on/off toggle
+  plus a `Recognition cue gain` slider clamped to `25%`-`500%`. Native voice settings also expose
+  a `Startup pre-roll (ms)` slider clamped to `0`-`4096`, defaulting to `512`, which controls the
+  silence prepended before recognition cue playback warms the media path.
+- The persistent Android notification now also includes a native-only Bluetooth/headset media-button
+  capture toggle. When enabled, the foreground service activates an Android `MediaSession` so
+  supported Bluetooth/headset media button presses toggle the existing native start/stop voice flow
+  based on runtime state. The toggle is persisted in native config and may compete with other media
+  apps for headset button ownership while enabled.
+- The same persistent Android notification also exposes compact icon actions for `Speak` or `Stop`
+  depending on runtime state, the Bluetooth/headset media-button capture toggle, and a voice-mode
+  cycle action for `Off`, `Tool`, or `Response`. `Off` leaves the foreground notification alive so
+  the mode can be cycled back on without reopening the web UI, while the direct Speak/Stop action
+  stays hidden when voice mode is disabled.
+- The recognition start cue is an arming cue that plays with a short native media preroll, fully
+  drains, then waits a brief settle delay before native mic startup begins. The completion cue is
+  deferred until recording has actually stopped, capture focus has been released, and a longer
+  media-route settle delay has elapsed before the tone plays.
+- A final native STT transcript of exactly `stop` is treated as a local stop command instead of
+  being forwarded to the LLM. That path plays the same negative completion cue used for canceled
+  or aborted recognition and leaves the runtime idle without surfacing an error.
 - Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
   listening pass immediately; later prompts that arrive while a pass is active are rendered only
   and are not queued for delayed autoplay.

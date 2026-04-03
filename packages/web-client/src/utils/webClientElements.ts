@@ -12,6 +12,14 @@ export interface WebClientElements {
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
   voiceRecognitionEndSilenceInput: HTMLInputElement;
+  voiceRecognitionCueControl: HTMLElement;
+  voiceRecognitionCueCheckbox: HTMLInputElement;
+  voiceRecognitionCueGainControl: HTMLElement;
+  voiceRecognitionCueGainSlider: HTMLInputElement;
+  voiceRecognitionCueGainValue: HTMLElement;
+  voiceStartupPreRollControl: HTMLElement;
+  voiceStartupPreRollSlider: HTMLInputElement;
+  voiceStartupPreRollValue: HTMLElement;
   voiceTtsGainControl: HTMLElement;
   voiceTtsGainSlider: HTMLInputElement;
   voiceTtsGainValue: HTMLElement;
@@ -74,7 +82,9 @@ export function getWebClientElements(): WebClientElements | null {
   const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
-  const voicePreferredSessionSelect = getElement<HTMLSelectElement>('voice-preferred-session-select');
+  const voicePreferredSessionSelect = getElement<HTMLSelectElement>(
+    'voice-preferred-session-select',
+  );
   const voiceMicInputSelect = getElement<HTMLSelectElement>('voice-mic-input-select');
   const voiceRecognitionStartTimeoutInput = getElement<HTMLInputElement>(
     'voice-recognition-start-timeout-input',
@@ -85,15 +95,27 @@ export function getWebClientElements(): WebClientElements | null {
   const voiceRecognitionEndSilenceInput = getElement<HTMLInputElement>(
     'voice-recognition-end-silence-input',
   );
+  const voiceRecognitionCueControl = getElement<HTMLElement>('voice-recognition-cue-control');
+  const voiceRecognitionCueCheckbox = getElement<HTMLInputElement>(
+    'voice-recognition-cue-checkbox',
+  );
+  const voiceRecognitionCueGainControl = getElement<HTMLElement>(
+    'voice-recognition-cue-gain-control',
+  );
+  const voiceRecognitionCueGainSlider = getElement<HTMLInputElement>(
+    'voice-recognition-cue-gain-slider',
+  );
+  const voiceRecognitionCueGainValue = getElement<HTMLElement>('voice-recognition-cue-gain-value');
+  const voiceStartupPreRollControl = getElement<HTMLElement>('voice-startup-pre-roll-control');
+  const voiceStartupPreRollSlider = getElement<HTMLInputElement>('voice-startup-pre-roll-slider');
+  const voiceStartupPreRollValue = getElement<HTMLElement>('voice-startup-pre-roll-value');
   const voiceTtsGainControl = getElement<HTMLElement>('voice-tts-gain-control');
   const voiceTtsGainSlider = getElement<HTMLInputElement>('voice-tts-gain-slider');
   const voiceTtsGainValue = getElement<HTMLElement>('voice-tts-gain-value');
   const includeContextCheckbox = getElement<HTMLInputElement>('include-context-checkbox');
   const showContextCheckbox = getElement<HTMLInputElement>('show-context-checkbox');
   const listInsertAtTopCheckbox = getElement<HTMLInputElement>('list-insert-at-top-checkbox');
-  const listItemSingleClickSelect = getElement<HTMLSelectElement>(
-    'list-item-single-click-select',
-  );
+  const listItemSingleClickSelect = getElement<HTMLSelectElement>('list-item-single-click-select');
   const globalAqlTagChipClickBehaviorSelect = getElement<HTMLSelectElement>(
     'global-aql-tag-chip-click-select',
   );
@@ -124,6 +146,14 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
     !voiceRecognitionEndSilenceInput ||
+    !voiceRecognitionCueControl ||
+    !voiceRecognitionCueCheckbox ||
+    !voiceRecognitionCueGainControl ||
+    !voiceRecognitionCueGainSlider ||
+    !voiceRecognitionCueGainValue ||
+    !voiceStartupPreRollControl ||
+    !voiceStartupPreRollSlider ||
+    !voiceStartupPreRollValue ||
     !voiceTtsGainControl ||
     !voiceTtsGainSlider ||
     !voiceTtsGainValue ||
@@ -151,6 +181,14 @@ export function getWebClientElements(): WebClientElements | null {
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,
     voiceRecognitionEndSilenceInput,
+    voiceRecognitionCueControl,
+    voiceRecognitionCueCheckbox,
+    voiceRecognitionCueGainControl,
+    voiceRecognitionCueGainSlider,
+    voiceRecognitionCueGainValue,
+    voiceStartupPreRollControl,
+    voiceStartupPreRollSlider,
+    voiceStartupPreRollValue,
     voiceTtsGainControl,
     voiceTtsGainSlider,
     voiceTtsGainValue,

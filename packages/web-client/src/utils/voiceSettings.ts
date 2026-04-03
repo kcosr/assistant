@@ -7,6 +7,11 @@ export const DEFAULT_RECOGNITION_END_SILENCE_MS = 1_200;
 export const MIN_TTS_GAIN = 0.25;
 export const MAX_TTS_GAIN = 5.0;
 export const DEFAULT_TTS_GAIN = 1.0;
+export const DEFAULT_RECOGNITION_CUE_ENABLED = true;
+export const DEFAULT_RECOGNITION_CUE_GAIN = 1.0;
+export const MIN_STARTUP_PRE_ROLL_MS = 0;
+export const MAX_STARTUP_PRE_ROLL_MS = 4096;
+export const DEFAULT_STARTUP_PRE_ROLL_MS = 512;
 export const MIN_TTS_GAIN_PERCENT = MIN_TTS_GAIN * 100;
 export const MAX_TTS_GAIN_PERCENT = MAX_TTS_GAIN * 100;
 
@@ -20,6 +25,9 @@ export interface VoiceSettings {
   recognitionCompletionTimeoutMs: number;
   recognitionEndSilenceMs: number;
   ttsGain: number;
+  recognitionCueEnabled: boolean;
+  recognitionCueGain: number;
+  startupPreRollMs: number;
 }
 
 function normalizeOptionalString(value: unknown): string {
@@ -67,21 +75,61 @@ export function normalizeTtsGain(value: unknown, fallback = DEFAULT_TTS_GAIN): n
   return Math.min(MAX_TTS_GAIN, Math.max(MIN_TTS_GAIN, candidate));
 }
 
+export function normalizeStartupPreRollMs(
+  value: unknown,
+  fallback = DEFAULT_STARTUP_PRE_ROLL_MS,
+): number {
+  const normalizedFallback =
+    typeof fallback === 'number' && Number.isFinite(fallback)
+      ? Math.min(MAX_STARTUP_PRE_ROLL_MS, Math.max(MIN_STARTUP_PRE_ROLL_MS, Math.round(fallback)))
+      : DEFAULT_STARTUP_PRE_ROLL_MS;
+  let candidate = normalizedFallback;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    candidate = value;
+  } else if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value.trim());
+    if (Number.isFinite(parsed)) {
+      candidate = parsed;
+    }
+  }
+  return Math.min(
+    MAX_STARTUP_PRE_ROLL_MS,
+    Math.max(MIN_STARTUP_PRE_ROLL_MS, Math.round(candidate)),
+  );
+}
+
+export function formatStartupPreRollMsLabel(value: number): string {
+  return `${normalizeStartupPreRollMs(value)} ms`;
+}
+
 export function ttsGainToPercent(gain: number): number {
   return Math.round(normalizeTtsGain(gain) * 100);
 }
 
 export function ttsGainPercentToValue(value: unknown, fallback = DEFAULT_TTS_GAIN): number {
   return normalizeTtsGain(
-    typeof value === 'string' || typeof value === 'number'
-      ? Number(value) / 100
-      : DEFAULT_TTS_GAIN,
+    typeof value === 'string' || typeof value === 'number' ? Number(value) / 100 : DEFAULT_TTS_GAIN,
     fallback,
   );
 }
 
 export function formatTtsGainPercentLabel(gain: number): string {
   return `${ttsGainToPercent(gain)}%`;
+}
+
+export function recognitionCueGainToPercent(gain: number): number {
+  return ttsGainToPercent(gain);
+}
+
+export function recognitionCueGainPercentToValue(
+  value: unknown,
+  fallback = DEFAULT_RECOGNITION_CUE_GAIN,
+): number {
+  return ttsGainPercentToValue(value, fallback);
+}
+
+export function formatRecognitionCueGainPercentLabel(gain: number): string {
+  return formatTtsGainPercentLabel(gain);
 }
 
 export function createDefaultVoiceSettings(options?: {
@@ -98,6 +146,9 @@ export function createDefaultVoiceSettings(options?: {
     recognitionCompletionTimeoutMs: DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
     recognitionEndSilenceMs: DEFAULT_RECOGNITION_END_SILENCE_MS,
     ttsGain: DEFAULT_TTS_GAIN,
+    recognitionCueEnabled: DEFAULT_RECOGNITION_CUE_ENABLED,
+    recognitionCueGain: DEFAULT_RECOGNITION_CUE_GAIN,
+    startupPreRollMs: DEFAULT_STARTUP_PRE_ROLL_MS,
   };
 }
 
@@ -135,6 +186,15 @@ export function normalizeVoiceSettings(
       defaults.recognitionEndSilenceMs,
     ),
     ttsGain: normalizeTtsGain(record['ttsGain'], defaults.ttsGain),
+    recognitionCueEnabled:
+      typeof record['recognitionCueEnabled'] === 'boolean'
+        ? record['recognitionCueEnabled']
+        : defaults.recognitionCueEnabled,
+    recognitionCueGain: normalizeTtsGain(record['recognitionCueGain'], defaults.recognitionCueGain),
+    startupPreRollMs: normalizeStartupPreRollMs(
+      record['startupPreRollMs'],
+      defaults.startupPreRollMs,
+    ),
   };
 }
 
@@ -148,6 +208,9 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
     left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
     left.recognitionEndSilenceMs === right.recognitionEndSilenceMs &&
-    left.ttsGain === right.ttsGain
+    left.ttsGain === right.ttsGain &&
+    left.recognitionCueEnabled === right.recognitionCueEnabled &&
+    left.recognitionCueGain === right.recognitionCueGain &&
+    left.startupPreRollMs === right.startupPreRollMs
   );
 }
