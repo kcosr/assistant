@@ -55,7 +55,7 @@ describe('client message validation', () => {
         {
           sessionId: 'session-1',
           mask: {
-            serverMessageTypes: ['chat_event', 'transcript_event', 'output_cancelled'],
+            serverMessageTypes: ['transcript_event', 'output_cancelled'],
             chatEventTypes: ['tool_call', 'assistant_done'],
             toolNames: ['voice_speak', 'voice_ask'],
             messagePhases: ['final_answer'],
@@ -67,7 +67,7 @@ describe('client message validation', () => {
       type: 'subscribe',
       sessionId: 'session-1',
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak'],
       },
@@ -340,7 +340,7 @@ describe('server message validation', () => {
       type: 'subscribed',
       sessionId: 'session-4',
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak', 'voice_ask'],
       },

@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - Removed `sessions.mirrorPiSessionHistory`; Pi-backed sessions now always persist canonical Pi JSONL history for replay, reload, and request-group editing.
+- Changed the websocket protocol to require protocol version `5` and use `transcript_event` as the only event-stream server message; `chat_event` is no longer emitted or accepted in subscription masks.
 
 ### Added
 

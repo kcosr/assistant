@@ -18,7 +18,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const typingIndicators = new Set<string>();
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
-  const bufferChatEvent = vi.fn();
+  const bufferTranscriptEvent = vi.fn();
 
   const options: ServerMessageHandlerOptions = {
     statusEl: document.createElement('div'),
@@ -35,8 +35,8 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
     supportsAudioOutput: () => false,
     refreshSessions,
     loadSessionTranscript,
-    shouldBufferChatEvent: () => false,
-    bufferChatEvent,
+    shouldBufferTranscriptEvent: () => false,
+    bufferTranscriptEvent,
     renderAgentSidebar: () => {},
     appendMessage: () => document.createElement('div'),
     scrollMessageIntoView: () => {},
@@ -64,7 +64,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
 
   const handler = new ServerMessageHandler(options);
 
-  return { handler, typingIndicators, refreshSessions, loadSessionTranscript, bufferChatEvent };
+  return { handler, typingIndicators, refreshSessions, loadSessionTranscript, bufferTranscriptEvent };
 }
 
 describe('ServerMessageHandler typing indicator', () => {
@@ -72,31 +72,33 @@ describe('ServerMessageHandler typing indicator', () => {
     const { handler, typingIndicators } = makeHandler();
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event: {
-        id: 'e-turn-start',
-        type: 'turn_start',
-        timestamp: Date.now(),
         sessionId: 's-1',
-        turnId: 't-1',
-        payload: {
-          trigger: 'user',
-        },
+        revision: 1,
+        sequence: 0,
+        requestId: 't-1',
+        eventId: 'e-turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: new Date().toISOString(),
+        payload: { trigger: 'user' },
       },
     });
 
     handler.resetRealtimeState();
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event: {
-        id: 'e-turn-end',
-        type: 'turn_end',
-        timestamp: Date.now(),
         sessionId: 's-1',
-        turnId: 't-1',
+        revision: 1,
+        sequence: 1,
+        requestId: 't-1',
+        eventId: 'e-turn-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: new Date().toISOString(),
         payload: {},
       },
     });
@@ -135,10 +137,10 @@ describe('ServerMessageHandler typing indicator', () => {
   it('scrolls visible chat panels to bottom on turn_start', async () => {
     const scrollToBottom = vi.fn();
     const autoScrollIfEnabled = vi.fn();
-    const handleNewEvent = vi.fn();
+    const handleNewProjectedEvent = vi.fn();
     const runtime = {
       chatRenderer: {
-        handleNewEvent,
+        handleNewProjectedEvent,
         hideTypingIndicator: vi.fn(),
         showTypingIndicator: vi.fn(),
       },
@@ -163,28 +165,30 @@ describe('ServerMessageHandler typing indicator', () => {
     });
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event: {
-        id: 'turn-1',
-        type: 'turn_start',
-        timestamp: Date.now(),
         sessionId: 's-1',
-        turnId: 'turn-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'turn-1',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-02T00:00:00.000Z',
         payload: { trigger: 'user' },
       },
     });
 
-    expect(handleNewEvent).toHaveBeenCalledTimes(1);
+    expect(handleNewProjectedEvent).toHaveBeenCalledTimes(1);
     expect(scrollToBottom).toHaveBeenCalledTimes(1);
     expect(autoScrollIfEnabled).not.toHaveBeenCalled();
   });
 
-  it('buffers chat events while transcript hydration is in progress', async () => {
-    const handleNewEvent = vi.fn();
+  it('buffers transcript events while transcript hydration is in progress', async () => {
+    const handleNewProjectedEvent = vi.fn();
     const runtime = {
       chatRenderer: {
-        handleNewEvent,
+        handleNewProjectedEvent,
         hideTypingIndicator: vi.fn(),
         showTypingIndicator: vi.fn(),
       },
@@ -203,29 +207,31 @@ describe('ServerMessageHandler typing indicator', () => {
       dispose: vi.fn(),
     } as unknown as ChatRuntime;
 
-    const { handler, bufferChatEvent } = makeHandler({
+    const { handler, bufferTranscriptEvent } = makeHandler({
       getChatRuntimeForSession: () => runtime,
       isChatPanelVisible: () => true,
-      shouldBufferChatEvent: () => true,
+      shouldBufferTranscriptEvent: () => true,
     });
 
     const event = {
-      id: 'user-1',
-      type: 'user_message',
-      timestamp: Date.now(),
       sessionId: 's-1',
-      turnId: 't-1',
+      revision: 1,
+      sequence: 0,
+      requestId: 't-1',
+      eventId: 'user-1',
+      kind: 'user_message',
+      chatEventType: 'user_message',
+      timestamp: '2026-04-02T00:00:00.000Z',
       payload: { text: 'hello' },
     } as const;
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event,
     });
 
-    expect(bufferChatEvent).toHaveBeenCalledWith('s-1', event);
-    expect(handleNewEvent).not.toHaveBeenCalled();
+    expect(bufferTranscriptEvent).toHaveBeenCalledWith('s-1', event);
+    expect(handleNewProjectedEvent).not.toHaveBeenCalled();
   });
 
   it('renders transcript events through the chat renderer path', async () => {
@@ -353,14 +359,16 @@ describe('ServerMessageHandler typing indicator', () => {
     });
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event: {
-        id: 'turn-start',
-        type: 'turn_start',
-        timestamp: Date.now(),
         sessionId: 's-1',
-        turnId: 'turn-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-02T00:00:00.000Z',
         payload: { trigger: 'user' },
       },
     });
@@ -369,14 +377,16 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(statuses.at(-1)).toEqual({ sessionId: 's-1', status: 'busy' });
 
     await handler.handle({
-      type: 'chat_event',
-      sessionId: 's-1',
+      type: 'transcript_event',
       event: {
-        id: 'turn-end',
-        type: 'turn_end',
-        timestamp: Date.now(),
         sessionId: 's-1',
-        turnId: 'turn-1',
+        revision: 1,
+        sequence: 1,
+        requestId: 'turn-1',
+        eventId: 'turn-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: '2026-04-02T00:00:01.000Z',
         payload: {},
       },
     });

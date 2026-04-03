@@ -185,7 +185,7 @@ Panel layout management operations:
 
 ### Session & Multiplexed Connections
 
-The WebSocket server supports **multiplexed connections** (protocol v3), allowing a single WebSocket to subscribe to multiple sessions simultaneously with optional per-session event masks.
+The WebSocket server supports **multiplexed connections** (protocol v5), allowing a single WebSocket to subscribe to multiple sessions simultaneously with optional per-session event masks.
 
 **Connection model:**
 
@@ -197,18 +197,18 @@ Client ────── WebSocket ────── Server
                 └── Session C (not subscribed)
 ```
 
-**Protocol v3 hello:**
+**Protocol v5 hello:**
 
 ```typescript
 {
   type: 'hello',
-  protocolVersion: 3,
+  protocolVersion: 5,
   subscriptions: [
     { sessionId: 'session-a' },
     {
       sessionId: 'session-b',
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak', 'voice_ask'],
       },

@@ -1,6 +1,5 @@
 import type {
   AssistantTextPhase,
-  ChatEvent,
   ChatEventType,
   ProjectedTranscriptEvent,
   ServerMessage,
@@ -238,35 +237,16 @@ export class SessionConnectionRegistry {
       return true;
     }
 
-    if (message.type !== 'chat_event') {
-      // chatEventTypes only constrains chat_event payloads. Non-chat-event
-      // messages are filtered solely by the dimensions that apply to them.
-      const topLevelToolName = this.getTopLevelToolName(message);
-      if (topLevelToolName && mask.toolNames && !mask.toolNames.includes(topLevelToolName)) {
-        return false;
-      }
-      const topLevelPhase = this.getTopLevelAssistantPhase(message);
-      if (topLevelPhase && mask.messagePhases && !mask.messagePhases.includes(topLevelPhase)) {
-        return false;
-      }
-      return true;
-    }
-
-    const event = message.event;
-    if (mask.chatEventTypes && !mask.chatEventTypes.includes(event.type as ChatEventType)) {
+    // chatEventTypes only constrains transcript_event payloads. Non-transcript-event
+    // messages are filtered solely by the dimensions that apply to them.
+    const topLevelToolName = this.getTopLevelToolName(message);
+    if (topLevelToolName && mask.toolNames && !mask.toolNames.includes(topLevelToolName)) {
       return false;
     }
-
-    const eventToolName = this.getChatEventToolName(event);
-    if (eventToolName && mask.toolNames && !mask.toolNames.includes(eventToolName)) {
+    const topLevelPhase = this.getTopLevelAssistantPhase(message);
+    if (topLevelPhase && mask.messagePhases && !mask.messagePhases.includes(topLevelPhase)) {
       return false;
     }
-
-    const eventPhase = this.getChatEventAssistantPhase(event);
-    if (eventPhase && mask.messagePhases && !mask.messagePhases.includes(eventPhase)) {
-      return false;
-    }
-
     return true;
   }
 
@@ -287,27 +267,6 @@ export class SessionConnectionRegistry {
       case 'text_delta':
       case 'text_done':
         return message.phase ?? null;
-      default:
-        return null;
-    }
-  }
-
-  private getChatEventToolName(event: ChatEvent): string | null {
-    switch (event.type) {
-      case 'tool_call':
-      case 'tool_input_chunk':
-      case 'tool_output_chunk':
-        return event.payload.toolName;
-      default:
-        return null;
-    }
-  }
-
-  private getChatEventAssistantPhase(event: ChatEvent): AssistantTextPhase | null {
-    switch (event.type) {
-      case 'assistant_chunk':
-      case 'assistant_done':
-        return event.payload.phase ?? null;
       default:
         return null;
     }

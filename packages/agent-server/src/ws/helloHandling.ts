@@ -90,7 +90,7 @@ export async function handleHello(options: HandleHelloOptions): Promise<void> {
   } catch (err) {
     sendError(
       'internal_error',
-      'Failed to initialise subscriptions for protocol v3 hello',
+      'Failed to initialise subscriptions for multiplexed hello',
       { error: String(err) },
       { retryable: true },
     );

@@ -26,6 +26,24 @@ function createBaseEvent<T extends ChatEvent['type']>(
   return { ...base, ...overrides } as Extract<ChatEvent, { type: T }>;
 }
 
+function createProjectedEvent(
+  sequence: number,
+  overrides: Partial<ProjectedTranscriptEvent> = {},
+): ProjectedTranscriptEvent {
+  return {
+    sessionId: 's1',
+    revision: 1,
+    sequence,
+    requestId: 't1',
+    eventId: `e${sequence}`,
+    kind: 'assistant_message',
+    chatEventType: 'assistant_done',
+    timestamp: new Date(1000 + sequence).toISOString(),
+    payload: { text: `message ${sequence}` },
+    ...overrides,
+  };
+}
+
 describe('ChatRenderer', () => {
   it('replays projected transcript events into the expected DOM structure', () => {
     const container = document.createElement('div');
@@ -96,6 +114,83 @@ describe('ChatRenderer', () => {
     const assistantText = turn?.querySelector<HTMLDivElement>('.assistant-text');
     expect(assistantText?.textContent).toContain('Projected reply');
     expect(assistantText?.dataset['eventId']).toBe('e2');
+  });
+
+  it('orders projected transcript replay by sequence instead of arrival order', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents([
+      createProjectedEvent(2, {
+        responseId: 'r1',
+        payload: { text: 'assistant' },
+      }),
+      createProjectedEvent(0, {
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      createProjectedEvent(1, {
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'user' },
+      }),
+      createProjectedEvent(3, {
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        payload: {},
+      }),
+    ]);
+
+    const turn = container.querySelector<HTMLDivElement>('.turn');
+    const userMessage = turn?.querySelector<HTMLDivElement>('.message.user');
+    const assistantText = turn?.querySelector<HTMLDivElement>('.assistant-text');
+    expect(userMessage?.textContent).toContain('user');
+    expect(assistantText?.textContent).toContain('assistant');
+  });
+
+  it('ignores duplicate projected transcript events and stale revisions', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents([
+      createProjectedEvent(0, {
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      createProjectedEvent(1, {
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'hello' },
+      }),
+    ]);
+
+    renderer.handleNewProjectedEvent(
+      createProjectedEvent(1, {
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'hello' },
+      }),
+    );
+    renderer.handleNewProjectedEvent(
+      createProjectedEvent(0, {
+        revision: 0,
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'stale' },
+      }),
+    );
+
+    const messages = Array.from(container.querySelectorAll('.message.user'));
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.textContent).toContain('hello');
   });
 
   it('replays events into the expected DOM structure', () => {

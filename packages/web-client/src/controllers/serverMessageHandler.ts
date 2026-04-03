@@ -1,9 +1,7 @@
 import type {
-  ChatEvent,
   PanelEventEnvelope,
   PanelStatus,
   ProjectedTranscriptEvent,
-  ServerChatEventMessage,
   ServerMessage,
   ServerMessageDequeuedMessage,
   ServerMessageQueuedMessage,
@@ -51,8 +49,6 @@ export interface ServerMessageHandlerOptions {
   supportsAudioOutput: () => boolean;
   refreshSessions: (preferredSessionId?: string | null) => Promise<void>;
   loadSessionTranscript: (sessionId: string, options?: { force?: boolean }) => Promise<void>;
-  shouldBufferChatEvent?: (sessionId: string) => boolean;
-  bufferChatEvent?: (sessionId: string, event: ChatEvent) => void;
   shouldBufferTranscriptEvent?: (sessionId: string) => boolean;
   bufferTranscriptEvent?: (sessionId: string, event: ProjectedTranscriptEvent) => void;
   renderAgentSidebar: () => void;
@@ -144,44 +140,6 @@ export class ServerMessageHandler {
     }
   }
 
-  private handleChatEventForSession(sessionId: string, event: ChatEvent): void {
-    if (event.type === 'turn_start') {
-      this.markTurnStarted(sessionId, event.turnId);
-    } else if (
-      event.type === 'turn_end' ||
-      event.type === 'interrupt' ||
-      event.type === 'error'
-    ) {
-      this.markTurnFinished(sessionId, event.turnId);
-    }
-
-    if (!this.options.isChatPanelVisible(sessionId)) {
-      this.markSessionHasPendingMessages(sessionId);
-      this.options.showBackgroundSessionActivityIndicator(sessionId);
-    }
-
-    this.syncSessionTurnActivity(sessionId);
-
-    if (this.options.shouldBufferChatEvent?.(sessionId)) {
-      this.options.bufferChatEvent?.(sessionId, event);
-      return;
-    }
-
-    const runtime = this.options.getChatRuntimeForSession(sessionId);
-    if (!runtime) {
-      return;
-    }
-    runtime.chatRenderer.handleNewEvent(event);
-    if (this.options.isChatPanelVisible(sessionId)) {
-      if (event.type === 'turn_start') {
-        runtime.chatScrollManager.scrollToBottom();
-      } else {
-        runtime.chatScrollManager.autoScrollIfEnabled();
-      }
-    }
-    this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
-  }
-
   private handleProjectedTranscriptEventForSession(
     sessionId: string,
     event: ProjectedTranscriptEvent,
@@ -261,18 +219,6 @@ export class ServerMessageHandler {
 
   async handle(message: ServerMessage): Promise<void> {
     switch (message.type) {
-      case 'chat_event': {
-        const chatEventMessage = message as ServerChatEventMessage;
-        const messageSessionId =
-          typeof chatEventMessage.sessionId === 'string' ? chatEventMessage.sessionId.trim() : '';
-        if (!messageSessionId) {
-          console.warn('[client] chat_event missing sessionId', chatEventMessage);
-          break;
-        }
-        this.handleChatEventForSession(messageSessionId, chatEventMessage.event);
-        break;
-      }
-
       case 'transcript_event': {
         const transcriptMessage = message as ServerTranscriptEventMessage;
         const sessionId = transcriptMessage.event.sessionId.trim();

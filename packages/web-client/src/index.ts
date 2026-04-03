@@ -1,6 +1,5 @@
 import {
   safeValidateServerMessage,
-  type ChatEvent,
   type CombinedPluginManifest,
   type PanelBinding,
   type PanelEventEnvelope,
@@ -116,7 +115,6 @@ import {
   setStatus,
   stripContextLine,
 } from './utils/chatMessageRenderer';
-import { filterBufferedReplayEvents } from './utils/chatEventReplayDedup';
 import { ensureEmptySessionHint } from './utils/emptySessionHint';
 import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
@@ -130,6 +128,7 @@ import { applyContextUsageBadge } from './utils/contextUsage';
 import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils/panelServices';
 import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
+import { dedupeProjectedTranscriptEvents } from './utils/transcriptReplay';
 import {
   createWindowSlot,
   getClientWindowId,
@@ -337,69 +336,78 @@ async function main(): Promise<void> {
   };
   const chatPanelsById = new Map<string, ChatPanelEntry>();
   const chatPanelIdBySession = new Map<string, string>();
-  const loadedChatTranscripts = new Set<string>();
-  const hydratingSessionTranscriptCounts = new Map<string, number>();
-  const sessionTranscriptCursors = new Map<string, string>();
-  const bufferedChatEvents = new Map<string, ChatEvent[]>();
-  const bufferedTranscriptEvents = new Map<string, ProjectedTranscriptEvent[]>();
+  type SessionTranscriptReplayState = {
+    loaded: boolean;
+    hydratingCount: number;
+    cursor: string | null;
+    revision: number | null;
+    bufferedEvents: ProjectedTranscriptEvent[];
+  };
+  const sessionTranscriptReplayState = new Map<string, SessionTranscriptReplayState>();
+
+  function getOrCreateSessionTranscriptReplayState(sessionId: string): SessionTranscriptReplayState {
+    const trimmed = sessionId.trim();
+    const existing = sessionTranscriptReplayState.get(trimmed);
+    if (existing) {
+      return existing;
+    }
+    const created: SessionTranscriptReplayState = {
+      loaded: false,
+      hydratingCount: 0,
+      cursor: null,
+      revision: null,
+      bufferedEvents: [],
+    };
+    sessionTranscriptReplayState.set(trimmed, created);
+    return created;
+  }
 
   function clearSessionTranscriptState(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
       return;
     }
-    loadedChatTranscripts.delete(trimmed);
-    hydratingSessionTranscriptCounts.delete(trimmed);
-    sessionTranscriptCursors.delete(trimmed);
-    bufferedChatEvents.delete(trimmed);
-    bufferedTranscriptEvents.delete(trimmed);
-  }
-
-  function flushBufferedChatEvents(
-    sessionId: string,
-    chatRenderer: ChatRuntime['chatRenderer'],
-    chatScrollManager: ChatRuntime['chatScrollManager'],
-    replayedEvents?: ChatEvent[],
-  ): void {
-    const trimmed = sessionId.trim();
-    if (!trimmed) {
-      return;
-    }
-    const pendingEvents = bufferedChatEvents.get(trimmed) ?? [];
-    bufferedChatEvents.delete(trimmed);
-    const eventsToApply = filterBufferedReplayEvents(pendingEvents, replayedEvents);
-    if (eventsToApply.length === 0) {
-      return;
-    }
-    for (const event of eventsToApply) {
-      chatRenderer.handleNewEvent(event);
-    }
-    chatScrollManager.autoScrollIfEnabled();
+    sessionTranscriptReplayState.delete(trimmed);
   }
 
   function flushBufferedTranscriptEvents(
     sessionId: string,
     chatRenderer: ChatRuntime['chatRenderer'],
     chatScrollManager: ChatRuntime['chatScrollManager'],
-    replayedEvents?: ProjectedTranscriptEvent[],
+    revision?: number,
   ): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
       return;
     }
-    const pendingEvents = bufferedTranscriptEvents.get(trimmed) ?? [];
-    bufferedTranscriptEvents.delete(trimmed);
+    const replayState = sessionTranscriptReplayState.get(trimmed);
+    if (!replayState) {
+      return;
+    }
+    const pendingEvents = dedupeProjectedTranscriptEvents(replayState.bufferedEvents);
+    replayState.bufferedEvents = [];
     if (pendingEvents.length === 0) {
       return;
     }
-    const replayedIds = new Set((replayedEvents ?? []).map((event) => event.eventId));
-    const eventsToApply = pendingEvents.filter((event) => !replayedIds.has(event.eventId));
+    const latestBufferedRevision = pendingEvents[pendingEvents.length - 1]?.revision;
+    if (
+      typeof revision === 'number' &&
+      typeof latestBufferedRevision === 'number' &&
+      latestBufferedRevision > revision
+    ) {
+      replayState.loaded = false;
+      replayState.cursor = null;
+      void loadSessionTranscript(trimmed, { force: true });
+      return;
+    }
+    const eventsToApply =
+      typeof revision === 'number'
+        ? pendingEvents.filter((event) => event.revision === revision)
+        : pendingEvents;
     if (eventsToApply.length === 0) {
       return;
     }
-    for (const event of eventsToApply) {
-      chatRenderer.handleNewProjectedEvent(event);
-    }
+    chatRenderer.replayProjectedEvents(eventsToApply);
     chatScrollManager.autoScrollIfEnabled();
   }
 
@@ -4082,20 +4090,23 @@ async function main(): Promise<void> {
       return;
     }
     const forceReload = options?.force === true;
-    const alreadyLoaded = loadedChatTranscripts.has(trimmed);
-    if (!forceReload && alreadyLoaded) {
+    const replayState = getOrCreateSessionTranscriptReplayState(trimmed);
+    if (!forceReload && replayState.loaded && !replayState.cursor) {
       return;
     }
     const runtime = getChatRuntimeForSession(trimmed);
     if (!runtime) {
       return;
     }
-    loadedChatTranscripts.add(trimmed);
-    hydratingSessionTranscriptCounts.set(trimmed, (hydratingSessionTranscriptCounts.get(trimmed) ?? 0) + 1);
+    replayState.hydratingCount += 1;
+    if (forceReload) {
+      replayState.cursor = null;
+      replayState.bufferedEvents = [];
+    }
     const chatLogEl = runtime.elements.chatLog;
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
-    const replayCursor = !forceReload ? sessionTranscriptCursors.get(trimmed) : undefined;
+    const replayCursor = !forceReload ? replayState.cursor : undefined;
     // Unified events are the single source of truth for transcript replay.
     try {
       const eventsResponse = await apiFetch(sessionsOperationPath('events'), {
@@ -4111,45 +4122,52 @@ async function main(): Promise<void> {
         console.error('Failed to fetch session events', sessionId, eventsResponse.status);
         chatRenderer.clear();
         ensureEmptySessionHint(chatLogEl);
-        loadedChatTranscripts.delete(trimmed);
-        hydratingSessionTranscriptCounts.delete(trimmed);
-        flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
+        replayState.loaded = false;
+        replayState.cursor = null;
+        replayState.revision = null;
         return;
       }
 
       const replay = await readSessionOperationResult<SessionReplayResponse>(eventsResponse);
-      const projectedEvents = Array.isArray(replay?.events) ? replay.events : [];
-      if (typeof replay?.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
-        sessionTranscriptCursors.set(trimmed, replay.nextCursor.trim());
-      } else {
-        sessionTranscriptCursors.delete(trimmed);
+      if (!replay) {
+        throw new Error('Session events response did not include a replay payload');
       }
+      const projectedEvents = dedupeProjectedTranscriptEvents(
+        Array.isArray(replay.events) ? replay.events : [],
+      );
+      if (typeof replay.nextCursor === 'string' && replay.nextCursor.trim().length > 0) {
+        replayState.cursor = replay.nextCursor.trim();
+      } else {
+        replayState.cursor = null;
+      }
+      replayState.revision = replay.revision;
 
-      if (projectedEvents.length > 0) {
+      const shouldResetTranscript = forceReload || replay.reset || !replayState.loaded;
+      if (shouldResetTranscript) {
+        if (projectedEvents.length > 0) {
+          chatRenderer.replayProjectedEvents(projectedEvents, { reset: true });
+          chatScrollManager.scrollToBottom();
+        } else {
+          chatRenderer.clear();
+          ensureEmptySessionHint(chatLogEl);
+        }
+      } else if (projectedEvents.length > 0) {
         chatRenderer.replayProjectedEvents(projectedEvents);
-        chatScrollManager.scrollToBottom();
-      } else {
-        chatRenderer.clear();
-        ensureEmptySessionHint(chatLogEl);
+        chatScrollManager.autoScrollIfEnabled();
       }
 
-      flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, projectedEvents);
-      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
+      replayState.loaded = true;
+
+      flushBufferedTranscriptEvents(trimmed, chatRenderer, chatScrollManager, replay.revision);
     } catch (error) {
       console.error('Failed to fetch session events', sessionId, error);
       chatRenderer.clear();
       ensureEmptySessionHint(chatLogEl);
-      loadedChatTranscripts.delete(trimmed);
-      hydratingSessionTranscriptCounts.delete(trimmed);
-      sessionTranscriptCursors.delete(trimmed);
-      flushBufferedChatEvents(trimmed, chatRenderer, chatScrollManager);
+      replayState.loaded = false;
+      replayState.cursor = null;
+      replayState.revision = null;
     } finally {
-      const remainingLoads = (hydratingSessionTranscriptCounts.get(trimmed) ?? 1) - 1;
-      if (remainingLoads > 0) {
-        hydratingSessionTranscriptCounts.set(trimmed, remainingLoads);
-      } else {
-        hydratingSessionTranscriptCounts.delete(trimmed);
-      }
+      replayState.hydratingCount = Math.max(0, replayState.hydratingCount - 1);
     }
     const shouldShowTyping = sessionsWithActiveTyping.has(trimmed) || chatRenderer.hasActiveOutput();
     if (shouldShowTyping) {
@@ -4407,27 +4425,15 @@ async function main(): Promise<void> {
     supportsAudioOutput: () => getPrimaryChatInputRuntime()?.supportsAudioOutput() ?? false,
     refreshSessions,
     loadSessionTranscript,
-    shouldBufferChatEvent: (sessionId) =>
-      (hydratingSessionTranscriptCounts.get(sessionId.trim()) ?? 0) > 0,
-    bufferChatEvent: (sessionId, event) => {
-      const trimmed = sessionId.trim();
-      if (!trimmed) {
-        return;
-      }
-      const existing = bufferedChatEvents.get(trimmed) ?? [];
-      existing.push(event);
-      bufferedChatEvents.set(trimmed, existing);
-    },
     shouldBufferTranscriptEvent: (sessionId) =>
-      (hydratingSessionTranscriptCounts.get(sessionId.trim()) ?? 0) > 0,
+      (sessionTranscriptReplayState.get(sessionId.trim())?.hydratingCount ?? 0) > 0,
     bufferTranscriptEvent: (sessionId, event) => {
       const trimmed = sessionId.trim();
       if (!trimmed) {
         return;
       }
-      const existing = bufferedTranscriptEvents.get(trimmed) ?? [];
-      existing.push(event);
-      bufferedTranscriptEvents.set(trimmed, existing);
+      const replayState = getOrCreateSessionTranscriptReplayState(trimmed);
+      replayState.bufferedEvents.push(event);
     },
     renderAgentSidebar,
     appendMessage,

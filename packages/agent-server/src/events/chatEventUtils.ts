@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { ChatEvent, ServerChatEventMessage, ServerMessage } from '@assistant/shared';
+import type { ChatEvent, ServerMessage } from '@assistant/shared';
 
 import type { EventStore } from './eventStore';
 import type { SessionHub } from '../sessionHub';
@@ -350,22 +350,6 @@ export interface ChatEventContext {
 
 const liveTranscriptSequenceBySession = new Map<string, number>();
 
-function shouldBroadcastProjectedTranscript(sessionHub: SessionHub, sessionId: string): boolean {
-  if (typeof sessionHub.getSessionState !== 'function') {
-    return false;
-  }
-  const state = sessionHub.getSessionState(sessionId);
-  const agentId = state?.summary.agentId;
-  if (!agentId) {
-    return false;
-  }
-  if (typeof sessionHub.getAgentRegistry !== 'function') {
-    return false;
-  }
-  const provider = sessionHub.getAgentRegistry().getAgent(agentId)?.chat?.provider;
-  return provider === 'pi' || provider === 'pi-cli';
-}
-
 function getProjectedTranscriptRevision(sessionHub: SessionHub, sessionId: string): number {
   if (typeof sessionHub.getSessionState !== 'function') {
     return Date.now();
@@ -380,7 +364,7 @@ function broadcastProjectedTranscriptEvents(
   sessionId: string,
   events: ChatEvent[],
 ): void {
-  if (!events.length || !shouldBroadcastProjectedTranscript(sessionHub, sessionId)) {
+  if (!events.length) {
     return;
   }
   const revision = getProjectedTranscriptRevision(sessionHub, sessionId);
@@ -408,18 +392,7 @@ function broadcastLiveChatEvents(
   if (!events.length) {
     return;
   }
-  if (shouldBroadcastProjectedTranscript(sessionHub, sessionId)) {
-    broadcastProjectedTranscriptEvents(sessionHub, sessionId, events);
-    return;
-  }
-  for (const event of events) {
-    const message: ServerChatEventMessage = {
-      type: 'chat_event',
-      sessionId,
-      event,
-    };
-    sessionHub.broadcastToSession(sessionId, message);
-  }
+  broadcastProjectedTranscriptEvents(sessionHub, sessionId, events);
 }
 
 export function createChatEventBase(options: {

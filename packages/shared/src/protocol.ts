@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AssistantTextPhaseSchema, ChatEventSchema, ChatEventTypeSchema } from './chatEvents';
+import { AssistantTextPhaseSchema, ChatEventTypeSchema } from './chatEvents';
 import { PanelEventEnvelopeSchema } from './panelProtocol';
 
 export const TokenUsageBreakdownSchema = z.object({
@@ -16,7 +16,7 @@ export const SessionContextUsageSchema = z.object({
   usage: TokenUsageBreakdownSchema,
 });
 
-export const CURRENT_PROTOCOL_VERSION = 4 as const;
+export const CURRENT_PROTOCOL_VERSION = 5 as const;
 export type ProtocolVersion = typeof CURRENT_PROTOCOL_VERSION;
 
 const SERVER_MESSAGE_TYPE_VALUES = [
@@ -34,7 +34,6 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'tool_call_start',
   'tool_output_delta',
   'tool_result',
-  'chat_event',
   'transcript_event',
   'agent_callback_result',
   'modes_updated',
@@ -103,8 +102,8 @@ export const SessionSubscriptionMaskSchema = z.object({
    */
   serverMessageTypes: z.array(ServerMessageTypeSchema).nonempty().optional(),
   /**
-   * Chat-event subtypes for `chat_event` server messages. When present,
-   * only `chat_event` payloads are checked against this list. Non-`chat_event`
+   * Transcript event subtypes keyed by the underlying `chatEventType`. When present,
+   * only `transcript_event` payloads are checked against this list. Non-transcript-event
    * messages are still matched by the other applicable mask fields.
    */
   chatEventTypes: z.array(ChatEventTypeSchema).nonempty().optional(),
@@ -719,12 +718,6 @@ export const ServerToolResultMessageSchema = z.object({
   agentExchangeId: z.string().optional(),
 });
 
-export const ServerChatEventMessageSchema = z.object({
-  type: z.literal('chat_event'),
-  sessionId: z.string(),
-  event: ChatEventSchema,
-});
-
 export const ServerTranscriptEventMessageSchema = z.object({
   type: z.literal('transcript_event'),
   event: ProjectedTranscriptEventSchema,
@@ -872,7 +865,6 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerToolCallStartMessageSchema,
   ServerToolOutputDeltaMessageSchema,
   ServerToolResultMessageSchema,
-  ServerChatEventMessageSchema,
   ServerTranscriptEventMessageSchema,
   ServerAgentCallbackResultMessageSchema,
   ServerModesUpdatedMessageSchema,
@@ -906,7 +898,6 @@ export type ServerToolCallMessage = z.infer<typeof ServerToolCallMessageSchema>;
 export type ServerToolCallStartMessage = z.infer<typeof ServerToolCallStartMessageSchema>;
 export type ServerToolOutputDeltaMessage = z.infer<typeof ServerToolOutputDeltaMessageSchema>;
 export type ServerToolResultMessage = z.infer<typeof ServerToolResultMessageSchema>;
-export type ServerChatEventMessage = z.infer<typeof ServerChatEventMessageSchema>;
 export type ServerTranscriptEventMessage = z.infer<typeof ServerTranscriptEventMessageSchema>;
 export type ServerAgentCallbackResultMessage = z.infer<
   typeof ServerAgentCallbackResultMessageSchema

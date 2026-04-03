@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { CURRENT_PROTOCOL_VERSION } from '@assistant/shared/protocol';
 import { ConnectionManager } from './connectionManager';
 
 class MockWebSocket {
@@ -67,7 +68,7 @@ function ensureWebSocketGlobal(): void {
 }
 
 describe('ConnectionManager', () => {
-  it('sends protocol v3 hello with structured subscriptions on open', () => {
+  it('sends protocol v5 hello with structured subscriptions on open', () => {
     ensureWebSocketGlobal();
     MockWebSocket.reset();
 
@@ -79,7 +80,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 3,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getInteractionEnabled: () => true,
@@ -106,7 +107,7 @@ describe('ConnectionManager', () => {
       expect(socket.sent).toHaveLength(1);
       expect(JSON.parse(socket.sent[0] ?? '{}')).toMatchObject({
         type: 'hello',
-        protocolVersion: 3,
+        protocolVersion: CURRENT_PROTOCOL_VERSION,
         interaction: { supported: true, enabled: true },
         subscriptions: [{ sessionId: 'session-a' }, { sessionId: 'session-b' }],
       });
@@ -123,7 +124,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 3,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => socket,
@@ -147,7 +148,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 3,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => socket,
@@ -169,7 +170,7 @@ describe('ConnectionManager', () => {
     const manager = new ConnectionManager({
       createWebSocketUrl: () => 'ws://localhost',
       setStatus: () => undefined,
-      protocolVersion: 3,
+      protocolVersion: CURRENT_PROTOCOL_VERSION,
       supportsAudioOutput: () => false,
       onMessage: () => undefined,
       getSocket: () => null,

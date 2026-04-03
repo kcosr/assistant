@@ -20,6 +20,47 @@ function createTestConnection(): {
   return { connection, sendServerMessageFromHub };
 }
 
+function createTranscriptMessage(options: {
+  sessionId: string;
+  eventId: string;
+  sequence?: number;
+  requestId?: string;
+  chatEventType: 'turn_start' | 'turn_end' | 'tool_call' | 'assistant_done';
+  kind: 'request_start' | 'request_end' | 'tool_call' | 'assistant_message';
+  payload: Record<string, unknown>;
+  toolCallId?: string;
+  responseId?: string;
+}): ServerMessage {
+  const {
+    sessionId,
+    eventId,
+    sequence = 0,
+    requestId = 'request-1',
+    chatEventType,
+    kind,
+    payload,
+    toolCallId,
+    responseId,
+  } = options;
+
+  return {
+    type: 'transcript_event',
+    event: {
+      sessionId,
+      revision: 1,
+      sequence,
+      requestId,
+      eventId,
+      kind,
+      chatEventType,
+      timestamp: `2026-04-02T00:00:0${sequence}.000Z`,
+      ...(toolCallId ? { toolCallId } : {}),
+      ...(responseId ? { responseId } : {}),
+      payload,
+    },
+  };
+}
+
 describe('SessionConnectionRegistry', () => {
   it('tracks subscriptions and unsubscriptions in both directions', () => {
     const registry = new SessionConnectionRegistry();
@@ -109,43 +150,42 @@ describe('SessionConnectionRegistry', () => {
       createTestConnection();
 
     registry.subscribe('session-a', filteredConnection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_speak', 'voice_ask'],
     });
     registry.subscribe('session-a', unfilteredConnection);
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-1',
-        timestamp: 1,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'tool_call',
+        eventId: 'evt-1',
+        chatEventType: 'tool_call',
+        kind: 'tool_call',
+        toolCallId: 'call-1',
         payload: {
-          toolCallId: 'call-1',
           toolName: 'voice_speak',
           args: { text: 'hello' },
         },
-      },
-    });
+      }),
+    );
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-2',
-        timestamp: 2,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'tool_call',
+        eventId: 'evt-2',
+        sequence: 1,
+        chatEventType: 'tool_call',
+        kind: 'tool_call',
+        toolCallId: 'call-2',
         payload: {
-          toolCallId: 'call-2',
           toolName: 'sleep',
           args: { seconds: 1 },
         },
-      },
-    });
+      }),
+    );
 
     expect(sendFiltered).toHaveBeenCalledTimes(1);
     expect(sendUnfiltered).toHaveBeenCalledTimes(2);
@@ -156,47 +196,46 @@ describe('SessionConnectionRegistry', () => {
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['assistant_done'],
       messagePhases: ['final_answer'],
     });
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-1',
-        timestamp: 1,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'assistant_done',
+        eventId: 'evt-1',
+        chatEventType: 'assistant_done',
+        kind: 'assistant_message',
+        responseId: 'resp-1',
         payload: { text: 'Commentary', phase: 'commentary' },
-      },
-    });
+      }),
+    );
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-2',
-        timestamp: 2,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'assistant_done',
+        eventId: 'evt-2',
+        sequence: 1,
+        chatEventType: 'assistant_done',
+        kind: 'assistant_message',
+        responseId: 'resp-2',
         payload: { text: 'Final', phase: 'final_answer' },
-      },
-    });
+      }),
+    );
 
     expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
-    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-2',
-        timestamp: 2,
-        sessionId: 'session-a',
-        type: 'assistant_done',
-        payload: { text: 'Final', phase: 'final_answer' },
-      },
-    });
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'transcript_event',
+        event: expect.objectContaining({
+          eventId: 'evt-2',
+          chatEventType: 'assistant_done',
+        }),
+      }),
+    );
   });
 
   it('filters transcript events by projected chat event type and tool name', () => {
@@ -322,7 +361,7 @@ describe('SessionConnectionRegistry', () => {
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
     });
 
@@ -340,7 +379,7 @@ describe('SessionConnectionRegistry', () => {
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event', 'output_cancelled'],
+      serverMessageTypes: ['transcript_event', 'output_cancelled'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_speak'],
     });
@@ -425,28 +464,24 @@ describe('SessionConnectionRegistry', () => {
 
     registry.subscribe('session-a', excludedConnection);
     registry.subscribe('session-a', filteredConnection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_speak'],
     });
 
     registry.broadcastToSessionExcluding(
       'session-a',
-      {
-        type: 'chat_event',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        event: {
-          id: 'evt-1',
-          timestamp: 1,
-          sessionId: 'session-a',
-          type: 'tool_call',
-          payload: {
-            toolCallId: 'call-1',
-            toolName: 'voice_speak',
-            args: { text: 'hello' },
-          },
+        eventId: 'evt-1',
+        chatEventType: 'tool_call',
+        kind: 'tool_call',
+        toolCallId: 'call-1',
+        payload: {
+          toolName: 'voice_speak',
+          args: { text: 'hello' },
         },
-      },
+      }),
       excludedConnection,
     );
 
@@ -459,64 +494,57 @@ describe('SessionConnectionRegistry', () => {
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_speak'],
     });
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_ask'],
     });
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-1',
-        timestamp: 1,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'tool_call',
+        eventId: 'evt-1',
+        chatEventType: 'tool_call',
+        kind: 'tool_call',
+        toolCallId: 'call-1',
         payload: {
-          toolCallId: 'call-1',
           toolName: 'voice_speak',
           args: { text: 'hello' },
         },
-      },
-    });
+      }),
+    );
 
-    registry.broadcastToSession('session-a', {
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-2',
-        timestamp: 2,
+    registry.broadcastToSession(
+      'session-a',
+      createTranscriptMessage({
         sessionId: 'session-a',
-        type: 'tool_call',
+        eventId: 'evt-2',
+        sequence: 1,
+        chatEventType: 'tool_call',
+        kind: 'tool_call',
+        toolCallId: 'call-2',
         payload: {
-          toolCallId: 'call-2',
           toolName: 'voice_ask',
           args: { text: 'question' },
         },
-      },
-    });
+      }),
+    );
 
     expect(sendServerMessageFromHub).toHaveBeenCalledTimes(1);
-    expect(sendServerMessageFromHub).toHaveBeenCalledWith({
-      type: 'chat_event',
-      sessionId: 'session-a',
-      event: {
-        id: 'evt-2',
-        timestamp: 2,
-        sessionId: 'session-a',
-        type: 'tool_call',
-        payload: {
+    expect(sendServerMessageFromHub).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'transcript_event',
+        event: expect.objectContaining({
+          eventId: 'evt-2',
           toolCallId: 'call-2',
-          toolName: 'voice_ask',
-          args: { text: 'question' },
-        },
-      },
-    });
+        }),
+      }),
+    );
   });
 
   it('broadcastToAll bypasses per-session masks', () => {
@@ -524,7 +552,7 @@ describe('SessionConnectionRegistry', () => {
     const { connection, sendServerMessageFromHub } = createTestConnection();
 
     registry.subscribe('session-a', connection, {
-      serverMessageTypes: ['chat_event'],
+      serverMessageTypes: ['transcript_event'],
       chatEventTypes: ['tool_call'],
       toolNames: ['voice_speak'],
     });

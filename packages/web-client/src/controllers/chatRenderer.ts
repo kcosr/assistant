@@ -69,6 +69,7 @@ import {
   type InteractionResponseDraft,
   type QuestionnaireRequestView,
 } from '../utils/interactionRenderer';
+import { dedupeProjectedTranscriptEvents } from '../utils/transcriptReplay';
 export interface ChatRendererOptions {
   getAgentDisplayName?: (agentId: string) => string | undefined;
   getExpandToolOutput?: () => boolean;
@@ -211,6 +212,7 @@ export class ChatRenderer {
     string,
     InteractionResponseEvent['payload']
   >();
+  private readonly projectedTranscriptEvents = new Map<number, ProjectedTranscriptEvent>();
   private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
   // Track text segment index per response.
   private readonly textSegmentIndex = new Map<string, number>();
@@ -230,6 +232,7 @@ export class ChatRenderer {
     hour: 'numeric',
     minute: '2-digit',
   });
+  private projectedTranscriptRevision: number | null = null;
 
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
@@ -663,21 +666,22 @@ export class ChatRenderer {
     }
   }
 
-  replayProjectedEvents(events: ProjectedTranscriptEvent[]): void {
-    this.clear();
-    this._isReplaying = true;
-    for (const event of events) {
-      this.renderProjectedEvent(event);
+  private getHighestProjectedSequence(): number {
+    let highest = -1;
+    for (const sequence of this.projectedTranscriptEvents.keys()) {
+      if (sequence > highest) {
+        highest = sequence;
+      }
     }
-    this._isReplaying = false;
-    this.syncTypingIndicatorFromTurnState();
+    return highest;
   }
 
-  handleNewProjectedEvent(event: ProjectedTranscriptEvent): void {
-    this.renderProjectedEvent(event);
+  private resetProjectedTranscriptState(): void {
+    this.projectedTranscriptEvents.clear();
+    this.projectedTranscriptRevision = null;
   }
 
-  clear(): void {
+  private resetRenderState(): void {
     this.container.innerHTML = '';
     this._isStreaming = false;
     this.turnElements.clear();
@@ -708,6 +712,103 @@ export class ChatRenderer {
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
     this.activeTurnIds.clear();
+  }
+
+  private renderStoredProjectedTranscript(): void {
+    this.resetRenderState();
+    this._isReplaying = true;
+    const orderedEvents = [...this.projectedTranscriptEvents.values()].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+    for (const event of orderedEvents) {
+      this.renderProjectedEvent(event);
+    }
+    this._isReplaying = false;
+    this.syncTypingIndicatorFromTurnState();
+  }
+
+  replayProjectedEvents(
+    events: ProjectedTranscriptEvent[],
+    options: { reset?: boolean } = {},
+  ): void {
+    const normalized = dedupeProjectedTranscriptEvents(events);
+    if (options.reset) {
+      this.resetProjectedTranscriptState();
+    }
+    if (normalized.length === 0) {
+      if (options.reset) {
+        this.renderStoredProjectedTranscript();
+      }
+      return;
+    }
+
+    const incomingRevision = normalized[normalized.length - 1]?.revision ?? null;
+    if (incomingRevision === null) {
+      return;
+    }
+    if (
+      this.projectedTranscriptRevision !== null &&
+      incomingRevision < this.projectedTranscriptRevision
+    ) {
+      return;
+    }
+
+    const revisionEvents = normalized.filter((event) => event.revision === incomingRevision);
+    if (
+      this.projectedTranscriptRevision === null ||
+      incomingRevision > this.projectedTranscriptRevision ||
+      options.reset
+    ) {
+      this.projectedTranscriptRevision = incomingRevision;
+      this.projectedTranscriptEvents.clear();
+      for (const event of revisionEvents) {
+        this.projectedTranscriptEvents.set(event.sequence, event);
+      }
+      this.renderStoredProjectedTranscript();
+      return;
+    }
+
+    const highestSequence = this.getHighestProjectedSequence();
+    let expectedSequence = highestSequence + 1;
+    let requiresReplay = false;
+    const appendedEvents: ProjectedTranscriptEvent[] = [];
+
+    for (const event of revisionEvents) {
+      const existing = this.projectedTranscriptEvents.get(event.sequence);
+      if (existing) {
+        if (existing.eventId !== event.eventId) {
+          this.projectedTranscriptEvents.set(event.sequence, event);
+          requiresReplay = true;
+        }
+        continue;
+      }
+      this.projectedTranscriptEvents.set(event.sequence, event);
+      if (!requiresReplay && event.sequence === expectedSequence) {
+        appendedEvents.push(event);
+        expectedSequence += 1;
+        continue;
+      }
+      requiresReplay = true;
+    }
+
+    if (requiresReplay) {
+      this.renderStoredProjectedTranscript();
+      return;
+    }
+
+    for (const event of appendedEvents) {
+      this.renderProjectedEvent(event);
+    }
+    this.syncTypingIndicatorFromTurnState();
+  }
+
+  handleNewProjectedEvent(event: ProjectedTranscriptEvent): void {
+    this.replayProjectedEvents([event]);
+  }
+
+  clear(): void {
+    this.resetRenderState();
+    this.resetProjectedTranscriptState();
   }
 
   setFocusInputHandler(handler: (() => void) | null): void {

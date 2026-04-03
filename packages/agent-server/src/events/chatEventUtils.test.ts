@@ -55,7 +55,7 @@ function createSessionHub(provider: 'pi' | 'pi-cli' | 'claude-cli') {
 }
 
 describe('chatEventUtils live broadcast behavior', () => {
-  it('broadcasts transcript_event instead of chat_event for persisted pi events', async () => {
+  it('broadcasts transcript_event for persisted pi events', async () => {
     const eventStore = createEventStore();
     const { sessionHub, broadcastToSession } = createSessionHub('pi');
 
@@ -86,7 +86,7 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
   });
 
-  it('broadcasts transcript_event instead of chat_event for transient pi tool output', () => {
+  it('broadcasts transcript_event for transient pi tool output', () => {
     const { sessionHub, broadcastToSession } = createSessionHub('pi');
 
     emitToolOutputChunkEvent({
@@ -112,7 +112,7 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
   });
 
-  it('continues broadcasting chat_event for non-pi sessions', async () => {
+  it('broadcasts transcript_event for non-pi sessions too', async () => {
     const eventStore = createEventStore();
     const { sessionHub, broadcastToSession } = createSessionHub('claude-cli');
 
@@ -133,11 +133,11 @@ describe('chatEventUtils live broadcast behavior', () => {
 
     expect(broadcastToSession).toHaveBeenCalledTimes(1);
     expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
-      type: 'chat_event',
-      sessionId: 's1',
+      type: 'transcript_event',
       event: {
-        id: 'evt-1',
-        type: 'assistant_done',
+        sessionId: 's1',
+        eventId: 'evt-1',
+        chatEventType: 'assistant_done',
       },
     });
   });

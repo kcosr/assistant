@@ -63,7 +63,7 @@ describe('handleHello', () => {
         {
           sessionId: sessionA.sessionId,
           mask: {
-            serverMessageTypes: ['chat_event'],
+            serverMessageTypes: ['transcript_event'],
             chatEventTypes: ['tool_call'],
             toolNames: ['voice_speak', 'voice_ask'],
           },
@@ -100,7 +100,7 @@ describe('handleHello', () => {
       type: 'subscribed',
       sessionId: sessionA.sessionId,
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak', 'voice_ask'],
       },

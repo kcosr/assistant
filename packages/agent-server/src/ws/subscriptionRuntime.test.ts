@@ -188,7 +188,7 @@ describe('SessionRuntime subscription message handlers', () => {
       type: 'subscribe',
       sessionId: summary.sessionId,
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak'],
       },
@@ -203,7 +203,7 @@ describe('SessionRuntime subscription message handlers', () => {
       type: 'subscribed',
       sessionId: summary.sessionId,
       mask: {
-        serverMessageTypes: ['chat_event'],
+        serverMessageTypes: ['transcript_event'],
         chatEventTypes: ['tool_call'],
         toolNames: ['voice_speak'],
       },
