@@ -176,7 +176,7 @@ async function readCanonicalPiSessionContent(options: {
   if (providerId !== 'pi' && providerId !== 'pi-cli') {
     return null;
   }
-  const sessionInfo = resolvePiSessionInfo(attributes);
+  const sessionInfo = resolvePiSessionInfo(attributes, providerId);
   if (!sessionInfo) {
     return null;
   }
@@ -371,17 +371,27 @@ function resolveClaudeSessionInfo(attributes?: SessionAttributes): ClaudeSession
   return { sessionId: sessionId.trim(), cwd: cwd.trim() };
 }
 
-function resolvePiSessionInfo(attributes?: SessionAttributes): PiSessionInfo | null {
-  const candidate = getProviderAttributes(attributes, 'pi-cli', ['pi']);
-  if (!candidate) {
-    return null;
+function resolvePiSessionInfo(
+  attributes?: SessionAttributes,
+  providerId?: string | null,
+): PiSessionInfo | null {
+  const orderedProviderIds =
+    providerId === 'pi-cli' ? (['pi-cli', 'pi'] as const) : (['pi', 'pi-cli'] as const);
+
+  for (const candidateProviderId of orderedProviderIds) {
+    const candidate = getProviderAttributes(attributes, candidateProviderId);
+    if (!candidate) {
+      continue;
+    }
+    const sessionId = candidate['sessionId'];
+    const cwd = candidate['cwd'];
+    if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {
+      continue;
+    }
+    return { sessionId: sessionId.trim(), cwd: cwd.trim() };
   }
-  const sessionId = candidate['sessionId'];
-  const cwd = candidate['cwd'];
-  if (!isNonEmptyString(sessionId) || !isNonEmptyString(cwd)) {
-    return null;
-  }
-  return { sessionId: sessionId.trim(), cwd: cwd.trim() };
+
+  return null;
 }
 
 function resolveCodexSessionInfo(attributes?: SessionAttributes): CodexSessionInfo | null {

@@ -619,6 +619,184 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it('keeps rewritten Pi replay visible when the pi-cli alias only stores transcript revision', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi-delete-middle'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-plugin-events-pi-delete-middle-'));
+    const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry, piSessionWriter });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    } as ToolContext;
+
+    const sessionId = 'pi-replay-delete-middle-session';
+    const piSessionId = 'pi-replay-delete-middle-provider-session';
+    const cwd = '/tmp/project';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    await fs.writeFile(
+      filePath,
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: piSessionId,
+          timestamp: '2026-01-18T00:00:00.000Z',
+          cwd,
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-1-start',
+          parentId: null,
+          timestamp: '2026-01-18T00:00:01.000Z',
+          customType: 'assistant.request_start',
+          data: { v: 1, requestId: 'request-1', trigger: 'user' },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-1-user',
+          parentId: 'req-1-start',
+          timestamp: '2026-01-18T00:00:02.000Z',
+          customType: 'assistant.user_message',
+          data: { turnId: 'request-1', payload: { text: 'first request' } },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-1-assistant',
+          parentId: 'req-1-user',
+          timestamp: '2026-01-18T00:00:03.000Z',
+          customType: 'assistant.assistant_done',
+          data: { turnId: 'request-1', responseId: 'resp-1', payload: { text: 'first reply' } },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'req-1-user-msg',
+          parentId: 'req-1-assistant',
+          timestamp: '2026-01-18T00:00:04.000Z',
+          message: { role: 'user', content: [{ type: 'text', text: 'first request' }] },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'req-1-assistant-msg',
+          parentId: 'req-1-user-msg',
+          timestamp: '2026-01-18T00:00:05.000Z',
+          message: { role: 'assistant', id: 'resp-1', content: [{ type: 'text', text: 'first reply' }] },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-1-end',
+          parentId: 'req-1-assistant-msg',
+          timestamp: '2026-01-18T00:00:06.000Z',
+          customType: 'assistant.request_end',
+          data: { v: 1, requestId: 'request-1', status: 'completed' },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-3-start',
+          parentId: 'req-1-end',
+          timestamp: '2026-01-18T00:00:07.000Z',
+          customType: 'assistant.request_start',
+          data: { v: 1, requestId: 'request-3', trigger: 'user' },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-3-user',
+          parentId: 'req-3-start',
+          timestamp: '2026-01-18T00:00:08.000Z',
+          customType: 'assistant.user_message',
+          data: { turnId: 'request-3', payload: { text: 'third request' } },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-3-assistant',
+          parentId: 'req-3-user',
+          timestamp: '2026-01-18T00:00:09.000Z',
+          customType: 'assistant.assistant_done',
+          data: { turnId: 'request-3', responseId: 'resp-3', payload: { text: 'third reply' } },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'req-3-user-msg',
+          parentId: 'req-3-assistant',
+          timestamp: '2026-01-18T00:00:10.000Z',
+          message: { role: 'user', content: [{ type: 'text', text: 'third request' }] },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'req-3-assistant-msg',
+          parentId: 'req-3-user-msg',
+          timestamp: '2026-01-18T00:00:11.000Z',
+          message: { role: 'assistant', id: 'resp-3', content: [{ type: 'text', text: 'third reply' }] },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-3-end',
+          parentId: 'req-3-assistant-msg',
+          timestamp: '2026-01-18T00:00:12.000Z',
+          customType: 'assistant.request_end',
+          data: { v: 1, requestId: 'request-3', status: 'completed' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    await sessionIndex.createSession({
+      sessionId,
+      agentId: 'pi-agent',
+      attributes: {
+        core: { workingDir: cwd },
+        providers: {
+          pi: { sessionId: piSessionId, cwd, transcriptRevision: 2 },
+          'pi-cli': { transcriptRevision: 2 },
+        },
+      },
+    });
+
+    const replay = (await plugin.operations?.events(
+      { sessionId, force: true },
+      ctx,
+    )) as SessionReplayResponse;
+
+    expect(replay.revision).toBe(2);
+    expect(replay.events.length).toBeGreaterThan(0);
+    expect(replay.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requestId: 'request-1',
+          kind: 'user_message',
+          payload: expect.objectContaining({ text: 'first request' }),
+        }),
+        expect.objectContaining({
+          requestId: 'request-3',
+          kind: 'assistant_message',
+          payload: expect.objectContaining({ text: 'third reply' }),
+        }),
+      ]),
+    );
+    expect(replay.events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          requestId: 'request-2',
+        }),
+      ]),
+    );
+  });
+
   it('merges transient live Pi chunks into replay without persisting them to the Pi log', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi-live'));
     const agentRegistry = new AgentRegistry([
