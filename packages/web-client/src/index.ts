@@ -434,23 +434,39 @@ async function main(): Promise<void> {
       typeof revision === 'number'
         ? pendingEvents.filter((event) => event.revision === revision)
         : pendingEvents;
+    const highestAppliedSequence =
+      typeof revision === 'number' && chatRenderer.getProjectedTranscriptRevision() === revision
+        ? chatRenderer.getHighestProjectedSequence()
+        : -1;
+    const unappliedEvents =
+      highestAppliedSequence >= 0
+        ? eventsToApply.filter((event) => event.sequence > highestAppliedSequence)
+        : eventsToApply;
     const unresolvedEvents =
       typeof revision === 'number'
         ? pendingEvents.filter((event) => event.revision > revision)
         : [];
-    if (eventsToApply.length === 0) {
+    if (unappliedEvents.length === 0) {
+      if (highestAppliedSequence >= 0 && eventsToApply.length > 0) {
+        logTranscriptDebug('flush_drop_covered_events', {
+          sessionId: trimmed,
+          coveredCount: eventsToApply.length,
+          highestAppliedSequence,
+          revision,
+        });
+      }
       replayState.bufferedEvents = unresolvedEvents;
       return;
     }
-    const applyResult = chatRenderer.replayProjectedEvents(eventsToApply);
+    const applyResult = chatRenderer.replayProjectedEvents(unappliedEvents);
     if (applyResult === 'reload') {
       replayState.loaded = false;
       replayState.cursor = null;
       replayState.pendingForceReload = true;
-      replayState.bufferedEvents = pendingEvents;
+      replayState.bufferedEvents = [...unappliedEvents, ...unresolvedEvents];
       logTranscriptDebug('flush_renderer_requested_reload', {
         sessionId: trimmed,
-        bufferedCount: pendingEvents.length,
+        bufferedCount: unappliedEvents.length + unresolvedEvents.length,
         targetRevision: revision ?? null,
       });
       return;

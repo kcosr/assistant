@@ -357,6 +357,49 @@ describe('ChatRenderer', () => {
     expect(result).toBe('reload');
   });
 
+  it('applies same-sequence replacements without forcing a reload loop', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    const initialEvents = [
+      createProjectedEvent(0, {
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      }),
+      createProjectedEvent(1, {
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        payload: { text: 'hello' },
+      }),
+      createProjectedEvent(2, {
+        eventId: 'assistant-initial',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        responseId: 'r1',
+        payload: { text: 'partial reply', phase: 'response' },
+      }),
+    ];
+
+    renderer.replayProjectedEvents(initialEvents, { reset: true });
+
+    const result = renderer.replayProjectedEvents([
+      createProjectedEvent(2, {
+        eventId: 'assistant-replayed',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        responseId: 'r1',
+        payload: { text: 'partial reply', phase: 'response' },
+      }),
+    ]);
+
+    expect(result).toBe('applied');
+    expect(container.textContent).toContain('partial reply');
+  });
+
   it('replays events into the expected DOM structure', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';

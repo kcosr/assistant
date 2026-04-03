@@ -551,7 +551,7 @@ export class ChatRenderer {
     }
   }
 
-  private getHighestProjectedSequence(): number {
+  getHighestProjectedSequence(): number {
     let highest = -1;
     for (const sequence of this.projectedTranscriptEvents.keys()) {
       if (sequence > highest) {
@@ -559,6 +559,10 @@ export class ChatRenderer {
       }
     }
     return highest;
+  }
+
+  getProjectedTranscriptRevision(): number | null {
+    return this.projectedTranscriptRevision;
   }
 
   private resetProjectedTranscriptState(): void {
@@ -662,6 +666,7 @@ export class ChatRenderer {
     const highestSequence = this.getHighestProjectedSequence();
     let expectedSequence = highestSequence + 1;
     let requiresReplay = false;
+    let requiresRerender = false;
     const appendedEvents: ProjectedTranscriptEvent[] = [];
 
     for (const event of revisionEvents) {
@@ -669,7 +674,7 @@ export class ChatRenderer {
       if (existing) {
         if (existing.eventId !== event.eventId) {
           this.projectedTranscriptEvents.set(event.sequence, event);
-          requiresReplay = true;
+          requiresRerender = true;
         }
         continue;
       }
@@ -685,6 +690,11 @@ export class ChatRenderer {
     if (requiresReplay) {
       this.renderStoredProjectedTranscript();
       return 'reload';
+    }
+
+    if (requiresRerender) {
+      this.renderStoredProjectedTranscript();
+      return 'applied';
     }
 
     for (const event of appendedEvents) {

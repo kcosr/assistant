@@ -55,6 +55,7 @@
 - Fixed Pi request-history replay after middle-request deletion so partial `providers.pi-cli` transcript revision aliases no longer hide the canonical Pi session file and collapse the visible transcript to zero events.
 - Fixed canonical Pi replay so duplicate request-start markers no longer orphan the active request/response state or split later tool activity onto a fresh synthetic response.
 - Fixed Pi transcript/session cleanup so clearing a Pi-backed session removes provider transcript metadata entirely, Pi agent subscription failures surface as normal run errors, and mixed-revision buffered replay now forces a reload instead of silently dropping buffered events.
+- Fixed refreshed Pi transcript buffering so reset replay treats already-covered buffered events as stale, preventing same-revision overlap from trapping the client in an infinite replay/reload loop and flashing the chat view.
 
 ### Removed
 
