@@ -20,6 +20,7 @@
 - Changed live transcript_event delivery to project directly on the server with request-context tracking across batches instead of reusing replay batch projection.
 - Changed the web client transcript renderer to consume projected transcript kinds directly instead of reconstructing legacy chat-event wrappers internally.
 - Changed canonical Pi custom transcript entries to use explicit `assistant.<event_type>` records instead of the generic `assistant.event` envelope.
+- Changed Pi session restore in SessionHub to load canonical Pi replay messages directly instead of reconstructing `chatMessages` through ChatEvent replay.
 - Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed Android voice notifications to use a public lock-screen-visible channel, compact `Voice (State)` titles, and synced session titles for the preferred or active session. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))

@@ -21,6 +21,7 @@ import { AgentRegistry } from './agents';
 import type { EventStore } from './events';
 import type { HistoryProviderRegistry } from './history/historyProvider';
 import { loadCanonicalPiSessionEvents } from './history/historyProvider';
+import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
 import { SessionIndex, type SessionSummary } from './sessionIndex';
 import type { PluginRegistry } from './plugins/registry';
 import type { ChatCompletionMessage } from './chatCompletionTypes';
@@ -795,11 +796,23 @@ export class SessionHub {
     summary: SessionSummary,
     forceReload?: boolean,
   ): Promise<ChatCompletionMessage[]> {
+    const agentId = summary.agentId;
+    const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
+    const providerId = agent?.chat?.provider;
+    if (providerId === 'pi' || providerId === 'pi-cli') {
+      const replayMessages = await loadCanonicalPiReplayMessages({
+        summary,
+        ...(this.piSessionWriter ? { baseDir: this.piSessionWriter.getBaseDir() } : {}),
+      });
+      if (replayMessages) {
+        return replayMessages;
+      }
+    }
     const events = await this.loadSessionEvents(summary, forceReload);
     return buildChatMessagesFromEvents(
       events,
       this.agentRegistry,
-      summary.agentId,
+      agentId,
       undefined,
       summary.sessionId,
       summary.attributes?.core?.workingDir,
