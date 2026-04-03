@@ -1422,12 +1422,12 @@ async function main(): Promise<void> {
     runtime.chatRenderer.setFocusInputHandler(() => {
       inputRuntime.focusInput();
     });
-    runtime.chatRenderer.setTurnDividerActionHandler(
-      ({ turnId: requestId, anchorEl, hasBefore, hasAfter }) => {
+    runtime.chatRenderer.setRequestDividerActionHandler(
+      ({ requestId, anchorEl, hasBefore, hasAfter }) => {
         if (!bindingSessionId || !isSessionPiBacked(bindingSessionId)) {
           return;
         }
-        showTurnHistoryMenu({
+        showRequestHistoryMenu({
           sessionId: bindingSessionId,
           requestId,
           anchorEl,
@@ -1630,7 +1630,7 @@ async function main(): Promise<void> {
       unsubActive();
       contextMenuManager.close();
       runtime.chatRenderer.setFocusInputHandler(null);
-      runtime.chatRenderer.setTurnDividerActionHandler(null);
+      runtime.chatRenderer.setRequestDividerActionHandler(null);
       chatPanelsById.delete(panelId);
       if (entry.bindingSessionId) {
         clearSessionTranscriptState(entry.bindingSessionId);
@@ -3013,7 +3013,7 @@ async function main(): Promise<void> {
     });
   }
 
-  function showTurnHistoryMenu(options: {
+  function showRequestHistoryMenu(options: {
     sessionId: string;
     requestId: string;
     anchorEl: HTMLElement;
@@ -3023,7 +3023,7 @@ async function main(): Promise<void> {
     const { sessionId, requestId, anchorEl, hasBefore, hasAfter } = options;
     contextMenuManager.showAnchoredMenu({
       anchorEl,
-      menuClassName: 'context-menu turn-history-menu',
+      menuClassName: 'context-menu request-history-menu',
       closeOnScrollTarget: anchorEl.closest<HTMLElement>('.chat-log'),
       items: [
         ...(hasBefore

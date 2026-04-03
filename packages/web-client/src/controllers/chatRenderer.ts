@@ -91,8 +91,8 @@ export interface ChatRendererOptions {
     questionnaireRequestId: string;
     reason?: string;
   }) => void;
-  onTurnDividerActivate?: (options: {
-    turnId: string;
+  onRequestDividerActivate?: (options: {
+    requestId: string;
     timestamp: number;
     anchorEl: HTMLElement;
     hasBefore: boolean;
@@ -175,7 +175,7 @@ export class ChatRenderer {
   private typingIndicator: HTMLDivElement | null = null;
   private _isStreaming = false;
   private _isReplaying = false;
-  private readonly activeTurnIds = new Set<string>();
+  private readonly activeRequestIds = new Set<string>();
 
   private readonly turnElements = new Map<string, HTMLDivElement>();
   private readonly responseElements = new Map<string, HTMLDivElement>();
@@ -218,9 +218,9 @@ export class ChatRenderer {
   private readonly needsNewTextSegment = new Set<string>();
   private debugEnabled: boolean | null = null;
   private focusInputHandler: (() => void) | null = null;
-  private turnDividerActionHandler:
+  private requestDividerActionHandler:
     | ((options: {
-        turnId: string;
+        requestId: string;
         timestamp: number;
         anchorEl: HTMLElement;
         hasBefore: boolean;
@@ -236,7 +236,7 @@ export class ChatRenderer {
   constructor(container: HTMLElement, options: ChatRendererOptions = {}) {
     this.container = container;
     this.options = options;
-    this.turnDividerActionHandler = options.onTurnDividerActivate ?? null;
+    this.requestDividerActionHandler = options.onRequestDividerActivate ?? null;
   }
 
   get isStreaming(): boolean {
@@ -275,7 +275,7 @@ export class ChatRenderer {
   }
 
   hasActiveOutput(): boolean {
-    if (this.activeTurnIds.size > 0) {
+    if (this.activeRequestIds.size > 0) {
       return true;
     }
 
@@ -336,7 +336,7 @@ export class ChatRenderer {
   }
 
   private syncTypingIndicatorFromTurnState(): void {
-    this.setTypingIndicatorVisible(this.activeTurnIds.size > 0);
+    this.setTypingIndicatorVisible(this.activeRequestIds.size > 0);
   }
 
   renderProjectedEvent(event: ProjectedTranscriptEvent): void {
@@ -609,7 +609,7 @@ export class ChatRenderer {
     this.questionnaireResponses.clear();
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
-    this.activeTurnIds.clear();
+    this.activeRequestIds.clear();
   }
 
   private renderStoredProjectedTranscript(): void {
@@ -713,10 +713,10 @@ export class ChatRenderer {
     this.focusInputHandler = handler;
   }
 
-  setTurnDividerActionHandler(
+  setRequestDividerActionHandler(
     handler:
       | ((options: {
-          turnId: string;
+          requestId: string;
           timestamp: number;
           anchorEl: HTMLElement;
           hasBefore: boolean;
@@ -724,7 +724,7 @@ export class ChatRenderer {
         }) => void)
       | null,
   ): void {
-    this.turnDividerActionHandler = handler;
+    this.requestDividerActionHandler = handler;
   }
 
   focusFirstQuestionnaireInput(): boolean {
@@ -769,7 +769,7 @@ export class ChatRenderer {
   private handleTurnStart(event: TurnStartEvent): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     this.getOrCreateTurnContainer(turnId, event.timestamp);
-    this.activeTurnIds.add(turnId);
+    this.activeRequestIds.add(turnId);
     if (!this._isReplaying) {
       this.syncTypingIndicatorFromTurnState();
     }
@@ -781,7 +781,7 @@ export class ChatRenderer {
     if (turnEl) {
       turnEl.classList.add('turn-complete');
     }
-    this.activeTurnIds.delete(turnId);
+    this.activeRequestIds.delete(turnId);
     if (!this._isReplaying) {
       this.syncTypingIndicatorFromTurnState();
     }
@@ -2428,9 +2428,9 @@ export class ChatRenderer {
 
   private handleInterrupt(event: InterruptEvent): void {
     if (event.turnId) {
-      this.activeTurnIds.delete(event.turnId);
+      this.activeRequestIds.delete(event.turnId);
     } else {
-      this.activeTurnIds.clear();
+      this.activeRequestIds.clear();
     }
     if (!this._isReplaying) {
       this.syncTypingIndicatorFromTurnState();
@@ -2454,9 +2454,9 @@ export class ChatRenderer {
 
   private handleError(event: ErrorEvent): void {
     if (event.turnId) {
-      this.activeTurnIds.delete(event.turnId);
+      this.activeRequestIds.delete(event.turnId);
     } else {
-      this.activeTurnIds.clear();
+      this.activeRequestIds.clear();
     }
     if (!this._isReplaying) {
       this.syncTypingIndicatorFromTurnState();
@@ -2539,18 +2539,18 @@ export class ChatRenderer {
     label.type = 'button';
     label.className = 'turn-divider-label turn-divider-button';
     label.textContent = this.turnTimestampFormatter.format(new Date(timestamp));
-    label.setAttribute('aria-label', 'Turn actions');
+    label.setAttribute('aria-label', 'Request actions');
     label.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const turnId = turnEl.dataset['turnId'];
-      if (!turnId || !this.turnDividerActionHandler) {
+      const requestId = turnEl.dataset['turnId'];
+      if (!requestId || !this.requestDividerActionHandler) {
         return;
       }
       const previousTurn = turnEl.previousElementSibling;
       const nextTurn = turnEl.nextElementSibling;
-      this.turnDividerActionHandler({
-        turnId,
+      this.requestDividerActionHandler({
+        requestId,
         timestamp,
         anchorEl: label,
         hasBefore: previousTurn instanceof HTMLElement && previousTurn.classList.contains('turn'),

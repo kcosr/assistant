@@ -13,7 +13,7 @@ import type {
   Usage,
 } from '@mariozechner/pi-ai';
 
-import type { ChatCompletionMessage } from '../chatCompletionTypes';
+import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
 import { encodeAssistantTextSignature } from '../llm/piSdkProvider';
 import { buildProviderAttributesPatch, getProviderAttributes } from './providerAttributes';
@@ -161,6 +161,10 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 function normalizeThinkingLevel(value?: string): PiThinkingLevel | null {
@@ -432,8 +436,16 @@ function normalizePiMessageForSignature(message: unknown): unknown {
       isError: message['isError'] === true,
     };
   }
-  if (role === 'assistant' || role === 'user') {
+  if (role === 'assistant') {
     return { role, content };
+  }
+  if (role === 'user') {
+    const meta = normalizePiUserMeta(message['meta']);
+    return {
+      role,
+      content,
+      ...(meta ? { meta } : {}),
+    };
   }
   return stableNormalizeJson(message);
 }
@@ -475,32 +487,7 @@ function signatureFromChatCompletionMessage(
 ): string {
   switch (message.role) {
     case 'user': {
-      const meta = message.meta;
-      if (meta?.source === 'agent') {
-        return signatureFromCustomMessageEntry({
-          customType: 'assistant.input',
-          content: message.content ?? '',
-          details: {
-            kind: 'agent',
-            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
-            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
-          },
-          display: true,
-        });
-      }
-      if (meta?.source === 'callback') {
-        return signatureFromCustomMessageEntry({
-          customType: 'assistant.input',
-          content: message.content ?? '',
-          details: {
-            kind: 'callback',
-            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
-            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
-          },
-          display: meta.visibility === 'visible',
-        });
-      }
-      return signatureFromPiMessage(buildUserMessage(message.content ?? '', 0));
+      return signatureFromPiMessage(buildUserMessage(message.content ?? '', 0, message.meta));
     }
     case 'assistant': {
       if (message.piSdkMessage) {
@@ -664,13 +651,48 @@ function resolveModelInfo(options: {
   return null;
 }
 
-function buildUserMessage(content: string, timestamp: number): PiSdkMessage {
+function normalizePiUserMeta(value: unknown): ChatCompletionMessageMeta | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const sourceRaw = typeof value['source'] === 'string' ? value['source'].trim() : '';
+  const source =
+    sourceRaw === 'user' || sourceRaw === 'agent' || sourceRaw === 'callback' ? sourceRaw : '';
+  if (!source) {
+    return undefined;
+  }
+  const visibilityRaw = typeof value['visibility'] === 'string' ? value['visibility'].trim() : '';
+  const visibility = visibilityRaw === 'visible' || visibilityRaw === 'hidden' ? visibilityRaw : undefined;
+  return {
+    source,
+    ...(typeof value['fromAgentId'] === 'string' && value['fromAgentId'].trim().length > 0
+      ? { fromAgentId: value['fromAgentId'].trim() }
+      : {}),
+    ...(typeof value['fromSessionId'] === 'string' && value['fromSessionId'].trim().length > 0
+      ? { fromSessionId: value['fromSessionId'].trim() }
+      : {}),
+    ...(source === 'callback' && visibility ? { visibility } : {}),
+  };
+}
+
+function buildUserMessage(
+  content: string,
+  timestamp: number,
+  meta?: ChatCompletionMessageMeta,
+): PiSdkMessage {
   const block: TextContent = { type: 'text', text: content };
+  const normalizedMeta = normalizePiUserMeta(meta);
   return {
     role: 'user',
     content: [block],
     timestamp,
+    ...(normalizedMeta ? { meta: normalizedMeta } : {}),
   };
+}
+
+function getUserMessageMetaSource(value: unknown): ChatCompletionMessageMeta['source'] | null {
+  const meta = normalizePiUserMeta(value);
+  return meta?.source ?? null;
 }
 
 function buildAssistantMessage(options: {
@@ -1120,8 +1142,15 @@ function hasExplicitRequestSpans(entries: PiSessionEntryRecord[]): boolean {
 }
 
 function getSyntheticRequestTrigger(entry: PiSessionEntryRecord): PiTurnTrigger {
+  if (entry.type === 'message') {
+    const message = isRecord(entry['message']) ? entry['message'] : null;
+    if (message && getUserMessageMetaSource(message['meta']) === 'callback') {
+      return 'callback';
+    }
+  }
   if (entry.type === 'custom_message') {
-    return 'callback';
+    const details = isRecord(entry['details']) ? entry['details'] : null;
+    return getString(details?.['kind']) === 'callback' ? 'callback' : 'user';
   }
   return 'user';
 }
@@ -1480,52 +1509,7 @@ export class PiSessionWriter {
       if (message.role === 'user') {
         const text = message.content ?? '';
         const meta = message.meta;
-
-        if (meta?.source === 'agent') {
-          const details: Record<string, unknown> = {
-            kind: 'agent',
-            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
-            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
-          };
-          const entry: PiSessionCustomMessageEntry = {
-            type: 'custom_message',
-            id: generateEntryId(),
-            parentId: leafId,
-            timestamp: this.now().toISOString(),
-            customType: 'assistant.input',
-            content: text,
-            details,
-            display: true,
-          };
-          entries.push(entry);
-          leafId = entry.id;
-          messageCount += 1;
-          continue;
-        }
-
-        if (meta?.source === 'callback') {
-          const details: Record<string, unknown> = {
-            kind: 'callback',
-            ...(meta.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
-            ...(meta.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
-          };
-          const entry: PiSessionCustomMessageEntry = {
-            type: 'custom_message',
-            id: generateEntryId(),
-            parentId: leafId,
-            timestamp: this.now().toISOString(),
-            customType: 'assistant.input',
-            content: text,
-            details,
-            display: meta.visibility === 'visible',
-          };
-          entries.push(entry);
-          leafId = entry.id;
-          messageCount += 1;
-          continue;
-        }
-
-        const piMessage = buildUserMessage(text, messageTimestampValue);
+        const piMessage = buildUserMessage(text, messageTimestampValue, meta);
         const entry: PiSessionMessageEntry = {
           type: 'message',
           id: generateEntryId(),

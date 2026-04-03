@@ -95,18 +95,18 @@ export interface ServerMessageHandlerOptions {
 
 export class ServerMessageHandler {
   private readonly queuedMessageBubbles = new Map<string, HTMLDivElement>();
-  private readonly activeTurnsBySession = new Map<string, Set<string>>();
+  private readonly activeRequestsBySession = new Map<string, Set<string>>();
 
   constructor(private readonly options: ServerMessageHandlerOptions) {}
 
   resetRealtimeState(): void {
-    this.activeTurnsBySession.clear();
+    this.activeRequestsBySession.clear();
   }
 
-  private syncSessionTurnActivity(sessionId: string): void {
-    const activeTurns = this.activeTurnsBySession.get(sessionId);
-    const hasActiveTurn = !!activeTurns && activeTurns.size > 0;
-    if (hasActiveTurn) {
+  private syncSessionRequestActivity(sessionId: string): void {
+    const activeRequests = this.activeRequestsBySession.get(sessionId);
+    const hasActiveRequest = !!activeRequests && activeRequests.size > 0;
+    if (hasActiveRequest) {
       this.options.showSessionTypingIndicator(sessionId);
       this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
       return;
@@ -115,29 +115,29 @@ export class ServerMessageHandler {
     this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
   }
 
-  private markTurnStarted(sessionId: string, turnId: string | undefined): void {
-    const trimmedTurnId = typeof turnId === 'string' ? turnId.trim() : '';
-    if (!trimmedTurnId) {
+  private markRequestStarted(sessionId: string, requestId: string | undefined): void {
+    const trimmedRequestId = typeof requestId === 'string' ? requestId.trim() : '';
+    if (!trimmedRequestId) {
       return;
     }
-    const activeTurns = this.activeTurnsBySession.get(sessionId) ?? new Set<string>();
-    activeTurns.add(trimmedTurnId);
-    this.activeTurnsBySession.set(sessionId, activeTurns);
+    const activeRequests = this.activeRequestsBySession.get(sessionId) ?? new Set<string>();
+    activeRequests.add(trimmedRequestId);
+    this.activeRequestsBySession.set(sessionId, activeRequests);
   }
 
-  private markTurnFinished(sessionId: string, turnId: string | undefined): void {
-    const activeTurns = this.activeTurnsBySession.get(sessionId);
-    if (!activeTurns) {
+  private markRequestFinished(sessionId: string, requestId: string | undefined): void {
+    const activeRequests = this.activeRequestsBySession.get(sessionId);
+    if (!activeRequests) {
       return;
     }
-    const trimmedTurnId = typeof turnId === 'string' ? turnId.trim() : '';
-    if (!trimmedTurnId) {
-      activeTurns.clear();
+    const trimmedRequestId = typeof requestId === 'string' ? requestId.trim() : '';
+    if (!trimmedRequestId) {
+      activeRequests.clear();
     } else {
-      activeTurns.delete(trimmedTurnId);
+      activeRequests.delete(trimmedRequestId);
     }
-    if (activeTurns.size === 0) {
-      this.activeTurnsBySession.delete(sessionId);
+    if (activeRequests.size === 0) {
+      this.activeRequestsBySession.delete(sessionId);
     }
   }
 
@@ -146,13 +146,13 @@ export class ServerMessageHandler {
     event: ProjectedTranscriptEvent,
   ): void {
     if (event.kind === 'request_start') {
-      this.markTurnStarted(sessionId, event.requestId);
+      this.markRequestStarted(sessionId, event.requestId);
     } else if (
       event.kind === 'request_end' ||
       event.kind === 'interrupt' ||
       event.kind === 'error'
     ) {
-      this.markTurnFinished(sessionId, event.requestId);
+      this.markRequestFinished(sessionId, event.requestId);
     }
 
     if (!this.options.isChatPanelVisible(sessionId)) {
@@ -160,7 +160,7 @@ export class ServerMessageHandler {
       this.options.showBackgroundSessionActivityIndicator(sessionId);
     }
 
-    this.syncSessionTurnActivity(sessionId);
+    this.syncSessionRequestActivity(sessionId);
 
     if (this.options.shouldBufferTranscriptEvent?.(sessionId)) {
       this.options.bufferTranscriptEvent?.(sessionId, event);
@@ -439,7 +439,7 @@ export class ServerMessageHandler {
           this.options.scrollMessageIntoView(runtime.elements.chatLog, bubble);
         }
         if (selectedSessionId) {
-          this.markTurnFinished(selectedSessionId, undefined);
+          this.markRequestFinished(selectedSessionId, undefined);
           this.options.hideSessionTypingIndicator(selectedSessionId);
           runtime?.chatRenderer.hideTypingIndicator();
           this.options.setChatPanelStatusForSession?.(selectedSessionId, 'error');
@@ -461,7 +461,7 @@ export class ServerMessageHandler {
         this.options.getSpeechAudioControllerForSession(sessionId)?.handleOutputCancelled();
         const runtime = this.options.getChatRuntimeForSession(sessionId);
         runtime?.chatRenderer.markOutputCancelled();
-        this.syncSessionTurnActivity(sessionId);
+        this.syncSessionRequestActivity(sessionId);
         this.options.getSpeechAudioControllerForSession(sessionId)?.syncMicButtonState();
         break;
       }

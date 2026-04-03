@@ -1531,6 +1531,34 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
   ): string =>
     `${turnId}|${text}|${phase ?? ''}|${textSignature ?? ''}`;
   const getThinkingDoneKey = (turnId: string, text: string): string => `${turnId}|${text.trimEnd()}`;
+  const resolvePiUserMeta = (
+    messageEntry: Record<string, unknown>,
+  ): {
+    source: 'user' | 'agent' | 'callback';
+    fromAgentId?: string;
+    fromSessionId?: string;
+    visibility?: 'visible' | 'hidden';
+  } | null => {
+    const meta = isRecord(messageEntry['meta']) ? messageEntry['meta'] : null;
+    if (!meta) {
+      return null;
+    }
+    const source = (getString(meta['source']) ?? '').trim();
+    if (source !== 'user' && source !== 'agent' && source !== 'callback') {
+      return null;
+    }
+    const visibility = (getString(meta['visibility']) ?? '').trim();
+    return {
+      source,
+      ...(isNonEmptyString(meta['fromAgentId'])
+        ? { fromAgentId: (getString(meta['fromAgentId']) ?? '').trim() }
+        : {}),
+      ...(isNonEmptyString(meta['fromSessionId'])
+        ? { fromSessionId: (getString(meta['fromSessionId']) ?? '').trim() }
+        : {}),
+      ...(visibility === 'visible' || visibility === 'hidden' ? { visibility } : {}),
+    };
+  };
   const isOutOfOrderForExplicitTurn = (timestamp: number): boolean =>
     currentTurnExplicit && currentTurnStartedAt !== null && timestamp < currentTurnStartedAt;
 
@@ -1956,18 +1984,36 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
       const timestamp = resolvePiMessageTimestamp(messageEntry, entry);
       const turnId = currentTurnId && currentTurnExplicit ? currentTurnId : getTurnId(messageEntry);
       const text = extractText(messageEntry);
+      const meta = resolvePiUserMeta(messageEntry);
       if (
         mirroredUserInputs.has(getTimestampedTextCoverageKey(timestamp, text)) ||
         (isOutOfOrderForExplicitTurn(timestamp) && mirroredUserInputTexts.has(normalizeCoverageText(text)))
       ) {
         continue;
       }
-      if (emittedUserInputs.has(getUserInputKey(turnId, text))) {
+      if (meta?.source !== 'callback' && emittedUserInputs.has(getUserInputKey(turnId, text))) {
         continue;
       }
       if (!currentTurnId || !currentTurnExplicit) {
         endTurn(timestamp);
-        startTurn(turnId, 'user', timestamp);
+        startTurn(turnId, meta?.source === 'callback' ? 'callback' : 'user', timestamp);
+      }
+      if (meta?.source === 'callback') {
+        events.push({
+          id: randomUUID(),
+          timestamp,
+          sessionId,
+          turnId,
+          type: 'agent_message',
+          payload: {
+            messageId: getString(entry['id']) || randomUUID(),
+            targetAgentId: 'callback',
+            targetSessionId: sessionId,
+            message: text,
+            wait: false,
+          },
+        });
+        continue;
       }
       emittedUserInputs.add(getUserInputKey(turnId, text));
       events.push({
@@ -1976,7 +2022,11 @@ function buildChatEventsFromPiSession(content: string, sessionId: string): ChatE
         sessionId,
         turnId,
         type: 'user_message',
-        payload: { text },
+        payload: {
+          text,
+          ...(meta?.fromAgentId ? { fromAgentId: meta.fromAgentId } : {}),
+          ...(meta?.fromSessionId ? { fromSessionId: meta.fromSessionId } : {}),
+        },
       });
       continue;
     }

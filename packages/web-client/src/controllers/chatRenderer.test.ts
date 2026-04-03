@@ -1238,14 +1238,14 @@ describe('ChatRenderer', () => {
     );
   });
 
-  it('invokes the turn divider action handler with surrounding turn context', () => {
+  it('invokes the request divider action handler with surrounding request context', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);
 
-    const onTurnDividerActivate = vi.fn();
+    const onRequestDividerActivate = vi.fn();
     const renderer = new ChatRenderer(container);
-    renderer.setTurnDividerActionHandler(onTurnDividerActivate);
+    renderer.setRequestDividerActionHandler(onRequestDividerActivate);
 
     renderLegacyEvent(renderer, 
       createBaseEvent('turn_start', {
@@ -1285,9 +1285,9 @@ describe('ChatRenderer', () => {
 
     secondTurnDividerButton?.click();
 
-    expect(onTurnDividerActivate).toHaveBeenCalledWith(
+    expect(onRequestDividerActivate).toHaveBeenCalledWith(
       expect.objectContaining({
-        turnId: 't-turn-2',
+        requestId: 't-turn-2',
         anchorEl: secondTurnDividerButton,
         hasBefore: true,
         hasAfter: false,

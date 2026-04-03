@@ -156,7 +156,7 @@ describe('PiSessionWriter', () => {
     expect(toolResultMessage?.toolName).toBe('read');
   });
 
-  it('writes agent-attributed and callback inputs as assistant.input custom_message entries', async () => {
+  it('writes agent-attributed and callback inputs as user messages with provenance metadata', async () => {
     const baseDir = await createTempDir('pi-session-writer-custom-message');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -207,33 +207,25 @@ describe('PiSessionWriter', () => {
     const content = await fs.readFile(filePath, 'utf8');
     const entries = parseJsonLines(content);
 
-    const customEntries = entries.filter((entry) => entry['type'] === 'custom_message');
-    expect(customEntries.length).toBe(2);
-
-    const agentInput = customEntries.find((entry) => {
-      const details = entry['details'];
-      const kind = details && typeof details === 'object' ? (details as Record<string, unknown>)['kind'] : undefined;
-      return entry['customType'] === 'assistant.input' && kind === 'agent';
-    });
-    expect(agentInput?.['display']).toBe(true);
-    expect(agentInput?.['content']).toBe('Hello from agent');
-    expect((agentInput?.['details'] as Record<string, unknown> | undefined)?.['fromAgentId']).toBe('agent-a');
-    expect((agentInput?.['details'] as Record<string, unknown> | undefined)?.['fromSessionId']).toBe('sess-a');
-
-    const callbackInput = customEntries.find((entry) => {
-      const details = entry['details'];
-      const kind = details && typeof details === 'object' ? (details as Record<string, unknown>)['kind'] : undefined;
-      return entry['customType'] === 'assistant.input' && kind === 'callback';
-    });
-    expect(callbackInput?.['display']).toBe(false);
-    expect(callbackInput?.['content']).toBe('Hidden callback input');
-
     const userMessageEntries = entries
       .filter((entry) => entry['type'] === 'message')
       .map((entry) => entry['message'] as Record<string, unknown> | undefined)
       .filter(Boolean)
       .filter((message) => message?.['role'] === 'user');
-    expect(userMessageEntries.length).toBe(0);
+    expect(userMessageEntries.length).toBe(2);
+    expect(userMessageEntries[0]?.['content']).toEqual([{ type: 'text', text: 'Hello from agent' }]);
+    expect(userMessageEntries[0]?.['meta']).toEqual({
+      source: 'agent',
+      fromAgentId: 'agent-a',
+      fromSessionId: 'sess-a',
+    });
+    expect(userMessageEntries[1]?.['content']).toEqual([{ type: 'text', text: 'Hidden callback input' }]);
+    expect(userMessageEntries[1]?.['meta']).toEqual({
+      source: 'callback',
+      fromAgentId: 'agent-b',
+      fromSessionId: 'sess-b',
+      visibility: 'hidden',
+    });
   });
 
   it('writes replayable assistant text signatures for reconstructed assistant text messages', async () => {
@@ -312,7 +304,7 @@ describe('PiSessionWriter', () => {
     });
   });
 
-  it('counts assistant.input entries when resuming to avoid duplicate writes', async () => {
+  it('counts user messages with provenance metadata when resuming to avoid duplicate writes', async () => {
     const baseDir = await createTempDir('pi-session-writer-resume');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -367,7 +359,7 @@ describe('PiSessionWriter', () => {
     expect(second).toBe(first);
   });
 
-  it('realigns resumed writes when replay omits an earlier assistant.input entry', async () => {
+  it('realigns resumed writes when replay omits an earlier callback-meta user message', async () => {
     const baseDir = await createTempDir('pi-session-writer-realign');
     const now = () => new Date('2026-02-01T00:00:00.000Z');
     const writer = new PiSessionWriter({ baseDir, now });
@@ -431,10 +423,17 @@ describe('PiSessionWriter', () => {
     const filePath = path.join(sessionDir, files[0]!);
     const entries = parseJsonLines(await fs.readFile(filePath, 'utf8'));
 
-    const customEntries = entries.filter(
-      (entry) => entry['type'] === 'custom_message' && entry['customType'] === 'assistant.input',
-    );
-    expect(customEntries).toHaveLength(2);
+    const callbackUserMessages = entries
+      .filter((entry) => entry['type'] === 'message')
+      .map((entry) => entry['message'] as Record<string, unknown> | undefined)
+      .filter(
+        (message): message is Record<string, unknown> =>
+          !!message &&
+          message['role'] === 'user' &&
+          typeof (message['meta'] as Record<string, unknown> | undefined)?.['source'] === 'string' &&
+          ((message['meta'] as Record<string, unknown>)['source'] === 'callback'),
+      );
+    expect(callbackUserMessages).toHaveLength(2);
 
     const assistantTexts = entries
       .filter((entry) => entry['type'] === 'message')

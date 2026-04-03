@@ -157,7 +157,7 @@ describe('canonical Pi session history loader', () => {
     expect(Array.isArray(toolResult?.payload.result)).toBe(true);
   });
 
-  it('replays assistant extension entries (assistant.input + assistant.event)', async () => {
+  it('replays assistant extension entries from canonical user metadata plus assistant.event', async () => {
     const baseDir = await createTempDir('pi-session-history-ext');
     const sessionId = 'session-ext';
     const piSessionId = 'pi-session-ext';
@@ -168,14 +168,16 @@ describe('canonical Pi session history loader', () => {
     const filePath = path.join(sessionDir, `2026-01-20T00-00-00-000Z_${piSessionId}.jsonl`);
     const lines = [
       JSON.stringify({
-        type: 'custom_message',
+        type: 'message',
         id: 'input-agent-1',
         parentId: null,
         timestamp: '2026-01-20T00:00:00.000Z',
-        customType: 'assistant.input',
-        content: 'Hello from agent',
-        display: true,
-        details: { kind: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a' },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Hello from agent' }],
+          meta: { source: 'agent', fromAgentId: 'agent-a', fromSessionId: 'sess-a' },
+          timestamp: Date.parse('2026-01-20T00:00:00.000Z'),
+        },
       }),
       JSON.stringify({
         message: {
@@ -185,14 +187,21 @@ describe('canonical Pi session history loader', () => {
         },
       }),
       JSON.stringify({
-        type: 'custom_message',
+        type: 'message',
         id: 'input-callback-1',
         parentId: null,
         timestamp: '2026-01-20T00:00:01.000Z',
-        customType: 'assistant.input',
-        content: 'Hidden callback input',
-        display: false,
-        details: { kind: 'callback', fromAgentId: 'agent-b', fromSessionId: 'sess-b' },
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Hidden callback input' }],
+          meta: {
+            source: 'callback',
+            fromAgentId: 'agent-b',
+            fromSessionId: 'sess-b',
+            visibility: 'hidden',
+          },
+          timestamp: Date.parse('2026-01-20T00:00:01.000Z'),
+        },
       }),
       JSON.stringify({
         message: {

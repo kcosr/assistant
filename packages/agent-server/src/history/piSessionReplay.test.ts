@@ -78,18 +78,21 @@ describe('buildCanonicalPiReplayMessages', () => {
         },
       }),
       JSON.stringify({
-        type: 'custom_message',
+        type: 'message',
         id: 'm4',
         parentId: 'm3',
         timestamp: '2026-03-26T00:00:04.000Z',
-        customType: 'assistant.input',
-        content: 'Callback text',
-        details: {
-          kind: 'callback',
-          fromAgentId: 'worker',
-          fromSessionId: 's2',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Callback text' }],
+          meta: {
+            source: 'callback',
+            fromAgentId: 'worker',
+            fromSessionId: 's2',
+            visibility: 'hidden',
+          },
+          timestamp: 4,
         },
-        display: false,
       }),
       JSON.stringify({
         type: 'message',
@@ -148,7 +151,7 @@ describe('buildCanonicalPiReplayMessages', () => {
     expect(messages[3]).toMatchObject({
       role: 'user',
       content: 'Callback text',
-      historyTimestampMs: Date.parse('2026-03-26T00:00:04.000Z'),
+      historyTimestampMs: 4,
       meta: {
         source: 'callback',
         fromAgentId: 'worker',
@@ -289,7 +292,7 @@ describe('buildCanonicalPiReplayMessages', () => {
     });
   });
 
-  it('does not duplicate agent callbacks once the same callback was persisted as assistant.input', () => {
+  it('does not duplicate agent callbacks once the same callback was persisted as a callback-meta user message', () => {
     const callbackText =
       '[Callback from unknown]: <questionnaire-response questionnaire-request-id="questionnaire-1" tool="questions_ask" />';
     const content = [
@@ -311,16 +314,19 @@ describe('buildCanonicalPiReplayMessages', () => {
         },
       }),
       JSON.stringify({
-        type: 'custom_message',
+        type: 'message',
         timestamp: '2026-04-01T00:16:10.000Z',
-        customType: 'assistant.input',
-        content: callbackText,
-        details: {
-          kind: 'callback',
-          fromAgentId: 'unknown',
-          fromSessionId: '4d4cc8a3-3c8f-4bac-9864-27046c7d4159',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: callbackText }],
+          meta: {
+            source: 'callback',
+            fromAgentId: 'unknown',
+            fromSessionId: '4d4cc8a3-3c8f-4bac-9864-27046c7d4159',
+            visibility: 'visible',
+          },
+          timestamp: Date.parse('2026-04-01T00:16:10.000Z'),
         },
-        display: true,
       }),
       JSON.stringify({
         type: 'custom',

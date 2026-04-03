@@ -188,6 +188,31 @@ function toUserMeta(entry: Record<string, unknown>): ChatCompletionMessageMeta |
   return meta;
 }
 
+function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletionMessageMeta | undefined {
+  const meta = isRecord(message['meta']) ? message['meta'] : null;
+  if (!meta) {
+    return undefined;
+  }
+  const source = getString(meta['source']).trim();
+  if (source !== 'agent' && source !== 'callback' && source !== 'user') {
+    return undefined;
+  }
+  const resolved: ChatCompletionMessageMeta = {
+    source,
+    ...(isNonEmptyString(meta['fromAgentId']) ? { fromAgentId: meta['fromAgentId'].trim() } : {}),
+    ...(isNonEmptyString(meta['fromSessionId'])
+      ? { fromSessionId: meta['fromSessionId'].trim() }
+      : {}),
+  };
+  if (source === 'callback') {
+    const visibility = getString(meta['visibility']).trim();
+    if (visibility === 'visible' || visibility === 'hidden') {
+      resolved.visibility = visibility;
+    }
+  }
+  return resolved;
+}
+
 function extractInterruptedTurnIds(entries: Array<Record<string, unknown>>): Set<string> {
   const interruptedTurnIds = new Set<string>();
   for (const entry of entries) {
@@ -285,11 +310,15 @@ function collectCanonicalReplayCoverage(
       if (!text) {
         continue;
       }
+      const meta = toUserMetaFromMessage(message);
       const historyTimestampMs = resolveTimestamp(message, entry);
       users.push({
         text,
         ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
       });
+      if (meta?.source === 'callback') {
+        callbackInputTexts.add(text);
+      }
       continue;
     }
 
@@ -596,11 +625,13 @@ export function buildCanonicalPiReplayMessages(content: string): ChatCompletionM
       if (!text) {
         continue;
       }
+      const meta = toUserMetaFromMessage(message);
       const historyTimestampMs = resolveTimestamp(message, entry);
       messages.push({
         role: 'user',
         content: text,
         ...(historyTimestampMs !== undefined ? { historyTimestampMs } : {}),
+        ...(meta ? { meta } : {}),
       });
       continue;
     }
