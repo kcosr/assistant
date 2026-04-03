@@ -1198,7 +1198,7 @@ describe('ChatRenderer', () => {
     );
   });
 
-  it('renders a turn divider with the turn timestamp', () => {
+  it('renders a request divider with the request timestamp', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);

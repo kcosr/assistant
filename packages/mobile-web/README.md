@@ -154,7 +154,7 @@ The following patches are applied automatically on `android:sync`:
 - The Android app includes a committed local Capacitor plugin, `AssistantNativeVoice`, and a foreground
   service, `AssistantVoiceRuntimeService`.
 - The native runtime receives voice-mode config from the web layer, subscribes to the selected
-  Assistant session over the main Assistant websocket for live `chat_event` updates, plays
+  Assistant session over the main Assistant websocket for live `transcript_event` updates, plays
   `voice_speak` / `voice_ask` tool calls through `agent-voice-adapter`, and submits successful
   spoken replies back through the existing sessions message route.
 - Android-native voice settings now include a client-side `TTS gain` slider for native playback,
