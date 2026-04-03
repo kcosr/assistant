@@ -342,7 +342,7 @@ export async function processUserMessage(
       log('failed to append Pi turn start', err);
     }
   }
-  if (shouldEmitChatEvents && eventStore && turnId) {
+  if ((shouldEmitChatEvents && eventStore && turnId) || (chatProvider === 'pi' && turnId)) {
     const trigger: TurnStartTrigger = agentMessageContext
       ? logType === 'callback'
         ? 'callback'
@@ -422,7 +422,7 @@ export async function processUserMessage(
 
     void appendAndBroadcastChatEvents(
       {
-        eventStore,
+        ...(eventStore ? { eventStore } : {}),
         sessionHub,
         sessionId,
       },
@@ -459,10 +459,12 @@ export async function processUserMessage(
               }
             : {}),
         };
-  if (excludeConnection) {
-    sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, excludeConnection);
-  } else {
-    sessionHub.broadcastToSession(sessionId, userBroadcast);
+  if (chatProvider !== 'pi') {
+    if (excludeConnection) {
+      sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, excludeConnection);
+    } else {
+      sessionHub.broadcastToSession(sessionId, userBroadcast);
+    }
   }
 
   let userMeta: ChatCompletionMessageMeta | undefined;

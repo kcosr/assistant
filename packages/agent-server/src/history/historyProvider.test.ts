@@ -109,6 +109,83 @@ describe('canonical Pi transcript loader', () => {
     ]);
   });
 
+  it('keeps the visible user message when both overlay and canonical Pi user entries exist', async () => {
+    const baseDir = await createTempDir('pi-session-transcript-user-dedupe');
+    const sessionId = 'session-transcript-user-dedupe';
+    const piSessionId = 'pi-session-transcript-user-dedupe';
+    const cwd = '/home/kevin';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const filePath = path.join(sessionDir, `2026-01-18T00-00-00-000Z_${piSessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-start',
+        timestamp: '2026-01-18T00:00:00.000Z',
+        customType: 'assistant.request_start',
+        data: { v: 1, requestId: 'request-1', trigger: 'user' },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'user-overlay',
+        timestamp: '2026-01-18T00:00:00.100Z',
+        customType: 'assistant.user_message',
+        data: { payload: { text: 'hello there' }, turnId: 'request-1' },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-user',
+        timestamp: '2026-01-18T00:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello there' }],
+          timestamp: 1737158400100,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'msg-assistant',
+        timestamp: '2026-01-18T00:00:02.000Z',
+        message: {
+          role: 'assistant',
+          id: 'resp-1',
+          content: [{ type: 'text', text: 'hi back' }],
+        },
+      }),
+      JSON.stringify({
+        type: 'custom',
+        id: 'req-end',
+        timestamp: '2026-01-18T00:00:03.000Z',
+        customType: 'assistant.request_end',
+        data: { v: 1, requestId: 'request-1', status: 'completed' },
+      }),
+    ];
+    await fs.writeFile(filePath, lines.join('\n'), 'utf8');
+
+    const events = await loadCanonicalPiTranscriptEvents({
+      sessionId,
+      revision: 7,
+      providerId: 'pi',
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd },
+        },
+      },
+      baseDir,
+    });
+
+    const userEvents = events.filter((event) => event.kind === 'user_message');
+    expect(userEvents).toHaveLength(1);
+    expect(userEvents[0]).toEqual(
+      expect.objectContaining({
+        requestId: 'request-1',
+        chatEventType: 'user_message',
+        payload: { text: 'hello there' },
+      }),
+    );
+  });
+
   it('orders canonical assistant narration before earlier-appended tool overlay in transcript replay', async () => {
     const baseDir = await createTempDir('pi-session-transcript-replay-order');
     const sessionId = 'session-transcript-replay-order';

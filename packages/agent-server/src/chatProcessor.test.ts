@@ -537,10 +537,16 @@ describe('processUserMessage stream event emission', () => {
     expect(broadcast).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: 'user_audio',
-          sessionId: 's1',
-          transcription: 'spoken transcript',
-          durationMs: 4200,
+          type: 'transcript_event',
+          event: expect.objectContaining({
+            sessionId: 's1',
+            kind: 'user_message',
+            chatEventType: 'user_audio',
+            payload: {
+              transcription: 'spoken transcript',
+              durationMs: 4200,
+            },
+          }),
         }),
       ]),
     );

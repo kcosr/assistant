@@ -342,7 +342,7 @@ export function emitInteractionPendingEvent(params: EmitInteractionPendingEventP
 }
 
 export interface ChatEventContext {
-  eventStore: EventStore;
+  eventStore?: EventStore;
   sessionHub: SessionHub;
   sessionId: string;
 }
@@ -649,6 +649,9 @@ export async function appendAndBroadcastChatEvents(
           }
         }
       }
+    } else if (!eventStore) {
+      // Non-Pi callers should normally provide an EventStore. If not, fall back to
+      // broadcast-only behavior so live transcript updates still work.
     } else if (events.length === 1) {
       const [single] = events;
       if (!single) {

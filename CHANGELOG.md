@@ -40,6 +40,8 @@
 - Fixed systemd startup for Pi-backed sessions by removing top-level CommonJS requires of ESM-only `@mariozechner/pi-ai` and `@mariozechner/pi-coding-agent` packages.
 - Fixed live Pi transcript updates so normal session activity no longer resets the in-memory transcript revision and clears visible history on each new turn.
 - Fixed native Pi tool execution to hydrate `requestId`/`responseId`/`turnId` from the active run at execute time, restoring `attachment_send` and other request-scoped tools.
+- Fixed Pi transcript replay dropping visible user turns when canonical `user` messages coexisted with overlay request markers.
+- Fixed live Pi submit handling so the sending client immediately receives request-start and user-turn transcript events instead of waiting for assistant output or refresh.
 
 ### Removed
 

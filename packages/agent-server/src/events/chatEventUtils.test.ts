@@ -98,6 +98,52 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
   });
 
+  it('broadcasts live transcript events for Pi sessions without requiring EventStore', async () => {
+    const { sessionHub, broadcastToSession, appendAssistantEvent } = createSessionHub(
+      'pi',
+      'pi-live-user',
+    );
+
+    await appendAndBroadcastChatEvents(
+      { sessionHub, sessionId: 'pi-live-user' },
+      [
+        {
+          id: 'evt-start',
+          sessionId: 'pi-live-user',
+          turnId: 'req-1',
+          timestamp: Date.now(),
+          type: 'turn_start',
+          payload: { trigger: 'user' },
+        },
+        {
+          id: 'evt-user',
+          sessionId: 'pi-live-user',
+          turnId: 'req-1',
+          timestamp: Date.now(),
+          type: 'user_message',
+          payload: { text: 'hello' },
+        },
+      ],
+    );
+
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
+    expect(appendAssistantEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'user_message',
+        turnId: 'req-1',
+        payload: { text: 'hello' },
+      }),
+    );
+    expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { kind: 'request_start', requestId: 'req-1' },
+    });
+    expect(broadcastToSession.mock.calls[1]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: { kind: 'user_message', requestId: 'req-1', payload: { text: 'hello' } },
+    });
+  });
+
   it('broadcasts transcript_event for transient pi tool output', () => {
     const { sessionHub, broadcastToSession } = createSessionHub('pi');
 

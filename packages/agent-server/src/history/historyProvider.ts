@@ -2093,13 +2093,6 @@ function buildProjectedTranscriptFromPiSession(
         : getTurnId(messageEntry) || `synthetic-${getString(entry['id']) || nextSyntheticRequestId++}`;
       const text = extractText(messageEntry);
       const meta = resolvePiUserMeta(messageEntry);
-      if (
-        mirroredUserInputs.has(getTimestampedTextCoverageKey(timestamp, text)) ||
-        (isOutOfOrderForExplicitRequest(timestamp) &&
-          mirroredUserInputTexts.has(normalizeCoverageText(text)))
-      ) {
-        continue;
-      }
       if (meta?.source !== 'callback' && emittedUserInputs.has(getUserInputKey(requestId, text))) {
         continue;
       }

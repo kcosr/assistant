@@ -280,9 +280,11 @@ export async function handleTextInputWithChatCompletions(options: {
     text,
     requestId,
   };
-  sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, connection);
+  if (chatProvider !== 'pi') {
+    sessionHub.broadcastToSessionExcluding(sessionId, userBroadcast, connection);
+  }
 
-  if (shouldEmitChatEvents && eventStore && sessionId) {
+  if ((shouldEmitChatEvents && eventStore && sessionId) || (chatProvider === 'pi' && turnId)) {
     const events: ChatEvent[] = [
       {
         ...createChatEventBase({
@@ -304,7 +306,7 @@ export async function handleTextInputWithChatCompletions(options: {
 
     void appendAndBroadcastChatEvents(
       {
-        eventStore,
+        ...(eventStore ? { eventStore } : {}),
         sessionHub,
         sessionId,
       },
