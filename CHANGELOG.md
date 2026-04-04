@@ -94,6 +94,7 @@
 - Fixed unbound chat panel creation so launcher-created chat panes explicitly auto-open the session picker on mount instead of relying on focus timing.
 - Fixed chat-panel activity drift so the in-chat typing dots and the input activity bar now fan out from the same session request-activity sync across all panels bound to that session.
 - Fixed chat tab and session-label hydration so bound chat panels refresh from session names immediately after binding and on page-load session summary sync instead of waiting for a later click-triggered rerender.
+- Fixed chat title refresh so routine `session_updated` syncs no longer force a full workspace rerender when a panel title has not actually changed.
 
 ### Removed
 

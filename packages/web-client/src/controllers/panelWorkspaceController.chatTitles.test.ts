@@ -118,4 +118,45 @@ describe('PanelWorkspaceController chat tab titles', () => {
 
     expect(getTabLabel(root, 'chat-1')).toBe('Assistant (ba3b97f0)');
   });
+
+  it('does not rerender the workspace when refreshed titles are unchanged', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'chat', title: 'Chat' }, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    host.setContext('session.summaries', [{ sessionId: 'ba3b97f0-example', name: 'Assistant' }]);
+    host.setContext('agent.summaries', []);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      getSynthesizedPanelTitlesEnabled: () => true,
+      loadLayout: () => ({
+        layout: pane('pane-1', ['chat-1']),
+        panels: {
+          'chat-1': {
+            panelId: 'chat-1',
+            panelType: 'chat',
+            binding: { mode: 'fixed', sessionId: 'ba3b97f0-example' },
+          },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    const tabBefore = root.querySelector(`.panel-tab-button[data-panel-id="chat-1"]`);
+    expect(tabBefore).not.toBeNull();
+
+    workspace.refreshPanelTitles();
+
+    const tabAfter = root.querySelector(`.panel-tab-button[data-panel-id="chat-1"]`);
+    expect(tabAfter).toBe(tabBefore);
+    expect(getTabLabel(root, 'chat-1')).toBe('Assistant (ba3b97f0)');
+  });
 });

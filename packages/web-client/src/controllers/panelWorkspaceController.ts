@@ -171,7 +171,22 @@ export class PanelWorkspaceController {
   }
 
   refreshPanelTitles(): void {
-    this.render();
+    const panelIds = Object.keys(this.layout.panels);
+    let titleChanged = false;
+    for (const panelId of panelIds) {
+      const nextTitle = this.getPanelTitle(panelId);
+      const previousTitle = this.publishedPanelTitles.get(panelId) ?? null;
+      if (previousTitle !== nextTitle) {
+        titleChanged = true;
+        break;
+      }
+    }
+    if (titleChanged) {
+      this.render();
+      return;
+    }
+    this.syncResolvedPanelTitleContexts();
+    this.updatePanelContextSummary();
   }
 
   getLayout(): LayoutPersistence {
