@@ -140,9 +140,9 @@ import { CORE_PANEL_SERVICES_CONTEXT_KEY, type PanelCoreServices } from './utils
 import { getPanelHeaderActionsKey, type PanelHeaderActions } from './utils/panelHeaderActions';
 import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils/chatPanelServices';
 import {
+  computeUnfinishedRequestIds,
   dedupeProjectedTranscriptEvents,
   finishTranscriptHydration,
-  shouldShowTypingIndicatorAfterReplay,
 } from './utils/transcriptReplay';
 import {
   createWindowSlot,
@@ -1328,7 +1328,11 @@ async function main(): Promise<void> {
     if (!entry) {
       return false;
     }
-    return entry.runtime.chatRenderer.hasActiveOutput();
+    const sessionId = entry.bindingSessionId;
+    const hasActiveRequest = sessionId
+      ? (serverMessageHandler?.hasActiveRequestForSession(sessionId) ?? false)
+      : false;
+    return hasActiveRequest || entry.runtime.chatRenderer.hasPendingToolActivity();
   }
 
   function getChatPanelSessionIds(): Set<string> {
@@ -1513,6 +1517,8 @@ async function main(): Promise<void> {
       onBriefModeChange: (enabled) => {
         applyBriefModeEnabled(enabled);
       },
+      hasActiveRequestForSession: (sessionId: string) =>
+        serverMessageHandler?.hasActiveRequestForSession(sessionId) ?? false,
       speechFeaturesEnabled,
       initialVoiceSettings,
       voiceSettingsStorageKey: VOICE_SETTINGS_STORAGE_KEY,
@@ -4363,10 +4369,15 @@ async function main(): Promise<void> {
         await loadSessionTranscript(trimmed, { force: true });
       }
     }
-    const shouldShowTyping = shouldShowTypingIndicatorAfterReplay({
-      hasActiveRequest: chatRenderer.hasActiveRequest(),
-    });
-    syncSessionRequestActivityUi(trimmed, shouldShowTyping);
+    // After a replay the authoritative in-flight request state must be
+    // reseeded from the transcript the renderer now reflects. Live events are
+    // layered on top via normal WebSocket handling; the seed call fans out to
+    // the activity bar, typing indicator, and mic/stop button via the shared
+    // syncSessionRequestActivityUi path.
+    const unfinishedRequestIds = computeUnfinishedRequestIds(
+      chatRenderer.getStoredProjectedTranscriptEvents(),
+    );
+    serverMessageHandler.seedActiveRequestsForSession(trimmed, unfinishedRequestIds);
     getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
   }
 

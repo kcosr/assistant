@@ -44,11 +44,36 @@ export function finishTranscriptHydration(
   flushBufferedEvents();
 }
 
-export function shouldShowTypingIndicatorAfterReplay(options: {
-  hasActiveRequest: boolean;
-}): boolean {
-  // Once replay finishes, the rendered transcript is authoritative. Any earlier
-  // optimistic local typing state should not survive if the transcript shows no
-  // active request.
-  return options.hasActiveRequest;
+/**
+ * Compute the set of unfinished request IDs from a projected transcript.
+ *
+ * Mirrors the bookkeeping in ServerMessageHandler: `request_start` events add
+ * the request ID to the active set, and `request_end`/`interrupt`/`error`
+ * events remove it (or clear everything when the event omits a request ID).
+ * Used to seed the authoritative request state after a transcript replay.
+ */
+export function computeUnfinishedRequestIds(
+  events: readonly ProjectedTranscriptEvent[],
+): string[] {
+  const active = new Set<string>();
+  for (const event of events) {
+    if (event.kind === 'request_start') {
+      const id = typeof event.requestId === 'string' ? event.requestId.trim() : '';
+      if (id) {
+        active.add(id);
+      }
+    } else if (
+      event.kind === 'request_end' ||
+      event.kind === 'interrupt' ||
+      event.kind === 'error'
+    ) {
+      const id = typeof event.requestId === 'string' ? event.requestId.trim() : '';
+      if (id) {
+        active.delete(id);
+      } else {
+        active.clear();
+      }
+    }
+  }
+  return Array.from(active);
 }

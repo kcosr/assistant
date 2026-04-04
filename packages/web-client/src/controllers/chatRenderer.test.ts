@@ -1436,9 +1436,6 @@ describe('ChatRenderer', () => {
     expect(
       bubble?.querySelector('.message-avatar.user-audio-avatar .voice-event-icon-microphone'),
     ).not.toBeNull();
-    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
-      true,
-    );
   });
 
   it('strips the context line from rendered user_audio bubbles', () => {
@@ -1493,14 +1490,14 @@ describe('ChatRenderer', () => {
     delete (globalThis as { __ASSISTANT_HIDE_CONTEXT__?: boolean }).__ASSISTANT_HIDE_CONTEXT__;
   });
 
-  it('shows the typing indicator for live voice tool bubbles', () => {
+  it('renders live voice tool bubbles for voice_ask calls', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'e-voice-live-turn-start',
         turnId: 't-voice-live',
@@ -1508,7 +1505,7 @@ describe('ChatRenderer', () => {
       }),
     );
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e-voice-live',
         turnId: 't-voice-live',
@@ -1523,9 +1520,6 @@ describe('ChatRenderer', () => {
 
     expect(container.querySelector('.voice-tool-bubble')?.textContent).toContain(
       'Are you still there?',
-    );
-    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
-      true,
     );
   });
 
@@ -1800,7 +1794,7 @@ describe('ChatRenderer', () => {
     expect(blocks).toHaveLength(2);
   });
 
-  it('reports active output for typing indicators and pending tools', () => {
+  it('reports pending tool activity from streaming/pending tool blocks', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -1808,15 +1802,17 @@ describe('ChatRenderer', () => {
       getExpandToolOutput: () => true,
     });
 
-    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(renderer.hasPendingToolActivity()).toBe(false);
 
+    // Typing indicator visibility is owned by the external controller, not by
+    // the renderer's pending-tool-activity check.
     renderer.showTypingIndicator();
-    expect(renderer.hasActiveOutput()).toBe(true);
+    expect(renderer.hasPendingToolActivity()).toBe(false);
 
     renderer.hideTypingIndicator();
-    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(renderer.hasPendingToolActivity()).toBe(false);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_call', {
         id: 'e1',
         payload: {
@@ -1826,12 +1822,12 @@ describe('ChatRenderer', () => {
         },
       }),
     );
-    expect(renderer.hasActiveOutput()).toBe(true);
+    expect(renderer.hasPendingToolActivity()).toBe(true);
 
     renderer.markOutputCancelled();
-    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(renderer.hasPendingToolActivity()).toBe(false);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('tool_result', {
         id: 'e2',
         payload: {
@@ -1840,17 +1836,17 @@ describe('ChatRenderer', () => {
         },
       }),
     );
-    expect(renderer.hasActiveOutput()).toBe(false);
+    expect(renderer.hasPendingToolActivity()).toBe(false);
   });
 
-  it('clears active output state when replaying history', () => {
+  it('clears the typing indicator element when replaying history', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
     renderer.showTypingIndicator();
-    expect(renderer.hasActiveOutput()).toBe(true);
+    expect(container.querySelector('.chat-typing-indicator.visible')).not.toBeNull();
 
     replayLegacyEvents(renderer, [
       createBaseEvent('assistant_done', {
@@ -1861,70 +1857,31 @@ describe('ChatRenderer', () => {
       }),
     ]);
 
-    expect(renderer.hasActiveOutput()).toBe(false);
+    // resetRenderState wipes container innerHTML, so the typing indicator is
+    // gone after a reset replay. Re-showing it should create a fresh element.
     expect(container.querySelector('.chat-typing-indicator.visible')).toBeNull();
+    renderer.showTypingIndicator();
+    expect(container.querySelector('.chat-typing-indicator.visible')).not.toBeNull();
   });
 
-  it('shows the typing indicator immediately on turn_start and clears it on turn_end', () => {
+  it('toggles the typing indicator DOM element via show/hide calls', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
-      createBaseEvent('turn_start', {
-        id: 'turn-1',
-        turnId: 'turn-1',
-        payload: { trigger: 'user' },
-      }),
-    );
-
+    renderer.showTypingIndicator();
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       true,
     );
 
-    renderLegacyEvent(renderer, 
-      createBaseEvent('turn_end', {
-        id: 'turn-1-end',
-        turnId: 'turn-1',
-        payload: {},
-      }),
-    );
-
+    renderer.hideTypingIndicator();
     expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
       false,
     );
   });
 
-  it('restores typing indicator after replay when the latest turn is still active', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-
-    const renderer = new ChatRenderer(container);
-
-    replayLegacyEvents(renderer, [
-      createBaseEvent('turn_start', {
-        id: 'turn-replay',
-        turnId: 'turn-replay',
-        payload: { trigger: 'user' },
-      }),
-      createBaseEvent('user_audio', {
-        id: 'turn-replay-audio',
-        turnId: 'turn-replay',
-        responseId: undefined,
-        payload: {
-          transcription: 'Testing live replay state.',
-          durationMs: 1200,
-        },
-      }),
-    ]);
-
-    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
-      true,
-    );
-  });
-
-  it('reports active output after replay when the latest turn is still active', () => {
+  it('reports pending tool activity after replay when a tool is still running', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
 
@@ -1953,40 +1910,7 @@ describe('ChatRenderer', () => {
       }),
     ]);
 
-    expect(renderer.hasActiveOutput()).toBe(true);
-  });
-
-  it('keeps typing indicator active while interaction is pending within an active turn', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-
-    const renderer = new ChatRenderer(container);
-
-    renderLegacyEvent(renderer, 
-      createBaseEvent('turn_start', {
-        id: 'turn-pending',
-        turnId: 'turn-pending',
-        payload: { trigger: 'user' },
-      }),
-    );
-
-    renderLegacyEvent(renderer, 
-      createBaseEvent('interaction_pending', {
-        id: 'pending-1',
-        turnId: 'turn-pending',
-        responseId: undefined,
-        payload: {
-          toolCallId: 'tc1',
-          toolName: 'questions_ask',
-          pending: true,
-          presentation: 'questionnaire',
-        },
-      }),
-    );
-
-    expect(container.querySelector('.chat-typing-indicator')?.classList.contains('visible')).toBe(
-      true,
-    );
+    expect(renderer.hasPendingToolActivity()).toBe(true);
   });
 
   it('shows agent attribution for user_message events from agents', () => {
@@ -2644,14 +2568,14 @@ describe('ChatRenderer', () => {
     expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
   });
 
-  it('shows typing immediately after a live questionnaire callback message renders', () => {
+  it('renders live questionnaire callback messages into the callback turn', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);
 
     const renderer = new ChatRenderer(container);
 
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('turn_start', {
         id: 'cb-turn-start',
         turnId: 't-callback',
@@ -2659,7 +2583,7 @@ describe('ChatRenderer', () => {
         payload: { trigger: 'callback' },
       }),
     );
-    renderLegacyEvent(renderer, 
+    renderLegacyEvent(renderer,
       createBaseEvent('agent_callback', {
         id: 'cb-1',
         turnId: 't-callback',
@@ -2678,7 +2602,6 @@ describe('ChatRenderer', () => {
       '.turn[data-turn-id="t-callback"] .questionnaire-submission-indicator',
     );
     expect(callbackIndicator?.textContent).toContain('Submitted questionnaire answers');
-    expect(container.querySelector('.chat-typing-indicator.visible')).not.toBeNull();
   });
 
   it('submits async questionnaires through the dedicated websocket callbacks', () => {

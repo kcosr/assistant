@@ -173,9 +173,7 @@ export class ChatRenderer {
   private readonly container: HTMLElement;
   private readonly options: ChatRendererOptions;
   private typingIndicator: HTMLDivElement | null = null;
-  private _isStreaming = false;
   private _isReplaying = false;
-  private readonly activeRequestIds = new Set<string>();
 
   private readonly turnElements = new Map<string, HTMLDivElement>();
   private readonly responseElements = new Map<string, HTMLDivElement>();
@@ -241,10 +239,6 @@ export class ChatRenderer {
     this.requestDividerActionHandler = options.onRequestDividerActivate ?? null;
   }
 
-  get isStreaming(): boolean {
-    return this._isStreaming;
-  }
-
   private isDebugEnabled(): boolean {
     if (this.debugEnabled !== null) {
       return this.debugEnabled;
@@ -276,15 +270,13 @@ export class ChatRenderer {
     return singleLine.length > 120 ? `${singleLine.slice(0, 117)}...` : singleLine;
   }
 
-  hasActiveOutput(): boolean {
-    if (this.activeRequestIds.size > 0) {
-      return true;
-    }
-
-    if (this._isStreaming) {
-      return true;
-    }
-
+  /**
+   * Returns true when there is any in-flight tool activity currently reflected
+   * in the DOM (pending/streaming tool blocks in non-completed turns). Does
+   * NOT track request lifecycle — that is owned by ServerMessageHandler and
+   * surfaced via the typing indicator's external controller.
+   */
+  hasPendingToolActivity(): boolean {
     for (const block of this.toolCallElements.values()) {
       const turnEl = block.closest<HTMLElement>('.turn');
       if (turnEl?.classList.contains('turn-complete')) {
@@ -302,10 +294,6 @@ export class ChatRenderer {
     return false;
   }
 
-  hasActiveRequest(): boolean {
-    return this.activeRequestIds.size > 0;
-  }
-
   markOutputCancelled(): void {
     this.interruptPendingToolBlocks();
   }
@@ -319,7 +307,6 @@ export class ChatRenderer {
   }
 
   private setTypingIndicatorVisible(visible: boolean): void {
-    this._isStreaming = visible;
     if (!visible) {
       if (this.typingIndicator) {
         this.typingIndicator.classList.remove('visible');
@@ -339,10 +326,6 @@ export class ChatRenderer {
 
   hideTypingIndicator(): void {
     this.setTypingIndicatorVisible(false);
-  }
-
-  private syncTypingIndicatorFromTurnState(): void {
-    this.setTypingIndicatorVisible(this.activeRequestIds.size > 0);
   }
 
   renderProjectedEvent(event: ProjectedTranscriptEvent): void {
@@ -573,6 +556,17 @@ export class ChatRenderer {
     return this.projectedTranscriptRevision;
   }
 
+  /**
+   * Returns the full set of projected transcript events currently tracked by
+   * the renderer, ordered by sequence. Used to drive authoritative activity
+   * state outside the renderer (e.g. request-in-flight bookkeeping).
+   */
+  getStoredProjectedTranscriptEvents(): ProjectedTranscriptEvent[] {
+    return [...this.projectedTranscriptEvents.values()].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+  }
+
   private resetProjectedTranscriptState(): void {
     this.projectedTranscriptEvents.clear();
     this.projectedTranscriptRevision = null;
@@ -580,7 +574,7 @@ export class ChatRenderer {
 
   private resetRenderState(): void {
     this.container.innerHTML = '';
-    this._isStreaming = false;
+    this.typingIndicator = null;
     this.turnElements.clear();
     this.responseElements.clear();
     this.assistantTextElements.clear();
@@ -608,7 +602,6 @@ export class ChatRenderer {
     this.questionnaireResponses.clear();
     this.standaloneToolCalls.clear();
     this.pendingInteractionToolCalls.clear();
-    this.activeRequestIds.clear();
   }
 
   private renderStoredProjectedTranscript(): void {
@@ -621,7 +614,6 @@ export class ChatRenderer {
       this.renderProjectedEvent(event);
     }
     this._isReplaying = false;
-    this.syncTypingIndicatorFromTurnState();
   }
 
   replayProjectedEvents(
@@ -708,7 +700,6 @@ export class ChatRenderer {
     for (const event of appendedEvents) {
       this.renderProjectedEvent(event);
     }
-    this.syncTypingIndicatorFromTurnState();
     return 'applied';
   }
 
@@ -781,10 +772,6 @@ export class ChatRenderer {
   private handleTurnStart(event: RenderedTranscriptEvent<{ trigger?: string }>): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     this.getOrCreateTurnContainer(turnId, event.timestamp);
-    this.activeRequestIds.add(turnId);
-    if (!this._isReplaying) {
-      this.syncTypingIndicatorFromTurnState();
-    }
   }
 
   private handleTurnEnd(event: RenderedTranscriptEvent<Record<string, unknown>>): void {
@@ -792,10 +779,6 @@ export class ChatRenderer {
     const turnEl = this.turnElements.get(turnId);
     if (turnEl) {
       turnEl.classList.add('turn-complete');
-    }
-    this.activeRequestIds.delete(turnId);
-    if (!this._isReplaying) {
-      this.syncTypingIndicatorFromTurnState();
     }
   }
 
@@ -2513,14 +2496,6 @@ export class ChatRenderer {
   // Interrupts and errors are rendered as indicators on the current turn.
 
   private handleInterrupt(event: RenderedTranscriptEvent<{ reason?: string }>): void {
-    if (event.turnId) {
-      this.activeRequestIds.delete(event.turnId);
-    } else {
-      this.activeRequestIds.clear();
-    }
-    if (!this._isReplaying) {
-      this.syncTypingIndicatorFromTurnState();
-    }
     // Mark any pending tool blocks as interrupted
     const hasInterruptedToolBlock = this.interruptPendingToolBlocks();
 
@@ -2541,14 +2516,6 @@ export class ChatRenderer {
   private handleError(
     event: RenderedTranscriptEvent<{ code: string; message: string }>,
   ): void {
-    if (event.turnId) {
-      this.activeRequestIds.delete(event.turnId);
-    } else {
-      this.activeRequestIds.clear();
-    }
-    if (!this._isReplaying) {
-      this.syncTypingIndicatorFromTurnState();
-    }
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 

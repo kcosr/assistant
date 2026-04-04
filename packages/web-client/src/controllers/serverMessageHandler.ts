@@ -102,6 +102,45 @@ export class ServerMessageHandler {
     this.activeRequestsBySession.clear();
   }
 
+  /**
+   * Authoritative check for whether a session currently has an in-flight
+   * request. This is the single source of truth that the activity pulse,
+   * typing indicator, and mic/stop button all read from.
+   */
+  hasActiveRequestForSession(sessionId: string): boolean {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return false;
+    }
+    const activeRequests = this.activeRequestsBySession.get(trimmed);
+    return !!activeRequests && activeRequests.size > 0;
+  }
+
+  /**
+   * Replace the tracked in-flight request IDs for a session. Used after a
+   * transcript replay so that the authoritative state reflects any requests
+   * the client hadn't observed as live events. Triggers a UI sync.
+   */
+  seedActiveRequestsForSession(sessionId: string, requestIds: Iterable<string>): void {
+    const trimmed = sessionId.trim();
+    if (!trimmed) {
+      return;
+    }
+    const nextSet = new Set<string>();
+    for (const id of requestIds) {
+      const normalized = typeof id === 'string' ? id.trim() : '';
+      if (normalized) {
+        nextSet.add(normalized);
+      }
+    }
+    if (nextSet.size === 0) {
+      this.activeRequestsBySession.delete(trimmed);
+    } else {
+      this.activeRequestsBySession.set(trimmed, nextSet);
+    }
+    this.syncSessionRequestActivity(trimmed);
+  }
+
   private isDebugEnabled(): boolean {
     if (typeof window === 'undefined') {
       return false;

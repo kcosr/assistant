@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { ProjectedTranscriptEvent } from '@assistant/shared';
 import {
+  computeUnfinishedRequestIds,
   dedupeProjectedTranscriptEvents,
   finishTranscriptHydration,
-  shouldShowTypingIndicatorAfterReplay,
 } from './transcriptReplay';
 
 function createEvent(
@@ -70,20 +70,71 @@ describe('finishTranscriptHydration', () => {
   });
 });
 
-describe('shouldShowTypingIndicatorAfterReplay', () => {
-  it('does not preserve stale optimistic typing when replay has no active request', () => {
-    expect(
-      shouldShowTypingIndicatorAfterReplay({
-        hasActiveRequest: false,
-      }),
-    ).toBe(false);
+describe('computeUnfinishedRequestIds', () => {
+  it('returns an empty list when every request has ended', () => {
+    const events: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: 'r1', chatEventType: 'turn_start' }),
+      createEvent(1, { kind: 'request_end', requestId: 'r1', chatEventType: 'turn_end' }),
+    ];
+
+    expect(computeUnfinishedRequestIds(events)).toEqual([]);
   });
 
-  it('keeps typing visible when replay still has an active request', () => {
-    expect(
-      shouldShowTypingIndicatorAfterReplay({
-        hasActiveRequest: true,
+  it('returns request IDs for requests that started but never finished', () => {
+    const events: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: 'r1', chatEventType: 'turn_start' }),
+      createEvent(1, { kind: 'request_end', requestId: 'r1', chatEventType: 'turn_end' }),
+      createEvent(2, { kind: 'request_start', requestId: 'r2', chatEventType: 'turn_start' }),
+    ];
+
+    expect(computeUnfinishedRequestIds(events)).toEqual(['r2']);
+  });
+
+  it('treats interrupt and error events as request terminators', () => {
+    const interruptEvents: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: 'r1', chatEventType: 'turn_start' }),
+      createEvent(1, {
+        kind: 'interrupt',
+        requestId: 'r1',
+        chatEventType: 'interrupt',
+        payload: { reason: 'user' },
       }),
-    ).toBe(true);
+    ];
+    expect(computeUnfinishedRequestIds(interruptEvents)).toEqual([]);
+
+    const errorEvents: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: 'r2', chatEventType: 'turn_start' }),
+      createEvent(1, {
+        kind: 'error',
+        requestId: 'r2',
+        chatEventType: 'error',
+        payload: { code: 'FAIL', message: 'nope' },
+      }),
+    ];
+    expect(computeUnfinishedRequestIds(errorEvents)).toEqual([]);
+  });
+
+  it('clears all active requests when a terminator event omits its request ID', () => {
+    const events: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: 'r1', chatEventType: 'turn_start' }),
+      createEvent(1, { kind: 'request_start', requestId: 'r2', chatEventType: 'turn_start' }),
+      createEvent(2, {
+        kind: 'interrupt',
+        requestId: '',
+        chatEventType: 'interrupt',
+        payload: { reason: 'shutdown' },
+      }),
+    ];
+
+    expect(computeUnfinishedRequestIds(events)).toEqual([]);
+  });
+
+  it('ignores request_start events that have no request ID', () => {
+    const events: ProjectedTranscriptEvent[] = [
+      createEvent(0, { kind: 'request_start', requestId: '', chatEventType: 'turn_start' }),
+      createEvent(1, { kind: 'request_start', requestId: 'r1', chatEventType: 'turn_start' }),
+    ];
+
+    expect(computeUnfinishedRequestIds(events)).toEqual(['r1']);
   });
 });

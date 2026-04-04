@@ -89,6 +89,7 @@ export interface InputRuntimeOptions {
   initialBriefModeEnabled: boolean;
   onIncludePanelContextChange?: (enabled: boolean) => void;
   onBriefModeChange?: (enabled: boolean) => void;
+  hasActiveRequestForSession?: (sessionId: string) => boolean;
   speechFeaturesEnabled: boolean;
   initialVoiceSettings: VoiceSettings;
   voiceSettingsStorageKey: string;
@@ -349,7 +350,13 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     updateClearInputButtonVisibility: () => textInputController.updateClearInputButtonVisibility(),
     sendModesUpdate,
     supportsAudioOutput,
-    isOutputActive: () => getActiveChatRuntime()?.chatRenderer.hasActiveOutput() ?? false,
+    isOutputActive: () => {
+      const sessionId = options.getSelectedSessionId();
+      if (sessionId && options.hasActiveRequestForSession?.(sessionId)) {
+        return true;
+      }
+      return getActiveChatRuntime()?.chatRenderer.hasPendingToolActivity() ?? false;
+    },
     updateScrollButtonVisibility: () => {
       getActiveChatRuntime()?.chatScrollManager.updateScrollButtonVisibility();
     },
