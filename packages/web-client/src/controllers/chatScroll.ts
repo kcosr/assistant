@@ -1,6 +1,8 @@
 export class ChatScrollManager {
   private userScrolledAway = false;
   private scrollTimeoutId: number | null = null;
+  private bottomSettleFrameId: number | null = null;
+  private bottomSettleToken = 0;
   private readonly bottomThresholdPx: number;
   private autoScrollEnabled = true;
 
@@ -34,6 +36,33 @@ export class ChatScrollManager {
     this.userScrolledAway = false;
     this.container.scrollTop = this.container.scrollHeight;
     this.scrollToBottomButton.classList.remove('visible');
+  }
+
+  scrollToBottomAfterLayout(frames: number = 2): void {
+    this.scrollToBottom();
+    if (typeof requestAnimationFrame !== 'function' || frames <= 0) {
+      return;
+    }
+    this.bottomSettleToken += 1;
+    const settleToken = this.bottomSettleToken;
+    if (this.bottomSettleFrameId !== null) {
+      cancelAnimationFrame(this.bottomSettleFrameId);
+      this.bottomSettleFrameId = null;
+    }
+    let remainingFrames = frames;
+    const settle = () => {
+      if (settleToken !== this.bottomSettleToken) {
+        return;
+      }
+      this.scrollToBottom();
+      remainingFrames -= 1;
+      if (remainingFrames > 0) {
+        this.bottomSettleFrameId = requestAnimationFrame(settle);
+      } else {
+        this.bottomSettleFrameId = null;
+      }
+    };
+    this.bottomSettleFrameId = requestAnimationFrame(settle);
   }
 
   scrollToTop(): void {

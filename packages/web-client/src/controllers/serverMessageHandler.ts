@@ -217,7 +217,7 @@ export class ServerMessageHandler {
     }
     if (this.options.isChatPanelVisible(sessionId)) {
       if (event.kind === 'request_start') {
-        runtime.chatScrollManager.scrollToBottom();
+        runtime.chatScrollManager.scrollToBottomAfterLayout();
       } else {
         runtime.chatScrollManager.autoScrollIfEnabled();
       }

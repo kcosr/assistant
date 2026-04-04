@@ -4310,14 +4310,15 @@ async function main(): Promise<void> {
         if (shouldResetTranscript) {
           if (projectedEvents.length > 0) {
             chatRenderer.replayProjectedEvents(projectedEvents, { reset: true });
-            chatScrollManager.scrollToBottom();
+            chatScrollManager.scrollToBottomAfterLayout();
           } else {
             chatRenderer.clear();
             ensureEmptySessionHint(chatLogEl);
+            chatScrollManager.scrollToBottomAfterLayout();
           }
         } else if (projectedEvents.length > 0) {
           chatRenderer.replayProjectedEvents(projectedEvents);
-          chatScrollManager.autoScrollIfEnabled();
+          chatScrollManager.scrollToBottomAfterLayout();
         }
 
         replayState.loaded = true;

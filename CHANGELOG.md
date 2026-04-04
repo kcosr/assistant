@@ -95,6 +95,7 @@
 - Fixed chat-panel activity drift so the in-chat typing dots and the input activity bar now fan out from the same session request-activity sync across all panels bound to that session.
 - Fixed chat tab and session-label hydration so bound chat panels refresh from session names immediately after binding and on page-load session summary sync instead of waiting for a later click-triggered rerender.
 - Fixed chat title refresh so routine `session_updated` syncs no longer force a full workspace rerender when a panel title has not actually changed.
+- Fixed chat transcript auto-scroll so loading a chat panel, selecting a session, and replaying the latest transcript settle fully to the bottom instead of stopping slightly above the newest messages.
 
 ### Removed
 

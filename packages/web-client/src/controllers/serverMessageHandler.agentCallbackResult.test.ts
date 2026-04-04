@@ -130,6 +130,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom: vi.fn(),
+        scrollToBottomAfterLayout: vi.fn(),
         autoScrollIfEnabled: vi.fn(),
       },
       elements: {
@@ -208,6 +209,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom: vi.fn(),
+        scrollToBottomAfterLayout: vi.fn(),
         autoScrollIfEnabled: vi.fn(),
       },
       elements: {
@@ -332,6 +334,7 @@ describe('ServerMessageHandler typing indicator', () => {
 
   it('scrolls visible chat panels to bottom on turn_start', async () => {
     const scrollToBottom = vi.fn();
+    const scrollToBottomAfterLayout = vi.fn();
     const autoScrollIfEnabled = vi.fn();
     const handleNewProjectedEvent = vi.fn();
     const runtime = {
@@ -342,6 +345,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom,
+        scrollToBottomAfterLayout,
         autoScrollIfEnabled,
       },
       elements: {
@@ -376,7 +380,8 @@ describe('ServerMessageHandler typing indicator', () => {
     });
 
     expect(handleNewProjectedEvent).toHaveBeenCalledTimes(1);
-    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    expect(scrollToBottomAfterLayout).toHaveBeenCalledTimes(1);
     expect(autoScrollIfEnabled).not.toHaveBeenCalled();
   });
 
@@ -390,6 +395,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom: vi.fn(),
+        scrollToBottomAfterLayout: vi.fn(),
         autoScrollIfEnabled: vi.fn(),
       },
       elements: {
@@ -476,6 +482,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom: vi.fn(),
+        scrollToBottomAfterLayout: vi.fn(),
         autoScrollIfEnabled: vi.fn(),
       },
       elements: {
@@ -524,6 +531,7 @@ describe('ServerMessageHandler typing indicator', () => {
   it('renders transcript events through the chat renderer path', async () => {
     const handleNewProjectedEvent = vi.fn();
     const scrollToBottom = vi.fn();
+    const scrollToBottomAfterLayout = vi.fn();
     const autoScrollIfEnabled = vi.fn();
     const runtime = {
       chatRenderer: {
@@ -533,6 +541,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom,
+        scrollToBottomAfterLayout,
         autoScrollIfEnabled,
       },
       elements: {
@@ -574,7 +583,8 @@ describe('ServerMessageHandler typing indicator', () => {
         kind: 'request_start',
       }),
     );
-    expect(scrollToBottom).toHaveBeenCalledTimes(1);
+    expect(scrollToBottom).not.toHaveBeenCalled();
+    expect(scrollToBottomAfterLayout).toHaveBeenCalledTimes(1);
     expect(autoScrollIfEnabled).not.toHaveBeenCalled();
     expect(typingIndicators.has('s-1')).toBe(true);
   });
@@ -589,6 +599,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       chatScrollManager: {
         scrollToBottom: vi.fn(),
+        scrollToBottomAfterLayout: vi.fn(),
         autoScrollIfEnabled: vi.fn(),
       },
       elements: {

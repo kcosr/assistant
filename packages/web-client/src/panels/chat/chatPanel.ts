@@ -127,11 +127,7 @@ export function createChatPanel(options: ChatPanelOptions): PanelFactory {
         onVisibilityChange: (visible) => {
           if (visible) {
             chromeController.scheduleLayoutCheck();
-            // Scroll to bottom when panel becomes visible
-            // Use requestAnimationFrame to ensure DOM is rendered
-            requestAnimationFrame(() => {
-              runtime.chatScrollManager.scrollToBottom();
-            });
+            runtime.chatScrollManager.scrollToBottomAfterLayout();
           }
         },
         unmount() {
