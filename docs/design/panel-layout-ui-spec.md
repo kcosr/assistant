@@ -38,14 +38,14 @@
 
 ## Overview
 
-The UI is built around a **panel workspace** that can contain any number of panels. Panels are plugin instances (chat, artifacts, diff, terminal, etc.) arranged via a dock/split layout engine with a tab view mode. The shell provides a panel launcher and global commands; panels provide their own UI and tool integrations.
+The UI is built around a **panel workspace** that can contain any number of panels. Panels are plugin instances (chat, artifacts, diff, terminal, etc.) arranged in **panes**. Panes may be split against each other, and each pane owns its own tab strip. The shell provides a panel launcher and global commands; panels provide their own UI and tool integrations.
 
 ## Layout and Shell
 
 ### Global Shell
 
 - **Top Bar**: contains global actions and status.
-- **Workspace**: the panel layout area (splits with optional tab view).
+- **Workspace**: the panel layout area (nested splits containing pane-local tab groups).
 - **Status Area** (optional): transient notifications and connection status.
 
 The shell does not assume fixed panel positions. Panels are arranged dynamically via the layout engine.
@@ -92,9 +92,9 @@ Each panel renders in a standardized frame with:
 - **Title badge + status indicator** (optional)
 - **Close button**
 - **Panel actions** (slots contributed by plugin)
-- **Tab strip** (when parent split is in tab view)
+- **Pane tab strip**
 - **Session binding indicator** (for session-scoped panels; shows the bound session or global/unbound)
-- **Panel actions menu** for docking and tabbing
+- **Panel actions menu** for panel-specific actions
 
 Binding indicator behavior:
 
@@ -102,14 +102,15 @@ Binding indicator behavior:
 - Panels do not implicitly follow a global "active session"; binding is explicit.
 - Panels that support global/unbound binding show a non-interactive indicator or a clear action.
 
-### Tabs and Split View Modes
+### Panes, Tabs, and Splits
 
-- Tabs are a view mode of split nodes (no standalone tab nodes).
-- Split nodes can switch between split mode and tab mode.
-- Tab mode renders the split's direct children as tabs without changing the split tree.
-- Each tab shows the panel title and icon.
-- Tab order follows the split's `children` order.
-- Dragging a tab header reorders tabs within the group.
+- Splits and panes are distinct layout nodes.
+- Split nodes arrange child panes or nested splits horizontally or vertically.
+- Pane nodes own their tab lists directly.
+- Each tab shows the panel title.
+- Tab order follows the pane's `tabs` order.
+- Dragging a tab within its own tab strip reorders tabs in that pane.
+- Dragging a tab out of its pane docks that tab into a split edge or tabs it into another pane, without moving the rest of the source pane.
 
 ### Resizing
 
@@ -126,21 +127,27 @@ Behavior:
 - Includes a search input to filter by panel name, type, or description.
 - Indicates which panel types are already open (including open counts).
 - Supports pinned panel types.
-- Opening a panel uses its default placement unless a placement is chosen (launcher "Place" menu or tab add).
+- Opening a panel uses its default placement unless a placement is chosen (launcher "Place" menu or pane-local add-tab flow).
 - Default placement size hints (width/height) are used when creating a split.
 - Single-instance panels focus the existing instance instead of opening a new one.
 - Multi-instance panels use a "New" action to open additional instances.
 - Multi-instance panels expose a "Place" menu to open as a tab with the active panel or split in a direction.
-- Opening from a tab header "+" button opens as a new tab in that group.
+- Opening from a pane tab header "+" button opens as a new tab in that pane.
 
 ## Drag and Dock
 
 Panels can be repositioned by dragging their header:
 
 - **Dock**: drop on workspace edges to create a split.
-- **Tab**: drop on another panel to create a tabbed split.
+- **Tab**: drop on another pane or tab to add the panel into that pane's tab strip.
 - **Split preview** shows where the panel will land.
 - **Reorder**: a dedicated reorder handle swaps the panel within its parent split.
+
+Tabs can also be repositioned by dragging their tab title:
+
+- **Reorder in pane**: drag within the same tab strip.
+- **Detach to split**: drag to a pane edge to split just that tab out into its own pane.
+- **Move across panes**: drop on another pane or its tab strip to move that tab there.
 
 Initial implementation notes:
 

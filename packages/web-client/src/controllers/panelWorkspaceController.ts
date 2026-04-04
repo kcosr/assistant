@@ -76,6 +76,8 @@ const resolveIconSvg = (iconName: string | null | undefined): string | null => {
 };
 
 const FOCUS_HISTORY_STORAGE_KEY = 'aiAssistantPanelFocusHistory';
+const TAB_DRAG_PANEL_ID_MIME = 'application/x-assistant-tab-panel-id';
+const TAB_DRAG_PANE_ID_MIME = 'application/x-assistant-tab-source-pane-id';
 
 export interface PanelWorkspaceControllerOptions {
   root: HTMLElement;
@@ -121,6 +123,7 @@ export class PanelWorkspaceController {
   private activeSubMenu: HTMLElement | null = null;
   private menuCleanup: (() => void) | null = null;
   private dragState: PanelDragState | null = null;
+  private tabDragState: TabDetachDragState | null = null;
   private reorderState: PanelReorderState | null = null;
   private usesDefaultLayout = false;
   private defaultPinsApplied = false;
@@ -1532,6 +1535,7 @@ export class PanelWorkspaceController {
   private render(options: { forceRemount?: boolean } = {}): void {
     this.closePanelMenu();
     this.stopPanelDrag();
+    this.stopTabDetachDrag();
     this.stopPanelReorder();
     this.pruneFocusHistory();
     this.unmountRemovedPanels(new Set(Object.keys(this.layout.panels)));
@@ -1769,6 +1773,9 @@ export class PanelWorkspaceController {
       node.tabs.find((tab) => tab.panelId === node.activePanelId)?.panelId ??
       node.tabs[0]?.panelId ??
       null;
+    if (activePanelId) {
+      container.dataset['activePanelId'] = activePanelId;
+    }
 
     node.tabs.forEach((tab, index) => {
       const tabPanelId = tab.panelId;
@@ -1798,12 +1805,16 @@ export class PanelWorkspaceController {
           if (event.dataTransfer) {
             event.dataTransfer.setData('text/tab-index', String(index));
             event.dataTransfer.setData('text/plain', String(index));
+            event.dataTransfer.setData(TAB_DRAG_PANEL_ID_MIME, tabPanelId);
+            event.dataTransfer.setData(TAB_DRAG_PANE_ID_MIME, node.paneId);
             event.dataTransfer.setDragImage(button, 4, 4);
           }
           button.classList.add('dragging');
+          this.startTabDetachDrag(tabPanelId, node.paneId);
         });
         button.addEventListener('dragend', () => {
           button.classList.remove('dragging');
+          this.stopTabDetachDrag();
         });
         button.addEventListener('dragover', (event) => {
           event.preventDefault();
@@ -1813,6 +1824,14 @@ export class PanelWorkspaceController {
         });
         button.addEventListener('drop', (event) => {
           event.preventDefault();
+          const draggedPanelId = event.dataTransfer?.getData(TAB_DRAG_PANEL_ID_MIME) ?? '';
+          const sourcePaneId = event.dataTransfer?.getData(TAB_DRAG_PANE_ID_MIME) ?? '';
+          if (draggedPanelId && sourcePaneId && draggedPanelId !== tabPanelId) {
+            event.stopPropagation();
+            this.stopTabDetachDrag();
+            this.movePanel(draggedPanelId, { region: 'center' }, tabPanelId);
+            return;
+          }
           const rawIndex =
             event.dataTransfer?.getData('text/tab-index') ??
             event.dataTransfer?.getData('text/plain') ??
@@ -1841,6 +1860,28 @@ export class PanelWorkspaceController {
       }
       tabWrapper.appendChild(this.renderPanel(tabPanelId));
       content.appendChild(tabWrapper);
+    });
+
+    header.addEventListener('dragover', (event) => {
+      const dataTransfer = event.dataTransfer;
+      if (!dataTransfer || !Array.from(dataTransfer.types).includes(TAB_DRAG_PANEL_ID_MIME)) {
+        return;
+      }
+      event.preventDefault();
+      dataTransfer.dropEffect = 'move';
+    });
+    header.addEventListener('drop', (event) => {
+      const draggedPanelId = event.dataTransfer?.getData(TAB_DRAG_PANEL_ID_MIME) ?? '';
+      const sourcePaneId = event.dataTransfer?.getData(TAB_DRAG_PANE_ID_MIME) ?? '';
+      if (!draggedPanelId || !sourcePaneId) {
+        return;
+      }
+      event.preventDefault();
+      this.stopTabDetachDrag();
+      if (sourcePaneId === node.paneId) {
+        return;
+      }
+      this.movePanel(draggedPanelId, { region: 'center' }, activePanelId ?? undefined);
     });
 
     if (this.options.openPanelLauncher) {
@@ -3652,40 +3693,7 @@ export class PanelWorkspaceController {
   }
 
   private updatePanelDrag(state: PanelDragState, event: PointerEvent): void {
-    const { clientX, clientY } = event;
-    const workspaceRect = this.options.root.getBoundingClientRect();
-    const headerDockRect = this.getHeaderDockRect();
-
-    if (headerDockRect && pointInRect(clientX, clientY, headerDockRect)) {
-      state.dropTarget = 'header';
-      state.placement = null;
-      state.targetPanelId = null;
-      this.applyDragHighlight(state, headerDockRect);
-      return;
-    }
-
-    if (!pointInRect(clientX, clientY, workspaceRect)) {
-      state.placement = null;
-      state.targetPanelId = null;
-      state.dropTarget = null;
-      state.highlight.style.display = 'none';
-      return;
-    }
-
-    const hoveredPanel = getPanelFrameAtPoint(clientX, clientY);
-    const hoveredPanelId = hoveredPanel?.dataset['panelId'] ?? null;
-    const targetPanelId =
-      hoveredPanelId && hoveredPanelId !== state.panelId ? hoveredPanelId : null;
-    const targetRect =
-      targetPanelId && hoveredPanel ? hoveredPanel.getBoundingClientRect() : workspaceRect;
-    const region = resolveDropRegion(clientX, clientY, targetRect);
-
-    state.dropTarget = 'layout';
-    state.placement = { region };
-    state.targetPanelId = targetPanelId;
-
-    const highlightRect = computeHighlightRect(region, targetRect);
-    this.applyDragHighlight(state, highlightRect);
+    this.updateDockDragState(state, event.clientX, event.clientY);
   }
 
   private finishPanelDrag(state: PanelDragState, event: PointerEvent): void {
@@ -3718,6 +3726,136 @@ export class PanelWorkspaceController {
     this.dragState.overlay.remove();
     this.dragState = null;
     document.body.classList.remove('panel-dragging');
+  }
+
+  private startTabDetachDrag(panelId: string, sourcePaneId: string): void {
+    this.stopTabDetachDrag();
+    this.stopPanelDrag();
+    this.stopPanelReorder();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'panel-dock-overlay';
+
+    const highlight = document.createElement('div');
+    highlight.className = 'panel-dock-highlight';
+    overlay.appendChild(highlight);
+
+    document.body.appendChild(overlay);
+    document.body.classList.add('panel-dragging');
+
+    const state: TabDetachDragState = {
+      panelId,
+      sourcePaneId,
+      overlay,
+      highlight,
+      placement: null,
+      targetPanelId: null,
+      dropTarget: null,
+      cleanup: () => undefined,
+    };
+    this.tabDragState = state;
+
+    const handleDragOver = (dragEvent: DragEvent) => {
+      dragEvent.preventDefault();
+      if (dragEvent.dataTransfer) {
+        dragEvent.dataTransfer.dropEffect = 'move';
+      }
+      this.updateTabDetachDrag(state, dragEvent);
+    };
+    const handleDrop = (dropEvent: DragEvent) => {
+      this.finishTabDetachDrag(state, dropEvent);
+    };
+    const handleKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') {
+        keyEvent.preventDefault();
+        this.stopTabDetachDrag();
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    window.addEventListener('keydown', handleKeyDown);
+
+    state.cleanup = () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }
+
+  private updateTabDetachDrag(state: TabDetachDragState, event: DragEvent): void {
+    this.updateDockDragState(state, event.clientX, event.clientY);
+  }
+
+  private finishTabDetachDrag(state: TabDetachDragState, event: DragEvent): void {
+    event.preventDefault();
+    const placement = state.placement;
+    const targetPanelId = state.targetPanelId ?? undefined;
+    const panelId = state.panelId;
+    const dropTarget = state.dropTarget;
+
+    this.stopTabDetachDrag();
+
+    if (dropTarget === 'header') {
+      this.pinPanel(panelId);
+      return;
+    }
+    if (!placement) {
+      return;
+    }
+    this.movePanel(panelId, placement, targetPanelId);
+  }
+
+  private stopTabDetachDrag(): void {
+    if (!this.tabDragState) {
+      return;
+    }
+
+    this.tabDragState.cleanup();
+    this.tabDragState.overlay.remove();
+    this.tabDragState = null;
+    document.body.classList.remove('panel-dragging');
+  }
+
+  private updateDockDragState(state: DockDragState, clientX: number, clientY: number): void {
+    const workspaceRect = this.options.root.getBoundingClientRect();
+    const headerDockRect = this.getHeaderDockRect();
+
+    if (headerDockRect && pointInRect(clientX, clientY, headerDockRect)) {
+      state.dropTarget = 'header';
+      state.placement = null;
+      state.targetPanelId = null;
+      this.applyDragHighlight(state, headerDockRect);
+      return;
+    }
+
+    if (!pointInRect(clientX, clientY, workspaceRect)) {
+      state.placement = null;
+      state.targetPanelId = null;
+      state.dropTarget = null;
+      state.highlight.style.display = 'none';
+      return;
+    }
+
+    if ('sourcePaneId' in state && isInsideSourceTabHeader(clientX, clientY, state.sourcePaneId)) {
+      state.placement = null;
+      state.targetPanelId = null;
+      state.dropTarget = null;
+      state.highlight.style.display = 'none';
+      return;
+    }
+
+    const hoveredPanel = getPanelDropTargetAtPoint(clientX, clientY);
+    const hoveredPanelId = hoveredPanel?.panelId ?? null;
+    const targetPanelId =
+      hoveredPanelId && hoveredPanelId !== state.panelId ? hoveredPanelId : null;
+    const targetRect = targetPanelId && hoveredPanel ? hoveredPanel.rect : workspaceRect;
+    const region = resolveDropRegion(clientX, clientY, targetRect);
+
+    state.dropTarget = 'layout';
+    state.placement = { region };
+    state.targetPanelId = targetPanelId;
+    this.applyDragHighlight(state, computeHighlightRect(region, targetRect));
   }
 
   startPanelReorder(panelId: string, event: PointerEvent): void {
@@ -3989,6 +4127,19 @@ interface PanelDragState {
   cleanup: () => void;
 }
 
+interface TabDetachDragState {
+  panelId: string;
+  sourcePaneId: string;
+  overlay: HTMLElement;
+  highlight: HTMLElement;
+  placement: PanelPlacement | null;
+  targetPanelId: string | null;
+  dropTarget: 'layout' | 'header' | null;
+  cleanup: () => void;
+}
+
+type DockDragState = PanelDragState | TabDetachDragState;
+
 type HighlightRect = {
   left: number;
   top: number;
@@ -4011,12 +4162,60 @@ function pointInRect(x: number, y: number, rect: DOMRect): boolean {
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
-function getPanelFrameAtPoint(x: number, y: number): HTMLElement | null {
+function getElementAtPoint(x: number, y: number): HTMLElement | null {
   const element = document.elementFromPoint(x, y) as HTMLElement | null;
+  return element ?? null;
+}
+
+function getPanelDropTargetAtPoint(
+  x: number,
+  y: number,
+): { panelId: string; rect: DOMRect } | null {
+  const element = getElementAtPoint(x, y);
   if (!element) {
     return null;
   }
-  return element.closest('.panel-frame');
+
+  const tabButton = element.closest<HTMLElement>('.panel-tab-button[data-panel-id]');
+  if (tabButton?.dataset['panelId']) {
+    const pane = tabButton.closest<HTMLElement>('.panel-tabs-pane');
+    return {
+      panelId: tabButton.dataset['panelId'],
+      rect: pane?.getBoundingClientRect() ?? tabButton.getBoundingClientRect(),
+    };
+  }
+
+  const pane = element.closest<HTMLElement>('.panel-tabs-pane[data-active-panel-id]');
+  const activePanelId = pane?.dataset['activePanelId'];
+  if (pane && activePanelId) {
+    return {
+      panelId: activePanelId,
+      rect: pane.getBoundingClientRect(),
+    };
+  }
+
+  const frame = element.closest<HTMLElement>('.panel-frame[data-panel-id]');
+  if (frame?.dataset['panelId']) {
+    return {
+      panelId: frame.dataset['panelId'],
+      rect: frame.getBoundingClientRect(),
+    };
+  }
+
+  return null;
+}
+
+function isInsideSourceTabHeader(x: number, y: number, sourcePaneId: string): boolean {
+  const element = getElementAtPoint(x, y);
+  if (!element) {
+    return false;
+  }
+  const header = element.closest<HTMLElement>('.panel-tabs-header');
+  if (!header) {
+    return false;
+  }
+  const pane = header.closest<HTMLElement>('.panel-tabs-pane');
+  return pane?.dataset['paneId'] === sourcePaneId;
 }
 
 function resolveDropRegion(x: number, y: number, rect: DOMRect): PanelPlacement['region'] {
