@@ -111,7 +111,7 @@ Binding indicator behavior:
 - Tab order follows the pane's `tabs` order.
 - Dragging a tab within its own tab strip reorders tabs in that pane.
 - Dragging a tab out of its pane docks that tab into a split edge or tabs it into another pane, without moving the rest of the source pane.
-- Dragging the only tab in a pane moves that pane's content and collapses the emptied source area instead of leaving an empty pane behind.
+- Dragging the only tab in a pane moves that pane's content and leaves an `empty` placeholder panel behind in the source pane so the area remains in place.
 
 ### Resizing
 
@@ -136,6 +136,8 @@ Behavior:
 - Opening from a pane tab header "+" button opens as a new tab in that pane.
 - Pane-local actions whose placement is already known use a compact in-pane picker instead of the full launcher with placement controls.
 - The top-row `+` button also uses that compact picker to add a tab to the active pane.
+- Compact in-pane picker rows submit directly without per-row add buttons, and the compact header shows the current action (`Add Tab`, `Split Right`, `Replace Panel`, and so on).
+- Inline panel replacement uses the same compact in-pane picker instead of the full global launcher.
 
 ## Drag and Dock
 
@@ -151,7 +153,7 @@ Tabs can also be repositioned by dragging their tab title:
 - **Reorder in pane**: drag within the same tab strip.
 - **Detach to split**: drag to a pane edge to split just that tab out into its own pane.
 - **Move across panes**: drop on another pane or its tab strip to move that tab there.
-- **Move lone pane tab**: drag the only tab in a pane to move that pane and remove the emptied source area.
+- **Move lone pane tab**: drag the only tab in a pane to move that pane while leaving an `empty` placeholder behind in the source pane.
 
 Initial implementation notes:
 

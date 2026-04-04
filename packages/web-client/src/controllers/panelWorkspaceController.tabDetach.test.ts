@@ -6,6 +6,7 @@ import { PanelRegistry, type PanelFactory } from './panelRegistry';
 import { PanelWorkspaceController } from './panelWorkspaceController';
 import { CHAT_PANEL_MANIFEST } from '../panels/chat/manifest';
 import { INPUT_PANEL_MANIFEST } from '../panels/input/manifest';
+import { EMPTY_PANEL_MANIFEST } from '../panels/empty/manifest';
 import type { LayoutNode } from '@assistant/shared';
 
 const createStubPanel: PanelFactory = () => ({
@@ -56,6 +57,7 @@ describe('PanelWorkspaceController tab detach', () => {
     const registry = new PanelRegistry();
     registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
     registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+    registry.register(EMPTY_PANEL_MANIFEST, createStubPanel);
 
     const host = new PanelHostController({ registry });
     const root = document.createElement('div');
@@ -117,6 +119,7 @@ describe('PanelWorkspaceController tab detach', () => {
     const registry = new PanelRegistry();
     registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
     registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+    registry.register(EMPTY_PANEL_MANIFEST, createStubPanel);
 
     const host = new PanelHostController({ registry });
     const root = document.createElement('div');
@@ -160,17 +163,32 @@ describe('PanelWorkspaceController tab detach', () => {
     targetTab.dispatchEvent(dropEvent);
 
     expect(workspace.getLayoutRoot()).toEqual({
-      kind: 'pane',
-      paneId: 'pane-2',
-      tabs: [{ panelId: 'input-1' }, { panelId: 'input-2' }, { panelId: 'chat-1' }],
-      activePanelId: 'chat-1',
+      kind: 'split',
+      splitId: 'split-1',
+      direction: 'horizontal',
+      sizes: [0.5, 0.5],
+      children: [
+        {
+          kind: 'pane',
+          paneId: 'pane-1',
+          tabs: [{ panelId: 'empty-1' }],
+          activePanelId: 'empty-1',
+        },
+        {
+          kind: 'pane',
+          paneId: 'pane-2',
+          tabs: [{ panelId: 'input-1' }, { panelId: 'input-2' }, { panelId: 'chat-1' }],
+          activePanelId: 'chat-1',
+        },
+      ],
     });
   });
 
-  it('allows dragging the only tab out of a pane and collapses the empty source pane', () => {
+  it('allows dragging the only tab out of a pane and leaves an empty placeholder pane behind', () => {
     const registry = new PanelRegistry();
     registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
     registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+    registry.register(EMPTY_PANEL_MANIFEST, createStubPanel);
 
     const host = new PanelHostController({ registry });
     const root = document.createElement('div');
@@ -217,10 +235,24 @@ describe('PanelWorkspaceController tab detach', () => {
     targetTab.dispatchEvent(dropEvent);
 
     expect(workspace.getLayoutRoot()).toEqual({
-      kind: 'pane',
-      paneId: 'pane-2',
-      tabs: [{ panelId: 'input-1' }, { panelId: 'chat-1' }],
-      activePanelId: 'chat-1',
+      kind: 'split',
+      splitId: 'split-1',
+      direction: 'horizontal',
+      sizes: [0.5, 0.5],
+      children: [
+        {
+          kind: 'pane',
+          paneId: 'pane-1',
+          tabs: [{ panelId: 'empty-1' }],
+          activePanelId: 'empty-1',
+        },
+        {
+          kind: 'pane',
+          paneId: 'pane-2',
+          tabs: [{ panelId: 'input-1' }, { panelId: 'chat-1' }],
+          activePanelId: 'chat-1',
+        },
+      ],
     });
   });
 });

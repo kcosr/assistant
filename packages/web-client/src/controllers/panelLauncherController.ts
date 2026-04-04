@@ -119,7 +119,7 @@ export class PanelLauncherController {
     const next = this.items[clamped];
     if (next) {
       next.element.classList.add('focused');
-      next.element.scrollIntoView({ block: 'nearest' });
+      next.element.scrollIntoView?.({ block: 'nearest' });
     }
     this.focusedIndex = clamped;
   }
@@ -189,9 +189,20 @@ export class PanelLauncherController {
       }
     }
     this.render();
+    this.updateLauncherTitle();
     this.positionLauncher();
+    if (this.compact) {
+      const launcherPanel = this.getLauncherPanel();
+      if (launcherPanel) {
+        launcherPanel.tabIndex = -1;
+        launcherPanel.focus();
+      }
+    }
     requestAnimationFrame(() => {
       this.positionLauncher();
+      if (this.compact) {
+        this.getLauncherPanel()?.focus();
+      }
     });
   }
 
@@ -212,6 +223,7 @@ export class PanelLauncherController {
     this.replacePanelId = null;
     this.compact = false;
     this.compactAnchor = null;
+    this.updateLauncherTitle();
     this.restoreFocus();
   }
 
@@ -287,35 +299,40 @@ export class PanelLauncherController {
         info.appendChild(description);
       }
 
-      const action = document.createElement('button');
-      action.type = 'button';
-      action.className = 'panel-launcher-toggle';
-
       const actions = document.createElement('div');
       actions.className = 'panel-launcher-actions';
 
       let onAction: (() => void) | null = null;
 
       if (!isAvailable) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'panel-launcher-toggle';
         action.textContent = 'Unavailable';
         action.disabled = true;
         actions.appendChild(action);
-      } else if (this.compact && !isReplacing && !isPinning) {
+      } else if (this.compact) {
         row.classList.add('panel-launcher-item-actionable');
-        action.textContent = 'Add';
+        row.classList.toggle('panel-launcher-item-current', isOpen && !isReplacing && !isPinning);
         onAction = () => {
           const targetPanelId = this.getPlacementTargetPanelId();
           const placement = targetPanelId ? this.defaultPlacement : null;
-          this.openPanelWithPlacement(manifest.type, placement, targetPanelId, action);
+          this.openPanelWithPlacement(manifest.type, placement, targetPanelId, row, {
+            replacePanelId: this.replacePanelId,
+            pinToHeader: this.pinToHeader,
+          });
         };
         row.addEventListener('click', (event) => {
           event.preventDefault();
+          event.stopPropagation();
           onAction?.();
         });
         row.setAttribute('role', 'button');
         row.setAttribute('tabindex', '-1');
-        actions.appendChild(action);
       } else if (isReplacing) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'panel-launcher-toggle';
         const replacePanelId = this.replacePanelId;
         action.textContent = 'Replace';
         onAction = () => {
@@ -327,6 +344,9 @@ export class PanelLauncherController {
         action.addEventListener('click', onAction);
         actions.appendChild(action);
       } else if (isPinning) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'panel-launcher-toggle';
         // Pin mode: simple "Pin" button
         action.textContent = requiresSession ? 'Pin...' : 'Pin';
         onAction = () => {
@@ -337,6 +357,9 @@ export class PanelLauncherController {
         action.addEventListener('click', onAction);
         actions.appendChild(action);
       } else if (!supportsMultiInstance && toggle) {
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'panel-launcher-toggle';
         // Single-instance panels: Show/Hide toggle
         action.classList.toggle('active', isOpen);
         action.setAttribute('aria-pressed', isOpen ? 'true' : 'false');
@@ -348,6 +371,8 @@ export class PanelLauncherController {
         action.addEventListener('click', onAction);
         actions.appendChild(action);
       } else {
+        const action = document.createElement('button');
+        action.type = 'button';
         // Normal mode: "Add ▾" button with dropdown
         action.className = 'panel-launcher-toggle panel-launcher-add-dropdown';
         action.innerHTML = `Add <span class="panel-launcher-caret">▾</span>`;
@@ -440,6 +465,46 @@ export class PanelLauncherController {
       return null;
     }
     return launcher.querySelector<HTMLElement>('.panel-launcher');
+  }
+
+  private getLauncherTitleElement(): HTMLElement | null {
+    const { launcher } = this.options;
+    if (!launcher) {
+      return null;
+    }
+    return launcher.querySelector<HTMLElement>('.panel-launcher-title-text');
+  }
+
+  private updateLauncherTitle(): void {
+    const title = this.getLauncherTitleElement();
+    if (!title) {
+      return;
+    }
+    title.textContent = this.compact ? this.getCompactTitle() : 'Panels';
+  }
+
+  private getCompactTitle(): string {
+    if (this.replacePanelId) {
+      return 'Replace Panel';
+    }
+    if (this.pinToHeader) {
+      return 'Pin To Header';
+    }
+    const region = this.defaultPlacement?.region ?? null;
+    switch (region) {
+      case 'center':
+        return 'Add Tab';
+      case 'left':
+        return 'Split Left';
+      case 'right':
+        return 'Split Right';
+      case 'top':
+        return 'Split Top';
+      case 'bottom':
+        return 'Split Bottom';
+      default:
+        return 'Open Panel';
+    }
   }
 
   private positionLauncher(): void {

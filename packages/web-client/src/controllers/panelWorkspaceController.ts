@@ -910,7 +910,12 @@ export class PanelWorkspaceController {
     }
   }
 
-  movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void {
+  movePanel(
+    panelId: string,
+    placement: PanelPlacement,
+    targetPanelId?: string,
+    options?: { preserveSourcePaneWithEmpty?: boolean },
+  ): void {
     if (!this.layout.panels[panelId]) {
       return;
     }
@@ -919,9 +924,17 @@ export class PanelWorkspaceController {
       this.removeHeaderPanel(panelId);
     }
 
+    let nextPanels = this.layout.panels;
+    let sourceLayout = this.layout.layout;
+    if (options?.preserveSourcePaneWithEmpty) {
+      const preserved = this.preserveSourcePaneWithEmpty(panelId, sourceLayout, nextPanels);
+      sourceLayout = preserved.layout;
+      nextPanels = preserved.panels;
+    }
+
     const containerSize = this.getPlacementContainerSize(targetPanelId);
     const nextLayout = movePanel(
-      this.layout.layout,
+      sourceLayout,
       panelId,
       placement,
       targetPanelId,
@@ -929,7 +942,7 @@ export class PanelWorkspaceController {
     );
     this.layout = {
       layout: nextLayout,
-      panels: this.layout.panels,
+      panels: nextPanels,
       headerPanels: this.getHeaderPanelIds(),
       headerPanelSizes: this.getHeaderPanelSizes(),
     };
@@ -937,6 +950,46 @@ export class PanelWorkspaceController {
     this.persistLayout();
     this.render();
     this.focusPanel(panelId);
+  }
+
+  private preserveSourcePaneWithEmpty(
+    panelId: string,
+    layout: LayoutNode,
+    panels: Record<string, PanelInstance>,
+  ): { layout: LayoutNode; panels: Record<string, PanelInstance> } {
+    if (panels[panelId]?.panelType === 'empty') {
+      return { layout, panels };
+    }
+    const sourcePane = this.findPaneContainingPanel(layout, panelId);
+    if (!sourcePane || sourcePane.tabs.length !== 1) {
+      return { layout, panels };
+    }
+    const emptyManifest = this.options.registry.getManifest('empty');
+    if (!emptyManifest || !this.isPanelAvailable('empty', emptyManifest)) {
+      return { layout, panels };
+    }
+
+    const emptyId = createPanelId('empty', new Set(Object.keys(panels)));
+    const emptyInstance = this.options.registry.createInstance('empty', emptyId);
+    const updated = this.updatePaneByPanelId(layout, panelId, (pane) => ({
+      pane: {
+        ...pane,
+        tabs: [...pane.tabs, { panelId: emptyId }],
+        activePanelId: pane.activePanelId,
+      },
+      updated: true,
+    }));
+    if (!updated.updated) {
+      return { layout, panels };
+    }
+
+    return {
+      layout: updated.node,
+      panels: {
+        ...panels,
+        [emptyId]: emptyInstance,
+      },
+    };
   }
 
   openPanelLauncher(options?: {
@@ -1832,7 +1885,9 @@ export class PanelWorkspaceController {
         if (draggedPanelId && sourcePaneId && draggedPanelId !== tabPanelId) {
           event.stopPropagation();
           this.stopTabDetachDrag();
-          this.movePanel(draggedPanelId, { region: 'center' }, tabPanelId);
+          this.movePanel(draggedPanelId, { region: 'center' }, tabPanelId, {
+            preserveSourcePaneWithEmpty: true,
+          });
           return;
         }
         if (node.tabs.length <= 1) {
@@ -1886,7 +1941,9 @@ export class PanelWorkspaceController {
       if (sourcePaneId === node.paneId) {
         return;
       }
-      this.movePanel(draggedPanelId, { region: 'center' }, activePanelId ?? undefined);
+      this.movePanel(draggedPanelId, { region: 'center' }, activePanelId ?? undefined, {
+        preserveSourcePaneWithEmpty: true,
+      });
     });
 
     if (this.options.openPanelLauncher) {
@@ -3207,6 +3264,22 @@ export class PanelWorkspaceController {
     );
   }
 
+  private findPaneContainingPanel(
+    node: LayoutNode,
+    panelId: string,
+  ): (LayoutNode & { kind: 'pane' }) | null {
+    if (node.kind === 'pane') {
+      return node.tabs.some((tab) => tab.panelId === panelId) ? node : null;
+    }
+    for (const child of node.children) {
+      const found = this.findPaneContainingPanel(child, panelId);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
   private setActivePanelContext(panelId: string | null, source: PanelFocusSource): void {
     if (!panelId) {
       this.options.host.setContext('panel.active', null);
@@ -3443,7 +3516,11 @@ export class PanelWorkspaceController {
 
     if (this.options.openPanelLauncher) {
       addItem('Replace panel with...', () => {
-        this.options.openPanelLauncher?.({ replacePanelId: panelId });
+        this.options.openPanelLauncher?.({
+          replacePanelId: panelId,
+          compact: true,
+          anchor: this.getPanelFrameElement(panelId),
+        });
       });
       const splitButton = addItem(
         'Split with new panel... >',
@@ -3827,7 +3904,9 @@ export class PanelWorkspaceController {
     if (!placement) {
       return;
     }
-    this.movePanel(panelId, placement, targetPanelId);
+    this.movePanel(panelId, placement, targetPanelId, {
+      preserveSourcePaneWithEmpty: true,
+    });
   }
 
   private stopTabDetachDrag(): void {

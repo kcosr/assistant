@@ -1765,9 +1765,15 @@ button.settings-dropdown-item {
   max-height: min(60vh, 420px);
 }
 
-.panel-launcher.panel-launcher-compact .panel-launcher-header,
-.panel-launcher.panel-launcher-compact .panel-launcher-search {
+.panel-launcher.panel-launcher-compact .panel-launcher-search,
+.panel-launcher.panel-launcher-compact .panel-launcher-close {
   display: none;
+}
+
+.panel-launcher.panel-launcher-compact .panel-launcher-header {
+  justify-content: flex-start;
+  padding: var(--spacing-sm) var(--spacing-sm) 0;
+  border-bottom: none;
 }
 
 .panel-launcher.panel-launcher-compact .panel-launcher-list {
@@ -1862,6 +1868,11 @@ button.settings-dropdown-item {
 .panel-launcher-item.panel-launcher-item-compact {
   align-items: center;
   padding: var(--spacing-xs) var(--spacing-sm);
+}
+
+.panel-launcher-item.panel-launcher-item-compact .panel-launcher-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .panel-launcher-actions {
