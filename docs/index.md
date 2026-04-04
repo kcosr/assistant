@@ -38,6 +38,7 @@ This index maps the repository documentation into predictable categories so it i
 - [External Agents](design/external-agents.md)
 - [Issue 586: Chat Rendering and Transcript Replay](design/issue-586-chat-rendering-and-transcript-replay.md)
 - [Panel Layout UI Spec](design/panel-layout-ui-spec.md)
+- [Panel Workspace Redesign](design/panel-workspace-redesign.md)
 - [Panel Plugins](design/panel-plugins.md)
 - [Persistent Views](design/persistent-views.md)
 - [Preferences](design/preferences.md)

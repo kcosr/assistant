@@ -1,5 +1,9 @@
 # Panel Layout UI Specification (Draft)
 
+> This document describes the current panel layout system.
+> For the proposed replacement model that separates splits, panes, and tabs,
+> see [Panel Workspace Redesign](panel-workspace-redesign.md).
+
 ## Table of Contents
 
 - [Scope](#scope)
