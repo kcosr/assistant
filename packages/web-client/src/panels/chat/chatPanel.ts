@@ -3,6 +3,7 @@ import type {
   PanelModule,
   PanelFactory,
   PanelHost,
+  PanelInitOptions,
 } from '../../controllers/panelRegistry';
 import { PanelChromeController } from '../../controllers/panelChromeController';
 import {
@@ -20,6 +21,7 @@ export interface ChatPanelOptions {
     runtime: ChatRuntime;
     dom: ChatPanelDom;
     host: PanelHost;
+    init: PanelInitOptions;
   }) => void | (() => void);
 }
 
@@ -104,7 +106,7 @@ function getChatPanelDom(container: HTMLElement): ChatPanelDom {
 
 export function createChatPanel(options: ChatPanelOptions): PanelFactory {
   return (): PanelModule => ({
-    mount(container: HTMLElement, host, _init): PanelHandle {
+    mount(container: HTMLElement, host, init): PanelHandle {
       container.innerHTML = '';
       const root = cloneTemplate('chat-panel-template');
       container.appendChild(root);
@@ -119,7 +121,7 @@ export function createChatPanel(options: ChatPanelOptions): PanelFactory {
         elements: dom.runtimeElements,
         ...options.getRuntimeOptions(host),
       });
-      const cleanup = options.onRuntimeReady?.({ runtime, dom, host }) ?? null;
+      const cleanup = options.onRuntimeReady?.({ runtime, dom, host, init }) ?? null;
 
       return {
         onVisibilityChange: (visible) => {

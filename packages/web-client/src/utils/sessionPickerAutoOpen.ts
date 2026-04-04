@@ -1,6 +1,6 @@
 type AutoOpenSessionPickerOptions = {
   hasSession: boolean;
-  isActive: boolean;
+  shouldOpen: boolean;
   hasAnchor: boolean;
   alreadyOpened: boolean;
 };
@@ -14,7 +14,7 @@ export function shouldAutoOpenSessionPicker(
   if (options.hasSession) {
     return false;
   }
-  if (!options.isActive) {
+  if (!options.shouldOpen) {
     return false;
   }
   if (!options.hasAnchor) {

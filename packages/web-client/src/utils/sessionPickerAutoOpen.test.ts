@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { shouldAutoOpenSessionPicker } from './sessionPickerAutoOpen';
 
 describe('shouldAutoOpenSessionPicker', () => {
-  it('opens only when active, unbound, and not opened before', () => {
+  it('opens only when requested, unbound, and not opened before', () => {
     expect(
       shouldAutoOpenSessionPicker({
         hasSession: false,
-        isActive: true,
+        shouldOpen: true,
         hasAnchor: true,
         alreadyOpened: false,
       }),
@@ -17,18 +17,18 @@ describe('shouldAutoOpenSessionPicker', () => {
     expect(
       shouldAutoOpenSessionPicker({
         hasSession: true,
-        isActive: true,
+        shouldOpen: true,
         hasAnchor: true,
         alreadyOpened: false,
       }),
     ).toBe(false);
   });
 
-  it('skips when panel is not active', () => {
+  it('skips when open was not requested', () => {
     expect(
       shouldAutoOpenSessionPicker({
         hasSession: false,
-        isActive: false,
+        shouldOpen: false,
         hasAnchor: true,
         alreadyOpened: false,
       }),
@@ -39,7 +39,7 @@ describe('shouldAutoOpenSessionPicker', () => {
     expect(
       shouldAutoOpenSessionPicker({
         hasSession: false,
-        isActive: true,
+        shouldOpen: true,
         hasAnchor: false,
         alreadyOpened: false,
       }),
@@ -50,7 +50,7 @@ describe('shouldAutoOpenSessionPicker', () => {
     expect(
       shouldAutoOpenSessionPicker({
         hasSession: false,
-        isActive: true,
+        shouldOpen: true,
         hasAnchor: true,
         alreadyOpened: true,
       }),

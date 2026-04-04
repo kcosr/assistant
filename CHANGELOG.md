@@ -45,6 +45,8 @@
 - Changed `Ctrl+T` to open the compact add-tab picker for the active pane, and changed the top-row `+` button to use the same inline add-tab flow instead of the full global panel launcher.
 - Changed compact in-pane panel pickers to show the current action in the header, submit directly from the focused row without redundant per-row add buttons, and use that same compact flow for inline panel replacement.
 - Changed empty-pane and toolbar replace actions to use explicit compact replace pickers, and suspended background keyboard shortcuts while the compact picker is open so arrow keys and enter stay scoped to the picker.
+- Changed compact panel pickers to keep a searchable filter input visible in compact mode, with keyboard navigation staying inside the picker while filtering.
+- Changed newly created unbound chat panels to open the session picker without auto-focusing the chat input, and stopped merely selecting an existing chat panel from stealing focus into the composer.
 
 ### Fixed
 

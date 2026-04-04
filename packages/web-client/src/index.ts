@@ -67,6 +67,7 @@ import {
   type CreateScheduledSessionInput,
   type SessionComposerOpenOptions,
 } from './controllers/sessionComposerController';
+import type { PanelInitOptions } from './controllers/panelRegistry';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
 import { CHAT_PANEL_MANIFEST, createChatPanel } from './panels/chat';
@@ -599,7 +600,8 @@ async function main(): Promise<void> {
     CHAT_PANEL_MANIFEST,
     createChatPanel({
       getRuntimeOptions: getChatRuntimeOptions,
-      onRuntimeReady: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
+      onRuntimeReady: ({ runtime, dom, host, init }) =>
+        registerChatPanelRuntime({ runtime, dom, host, init }),
     }),
   );
   registerBuiltInPanel(WORKSPACE_NAVIGATOR_PANEL_MANIFEST, createWorkspaceNavigatorPanel());
@@ -1454,8 +1456,9 @@ async function main(): Promise<void> {
     runtime: ChatRuntime;
     dom: ChatPanelDom;
     host: PanelHost;
+    init: PanelInitOptions;
   }): () => void {
-    const { runtime, dom, host } = options;
+    const { runtime, dom, host, init } = options;
     const panelId = host.panelId();
     let bindingSessionId: string | null = null;
     const inputRuntime = createInputRuntime({
@@ -1604,13 +1607,11 @@ async function main(): Promise<void> {
         { signal: abortController.signal },
       );
     }
-    const maybeAutoOpenSessionPicker = () => {
-      const active = getActivePanelContext();
-      const isActive = active?.panelId === panelId;
+    const maybeAutoOpenSessionPicker = (shouldOpen: boolean) => {
       if (
         !shouldAutoOpenSessionPicker({
           hasSession: Boolean(bindingSessionId),
-          isActive,
+          shouldOpen,
           hasAnchor: Boolean(dom.sessionLabelEl),
           alreadyOpened: didAutoOpenSessionPicker,
         })
@@ -1679,9 +1680,6 @@ async function main(): Promise<void> {
       if (sessionId) {
         void loadSessionTranscript(sessionId, { force: true });
       }
-      if (!sessionId) {
-        maybeAutoOpenSessionPicker();
-      }
       syncNativeSelectedSession();
     };
     updateBinding(host.getBinding());
@@ -1689,9 +1687,7 @@ async function main(): Promise<void> {
     const unsubSessionContext = host.subscribeSessionContext(() => {
       updateChatPanelSessionLabel(entry);
     });
-    const unsubActive = host.subscribeContext('panel.active', () => {
-      maybeAutoOpenSessionPicker();
-    });
+    maybeAutoOpenSessionPicker(Boolean(init.focus));
     if (dom.modelSelectEl) {
       dom.modelSelectEl.addEventListener(
         'change',
@@ -1735,7 +1731,6 @@ async function main(): Promise<void> {
       abortController.abort();
       unsubBinding();
       unsubSessionContext();
-      unsubActive();
       contextMenuManager.close();
       runtime.chatRenderer.setFocusInputHandler(null);
       runtime.chatRenderer.setRequestDividerActionHandler(null);
@@ -2098,43 +2093,17 @@ async function main(): Promise<void> {
     const raw = value as { panelId?: unknown; panelType?: unknown; source?: unknown };
     const panelId = typeof raw.panelId === 'string' ? raw.panelId.trim() : '';
     const panelType = typeof raw.panelType === 'string' ? raw.panelType.trim() : '';
-    const focusSource = raw.source === 'chrome' ? 'chrome' : 'content';
     if (!panelId || !panelType) {
       syncNativeSelectedSession();
       return;
     }
     if (panelType === 'chat') {
-      const isChromeActive = (): boolean => {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLElement)) {
-          return false;
-        }
-        return Boolean(active.closest('.panel-chrome-row, .chat-header'));
-      };
-      const isInteractionActive = (): boolean => {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLElement)) {
-          return false;
-        }
-        return Boolean(active.closest('.interaction-block, .tool-interaction-dock'));
-      };
       panelWorkspace?.setActiveChatPanelId(panelId);
       const binding = panelHostControllerInstance.getPanelBinding(panelId);
       const boundSessionId =
         binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
       if (boundSessionId && boundSessionId !== inputSessionId) {
         setInputSessionId(boundSessionId);
-      }
-      if (
-        focusSource !== 'chrome' &&
-        !isChromeActive() &&
-        !isMobileViewport() &&
-        !isInteractionActive()
-      ) {
-        window.setTimeout(() => {
-          const inputRuntime = chatPanelsById.get(panelId)?.inputRuntime ?? null;
-          inputRuntime?.focusInput();
-        }, 0);
       }
       syncNativeVoiceBridgeState();
       return;
@@ -2469,7 +2438,8 @@ async function main(): Promise<void> {
 
   panelHostControllerInstance.setContext(CHAT_PANEL_SERVICES_CONTEXT_KEY, {
     getRuntimeOptions: getChatRuntimeOptions,
-    registerChatPanel: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
+    registerChatPanel: ({ runtime, dom, host, init }) =>
+      registerChatPanelRuntime({ runtime, dom, host, init }),
   } satisfies ChatPanelServices);
 
   await fetchPlugins();

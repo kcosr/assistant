@@ -139,6 +139,7 @@ export class PanelWorkspaceController {
   private readonly modalPanelIds = new Set<string>();
   private modalOverlay: HTMLElement | null = null;
   private modalOverlayCleanup: (() => void) | null = null;
+  private readonly mountFocusPanelIds = new Set<string>();
 
   constructor(private readonly options: PanelWorkspaceControllerOptions) {
     this.headerDockRoot = options.headerDockRoot ?? null;
@@ -609,6 +610,9 @@ export class PanelWorkspaceController {
       headerPanelSizes: this.getHeaderPanelSizes(),
     };
     this.recordPanelFocus(panelId);
+    if (options.focus) {
+      this.mountFocusPanelIds.add(panelId);
+    }
 
     this.persistLayout();
     this.render();
@@ -710,6 +714,9 @@ export class PanelWorkspaceController {
       },
     };
     this.persistLayout();
+    if (this.activePanelId === panelId) {
+      this.mountFocusPanelIds.add(panelId);
+    }
 
     if (this.activeChatPanelId === panelId && panelType !== 'chat') {
       this.activeChatPanelId = null;
@@ -3038,6 +3045,7 @@ export class PanelWorkspaceController {
         container: HTMLElement;
         binding?: PanelBinding;
         state?: PanelInstance['state'];
+        focus?: boolean;
       } = {
         panelId,
         panelType: panel.panelType,
@@ -3049,8 +3057,12 @@ export class PanelWorkspaceController {
       if (panel.state !== undefined) {
         mountOptions.state = panel.state;
       }
+      if (this.mountFocusPanelIds.has(panelId)) {
+        mountOptions.focus = true;
+      }
       try {
         this.options.host.mountPanel(mountOptions);
+        this.mountFocusPanelIds.delete(panelId);
       } catch (err) {
         this.mountedPanelIds.delete(panelId);
         console.error('Failed to mount panel', panelId, err);
@@ -3077,6 +3089,7 @@ export class PanelWorkspaceController {
       container: HTMLElement;
       binding?: PanelBinding;
       state?: PanelInstance['state'];
+      focus?: boolean;
     } = {
       panelId,
       panelType: panel.panelType,
@@ -3088,9 +3101,13 @@ export class PanelWorkspaceController {
     if (panel.state !== undefined) {
       mountOptions.state = panel.state;
     }
+    if (this.mountFocusPanelIds.has(panelId)) {
+      mountOptions.focus = true;
+    }
     try {
       this.options.host.mountPanel(mountOptions);
       this.mountedPanelIds.add(panelId);
+      this.mountFocusPanelIds.delete(panelId);
     } catch (err) {
       console.error('Failed to remount panel', panelId, err);
     }

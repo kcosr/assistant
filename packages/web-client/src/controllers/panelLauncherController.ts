@@ -184,25 +184,14 @@ export class PanelLauncherController {
     if (launcherSearch) {
       launcherSearch.value = '';
       this.query = '';
-      if (!this.compact) {
-        launcherSearch.focus();
-      }
+      launcherSearch.focus();
     }
     this.render();
     this.updateLauncherTitle();
     this.positionLauncher();
-    if (this.compact) {
-      const launcherPanel = this.getLauncherPanel();
-      if (launcherPanel) {
-        launcherPanel.tabIndex = -1;
-        launcherPanel.focus();
-      }
-    }
     requestAnimationFrame(() => {
       this.positionLauncher();
-      if (this.compact) {
-        this.getLauncherPanel()?.focus();
-      }
+      this.options.launcherSearch?.focus();
     });
   }
 

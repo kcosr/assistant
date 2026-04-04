@@ -140,6 +140,7 @@ Behavior:
 - Inline panel replacement uses the same compact in-pane picker instead of the full global launcher.
 - Empty placeholder panes use an explicit `Replace panel` action and open that same compact replace picker.
 - While the compact picker is open, background panel shortcuts are suspended so `Up`, `Down`, `Enter`, and `Esc` stay scoped to the picker.
+- Compact pickers keep a search/filter input visible at the top, and filtering does not break arrow-key or enter selection.
 
 ## Drag and Dock
 
@@ -212,6 +213,8 @@ Panel plugins may register additional shortcuts scoped to the focused panel.
 - Contains the input bar and chat log.
 - Supports code block copy actions and tool output rendering.
 - Shows connection and status indicators.
+- Selecting or creating a chat panel does not automatically move focus into the composer.
+- Creating a new unbound chat panel opens the session picker automatically so the user can bind it immediately.
 
 ## Artifacts Panel Requirements
 

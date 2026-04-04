@@ -1,4 +1,4 @@
-import type { PanelHost } from '../controllers/panelRegistry';
+import type { PanelHost, PanelInitOptions } from '../controllers/panelRegistry';
 import type { ChatPanelDom } from '../panels/chat/chatPanel';
 import type { ChatRuntime, ChatRuntimeOptions } from '../panels/chat/runtime';
 
@@ -10,5 +10,6 @@ export interface ChatPanelServices {
     runtime: ChatRuntime;
     dom: ChatPanelDom;
     host: PanelHost;
+    init: PanelInitOptions;
   }) => void | (() => void);
 }
