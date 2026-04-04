@@ -166,6 +166,7 @@ export function insertPanel(
   placement: PanelPlacement,
   targetPanelId?: string,
   containerSize?: PanelContainerSize,
+  options?: { newPaneId?: string },
 ): LayoutNode {
   const splitIds = new Set(collectSplitIds(node));
   const paneIds = new Set(collectPaneIds(node));
@@ -178,13 +179,14 @@ export function insertPanel(
       containerSize,
       splitIds,
       paneIds,
+      options,
     );
     if (result.inserted) {
       return result.node;
     }
   }
 
-  return createPlacementNode(node, panelId, placement, containerSize, splitIds, paneIds);
+  return createPlacementNode(node, panelId, placement, containerSize, splitIds, paneIds, options);
 }
 
 export function movePanel(
@@ -193,13 +195,14 @@ export function movePanel(
   placement: PanelPlacement,
   targetPanelId?: string,
   containerSize?: PanelContainerSize,
+  options?: { newPaneId?: string },
 ): LayoutNode {
   const pruned = removePanel(node, panelId);
   if (!pruned) {
     return createPaneNode(panelId);
   }
   const resolvedTarget = targetPanelId === panelId ? undefined : targetPanelId;
-  return insertPanel(pruned, panelId, placement, resolvedTarget, containerSize);
+  return insertPanel(pruned, panelId, placement, resolvedTarget, containerSize, options);
 }
 
 function insertPanelRelative(
@@ -210,6 +213,7 @@ function insertPanelRelative(
   containerSize: PanelContainerSize | undefined,
   splitIds: Set<string>,
   paneIds: Set<string>,
+  placementOptions: { newPaneId?: string } | undefined,
 ): { node: LayoutNode; inserted: boolean } {
   if (node.kind === 'pane') {
     if (!containsPanelId(node, targetPanelId)) {
@@ -218,6 +222,7 @@ function insertPanelRelative(
     return {
       node: createPlacementNode(node, panelId, placement, containerSize, splitIds, paneIds, {
         targetPanelId,
+        ...(placementOptions?.newPaneId ? { newPaneId: placementOptions.newPaneId } : {}),
       }),
       inserted: true,
     };
@@ -236,6 +241,7 @@ function insertPanelRelative(
       containerSize,
       splitIds,
       paneIds,
+      placementOptions,
     );
     inserted = result.inserted;
     return result.node;
@@ -261,7 +267,7 @@ function createPlacementNode(
   containerSize: PanelContainerSize | undefined,
   splitIds: Set<string>,
   paneIds: Set<string>,
-  options?: { targetPanelId?: string },
+  options?: { targetPanelId?: string; newPaneId?: string },
 ): LayoutNode {
   const region = placement.region;
 
@@ -275,7 +281,7 @@ function createPlacementNode(
     return insertPanelIntoLastPane(target, panelId);
   }
 
-  const paneNode = createPaneNode(panelId, paneIds);
+  const paneNode = createPaneNode(panelId, paneIds, options?.newPaneId);
   const direction = region === 'left' || region === 'right' ? 'horizontal' : 'vertical';
   const primaryFirst = region === 'left' || region === 'top';
   const children = primaryFirst ? [paneNode, target] : [target, paneNode];
@@ -378,7 +384,13 @@ function collectPaneIds(node: LayoutNode): string[] {
   return node.children.flatMap((child) => collectPaneIds(child));
 }
 
-function createPaneId(existing?: Set<string>): string {
+function createPaneId(existing?: Set<string>, preferredPaneId?: string): string {
+  if (preferredPaneId) {
+    if (existing) {
+      existing.add(preferredPaneId);
+    }
+    return preferredPaneId;
+  }
   if (!existing) {
     return `pane-${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -399,10 +411,11 @@ function createPaneTab(panelId: string): LayoutTab {
 export function createPaneNode(
   panelId: string,
   existingPaneIds?: Set<string>,
+  preferredPaneId?: string,
 ): Extract<LayoutNode, { kind: 'pane' }> {
   return {
     kind: 'pane',
-    paneId: createPaneId(existingPaneIds),
+    paneId: createPaneId(existingPaneIds, preferredPaneId),
     tabs: [createPaneTab(panelId)],
     activePanelId: panelId,
   };

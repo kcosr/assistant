@@ -217,7 +217,7 @@ describe('buildSystemPrompt', () => {
     expect(prompt).toContain('## Message Context');
     expect(prompt).toContain('Each user message begins with a context line in XML format');
     expect(prompt).toContain(
-      '<context panel-id="<panel-id>" panel-type="<panel-type>" panel-title="<panel-title>" />',
+      '<context panel-id="<panel-id>" panel-type="<panel-type>" panel-title="<panel-title>" window-id="<window-id>" pane-id="<pane-id>" pane-tab-count="<pane-tab-count>" pane-tab-panel-ids="<pane-tab-panel-ids>" />',
     );
     expect(prompt).toContain(
       'Always rely on this context line for the current panel and selection',

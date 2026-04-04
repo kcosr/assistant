@@ -48,6 +48,8 @@
 - Changed compact panel pickers to keep a searchable filter input visible in compact mode, with keyboard navigation staying inside the picker while filtering.
 - Changed newly created unbound chat panels to open the session picker without auto-focusing the chat input, and stopped merely selecting an existing chat panel from stealing focus into the composer.
 - Changed mobile pane rendering to hide the tabs header when a pane only has a single tab.
+- Changed the panels tool contract to be pane-aware, adding explicit window discovery, pane selection metadata, and `tab`/`split`/`header` modes for agent-driven layout commands instead of the older placement-only API.
+- Changed user-message panel XML context to include `window-id`, `pane-id`, `pane-tab-count`, and `pane-tab-panel-ids` so agents can target the current pane and tab group directly.
 
 ### Fixed
 
@@ -96,6 +98,7 @@
 - Fixed chat tab and session-label hydration so bound chat panels refresh from session names immediately after binding and on page-load session summary sync instead of waiting for a later click-triggered rerender.
 - Fixed chat title refresh so routine `session_updated` syncs no longer force a full workspace rerender when a panel title has not actually changed.
 - Fixed chat transcript auto-scroll so loading a chat panel, selecting a session, and replaying the latest transcript settle fully to the bottom instead of stopping slightly above the newest messages.
+- Fixed workspace panel command handling to understand the pane-aware panel tool payloads for tab insertion, split creation, header pinning, and pane-targeted moves.
 
 ### Removed
 

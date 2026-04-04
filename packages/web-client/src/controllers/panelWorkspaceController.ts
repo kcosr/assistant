@@ -585,7 +585,17 @@ export class PanelWorkspaceController {
           this.updatePanelState(existingForSession, options.state);
         }
         if (options.placement) {
-          this.movePanel(existingForSession, options.placement, options.targetPanelId);
+          const moveOptions = {
+            ...(options.targetPaneId ? { targetPaneId: options.targetPaneId } : {}),
+            ...(options.afterPanelId ? { afterPanelId: options.afterPanelId } : {}),
+            ...(options.newPaneId ? { newPaneId: options.newPaneId } : {}),
+          };
+          this.movePanel(
+            existingForSession,
+            options.placement,
+            options.targetPanelId,
+            Object.keys(moveOptions).length > 0 ? moveOptions : undefined,
+          );
         } else {
           this.focusPanel(existingForSession);
           if (this.isPanelPinned(existingForSession)) {
@@ -626,14 +636,21 @@ export class PanelWorkspaceController {
     const instance = this.options.registry.createInstance(panelType, panelId, initOptions);
 
     const placement = options.placement ?? manifest.defaultPlacement ?? { region: 'center' };
-    const containerSize = this.getPlacementContainerSize(options.targetPanelId);
+    const resolvedTargetPanelId = this.resolveTargetPanelId({
+      placement,
+      ...(options.targetPanelId ? { targetPanelId: options.targetPanelId } : {}),
+      ...(options.targetPaneId ? { targetPaneId: options.targetPaneId } : {}),
+      ...(options.afterPanelId ? { afterPanelId: options.afterPanelId } : {}),
+    });
+    const containerSize = this.getPlacementContainerSize(resolvedTargetPanelId);
     this.layout = {
       layout: insertPanel(
         this.layout.layout,
         panelId,
         placement,
-        options.targetPanelId,
+        resolvedTargetPanelId,
         containerSize,
+        options.newPaneId ? { newPaneId: options.newPaneId } : undefined,
       ),
       panels: { ...this.layout.panels, [panelId]: instance },
       headerPanels: this.getHeaderPanelIds(),
@@ -951,7 +968,12 @@ export class PanelWorkspaceController {
     panelId: string,
     placement: PanelPlacement,
     targetPanelId?: string,
-    options?: { preserveSourcePaneWithEmpty?: boolean },
+    options?: {
+      preserveSourcePaneWithEmpty?: boolean;
+      targetPaneId?: string;
+      afterPanelId?: string;
+      newPaneId?: string;
+    },
   ): void {
     if (!this.layout.panels[panelId]) {
       return;
@@ -969,13 +991,20 @@ export class PanelWorkspaceController {
       nextPanels = preserved.panels;
     }
 
-    const containerSize = this.getPlacementContainerSize(targetPanelId);
+    const resolvedTargetPanelId = this.resolveTargetPanelId({
+      placement,
+      ...(targetPanelId ? { targetPanelId } : {}),
+      ...(options?.targetPaneId ? { targetPaneId: options.targetPaneId } : {}),
+      ...(options?.afterPanelId ? { afterPanelId: options.afterPanelId } : {}),
+    });
+    const containerSize = this.getPlacementContainerSize(resolvedTargetPanelId);
     const nextLayout = movePanel(
       sourceLayout,
       panelId,
       placement,
-      targetPanelId,
+      resolvedTargetPanelId,
       containerSize,
+      options?.newPaneId ? { newPaneId: options.newPaneId } : undefined,
     );
     this.layout = {
       layout: nextLayout,
@@ -3327,6 +3356,66 @@ export class PanelWorkspaceController {
     return null;
   }
 
+  private findPaneById(node: LayoutNode, paneId: string): (LayoutNode & { kind: 'pane' }) | null {
+    if (node.kind === 'pane') {
+      return node.paneId === paneId ? node : null;
+    }
+    for (const child of node.children) {
+      const found = this.findPaneById(child, paneId);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  private getPanelLocation(panelId: string): {
+    paneId: string;
+    tabIndex: number;
+    tabCount: number;
+    pane: LayoutNode & { kind: 'pane' };
+  } | null {
+    const pane = this.findPaneContainingPanel(this.layout.layout, panelId);
+    if (!pane) {
+      return null;
+    }
+    const tabIndex = pane.tabs.findIndex((tab) => tab.panelId === panelId);
+    if (tabIndex < 0) {
+      return null;
+    }
+    return {
+      paneId: pane.paneId,
+      tabIndex,
+      tabCount: pane.tabs.length,
+      pane,
+    };
+  }
+
+  private resolveTargetPanelId(options: {
+    placement: PanelPlacement;
+    targetPanelId?: string;
+    targetPaneId?: string;
+    afterPanelId?: string;
+  }): string | undefined {
+    if (options.afterPanelId) {
+      return this.layout.panels[options.afterPanelId] ? options.afterPanelId : undefined;
+    }
+    if (options.targetPanelId) {
+      return this.layout.panels[options.targetPanelId] ? options.targetPanelId : undefined;
+    }
+    if (!options.targetPaneId) {
+      return undefined;
+    }
+    const pane = this.findPaneById(this.layout.layout, options.targetPaneId);
+    if (!pane) {
+      return undefined;
+    }
+    if (options.placement.region === 'center') {
+      return pane.tabs[pane.tabs.length - 1]?.panelId;
+    }
+    return pane.activePanelId || pane.tabs[0]?.panelId;
+  }
+
   private setActivePanelContext(panelId: string | null, source: PanelFocusSource): void {
     if (!panelId) {
       this.options.host.setContext('panel.active', null);
@@ -3340,10 +3429,19 @@ export class PanelWorkspaceController {
       return;
     }
     const panelTitle = this.getPanelTitle(panelId);
+    const location = this.getPanelLocation(panelId);
     this.options.host.setContext('panel.active', {
       panelId,
       panelType: panel.panelType,
       panelTitle,
+      ...(this.options.windowId ? { windowId: this.options.windowId } : {}),
+      ...(location
+        ? {
+            paneId: location.paneId,
+            paneTabCount: location.tabCount,
+            paneTabPanelIds: location.pane.tabs.map((tab) => tab.panelId),
+          }
+        : {}),
       source,
     });
     this.updatePanelContextSummary();
@@ -3353,15 +3451,28 @@ export class PanelWorkspaceController {
     panelId: string;
     panelType: string;
     panelTitle: string;
+    paneId?: string;
+    paneTabCount?: number;
+    paneTabPanelIds?: string[];
+    windowId?: string;
   } | null {
     const panel = this.layout.panels[panelId];
     if (!panel) {
       return null;
     }
+    const location = this.getPanelLocation(panelId);
     return {
       panelId,
       panelType: panel.panelType,
       panelTitle: this.getPanelTitle(panelId),
+      ...(location
+        ? {
+            paneId: location.paneId,
+            paneTabCount: location.tabCount,
+            paneTabPanelIds: location.pane.tabs.map((tab) => tab.panelId),
+          }
+        : {}),
+      ...(this.options.windowId ? { windowId: this.options.windowId } : {}),
     };
   }
 
@@ -3383,10 +3494,18 @@ export class PanelWorkspaceController {
     const binding = panel.binding ?? null;
     const visible = this.panelVisibility.get(panelId) ?? false;
     const context = this.normalizePanelContext(panelId);
+    const location = this.getPanelLocation(panelId);
     return {
       panelId,
       panelType: panel.panelType,
       panelTitle: this.getPanelTitle(panelId),
+      ...(location
+        ? {
+            paneId: location.paneId,
+            tabIndex: location.tabIndex,
+            tabCount: location.tabCount,
+          }
+        : {}),
       visible,
       binding,
       ...(context ? { context } : {}),
@@ -3405,11 +3524,13 @@ export class PanelWorkspaceController {
       this.activeChatPanelId && this.layout.panels[this.activeChatPanelId]
         ? this.activeChatPanelId
         : null;
+    const selectedPaneId = this.activePanelId ? this.getPanelLocation(this.activePanelId)?.paneId : null;
     const payload: PanelInventoryPayload = {
       type: 'panel_inventory',
       panels,
       selectedPanelId,
       selectedChatPanelId,
+      selectedPaneId,
       layout: this.layout.layout,
       headerPanels: this.getHeaderPanelIds(),
       ...(this.options.windowId ? { windowId: this.options.windowId } : {}),

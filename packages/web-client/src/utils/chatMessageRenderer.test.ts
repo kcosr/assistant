@@ -68,7 +68,14 @@ describe('buildContextLine', () => {
 
   it('includes context attributes when provided', () => {
     const line = buildContextLine(null, null, [], null, {
-      panel: { panelId: 'diff-1', panelType: 'diff' },
+      panel: {
+        panelId: 'diff-1',
+        panelType: 'diff',
+        windowId: 'window-main',
+        paneId: 'pane-2',
+        paneTabCount: 3,
+        paneTabPanelIds: ['diff-1', 'notes-2', 'chat-4'],
+      },
       contextAttributes: {
         'diff-path': 'src/index.ts',
         'diff-type': 'file',
@@ -80,6 +87,10 @@ describe('buildContextLine', () => {
     });
     expect(line).toContain('panel-id="diff-1"');
     expect(line).toContain('panel-type="diff"');
+    expect(line).toContain('window-id="window-main"');
+    expect(line).toContain('pane-id="pane-2"');
+    expect(line).toContain('pane-tab-count="3"');
+    expect(line).toContain('pane-tab-panel-ids="diff-1,notes-2,chat-4"');
     expect(line).toContain('diff-path="src/index.ts"');
     expect(line).toContain('diff-type="file"');
     expect(line).toContain('diff-target="working"');

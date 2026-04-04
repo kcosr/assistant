@@ -18,6 +18,9 @@ export interface PanelInitOptions {
 export interface PanelOpenOptions extends PanelInitOptions {
   placement?: PanelPlacement;
   targetPanelId?: string;
+  targetPaneId?: string;
+  afterPanelId?: string;
+  newPaneId?: string;
 }
 
 export interface PanelHandle {
@@ -49,7 +52,12 @@ export interface PanelHost {
   openModalPanel?(panelType: string, options?: PanelOpenOptions): string | null;
   closePanel(panelId: string): void;
   activatePanel(panelId: string): void;
-  movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void;
+  movePanel(
+    panelId: string,
+    placement: PanelPlacement,
+    targetPanelId?: string,
+    options?: { targetPaneId?: string; afterPanelId?: string; newPaneId?: string },
+  ): void;
   openPanelMenu?(panelId: string, anchor: HTMLElement): void;
   startPanelDrag?(panelId: string, event: PointerEvent): void;
   startPanelReorder?(panelId: string, event: PointerEvent): void;

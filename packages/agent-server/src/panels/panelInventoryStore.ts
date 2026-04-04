@@ -4,6 +4,7 @@ export interface PanelInventorySnapshot {
   panels: PanelInventoryItem[];
   selectedPanelId: string | null;
   selectedChatPanelId: string | null;
+  selectedPaneId: string | null;
   layout: LayoutNode | null;
   headerPanels: string[];
   updatedAt: string;
@@ -33,6 +34,10 @@ function getGlobalStore(): PanelInventoryGlobal {
 export interface PanelWindowInfo {
   windowId: string;
   updatedAt: string;
+  selectedPanelId: string | null;
+  selectedChatPanelId: string | null;
+  selectedPaneId: string | null;
+  panelCount: number;
 }
 
 interface WindowInventoryEntry {
@@ -77,6 +82,7 @@ export function updatePanelInventory(
     panels: payload.panels.map((panel) => ({ ...panel })),
     selectedPanelId: payload.selectedPanelId ?? null,
     selectedChatPanelId: payload.selectedChatPanelId ?? null,
+    selectedPaneId: payload.selectedPaneId ?? null,
     layout: payload.layout ?? null,
     headerPanels: payload.headerPanels ? [...payload.headerPanels] : [],
     updatedAt: new Date().toISOString(),
@@ -107,6 +113,10 @@ export function listPanelWindows(): PanelWindowInfo[] {
   return Array.from(store.entries.values()).map((entry) => ({
     windowId: entry.windowId,
     updatedAt: entry.snapshot.updatedAt,
+    selectedPanelId: entry.snapshot.selectedPanelId,
+    selectedChatPanelId: entry.snapshot.selectedChatPanelId,
+    selectedPaneId: entry.snapshot.selectedPaneId,
+    panelCount: entry.snapshot.panels.length,
   }));
 }
 
@@ -191,6 +201,7 @@ function getPanelInventorySnapshot(
       panels: snapshot.panels.map((panel) => ({ ...panel })),
       selectedPanelId: snapshot.selectedPanelId,
       selectedChatPanelId: snapshot.selectedChatPanelId,
+      selectedPaneId: snapshot.selectedPaneId,
       layout: snapshot.layout,
       headerPanels: [...snapshot.headerPanels],
       updatedAt: snapshot.updatedAt,
@@ -212,6 +223,7 @@ export function listPanels(options: PanelInventoryOptions = {}): {
   panels: PanelInventoryItem[];
   selectedPanelId: string | null;
   selectedChatPanelId: string | null;
+  selectedPaneId: string | null;
   layout?: LayoutNode | null;
   headerPanels?: string[];
 } {
@@ -221,7 +233,7 @@ export function listPanels(options: PanelInventoryOptions = {}): {
   const includeLayout = options.includeLayout ?? false;
 
   if (!snapshot) {
-    return { panels: [], selectedPanelId: null, selectedChatPanelId: null };
+    return { panels: [], selectedPanelId: null, selectedChatPanelId: null, selectedPaneId: null };
   }
 
   const panels = snapshot.panels
@@ -233,6 +245,7 @@ export function listPanels(options: PanelInventoryOptions = {}): {
     panels: PanelInventoryItem[];
     selectedPanelId: string | null;
     selectedChatPanelId: string | null;
+    selectedPaneId: string | null;
     layout?: LayoutNode | null;
     headerPanels?: string[];
   } = {
@@ -240,6 +253,7 @@ export function listPanels(options: PanelInventoryOptions = {}): {
     panels,
     selectedPanelId: snapshot.selectedPanelId,
     selectedChatPanelId: snapshot.selectedChatPanelId,
+    selectedPaneId: snapshot.selectedPaneId,
   };
   if (includeLayout) {
     result.layout = snapshot.layout;
@@ -252,6 +266,7 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
   windowId?: string;
   selectedPanelId: string | null;
   selectedChatPanelId: string | null;
+  selectedPaneId: string | null;
   panel: PanelInventoryItem | null;
   chatPanel: PanelInventoryItem | null;
   layout?: LayoutNode | null;
@@ -266,6 +281,7 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
     return {
       selectedPanelId: null,
       selectedChatPanelId: null,
+      selectedPaneId: null,
       panel: null,
       chatPanel: null,
     };
@@ -284,6 +300,7 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
     windowId?: string;
     selectedPanelId: string | null;
     selectedChatPanelId: string | null;
+    selectedPaneId: string | null;
     panel: PanelInventoryItem | null;
     chatPanel: PanelInventoryItem | null;
     layout?: LayoutNode | null;
@@ -292,6 +309,7 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
     ...(windowId ? { windowId } : {}),
     selectedPanelId: snapshot.selectedPanelId,
     selectedChatPanelId: snapshot.selectedChatPanelId,
+    selectedPaneId: snapshot.selectedPaneId,
     panel: panel ? stripPanelContext(panel, includeContext) : null,
     chatPanel: chatPanel ? stripPanelContext(chatPanel, includeContext) : null,
   };

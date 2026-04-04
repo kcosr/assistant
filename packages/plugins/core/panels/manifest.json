@@ -9,6 +9,20 @@
   },
   "operations": [
     {
+      "id": "windows",
+      "summary": "List active workspace windows and their current selections.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to inspect."
+          }
+        }
+      },
+      "capabilities": ["panels.read"]
+    },
+    {
       "id": "list",
       "summary": "List known panel instances, including selected panel ids.",
       "inputSchema": {
@@ -25,6 +39,10 @@
           "includeLayout": {
             "type": "boolean",
             "description": "Include layout tree and header panel ids (default: false)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to inspect."
           }
         }
       },
@@ -47,6 +65,10 @@
           "includeLayout": {
             "type": "boolean",
             "description": "Include layout tree and header panel ids (default: false)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to inspect."
           }
         }
       },
@@ -80,6 +102,10 @@
             "type": "string",
             "enum": ["session", "all"],
             "description": "Optional scope; \"all\" broadcasts to every connected client."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
         "required": ["panelId", "panelType", "payload"]
@@ -104,6 +130,10 @@
             "type": "string",
             "enum": ["json", "text", "both"],
             "description": "Output format (default: json)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to inspect."
           }
         }
       },
@@ -119,34 +149,39 @@
             "type": "string",
             "description": "Panel type to open (default: \"empty\")."
           },
+          "mode": {
+            "type": "string",
+            "enum": ["tab", "split", "header"],
+            "description": "Open as a tab in a pane, split a pane, or pin to the header."
+          },
+          "targetPaneId": {
+            "type": "string",
+            "description": "Optional pane id to target. If omitted, the selected pane is used."
+          },
           "targetPanelId": {
             "type": "string",
-            "description": "Optional panel id to place relative to."
+            "description": "Optional anchor panel id to target."
           },
-          "placement": {
+          "afterPanelId": {
+            "type": "string",
+            "description": "Optional tab id after which a new tab should be inserted."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["left", "right", "top", "bottom"],
+            "description": "Required when mode is \"split\"."
+          },
+          "size": {
             "type": "object",
             "properties": {
-              "region": {
-                "type": "string",
-                "enum": ["left", "right", "top", "bottom", "center"]
-              },
-              "size": {
-                "type": "object",
-                "properties": {
-                  "width": { "type": "number" },
-                  "height": { "type": "number" }
-                }
-              }
+              "width": { "type": "number" },
+              "height": { "type": "number" }
             },
-            "required": ["region"]
+            "description": "Optional size override for split mode."
           },
           "focus": {
             "type": "boolean",
             "description": "Focus the opened panel (default: true)."
-          },
-          "pinToHeader": {
-            "type": "boolean",
-            "description": "Pin the opened panel to the header (default: false)."
           },
           "binding": {
             "type": "object",
@@ -164,6 +199,10 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         }
       },
@@ -182,6 +221,10 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
         "required": ["panelId"]
@@ -201,6 +244,10 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
         "required": ["panelId"]
@@ -237,6 +284,10 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
         "required": ["panelId", "panelType"]
@@ -253,33 +304,46 @@
             "type": "string",
             "description": "Panel instance id to move."
           },
-          "placement": {
-            "type": "object",
-            "properties": {
-              "region": {
-                "type": "string",
-                "enum": ["left", "right", "top", "bottom", "center"]
-              },
-              "size": {
-                "type": "object",
-                "properties": {
-                  "width": { "type": "number" },
-                  "height": { "type": "number" }
-                }
-              }
-            },
-            "required": ["region"]
+          "mode": {
+            "type": "string",
+            "enum": ["tab", "split"],
+            "description": "Move into an existing pane as a tab or into a new split."
+          },
+          "targetPaneId": {
+            "type": "string",
+            "description": "Optional pane id to target. If omitted, the selected pane is used."
           },
           "targetPanelId": {
             "type": "string",
-            "description": "Optional panel id to place relative to."
+            "description": "Optional anchor panel id to target."
+          },
+          "afterPanelId": {
+            "type": "string",
+            "description": "Optional tab id after which the moved panel should be inserted."
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["left", "right", "top", "bottom"],
+            "description": "Required when mode is \"split\"."
+          },
+          "size": {
+            "type": "object",
+            "properties": {
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            },
+            "description": "Optional size override for split mode."
           },
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
-        "required": ["panelId", "placement"]
+        "required": ["panelId"]
       },
       "capabilities": ["panels.manage"]
     },
@@ -296,6 +360,10 @@
           "sessionId": {
             "type": "string",
             "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
           }
         },
         "required": ["splitId"]

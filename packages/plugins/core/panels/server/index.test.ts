@@ -51,6 +51,49 @@ function createTestPlugin() {
   return createPlugin({ manifest: manifestJson as CombinedPluginManifest });
 }
 
+function createPanelInventoryPayload(): PanelInventoryPayload {
+  return {
+    type: 'panel_inventory',
+    panels: [
+      {
+        panelId: 'notes-1',
+        panelType: 'notes',
+        panelTitle: 'Notes',
+        paneId: 'pane-1',
+        tabIndex: 0,
+        tabCount: 2,
+        visible: true,
+        context: { id: 'note-1', name: 'Scratchpad' },
+      },
+      {
+        panelId: 'lists-1',
+        panelType: 'lists',
+        panelTitle: 'Lists',
+        paneId: 'pane-1',
+        tabIndex: 1,
+        tabCount: 2,
+        visible: false,
+      },
+      {
+        panelId: 'sessions-1',
+        panelType: 'sessions',
+        panelTitle: 'Sessions',
+        visible: true,
+      },
+    ],
+    selectedPanelId: 'notes-1',
+    selectedChatPanelId: null,
+    selectedPaneId: 'pane-1',
+    layout: {
+      kind: 'pane',
+      paneId: 'pane-1',
+      tabs: [{ panelId: 'notes-1' }, { panelId: 'lists-1' }],
+      activePanelId: 'notes-1',
+    },
+    headerPanels: ['sessions-1'],
+  };
+}
+
 describe('panels plugin operations', () => {
   it('broadcasts to the current session by default', async () => {
     const { ctx, sessionHub } = await createTestEnvironment();
@@ -67,11 +110,8 @@ describe('panels plugin operations', () => {
     )) as { ok?: boolean };
 
     expect(result.ok).toBe(true);
-
     expect(broadcastSpy).toHaveBeenCalledTimes(1);
-    const lastCall = broadcastSpy.mock.calls[0]!;
-    expect(lastCall[0]).toBe(ctx.sessionId);
-    expect(lastCall[1]).toEqual({
+    expect(broadcastSpy.mock.calls[0]?.[1]).toEqual({
       type: 'panel_event',
       panelId: 'panel-1',
       panelType: 'chat',
@@ -96,16 +136,8 @@ describe('panels plugin operations', () => {
     )) as { ok?: boolean };
 
     expect(result.ok).toBe(true);
-
     expect(broadcastSpy).toHaveBeenCalledTimes(1);
-    const message = broadcastSpy.mock.calls[0]?.[0] as {
-      type?: string;
-      panelId?: string;
-      panelType?: string;
-      payload?: unknown;
-      sessionId?: string;
-    };
-    expect(message).toEqual({
+    expect(broadcastSpy.mock.calls[0]?.[0]).toEqual({
       type: 'panel_event',
       panelId: 'panel-2',
       panelType: 'notes',
@@ -114,169 +146,298 @@ describe('panels plugin operations', () => {
     });
   });
 
-  it('lists panels with or without context', async () => {
+  it('lists panels with pane metadata and optional context', async () => {
     resetPanelInventoryForTests();
     const { ctx } = await createTestEnvironment();
     const plugin = createTestPlugin();
 
-    const payload: PanelInventoryPayload = {
-      type: 'panel_inventory',
-      panels: [
-        {
-          panelId: 'p-1',
-          panelType: 'notes',
-          panelTitle: 'Notes',
-          visible: true,
-          context: { id: 'note-1', name: 'Scratchpad' },
-        },
-      ],
-      selectedPanelId: 'p-1',
-      selectedChatPanelId: null,
-    };
-    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
 
-    const withoutContext = (await plugin.operations?.list({ includeContext: false }, ctx)) as {
-      panels: Array<{ context?: unknown }>;
+    const withoutContext = (await plugin.operations?.list(
+      { includeContext: false },
+      ctx,
+    )) as {
+      selectedPaneId: string | null;
+      panels: Array<{ paneId?: string; tabIndex?: number; tabCount?: number; context?: unknown }>;
     };
+    expect(withoutContext.selectedPaneId).toBe('pane-1');
+    expect(withoutContext.panels[0]?.paneId).toBe('pane-1');
+    expect(withoutContext.panels[0]?.tabIndex).toBe(0);
+    expect(withoutContext.panels[0]?.tabCount).toBe(2);
     expect(withoutContext.panels[0]?.context).toBeUndefined();
 
-    const defaultContext = (await plugin.operations?.list({}, ctx)) as {
-      panels: Array<{ context?: unknown }>;
-    };
-    expect(defaultContext.panels[0]?.context).toEqual({ id: 'note-1', name: 'Scratchpad' });
-
-    const withContext = (await plugin.operations?.list({ includeContext: true }, ctx)) as {
+    const withContext = (await plugin.operations?.list(
+      { includeContext: true },
+      ctx,
+    )) as {
       panels: Array<{ context?: unknown }>;
     };
     expect(withContext.panels[0]?.context).toEqual({ id: 'note-1', name: 'Scratchpad' });
   });
 
-  it('returns selected panels', async () => {
+  it('returns selected panel and pane information', async () => {
     resetPanelInventoryForTests();
     const { ctx } = await createTestEnvironment();
     const plugin = createTestPlugin();
 
-    const payload: PanelInventoryPayload = {
-      type: 'panel_inventory',
-      panels: [
-        {
-          panelId: 'p-2',
-          panelType: 'notes',
-          panelTitle: 'Notes',
-          visible: true,
-        },
-      ],
-      selectedPanelId: 'p-2',
-      selectedChatPanelId: null,
-    };
-    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
 
-    const selected = (await plugin.operations?.selected({ includeContext: true }, ctx)) as {
+    const selected = (await plugin.operations?.selected(
+      { includeContext: true },
+      ctx,
+    )) as {
       selectedPanelId: string | null;
-      panel: { panelId?: string } | null;
+      selectedPaneId: string | null;
+      panel: { panelId?: string; paneId?: string } | null;
     };
-    expect(selected.selectedPanelId).toBe('p-2');
-    expect(selected.panel?.panelId).toBe('p-2');
+    expect(selected.selectedPanelId).toBe('notes-1');
+    expect(selected.selectedPaneId).toBe('pane-1');
+    expect(selected.panel?.panelId).toBe('notes-1');
+    expect(selected.panel?.paneId).toBe('pane-1');
   });
 
-  it('returns tree output with layout details', async () => {
+  it('lists active windows with selection state', async () => {
     resetPanelInventoryForTests();
     const { ctx } = await createTestEnvironment();
     const plugin = createTestPlugin();
 
-    const payload: PanelInventoryPayload = {
-      type: 'panel_inventory',
-      panels: [
-        {
-          panelId: 'p-1',
-          panelType: 'notes',
-          panelTitle: 'Notes',
-          visible: true,
-        },
-        {
-          panelId: 'p-2',
-          panelType: 'sessions',
-          panelTitle: 'Sessions',
-          visible: true,
-        },
-      ],
-      selectedPanelId: 'p-1',
-      selectedChatPanelId: null,
-      layout: { kind: 'panel', panelId: 'p-1' },
-      headerPanels: ['p-2'],
-    };
-    updatePanelInventory(payload, { windowId: 'window-a', connectionId: 'conn-a' });
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+    updatePanelInventory(
+      {
+        type: 'panel_inventory',
+        panels: [],
+        selectedPanelId: null,
+        selectedChatPanelId: null,
+        selectedPaneId: null,
+      },
+      { windowId: 'window-b', connectionId: 'conn-b' },
+    );
 
-    const tree = (await plugin.operations?.tree({ format: 'both', includeChat: true }, ctx)) as {
+    const result = (await plugin.operations?.windows({}, ctx)) as {
+      windows: Array<{
+        windowId: string;
+        selectedPaneId: string | null;
+        panelCount: number;
+      }>;
+    };
+
+    expect(result.windows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          windowId: 'window-a',
+          selectedPaneId: 'pane-1',
+          panelCount: 3,
+        }),
+        expect.objectContaining({
+          windowId: 'window-b',
+          selectedPaneId: null,
+          panelCount: 0,
+        }),
+      ]),
+    );
+  });
+
+  it('returns tree output with pane-aware layout details', async () => {
+    resetPanelInventoryForTests();
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+
+    const tree = (await plugin.operations?.tree(
+      { format: 'both', includeChat: true },
+      ctx,
+    )) as {
       layout?: unknown;
       headerPanels?: string[];
+      selectedPaneId?: string | null;
       text?: string;
     };
 
-    expect(tree.layout).toEqual(payload.layout);
-    expect(tree.headerPanels).toEqual(['p-2']);
-    expect(tree.text).toContain('Header panels:');
-    expect(tree.text).toContain('Layout:');
+    expect(tree.layout).toEqual(createPanelInventoryPayload().layout);
+    expect(tree.headerPanels).toEqual(['sessions-1']);
+    expect(tree.selectedPaneId).toBe('pane-1');
+    expect(tree.text).toContain('Window: window-a');
+    expect(tree.text).toContain('Selected pane: pane-1');
+    expect(tree.text).toContain('- pane pane-1:');
   });
 
-  it('opens panels by broadcasting a panel command', async () => {
+  it('opens a panel as a tab in the selected pane by default', async () => {
     resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
-    const broadcastSpy = vi.spyOn(sessionHub, 'broadcastToSession');
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
 
-    const result = (await plugin.operations?.open(
-      { panelType: 'notes', targetPanelId: 'p-1' },
-      ctx,
-    )) as { ok?: boolean };
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
 
-    expect(result.ok).toBe(true);
-    expect(broadcastSpy).toHaveBeenCalledTimes(1);
-    const [targetSession, message] = broadcastSpy.mock.calls[0] ?? [];
-    expect(targetSession).toBe(ctx.sessionId);
-    expect(message).toEqual({
+    const result = (await plugin.operations?.open({ panelType: 'notes' }, ctx)) as {
+      ok?: boolean;
+      mode?: string;
+      paneId?: string;
+      windowId?: string;
+    };
+
+    expect(result).toMatchObject({
+      ok: true,
+      mode: 'tab',
+      paneId: 'pane-1',
+      windowId: 'window-a',
+    });
+    expect(sendSpy.mock.calls[0]?.[0]).toBe('conn-a');
+    expect(sendSpy.mock.calls[0]?.[1]).toEqual({
       type: 'panel_event',
       panelId: 'workspace',
       panelType: 'workspace',
+      windowId: 'window-a',
       payload: {
         type: 'panel_command',
         command: 'open_panel',
         panelType: 'notes',
-        targetPanelId: 'p-1',
+        mode: 'tab',
+        targetPaneId: 'pane-1',
       },
-      sessionId: ctx.sessionId,
     });
   });
 
-  it('normalizes placement aliases in panel commands', async () => {
+  it('opens a panel in a new split and returns the destination pane id', async () => {
     resetPanelInventoryForTests();
     const { ctx, sessionHub } = await createTestEnvironment();
     const plugin = createTestPlugin();
-    const broadcastSpy = vi.spyOn(sessionHub, 'broadcastToSession');
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
+
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
 
     const result = (await plugin.operations?.open(
       {
-        panelType: 'notes',
-        targetPanelId: 'p-1',
-        placement: { position: 'right' },
+        panelType: 'chat',
+        mode: 'split',
+        targetPanelId: 'notes-1',
+        direction: 'right',
+        size: { width: 420 },
       },
       ctx,
-    )) as { ok?: boolean };
+    )) as {
+      ok?: boolean;
+      mode?: string;
+      paneId?: string;
+      parentPaneId?: string;
+      windowId?: string;
+    };
 
     expect(result.ok).toBe(true);
-    const [, message] = broadcastSpy.mock.calls[0] ?? [];
-    expect(message).toEqual({
+    expect(result.mode).toBe('split');
+    expect(result.parentPaneId).toBe('pane-1');
+    expect(result.windowId).toBe('window-a');
+    expect(result.paneId).toMatch(/^pane-\d+$/);
+    expect(sendSpy.mock.calls[0]?.[0]).toBe('conn-a');
+    expect(sendSpy.mock.calls[0]?.[1]).toEqual({
       type: 'panel_event',
       panelId: 'workspace',
       panelType: 'workspace',
+      windowId: 'window-a',
       payload: {
         type: 'panel_command',
         command: 'open_panel',
-        panelType: 'notes',
-        targetPanelId: 'p-1',
-        placement: { region: 'right' },
+        panelType: 'chat',
+        mode: 'split',
+        targetPaneId: 'pane-1',
+        direction: 'right',
+        size: { width: 420 },
+        targetPanelId: 'notes-1',
+        paneId: result.paneId,
       },
-      sessionId: ctx.sessionId,
+    });
+  });
+
+  it('moves a panel into another pane as a tab', async () => {
+    resetPanelInventoryForTests();
+    const { ctx, sessionHub } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
+
+    updatePanelInventory(
+      {
+        type: 'panel_inventory',
+        panels: [
+          {
+            panelId: 'notes-1',
+            panelType: 'notes',
+            paneId: 'pane-1',
+            tabIndex: 0,
+            tabCount: 1,
+            visible: true,
+          },
+          {
+            panelId: 'lists-1',
+            panelType: 'lists',
+            paneId: 'pane-2',
+            tabIndex: 0,
+            tabCount: 1,
+            visible: true,
+          },
+        ],
+        selectedPanelId: 'notes-1',
+        selectedChatPanelId: null,
+        selectedPaneId: 'pane-1',
+        layout: {
+          kind: 'split',
+          splitId: 'split-1',
+          direction: 'horizontal',
+          sizes: [1, 1],
+          children: [
+            { kind: 'pane', paneId: 'pane-1', tabs: [{ panelId: 'notes-1' }], activePanelId: 'notes-1' },
+            { kind: 'pane', paneId: 'pane-2', tabs: [{ panelId: 'lists-1' }], activePanelId: 'lists-1' },
+          ],
+        },
+      },
+      { windowId: 'window-a', connectionId: 'conn-a' },
+    );
+
+    const result = (await plugin.operations?.move(
+      {
+        panelId: 'notes-1',
+        mode: 'tab',
+        targetPaneId: 'pane-2',
+      },
+      ctx,
+    )) as {
+      ok?: boolean;
+      mode?: string;
+      paneId?: string;
+    };
+
+    expect(result).toMatchObject({ ok: true, mode: 'tab', paneId: 'pane-2' });
+    expect(sendSpy.mock.calls[0]?.[0]).toBe('conn-a');
+    expect(sendSpy.mock.calls[0]?.[1]).toEqual({
+      type: 'panel_event',
+      panelId: 'workspace',
+      panelType: 'workspace',
+      windowId: 'window-a',
+      payload: {
+        type: 'panel_command',
+        command: 'move_panel',
+        panelId: 'notes-1',
+        mode: 'tab',
+        targetPaneId: 'pane-2',
+      },
     });
   });
 
@@ -296,8 +457,7 @@ describe('panels plugin operations', () => {
     )) as { ok?: boolean };
 
     expect(result.ok).toBe(true);
-    const [message] = broadcastSpy.mock.calls[0] ?? [];
-    expect(message).toEqual({
+    expect(broadcastSpy.mock.calls[0]?.[0]).toEqual({
       type: 'panel_event',
       panelId: 'workspace',
       panelType: 'workspace',
@@ -322,6 +482,7 @@ describe('panels plugin operations', () => {
         panels: [],
         selectedPanelId: null,
         selectedChatPanelId: null,
+        selectedPaneId: null,
       },
       { windowId: 'window-a', connectionId: 'conn-a' },
     );
@@ -331,6 +492,7 @@ describe('panels plugin operations', () => {
         panels: [],
         selectedPanelId: null,
         selectedChatPanelId: null,
+        selectedPaneId: null,
       },
       { windowId: 'window-b', connectionId: 'conn-b' },
     );
@@ -346,26 +508,21 @@ describe('panels plugin operations', () => {
     const plugin = createTestPlugin();
     const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
 
-    updatePanelInventory(
-      {
-        type: 'panel_inventory',
-        panels: [],
-        selectedPanelId: null,
-        selectedChatPanelId: null,
-      },
-      { windowId: 'window-a', connectionId: 'conn-a' },
-    );
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
 
     const result = (await plugin.operations?.open(
-      { panelType: 'notes', targetPanelId: 'p-1', windowId: 'window-a' },
+      { panelType: 'notes', mode: 'tab', targetPaneId: 'pane-1', windowId: 'window-a' },
       ctx,
-    )) as { ok?: boolean };
+    )) as { ok?: boolean; windowId?: string };
 
     expect(result.ok).toBe(true);
+    expect(result.windowId).toBe('window-a');
     expect(sendSpy).toHaveBeenCalledTimes(1);
-    const [connectionId, message] = sendSpy.mock.calls[0] ?? [];
-    expect(connectionId).toBe('conn-a');
-    expect(message).toEqual({
+    expect(sendSpy.mock.calls[0]?.[0]).toBe('conn-a');
+    expect(sendSpy.mock.calls[0]?.[1]).toEqual({
       type: 'panel_event',
       panelId: 'workspace',
       panelType: 'workspace',
@@ -374,7 +531,8 @@ describe('panels plugin operations', () => {
         type: 'panel_command',
         command: 'open_panel',
         panelType: 'notes',
-        targetPanelId: 'p-1',
+        mode: 'tab',
+        targetPaneId: 'pane-1',
       },
     });
   });

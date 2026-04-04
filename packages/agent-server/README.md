@@ -167,6 +167,7 @@ Use `GET /api/plugins` to discover plugin manifests and operation ids. Example c
 
 Panel inventory, selection, and layout are exposed via the panels plugin:
 
+- `POST /api/plugins/panels/operations/windows`
 - `POST /api/plugins/panels/operations/list`
 - `POST /api/plugins/panels/operations/selected`
 - `POST /api/plugins/panels/operations/tree`
@@ -178,8 +179,14 @@ Panel layout management operations:
 - `POST /api/plugins/panels/operations/remove`
 - `POST /api/plugins/panels/operations/replace`
 - `POST /api/plugins/panels/operations/move`
-- `POST /api/plugins/panels/operations/toggle-split-view`
 - `POST /api/plugins/panels/operations/close-split`
+
+The panels API is pane-aware:
+
+- windows expose `windowId`, `selectedPanelId`, `selectedChatPanelId`, `selectedPaneId`, and `panelCount`
+- panel inventory items expose `paneId`, `tabIndex`, and `tabCount`
+- `open` / `move` use `mode: "tab" | "split" | "header"` plus `targetPaneId`, `targetPanelId`, or `afterPanelId`
+- split mode requires `direction` and may include `size`
 
 ## Key Components
 
@@ -357,6 +364,20 @@ Example:
 { "format": "both", "includeChat": true }
 ```
 
+#### panels_windows
+
+List active workspace windows and their current selection state.
+
+Parameters:
+
+- `windowId` (string, optional): filter to a specific active window.
+
+Example:
+
+```json
+{}
+```
+
 #### panels_open
 
 Open a panel in the workspace or header.
@@ -366,10 +387,13 @@ Requires an active websocket client for the target session.
 Parameters:
 
 - `panelType` (string, optional): panel type to open (default: `"empty"`).
-- `targetPanelId` (string, optional): panel id to place relative to.
-- `placement` (object, optional): `{ region: "left" | "right" | "top" | "bottom" | "center", size?: { width?: number, height?: number } }`.
+- `mode` (`"tab"`, `"split"`, or `"header"`, optional): open into an existing pane, create a new split, or pin to the header (default: `"tab"`).
+- `targetPaneId` (string, optional): target pane id. If omitted, the selected pane is used.
+- `targetPanelId` (string, optional): anchor panel id to target.
+- `afterPanelId` (string, optional): tab id after which a new tab should be inserted.
+- `direction` (`"left"`, `"right"`, `"top"`, or `"bottom"`, optional): required when `mode` is `"split"`.
+- `size` (object, optional): `{ width?: number, height?: number }`, valid only for split mode.
 - `focus` (boolean, optional): focus the panel (default: true).
-- `pinToHeader` (boolean, optional): pin the panel to the header (default: false).
 - `binding` (object, optional): `{ mode: "fixed" | "global", sessionId?: string }` (`sessionId` required for `fixed`).
 - `sessionId` (string, optional): target session id (defaults to current session).
 - `windowId` (string, optional): target a specific window when multiple are active.
@@ -377,7 +401,7 @@ Parameters:
 Example:
 
 ```json
-{ "panelType": "notes", "placement": { "region": "right" } }
+{ "panelType": "notes", "mode": "split", "direction": "right" }
 ```
 
 #### panels_close
@@ -414,24 +438,17 @@ Parameters:
 
 #### panels_move
 
-Move a panel to a new placement.
+Move a panel into a pane or split.
 
 Parameters:
 
 - `panelId` (string, required): panel instance id to move.
-- `placement` (object, required): placement definition.
-- `targetPanelId` (string, optional): panel id to place relative to.
-- `sessionId` (string, optional): target session id (defaults to current session).
-- `windowId` (string, optional): target a specific window when multiple are active.
-
-#### panels_toggle-split-view
-
-Toggle a split between split and tab modes.
-
-Parameters:
-
-- `splitId` (string, optional): split id to toggle.
-- `panelId` (string, optional): panel id within the split to toggle.
+- `mode` (`"tab"` or `"split"`, optional): move into an existing pane or a new split (default: `"tab"`).
+- `targetPaneId` (string, optional): target pane id. If omitted, the selected pane is used.
+- `targetPanelId` (string, optional): anchor panel id to target.
+- `afterPanelId` (string, optional): tab id after which the moved panel should be inserted.
+- `direction` (`"left"`, `"right"`, `"top"`, or `"bottom"`, optional): required when `mode` is `"split"`.
+- `size` (object, optional): `{ width?: number, height?: number }`, valid only for split mode.
 - `sessionId` (string, optional): target session id (defaults to current session).
 - `windowId` (string, optional): target a specific window when multiple are active.
 

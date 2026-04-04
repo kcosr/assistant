@@ -23,7 +23,7 @@ function stripLeadingContextLine(text: string): string {
  * Build the context line to prepend to user messages.
  * Format:
  * - Item: <context type="..." id="..." name="..." description="..." selection="..." selection-titles="..." mode="..." />
- * - Panel: <context panel-id="..." panel-type="..." panel-title="..." />
+ * - Panel: <context panel-id="..." panel-type="..." panel-title="..." window-id="..." pane-id="..." pane-tab-count="..." pane-tab-panel-ids="..." />
  * - Panel attributes: <context diff-path="..." diff-hunk-hash="..." diff-hunk-index="..." />
  * - Note text selection: <context selected-text="..." /> (when text is selected in a note)
  */
@@ -41,6 +41,10 @@ const RESERVED_CONTEXT_ATTRS = new Set([
   'panel-id',
   'panel-type',
   'panel-title',
+  'window-id',
+  'pane-id',
+  'pane-tab-count',
+  'pane-tab-panel-ids',
 ]);
 
 function escapeAttributeValue(value: string): string {
@@ -68,6 +72,10 @@ export interface ContextPanelInfo {
   panelId: string;
   panelType: string;
   panelTitle?: string | null;
+  windowId?: string | null;
+  paneId?: string | null;
+  paneTabCount?: number | null;
+  paneTabPanelIds?: string[] | null;
 }
 
 export interface ContextLineOptions {
@@ -125,6 +133,22 @@ export function buildContextLine(
     const panelTitle = activePanel.panelTitle ?? null;
     if (panelTitle && panelTitle.trim().length > 0) {
       attrs.push(`panel-title="${normalizeAttributeValue(panelTitle)}"`);
+    }
+    const windowId = activePanel.windowId?.trim();
+    if (windowId) {
+      attrs.push(`window-id="${normalizeAttributeValue(windowId)}"`);
+    }
+    const paneId = activePanel.paneId?.trim();
+    if (paneId) {
+      attrs.push(`pane-id="${normalizeAttributeValue(paneId)}"`);
+    }
+    if (typeof activePanel.paneTabCount === 'number' && activePanel.paneTabCount > 0) {
+      attrs.push(`pane-tab-count="${activePanel.paneTabCount}"`);
+    }
+    if (Array.isArray(activePanel.paneTabPanelIds) && activePanel.paneTabPanelIds.length > 0) {
+      attrs.push(
+        `pane-tab-panel-ids="${normalizeAttributeValue(activePanel.paneTabPanelIds.join(','), MAX_CONTEXT_ATTR_LENGTH)}"`,
+      );
     }
   }
   const contextAttributes = options?.contextAttributes ?? null;

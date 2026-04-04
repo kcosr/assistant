@@ -2506,6 +2506,10 @@ async function main(): Promise<void> {
     panelId: string;
     panelType: string;
     panelTitle?: string | null;
+    windowId?: string | null;
+    paneId?: string | null;
+    paneTabCount?: number | null;
+    paneTabPanelIds?: string[] | null;
   } | null {
     const context =
       (panelHostController?.getContext('panel.context') as {
@@ -2513,6 +2517,10 @@ async function main(): Promise<void> {
           panelId: string;
           panelType: string;
           panelTitle?: string | null;
+          windowId?: string | null;
+          paneId?: string | null;
+          paneTabCount?: number | null;
+          paneTabPanelIds?: string[] | null;
         } | null;
       } | null) ?? null;
     const active = context?.active ?? null;
@@ -4397,37 +4405,68 @@ async function main(): Promise<void> {
     return null;
   };
 
-  const parsePanelCommandPlacement = (value: unknown): PanelPlacement | null => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  const parsePanelCommandMode = (
+    value: unknown,
+  ): 'tab' | 'split' | 'header' | null => {
+    const mode = normalizeCommandString(value);
+    if (!mode) {
       return null;
+    }
+    return mode === 'tab' || mode === 'split' || mode === 'header' ? mode : null;
+  };
+
+  const parsePanelCommandDirection = (
+    value: unknown,
+  ): 'left' | 'right' | 'top' | 'bottom' | null => {
+    const direction = normalizeCommandString(value);
+    if (!direction) {
+      return null;
+    }
+    return direction === 'left' ||
+      direction === 'right' ||
+      direction === 'top' ||
+      direction === 'bottom'
+      ? direction
+      : null;
+  };
+
+  const parsePanelCommandSize = (
+    value: unknown,
+  ): PanelPlacement['size'] | undefined => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
     }
     const record = value as Record<string, unknown>;
-    const region = normalizeCommandString(record['region']);
-    if (!region) {
+    const width = typeof record['width'] === 'number' && record['width'] > 0 ? record['width'] : undefined;
+    const height =
+      typeof record['height'] === 'number' && record['height'] > 0 ? record['height'] : undefined;
+    if (width === undefined && height === undefined) {
+      return undefined;
+    }
+    return {
+      ...(width !== undefined ? { width } : {}),
+      ...(height !== undefined ? { height } : {}),
+    };
+  };
+
+  const buildPanelCommandPlacement = (
+    mode: 'tab' | 'split' | 'header' | null,
+    direction: 'left' | 'right' | 'top' | 'bottom' | null,
+    size: PanelPlacement['size'] | undefined,
+  ): PanelPlacement | null => {
+    if (mode === 'header') {
       return null;
     }
-    if (!['left', 'right', 'top', 'bottom', 'center'].includes(region)) {
-      return null;
-    }
-    const sizeValue = record['size'];
-    if (!sizeValue || typeof sizeValue !== 'object' || Array.isArray(sizeValue)) {
-      return { region: region as PanelPlacement['region'] };
-    }
-    const sizeRecord = sizeValue as Record<string, unknown>;
-    const width = typeof sizeRecord['width'] === 'number' ? sizeRecord['width'] : undefined;
-    const height = typeof sizeRecord['height'] === 'number' ? sizeRecord['height'] : undefined;
-    const hasWidth = typeof width === 'number' && width > 0;
-    const hasHeight = typeof height === 'number' && height > 0;
-    if (hasWidth || hasHeight) {
+    if (mode === 'split') {
+      if (!direction) {
+        return null;
+      }
       return {
-        region: region as PanelPlacement['region'],
-        size: {
-          ...(hasWidth ? { width } : {}),
-          ...(hasHeight ? { height } : {}),
-        },
+        region: direction,
+        ...(size ? { size } : {}),
       };
     }
-    return { region: region as PanelPlacement['region'] };
+    return { region: 'center' };
   };
 
   const handleWorkspacePanelEvent = (event: PanelEventEnvelope): boolean => {
@@ -4451,23 +4490,44 @@ async function main(): Promise<void> {
     }
     if (command === 'open_panel') {
       const panelType = normalizeCommandString(record['panelType']) ?? 'empty';
+      const mode = parsePanelCommandMode(record['mode']) ?? 'tab';
       const targetPanelId = normalizeCommandString(record['targetPanelId']);
-      const placement = parsePanelCommandPlacement(record['placement']);
+      const targetPaneId = normalizeCommandString(record['targetPaneId']);
+      const afterPanelId = normalizeCommandString(record['afterPanelId']);
+      const direction = parsePanelCommandDirection(record['direction']);
+      const size = parsePanelCommandSize(record['size']);
+      const placement = buildPanelCommandPlacement(mode, direction, size);
       const binding = parsePanelCommandBinding(record['binding']);
-      const pinToHeader = record['pinToHeader'] === true;
+      const newPaneId = normalizeCommandString(record['paneId']);
+      const pinToHeader = mode === 'header';
       const focus = typeof record['focus'] === 'boolean' ? record['focus'] : !pinToHeader;
       const openOptions: {
         focus?: boolean;
         placement?: PanelPlacement;
         targetPanelId?: string;
+        targetPaneId?: string;
+        afterPanelId?: string;
+        newPaneId?: string;
         binding?: PanelBinding;
       } = {};
       openOptions.focus = focus;
+      if (mode !== 'header' && !placement) {
+        return true;
+      }
       if (placement) {
         openOptions.placement = placement;
       }
       if (targetPanelId) {
         openOptions.targetPanelId = targetPanelId;
+      }
+      if (targetPaneId) {
+        openOptions.targetPaneId = targetPaneId;
+      }
+      if (afterPanelId) {
+        openOptions.afterPanelId = afterPanelId;
+      }
+      if (newPaneId) {
+        openOptions.newPaneId = newPaneId;
       }
       if (binding) {
         openOptions.binding = binding;
@@ -4504,10 +4564,20 @@ async function main(): Promise<void> {
     }
     if (command === 'move_panel') {
       const panelId = normalizeCommandString(record['panelId']);
-      const placement = parsePanelCommandPlacement(record['placement']);
       const targetPanelId = normalizeCommandString(record['targetPanelId']);
+      const targetPaneId = normalizeCommandString(record['targetPaneId']);
+      const afterPanelId = normalizeCommandString(record['afterPanelId']);
+      const mode = parsePanelCommandMode(record['mode']);
+      const direction = parsePanelCommandDirection(record['direction']);
+      const size = parsePanelCommandSize(record['size']);
+      const placement = buildPanelCommandPlacement(mode, direction, size);
+      const newPaneId = normalizeCommandString(record['paneId']);
       if (panelId && placement) {
-        panelWorkspace.movePanel(panelId, placement, targetPanelId ?? undefined);
+        panelWorkspace.movePanel(panelId, placement, targetPanelId ?? undefined, {
+          ...(targetPaneId ? { targetPaneId } : {}),
+          ...(afterPanelId ? { afterPanelId } : {}),
+          ...(newPaneId ? { newPaneId } : {}),
+        });
       }
       return true;
     }
