@@ -698,4 +698,102 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(typingIndicators.has('s-1')).toBe(false);
     expect(statuses.at(-1)).toEqual({ sessionId: 's-1', status: 'idle' });
   });
+
+  it('reports active requests for a session via hasActiveRequestForSession', async () => {
+    const { handler } = makeHandler();
+
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(false);
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'turn-1',
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        timestamp: '2026-04-02T00:00:00.000Z',
+        payload: { trigger: 'user' },
+      },
+    });
+
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(true);
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 1,
+        requestId: 'turn-1',
+        eventId: 'turn-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: '2026-04-02T00:00:01.000Z',
+        payload: {},
+      },
+    });
+
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(false);
+  });
+
+  it('seedActiveRequestsForSession replaces state and drives syncSessionRequestActivityUi', () => {
+    const statuses: Array<{ sessionId: string; busy: boolean }> = [];
+    const { handler } = makeHandler({
+      syncSessionRequestActivityUi: (sessionId, hasActiveRequest) => {
+        statuses.push({ sessionId: sessionId.trim(), busy: hasActiveRequest });
+      },
+    });
+
+    handler.seedActiveRequestsForSession('s-1', ['req-1']);
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(true);
+    expect(statuses.at(-1)).toEqual({ sessionId: 's-1', busy: true });
+
+    handler.seedActiveRequestsForSession('s-1', []);
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(false);
+    expect(statuses.at(-1)).toEqual({ sessionId: 's-1', busy: false });
+  });
+
+  it('seedActiveRequestsForSession trims and deduplicates request IDs', async () => {
+    const { handler } = makeHandler();
+    handler.seedActiveRequestsForSession('s-1', [' req-a ', 'req-a', 'req-b', '', '   ']);
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(true);
+
+    // A subsequent live request_end for a seeded request removes it from the
+    // set. The trimmed 'req-a' and duplicate entries collapse to a single
+    // tracked ID, so finishing both seeded IDs clears the session.
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 0,
+        requestId: 'req-a',
+        eventId: 'req-a-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: '2026-04-02T00:00:00.000Z',
+        payload: {},
+      },
+    });
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(true);
+
+    await handler.handle({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's-1',
+        revision: 1,
+        sequence: 1,
+        requestId: 'req-b',
+        eventId: 'req-b-end',
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        timestamp: '2026-04-02T00:00:01.000Z',
+        payload: {},
+      },
+    });
+    expect(handler.hasActiveRequestForSession('s-1')).toBe(false);
+  });
 });

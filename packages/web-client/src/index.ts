@@ -2472,6 +2472,12 @@ async function main(): Promise<void> {
     onOpen: () => {
       updateSessionSubscriptions();
       panelWorkspace?.publishPanelInventory();
+      // After a reconnect, onConnectionLostCleanup has marked every tracked
+      // transcript as unloaded. Reload open chat panels so the fresh-load
+      // branch reseeds authoritative activity state from the transcript,
+      // restoring the activity bar/typing indicator/mic button for sessions
+      // whose requests were already running server-side.
+      loadOpenChatPanelTranscripts();
     },
     getSocket: () => socket,
     setSocket: (nextSocket) => {
@@ -2480,6 +2486,15 @@ async function main(): Promise<void> {
     onConnectionLostCleanup: () => {
       sessionsWithActiveTyping.clear();
       serverMessageHandler?.resetRealtimeState();
+      // Mark every tracked session as unloaded so the next loadSessionTranscript
+      // for it runs as a "fresh" load and reseeds authoritative request state
+      // from the transcript. Without this, a reconnect that finds the panel
+      // already loaded would leave activeRequestsBySession empty.
+      for (const state of sessionTranscriptReplayState.values()) {
+        state.loaded = false;
+        state.cursor = null;
+        state.revision = null;
+      }
       for (const entry of chatPanelsById.values()) {
         entry.runtime.chatRenderer.hideTypingIndicator();
         entry.dom.inputElements.activityBarEl?.classList.remove('visible');
@@ -4270,6 +4285,20 @@ async function main(): Promise<void> {
     const chatRenderer = runtime.chatRenderer;
     const chatScrollManager = runtime.chatScrollManager;
 
+    // We only seed the authoritative request-activity state from the
+    // transcript on the first successful load after replay-state
+    // invalidation — i.e. when `replayState.loaded` is false at the moment
+    // this call starts. That covers the initial load for a session, the
+    // reconnect path (onConnectionLostCleanup clears `loaded` for every
+    // tracked session), and the revision-bump branches inside
+    // flushBufferedTranscriptEvents that also reset `loaded`. After that,
+    // live WebSocket events are authoritative — a transcript fetch can race
+    // ahead of or behind the live stream, and re-seeding from it on ordinary
+    // force reloads risks re-introducing requests that already ended live or
+    // losing requests that just started.
+    const wasInitialLoad = !replayState.loaded;
+    let didFreshSeed = false;
+
     const loadPromise = (async () => {
       let hydrationFinished = false;
       replayState.hydratingCount += 1;
@@ -4330,6 +4359,9 @@ async function main(): Promise<void> {
             ensureEmptySessionHint(chatLogEl);
             chatScrollManager.scrollToBottomAfterLayout();
           }
+          if (wasInitialLoad) {
+            didFreshSeed = true;
+          }
         } else if (projectedEvents.length > 0) {
           chatRenderer.replayProjectedEvents(projectedEvents);
           chatScrollManager.scrollToBottomAfterLayout();
@@ -4369,16 +4401,18 @@ async function main(): Promise<void> {
         await loadSessionTranscript(trimmed, { force: true });
       }
     }
-    // After a replay the authoritative in-flight request state must be
-    // reseeded from the transcript the renderer now reflects. Live events are
-    // layered on top via normal WebSocket handling; the seed call fans out to
-    // the activity bar, typing indicator, and mic/stop button via the shared
-    // syncSessionRequestActivityUi path.
-    const unfinishedRequestIds = computeUnfinishedRequestIds(
-      chatRenderer.getStoredProjectedTranscriptEvents(),
-    );
-    serverMessageHandler.seedActiveRequestsForSession(trimmed, unfinishedRequestIds);
-    getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
+    if (didFreshSeed) {
+      // First successful load for this session in this connection. Seed the
+      // authoritative request-activity state from the transcript so any
+      // in-flight request the client has never observed via live events is
+      // reflected in the activity bar, typing indicator, and mic/stop button.
+      // Subsequent reloads rely on live events to update this state.
+      const unfinishedRequestIds = computeUnfinishedRequestIds(
+        chatRenderer.getStoredProjectedTranscriptEvents(),
+      );
+      serverMessageHandler.seedActiveRequestsForSession(trimmed, unfinishedRequestIds);
+      getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
+    }
   }
 
   function sendPanelEvent(event: PanelEventEnvelope): void {
