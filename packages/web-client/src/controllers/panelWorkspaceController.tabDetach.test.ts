@@ -166,4 +166,61 @@ describe('PanelWorkspaceController tab detach', () => {
       activePanelId: 'chat-1',
     });
   });
+
+  it('allows dragging the only tab out of a pane and collapses the empty source pane', () => {
+    const registry = new PanelRegistry();
+    registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
+    registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      defaultLayout: () => ({
+        layout: {
+          kind: 'split',
+          splitId: 'split-1',
+          direction: 'horizontal',
+          sizes: [0.5, 0.5],
+          children: [pane('pane-1', ['chat-1'], 'chat-1'), pane('pane-2', ['input-1'], 'input-1')],
+        },
+        panels: {
+          'chat-1': { panelId: 'chat-1', panelType: 'chat' },
+          'input-1': { panelId: 'input-1', panelType: 'input' },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    const sourceTab = root.querySelector<HTMLElement>('.panel-tab-button[data-panel-id="chat-1"]');
+    const targetTab = root.querySelector<HTMLElement>('.panel-tab-button[data-panel-id="input-1"]');
+    expect(sourceTab?.draggable).toBe(true);
+    expect(targetTab).not.toBeNull();
+    if (!sourceTab || !targetTab) {
+      throw new Error('Missing tab buttons');
+    }
+
+    const dataTransfer = new MockDataTransfer();
+    const dragStart = new Event('dragstart', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperty(dragStart, 'dataTransfer', { value: dataTransfer });
+    sourceTab.dispatchEvent(dragStart);
+
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true }) as DragEvent;
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: dataTransfer });
+    targetTab.dispatchEvent(dropEvent);
+
+    expect(workspace.getLayoutRoot()).toEqual({
+      kind: 'pane',
+      paneId: 'pane-2',
+      tabs: [{ panelId: 'input-1' }, { panelId: 'chat-1' }],
+      activePanelId: 'chat-1',
+    });
+  });
 });

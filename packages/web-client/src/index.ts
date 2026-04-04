@@ -2284,6 +2284,8 @@ async function main(): Promise<void> {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }) => {
     if (!panelLauncherController) {
       return;

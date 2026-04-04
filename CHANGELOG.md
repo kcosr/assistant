@@ -41,6 +41,7 @@
 - Changed tool scoping so read-only `panels_tree` is treated like the existing always-available panel inspection tools, while mutating panel commands remain gated.
 - Changed panel workspace layout and navigation to model tabs at the pane level, so center placement now tabs into the targeted pane directly and the UI exposes explicit pane/tab actions instead of split tab-mode toggles.
 - Changed pane tab dragging so tabs can be reordered within a pane, detached into new splits, and dropped onto other panes as tabs.
+- Changed pane-local add flows such as pane `+`, panel split actions, and `Ctrl+S` to use a compact in-pane panel picker when placement is already known, and allowed dragging lone pane tabs so moving the final tab collapses the emptied source pane instead of leaving an empty area.
 
 ### Fixed
 

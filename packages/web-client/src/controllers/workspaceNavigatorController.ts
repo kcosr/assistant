@@ -416,7 +416,12 @@ export class WorkspaceNavigatorController {
         onClick: () => {
           this.options.host.openPanelLauncher?.(
             activePanelId
-              ? { targetPanelId: activePanelId, defaultPlacement: { region: 'center' } }
+              ? {
+                  targetPanelId: activePanelId,
+                  defaultPlacement: { region: 'center' },
+                  compact: true,
+                  anchor: this.root,
+                }
               : undefined,
           );
         },
@@ -436,6 +441,8 @@ export class WorkspaceNavigatorController {
           this.options.host.openPanelLauncher?.({
             targetPanelId: panelId,
             defaultPlacement: { region: 'center' },
+            compact: true,
+            anchor: this.root,
           });
         },
       });

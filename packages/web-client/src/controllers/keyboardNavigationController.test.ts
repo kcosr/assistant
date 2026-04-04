@@ -31,6 +31,7 @@ function buildPanelWorkspace(
     togglePanel: vi.fn(),
     isPanelTypeOpen: vi.fn(() => false),
     openPanel: vi.fn(() => null),
+    openPanelLauncher: vi.fn(),
     openModalPanel: vi.fn(() => null),
     focusLastPanelOfType: vi.fn(() => false),
     listHeaderPanelIds: vi.fn(() => headerPanels),
@@ -319,7 +320,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
-  it('starts split placement on ctrl+s and inserts an empty panel on enter', () => {
+  it('starts split placement on ctrl+s and opens the compact panel picker on enter', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -337,11 +338,13 @@ describe('KeyboardNavigationController panel shortcuts', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(options.panelWorkspace.openPanel).toHaveBeenCalledWith('empty', {
-      focus: true,
-      placement: { region: 'bottom' },
+    expect(options.panelWorkspace.openPanelLauncher).toHaveBeenCalledWith({
       targetPanelId: 'panel-1',
+      defaultPlacement: { region: 'bottom' },
+      compact: true,
+      anchor: panelFrame,
     });
+    expect(options.panelWorkspace.openPanel).not.toHaveBeenCalled();
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(false);
     registry.detach();
   });
@@ -360,15 +363,14 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }),
     );
 
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
-    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(options.panelWorkspace.openPanel).toHaveBeenCalledWith('empty', {
-      focus: true,
-      placement: { region: 'left' },
+    expect(options.panelWorkspace.openPanelLauncher).toHaveBeenCalledWith({
       targetPanelId: 'panel-1',
+      defaultPlacement: { region: 'left' },
+      compact: true,
+      anchor: panelFrame,
     });
     registry.detach();
   });
@@ -390,7 +392,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     );
 
     expect(document.body.classList.contains('panel-split-placement-active')).toBe(false);
-    expect(options.panelWorkspace.openPanel).not.toHaveBeenCalled();
+    expect(options.panelWorkspace.openPanelLauncher).not.toHaveBeenCalled();
     registry.detach();
   });
 

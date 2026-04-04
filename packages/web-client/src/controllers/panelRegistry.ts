@@ -58,6 +58,8 @@ export interface PanelHost {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }): void;
   closeSplit?(splitId: string): void;
 }

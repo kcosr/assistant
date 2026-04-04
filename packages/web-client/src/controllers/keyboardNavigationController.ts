@@ -1076,11 +1076,13 @@ export class KeyboardNavigationController {
 
     if (event.key === 'Enter') {
       const panelId = state.panelId;
-      if (panelId && this.options.panelWorkspace.getPanelFrameElement(panelId)) {
-        this.options.panelWorkspace.openPanel('empty', {
-          focus: true,
-          placement: { region: state.region },
+      const frame = panelId ? this.options.panelWorkspace.getPanelFrameElement(panelId) : null;
+      if (panelId && frame) {
+        this.options.panelWorkspace.openPanelLauncher({
           targetPanelId: panelId,
+          defaultPlacement: { region: state.region },
+          compact: true,
+          anchor: frame,
         });
       }
       this.stopSplitPlacement();

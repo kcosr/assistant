@@ -40,6 +40,8 @@ export class PanelLauncherController {
   private defaultPlacement: PanelPlacement | null = null;
   private pinToHeader = false;
   private replacePanelId: string | null = null;
+  private compact = false;
+  private compactAnchor: HTMLElement | null = null;
   private launcherCleanup: (() => void) | null = null;
   private items: Array<{ element: HTMLElement; onAction: () => void }> = [];
   private focusedIndex = -1;
@@ -148,6 +150,8 @@ export class PanelLauncherController {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }): void {
     this.openWithContext(options);
   }
@@ -157,11 +161,15 @@ export class PanelLauncherController {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }): void {
     this.placementTargetPanelId = options?.targetPanelId ?? null;
     this.defaultPlacement = options?.defaultPlacement ?? null;
     this.pinToHeader = options?.pinToHeader ?? false;
     this.replacePanelId = options?.replacePanelId ?? null;
+    this.compact = options?.compact ?? false;
+    this.compactAnchor = options?.anchor ?? null;
 
     const { launcher, launcherSearch } = this.options;
     if (!launcher) {
@@ -176,7 +184,9 @@ export class PanelLauncherController {
     if (launcherSearch) {
       launcherSearch.value = '';
       this.query = '';
-      launcherSearch.focus();
+      if (!this.compact) {
+        launcherSearch.focus();
+      }
     }
     this.render();
     this.positionLauncher();
@@ -200,6 +210,8 @@ export class PanelLauncherController {
     this.detachLauncherListeners();
     this.closePlacementMenu();
     this.replacePanelId = null;
+    this.compact = false;
+    this.compactAnchor = null;
     this.restoreFocus();
   }
 
@@ -249,7 +261,9 @@ export class PanelLauncherController {
       const isPinning = this.pinToHeader;
 
       const row = document.createElement('div');
-      row.className = 'panel-launcher-item';
+      row.className = this.compact
+        ? 'panel-launcher-item panel-launcher-item-compact'
+        : 'panel-launcher-item';
 
       const info = document.createElement('div');
       info.className = 'panel-launcher-info';
@@ -259,12 +273,14 @@ export class PanelLauncherController {
       title.textContent = manifest.title;
       info.appendChild(title);
 
-      const status = document.createElement('div');
-      status.className = 'panel-launcher-status';
-      status.textContent = openCount > 0 ? `${openCount} open` : 'Closed';
-      info.appendChild(status);
+      if (!this.compact) {
+        const status = document.createElement('div');
+        status.className = 'panel-launcher-status';
+        status.textContent = openCount > 0 ? `${openCount} open` : 'Closed';
+        info.appendChild(status);
+      }
 
-      if (manifest.description) {
+      if (manifest.description && !this.compact) {
         const description = document.createElement('div');
         description.className = 'panel-launcher-description';
         description.textContent = manifest.description;
@@ -283,6 +299,21 @@ export class PanelLauncherController {
       if (!isAvailable) {
         action.textContent = 'Unavailable';
         action.disabled = true;
+        actions.appendChild(action);
+      } else if (this.compact && !isReplacing && !isPinning) {
+        row.classList.add('panel-launcher-item-actionable');
+        action.textContent = 'Add';
+        onAction = () => {
+          const targetPanelId = this.getPlacementTargetPanelId();
+          const placement = targetPanelId ? this.defaultPlacement : null;
+          this.openPanelWithPlacement(manifest.type, placement, targetPanelId, action);
+        };
+        row.addEventListener('click', (event) => {
+          event.preventDefault();
+          onAction?.();
+        });
+        row.setAttribute('role', 'button');
+        row.setAttribute('tabindex', '-1');
         actions.appendChild(action);
       } else if (isReplacing) {
         const replacePanelId = this.replacePanelId;
@@ -416,16 +447,19 @@ export class PanelLauncherController {
       return;
     }
     const launcherPanel = this.getLauncherPanel();
-    const anchor = this.options.launcherButton;
+    const anchor = this.compact ? this.compactAnchor : this.options.launcherButton;
     if (!launcherPanel || !anchor) {
       return;
     }
 
+    launcherPanel.classList.toggle('panel-launcher-compact', this.compact);
     const anchorRect = anchor.getBoundingClientRect();
     const panelRect = launcherPanel.getBoundingClientRect();
     const padding = 8;
 
-    let left = anchorRect.left;
+    let left = this.compact
+      ? anchorRect.left + (anchorRect.width - panelRect.width) / 2
+      : anchorRect.left;
     if (left + panelRect.width > window.innerWidth - padding) {
       left = window.innerWidth - panelRect.width - padding;
     }
@@ -433,9 +467,14 @@ export class PanelLauncherController {
       left = padding;
     }
 
-    let top = anchorRect.bottom + 8;
-    if (top + panelRect.height > window.innerHeight - padding) {
+    let top = this.compact
+      ? anchorRect.top + (anchorRect.height - panelRect.height) / 2
+      : anchorRect.bottom + 8;
+    if (!this.compact && top + panelRect.height > window.innerHeight - padding) {
       top = anchorRect.top - panelRect.height - 8;
+    }
+    if (top + panelRect.height > window.innerHeight - padding) {
+      top = window.innerHeight - panelRect.height - padding;
     }
     if (top < padding) {
       top = padding;

@@ -1,7 +1,7 @@
 # Split panel keyboard shortcuts
 
 ## Summary
-Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selecting a placement (top/bottom/left/right) with the existing drag-style highlight overlay, then insert an empty placeholder panel in that region.
+Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selecting a placement (top/bottom/left/right) with the existing drag-style highlight overlay, then open the compact in-pane panel picker for that region.
 
 ## Context
 - Panel splitting exists in the panel menu under “Split with new panel...”.
@@ -14,7 +14,7 @@ Introduce a keyboard shortcut (`Ctrl + S`) to split the active panel by selectin
 - Default region is **bottom**.
 - Keys:
   - Arrow keys or `W/A/S/D` change the target region.
-  - `Enter` confirms and inserts an empty placeholder panel in that region.
+  - `Enter` confirms and opens the compact panel picker for that region.
   - `Esc` cancels and removes the overlay.
 
 ## Implementation sketch

@@ -1760,6 +1760,20 @@ button.settings-dropdown-item {
   z-index: 1002;
 }
 
+.panel-launcher.panel-launcher-compact {
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(60vh, 420px);
+}
+
+.panel-launcher.panel-launcher-compact .panel-launcher-header,
+.panel-launcher.panel-launcher-compact .panel-launcher-search {
+  display: none;
+}
+
+.panel-launcher.panel-launcher-compact .panel-launcher-list {
+  padding: var(--spacing-sm);
+}
+
 .panel-launcher-header {
   display: flex;
   align-items: center;
@@ -1839,6 +1853,15 @@ button.settings-dropdown-item {
 
 .panel-launcher-item.focused {
   background-color: var(--color-bg-hover);
+}
+
+.panel-launcher-item.panel-launcher-item-actionable {
+  cursor: pointer;
+}
+
+.panel-launcher-item.panel-launcher-item-compact {
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
 }
 
 .panel-launcher-actions {

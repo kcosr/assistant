@@ -111,6 +111,7 @@ Binding indicator behavior:
 - Tab order follows the pane's `tabs` order.
 - Dragging a tab within its own tab strip reorders tabs in that pane.
 - Dragging a tab out of its pane docks that tab into a split edge or tabs it into another pane, without moving the rest of the source pane.
+- Dragging the only tab in a pane moves that pane's content and collapses the emptied source area instead of leaving an empty pane behind.
 
 ### Resizing
 
@@ -133,6 +134,7 @@ Behavior:
 - Multi-instance panels use a "New" action to open additional instances.
 - Multi-instance panels expose a "Place" menu to open as a tab with the active panel or split in a direction.
 - Opening from a pane tab header "+" button opens as a new tab in that pane.
+- Pane-local actions whose placement is already known use a compact in-pane picker instead of the full launcher with placement controls.
 
 ## Drag and Dock
 
@@ -148,6 +150,7 @@ Tabs can also be repositioned by dragging their tab title:
 - **Reorder in pane**: drag within the same tab strip.
 - **Detach to split**: drag to a pane edge to split just that tab out into its own pane.
 - **Move across panes**: drop on another pane or its tab strip to move that tab there.
+- **Move lone pane tab**: drag the only tab in a pane to move that pane and remove the emptied source area.
 
 Initial implementation notes:
 
@@ -159,7 +162,7 @@ Panel actions menu (initial behavior):
 
 - Split with new panel (submenu).
 - Move to left/right/top/bottom pane within the workspace.
-- Add tab here (opens the launcher targeted to the current pane).
+- Add tab here (opens the compact picker targeted to the current pane).
 - Close panel.
 
 ## Panel Context Menu
@@ -184,7 +187,7 @@ Right-clicking (or long-pressing) a panel header should expose:
 - **Layout navigation mode**: `Ctrl + P` (arrows move between siblings, `A/S` = left, `D` = right, `Enter` descends or focuses, `Esc` ascends/exits, `1-9` select children, `0` cycles pages)
 - **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
-- **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` confirms, `Esc` cancels)
+- **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` opens the compact picker for that region, `Esc` cancels)
 - **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + T` time tracker (opens a modal panel if none exist)
 - **Close panel**: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (replaces with empty placeholder)
 - **Close/remove panel**: `Ctrl + X` (active panel; replaces with empty placeholder, or removes if already empty)

@@ -95,6 +95,8 @@ export interface PanelWorkspaceControllerOptions {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }) => void;
   openSessionPicker?: (options: SessionPickerOpenOptions) => void;
   dialogManager?: DialogManager;
@@ -942,6 +944,8 @@ export class PanelWorkspaceController {
     defaultPlacement?: PanelPlacement | null;
     pinToHeader?: boolean;
     replacePanelId?: string | null;
+    compact?: boolean;
+    anchor?: HTMLElement | null;
   }): void {
     this.options.openPanelLauncher?.(options);
   }
@@ -1799,57 +1803,58 @@ export class PanelWorkspaceController {
         this.render();
         this.focusPanel(tabPanelId);
       });
-      if (node.tabs.length > 1) {
-        button.draggable = true;
-        button.addEventListener('dragstart', (event) => {
-          if (event.dataTransfer) {
-            event.dataTransfer.setData('text/tab-index', String(index));
-            event.dataTransfer.setData('text/plain', String(index));
-            event.dataTransfer.setData(TAB_DRAG_PANEL_ID_MIME, tabPanelId);
-            event.dataTransfer.setData(TAB_DRAG_PANE_ID_MIME, node.paneId);
-            event.dataTransfer.setDragImage(button, 4, 4);
-          }
-          button.classList.add('dragging');
-          this.startTabDetachDrag(tabPanelId, node.paneId);
-        });
-        button.addEventListener('dragend', () => {
-          button.classList.remove('dragging');
+      button.draggable = true;
+      button.addEventListener('dragstart', (event) => {
+        if (event.dataTransfer) {
+          event.dataTransfer.setData('text/tab-index', String(index));
+          event.dataTransfer.setData('text/plain', String(index));
+          event.dataTransfer.setData(TAB_DRAG_PANEL_ID_MIME, tabPanelId);
+          event.dataTransfer.setData(TAB_DRAG_PANE_ID_MIME, node.paneId);
+          event.dataTransfer.setDragImage(button, 4, 4);
+        }
+        button.classList.add('dragging');
+        this.startTabDetachDrag(tabPanelId, node.paneId);
+      });
+      button.addEventListener('dragend', () => {
+        button.classList.remove('dragging');
+        this.stopTabDetachDrag();
+      });
+      button.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+      });
+      button.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const draggedPanelId = event.dataTransfer?.getData(TAB_DRAG_PANEL_ID_MIME) ?? '';
+        const sourcePaneId = event.dataTransfer?.getData(TAB_DRAG_PANE_ID_MIME) ?? '';
+        if (draggedPanelId && sourcePaneId && draggedPanelId !== tabPanelId) {
+          event.stopPropagation();
           this.stopTabDetachDrag();
-        });
-        button.addEventListener('dragover', (event) => {
-          event.preventDefault();
-          if (event.dataTransfer) {
-            event.dataTransfer.dropEffect = 'move';
-          }
-        });
-        button.addEventListener('drop', (event) => {
-          event.preventDefault();
-          const draggedPanelId = event.dataTransfer?.getData(TAB_DRAG_PANEL_ID_MIME) ?? '';
-          const sourcePaneId = event.dataTransfer?.getData(TAB_DRAG_PANE_ID_MIME) ?? '';
-          if (draggedPanelId && sourcePaneId && draggedPanelId !== tabPanelId) {
-            event.stopPropagation();
-            this.stopTabDetachDrag();
-            this.movePanel(draggedPanelId, { region: 'center' }, tabPanelId);
-            return;
-          }
-          const rawIndex =
-            event.dataTransfer?.getData('text/tab-index') ??
-            event.dataTransfer?.getData('text/plain') ??
-            '';
-          const sourceIndex = Number.parseInt(rawIndex, 10);
-          if (!Number.isFinite(sourceIndex) || sourceIndex === index) {
-            return;
-          }
-          const moved = node.tabs.splice(sourceIndex, 1)[0];
-          if (!moved) {
-            return;
-          }
-          const targetIndex = sourceIndex < index ? index - 1 : index;
-          node.tabs.splice(targetIndex, 0, moved);
-          this.persistLayout();
-          this.render();
-        });
-      }
+          this.movePanel(draggedPanelId, { region: 'center' }, tabPanelId);
+          return;
+        }
+        if (node.tabs.length <= 1) {
+          return;
+        }
+        const rawIndex =
+          event.dataTransfer?.getData('text/tab-index') ??
+          event.dataTransfer?.getData('text/plain') ??
+          '';
+        const sourceIndex = Number.parseInt(rawIndex, 10);
+        if (!Number.isFinite(sourceIndex) || sourceIndex === index) {
+          return;
+        }
+        const moved = node.tabs.splice(sourceIndex, 1)[0];
+        if (!moved) {
+          return;
+        }
+        const targetIndex = sourceIndex < index ? index - 1 : index;
+        node.tabs.splice(targetIndex, 0, moved);
+        this.persistLayout();
+        this.render();
+      });
       header.appendChild(button);
 
       const tabWrapper = document.createElement('div');
@@ -1898,6 +1903,8 @@ export class PanelWorkspaceController {
         this.options.openPanelLauncher?.({
           targetPanelId: activePanelId,
           defaultPlacement: { region: 'center' },
+          compact: true,
+          anchor: container,
         });
       });
       header.appendChild(addButton);
@@ -3449,6 +3456,8 @@ export class PanelWorkspaceController {
         this.options.openPanelLauncher?.({
           targetPanelId: panelId,
           defaultPlacement: { region: 'center' },
+          compact: true,
+          anchor: this.getPanelFrameElement(panelId),
         });
       });
     }
@@ -3567,6 +3576,8 @@ export class PanelWorkspaceController {
         this.options.openPanelLauncher?.({
           targetPanelId: panelId,
           defaultPlacement: placement,
+          compact: true,
+          anchor: this.getPanelFrameElement(panelId),
         });
       });
       menu.appendChild(button);
