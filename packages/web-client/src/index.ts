@@ -1741,6 +1741,7 @@ async function main(): Promise<void> {
         ? null
         : (sessionSummaries.find((summary) => summary.sessionId === inputSessionId) ?? null);
     panelHostController.setContext('session.activeSummary', activeSummary);
+    panelWorkspace?.refreshPanelTitles();
   }
 
   function mergePanelManifest(
@@ -2890,7 +2891,7 @@ async function main(): Promise<void> {
       agentSummaries = agents;
       syncPreferredVoiceSessionOptions();
       syncNativeSessionTitles();
-      panelHostController?.setContext('agent.summaries', agentSummaries);
+      syncSessionContext();
     },
     renderAgentSidebar,
   });
