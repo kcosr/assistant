@@ -68,7 +68,9 @@ describe('chat layout styles', () => {
     expect(css).toContain('@keyframes input-activity-bar-slide');
     expect(css).toContain('position: absolute;');
     expect(css).toContain('top: -1px;');
-    expect(css).toContain('height: 2px;');
+    expect(css).toContain('left: 0;');
+    expect(css).toContain('right: 0;');
+    expect(css).toContain('height: 3px;');
     expect(css).toContain('padding: calc(var(--spacing-xs) + 2px) var(--spacing-lg) var(--spacing-md);');
   });
 
@@ -82,5 +84,18 @@ describe('chat layout styles', () => {
     expect(preBlock).toContain('.tool-output-block.expanded .tool-output-content .markdown-content pre {');
     expect(preBlock).toContain('display: block;');
     expect(preBlock).toContain('width: 100%;');
+  });
+
+  it('keeps the chat typing indicator tucked close to the latest turn', () => {
+    const cssPath = join(process.cwd(), 'packages/web-client/public/styles.css');
+    const css = readFileSync(cssPath, 'utf8');
+    const blockStart = css.indexOf('.chat-typing-indicator {');
+    const nextBlockStart = css.indexOf('\n\n.', blockStart);
+    const indicatorBlock =
+      blockStart >= 0 ? css.slice(blockStart, nextBlockStart >= 0 ? nextBlockStart : undefined) : '';
+
+    expect(indicatorBlock).toContain('.chat-typing-indicator {');
+    expect(indicatorBlock).toContain('display: none;');
+    expect(indicatorBlock).toContain('margin: calc(-1 * var(--spacing-md)) 0 var(--spacing-sm) var(--spacing-xl);');
   });
 });

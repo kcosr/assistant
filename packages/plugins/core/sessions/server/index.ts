@@ -30,7 +30,10 @@ import {
   mergeBufferedLiveTranscriptEvents,
   seedLiveTranscriptSessionState,
 } from '../../../../agent-server/src/events/chatEventUtils';
-import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
+import {
+  projectTranscriptEvents,
+  sliceProjectedTranscript,
+} from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
