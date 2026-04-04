@@ -106,8 +106,22 @@ async function buildSessionToolContext(options: {
   sessionHub: SessionHub;
   agentRegistry: AgentRegistry;
   toolHost: ToolHost;
+  envConfig: EnvConfig;
+  eventStore?: EventStore;
+  scheduledSessionService?: ScheduledSessionService;
+  searchService?: SearchService;
 }): Promise<SessionToolContext> {
-  const { sessionId, sessionIndex, sessionHub, agentRegistry, toolHost } = options;
+  const {
+    sessionId,
+    sessionIndex,
+    sessionHub,
+    agentRegistry,
+    toolHost,
+    envConfig,
+    eventStore,
+    scheduledSessionService,
+    searchService,
+  } = options;
   const summary = await requireSessionSummary(sessionIndex, sessionId);
   const state = await sessionHub.ensureSessionState(sessionId, summary);
   const agentId = state.summary.agentId;
@@ -135,7 +149,11 @@ async function buildSessionToolContext(options: {
       agentRegistry,
       sessionIndex,
       sessionHub,
+      envConfig,
       baseToolHost: toolHost,
+      ...(eventStore ? { eventStore } : {}),
+      ...(scheduledSessionService ? { scheduledSessionService } : {}),
+      ...(searchService ? { searchService } : {}),
     };
     const exposure = await resolveAgentToolExposureForHost({
       scopedToolHost,
@@ -223,6 +241,12 @@ export async function startSessionMessage(options: {
       sessionHub,
       agentRegistry,
       toolHost,
+      envConfig,
+      ...(eventStore ? { eventStore } : {}),
+      ...(options.scheduledSessionService
+        ? { scheduledSessionService: options.scheduledSessionService }
+        : {}),
+      ...(options.searchService ? { searchService: options.searchService } : {}),
     });
 
   const basePayload: SessionMessageBase = {

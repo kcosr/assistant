@@ -26,11 +26,11 @@
               "description": { "type": "string" },
               "fields": {
                 "type": "array",
-                "items": { "$ref": "#/definitions/field" }
+                "items": { "$ref": "#/$defs/field" }
               },
               "sections": {
                 "type": "array",
-                "items": { "$ref": "#/definitions/section" }
+                "items": { "$ref": "#/$defs/section" }
               },
               "submitLabel": { "type": "string" },
               "cancelLabel": { "type": "string" },
@@ -47,7 +47,7 @@
           }
         },
         "required": ["schema"],
-        "definitions": {
+        "$defs": {
           "field": {
             "type": "object",
             "properties": {
@@ -102,7 +102,7 @@
               "description": { "type": "string" },
               "fields": {
                 "type": "array",
-                "items": { "$ref": "#/definitions/field" }
+                "items": { "$ref": "#/$defs/field" }
               },
               "optional": { "type": "boolean" },
               "submitLabel": { "type": "string" }

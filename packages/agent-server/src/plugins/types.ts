@@ -19,11 +19,7 @@ export interface PluginToolDefinition {
    * Kept intentionally loose to support a variety
    * of plugin parameter shapes.
    */
-  inputSchema: {
-    type: 'object';
-    properties: Record<string, unknown>;
-    required?: string[];
-  };
+  inputSchema: Record<string, unknown>;
   /**
    * Optional capability identifiers used for agent scoping.
    */

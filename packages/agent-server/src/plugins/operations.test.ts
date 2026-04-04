@@ -194,6 +194,63 @@ describe('plugin operations', () => {
     expect(payload).toEqual({ ok: true, result: { sessionId: 's1' } });
   });
 
+  it('preserves advanced JSON Schema fields for tool exposure', async () => {
+    const manifest: CombinedPluginManifest = {
+      id: 'demo',
+      version: '0.1.0',
+      operations: [
+        {
+          id: 'ask',
+          summary: 'Ask',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              schema: {
+                type: 'object',
+                properties: {
+                  fields: {
+                    type: 'array',
+                    items: { $ref: '#/$defs/field' },
+                  },
+                },
+              },
+            },
+            required: ['schema'],
+            $defs: {
+              field: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                },
+                required: ['id'],
+              },
+            },
+            allOf: [
+              {
+                if: {
+                  properties: {
+                    mode: { const: 'advanced' },
+                  },
+                },
+                then: {
+                  required: ['schema'],
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const { tools } = createPluginOperationSurface({
+      manifest,
+      handlers: { ask: vi.fn().mockResolvedValue({ ok: true }) },
+    });
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0]?.inputSchema).toEqual(manifest.operations?.[0]?.inputSchema);
+  });
+
   it('wires requestInteraction when session id is provided', async () => {
     const manifest: CombinedPluginManifest = {
       id: 'demo',

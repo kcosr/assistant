@@ -296,14 +296,7 @@ function validateArgs(
 function normalizeInputSchema(
   schema: PluginOperation['inputSchema'],
 ): PluginToolDefinition['inputSchema'] {
-  const base: PluginToolDefinition['inputSchema'] = {
-    type: 'object',
-    properties: schema.properties ?? {},
-  };
-  if (Array.isArray(schema.required) && schema.required.length > 0) {
-    return { ...base, required: schema.required };
-  }
-  return base;
+  return { ...schema };
 }
 
 export function createPluginOperationTools(options: {
