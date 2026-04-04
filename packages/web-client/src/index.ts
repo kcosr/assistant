@@ -1687,7 +1687,12 @@ async function main(): Promise<void> {
     const unsubSessionContext = host.subscribeSessionContext(() => {
       updateChatPanelSessionLabel(entry);
     });
-    maybeAutoOpenSessionPicker(Boolean(init.focus));
+    const shouldAutoOpenOnMount = Boolean(init.focus);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        maybeAutoOpenSessionPicker(shouldAutoOpenOnMount);
+      });
+    });
     if (dom.modelSelectEl) {
       dom.modelSelectEl.addEventListener(
         'change',
