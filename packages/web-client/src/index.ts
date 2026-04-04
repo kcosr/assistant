@@ -3311,6 +3311,26 @@ async function main(): Promise<void> {
     }
   }
 
+  function syncSessionRequestActivityUi(sessionId: string, hasActiveRequest: boolean): void {
+    const normalized = normalizeSessionId(sessionId);
+    if (!normalized) {
+      return;
+    }
+    if (hasActiveRequest) {
+      showSessionTypingIndicator(normalized);
+    } else {
+      hideSessionTypingIndicator(normalized);
+    }
+    setChatPanelStatusForSession(normalized, hasActiveRequest ? 'busy' : 'idle');
+    for (const entry of getChatPanelEntriesForSession(normalized)) {
+      if (hasActiveRequest) {
+        entry.runtime.chatRenderer.showTypingIndicator();
+      } else {
+        entry.runtime.chatRenderer.hideTypingIndicator();
+      }
+    }
+  }
+
   wirePreferencesCheckboxes({
     autoFocusChatCheckbox: autoFocusChatCheckboxEl,
     keyboardShortcutsCheckbox: keyboardShortcutsCheckboxEl,
@@ -4360,15 +4380,7 @@ async function main(): Promise<void> {
     const shouldShowTyping = shouldShowTypingIndicatorAfterReplay({
       hasActiveRequest: chatRenderer.hasActiveRequest(),
     });
-    if (shouldShowTyping) {
-      showSessionTypingIndicator(trimmed);
-      setChatPanelStatusForSession(trimmed, 'busy');
-      chatRenderer.showTypingIndicator();
-    } else {
-      hideSessionTypingIndicator(trimmed);
-      setChatPanelStatusForSession(trimmed, 'idle');
-      chatRenderer.hideTypingIndicator();
-    }
+    syncSessionRequestActivityUi(trimmed, shouldShowTyping);
     getChatInputRuntimeForSession(trimmed)?.speechAudioController?.syncMicButtonState();
   }
 
@@ -4624,8 +4636,7 @@ async function main(): Promise<void> {
     renderAgentSidebar,
     appendMessage,
     scrollMessageIntoView,
-    showSessionTypingIndicator,
-    hideSessionTypingIndicator,
+    syncSessionRequestActivityUi,
     onSessionDeleted: (sessionId) => {
       clearSessionTranscriptState(sessionId);
       unbindChatPanelsForSession(sessionId);

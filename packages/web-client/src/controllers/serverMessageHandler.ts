@@ -60,8 +60,7 @@ export interface ServerMessageHandlerOptions {
     useMarkdown?: boolean,
   ) => HTMLDivElement;
   scrollMessageIntoView: (container: HTMLElement, element: HTMLElement) => void;
-  showSessionTypingIndicator: (sessionId: string) => void;
-  hideSessionTypingIndicator: (sessionId: string) => void;
+  syncSessionRequestActivityUi: (sessionId: string, hasActiveRequest: boolean) => void;
   setStatus: (element: HTMLElement, text: string) => void;
   setTtsStatus: (text: string) => void;
   focusInputForSession: (sessionId: string) => void;
@@ -125,16 +124,7 @@ export class ServerMessageHandler {
   private syncSessionRequestActivity(sessionId: string): void {
     const activeRequests = this.activeRequestsBySession.get(sessionId);
     const hasActiveRequest = !!activeRequests && activeRequests.size > 0;
-    const runtime = this.options.getChatRuntimeForSession(sessionId);
-    if (hasActiveRequest) {
-      this.options.showSessionTypingIndicator(sessionId);
-      this.options.setChatPanelStatusForSession?.(sessionId, 'busy');
-      runtime?.chatRenderer.showTypingIndicator();
-      return;
-    }
-    this.options.hideSessionTypingIndicator(sessionId);
-    this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
-    runtime?.chatRenderer.hideTypingIndicator();
+    this.options.syncSessionRequestActivityUi(sessionId, hasActiveRequest);
   }
 
   private markRequestStarted(sessionId: string, requestId: string | undefined): void {
@@ -493,8 +483,7 @@ export class ServerMessageHandler {
         }
         if (selectedSessionId) {
           this.markRequestFinished(selectedSessionId, undefined);
-          this.options.hideSessionTypingIndicator(selectedSessionId);
-          runtime?.chatRenderer.hideTypingIndicator();
+          this.options.syncSessionRequestActivityUi(selectedSessionId, false);
           this.options.setChatPanelStatusForSession?.(selectedSessionId, 'error');
           this.options.getSpeechAudioControllerForSession(selectedSessionId)?.syncMicButtonState();
         }
@@ -617,11 +606,9 @@ export class ServerMessageHandler {
         const sessionId = message.sessionId;
         if (sessionId) {
           this.markRequestFinished(sessionId, undefined);
-          this.options.hideSessionTypingIndicator(sessionId);
-          this.options.setChatPanelStatusForSession?.(sessionId, 'idle');
+          this.options.syncSessionRequestActivityUi(sessionId, false);
           this.options.resetSessionTranscriptState?.(sessionId);
           const runtime = this.options.getChatRuntimeForSession(sessionId);
-          runtime?.chatRenderer.hideTypingIndicator();
           runtime?.chatRenderer.clear();
           void this.options.loadSessionTranscript(sessionId, { force: true });
         }

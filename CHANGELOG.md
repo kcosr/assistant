@@ -92,6 +92,7 @@
 - Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
 - Fixed sender-side session typing indicators so transcript replay no longer re-applies stale optimistic local typing after a turn has already completed.
 - Fixed unbound chat panel creation so launcher-created chat panes explicitly auto-open the session picker on mount instead of relying on focus timing.
+- Fixed chat-panel activity drift so the in-chat typing dots and the input activity bar now fan out from the same session request-activity sync across all panels bound to that session.
 
 ### Removed
 

@@ -16,6 +16,7 @@ import { CURRENT_PROTOCOL_VERSION } from '@assistant/shared/protocol';
 
 function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   const typingIndicators = new Set<string>();
+  const sessionRequestActivity = new Map<string, boolean>();
   const refreshSessions = vi.fn(async () => {});
   const loadSessionTranscript = vi.fn(async () => {});
   const bufferTranscriptEvent = vi.fn();
@@ -42,11 +43,14 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
     renderAgentSidebar: () => {},
     appendMessage: () => document.createElement('div'),
     scrollMessageIntoView: () => {},
-    showSessionTypingIndicator: (sessionId: string) => {
-      typingIndicators.add(sessionId.trim());
-    },
-    hideSessionTypingIndicator: (sessionId: string) => {
-      typingIndicators.delete(sessionId.trim());
+    syncSessionRequestActivityUi: (sessionId: string, hasActiveRequest: boolean) => {
+      const normalized = sessionId.trim();
+      if (hasActiveRequest) {
+        typingIndicators.add(normalized);
+      } else {
+        typingIndicators.delete(normalized);
+      }
+      sessionRequestActivity.set(normalized, hasActiveRequest);
     },
     setStatus: () => {},
     setTtsStatus: () => {},
@@ -69,6 +73,7 @@ function makeHandler(overrides: Partial<ServerMessageHandlerOptions> = {}) {
   return {
     handler,
     typingIndicators,
+    sessionRequestActivity,
     refreshSessions,
     loadSessionTranscript,
     bufferTranscriptEvent,
@@ -138,9 +143,11 @@ describe('ServerMessageHandler typing indicator', () => {
       dispose: vi.fn(),
     } as unknown as ChatRuntime;
     const setChatPanelStatusForSession = vi.fn();
+    const syncSessionRequestActivityUi = vi.fn();
     const { handler, typingIndicators } = makeHandler({
       getChatRuntimeForSession: () => runtime,
       setChatPanelStatusForSession,
+      syncSessionRequestActivityUi,
     });
 
     await handler.handle({
@@ -158,9 +165,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
 
-    expect(typingIndicators.has('s-1')).toBe(true);
-    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'busy');
-    expect(runtime.chatRenderer.showTypingIndicator).toHaveBeenCalledTimes(1);
+    expect(syncSessionRequestActivityUi).toHaveBeenCalledWith('s-1', true);
 
     await handler.handle({
       type: 'transcript_event',
@@ -177,9 +182,7 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
 
-    expect(typingIndicators.has('s-1')).toBe(false);
-    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'idle');
-    expect(runtime.chatRenderer.hideTypingIndicator).toHaveBeenCalledTimes(1);
+    expect(syncSessionRequestActivityUi).toHaveBeenCalledWith('s-1', false);
   });
 
   it('forces transcript reload when session history changes', async () => {
@@ -217,15 +220,10 @@ describe('ServerMessageHandler typing indicator', () => {
       },
       dispose: vi.fn(),
     } as unknown as ChatRuntime;
-    const setChatPanelStatusForSession = vi.fn();
-    const {
-      handler,
-      typingIndicators,
-      loadSessionTranscript,
-      resetSessionTranscriptState,
-    } = makeHandler({
+    const syncSessionRequestActivityUi = vi.fn();
+    const { handler, loadSessionTranscript, resetSessionTranscriptState } = makeHandler({
       getChatRuntimeForSession: () => runtime,
-      setChatPanelStatusForSession,
+      syncSessionRequestActivityUi,
     });
 
     await handler.handle({
@@ -243,19 +241,15 @@ describe('ServerMessageHandler typing indicator', () => {
       },
     });
 
-    expect(typingIndicators.has('s-1')).toBe(true);
-
     await handler.handle({
       type: 'session_history_changed',
       sessionId: 's-1',
       updatedAt: '2026-04-03T00:01:00.000Z',
     });
 
-    expect(typingIndicators.has('s-1')).toBe(false);
     expect(resetSessionTranscriptState).toHaveBeenCalledWith('s-1');
-    expect(runtime.chatRenderer.hideTypingIndicator).toHaveBeenCalledTimes(1);
     expect(runtime.chatRenderer.clear).toHaveBeenCalledTimes(1);
-    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-1', 'idle');
+    expect(syncSessionRequestActivityUi).toHaveBeenCalledWith('s-1', false);
     expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
   });
 
@@ -646,8 +640,14 @@ describe('ServerMessageHandler typing indicator', () => {
   it('marks sessions busy on turn_start and idle on turn_end before assistant output arrives', async () => {
     const statuses: Array<{ sessionId: string; status: string }> = [];
     const { handler, typingIndicators } = makeHandler({
-      setChatPanelStatusForSession: (sessionId, status) => {
-        statuses.push({ sessionId, status });
+      syncSessionRequestActivityUi: (sessionId, hasActiveRequest) => {
+        const normalized = sessionId.trim();
+        if (hasActiveRequest) {
+          typingIndicators.add(normalized);
+        } else {
+          typingIndicators.delete(normalized);
+        }
+        statuses.push({ sessionId: normalized, status: hasActiveRequest ? 'busy' : 'idle' });
       },
     });
 
