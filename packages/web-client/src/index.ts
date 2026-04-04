@@ -1687,7 +1687,7 @@ async function main(): Promise<void> {
     const unsubSessionContext = host.subscribeSessionContext(() => {
       updateChatPanelSessionLabel(entry);
     });
-    const shouldAutoOpenOnMount = Boolean(init.focus);
+    const shouldAutoOpenOnMount = Boolean(init.autoOpenSessionPicker);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         maybeAutoOpenSessionPicker(shouldAutoOpenOnMount);

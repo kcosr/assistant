@@ -91,6 +91,7 @@
 - Fixed filesystem-backed `attachment_send` calls to accept relative paths resolved from the session working directory, matching the cwd-oriented behavior of Pi coding tools.
 - Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
 - Fixed sender-side session typing indicators so transcript replay no longer re-applies stale optimistic local typing after a turn has already completed.
+- Fixed unbound chat panel creation so launcher-created chat panes explicitly auto-open the session picker on mount instead of relying on focus timing.
 
 ### Removed
 

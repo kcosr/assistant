@@ -140,6 +140,7 @@ export class PanelWorkspaceController {
   private modalOverlay: HTMLElement | null = null;
   private modalOverlayCleanup: (() => void) | null = null;
   private readonly mountFocusPanelIds = new Set<string>();
+  private readonly mountAutoOpenSessionPickerPanelIds = new Set<string>();
 
   constructor(private readonly options: PanelWorkspaceControllerOptions) {
     this.headerDockRoot = options.headerDockRoot ?? null;
@@ -613,6 +614,9 @@ export class PanelWorkspaceController {
     if (options.focus) {
       this.mountFocusPanelIds.add(panelId);
     }
+    if (options.autoOpenSessionPicker) {
+      this.mountAutoOpenSessionPickerPanelIds.add(panelId);
+    }
 
     this.persistLayout();
     this.render();
@@ -641,6 +645,9 @@ export class PanelWorkspaceController {
     }
     if (options.state !== undefined) {
       initOptions.state = options.state;
+    }
+    if (options.autoOpenSessionPicker) {
+      initOptions.autoOpenSessionPicker = true;
     }
 
     const instance = this.options.registry.createInstance(panelType, panelId, initOptions);
@@ -716,6 +723,9 @@ export class PanelWorkspaceController {
     this.persistLayout();
     if (this.activePanelId === panelId) {
       this.mountFocusPanelIds.add(panelId);
+    }
+    if (options.autoOpenSessionPicker) {
+      this.mountAutoOpenSessionPickerPanelIds.add(panelId);
     }
 
     if (this.activeChatPanelId === panelId && panelType !== 'chat') {
@@ -3046,6 +3056,7 @@ export class PanelWorkspaceController {
         binding?: PanelBinding;
         state?: PanelInstance['state'];
         focus?: boolean;
+        autoOpenSessionPicker?: boolean;
       } = {
         panelId,
         panelType: panel.panelType,
@@ -3060,9 +3071,13 @@ export class PanelWorkspaceController {
       if (this.mountFocusPanelIds.has(panelId)) {
         mountOptions.focus = true;
       }
+      if (this.mountAutoOpenSessionPickerPanelIds.has(panelId)) {
+        mountOptions.autoOpenSessionPicker = true;
+      }
       try {
         this.options.host.mountPanel(mountOptions);
         this.mountFocusPanelIds.delete(panelId);
+        this.mountAutoOpenSessionPickerPanelIds.delete(panelId);
       } catch (err) {
         this.mountedPanelIds.delete(panelId);
         console.error('Failed to mount panel', panelId, err);
@@ -3090,6 +3105,7 @@ export class PanelWorkspaceController {
       binding?: PanelBinding;
       state?: PanelInstance['state'];
       focus?: boolean;
+      autoOpenSessionPicker?: boolean;
     } = {
       panelId,
       panelType: panel.panelType,
@@ -3104,10 +3120,14 @@ export class PanelWorkspaceController {
     if (this.mountFocusPanelIds.has(panelId)) {
       mountOptions.focus = true;
     }
+    if (this.mountAutoOpenSessionPickerPanelIds.has(panelId)) {
+      mountOptions.autoOpenSessionPicker = true;
+    }
     try {
       this.options.host.mountPanel(mountOptions);
       this.mountedPanelIds.add(panelId);
       this.mountFocusPanelIds.delete(panelId);
+      this.mountAutoOpenSessionPickerPanelIds.delete(panelId);
     } catch (err) {
       console.error('Failed to remount panel', panelId, err);
     }

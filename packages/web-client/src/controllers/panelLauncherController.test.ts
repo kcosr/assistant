@@ -219,6 +219,67 @@ describe('PanelLauncherController compact picker', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(panelWorkspace.replacePanel).toHaveBeenCalledWith('panel-1', 'chat', {});
+    expect(panelWorkspace.replacePanel).toHaveBeenCalledWith('panel-1', 'chat', {
+      autoOpenSessionPicker: true,
+    });
+  });
+
+  it('passes chat auto-open session-picker intent when opening a new chat pane', () => {
+    const launcherButton = document.createElement('button');
+    const launcher = document.createElement('div');
+    launcher.className = 'panel-launcher-overlay';
+    launcher.innerHTML = `
+      <div class="panel-launcher" role="dialog">
+        <div class="panel-launcher-header"><h2 class="panel-launcher-title-text">Panels</h2></div>
+        <div class="panel-launcher-search"><input id="search" /></div>
+        <div class="panel-launcher-list"></div>
+      </div>
+    `;
+    document.body.append(launcherButton, launcher);
+
+    const registry = new PanelRegistry();
+    registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
+    registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+
+    const panelWorkspace = {
+      getPanelIdsByType: vi.fn(() => []),
+      isPanelTypeOpen: vi.fn(() => false),
+      getActivePanelId: vi.fn(() => 'panel-1'),
+      focusPanel: vi.fn(),
+      openPanel: vi.fn(() => 'chat-1'),
+      openModalPanel: vi.fn(() => null),
+      replacePanel: vi.fn(() => false),
+      listHeaderPanelIds: vi.fn(() => []),
+      getOpenHeaderPanelId: vi.fn(() => null),
+      pinPanelById: vi.fn(),
+      togglePanel: vi.fn(),
+    } as unknown as PanelWorkspaceController;
+
+    const controller = new PanelLauncherController({
+      launcherButton,
+      launcher,
+      launcherList: launcher.querySelector('.panel-launcher-list'),
+      launcherSearch: launcher.querySelector('#search'),
+      launcherCloseButton: null,
+      panelRegistry: registry,
+      panelWorkspace,
+    });
+    controller.attach();
+
+    controller.openWithPlacement({
+      targetPanelId: 'panel-1',
+      defaultPlacement: { region: 'center' },
+      compact: true,
+      anchor: launcherButton,
+    });
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(panelWorkspace.openPanel).toHaveBeenCalledWith('chat', {
+      focus: true,
+      placement: { region: 'center' },
+      targetPanelId: 'panel-1',
+      autoOpenSessionPicker: true,
+    });
   });
 });

@@ -743,9 +743,11 @@ export class PanelLauncherController {
     const openAsModal = options?.openAsModal ?? false;
 
     const openPanel = (binding?: PanelBinding) => {
+      const shouldAutoOpenSessionPicker = panelType === 'chat' && !binding;
       if (replacePanelId) {
         const replaced = this.options.panelWorkspace.replacePanel(replacePanelId, panelType, {
           ...(binding ? { binding } : {}),
+          ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
         });
         if (replaced) {
           this.close();
@@ -758,6 +760,7 @@ export class PanelLauncherController {
         const panelId = this.options.panelWorkspace.openModalPanel(panelType, {
           focus: true,
           ...(binding ? { binding } : {}),
+          ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
         });
         if (panelId) {
           this.close();
@@ -773,8 +776,13 @@ export class PanelLauncherController {
               placement,
               targetPanelId,
               ...(binding ? { binding } : {}),
+              ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
             }
-          : { focus: !shouldPin, ...(binding ? { binding } : {}) };
+          : {
+              focus: !shouldPin,
+              ...(binding ? { binding } : {}),
+              ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
+            };
       const panelId = this.options.panelWorkspace.openPanel(panelType, openOptions);
       if (panelId && shouldPin) {
         this.options.panelWorkspace.pinPanelById(panelId);
