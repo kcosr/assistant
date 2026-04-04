@@ -55,14 +55,19 @@ export function createEmptyPanel(): PanelFactory {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'panel-empty-button';
-      button.textContent = 'Add panel';
+      button.textContent = 'Replace panel';
+      button.setAttribute('aria-label', 'Replace empty panel');
       const canLaunch = typeof host.openPanelLauncher === 'function';
       if (!canLaunch) {
         button.disabled = true;
         button.title = 'Panel launcher unavailable';
       } else {
         button.addEventListener('click', () => {
-          host.openPanelLauncher?.({ replacePanelId: host.panelId() });
+          host.openPanelLauncher?.({
+            replacePanelId: host.panelId(),
+            compact: true,
+            anchor: button,
+          });
         });
       }
 

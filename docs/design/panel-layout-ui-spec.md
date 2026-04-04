@@ -138,6 +138,8 @@ Behavior:
 - The top-row `+` button also uses that compact picker to add a tab to the active pane.
 - Compact in-pane picker rows submit directly without per-row add buttons, and the compact header shows the current action (`Add Tab`, `Split Right`, `Replace Panel`, and so on).
 - Inline panel replacement uses the same compact in-pane picker instead of the full global launcher.
+- Empty placeholder panes use an explicit `Replace panel` action and open that same compact replace picker.
+- While the compact picker is open, background panel shortcuts are suspended so `Up`, `Down`, `Enter`, and `Esc` stay scoped to the picker.
 
 ## Drag and Dock
 

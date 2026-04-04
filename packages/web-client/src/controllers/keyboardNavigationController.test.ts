@@ -419,6 +419,28 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
+  it('suspends panel shortcuts while the panel launcher is open', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const launcherOverlay = document.createElement('div');
+    launcherOverlay.className = 'panel-launcher-overlay open';
+    document.body.appendChild(launcherOverlay);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(options.panelWorkspace.openPanelLauncher).not.toHaveBeenCalled();
+    registry.detach();
+  });
+
   it('closes the active panel to a placeholder on ctrl+x', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';

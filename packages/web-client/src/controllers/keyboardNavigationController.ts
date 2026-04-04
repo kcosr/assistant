@@ -11,6 +11,7 @@ import type { SpeechAudioController } from './speechAudioController';
 import type { PanelWorkspaceController } from './panelWorkspaceController';
 import type { ChatRuntime } from '../panels/chat/runtime';
 import { collectVisiblePanelIdsInOrder } from '../utils/layoutTree';
+import { areKeyboardShortcutsBlockedByOverlay } from '../utils/keyboardShortcutGuards';
 
 export interface KeyboardNavigationControllerOptions {
   getAgentSidebar: () => HTMLElement | null;
@@ -87,7 +88,9 @@ export class KeyboardNavigationController {
           console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
         },
         isEnabled: () =>
-          this.options.isKeyboardShortcutsEnabled() && !this.options.dialogManager.hasOpenDialog,
+          this.options.isKeyboardShortcutsEnabled() &&
+          !this.options.dialogManager.hasOpenDialog &&
+          !areKeyboardShortcutsBlockedByOverlay(),
       });
   }
 
@@ -846,15 +849,7 @@ export class KeyboardNavigationController {
   }
 
   private preparePanelNavigationShortcut(options?: { closeModal?: boolean }): boolean {
-    const blockingSelectors = [
-      '.command-palette-overlay.open',
-      '.workspace-switcher-overlay.open',
-      '.session-picker-popover',
-      '.panel-launcher-overlay.open',
-      '.confirm-dialog-overlay',
-      '#share-target-modal.visible',
-    ];
-    if (blockingSelectors.some((selector) => Boolean(document.querySelector(selector)))) {
+    if (areKeyboardShortcutsBlockedByOverlay()) {
       return false;
     }
 

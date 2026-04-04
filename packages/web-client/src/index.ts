@@ -122,6 +122,7 @@ import {
   stripContextLine,
 } from './utils/chatMessageRenderer';
 import { ensureEmptySessionHint } from './utils/emptySessionHint';
+import { areKeyboardShortcutsBlockedByOverlay } from './utils/keyboardShortcutGuards';
 import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
 import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
@@ -2072,7 +2073,10 @@ async function main(): Promise<void> {
     onConflict: (existing, incoming) => {
       console.warn(`[Keyboard] Shortcut conflict: "${incoming.id}" overwrites "${existing.id}"`);
     },
-    isEnabled: () => keyboardShortcutsEnabled && !dialogManager.hasOpenDialog,
+    isEnabled: () =>
+      keyboardShortcutsEnabled &&
+      !dialogManager.hasOpenDialog &&
+      !areKeyboardShortcutsBlockedByOverlay(),
     getActivePanel: () => {
       const active =
         (panelHostControllerInstance.getContext('panel.active') as {
@@ -4011,7 +4015,11 @@ async function main(): Promise<void> {
       if (!activePanelId) {
         return;
       }
-      panelWorkspace.openPanelLauncher({ replacePanelId: activePanelId });
+      panelWorkspace.openPanelLauncher({
+        replacePanelId: activePanelId,
+        compact: true,
+        anchor: panelWorkspace.getPanelFrameElement(activePanelId),
+      });
       layoutReplacePanelButton.blur();
       layoutDropdownController?.toggle(false);
     });
