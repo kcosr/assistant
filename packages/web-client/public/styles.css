@@ -3743,6 +3743,10 @@ body.panel-reordering {
 }
 
 @media (max-width: 768px) {
+  .panel-tabs-header.panel-tabs-header-single {
+    display: none;
+  }
+
   .session-composer-overlay {
     align-items: flex-start;
     padding: clamp(28px, 7dvh, 56px) var(--spacing-sm) var(--spacing-sm);

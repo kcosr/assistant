@@ -47,6 +47,7 @@
 - Changed empty-pane and toolbar replace actions to use explicit compact replace pickers, and suspended background keyboard shortcuts while the compact picker is open so arrow keys and enter stay scoped to the picker.
 - Changed compact panel pickers to keep a searchable filter input visible in compact mode, with keyboard navigation staying inside the picker while filtering.
 - Changed newly created unbound chat panels to open the session picker without auto-focusing the chat input, and stopped merely selecting an existing chat panel from stealing focus into the composer.
+- Changed mobile pane rendering to hide the tabs header when a pane only has a single tab.
 
 ### Fixed
 
