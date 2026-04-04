@@ -135,6 +135,7 @@ Behavior:
 - Multi-instance panels expose a "Place" menu to open as a tab with the active panel or split in a direction.
 - Opening from a pane tab header "+" button opens as a new tab in that pane.
 - Pane-local actions whose placement is already known use a compact in-pane picker instead of the full launcher with placement controls.
+- The top-row `+` button also uses that compact picker to add a tab to the active pane.
 
 ## Drag and Dock
 
@@ -188,7 +189,8 @@ Right-clicking (or long-pressing) a panel header should expose:
 - **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` opens the compact picker for that region, `Esc` cancels)
-- **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes, `Ctrl + T` time tracker (opens a modal panel if none exist)
+- **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes
+- **Add tab to active pane**: `Ctrl + T` (opens the compact picker targeted to the active pane)
 - **Close panel**: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (replaces with empty placeholder)
 - **Close/remove panel**: `Ctrl + X` (active panel; replaces with empty placeholder, or removes if already empty)
 - **Remove panel**: `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others)

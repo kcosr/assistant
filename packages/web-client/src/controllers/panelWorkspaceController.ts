@@ -2059,12 +2059,25 @@ export class PanelWorkspaceController {
       addButton.type = 'button';
       addButton.className = 'toolbar-button panel-dock-button panel-dock-add';
       addButton.innerHTML = ICONS.plus;
-      addButton.title = 'Pin panel to header';
-      addButton.setAttribute('aria-label', 'Pin panel to header');
+      addButton.title = 'Add tab to active pane';
+      addButton.setAttribute('aria-label', 'Add tab to active pane');
       addButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.openPanelLauncher({ pinToHeader: true });
+        const activePanelId = this.getActivePanelId();
+        const anchor = activePanelId
+          ? this.getPanelFrameElement(activePanelId) ?? dockRoot
+          : dockRoot;
+        if (activePanelId) {
+          this.openPanelLauncher({
+            targetPanelId: activePanelId,
+            defaultPlacement: { region: 'center' },
+            compact: true,
+            anchor,
+          });
+          return;
+        }
+        this.openPanelLauncher({ compact: true, anchor });
       });
       const addWrapper = document.createElement('div');
       addWrapper.className = 'panel-dock-item';

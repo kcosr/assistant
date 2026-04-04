@@ -42,6 +42,7 @@
 - Changed panel workspace layout and navigation to model tabs at the pane level, so center placement now tabs into the targeted pane directly and the UI exposes explicit pane/tab actions instead of split tab-mode toggles.
 - Changed pane tab dragging so tabs can be reordered within a pane, detached into new splits, and dropped onto other panes as tabs.
 - Changed pane-local add flows such as pane `+`, panel split actions, and `Ctrl+S` to use a compact in-pane panel picker when placement is already known, and allowed dragging lone pane tabs so moving the final tab collapses the emptied source pane instead of leaving an empty area.
+- Changed `Ctrl+T` to open the compact add-tab picker for the active pane, and changed the top-row `+` button to use the same inline add-tab flow instead of the full global panel launcher.
 
 ### Fixed
 

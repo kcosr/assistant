@@ -396,6 +396,29 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
+  it('opens the compact add-tab picker on ctrl+t', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 't', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(options.panelWorkspace.openPanelLauncher).toHaveBeenCalledWith({
+      targetPanelId: 'panel-1',
+      defaultPlacement: { region: 'center' },
+      compact: true,
+      anchor: panelFrame,
+    });
+    registry.detach();
+  });
+
   it('closes the active panel to a placeholder on ctrl+x', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
@@ -654,7 +677,6 @@ describe('KeyboardNavigationController chat shortcuts', () => {
     ['f', 'files'],
     ['l', 'lists'],
     ['n', 'notes'],
-    ['t', 'time-tracker'],
   ])('focuses the last %s panel on ctrl+%s', (key, panelType) => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';

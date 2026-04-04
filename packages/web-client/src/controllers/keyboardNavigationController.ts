@@ -417,11 +417,37 @@ export class KeyboardNavigationController {
     registerLastPanelShortcut('focus-last-files', 'f', 'Focus last used files panel', 'files');
     registerLastPanelShortcut('focus-last-lists', 'l', 'Focus last used lists panel', 'lists');
     registerLastPanelShortcut('focus-last-notes', 'n', 'Focus last used notes panel', 'notes');
-    registerLastPanelShortcut(
-      'focus-last-time-tracker',
-      't',
-      'Focus last used time tracker panel',
-      'time-tracker',
+
+    this.shortcutRegistry.register(
+      ctrlShortcut(
+        'panel-add-tab',
+        't',
+        'Add tab to active pane',
+        (event) => {
+          if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
+            return false;
+          }
+          if (!this.canHandlePanelNavigationShortcut(event)) {
+            return false;
+          }
+          if (this.isTerminalKeyTarget(event)) {
+            return false;
+          }
+          const activePanelId = panelWorkspace.getActivePanelId();
+          if (!activePanelId) {
+            return false;
+          }
+          const frame = panelWorkspace.getPanelFrameElement(activePanelId);
+          panelWorkspace.openPanelLauncher({
+            targetPanelId: activePanelId,
+            defaultPlacement: { region: 'center' },
+            compact: true,
+            anchor: frame,
+          });
+          return true;
+        },
+        { bindingId: 'panel.add-tab' },
+      ),
     );
 
     this.shortcutRegistry.register(
