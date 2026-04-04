@@ -5,7 +5,6 @@ import type {
   PanelTypeManifest,
 } from '@assistant/shared';
 import type { PanelHost } from './panelRegistry';
-import { containsPanelId } from '../utils/layoutTree';
 import { formatSessionLabel } from '../utils/sessionLabel';
 import { PanelChromeController } from './panelChromeController';
 import { resolvePanelDisplayTitle } from '../utils/panelTitle';
@@ -286,8 +285,8 @@ export class WorkspaceNavigatorController {
     tabState: TabRenderState,
     isRoot = false,
   ): void {
-    if (node.kind === 'panel') {
-      this.renderPanelRow(node.panelId, depth, options, tabState);
+    if (node.kind === 'pane') {
+      this.renderPaneRows(node, depth, options, tabState);
       return;
     }
 
@@ -302,13 +301,44 @@ export class WorkspaceNavigatorController {
       isTabInactive: tabState.isInactive,
     });
 
-    const isTabs = node.viewMode === 'tabs';
-    const activeChild = isTabs ? this.resolveActiveTabNode(node.children, node.activeId) : null;
-
     node.children.forEach((child) => {
-      const isActiveChild = isTabs ? child === activeChild : false;
-      const isInactive = tabState.isInactive || (isTabs && child !== activeChild);
-      this.renderNode(child, depth + 1, options, { isInactive, isActiveChild });
+      this.renderNode(child, depth + 1, options, tabState);
+    });
+  }
+
+  private renderPaneRows(
+    node: LayoutNode & { kind: 'pane' },
+    depth: number,
+    options: {
+      manifestMap: Map<string, PanelTypeManifest>;
+      panelTypeCounts: Map<string, number>;
+      sessionLabels: Map<string, string>;
+      activePanelId: string | null;
+    },
+    tabState: TabRenderState,
+  ): void {
+    const activePanelId =
+      node.tabs.find((tab) => tab.panelId === node.activePanelId)?.panelId ??
+      node.tabs[0]?.panelId ??
+      null;
+
+    this.appendRow({
+      kind: 'split',
+      label: node.tabs.length > 1 ? `Pane (${node.tabs.length} tabs)` : 'Pane',
+      depth,
+      isStatic: true,
+      actions: this.buildPaneActions(activePanelId),
+      isTabActive: tabState.isActiveChild,
+      isTabInactive: tabState.isInactive,
+    });
+
+    node.tabs.forEach((tab) => {
+      const isActiveChild = tab.panelId === activePanelId;
+      const isInactive = tabState.isInactive || tab.panelId !== activePanelId;
+      this.renderPanelRow(tab.panelId, depth + 1, options, {
+        isInactive,
+        isActiveChild,
+      });
     });
   }
 
@@ -362,30 +392,6 @@ export class WorkspaceNavigatorController {
 
   private buildSplitActions(node: LayoutNode & { kind: 'split' }): WorkspaceRowAction[] {
     const actions: WorkspaceRowAction[] = [];
-    if (this.options.host.toggleSplitViewMode) {
-      const isTabs = node.viewMode === 'tabs';
-      actions.push({
-        label: isTabs ? 'Split' : 'Tabs',
-        title: isTabs ? 'View as split' : 'View as tabs',
-        ariaLabel: isTabs ? 'View split as split panes' : 'View split as tabs',
-        onClick: () => {
-          this.options.host.toggleSplitViewMode?.(node.splitId);
-        },
-      });
-    }
-    if (this.options.host.openPanelLauncher) {
-      const targetPanelId = this.findLastPanelId(node);
-      actions.push({
-        label: '+',
-        title: 'Add panel',
-        ariaLabel: 'Add panel to split',
-        onClick: () => {
-          this.options.host.openPanelLauncher?.(
-            targetPanelId ? { targetPanelId, defaultPlacement: { region: 'center' } } : undefined,
-          );
-        },
-      });
-    }
     if (this.options.host.closeSplit) {
       actions.push({
         label: 'x',
@@ -394,6 +400,25 @@ export class WorkspaceNavigatorController {
         isDanger: true,
         onClick: () => {
           this.options.host.closeSplit?.(node.splitId);
+        },
+      });
+    }
+    return actions;
+  }
+
+  private buildPaneActions(activePanelId: string | null): WorkspaceRowAction[] {
+    const actions: WorkspaceRowAction[] = [];
+    if (this.options.host.openPanelLauncher) {
+      actions.push({
+        label: '+',
+        title: 'Add tab',
+        ariaLabel: 'Add tab to pane',
+        onClick: () => {
+          this.options.host.openPanelLauncher?.(
+            activePanelId
+              ? { targetPanelId: activePanelId, defaultPlacement: { region: 'center' } }
+              : undefined,
+          );
         },
       });
     }
@@ -429,14 +454,9 @@ export class WorkspaceNavigatorController {
     return actions;
   }
 
-  private resolveActiveTabNode(tabs: LayoutNode[], activeId?: string | null): LayoutNode {
-    const selected = activeId ? tabs.find((tab) => containsPanelId(tab, activeId)) : null;
-    return selected ?? tabs[0]!;
-  }
-
   private findLastPanelId(node: LayoutNode): string | null {
-    if (node.kind === 'panel') {
-      return node.panelId;
+    if (node.kind === 'pane') {
+      return node.tabs[node.tabs.length - 1]?.panelId ?? null;
     }
     for (let index = node.children.length - 1; index >= 0; index -= 1) {
       const child = node.children[index];

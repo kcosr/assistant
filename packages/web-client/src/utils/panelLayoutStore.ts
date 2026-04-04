@@ -2,7 +2,7 @@ import { LayoutPersistenceSchema, type LayoutPersistence } from '@assistant/shar
 
 const LAYOUT_STORAGE_KEY = 'aiAssistantPanelLayout';
 const LAYOUT_VERSION_KEY = 'aiAssistantPanelLayoutVersion';
-const CURRENT_LAYOUT_VERSION = 3;
+const CURRENT_LAYOUT_VERSION = 6;
 
 function buildStorageKey(base: string, windowId?: string): string {
   const trimmed = typeof windowId === 'string' ? windowId.trim() : '';

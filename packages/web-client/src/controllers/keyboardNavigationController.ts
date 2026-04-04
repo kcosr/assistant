@@ -1217,12 +1217,6 @@ export class KeyboardNavigationController {
       return true;
     }
 
-    if (event.key === 'm') {
-      this.options.panelWorkspace.toggleSplitViewModeForPanelId(state.panelId);
-      this.setLayoutSelection(state.panelId);
-      return true;
-    }
-
     if (event.key === 'Enter') {
       return this.confirmLayoutSelection();
     }

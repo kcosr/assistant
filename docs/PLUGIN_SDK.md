@@ -883,7 +883,6 @@ These methods may not be available in all contexts:
 | Method | Description |
 |--------|-------------|
 | `openPanelLauncher(options?)` | Open the panel launcher UI. |
-| `toggleSplitViewMode(splitId)` | Toggle between split and tabbed view modes. |
 | `closeSplit(splitId)` | Close a split container, keeping one child. |
 
 ### Session Attributes

@@ -3,26 +3,24 @@ import type { LayoutNode } from '@assistant/shared';
 import { collectPanelIds } from './layoutTree';
 import { buildPanelLayoutPreset } from './layoutPresets';
 
+const pane = (
+  paneId: string,
+  panelIds: string[],
+  activePanelId = panelIds[0] ?? '',
+): LayoutNode => ({
+  kind: 'pane',
+  paneId,
+  tabs: panelIds.map((panelId) => ({ panelId })),
+  activePanelId,
+});
+
 describe('layoutPresets', () => {
   it('keeps tab groups intact when building presets', () => {
-    const root: LayoutNode = {
-      kind: 'split',
-      splitId: 'split-1',
-      direction: 'horizontal',
-      sizes: [0.5, 0.5],
-      viewMode: 'tabs',
-      activeId: 'panel-a',
-      children: [
-        { kind: 'panel', panelId: 'panel-a' },
-        { kind: 'panel', panelId: 'panel-b' },
-      ],
-    };
+    const root: LayoutNode = pane('pane-1', ['panel-a', 'panel-b'], 'panel-a');
 
     const result = buildPanelLayoutPreset(root, { id: 'auto' });
 
-    expect(result.kind).toBe('split');
-    if (result.kind !== 'split') return;
-    expect(result.viewMode).toBe('tabs');
+    expect(result.kind).toBe('pane');
     expect(collectPanelIds(result)).toEqual(['panel-a', 'panel-b']);
   });
 
@@ -33,9 +31,9 @@ describe('layoutPresets', () => {
       direction: 'vertical',
       sizes: [0.34, 0.33, 0.33],
       children: [
-        { kind: 'panel', panelId: 'panel-a' },
-        { kind: 'panel', panelId: 'panel-b' },
-        { kind: 'panel', panelId: 'panel-c' },
+        pane('pane-1', ['panel-a']),
+        pane('pane-2', ['panel-b']),
+        pane('pane-3', ['panel-c']),
       ],
     };
 
@@ -61,9 +59,9 @@ describe('layoutPresets', () => {
       direction: 'vertical',
       sizes: [0.34, 0.33, 0.33],
       children: [
-        { kind: 'panel', panelId: 'panel-a' },
-        { kind: 'panel', panelId: 'panel-b' },
-        { kind: 'panel', panelId: 'panel-c' },
+        pane('pane-1', ['panel-a']),
+        pane('pane-2', ['panel-b']),
+        pane('pane-3', ['panel-c']),
       ],
     };
 

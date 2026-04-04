@@ -49,20 +49,22 @@ function createChromePanel(initialTitle: string): PanelFactory {
   });
 }
 
+function pane(
+  paneId: string,
+  panelIds: string[],
+  activePanelId = panelIds[0] ?? '',
+): LayoutPersistence['layout'] {
+  return {
+    kind: 'pane',
+    paneId,
+    tabs: panelIds.map((panelId) => ({ panelId })),
+    activePanelId,
+  };
+}
+
 function createTabbedLayout(): LayoutPersistence {
   return {
-    layout: {
-      kind: 'split',
-      splitId: 'root',
-      direction: 'horizontal',
-      sizes: [1, 1],
-      viewMode: 'tabs',
-      activeId: 'lists-1',
-      children: [
-        { kind: 'panel', panelId: 'lists-1' },
-        { kind: 'panel', panelId: 'notes-1' },
-      ],
-    },
+    layout: pane('pane-1', ['lists-1', 'notes-1'], 'lists-1'),
     panels: {
       'lists-1': {
         panelId: 'lists-1',
@@ -202,10 +204,7 @@ describe('PanelWorkspaceController rename flow', () => {
       host,
       dialogManager,
       loadLayout: () => ({
-        layout: {
-          kind: 'panel',
-          panelId: 'lists-1',
-        },
+        layout: pane('pane-1', ['lists-1']),
         panels: {
           'lists-1': {
             panelId: 'lists-1',
@@ -267,10 +266,7 @@ describe('PanelWorkspaceController rename flow', () => {
       host,
       headerDockRoot,
       loadLayout: () => ({
-        layout: {
-          kind: 'panel',
-          panelId: 'lists-1',
-        },
+        layout: pane('pane-1', ['lists-1']),
         panels: {
           'lists-1': {
             panelId: 'lists-1',

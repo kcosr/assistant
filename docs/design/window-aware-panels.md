@@ -50,7 +50,7 @@ default to it; otherwise they require an explicit `windowId`.
   - New optional `windowId` param.
   - Error if multiple windows active and `windowId` is missing.
 - `panels_event`, `panels_open`, `panels_close`, `panels_remove`,
-  `panels_replace`, `panels_move`, `panels_toggle_split_view`, `panels_close_split`
+  `panels_replace`, `panels_move`, `panels_close_split`
   - New optional `windowId` param.
   - If multiple windows are active and `windowId` is missing, error.
   - If `windowId` is provided, route to the matching connection only.

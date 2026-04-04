@@ -7,8 +7,10 @@ describe('panelLayoutStore', () => {
   it('preserves panel customTitle when saving and loading a layout', () => {
     const layout = {
       layout: {
-        kind: 'panel' as const,
-        panelId: 'lists-1',
+        kind: 'pane' as const,
+        paneId: 'pane-1',
+        tabs: [{ panelId: 'lists-1' }],
+        activePanelId: 'lists-1',
       },
       panels: {
         'lists-1': {

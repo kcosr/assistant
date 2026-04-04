@@ -11,7 +11,12 @@ function buildPanelWorkspace(
   openHeaderPanelId: string | null = null,
   panelType: string | null = null,
 ): PanelWorkspaceController {
-  const layoutRoot = { kind: 'panel', panelId: 'panel-1' };
+  const layoutRoot = {
+    kind: 'pane' as const,
+    paneId: 'pane-1',
+    tabs: [{ panelId: 'panel-1' }],
+    activePanelId: 'panel-1',
+  };
   return {
     focusNextPanel: vi.fn(),
     getActivePanelId: vi.fn(() => 'panel-1'),
@@ -20,7 +25,6 @@ function buildPanelWorkspace(
     ),
     getLayoutRoot: vi.fn(() => layoutRoot),
     cycleTabForPanel: vi.fn(() => null),
-    toggleSplitViewModeForPanelId: vi.fn(),
     activatePanel: vi.fn(),
     closePanelToPlaceholder: vi.fn(),
     closePanel: vi.fn(),

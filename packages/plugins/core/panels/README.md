@@ -36,7 +36,6 @@ the web client.
 - `remove` → `panels_remove`
 - `replace` → `panels_replace`
 - `move` → `panels_move`
-- `toggle-split-view` → `panels_toggle-split-view`
 - `close-split` → `panels_close-split`
 
 Panel command operations (open/close/remove/replace/move/toggle/close-split)
@@ -63,5 +62,4 @@ HTTP endpoints are available under:
 - `POST /api/plugins/panels/operations/remove`
 - `POST /api/plugins/panels/operations/replace`
 - `POST /api/plugins/panels/operations/move`
-- `POST /api/plugins/panels/operations/toggle-split-view`
 - `POST /api/plugins/panels/operations/close-split`

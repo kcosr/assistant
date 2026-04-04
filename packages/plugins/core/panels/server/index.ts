@@ -77,13 +77,6 @@ type PanelMoveArgs = {
   windowId?: string;
 };
 
-type PanelToggleSplitViewArgs = {
-  splitId?: string;
-  panelId?: string;
-  sessionId?: string;
-  windowId?: string;
-};
-
 type PanelCloseSplitArgs = {
   splitId: string;
   sessionId?: string;
@@ -348,23 +341,6 @@ function parsePanelMoveArgs(raw: unknown): PanelMoveArgs {
     panelId,
     placement,
     ...(targetPanelId ? { targetPanelId } : {}),
-    ...(sessionId ? { sessionId } : {}),
-    ...(windowId ? { windowId } : {}),
-  };
-}
-
-function parsePanelToggleSplitViewArgs(raw: unknown): PanelToggleSplitViewArgs {
-  const obj = asObject(raw);
-  const splitId = parseOptionalString(obj, 'splitId', 'splitId');
-  const panelId = parseOptionalString(obj, 'panelId', 'panelId');
-  if (!splitId && !panelId) {
-    throw new ToolError('invalid_arguments', 'splitId or panelId is required');
-  }
-  const sessionId = parseOptionalString(obj, 'sessionId', 'sessionId');
-  const windowId = parseOptionalString(obj, 'windowId', 'windowId');
-  return {
-    ...(splitId ? { splitId } : {}),
-    ...(panelId ? { panelId } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(windowId ? { windowId } : {}),
   };
@@ -745,20 +721,6 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         };
         if (parsed.targetPanelId) {
           payload.targetPanelId = parsed.targetPanelId;
-        }
-        return sendPanelCommand(payload, ctx, parsed.sessionId, parsed.windowId);
-      },
-      'toggle-split-view': async (args, ctx) => {
-        const parsed = parsePanelToggleSplitViewArgs(args);
-        const payload: PanelCommandPayload = {
-          type: 'panel_command',
-          command: 'toggle_split_view',
-        };
-        if (parsed.splitId) {
-          payload.splitId = parsed.splitId;
-        }
-        if (parsed.panelId) {
-          payload.panelId = parsed.panelId;
         }
         return sendPanelCommand(payload, ctx, parsed.sessionId, parsed.windowId);
       },

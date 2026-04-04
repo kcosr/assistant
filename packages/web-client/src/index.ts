@@ -4536,16 +4536,6 @@ async function main(): Promise<void> {
       }
       return true;
     }
-    if (command === 'toggle_split_view') {
-      const splitId = normalizeCommandString(record['splitId']);
-      const panelId = normalizeCommandString(record['panelId']);
-      if (splitId) {
-        panelWorkspace.toggleSplitViewMode(splitId);
-      } else if (panelId) {
-        panelWorkspace.toggleSplitViewModeForPanelId(panelId);
-      }
-      return true;
-    }
     if (command === 'close_split') {
       const splitId = normalizeCommandString(record['splitId']);
       if (splitId) {

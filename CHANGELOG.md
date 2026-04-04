@@ -7,6 +7,7 @@
 - Removed `sessions.mirrorPiSessionHistory`; Pi-backed sessions now always persist canonical Pi JSONL history for replay, reload, and request-group editing.
 - Changed the websocket protocol to require protocol version `5` and use `transcript_event` as the only event-stream server message; `chat_event` is no longer emitted or accepted in subscription masks.
 - Removed coding-plugin sidecar mode and sidecar-specific config; coding tools now run locally from the session workspace through imported `@mariozechner/pi-coding-agent` tool implementations.
+- Changed persisted panel layouts to use explicit `pane` nodes with pane-local tabs instead of leaf `panel` nodes and split-level tab mode, removing the split-view toggle command/tool from the panel workspace API.
 
 ### Added
 
@@ -38,6 +39,7 @@
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed attachment MIME inference so files with unknown extensions download as `application/octet-stream` while extensionless text still defaults to `text/plain`. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Changed tool scoping so read-only `panels_tree` is treated like the existing always-available panel inspection tools, while mutating panel commands remain gated.
+- Changed panel workspace layout and navigation to model tabs at the pane level, so center placement now tabs into the targeted pane directly and the UI exposes explicit pane/tab actions instead of split tab-mode toggles.
 
 ### Fixed
 

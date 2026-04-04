@@ -8,203 +8,116 @@ import {
   removePanel,
 } from './layoutTree';
 
+const pane = (
+  paneId: string,
+  panelIds: string[],
+  activePanelId = panelIds[0] ?? '',
+): Extract<LayoutNode, { kind: 'pane' }> => ({
+  kind: 'pane',
+  paneId,
+  tabs: panelIds.map((panelId) => ({ panelId })),
+  activePanelId,
+});
+
 const split = (
   splitId: string,
   direction: 'horizontal' | 'vertical',
   sizes: number[],
   children: LayoutNode[],
-  options?: { viewMode?: 'split' | 'tabs'; activeId?: string },
 ): LayoutNode => ({
   kind: 'split',
   splitId,
   direction,
   sizes,
   children,
-  ...(options?.viewMode ? { viewMode: options.viewMode } : {}),
-  ...(options?.activeId ? { activeId: options.activeId } : {}),
 });
 
 describe('layoutTree', () => {
   it('collects panel ids in depth-first order', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        split(
-          'split-2',
-          'vertical',
-          [0.5, 0.5],
-          [
-            { kind: 'panel', panelId: 'a' },
-            { kind: 'panel', panelId: 'b' },
-          ],
-        ),
-      ],
-      { viewMode: 'tabs', activeId: 'b' },
-    );
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['left']),
+      split('split-2', 'vertical', [0.5, 0.5], [pane('pane-2', ['a']), pane('pane-3', ['b'])]),
+    ]);
 
     expect(collectPanelIds(layout)).toEqual(['left', 'a', 'b']);
   });
 
   it('removes a panel and collapses split nodes', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        { kind: 'panel', panelId: 'right' },
-      ],
-    );
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['left']),
+      pane('pane-2', ['right']),
+    ]);
 
-    const result = removePanel(layout, 'right');
-    expect(result).toEqual({ kind: 'panel', panelId: 'left' });
+    expect(removePanel(layout, 'right')).toEqual(pane('pane-1', ['left']));
   });
 
-  it('collects visible panel ids for split tabs view', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        { kind: 'panel', panelId: 'right' },
-      ],
-      { viewMode: 'tabs', activeId: 'right' },
-    );
+  it('collects visible panel ids for the active pane tab', () => {
+    const layout: LayoutNode = pane('pane-1', ['left', 'right'], 'right');
 
     expect(Array.from(collectVisiblePanelIds(layout))).toEqual(['right']);
   });
 
-  it('falls back to the first tab when activeId is missing', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'first' },
-        { kind: 'panel', panelId: 'second' },
-      ],
-      { viewMode: 'tabs', activeId: 'missing' },
-    );
+  it('falls back to the first pane tab when activePanelId is missing', () => {
+    const layout: LayoutNode = pane('pane-1', ['first', 'second'], 'missing');
 
     expect(Array.from(collectVisiblePanelIds(layout))).toEqual(['first']);
   });
 
-  it('updates split tabs activeId when the active panel is removed', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        split(
-          'split-2',
-          'horizontal',
-          [0.5, 0.5],
-          [
-            { kind: 'panel', panelId: 'mid' },
-            { kind: 'panel', panelId: 'right' },
-          ],
-        ),
-      ],
-      { viewMode: 'tabs', activeId: 'mid' },
-    );
+  it('updates pane activePanelId when the active tab is removed', () => {
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['left']),
+      pane('pane-2', ['mid', 'right'], 'mid'),
+    ]);
 
     expect(removePanel(layout, 'mid')).toEqual(
-      split(
-        'split-1',
-        'horizontal',
-        [0.5, 0.5],
-        [
-          { kind: 'panel', panelId: 'left' },
-          { kind: 'panel', panelId: 'right' },
-        ],
-        { viewMode: 'tabs', activeId: 'left' },
-      ),
+      split('split-1', 'horizontal', [0.5, 0.5], [
+        pane('pane-1', ['left']),
+        pane('pane-2', ['right'], 'right'),
+      ]),
     );
   });
 
-  it('inserts a panel into tabs when placed at center', () => {
-    const layout: LayoutNode = { kind: 'panel', panelId: 'a' };
+  it('inserts a panel into a pane when placed at center', () => {
+    const layout: LayoutNode = pane('pane-1', ['a']);
 
     expect(insertPanel(layout, 'b', { region: 'center' })).toEqual(
-      split(
-        'split-1',
-        'horizontal',
-        [0.5, 0.5],
-        [
-          { kind: 'panel', panelId: 'a' },
-          { kind: 'panel', panelId: 'b' },
-        ],
-        { viewMode: 'tabs', activeId: 'b' },
-      ),
+      pane('pane-1', ['a', 'b'], 'b'),
     );
   });
 
-  it('adds a panel to an existing split when placed at center', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'a' },
-        { kind: 'panel', panelId: 'b' },
-      ],
-      { viewMode: 'tabs', activeId: 'a' },
-    );
+  it('adds a panel tab to the targeted pane inside a split', () => {
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['a']),
+      pane('pane-2', ['b']),
+    ]);
 
     expect(insertPanel(layout, 'c', { region: 'center' }, 'a')).toEqual(
-      split(
-        'split-1',
-        'horizontal',
-        [0.25, 0.25, 0.5],
-        [
-          { kind: 'panel', panelId: 'a' },
-          { kind: 'panel', panelId: 'c' },
-          { kind: 'panel', panelId: 'b' },
-        ],
-        { viewMode: 'tabs', activeId: 'c' },
-      ),
+      split('split-1', 'horizontal', [0.5, 0.5], [
+        pane('pane-1', ['a', 'c'], 'c'),
+        pane('pane-2', ['b']),
+      ]),
     );
   });
 
   it('inserts a panel relative to a target inside a split', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        { kind: 'panel', panelId: 'right' },
-      ],
-    );
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['left']),
+      pane('pane-2', ['right']),
+    ]);
 
     expect(insertPanel(layout, 'new', { region: 'left' }, 'right')).toEqual(
-      split(
-        'split-1',
-        'horizontal',
-        [0.5, 0.5],
-        [
-          { kind: 'panel', panelId: 'left' },
-          split(
-            'split-2',
-            'horizontal',
-            [0.5, 0.5],
-            [
-              { kind: 'panel', panelId: 'new' },
-              { kind: 'panel', panelId: 'right' },
-            ],
-          ),
-        ],
-      ),
+      split('split-1', 'horizontal', [0.5, 0.5], [
+        pane('pane-1', ['left']),
+        split('split-2', 'horizontal', [0.5, 0.5], [
+          pane('pane-3', ['new']),
+          pane('pane-2', ['right']),
+        ]),
+      ]),
     );
   });
 
   it('respects placement size when inserting a split', () => {
-    const layout: LayoutNode = { kind: 'panel', panelId: 'root' };
+    const layout: LayoutNode = pane('pane-1', ['root']);
     const result = insertPanel(
       layout,
       'sidebar',
@@ -220,10 +133,7 @@ describe('layoutTree', () => {
       kind: 'split',
       splitId: 'split-1',
       direction: 'horizontal',
-      children: [
-        { kind: 'panel', panelId: 'root' },
-        { kind: 'panel', panelId: 'sidebar' },
-      ],
+      children: [pane('pane-1', ['root']), pane('pane-2', ['sidebar'])],
     });
     if (result.kind === 'split') {
       expect(result.sizes[0]).toBeCloseTo(0.8, 5);
@@ -232,26 +142,16 @@ describe('layoutTree', () => {
   });
 
   it('moves a panel to the left of the remaining layout', () => {
-    const layout: LayoutNode = split(
-      'split-1',
-      'horizontal',
-      [0.5, 0.5],
-      [
-        { kind: 'panel', panelId: 'left' },
-        { kind: 'panel', panelId: 'right' },
-      ],
-    );
+    const layout: LayoutNode = split('split-1', 'horizontal', [0.5, 0.5], [
+      pane('pane-1', ['left']),
+      pane('pane-2', ['right']),
+    ]);
 
     expect(movePanel(layout, 'right', { region: 'left' })).toEqual(
-      split(
-        'split-1',
-        'horizontal',
-        [0.5, 0.5],
-        [
-          { kind: 'panel', panelId: 'right' },
-          { kind: 'panel', panelId: 'left' },
-        ],
-      ),
+      split('split-1', 'horizontal', [0.5, 0.5], [
+        pane('pane-2', ['right']),
+        pane('pane-1', ['left']),
+      ]),
     );
   });
 });

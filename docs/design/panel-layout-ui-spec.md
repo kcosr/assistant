@@ -151,10 +151,8 @@ Initial implementation notes:
 Panel actions menu (initial behavior):
 
 - Split with new panel (submenu).
-- Dock left/right/top/bottom within the workspace.
-- Tab with the active panel.
-- Add panel tab (opens the launcher targeted to the active tabbed split).
-- Toggle split view mode (split vs tabs) for the nearest parent split.
+- Move to left/right/top/bottom pane within the workspace.
+- Add tab here (opens the launcher targeted to the current pane).
 - Close panel.
 
 ## Panel Context Menu

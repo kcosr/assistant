@@ -12,6 +12,17 @@ const createStubPanel: PanelFactory = () => ({
   }),
 });
 
+const pane = (
+  paneId: string,
+  panelIds: string[],
+  activePanelId = panelIds[0] ?? '',
+): LayoutPersistence['layout'] => ({
+  kind: 'pane',
+  paneId,
+  tabs: panelIds.map((panelId) => ({ panelId })),
+  activePanelId,
+});
+
 const buildLayout = (): LayoutPersistence => ({
   layout: {
     kind: 'split',
@@ -19,16 +30,13 @@ const buildLayout = (): LayoutPersistence => ({
     direction: 'horizontal',
     sizes: [1, 1],
     children: [
-      { kind: 'panel', panelId: 'time-1' },
+      pane('pane-1', ['time-1']),
       {
         kind: 'split',
         splitId: 'right',
         direction: 'vertical',
         sizes: [1, 1],
-        children: [
-          { kind: 'panel', panelId: 'notes-1' },
-          { kind: 'panel', panelId: 'time-2' },
-        ],
+        children: [pane('pane-2', ['notes-1']), pane('pane-3', ['time-2'])],
       },
     ],
   },
@@ -90,7 +98,7 @@ describe('PanelWorkspaceController focus history', () => {
     document.body.appendChild(root);
 
     const layout: LayoutPersistence = {
-      layout: { kind: 'panel', panelId: 'notes-1' },
+      layout: pane('pane-1', ['notes-1']),
       panels: { 'notes-1': { panelId: 'notes-1', panelType: 'notes' } },
       headerPanels: [],
       headerPanelSizes: {},
@@ -119,7 +127,7 @@ describe('PanelWorkspaceController focus history', () => {
     document.body.appendChild(root);
 
     const layout: LayoutPersistence = {
-      layout: { kind: 'panel', panelId: 'time-1' },
+      layout: pane('pane-1', ['time-1']),
       panels: { 'time-1': { panelId: 'time-1', panelType: 'time-tracker' } },
       headerPanels: [],
       headerPanelSizes: {},
@@ -147,7 +155,7 @@ describe('PanelWorkspaceController focus history', () => {
     document.body.appendChild(root);
 
     const layout: LayoutPersistence = {
-      layout: { kind: 'panel', panelId: 'notes-1' },
+      layout: pane('pane-1', ['notes-1']),
       panels: { 'notes-1': { panelId: 'notes-1', panelType: 'notes' } },
       headerPanels: [],
       headerPanelSizes: {},
@@ -213,7 +221,7 @@ describe('PanelWorkspaceController focus history', () => {
     document.body.appendChild(root);
 
     const layout: LayoutPersistence = {
-      layout: { kind: 'panel', panelId: 'time-1' },
+      layout: pane('pane-1', ['time-1']),
       panels: { 'time-1': { panelId: 'time-1', panelType: 'time-tracker' } },
       headerPanels: [],
       headerPanelSizes: {},

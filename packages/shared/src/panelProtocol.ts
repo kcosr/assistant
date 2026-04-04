@@ -84,6 +84,10 @@ export const PanelInstanceSchema: z.ZodType<PanelInstance, z.ZodTypeDef, PanelIn
     return instance;
   });
 
+export interface LayoutTab {
+  panelId: string;
+}
+
 export type LayoutNode =
   | {
       kind: 'split';
@@ -91,16 +95,16 @@ export type LayoutNode =
       direction: 'horizontal' | 'vertical';
       sizes: number[];
       children: LayoutNode[];
-      viewMode?: 'split' | 'tabs';
-      activeId?: string;
     }
   | {
-      kind: 'panel';
-      panelId: string;
+      kind: 'pane';
+      paneId: string;
+      tabs: LayoutTab[];
+      activePanelId: string;
     };
 
 type SplitLayoutNode = Extract<LayoutNode, { kind: 'split' }>;
-type PanelLayoutNode = Extract<LayoutNode, { kind: 'panel' }>;
+type PaneLayoutNode = Extract<LayoutNode, { kind: 'pane' }>;
 
 export const LayoutNodeSchema: z.ZodType<LayoutNode, z.ZodTypeDef, unknown> = z.lazy(() => {
   const splitSchemaBase = z.object({
@@ -109,8 +113,6 @@ export const LayoutNodeSchema: z.ZodType<LayoutNode, z.ZodTypeDef, unknown> = z.
     direction: z.enum(['horizontal', 'vertical']),
     sizes: z.array(z.number().positive()).min(2),
     children: z.array(LayoutNodeSchema).min(2),
-    viewMode: z.enum(['split', 'tabs']).optional(),
-    activeId: z.string().min(1).optional(),
   });
 
   type SplitLayoutNodeInput = z.input<typeof splitSchemaBase>;
@@ -125,22 +127,47 @@ export const LayoutNodeSchema: z.ZodType<LayoutNode, z.ZodTypeDef, unknown> = z.
           });
         }
       })
-      .transform((value) => {
-        const { viewMode, activeId, ...rest } = value;
-        const node: SplitLayoutNode = {
-          ...rest,
-          ...(viewMode ? { viewMode } : {}),
-          ...(activeId ? { activeId } : {}),
-        };
-        return node;
-      });
+      .transform((value) => value);
 
-  const panelSchema: z.ZodType<PanelLayoutNode> = z.object({
-    kind: z.literal('panel'),
+  const paneTabSchema = z.object({
     panelId: z.string().min(1),
   });
 
-  return z.union([splitSchema, panelSchema]);
+  const paneSchemaBase = z.object({
+    kind: z.literal('pane'),
+    paneId: z.string().min(1),
+    tabs: z.array(paneTabSchema).min(1),
+    activePanelId: z.string().min(1).optional(),
+  });
+
+  type PaneLayoutNodeInput = z.input<typeof paneSchemaBase>;
+  const paneSchema: z.ZodType<PaneLayoutNode, z.ZodTypeDef, PaneLayoutNodeInput> = paneSchemaBase
+    .superRefine((value, ctx) => {
+      const panelIds = value.tabs.map((tab) => tab.panelId);
+      const uniqueIds = new Set(panelIds);
+      if (uniqueIds.size !== panelIds.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Pane tabs must reference unique panel ids.',
+          path: ['tabs'],
+        });
+      }
+      if (value.activePanelId && !uniqueIds.has(value.activePanelId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Pane activePanelId must reference one of the pane tabs.',
+          path: ['activePanelId'],
+        });
+      }
+    })
+    .transform((value) => ({
+      kind: 'pane',
+      paneId: value.paneId,
+      tabs: value.tabs,
+      activePanelId: value.activePanelId ?? value.tabs[0]!.panelId,
+    }));
+
+  return z.union([splitSchema, paneSchema]);
 });
 
 export interface LayoutPersistence {

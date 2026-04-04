@@ -59,7 +59,6 @@ export interface PanelHost {
     pinToHeader?: boolean;
     replacePanelId?: string | null;
   }): void;
-  toggleSplitViewMode?(splitId: string): void;
   closeSplit?(splitId: string): void;
 }
 

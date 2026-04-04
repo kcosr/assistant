@@ -284,28 +284,6 @@
       "capabilities": ["panels.manage"]
     },
     {
-      "id": "toggle-split-view",
-      "summary": "Toggle a split between split and tab modes.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "splitId": {
-            "type": "string",
-            "description": "Split id to toggle."
-          },
-          "panelId": {
-            "type": "string",
-            "description": "Panel id within the split to toggle."
-          },
-          "sessionId": {
-            "type": "string",
-            "description": "Optional session id to target (defaults to current session)."
-          }
-        }
-      },
-      "capabilities": ["panels.manage"]
-    },
-    {
       "id": "close-split",
       "summary": "Close a split, keeping the active/first panel.",
       "inputSchema": {

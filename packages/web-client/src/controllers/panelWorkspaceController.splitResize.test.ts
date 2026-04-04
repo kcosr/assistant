@@ -13,6 +13,13 @@ const createStubPanel: PanelFactory = () => ({
   }),
 });
 
+const pane = (paneId: string, panelId: string) => ({
+  kind: 'pane' as const,
+  paneId,
+  tabs: [{ panelId }],
+  activePanelId: panelId,
+});
+
 let pointerCaptures = new WeakMap<HTMLElement, number>();
 const originalPointerEvent = globalThis.PointerEvent;
 const originalSetPointerCapture = (HTMLElement.prototype as Partial<HTMLElement>).setPointerCapture;
@@ -103,10 +110,7 @@ describe('PanelWorkspaceController split resize', () => {
           splitId: 'split-1',
           direction: 'vertical',
           sizes: [1, 1],
-          children: [
-            { kind: 'panel', panelId: 'chat-1' },
-            { kind: 'panel', panelId: 'input-1' },
-          ],
+          children: [pane('pane-1', 'chat-1'), pane('pane-2', 'input-1')],
         },
         panels: {
           'chat-1': { panelId: 'chat-1', panelType: 'chat' },

@@ -102,9 +102,9 @@ Shared panel layout and plugin manifest types:
 
 ```typescript
 type LayoutNode =
-  | { kind: 'split'; splitId: string; direction: 'horizontal' | 'vertical'; sizes: number[]; children: LayoutNode[]; viewMode?: 'split' | 'tabs'; activeId?: string }
-  | { kind: 'panel'; panelId: string };
-// split nodes can include viewMode: 'split' | 'tabs' and activeId for tab view.
+  | { kind: 'split'; splitId: string; direction: 'horizontal' | 'vertical'; sizes: number[]; children: LayoutNode[] }
+  | { kind: 'pane'; paneId: string; tabs: Array<{ panelId: string }>; activePanelId: string };
+// panes own tab state.
 interface LayoutPersistence { layout: LayoutNode; panels: Record<string, PanelInstance>; }
 interface PanelInstance {
   panelId: string;

@@ -14,6 +14,7 @@ import {
   collectPanelIds,
   collectVisiblePanelIds,
   containsPanelId,
+  createPaneNode,
   findFirstPanelId,
   type PanelContainerSize,
   insertPanel,
@@ -942,52 +943,13 @@ export class PanelWorkspaceController {
     this.options.openPanelLauncher?.(options);
   }
 
-  toggleSplitViewMode(splitId: string): void {
-    const result = this.updateSplitById(this.layout.layout, splitId, (split) => {
-      const currentMode = split.viewMode ?? 'split';
-      const nextMode = currentMode === 'tabs' ? 'split' : 'tabs';
-      const { activeId: _activeId, ...rest } = split;
-      if (nextMode === 'tabs') {
-        const firstChild = split.children[0] ?? null;
-        const resolvedActive =
-          (this.activePanelId && containsPanelId(split, this.activePanelId)
-            ? this.activePanelId
-            : null) ??
-          split.activeId ??
-          (firstChild ? findFirstPanelId(firstChild) : null);
-        return {
-          ...rest,
-          viewMode: 'tabs',
-          ...(resolvedActive ? { activeId: resolvedActive } : {}),
-        };
-      }
-      return { ...rest, viewMode: 'split' };
-    });
-
-    if (!result.updated) {
-      return;
-    }
-
-    this.layout = {
-      layout: result.node,
-      panels: this.layout.panels,
-      headerPanels: this.getHeaderPanelIds(),
-      headerPanelSizes: this.getHeaderPanelSizes(),
-    };
-    this.persistLayout();
-    this.render();
-  }
-
   closeSplit(splitId: string): void {
     const target = this.findSplitById(this.layout.layout, splitId);
     if (!target) {
       return;
     }
 
-    const keepChild =
-      target.viewMode === 'tabs'
-        ? this.resolveActiveTabNode(target.children, target.activeId)
-        : target.children[0];
+    const keepChild = target.children[0];
     if (!keepChild) {
       return;
     }
@@ -1317,25 +1279,27 @@ export class PanelWorkspaceController {
   cycleTabForPanel(panelId: string, reverse = false): string | null {
     let nextPanelId: string | null = null;
     let didChange = false;
-    const result = this.updateNearestSplitForPanel(this.layout.layout, panelId, (split) => {
-      if (split.viewMode !== 'tabs' || split.children.length < 2) {
-        return split;
+    const result = this.updatePaneByPanelId(this.layout.layout, panelId, (pane) => {
+      if (pane.tabs.length < 2) {
+        return { pane, updated: false };
       }
-      const activeNode = this.resolveActiveTabNode(split.children, split.activeId ?? panelId);
-      const activeIndex = split.children.indexOf(activeNode);
-      if (activeIndex < 0) {
-        return split;
-      }
+      const activeIndex = pane.tabs.findIndex((tab) => tab.panelId === pane.activePanelId);
+      const baseIndex = activeIndex >= 0 ? activeIndex : 0;
       const delta = reverse ? -1 : 1;
-      const nextIndex = (activeIndex + delta + split.children.length) % split.children.length;
-      const nextNode = split.children[nextIndex];
-      const nextId = nextNode ? findFirstPanelId(nextNode) : null;
-      if (!nextId || split.activeId === nextId) {
-        return split;
+      const nextIndex = (baseIndex + delta + pane.tabs.length) % pane.tabs.length;
+      const nextId = pane.tabs[nextIndex]?.panelId ?? null;
+      if (!nextId || pane.activePanelId === nextId) {
+        return { pane, updated: false };
       }
       nextPanelId = nextId;
       didChange = true;
-      return { ...split, activeId: nextId };
+      return {
+        pane: {
+          ...pane,
+          activePanelId: nextId,
+        },
+        updated: true,
+      };
     });
 
     if (!didChange || !nextPanelId) {
@@ -1354,14 +1318,14 @@ export class PanelWorkspaceController {
   }
 
   private activateTabsForPanel(node: LayoutNode, panelId: string): boolean {
-    if (node.kind === 'panel') {
-      return false;
+    if (node.kind === 'pane') {
+      if (!node.tabs.some((tab) => tab.panelId === panelId) || node.activePanelId === panelId) {
+        return false;
+      }
+      node.activePanelId = panelId;
+      return true;
     }
     let changed = false;
-    if (node.viewMode === 'tabs' && containsPanelId(node, panelId) && node.activeId !== panelId) {
-      node.activeId = panelId;
-      changed = true;
-    }
     for (const child of node.children) {
       if (containsPanelId(child, panelId)) {
         changed = this.activateTabsForPanel(child, panelId) || changed;
@@ -1471,7 +1435,7 @@ export class PanelWorkspaceController {
     const panel = this.options.registry.createInstance(manifest.type, panelId);
 
     return {
-      layout: { kind: 'panel', panelId },
+      layout: createPaneNode(panelId),
       panels: { [panelId]: panel },
       headerPanels: [],
       headerPanelSizes: {},
@@ -1502,7 +1466,7 @@ export class PanelWorkspaceController {
     const panel = this.options.registry.createInstance(manifest.type, panelId);
 
     return {
-      layout: { kind: 'panel', panelId },
+      layout: createPaneNode(panelId),
       panels: { ...existingPanels, [panelId]: panel },
       headerPanels,
       headerPanelSizes,
@@ -1646,11 +1610,8 @@ export class PanelWorkspaceController {
   }
 
   private renderNode(node: LayoutNode): HTMLElement {
-    if (node.kind === 'panel') {
-      return this.renderPanel(node.panelId);
-    }
-    if (node.viewMode === 'tabs') {
-      return this.renderSplitTabs(node);
+    if (node.kind === 'pane') {
+      return this.renderPane(node);
     }
 
     const container = document.createElement('div');
@@ -1791,10 +1752,10 @@ export class PanelWorkspaceController {
     return handle;
   }
 
-  private renderSplitTabs(node: LayoutNode & { kind: 'split' }): HTMLElement {
+  private renderPane(node: LayoutNode & { kind: 'pane' }): HTMLElement {
     const container = document.createElement('div');
-    container.className = 'panel-tabs panel-tabs-split';
-    container.dataset['splitId'] = node.splitId;
+    container.className = 'panel-tabs panel-tabs-pane';
+    container.dataset['paneId'] = node.paneId;
 
     const header = document.createElement('div');
     header.className = 'panel-tabs-header';
@@ -1804,12 +1765,15 @@ export class PanelWorkspaceController {
     content.className = 'panel-tabs-content';
     container.appendChild(content);
 
-    const activeTab = this.resolveActiveTabNode(node.children, node.activeId);
+    const activePanelId =
+      node.tabs.find((tab) => tab.panelId === node.activePanelId)?.panelId ??
+      node.tabs[0]?.panelId ??
+      null;
 
-    node.children.forEach((tab, index) => {
-      const tabPanelId = findFirstPanelId(tab);
-      const tabTitle = tabPanelId ? this.getPanelTitle(tabPanelId) : `Panel ${index + 1}`;
-      const isActive = activeTab === tab;
+    node.tabs.forEach((tab, index) => {
+      const tabPanelId = tab.panelId;
+      const tabTitle = this.getPanelTitle(tabPanelId) || `Panel ${index + 1}`;
+      const isActive = activePanelId === tabPanelId;
 
       const button = document.createElement('button');
       button.type = 'button';
@@ -1820,15 +1784,15 @@ export class PanelWorkspaceController {
         button.setAttribute('data-panel-id', tabPanelId);
       }
       button.addEventListener('click', () => {
-        if (!tabPanelId || node.activeId === tabPanelId) {
+        if (!tabPanelId || node.activePanelId === tabPanelId) {
           return;
         }
-        node.activeId = tabPanelId;
+        node.activePanelId = tabPanelId;
         this.persistLayout();
         this.render();
         this.focusPanel(tabPanelId);
       });
-      if (node.children.length > 1) {
+      if (node.tabs.length > 1) {
         button.draggable = true;
         button.addEventListener('dragstart', (event) => {
           if (event.dataTransfer) {
@@ -1857,12 +1821,12 @@ export class PanelWorkspaceController {
           if (!Number.isFinite(sourceIndex) || sourceIndex === index) {
             return;
           }
-          const moved = node.children.splice(sourceIndex, 1)[0];
+          const moved = node.tabs.splice(sourceIndex, 1)[0];
           if (!moved) {
             return;
           }
           const targetIndex = sourceIndex < index ? index - 1 : index;
-          node.children.splice(targetIndex, 0, moved);
+          node.tabs.splice(targetIndex, 0, moved);
           this.persistLayout();
           this.render();
         });
@@ -1875,7 +1839,7 @@ export class PanelWorkspaceController {
       if (!isActive) {
         tabWrapper.setAttribute('aria-hidden', 'true');
       }
-      tabWrapper.appendChild(this.renderNode(tab));
+      tabWrapper.appendChild(this.renderPanel(tabPanelId));
       content.appendChild(tabWrapper);
     });
 
@@ -1884,21 +1848,22 @@ export class PanelWorkspaceController {
       addButton.type = 'button';
       addButton.className = 'panel-tab-add';
       addButton.textContent = '+';
-      addButton.setAttribute('aria-label', 'Add panel tab');
+      addButton.setAttribute('aria-label', 'Add tab to pane');
       addButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
         this.closePanelMenu();
         this.closeHeaderPopover();
-        const targetPanelId = node.activeId ?? findFirstPanelId(activeTab);
         this.options.openPanelLauncher?.({
-          targetPanelId,
+          targetPanelId: activePanelId,
           defaultPlacement: { region: 'center' },
         });
       });
       header.appendChild(addButton);
     }
-
+    if (node.tabs.length <= 1) {
+      header.classList.add('panel-tabs-header-single');
+    }
     return container;
   }
 
@@ -2620,9 +2585,47 @@ export class PanelWorkspaceController {
     return null;
   }
 
-  private resolveActiveTabNode(tabs: LayoutNode[], activeId?: string | null): LayoutNode {
-    const selected = activeId ? tabs.find((tab) => containsPanelId(tab, activeId)) : null;
-    return selected ?? tabs[0]!;
+  private updatePaneByPanelId(
+    node: LayoutNode,
+    panelId: string,
+    updatePane: (
+      pane: LayoutNode & { kind: 'pane' },
+    ) => { pane: LayoutNode & { kind: 'pane' }; updated: boolean },
+  ): { node: LayoutNode; found: boolean; updated: boolean } {
+    if (node.kind === 'pane') {
+      if (!node.tabs.some((tab) => tab.panelId === panelId)) {
+        return { node, found: false, updated: false };
+      }
+      const result = updatePane(node);
+      return { node: result.pane, found: true, updated: result.updated };
+    }
+
+    let found = false;
+    let updated = false;
+    const nextChildren = node.children.map((child, index) => {
+      if (updated || !containsPanelId(child, panelId)) {
+        return child;
+      }
+      const result = this.updatePaneByPanelId(child, panelId, updatePane);
+      if (result.found) {
+        found = true;
+      }
+      updated = updated || result.updated;
+      return result.node;
+    });
+
+    if (!updated) {
+      return { node, found, updated: false };
+    }
+
+    return {
+      node: {
+        ...node,
+        children: nextChildren,
+      },
+      found,
+      updated: true,
+    };
   }
 
   private updateNearestSplitForPanel(
@@ -2633,8 +2636,12 @@ export class PanelWorkspaceController {
       childIndex: number,
     ) => LayoutNode & { kind: 'split' },
   ): { node: LayoutNode; found: boolean; updated: boolean } {
-    if (node.kind === 'panel') {
-      return { node, found: node.panelId === panelId, updated: false };
+    if (node.kind === 'pane') {
+      return {
+        node,
+        found: node.tabs.some((tab) => tab.panelId === panelId),
+        updated: false,
+      };
     }
 
     let found = false;
@@ -2675,47 +2682,12 @@ export class PanelWorkspaceController {
     };
   }
 
-  private toggleSplitViewModeForPanel(panelId: string): void {
-    const result = this.updateNearestSplitForPanel(this.layout.layout, panelId, (split) => {
-      const currentMode = split.viewMode ?? 'split';
-      const nextMode = currentMode === 'tabs' ? 'split' : 'tabs';
-      const { activeId: _activeId, ...rest } = split;
-      if (nextMode === 'tabs') {
-        const firstChild = split.children[0] ?? null;
-        const resolvedActive =
-          (panelId && containsPanelId(split, panelId) ? panelId : null) ??
-          split.activeId ??
-          (firstChild ? findFirstPanelId(firstChild) : null) ??
-          panelId;
-        return { ...rest, viewMode: 'tabs', activeId: resolvedActive };
-      }
-      return { ...rest, viewMode: 'split' };
-    });
-
-    if (!result.updated) {
-      return;
-    }
-
-    this.layout = {
-      layout: result.node,
-      panels: this.layout.panels,
-      headerPanels: this.getHeaderPanelIds(),
-      headerPanelSizes: this.getHeaderPanelSizes(),
-    };
-    this.persistLayout();
-    this.render();
-  }
-
-  toggleSplitViewModeForPanelId(panelId: string): void {
-    this.toggleSplitViewModeForPanel(panelId);
-  }
-
   private updateSplitById(
     node: LayoutNode,
     splitId: string,
     updateSplit: (split: LayoutNode & { kind: 'split' }) => LayoutNode,
   ): { node: LayoutNode; updated: boolean } {
-    if (node.kind === 'panel') {
+    if (node.kind === 'pane') {
       return { node, updated: false };
     }
     if (node.splitId === splitId) {
@@ -2747,7 +2719,7 @@ export class PanelWorkspaceController {
     node: LayoutNode,
     splitId: string,
   ): (LayoutNode & { kind: 'split' }) | null {
-    if (node.kind === 'panel') {
+    if (node.kind === 'pane') {
       return null;
     }
     if (node.splitId === splitId) {
@@ -2767,8 +2739,8 @@ export class PanelWorkspaceController {
     panelId: string,
     nearestSplit: (LayoutNode & { kind: 'split' }) | null = null,
   ): (LayoutNode & { kind: 'split' }) | null {
-    if (node.kind === 'panel') {
-      return node.panelId === panelId ? nearestSplit : null;
+    if (node.kind === 'pane') {
+      return node.tabs.some((tab) => tab.panelId === panelId) ? nearestSplit : null;
     }
 
     for (const child of node.children) {
@@ -3427,13 +3399,12 @@ export class PanelWorkspaceController {
       splitButton.addEventListener('focus', openSplitMenu);
     }
 
-    addItem('Dock left', () => this.movePanel(panelId, { region: 'left' }));
-    addItem('Dock right', () => this.movePanel(panelId, { region: 'right' }));
-    addItem('Dock top', () => this.movePanel(panelId, { region: 'top' }));
-    addItem('Dock bottom', () => this.movePanel(panelId, { region: 'bottom' }));
-    addItem('Tab with workspace', () => this.movePanel(panelId, { region: 'center' }));
+    addItem('Move to left pane', () => this.movePanel(panelId, { region: 'left' }));
+    addItem('Move to right pane', () => this.movePanel(panelId, { region: 'right' }));
+    addItem('Move to top pane', () => this.movePanel(panelId, { region: 'top' }));
+    addItem('Move to bottom pane', () => this.movePanel(panelId, { region: 'bottom' }));
     if (this.options.openPanelLauncher) {
-      addItem('Add panel tab...', () => {
+      addItem('Add tab here...', () => {
         this.options.openPanelLauncher?.({
           targetPanelId: panelId,
           defaultPlacement: { region: 'center' },
@@ -3443,10 +3414,6 @@ export class PanelWorkspaceController {
 
     const nearestSplit = this.findNearestSplitForPanel(this.layout.layout, panelId);
     if (nearestSplit) {
-      const currentMode = nearestSplit.viewMode ?? 'split';
-      const label = currentMode === 'tabs' ? 'View as split' : 'View as tabs';
-      addItem(label, () => this.toggleSplitViewModeForPanel(panelId));
-
       if (this.options.openSessionPicker) {
         const hasBindablePanels = collectPanelIds(nearestSplit).some((candidate) =>
           this.isPanelSessionBindable(candidate),

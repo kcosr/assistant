@@ -34,7 +34,6 @@ export interface PanelWorkspaceHandle {
     pinToHeader?: boolean;
     replacePanelId?: string | null;
   }): void;
-  toggleSplitViewMode?(splitId: string): void;
   closeSplit?(splitId: string): void;
 }
 
@@ -512,9 +511,6 @@ export class PanelHostController {
       },
       openPanelLauncher: (options) => {
         this.workspace?.openPanelLauncher?.(options);
-      },
-      toggleSplitViewMode: (splitId) => {
-        this.workspace?.toggleSplitViewMode?.(splitId);
       },
       closeSplit: (splitId) => {
         this.workspace?.closeSplit?.(splitId);

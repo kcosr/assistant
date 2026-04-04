@@ -718,10 +718,13 @@ type LayoutNode =
       direction: 'horizontal' | 'vertical';
       sizes: number[];
       children: LayoutNode[];
-      viewMode?: 'split' | 'tabs';
-      activeId?: string;
     }
-  | { kind: 'panel'; panelId: string };
+  | {
+      kind: 'pane';
+      paneId: string;
+      tabs: Array<{ panelId: string }>;
+      activePanelId: string;
+    };
 ```
 
 ### Panel Instance
@@ -775,7 +778,6 @@ interface LayoutPersistence {
 - `closePanel(panelId)`
 - `splitPanel(panelId, direction)`
 - `movePanel(panelId, target)`
-- `setSplitViewMode(splitId, mode)` / `toggleSplitViewMode(splitId)`
 - `activatePanel(panelId)`
 
 ### Constraints and Defaults
@@ -1188,18 +1190,20 @@ Shared types:
     "direction": "horizontal",
     "sizes": [0.25, 0.75],
     "children": [
-      { "kind": "panel", "panelId": "sessions-1" },
       {
-        "kind": "split",
-        "splitId": "split-2",
-        "direction": "vertical",
-        "sizes": [0.5, 0.5],
-        "viewMode": "tabs",
-        "activeId": "chat-1",
-        "children": [
-          { "kind": "panel", "panelId": "chat-1" },
-          { "kind": "panel", "panelId": "artifacts-1" }
-        ]
+        "kind": "pane",
+        "paneId": "pane-1",
+        "tabs": [{ "panelId": "sessions-1" }],
+        "activePanelId": "sessions-1"
+      },
+      {
+        "kind": "pane",
+        "paneId": "pane-2",
+        "tabs": [
+          { "panelId": "chat-1" },
+          { "panelId": "artifacts-1" }
+        ],
+        "activePanelId": "chat-1"
       }
     ]
   },

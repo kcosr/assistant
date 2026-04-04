@@ -5,7 +5,7 @@ import type {
   PanelPlacement,
   PanelTypeManifest,
 } from '@assistant/shared';
-import { insertPanel } from './layoutTree';
+import { createPaneNode, insertPanel } from './layoutTree';
 
 export const DEFAULT_PANEL_IDS = {
   sessions: 'sessions-1',
@@ -59,7 +59,7 @@ export function createDefaultPanelLayout(manifests: PanelTypeManifest[]): Layout
   for (const entry of ordered) {
     const placement = entry.manifest.defaultPlacement ?? { region: 'center' };
     if (!layout) {
-      layout = { kind: 'panel', panelId: entry.panelId };
+      layout = createPaneNode(entry.panelId);
       continue;
     }
     layout = insertPanel(layout, entry.panelId, placement);

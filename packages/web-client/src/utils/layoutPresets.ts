@@ -18,10 +18,7 @@ export function buildPanelLayoutPreset(root: LayoutNode, preset: PanelLayoutPres
 }
 
 export function collectLayoutGroups(root: LayoutNode): LayoutNode[] {
-  if (root.kind === 'panel') {
-    return [root];
-  }
-  if (root.viewMode === 'tabs') {
+  if (root.kind === 'pane') {
     return [root];
   }
   return root.children.flatMap((child) => collectLayoutGroups(child));
