@@ -6,28 +6,6 @@ import { PanelRegistry } from './panelRegistry';
 import { PanelHostController } from './panelHostController';
 
 describe('PanelHostController', () => {
-  it('passes auto-open session-picker intent through panel init', () => {
-    const registry = new PanelRegistry();
-    const manifest: PanelTypeManifest = { type: 'chat', title: 'Chat Panel' };
-    let receivedInit: Record<string, unknown> | null = null;
-    registry.register(manifest, () => ({
-      mount(_container, _host, init) {
-        receivedInit = init as Record<string, unknown>;
-        return { unmount() {} };
-      },
-    }));
-
-    const hostController = new PanelHostController({ registry });
-    hostController.mountPanel({
-      panelId: 'chat-1',
-      panelType: manifest.type,
-      container: document.createElement('div'),
-      autoOpenSessionPicker: true,
-    });
-
-    expect(receivedInit).toMatchObject({ autoOpenSessionPicker: true });
-  });
-
   it('merges metadata updates for a panel', () => {
     const registry = new PanelRegistry();
     const manifest: PanelTypeManifest = { type: 'meta-panel', title: 'Meta Panel' };

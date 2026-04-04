@@ -56,7 +56,6 @@ interface PanelMountOptions {
   binding?: PanelBinding;
   state?: unknown;
   focus?: boolean;
-  autoOpenSessionPicker?: boolean;
 }
 
 interface PanelEntry {
@@ -166,9 +165,6 @@ export class PanelHostController {
       ...(binding ? { binding } : {}),
       ...(options.state !== undefined ? { state: options.state } : {}),
       ...(typeof options.focus === 'boolean' ? { focus: options.focus } : {}),
-      ...(typeof options.autoOpenSessionPicker === 'boolean'
-        ? { autoOpenSessionPicker: options.autoOpenSessionPicker }
-        : {}),
     };
 
     const availability = resolvePanelAvailability(options.panelType, manifest, {

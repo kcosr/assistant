@@ -14,6 +14,8 @@ const createStubPanel: PanelFactory = () => ({
 });
 
 const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+const waitForAnimationFrame = () =>
+  new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
 describe('PanelLauncherController compact picker', () => {
   beforeEach(() => {
@@ -50,6 +52,7 @@ describe('PanelLauncherController compact picker', () => {
       getActivePanelId: vi.fn(() => 'panel-1'),
       focusPanel: vi.fn(),
       openPanel: vi.fn(() => 'input-1'),
+      openSessionPickerForPanel: vi.fn(),
       openModalPanel: vi.fn(() => null),
       replacePanel: vi.fn(() => false),
       listHeaderPanelIds: vi.fn(() => []),
@@ -125,6 +128,7 @@ describe('PanelLauncherController compact picker', () => {
       getActivePanelId: vi.fn(() => 'panel-1'),
       focusPanel: vi.fn(),
       openPanel: vi.fn(() => 'input-1'),
+      openSessionPickerForPanel: vi.fn(),
       openModalPanel: vi.fn(() => null),
       replacePanel: vi.fn(() => false),
       listHeaderPanelIds: vi.fn(() => []),
@@ -167,7 +171,7 @@ describe('PanelLauncherController compact picker', () => {
     });
   });
 
-  it('uses the compact picker title and row submission for replace', () => {
+  it('uses the compact picker title and row submission for replace', async () => {
     const launcherButton = document.createElement('button');
     const launcher = document.createElement('div');
     launcher.className = 'panel-launcher-overlay';
@@ -190,6 +194,7 @@ describe('PanelLauncherController compact picker', () => {
       getActivePanelId: vi.fn(() => 'panel-1'),
       focusPanel: vi.fn(),
       openPanel: vi.fn(() => 'input-1'),
+      openSessionPickerForPanel: vi.fn(),
       openModalPanel: vi.fn(() => null),
       replacePanel: vi.fn(() => true),
       listHeaderPanelIds: vi.fn(() => []),
@@ -218,13 +223,13 @@ describe('PanelLauncherController compact picker', () => {
     expect(launcher.querySelector('.panel-launcher-title-text')?.textContent).toBe('Replace Panel');
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitForAnimationFrame();
 
-    expect(panelWorkspace.replacePanel).toHaveBeenCalledWith('panel-1', 'chat', {
-      autoOpenSessionPicker: true,
-    });
+    expect(panelWorkspace.replacePanel).toHaveBeenCalledWith('panel-1', 'chat', {});
+    expect(panelWorkspace.openSessionPickerForPanel).toHaveBeenCalledWith('panel-1');
   });
 
-  it('passes chat auto-open session-picker intent when opening a new chat pane', () => {
+  it('passes chat auto-open session-picker intent when opening a new chat pane', async () => {
     const launcherButton = document.createElement('button');
     const launcher = document.createElement('div');
     launcher.className = 'panel-launcher-overlay';
@@ -247,6 +252,7 @@ describe('PanelLauncherController compact picker', () => {
       getActivePanelId: vi.fn(() => 'panel-1'),
       focusPanel: vi.fn(),
       openPanel: vi.fn(() => 'chat-1'),
+      openSessionPickerForPanel: vi.fn(),
       openModalPanel: vi.fn(() => null),
       replacePanel: vi.fn(() => false),
       listHeaderPanelIds: vi.fn(() => []),
@@ -274,12 +280,13 @@ describe('PanelLauncherController compact picker', () => {
     });
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitForAnimationFrame();
 
     expect(panelWorkspace.openPanel).toHaveBeenCalledWith('chat', {
       focus: true,
       placement: { region: 'center' },
       targetPanelId: 'panel-1',
-      autoOpenSessionPicker: true,
     });
+    expect(panelWorkspace.openSessionPickerForPanel).toHaveBeenCalledWith('chat-1');
   });
 });

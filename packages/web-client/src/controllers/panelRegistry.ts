@@ -13,7 +13,6 @@ export interface PanelInitOptions {
   binding?: PanelBinding;
   state?: unknown;
   focus?: boolean;
-  autoOpenSessionPicker?: boolean;
 }
 
 export interface PanelOpenOptions extends PanelInitOptions {

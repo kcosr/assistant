@@ -747,10 +747,14 @@ export class PanelLauncherController {
       if (replacePanelId) {
         const replaced = this.options.panelWorkspace.replacePanel(replacePanelId, panelType, {
           ...(binding ? { binding } : {}),
-          ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
         });
         if (replaced) {
           this.close();
+          if (shouldAutoOpenSessionPicker) {
+            requestAnimationFrame(() => {
+              this.options.panelWorkspace.openSessionPickerForPanel(replacePanelId);
+            });
+          }
         } else {
           this.render();
         }
@@ -760,10 +764,14 @@ export class PanelLauncherController {
         const panelId = this.options.panelWorkspace.openModalPanel(panelType, {
           focus: true,
           ...(binding ? { binding } : {}),
-          ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
         });
         if (panelId) {
           this.close();
+          if (shouldAutoOpenSessionPicker) {
+            requestAnimationFrame(() => {
+              this.options.panelWorkspace.openSessionPickerForPanel(panelId);
+            });
+          }
         } else {
           this.render();
         }
@@ -776,12 +784,10 @@ export class PanelLauncherController {
               placement,
               targetPanelId,
               ...(binding ? { binding } : {}),
-              ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
             }
           : {
               focus: !shouldPin,
               ...(binding ? { binding } : {}),
-              ...(shouldAutoOpenSessionPicker ? { autoOpenSessionPicker: true } : {}),
             };
       const panelId = this.options.panelWorkspace.openPanel(panelType, openOptions);
       if (panelId && shouldPin) {
@@ -790,6 +796,11 @@ export class PanelLauncherController {
       }
       if (panelId) {
         this.close();
+        if (shouldAutoOpenSessionPicker) {
+          requestAnimationFrame(() => {
+            this.options.panelWorkspace.openSessionPickerForPanel(panelId);
+          });
+        }
       } else {
         this.render();
       }

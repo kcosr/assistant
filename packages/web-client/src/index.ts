@@ -128,7 +128,6 @@ import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
 import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
 import { PluginSettingsClient } from './utils/pluginSettingsClient';
-import { shouldAutoOpenSessionPicker } from './utils/sessionPickerAutoOpen';
 import { PluginBundleLoader } from './utils/pluginBundleLoader';
 import { ICONS } from './utils/icons';
 import {
@@ -1550,7 +1549,6 @@ async function main(): Promise<void> {
     entry.inputRuntime.speechAudioController?.setVoiceSettingsChangeHandler(() => {
       syncNativeVoiceSettings();
     });
-    let didAutoOpenSessionPicker = false;
     const abortController = new AbortController();
     const openChatSessionPicker = () => {
       const anchor = dom.sessionLabelEl;
@@ -1607,22 +1605,6 @@ async function main(): Promise<void> {
         { signal: abortController.signal },
       );
     }
-    const maybeAutoOpenSessionPicker = (shouldOpen: boolean) => {
-      if (
-        !shouldAutoOpenSessionPicker({
-          hasSession: Boolean(bindingSessionId),
-          shouldOpen,
-          hasAnchor: Boolean(dom.sessionLabelEl),
-          alreadyOpened: didAutoOpenSessionPicker,
-        })
-      ) {
-        return;
-      }
-      didAutoOpenSessionPicker = true;
-      requestAnimationFrame(() => {
-        openChatSessionPicker();
-      });
-    };
     const updateBinding = (binding: PanelBinding | null) => {
       const sessionId = binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
       const previousSessionId = entry.bindingSessionId;
@@ -1686,12 +1668,6 @@ async function main(): Promise<void> {
     const unsubBinding = host.onBindingChange(updateBinding);
     const unsubSessionContext = host.subscribeSessionContext(() => {
       updateChatPanelSessionLabel(entry);
-    });
-    const shouldAutoOpenOnMount = Boolean(init.autoOpenSessionPicker);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        maybeAutoOpenSessionPicker(shouldAutoOpenOnMount);
-      });
     });
     if (dom.modelSelectEl) {
       dom.modelSelectEl.addEventListener(
