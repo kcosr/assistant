@@ -2171,6 +2171,42 @@ describe('ChatRenderer', () => {
     expect(assistantTexts[0]?.textContent).toContain('Drink water now');
   });
 
+  it('reuses an existing finalized text node when the same segment is replayed again', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents([
+      createProjectedEvent(0, {
+        eventId: 'canonical-done',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+        payload: { text: 'Loud and clear! 👂' },
+      }),
+    ], { reset: true });
+
+    renderer.handleNewProjectedEvent(
+      createProjectedEvent(5, {
+        eventId: 'live-done',
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+        payload: { text: 'Loud and clear! 👂' },
+      }),
+    );
+
+    const assistantTexts = container.querySelectorAll<HTMLDivElement>(
+      '.assistant-response[data-response-id="resp-1"] .assistant-text',
+    );
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.dataset['eventId']).toBe('live-done');
+    expect(assistantTexts[0]?.textContent).toContain('Loud and clear! 👂');
+  });
+
   it('renders interrupt indicators on the active turn', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

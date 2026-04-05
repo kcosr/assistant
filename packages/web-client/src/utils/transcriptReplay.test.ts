@@ -4,6 +4,7 @@ import type { ProjectedTranscriptEvent } from '@assistant/shared';
 import {
   computeUnfinishedRequestIds,
   dedupeProjectedTranscriptEvents,
+  filterBufferedTranscriptEventsAfterReplay,
   finishTranscriptHydration,
 } from './transcriptReplay';
 
@@ -136,5 +137,94 @@ describe('computeUnfinishedRequestIds', () => {
     ];
 
     expect(computeUnfinishedRequestIds(events)).toEqual(['r1']);
+  });
+});
+
+describe('filterBufferedTranscriptEventsAfterReplay', () => {
+  it('drops buffered events for requests already terminated by canonical replay', () => {
+    const renderedEvents: ProjectedTranscriptEvent[] = [
+      createEvent(0, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+      }),
+      createEvent(1, {
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        requestId: 'r1',
+      }),
+    ];
+    const bufferedEvents: ProjectedTranscriptEvent[] = [
+      createEvent(5, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        requestId: 'r1',
+        responseId: 'resp-1',
+        payload: { text: 'stale' },
+      }),
+      createEvent(6, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+        payload: { text: 'stale final' },
+      }),
+      createEvent(7, {
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        requestId: 'r1',
+      }),
+      createEvent(8, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        requestId: 'r2',
+        responseId: 'resp-2',
+        payload: { text: 'fresh' },
+      }),
+    ];
+
+    expect(
+      filterBufferedTranscriptEventsAfterReplay(bufferedEvents, renderedEvents, 1).map(
+        (event) => event.requestId,
+      ),
+    ).toEqual(['r2']);
+  });
+
+  it('drops stale assistant text for a finalized response even before request_end is rendered', () => {
+    const renderedEvents: ProjectedTranscriptEvent[] = [
+      createEvent(0, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+      }),
+    ];
+    const bufferedEvents: ProjectedTranscriptEvent[] = [
+      createEvent(5, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_chunk',
+        requestId: 'r1',
+        responseId: 'resp-1',
+        payload: { text: 'stale' },
+      }),
+      createEvent(6, {
+        kind: 'assistant_message',
+        chatEventType: 'assistant_done',
+        requestId: 'r1',
+        responseId: 'resp-1',
+      }),
+      createEvent(7, {
+        kind: 'request_end',
+        chatEventType: 'turn_end',
+        requestId: 'r1',
+      }),
+    ];
+
+    expect(
+      filterBufferedTranscriptEventsAfterReplay(bufferedEvents, renderedEvents, 0).map(
+        (event) => event.chatEventType,
+      ),
+    ).toEqual(['turn_end']);
   });
 });

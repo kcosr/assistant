@@ -36,6 +36,62 @@ export function dedupeProjectedTranscriptEvents(
   return deduped;
 }
 
+function trimProjectedId(value: string | undefined): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * Filter buffered live transcript events after a canonical replay has rendered.
+ *
+ * Live WS events and canonical replay do not share a strict sequence space for
+ * Pi-backed sessions because transient chunks are omitted from canonical
+ * history. Sequence filtering alone can therefore re-apply stale chunks or a
+ * duplicate assistant_done after canonical replay. Drop buffered events that
+ * belong to requests already terminated in the rendered transcript, or
+ * assistant text events for responses already finalized by canonical replay.
+ */
+export function filterBufferedTranscriptEventsAfterReplay(
+  bufferedEvents: readonly ProjectedTranscriptEvent[],
+  renderedEvents: readonly ProjectedTranscriptEvent[],
+  highestAppliedSequence: number,
+): ProjectedTranscriptEvent[] {
+  const completedRequestIds = new Set<string>();
+  const finalizedResponseIds = new Set<string>();
+
+  for (const event of renderedEvents) {
+    const requestId = trimProjectedId(event.requestId);
+    if (
+      requestId &&
+      (event.kind === 'request_end' || event.kind === 'interrupt' || event.kind === 'error')
+    ) {
+      completedRequestIds.add(requestId);
+    }
+    const responseId = trimProjectedId(event.responseId);
+    if (responseId && event.chatEventType === 'assistant_done') {
+      finalizedResponseIds.add(responseId);
+    }
+  }
+
+  return bufferedEvents.filter((event) => {
+    if (highestAppliedSequence >= 0 && event.sequence <= highestAppliedSequence) {
+      return false;
+    }
+    const requestId = trimProjectedId(event.requestId);
+    if (requestId && completedRequestIds.has(requestId)) {
+      return false;
+    }
+    const responseId = trimProjectedId(event.responseId);
+    if (
+      responseId &&
+      finalizedResponseIds.has(responseId) &&
+      (event.chatEventType === 'assistant_chunk' || event.chatEventType === 'assistant_done')
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 export function finishTranscriptHydration(
   state: { hydratingCount: number },
   flushBufferedEvents: () => void,

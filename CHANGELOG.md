@@ -11,6 +11,7 @@
 ### Fixed
 
 - Fixed desktop HTML attachment opens to use a single native Tauri command that writes and opens the temporary `.html` file, avoiding host-specific failures from the previous split write/open path.
+- Fixed chat transcript hydration so stale buffered live events no longer re-apply already-finalized assistant text after canonical replay, preventing transient duplicate final messages that disappeared on refresh.
 
 ### Removed
 
