@@ -29,6 +29,8 @@
 - Changed Android share-intent chat destinations to prefer the configured native voice session
   while keeping the existing share destination modal and falling back to the chat session picker
   when no preferred session is set.
+- Changed pane tab strips to use a dedicated horizontal scroll rail so long tab sets remain usable,
+  especially on mobile.
 
 - Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
 - Changed coding tool registration to use a core `CodingToolHost` in the main tool catalog instead of routing coding tools through the plugin registry wrapper.

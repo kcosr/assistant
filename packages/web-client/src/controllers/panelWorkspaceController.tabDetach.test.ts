@@ -255,4 +255,51 @@ describe('PanelWorkspaceController tab detach', () => {
       ],
     });
   });
+
+  it('renders pane tabs inside a dedicated scrollable tab list with the add button outside it', () => {
+    const registry = new PanelRegistry();
+    registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
+    registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+    registry.register(EMPTY_PANEL_MANIFEST, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      defaultLayout: () => ({
+        layout: pane('pane-1', ['chat-1', 'input-1', 'empty-1'], 'chat-1'),
+        panels: {
+          'chat-1': { panelId: 'chat-1', panelType: 'chat' },
+          'input-1': { panelId: 'input-1', panelType: 'input' },
+          'empty-1': { panelId: 'empty-1', panelType: 'empty' },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+      openPanelLauncher: () => undefined,
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+
+    const header = root.querySelector<HTMLElement>('.panel-tabs-header');
+    const tabList = root.querySelector<HTMLElement>('.panel-tabs-list');
+    const addButton = root.querySelector<HTMLElement>('.panel-tab-add');
+    const tabButtons = [...root.querySelectorAll<HTMLElement>('.panel-tab-button')];
+
+    expect(header).not.toBeNull();
+    expect(tabList).not.toBeNull();
+    expect(addButton).not.toBeNull();
+    if (!header || !tabList || !addButton) {
+      throw new Error('Missing tab strip elements');
+    }
+
+    expect(tabButtons.length).toBe(3);
+    expect(tabButtons.every((button) => button.parentElement === tabList)).toBe(true);
+    expect(addButton.parentElement).toBe(header);
+    expect(addButton.parentElement).not.toBe(tabList);
+  });
 });

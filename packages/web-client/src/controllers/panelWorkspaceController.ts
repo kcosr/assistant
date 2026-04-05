@@ -1888,6 +1888,10 @@ export class PanelWorkspaceController {
     header.className = 'panel-tabs-header';
     container.appendChild(header);
 
+    const tabList = document.createElement('div');
+    tabList.className = 'panel-tabs-list';
+    header.appendChild(tabList);
+
     const content = document.createElement('div');
     content.className = 'panel-tabs-content';
     container.appendChild(content);
@@ -1976,7 +1980,7 @@ export class PanelWorkspaceController {
         this.persistLayout();
         this.render();
       });
-      header.appendChild(button);
+      tabList.appendChild(button);
 
       const tabWrapper = document.createElement('div');
       tabWrapper.className = 'panel-tab-panel';
@@ -2034,6 +2038,7 @@ export class PanelWorkspaceController {
     }
     if (node.tabs.length <= 1) {
       header.classList.add('panel-tabs-header-single');
+      tabList.classList.add('panel-tabs-list-single');
     }
     return container;
   }
