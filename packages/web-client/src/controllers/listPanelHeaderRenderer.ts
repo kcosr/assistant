@@ -205,11 +205,33 @@ export function renderListPanelHeader(
   });
   selectAllBtn.dataset['role'] = 'select-all-button';
 
+  const moveTopBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Move to Top',
+    options.onMoveSelectionToTop,
+    {
+      className: 'collection-list-actions-menu-item move-selection-top-button',
+    },
+  );
+  moveTopBtn.dataset['role'] = 'move-selection-top-button';
+
+  const moveBottomBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Move to Bottom',
+    options.onMoveSelectionToBottom,
+    {
+      className: 'collection-list-actions-menu-item move-selection-bottom-button',
+    },
+  );
+  moveBottomBtn.dataset['role'] = 'move-selection-bottom-button';
+
   const moveSelectedBtn = document.createElement('button');
   moveSelectedBtn.type = 'button';
   moveSelectedBtn.className = 'collection-list-actions-menu-item move-selected-button';
   moveSelectedBtn.dataset['role'] = 'move-selected-button';
-  moveSelectedBtn.textContent = 'Move';
+  moveSelectedBtn.textContent = 'Move to List';
   moveSelectedBtn.setAttribute('aria-haspopup', 'menu');
   moveSelectedBtn.setAttribute('aria-expanded', 'false');
   selectionMenu.appendChild(moveSelectedBtn);
@@ -440,28 +462,6 @@ export function renderListPanelHeader(
   );
   clearBtn.dataset['role'] = 'clear-selection-button';
   clearBtn.title = 'Clear selection';
-
-  const moveTopBtn = addMenuItem(
-    selectionMenu,
-    () => setSelectionMenuOpen(false),
-    'Move to Top',
-    options.onMoveSelectionToTop,
-    {
-      className: 'collection-list-actions-menu-item move-selection-top-button',
-    },
-  );
-  moveTopBtn.dataset['role'] = 'move-selection-top-button';
-
-  const moveBottomBtn = addMenuItem(
-    selectionMenu,
-    () => setSelectionMenuOpen(false),
-    'Move to Bottom',
-    options.onMoveSelectionToBottom,
-    {
-      className: 'collection-list-actions-menu-item move-selection-bottom-button',
-    },
-  );
-  moveBottomBtn.dataset['role'] = 'move-selection-bottom-button';
 
   const deleteBtn = addMenuItem(
     selectionMenu,

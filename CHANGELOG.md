@@ -31,9 +31,9 @@
   when no preferred session is set.
 - Changed pane tab strips to use a dedicated horizontal scroll rail so long tab sets remain usable,
   especially on mobile.
-- Changed list selection commands to live under the `<n> selected` menu instead of `Actions`, and
-  added `Move to Top` and `Move to Bottom` there while preserving the current order of the selected
-  items.
+- Changed list selection commands to live under the `<n> selected` menu instead of `Actions`,
+  reordered them to put `Move to Top`, `Move to Bottom`, and `Move to List` first, and preserved
+  the current order of moved items.
 
 - Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
 - Changed coding tool registration to use a core `CodingToolHost` in the main tool catalog instead of routing coding tools through the plugin registry wrapper.

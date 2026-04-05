@@ -137,6 +137,66 @@ describe('renderListPanelHeader', () => {
     expect(deleteBtn?.classList.contains('visible')).toBe(true);
   });
 
+  it('orders selection-menu commands with move actions first', () => {
+    const data: ListPanelData = {
+      id: 'list1',
+      name: 'My List',
+    };
+
+    const { header, controls } = renderListPanelHeader({
+      listId: 'list1',
+      data,
+      selectedCount: 2,
+      icons: {
+        plus: '',
+        trash: '<svg class="trash"></svg>',
+        edit: '<svg></svg>',
+      },
+      showAllColumns: false,
+      timelineField: null,
+      focusMarkerItemId: null,
+      isSortedByPosition: true,
+      customFields: [],
+      onSelectVisible: vi.fn(),
+      onSelectAll: vi.fn(),
+      onClearSelection: vi.fn(),
+      onDeleteSelection: vi.fn(),
+      onMoveSelectionToTop: vi.fn(),
+      onMoveSelectionToBottom: vi.fn(),
+      onAddItem: vi.fn(),
+      onToggleView: vi.fn(),
+      onEditMetadata: vi.fn(),
+      onTimelineFieldChange: vi.fn(),
+      onFocusViewToggle: vi.fn(),
+      getMoveTargetLists: () => [],
+      onMoveSelectedToList: vi.fn(),
+      onCopySelectedToList: vi.fn(),
+      renderTags: () => null,
+    });
+
+    document.body.appendChild(header);
+    for (const el of controls.rightControls) {
+      document.body.appendChild(el);
+    }
+
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+
+    const labels = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>(
+        '.collection-list-selection-menu > .collection-list-actions-menu-item.visible',
+      ),
+    ).map((el) => el.textContent?.trim());
+
+    expect(labels).toEqual([
+      'Move to Top',
+      'Move to Bottom',
+      'Move to List',
+      'Copy',
+      'Clear',
+      'Delete',
+    ]);
+  });
+
   it('preserves provided target order in the move selected submenu', () => {
     const data: ListPanelData = {
       id: 'list1',
