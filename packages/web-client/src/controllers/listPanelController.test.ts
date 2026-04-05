@@ -963,11 +963,101 @@ describe('ListPanelController clipboard shortcuts', () => {
     expect(__TEST_ONLY.getListClipboard()?.mode).toBe('copy');
   });
 
+  it('moves selected items to the top preserving their current order', async () => {
+    setupClipboard();
+    const callOperation = vi.fn(async (operation) => {
+      if (operation === 'items-bulk-move') {
+        return { results: [{ ok: true }, { ok: true }] } as unknown;
+      }
+      return {} as unknown;
+    }) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const setStatus = vi.fn();
+    const selectedIds = ['item-3', 'item-1'];
+
+    const controller = buildController({
+      callOperation,
+      setStatus,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+
+    const controls = controller.render('list-1', {
+      id: 'list-1',
+      name: 'List 1',
+      items: [
+        { id: 'item-1', title: 'Item 1', position: 0 },
+        { id: 'item-2', title: 'Item 2', position: 1 },
+        { id: 'item-3', title: 'Item 3', position: 2 },
+        { id: 'item-4', title: 'Item 4', position: 3 },
+      ],
+    });
+    for (const el of controls.rightControls) {
+      document.body.appendChild(el);
+    }
+
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="move-selection-top-button"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOperation).toHaveBeenCalledWith('items-bulk-move', {
+      operations: [
+        { id: 'item-1', targetListId: 'list-1', position: 0 },
+        { id: 'item-3', targetListId: 'list-1', position: 1 },
+      ],
+    });
+    expect(setStatus).toHaveBeenCalledWith('Moved 2 selected items to the top');
+  });
+
+  it('moves selected items to the bottom preserving their current order', async () => {
+    setupClipboard();
+    const callOperation = vi.fn(async (operation) => {
+      if (operation === 'items-bulk-move') {
+        return { results: [{ ok: true }, { ok: true }] } as unknown;
+      }
+      return {} as unknown;
+    }) as NonNullable<ListPanelControllerOptions['callOperation']>;
+    const setStatus = vi.fn();
+    const selectedIds = ['item-2', 'item-4'];
+
+    const controller = buildController({
+      callOperation,
+      setStatus,
+      getSelectedItemIds: () => selectedIds,
+      getSelectedItemCount: () => selectedIds.length,
+    });
+
+    const controls = controller.render('list-1', {
+      id: 'list-1',
+      name: 'List 1',
+      items: [
+        { id: 'item-1', title: 'Item 1', position: 0 },
+        { id: 'item-2', title: 'Item 2', position: 1 },
+        { id: 'item-3', title: 'Item 3', position: 2 },
+        { id: 'item-4', title: 'Item 4', position: 3 },
+      ],
+    });
+    for (const el of controls.rightControls) {
+      document.body.appendChild(el);
+    }
+
+    document.body.querySelector<HTMLButtonElement>('[data-role="selection-status"]')?.click();
+    document.body.querySelector<HTMLButtonElement>('[data-role="move-selection-bottom-button"]')?.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(callOperation).toHaveBeenCalledWith('items-bulk-move', {
+      operations: [
+        { id: 'item-2', targetListId: 'list-1' },
+        { id: 'item-4', targetListId: 'list-1' },
+      ],
+    });
+    expect(setStatus).toHaveBeenCalledWith('Moved 2 selected items to the bottom');
+  });
+
   it('pastes copied items into another list on Cmd/Ctrl+V', async () => {
     setupClipboard();
     const callOperation = vi.fn(async (operation) => {
       if (operation === 'items-bulk-copy') {
-        return { result: { results: [{ ok: true }] } } as unknown;
+        return { results: [{ ok: true }] } as unknown;
       }
       return {} as unknown;
     }) as NonNullable<ListPanelControllerOptions['callOperation']>;
@@ -1005,7 +1095,7 @@ describe('ListPanelController clipboard shortcuts', () => {
     setupClipboard();
     const callOperation = vi.fn(async (operation) => {
       if (operation === 'items-bulk-move') {
-        return { result: { results: [{ ok: true }] } } as unknown;
+        return { results: [{ ok: true }] } as unknown;
       }
       return {} as unknown;
     }) as NonNullable<ListPanelControllerOptions['callOperation']>;

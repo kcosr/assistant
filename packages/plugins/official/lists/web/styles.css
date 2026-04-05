@@ -1384,10 +1384,20 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .collection-list-selection-status.visible {
   display: inline-flex;
+}
+
+.collection-list-selection-status:hover {
+  background-color: color-mix(in srgb, var(--color-accent-subtle) 60%, var(--color-bg-hover));
+  border-color: var(--color-accent-primary);
 }
 
 .collection-list-actions-menu {

@@ -25,6 +25,8 @@ export interface ListPanelHeaderRendererOptions {
   onSelectAll: () => void;
   onClearSelection: () => void;
   onDeleteSelection: () => void;
+  onMoveSelectionToTop: () => void;
+  onMoveSelectionToBottom: () => void;
   onAddItem: (listId: string) => void;
   onToggleView: () => void;
   onEditMetadata: () => void;
@@ -88,25 +90,38 @@ export function renderListPanelHeader(
   actionsButton.setAttribute('aria-expanded', 'false');
   actionsWrapper.appendChild(actionsButton);
 
-  const selectionStatus = document.createElement('span');
-  selectionStatus.className = 'collection-list-selection-status';
-  selectionStatus.dataset['role'] = 'selection-status';
-  selectionStatus.textContent =
-    options.selectedCount > 0 ? `${options.selectedCount} selected` : 'No items selected';
-  selectionStatus.classList.toggle('visible', options.selectedCount > 0);
-  actionsWrapper.appendChild(selectionStatus);
-
   const actionsMenu = document.createElement('div');
   actionsMenu.className = 'collection-list-actions-menu';
   actionsWrapper.appendChild(actionsMenu);
 
+  const selectionWrapper = document.createElement('div');
+  selectionWrapper.className = 'collection-list-actions-wrapper collection-list-selection-wrapper';
+
+  const selectionButton = document.createElement('button');
+  selectionButton.type = 'button';
+  selectionButton.className = 'collection-list-selection-status';
+  selectionButton.dataset['role'] = 'selection-status';
+  selectionButton.textContent =
+    options.selectedCount > 0 ? `${options.selectedCount} selected` : 'No items selected';
+  selectionButton.classList.toggle('visible', options.selectedCount > 0);
+  selectionButton.setAttribute('aria-haspopup', 'menu');
+  selectionButton.setAttribute('aria-expanded', 'false');
+  selectionWrapper.appendChild(selectionButton);
+
+  const selectionMenu = document.createElement('div');
+  selectionMenu.className = 'collection-list-actions-menu collection-list-selection-menu';
+  selectionWrapper.appendChild(selectionMenu);
+
   let isMenuOpen = false;
+  let isSelectionMenuOpen = false;
   let moveSubmenu: HTMLDivElement | null = null;
   let copySubmenu: HTMLDivElement | null = null;
 
   const handleDocumentClick = (event: MouseEvent): void => {
-    if (!actionsWrapper.contains(event.target as Node)) {
+    const target = event.target as Node;
+    if (!actionsWrapper.contains(target) && !selectionWrapper.contains(target)) {
       setMenuOpen(false);
+      setSelectionMenuOpen(false);
     }
   };
 
@@ -119,7 +134,7 @@ export function renderListPanelHeader(
     actionsButton.setAttribute('aria-expanded', isMenuOpen ? 'true' : 'false');
     if (isMenuOpen) {
       document.addEventListener('click', handleDocumentClick);
-    } else {
+    } else if (!isSelectionMenuOpen) {
       document.removeEventListener('click', handleDocumentClick);
     }
 
@@ -131,7 +146,30 @@ export function renderListPanelHeader(
     }
   };
 
+  const setSelectionMenuOpen = (open: boolean): void => {
+    if (isSelectionMenuOpen === open) {
+      return;
+    }
+    isSelectionMenuOpen = open;
+    selectionMenu.classList.toggle('open', isSelectionMenuOpen);
+    selectionButton.setAttribute('aria-expanded', isSelectionMenuOpen ? 'true' : 'false');
+    if (isSelectionMenuOpen) {
+      document.addEventListener('click', handleDocumentClick);
+    } else if (!isMenuOpen) {
+      document.removeEventListener('click', handleDocumentClick);
+    }
+
+    if (!isSelectionMenuOpen && moveSubmenu) {
+      moveSubmenu.classList.remove('open');
+    }
+    if (!isSelectionMenuOpen && copySubmenu) {
+      copySubmenu.classList.remove('open');
+    }
+  };
+
   const addMenuItem = (
+    menu: HTMLElement,
+    closeMenu: () => void,
     label: string,
     onClick: () => void,
     optionsOverrides?: { id?: string; className?: string; iconHtml?: string },
@@ -150,19 +188,19 @@ export function renderListPanelHeader(
     btn.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      setMenuOpen(false);
+      closeMenu();
       onClick();
     });
-    actionsMenu.appendChild(btn);
+    menu.appendChild(btn);
     return btn;
   };
 
-  const selectVisibleBtn = addMenuItem('Select visible', options.onSelectVisible, {
+  const selectVisibleBtn = addMenuItem(actionsMenu, () => setMenuOpen(false), 'Select visible', options.onSelectVisible, {
     className: 'collection-list-actions-menu-item',
   });
   selectVisibleBtn.dataset['role'] = 'select-visible-button';
 
-  const selectAllBtn = addMenuItem('Select all', options.onSelectAll, {
+  const selectAllBtn = addMenuItem(actionsMenu, () => setMenuOpen(false), 'Select all', options.onSelectAll, {
     className: 'collection-list-actions-menu-item',
   });
   selectAllBtn.dataset['role'] = 'select-all-button';
@@ -171,14 +209,14 @@ export function renderListPanelHeader(
   moveSelectedBtn.type = 'button';
   moveSelectedBtn.className = 'collection-list-actions-menu-item move-selected-button';
   moveSelectedBtn.dataset['role'] = 'move-selected-button';
-  moveSelectedBtn.textContent = 'Move Selected';
+  moveSelectedBtn.textContent = 'Move';
   moveSelectedBtn.setAttribute('aria-haspopup', 'menu');
   moveSelectedBtn.setAttribute('aria-expanded', 'false');
-  actionsMenu.appendChild(moveSelectedBtn);
+  selectionMenu.appendChild(moveSelectedBtn);
 
   moveSubmenu = document.createElement('div');
   moveSubmenu.className = 'collection-list-actions-submenu';
-  actionsMenu.appendChild(moveSubmenu);
+  selectionMenu.appendChild(moveSubmenu);
 
   const rebuildMoveSubmenu = (): void => {
     if (!moveSubmenu) {
@@ -206,7 +244,7 @@ export function renderListPanelHeader(
       btn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        setMenuOpen(false);
+        setSelectionMenuOpen(false);
         options.onMoveSelectedToList(target.id);
       });
       moveSubmenu.appendChild(btn);
@@ -283,14 +321,14 @@ export function renderListPanelHeader(
   copySelectedBtn.type = 'button';
   copySelectedBtn.className = 'collection-list-actions-menu-item copy-selected-button';
   copySelectedBtn.dataset['role'] = 'copy-selected-button';
-  copySelectedBtn.textContent = 'Copy Selected';
+  copySelectedBtn.textContent = 'Copy';
   copySelectedBtn.setAttribute('aria-haspopup', 'menu');
   copySelectedBtn.setAttribute('aria-expanded', 'false');
-  actionsMenu.appendChild(copySelectedBtn);
+  selectionMenu.appendChild(copySelectedBtn);
 
   copySubmenu = document.createElement('div');
   copySubmenu.className = 'collection-list-actions-submenu';
-  actionsMenu.appendChild(copySubmenu);
+  selectionMenu.appendChild(copySubmenu);
 
   const rebuildCopySubmenu = (): void => {
     if (!copySubmenu) {
@@ -318,7 +356,7 @@ export function renderListPanelHeader(
       btn.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        setMenuOpen(false);
+        setSelectionMenuOpen(false);
         options.onCopySelectedToList(target.id);
       });
       copySubmenu.appendChild(btn);
@@ -391,17 +429,51 @@ export function renderListPanelHeader(
     });
   }
 
-  const clearBtn = addMenuItem('Clear Selected', options.onClearSelection, {
-    className: 'collection-list-actions-menu-item clear-selection-button',
-  });
+  const clearBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Clear',
+    options.onClearSelection,
+    {
+      className: 'collection-list-actions-menu-item clear-selection-button',
+    },
+  );
   clearBtn.dataset['role'] = 'clear-selection-button';
   clearBtn.title = 'Clear selection';
 
-  const deleteBtn = addMenuItem('Delete Selected', options.onDeleteSelection, {
-    className:
-      'collection-list-actions-menu-item delete-selection-button collection-list-actions-menu-item-danger',
-    iconHtml: options.icons.trash,
-  });
+  const moveTopBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Move to Top',
+    options.onMoveSelectionToTop,
+    {
+      className: 'collection-list-actions-menu-item move-selection-top-button',
+    },
+  );
+  moveTopBtn.dataset['role'] = 'move-selection-top-button';
+
+  const moveBottomBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Move to Bottom',
+    options.onMoveSelectionToBottom,
+    {
+      className: 'collection-list-actions-menu-item move-selection-bottom-button',
+    },
+  );
+  moveBottomBtn.dataset['role'] = 'move-selection-bottom-button';
+
+  const deleteBtn = addMenuItem(
+    selectionMenu,
+    () => setSelectionMenuOpen(false),
+    'Delete',
+    options.onDeleteSelection,
+    {
+      className:
+        'collection-list-actions-menu-item delete-selection-button collection-list-actions-menu-item-danger',
+      iconHtml: options.icons.trash,
+    },
+  );
   deleteBtn.dataset['role'] = 'delete-selection-button';
   deleteBtn.setAttribute('aria-label', 'Delete selected items');
   deleteBtn.title = 'Delete selected items';
@@ -409,16 +481,22 @@ export function renderListPanelHeader(
   const updateSelectionActionVisibility = (hasSelection: boolean): void => {
     selectVisibleBtn.hidden = hasSelection;
     selectAllBtn.hidden = hasSelection;
+    selectionButton.classList.toggle('visible', hasSelection);
     clearBtn.classList.toggle('visible', hasSelection);
+    moveTopBtn.classList.toggle('visible', hasSelection);
+    moveBottomBtn.classList.toggle('visible', hasSelection);
     deleteBtn.classList.toggle('visible', hasSelection);
     moveSelectedBtn.classList.toggle('visible', hasSelection);
     copySelectedBtn.classList.toggle('visible', hasSelection);
+    if (!hasSelection) {
+      setSelectionMenuOpen(false);
+    }
   };
 
   updateSelectionActionVisibility(options.selectedCount > 0);
 
   const toggleLabel = options.showAllColumns ? 'Compact view' : 'Expand view';
-  addMenuItem(toggleLabel, options.onToggleView, {
+  addMenuItem(actionsMenu, () => setMenuOpen(false), toggleLabel, options.onToggleView, {
     className: 'collection-list-actions-menu-item',
   });
 
@@ -426,12 +504,18 @@ export function renderListPanelHeader(
   const focusViewEnabled = options.isSortedByPosition && !options.timelineField;
   const isFocusViewActive = !!options.focusMarkerItemId;
   const focusViewLabel = isFocusViewActive ? '✓ Focus View' : 'Focus View';
-  const focusViewBtn = addMenuItem(focusViewLabel, options.onFocusViewToggle, {
-    className:
-      'collection-list-actions-menu-item' +
-      (isFocusViewActive ? ' collection-list-actions-menu-item-selected' : '') +
-      (!focusViewEnabled ? ' collection-list-actions-menu-item-disabled' : ''),
-  });
+  const focusViewBtn = addMenuItem(
+    actionsMenu,
+    () => setMenuOpen(false),
+    focusViewLabel,
+    options.onFocusViewToggle,
+    {
+      className:
+        'collection-list-actions-menu-item' +
+        (isFocusViewActive ? ' collection-list-actions-menu-item-selected' : '') +
+        (!focusViewEnabled ? ' collection-list-actions-menu-item-disabled' : ''),
+    },
+  );
   if (!focusViewEnabled) {
     focusViewBtn.disabled = true;
     focusViewBtn.title = options.timelineField
@@ -454,6 +538,8 @@ export function renderListPanelHeader(
     // Option to disable timeline view
     const isNoneSelected = !options.timelineField;
     const noneOption = addMenuItem(
+      actionsMenu,
+      () => setMenuOpen(false),
       isNoneSelected ? '✓ None' : 'None',
       () => options.onTimelineFieldChange(null),
       {
@@ -468,6 +554,8 @@ export function renderListPanelHeader(
     for (const field of timelineFields) {
       const isSelected = options.timelineField === field.key;
       const fieldOption = addMenuItem(
+        actionsMenu,
+        () => setMenuOpen(false),
         isSelected ? `✓ ${field.label}` : field.label,
         () => options.onTimelineFieldChange(field.key),
         {
@@ -483,10 +571,22 @@ export function renderListPanelHeader(
   actionsButton.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    setSelectionMenuOpen(false);
     setMenuOpen(!isMenuOpen);
   });
 
+  selectionButton.addEventListener('click', (event) => {
+    if (!selectionButton.classList.contains('visible')) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setMenuOpen(false);
+    setSelectionMenuOpen(!isSelectionMenuOpen);
+  });
+
   buttonGroup.appendChild(actionsWrapper);
+  buttonGroup.appendChild(selectionWrapper);
 
   if (typeof options.data.description === 'string' && options.data.description.trim().length > 0) {
     const descriptionEl = document.createElement('p');

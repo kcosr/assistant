@@ -739,6 +739,12 @@ export class ListPanelController {
       onClearSelection: () => {
         this.clearListSelection();
       },
+      onMoveSelectionToTop: () => {
+        void this.moveSelectedItemsToBoundary('top');
+      },
+      onMoveSelectionToBottom: () => {
+        void this.moveSelectedItemsToBoundary('bottom');
+      },
       onDeleteSelection: () => {
         this.showDeleteSelectedItemsConfirmation(listId);
       },
@@ -1724,9 +1730,8 @@ export class ListPanelController {
     let totalCount = fallbackTotal;
 
     if (data && typeof data === 'object') {
-      const obj = data as { ok?: unknown; result?: unknown };
-      const result = obj.result as { results?: unknown } | undefined;
-      const results = result?.results;
+      const obj = data as { results?: unknown };
+      const results = obj.results;
       if (Array.isArray(results)) {
         totalCount = results.length;
         for (const entry of results) {
@@ -2076,6 +2081,63 @@ export class ListPanelController {
       this.options.setStatus('Failed to move item');
     }
     return ok;
+  }
+
+  private async moveSelectedItemsToBoundary(boundary: 'top' | 'bottom'): Promise<boolean> {
+    const listId = this.currentListId;
+    if (!listId) {
+      return false;
+    }
+    const selectedIds = this.options.getSelectedItemIds();
+    if (selectedIds.length === 0) {
+      this.options.setStatus('Select at least one item to move');
+      return false;
+    }
+
+    const selectedSet = new Set(selectedIds);
+    const orderedSelectedIds = this.currentSortedItems
+      .map((item) => item.id)
+      .filter((itemId): itemId is string => typeof itemId === 'string' && selectedSet.has(itemId));
+    if (orderedSelectedIds.length === 0) {
+      return false;
+    }
+
+    const scrollTargetId =
+      boundary === 'top'
+        ? orderedSelectedIds[0]!
+        : orderedSelectedIds[orderedSelectedIds.length - 1]!;
+    this.queuePendingSelectionScroll(scrollTargetId);
+    for (const itemId of orderedSelectedIds) {
+      this.options.recentUserItemUpdates.add(itemId);
+      window.setTimeout(() => {
+        this.options.recentUserItemUpdates.delete(itemId);
+      }, this.options.userUpdateTimeoutMs);
+    }
+
+    const total = orderedSelectedIds.length;
+    const result = await this.runOperation('items-bulk-move', {
+      operations: orderedSelectedIds.map((itemId, index) => ({
+        id: itemId,
+        targetListId: listId,
+        ...(boundary === 'top' ? { position: index } : {}),
+      })),
+    });
+    const { okCount, totalCount } = this.countBulkResults(result, total);
+
+    if (okCount !== totalCount) {
+      this.consumePendingSelectionScrollItemId();
+      this.options.setStatus(
+        okCount === 0
+          ? 'Failed to move selected items'
+          : `Moved ${okCount} selected item${okCount === 1 ? '' : 's'}, but ${totalCount - okCount} failed`,
+      );
+      return false;
+    }
+
+    this.options.setStatus(
+      `Moved ${total} selected item${total === 1 ? '' : 's'} to the ${boundary}`,
+    );
+    return true;
   }
 }
 
