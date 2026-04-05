@@ -139,11 +139,35 @@ function summarizeText(value: string, maxLen = 120): string {
   return `${value.slice(0, headLen)}…${value.slice(-tailLen)}`;
 }
 
+/**
+ * Map a session-level thinking level (shared with pi/codex — e.g. "none", "low",
+ * "medium", "high", "xhigh") to a value accepted by Claude's `--effort` flag
+ * (`low`, `medium`, `high`, or `max`). Returns `undefined` when no flag should
+ * be passed (either "none" or an unrecognised value).
+ */
+export function resolveClaudeEffortLevel(level: string | undefined): string | undefined {
+  if (typeof level !== 'string') {
+    return undefined;
+  }
+  const trimmed = level.trim().toLowerCase();
+  if (!trimmed || trimmed === 'none' || trimmed === 'off') {
+    return undefined;
+  }
+  if (trimmed === 'low' || trimmed === 'medium' || trimmed === 'high') {
+    return trimmed;
+  }
+  if (trimmed === 'xhigh' || trimmed === 'max') {
+    return 'max';
+  }
+  return undefined;
+}
+
 export async function runClaudeCliChat(options: {
   sessionId: string;
   resumeSession: boolean;
   userText: string;
   model?: string;
+  thinking?: string;
   config?: ClaudeCliChatConfig;
   abortSignal: AbortSignal;
   onTextDelta: (delta: string, fullTextSoFar: string) => void | Promise<void>;
@@ -187,6 +211,11 @@ export async function runClaudeCliChat(options: {
 
   if (options.model) {
     args.push('--model', options.model);
+  }
+
+  const effortLevel = resolveClaudeEffortLevel(options.thinking);
+  if (effortLevel) {
+    args.push('--effort', effortLevel);
   }
 
   if (config?.extraArgs?.length) {

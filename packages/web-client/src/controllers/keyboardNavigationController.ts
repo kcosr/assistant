@@ -565,6 +565,31 @@ export class KeyboardNavigationController {
 
     this.shortcutRegistry.register(
       plainShortcut(
+        'replace-empty-panel',
+        'enter',
+        'Replace empty active panel',
+        (event) => {
+          if (!this.canHandlePanelHeaderShortcut(event)) {
+            return false;
+          }
+          const activePanelId = panelWorkspace.getActivePanelId();
+          if (!activePanelId || panelWorkspace.getPanelType(activePanelId) !== 'empty') {
+            return false;
+          }
+          const frame = panelWorkspace.getPanelFrameElement(activePanelId);
+          panelWorkspace.openPanelLauncher({
+            replacePanelId: activePanelId,
+            compact: true,
+            anchor: frame,
+          });
+          return true;
+        },
+        { bindingId: 'panel.replace-empty' },
+      ),
+    );
+
+    this.shortcutRegistry.register(
+      plainShortcut(
         'open-panel-instance-picker',
         'i',
         'Open panel instance picker',

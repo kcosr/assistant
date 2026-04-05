@@ -965,6 +965,7 @@ export async function runChatCompletionCore(
     const resolvedSessionId = storedClaudeSession?.sessionId?.trim() || sessionId.trim();
     const nextCwd = resolvedCwd && resolvedCwd.trim().length > 0 ? resolvedCwd.trim() : undefined;
     const model = resolveCliModelForRun({ agent, summary: state.summary });
+    const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
 
     if (resolvedSessionId && nextCwd) {
       const currentSessionId = storedClaudeSession?.sessionId ?? '';
@@ -1003,6 +1004,7 @@ export async function runChatCompletionCore(
       resumeSession,
       userText: text,
       ...(model ? { model } : {}),
+      ...(thinking ? { thinking } : {}),
       ...(claudeConfig ? { config: claudeConfig } : {}),
       abortSignal: abortController.signal,
       onTextDelta: streamHandlers.emitTextDelta,

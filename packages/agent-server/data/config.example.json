@@ -47,6 +47,7 @@
       "chat": {
         "provider": "claude-cli",
         "models": ["opus", "sonnet", "haiku"],
+        "thinking": ["none", "low", "medium", "high", "xhigh"],
         "config": {
           "workdir": "/path/to/workspace",
           "extraArgs": ["--dangerously-skip-permissions"],

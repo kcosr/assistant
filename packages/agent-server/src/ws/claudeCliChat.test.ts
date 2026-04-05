@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
-import { runClaudeCliChat, type ClaudeCliSpawn } from './claudeCliChat';
+import { resolveClaudeEffortLevel, runClaudeCliChat, type ClaudeCliSpawn } from './claudeCliChat';
 
 class FakeClaudeProcess extends EventEmitter {
   readonly stdin = new PassThrough();
@@ -23,6 +23,28 @@ class FakeClaudeProcess extends EventEmitter {
     return true;
   }
 }
+
+describe('resolveClaudeEffortLevel', () => {
+  it('passes low/medium/high through unchanged', () => {
+    expect(resolveClaudeEffortLevel('low')).toBe('low');
+    expect(resolveClaudeEffortLevel('medium')).toBe('medium');
+    expect(resolveClaudeEffortLevel('high')).toBe('high');
+  });
+
+  it('maps xhigh and max to max', () => {
+    expect(resolveClaudeEffortLevel('xhigh')).toBe('max');
+    expect(resolveClaudeEffortLevel('max')).toBe('max');
+  });
+
+  it('returns undefined for none/off/empty/unknown', () => {
+    expect(resolveClaudeEffortLevel('none')).toBeUndefined();
+    expect(resolveClaudeEffortLevel('off')).toBeUndefined();
+    expect(resolveClaudeEffortLevel('')).toBeUndefined();
+    expect(resolveClaudeEffortLevel('  ')).toBeUndefined();
+    expect(resolveClaudeEffortLevel('bogus')).toBeUndefined();
+    expect(resolveClaudeEffortLevel(undefined)).toBeUndefined();
+  });
+});
 
 describe('runClaudeCliChat', () => {
   it('spawns claude with session-id for first message', async () => {
@@ -81,6 +103,95 @@ describe('runClaudeCliChat', () => {
     await promise;
 
     expect(capturedEnv?.['ASSISTANT_SESSION_ID']).toBe('session-123');
+  });
+
+  it('adds --effort when a supported thinking level is provided', async () => {
+    const child = new FakeClaudeProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: ClaudeCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      thinking: 'high',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).toContain('--effort');
+    expect(args).toContain('high');
+  });
+
+  it('maps xhigh thinking level to claude --effort max', async () => {
+    const child = new FakeClaudeProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: ClaudeCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      thinking: 'xhigh',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).toContain('--effort');
+    expect(args).toContain('max');
+  });
+
+  it('omits --effort when thinking is "none" or unrecognised', async () => {
+    const child = new FakeClaudeProcess();
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+
+    const spawnFn: ClaudeCliSpawn = (command, args) => {
+      calls.push({ command, args });
+      return child as unknown as ReturnType<ClaudeCliSpawn>;
+    };
+
+    const promise = runClaudeCliChat({
+      sessionId: 'session-123',
+      resumeSession: false,
+      userText: 'hello',
+      thinking: 'none',
+      abortSignal: new AbortController().signal,
+      onTextDelta: () => undefined,
+      log: () => undefined,
+      spawnFn,
+    });
+
+    child.stdout.end();
+    child.emit('close', 0, null);
+
+    await promise;
+
+    const args = calls[0]!.args;
+    expect(args).not.toContain('--effort');
   });
 
   it('adds model to claude args when provided', async () => {

@@ -6,9 +6,13 @@
 
 ### Added
 
+- Added `chat.thinking` support for `claude-cli` agents: the composer now surfaces the thinking picker for Claude agents, and the selected level is translated to Claude's `--effort` flag (`none`/`off` suppress the flag, `xhigh` maps to `max`, and `low`/`medium`/`high`/`max` pass through).
+
 ### Changed
 
 ### Fixed
+
+- Fixed keyboard handling so pressing `Enter` with an active empty panel opens the inline replace-panel picker, matching the empty panel replace button.
 
 ### Removed
 
