@@ -301,6 +301,9 @@ final class AssistantVoicePcmPlayer {
     private void writeChunk(long taskGeneration, String requestId, byte[] chunk, int sampleRate) {
         AudioTrack track;
         float chunkGain;
+        boolean writeStartupPreRoll;
+        int prerollSampleRate;
+        int prerollMs;
         synchronized (lock) {
             if (taskGeneration != generation || !matchesActiveRequestLocked(requestId)) {
                 pendingWrites = Math.max(0, pendingWrites - 1);
@@ -313,6 +316,21 @@ final class AssistantVoicePcmPlayer {
                 maybeCompletePlaybackLocked();
                 return;
             }
+            // The audio HAL/mixer needs a brief warmup after AudioTrack.play() is called on
+            // a cold device, especially when a scheduled session wakes the service from idle.
+            // Prepend silence (same knob recognition cues use) on the first chunk of each
+            // stream so the warmup window doesn't eat the beginning of the speech.
+            writeStartupPreRoll = framesWritten == 0 && startupPreRollMs > 0;
+            prerollSampleRate = activeSampleRate;
+            prerollMs = startupPreRollMs;
+        }
+
+        int prerollBytesWritten = 0;
+        if (writeStartupPreRoll) {
+            byte[] preroll = buildRecognitionCuePrerollPcm(prerollSampleRate, prerollMs);
+            if (preroll.length > 0) {
+                prerollBytesWritten = writePcm(track, preroll);
+            }
         }
 
         byte[] adjustedChunk = applySoftwareGainPcm16(chunk, chunkGain);
@@ -320,7 +338,7 @@ final class AssistantVoicePcmPlayer {
 
         synchronized (lock) {
             if (taskGeneration == generation && matchesActiveRequestLocked(requestId)) {
-                framesWritten += bytesWritten / 2;
+                framesWritten += (prerollBytesWritten + bytesWritten) / 2;
             }
             pendingWrites = Math.max(0, pendingWrites - 1);
             maybeCompletePlaybackLocked();

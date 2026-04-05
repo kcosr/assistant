@@ -359,12 +359,28 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void shouldHandleRecognizedStopCommandMatchesExactStopWord() {
+    public void shouldHandleRecognizedStopCommandMatchesStopAsStandaloneWordInShortPhrase() {
         assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop"));
         assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, " Stop. "));
-        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop now"));
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop now"));
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "please stop"));
+        assertEquals(true, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "can you stop now"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "please can you stop now"));
+        assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "unstoppable"));
         assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, ""));
         assertEquals(false, AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(false, "stop"));
+    }
+
+    @Test
+    public void shouldHandleRecognizedStopCommandRespectsEnabledSetting() {
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop", false)
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldHandleRecognizedStopCommand(true, "stop", true)
+        );
     }
 
     @Test

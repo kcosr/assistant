@@ -9,6 +9,7 @@ export const MAX_TTS_GAIN = 5.0;
 export const DEFAULT_TTS_GAIN = 1.0;
 export const DEFAULT_RECOGNITION_CUE_ENABLED = true;
 export const DEFAULT_RECOGNITION_CUE_GAIN = 1.0;
+export const DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED = true;
 export const MIN_STARTUP_PRE_ROLL_MS = 0;
 export const MAX_STARTUP_PRE_ROLL_MS = 4096;
 export const DEFAULT_STARTUP_PRE_ROLL_MS = 512;
@@ -24,6 +25,7 @@ export interface VoiceSettings {
   recognitionStartTimeoutMs: number;
   recognitionCompletionTimeoutMs: number;
   recognitionEndSilenceMs: number;
+  recognizeStopCommandEnabled: boolean;
   ttsGain: number;
   recognitionCueEnabled: boolean;
   recognitionCueGain: number;
@@ -145,6 +147,7 @@ export function createDefaultVoiceSettings(options?: {
     recognitionStartTimeoutMs: DEFAULT_RECOGNITION_START_TIMEOUT_MS,
     recognitionCompletionTimeoutMs: DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
     recognitionEndSilenceMs: DEFAULT_RECOGNITION_END_SILENCE_MS,
+    recognizeStopCommandEnabled: DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
     ttsGain: DEFAULT_TTS_GAIN,
     recognitionCueEnabled: DEFAULT_RECOGNITION_CUE_ENABLED,
     recognitionCueGain: DEFAULT_RECOGNITION_CUE_GAIN,
@@ -185,6 +188,10 @@ export function normalizeVoiceSettings(
       record['recognitionEndSilenceMs'],
       defaults.recognitionEndSilenceMs,
     ),
+    recognizeStopCommandEnabled:
+      typeof record['recognizeStopCommandEnabled'] === 'boolean'
+        ? record['recognizeStopCommandEnabled']
+        : defaults.recognizeStopCommandEnabled,
     ttsGain: normalizeTtsGain(record['ttsGain'], defaults.ttsGain),
     recognitionCueEnabled:
       typeof record['recognitionCueEnabled'] === 'boolean'
@@ -208,6 +215,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
     left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&
     left.recognitionEndSilenceMs === right.recognitionEndSilenceMs &&
+    left.recognizeStopCommandEnabled === right.recognizeStopCommandEnabled &&
     left.ttsGain === right.ttsGain &&
     left.recognitionCueEnabled === right.recognitionCueEnabled &&
     left.recognitionCueGain === right.recognitionCueGain &&

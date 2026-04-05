@@ -340,6 +340,7 @@ export interface SpeechAudioControllerOptions {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceRecognizeStopCommandCheckboxEl: HTMLInputElement;
   voiceRecognitionCueCheckboxEl: HTMLInputElement;
   voiceRecognitionCueGainSliderEl: HTMLInputElement;
   voiceRecognitionCueGainValueEl: HTMLElement;
@@ -951,6 +952,8 @@ export class SpeechAudioController {
     this.options.voiceRecognitionEndSilenceInputEl.value = String(
       this.currentVoiceSettings.recognitionEndSilenceMs,
     );
+    this.options.voiceRecognizeStopCommandCheckboxEl.checked =
+      this.currentVoiceSettings.recognizeStopCommandEnabled;
     this.options.voiceRecognitionCueCheckboxEl.checked =
       this.currentVoiceSettings.recognitionCueEnabled;
     this.options.voiceRecognitionCueGainSliderEl.value = String(
@@ -983,6 +986,7 @@ export class SpeechAudioController {
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCompletionTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionEndSilenceInputEl.disabled = !supportsNativeVoiceSettings;
+    this.options.voiceRecognizeStopCommandCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCueCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionCueGainSliderEl.disabled =
       !supportsNativeVoiceSettings || !this.currentVoiceSettings.recognitionCueEnabled;

@@ -101,6 +101,15 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void withVoiceSettingsReadsRecognizeStopCommandSetting() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("recognizeStopCommandEnabled", false)
+        );
+
+        assertFalse(updated.recognizeStopCommandEnabled);
+    }
+
+    @Test
     public void withVoiceSettingsReadsStartupPreRollMs() throws Exception {
         AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
             new JSONObject().put("startupPreRollMs", 768)
@@ -214,6 +223,7 @@ public final class AssistantVoiceConfigTest {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
             startupPreRollMs,
             mediaButtonsEnabled
         );

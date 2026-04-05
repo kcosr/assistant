@@ -1297,7 +1297,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         String text = trim(message.optString("text"));
         String error = trim(message.optString("error"));
         int durationMs = Math.max(0, message.optInt("durationMs", 0));
-        boolean localStopCommand = shouldHandleRecognizedStopCommand(success, text);
+        boolean localStopCommand = shouldHandleRecognizedStopCommand(
+            success,
+            text,
+            config.recognizeStopCommandEnabled
+        );
         boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
         boolean captureAlreadyStopped =
             shouldScheduleQueuedRecognitionCompletionCueAfterResult(
@@ -1756,13 +1760,35 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     static boolean shouldHandleRecognizedStopCommand(boolean success, String text) {
+        return shouldHandleRecognizedStopCommand(success, text, true);
+    }
+
+    static boolean shouldHandleRecognizedStopCommand(
+        boolean success,
+        String text,
+        boolean enabled
+    ) {
+        if (!enabled) {
+            return false;
+        }
         if (!success) {
             return false;
         }
-        String normalized = trim(text)
-            .toLowerCase(java.util.Locale.US)
-            .replaceAll("^[^a-z0-9]+|[^a-z0-9]+$", "");
-        return "stop".equals(normalized);
+        String normalized = trim(text).toLowerCase(java.util.Locale.US);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        String[] words = normalized.split("\\s+");
+        if (words.length == 0 || words.length > 4) {
+            return false;
+        }
+        for (String word : words) {
+            String cleaned = word.replaceAll("^[^a-z0-9]+|[^a-z0-9]+$", "");
+            if ("stop".equals(cleaned)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static boolean shouldPlayQueuedRecognitionCompletionCue(

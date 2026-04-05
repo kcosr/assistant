@@ -512,6 +512,8 @@ async function main(): Promise<void> {
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
     voiceRecognitionEndSilenceInput: voiceRecognitionEndSilenceInputEl,
+    voiceRecognizeStopCommandControl: voiceRecognizeStopCommandControlEl,
+    voiceRecognizeStopCommandCheckbox: voiceRecognizeStopCommandCheckboxEl,
     voiceRecognitionCueControl: voiceRecognitionCueControlEl,
     voiceRecognitionCueCheckbox: voiceRecognitionCueCheckboxEl,
     voiceRecognitionCueGainControl: voiceRecognitionCueGainControlEl,
@@ -631,6 +633,7 @@ async function main(): Promise<void> {
   const LIST_ITEM_EDITOR_DEFAULT_MODE_STORAGE_KEY = 'aiAssistantListItemEditorDefaultMode';
   const nativeVoiceBridge = new AssistantNativeVoiceBridge();
   const useNativeVoiceRuntime = isCapacitorAndroid() && nativeVoiceBridge.isAvailable();
+  voiceRecognizeStopCommandControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueControlEl.hidden = !useNativeVoiceRuntime;
   voiceRecognitionCueGainControlEl.hidden = !useNativeVoiceRuntime;
   voiceStartupPreRollControlEl.hidden = !useNativeVoiceRuntime;
@@ -1506,6 +1509,7 @@ async function main(): Promise<void> {
       voiceRecognitionStartTimeoutInputEl,
       voiceRecognitionCompletionTimeoutInputEl,
       voiceRecognitionEndSilenceInputEl,
+      voiceRecognizeStopCommandCheckboxEl,
       voiceRecognitionCueCheckboxEl,
       voiceRecognitionCueGainSliderEl,
       voiceRecognitionCueGainValueEl,
@@ -3594,6 +3598,7 @@ async function main(): Promise<void> {
       recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
       recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
       recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
+      recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
       preferredVoiceSessionId: voicePreferredSessionSelectEl.value,
       recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
       recognitionCueGain: recognitionCueGainPercentToValue(
@@ -3623,6 +3628,7 @@ async function main(): Promise<void> {
   voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionCompletionTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceRecognizeStopCommandCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionCueCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionCueGainSliderEl.addEventListener('input', syncRecognitionCueGainLabelFromSlider);
   voiceRecognitionCueGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
@@ -3649,6 +3655,7 @@ async function main(): Promise<void> {
       settings.recognitionCompletionTimeoutMs,
     );
     voiceRecognitionEndSilenceInputEl.value = String(settings.recognitionEndSilenceMs);
+    voiceRecognizeStopCommandCheckboxEl.checked = settings.recognizeStopCommandEnabled;
     voiceRecognitionCueCheckboxEl.checked = settings.recognitionCueEnabled;
     voiceRecognitionCueGainSliderEl.value = String(
       recognitionCueGainToPercent(settings.recognitionCueGain),

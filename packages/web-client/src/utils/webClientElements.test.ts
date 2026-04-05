@@ -26,6 +26,8 @@ describe('getWebClientElements', () => {
       <input id="voice-recognition-start-timeout-input" type="number" />
       <input id="voice-recognition-completion-timeout-input" type="number" />
       <input id="voice-recognition-end-silence-input" type="number" />
+      <div id="voice-recognize-stop-command-control"></div>
+      <input id="voice-recognize-stop-command-checkbox" type="checkbox" />
       <div id="voice-recognition-cue-control"></div>
       <input id="voice-recognition-cue-checkbox" type="checkbox" />
       <div id="voice-recognition-cue-gain-control"></div>
@@ -65,6 +67,12 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceRecognitionEndSilenceInput.id).toBe(
       'voice-recognition-end-silence-input',
     );
+    expect(elements?.voiceRecognizeStopCommandControl.id).toBe(
+      'voice-recognize-stop-command-control',
+    );
+    expect(elements?.voiceRecognizeStopCommandCheckbox.id).toBe(
+      'voice-recognize-stop-command-checkbox',
+    );
     expect(elements?.voiceRecognitionCueControl.id).toBe('voice-recognition-cue-control');
     expect(elements?.voiceRecognitionCueCheckbox.id).toBe('voice-recognition-cue-checkbox');
     expect(elements?.voiceRecognitionCueGainControl.id).toBe('voice-recognition-cue-gain-control');
@@ -95,6 +103,11 @@ describe('getWebClientElements', () => {
       'voice-recognition-cue-control',
     );
     expect(recognitionCueControl?.hasAttribute('hidden')).toBe(true);
+
+    const recognizeStopCommandControl = dom.window.document.getElementById(
+      'voice-recognize-stop-command-control',
+    );
+    expect(recognizeStopCommandControl?.hasAttribute('hidden')).toBe(true);
 
     const startupPreRollControl = dom.window.document.getElementById('voice-startup-pre-roll-control');
     expect(startupPreRollControl?.hasAttribute('hidden')).toBe(true);
