@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.1] - 2026-04-05
 
 ### Breaking Changes
 
@@ -20,6 +20,7 @@
 - Fixed panel inventory and `panels_selected` to report the actual active chat tab as the selected panel instead of surfacing a stale `empty` placeholder when chat is focused.
 
 ### Removed
+
 
 ## [0.18.0] - 2026-04-05
 
