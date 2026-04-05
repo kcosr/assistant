@@ -1,6 +1,6 @@
 {
   "name": "@assistant/coding-executor",
-  "version": "0.17.5",
+  "version": "0.18.0",
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
