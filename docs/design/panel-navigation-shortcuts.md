@@ -23,6 +23,10 @@ Add panel-scoped shortcuts to enter layout and header navigation modes using `Ct
 - Replace the existing chorded shortcuts with `Ctrl+P` / `Ctrl+H`:
   - `Ctrl+P` toggles layout navigation.
   - `Ctrl+H` toggles header panel navigation.
+- Add pane/panel placement shortcuts alongside navigation:
+  - `Ctrl+S` enters split placement for the active panel and opens the compact picker on `Enter`.
+  - `Ctrl+M` enters move placement for the active panel and confirms the move on `Enter`.
+  - `Ctrl+T` opens the compact add-tab picker for the active pane.
 - While in a navigation mode, pressing the same shortcut exits; pressing the other switches modes.
 - While in layout navigation, allow `A` or `S` for left and `D` for right in addition to arrow keys.
 - While in header navigation, allow `A`/`D` (or left/right arrows) to cycle pinned header panels, `Enter` or `↓` to focus the selected header panel and exit nav mode.

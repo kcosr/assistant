@@ -21,6 +21,7 @@
 - Added Android native voice `TTS gain` settings with a 25%-500% playback control, Android PCM software gain, runtime gain reporting, and an Android source-tree `android:test` entrypoint that syncs Capacitor before Gradle tests. ([#87](https://github.com/kcosr/assistant/pull/87))
 - Added Android native recognition cues with configurable cue gain and startup pre-roll settings, persistent notification toggles for media-button capture and `Off/Tool/Response` voice mode cycling, and a local spoken `stop` abort path. ([#89](https://github.com/kcosr/assistant/pull/89))
 - Added lists item search support for filter-only queries, including normalized search filter inputs when no text query is provided. ([#89](https://github.com/kcosr/assistant/pull/89))
+- Added installable PWA icons to the mobile web manifest so the mobile app can be added to a home screen with proper `any maskable` icon sizes from 48px through 512px.
 
 ### Changed
 
@@ -43,6 +44,7 @@
 - Changed pane tab dragging so tabs can be reordered within a pane, detached into new splits, and dropped onto other panes as tabs.
 - Changed pane-local add flows such as pane `+`, panel split actions, and `Ctrl+S` to use a compact in-pane panel picker when placement is already known, and allowed dragging lone pane tabs while leaving an `empty` placeholder behind in the source pane instead of collapsing that area.
 - Changed `Ctrl+T` to open the compact add-tab picker for the active pane, and changed the top-row `+` button to use the same inline add-tab flow instead of the full global panel launcher.
+- Changed panel keyboard controls to add a `Ctrl+M` move mode for the active panel, using the same four-way directional overlay pattern as `Ctrl+S` and confirming the move with `Enter`.
 - Changed compact in-pane panel pickers to show the current action in the header, submit directly from the focused row without redundant per-row add buttons, and use that same compact flow for inline panel replacement.
 - Changed empty-pane and toolbar replace actions to use explicit compact replace pickers, and suspended background keyboard shortcuts while the compact picker is open so arrow keys and enter stay scoped to the picker.
 - Changed compact panel pickers to keep a searchable filter input visible in compact mode, with keyboard navigation staying inside the picker while filtering.
@@ -53,7 +55,7 @@
 
 ### Fixed
 
-- Fixed chat typing-state drift so the chat-log typing dots, session busy state, and input activity bar all follow the same active-request state after live updates and replay.
+- Fixed chat activity indicators so the input activity bar, chat-log typing dots, session panel busy state, and mic/stop button all derive from a single authoritative request-activity source — seeded from the transcript on the first load for a session and on reconnect, maintained by live WebSocket events afterwards — and no longer stick in a busy state after transcript refreshes, interrupted requests, or transient fetch failures. The mic/stop button stays responsive for voice input instead of trapping the user in a stop state that previously required restarting the app.
 - Fixed attachment persistence to enforce the 4 MB size cap in the store as well as the tool layer, preventing oversized writes from non-tool callers. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
 - Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
@@ -94,7 +96,6 @@
 - Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
 - Fixed sender-side session typing indicators so transcript replay no longer re-applies stale optimistic local typing after a turn has already completed.
 - Fixed unbound chat panel creation so launcher-created chat panes explicitly auto-open the session picker on mount instead of relying on focus timing.
-- Fixed chat-panel activity drift so the in-chat typing dots and the input activity bar now fan out from the same session request-activity sync across all panels bound to that session.
 - Fixed chat tab and session-label hydration so bound chat panels refresh from session names immediately after binding and on page-load session summary sync instead of waiting for a later click-triggered rerender.
 - Fixed chat title refresh so routine `session_updated` syncs no longer force a full workspace rerender when a panel title has not actually changed.
 - Fixed chat transcript auto-scroll so loading a chat panel, selecting a session, and replaying the latest transcript settle fully to the bottom instead of stopping slightly above the newest messages.
@@ -109,6 +110,7 @@
 - Removed dead Pi EventStore overlay mirroring; Pi sessions now ignore EventStore persistence on the canonical path instead of duplicating overlay writes into the Pi transcript log.
 - Removed the dead Pi `ChatEvent` reconstruction helper and stale Pi history-provider test matrix; Pi replay validation now targets canonical transcript projection only.
 - Removed Pi replay support for legacy assistant overlay custom entries; canonical replay now restores only from canonical Pi `message` records plus request-boundary markers.
+
 ## [0.17.5] - 2026-04-01
 
 ### Breaking Changes

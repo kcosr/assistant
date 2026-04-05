@@ -214,6 +214,7 @@ Keep shortcuts, but align them to the new concepts.
 Recommended defaults:
 
 - `Ctrl+S` enter split placement for the active pane
+- `Ctrl+M` enter move placement for the active panel
 - `Ctrl+T` add tab to the active pane
 - `Ctrl+Shift+Arrow` move focus across panes
 - `Ctrl+PageUp/PageDown` switch tabs in the active pane

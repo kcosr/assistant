@@ -46,6 +46,7 @@ export interface KeyboardNavigationControllerOptions {
 type FocusZone = 'sidebar' | 'input';
 type ArrowDirection = 'left' | 'right' | 'up' | 'down';
 type SplitPlacementRegion = 'left' | 'right' | 'top' | 'bottom';
+type MovePlacementRegion = SplitPlacementRegion;
 
 interface LayoutNavState {
   mode: 'layout';
@@ -68,12 +69,22 @@ interface SplitPlacementState {
   cleanup: () => void;
 }
 
+interface MovePlacementState {
+  mode: 'move';
+  panelId: string;
+  region: MovePlacementRegion;
+  overlay: HTMLElement;
+  highlight: HTMLElement;
+  cleanup: () => void;
+}
+
 export class KeyboardNavigationController {
   private readonly shortcutRegistry: KeyboardShortcutRegistry;
   private hasAttached = false;
   private layoutNavState: LayoutNavState | null = null;
   private headerNavState: HeaderNavState | null = null;
   private splitPlacementState: SplitPlacementState | null = null;
+  private movePlacementState: MovePlacementState | null = null;
   private navOverlay: HTMLElement | null = null;
   private navHighlight: HTMLElement | null = null;
   private navBadges: HTMLElement[] = [];
@@ -384,6 +395,36 @@ export class KeyboardNavigationController {
       },
     });
 
+    this.shortcutRegistry.register(
+      ctrlShortcut(
+        'move-panel',
+        'm',
+        'Move active panel',
+        (event) => {
+          if (!this.preparePanelNavigationShortcut({ closeModal: true })) {
+            return false;
+          }
+          if (!this.canHandlePanelNavigationShortcut(event)) {
+            return false;
+          }
+          if (this.isTerminalKeyTarget(event)) {
+            return false;
+          }
+          const activePanelId = panelWorkspace.getActivePanelId();
+          if (!activePanelId) {
+            return false;
+          }
+          if (this.movePlacementState) {
+            this.stopMovePlacement();
+            return true;
+          }
+          this.startMovePlacement(activePanelId);
+          return true;
+        },
+        { bindingId: 'panel.move' },
+      ),
+    );
+
     const registerLastPanelShortcut = (
       id: string,
       key: string,
@@ -584,17 +625,24 @@ export class KeyboardNavigationController {
     const hadLayout = Boolean(this.layoutNavState);
     const hadHeader = Boolean(this.headerNavState);
     const hadSplit = Boolean(this.splitPlacementState);
+    const hadMove = Boolean(this.movePlacementState);
     this.stopLayoutNavigation();
     this.stopHeaderNavigation();
     this.stopSplitPlacement();
-    return hadLayout || hadHeader || hadSplit;
+    this.stopMovePlacement();
+    return hadLayout || hadHeader || hadSplit || hadMove;
   }
 
   private attachPanelNavigation(): void {
     document.addEventListener(
       'pointerdown',
       (event: PointerEvent) => {
-        if (!this.layoutNavState && !this.headerNavState && !this.splitPlacementState) {
+        if (
+          !this.layoutNavState &&
+          !this.headerNavState &&
+          !this.splitPlacementState &&
+          !this.movePlacementState
+        ) {
           return;
         }
         const target = event.target;
@@ -613,6 +661,7 @@ export class KeyboardNavigationController {
         this.stopLayoutNavigation();
         this.stopHeaderNavigation();
         this.stopSplitPlacement();
+        this.stopMovePlacement();
       },
       true,
     );
@@ -626,7 +675,12 @@ export class KeyboardNavigationController {
         if (this.options.dialogManager.hasOpenDialog) {
           return;
         }
-        if (!this.layoutNavState && !this.headerNavState && !this.splitPlacementState) {
+        if (
+          !this.layoutNavState &&
+          !this.headerNavState &&
+          !this.splitPlacementState &&
+          !this.movePlacementState
+        ) {
           return;
         }
         const handled = this.handlePanelNavigationKey(event);
@@ -728,6 +782,9 @@ export class KeyboardNavigationController {
   }
 
   private handlePanelNavigationKey(event: KeyboardEvent): boolean {
+    if (this.movePlacementState) {
+      return this.handleMovePlacementKey(event);
+    }
     if (this.splitPlacementState) {
       return this.handleSplitPlacementKey(event);
     }
@@ -968,6 +1025,7 @@ export class KeyboardNavigationController {
   private startLayoutNavigation(): void {
     this.stopHeaderNavigation();
     this.stopSplitPlacement();
+    this.stopMovePlacement();
     const panelId = this.resolveInitialLayoutPanelId();
     if (!panelId) {
       return;
@@ -993,6 +1051,7 @@ export class KeyboardNavigationController {
   private startHeaderNavigation(): void {
     this.stopLayoutNavigation();
     this.stopSplitPlacement();
+    this.stopMovePlacement();
     const page = 0;
     const index = -1;
     this.headerNavState = { mode: 'header', page, index };
@@ -1004,6 +1063,7 @@ export class KeyboardNavigationController {
     this.stopLayoutNavigation();
     this.stopHeaderNavigation();
     this.stopSplitPlacement();
+    this.stopMovePlacement();
 
     const frame = this.options.panelWorkspace.getPanelFrameElement(panelId);
     if (!frame) {
@@ -1052,6 +1112,80 @@ export class KeyboardNavigationController {
     this.splitPlacementState.overlay.remove();
     this.splitPlacementState = null;
     document.body.classList.remove('panel-split-placement-active');
+  }
+
+  private startMovePlacement(panelId: string): void {
+    this.stopLayoutNavigation();
+    this.stopHeaderNavigation();
+    this.stopSplitPlacement();
+    this.stopMovePlacement();
+
+    const frame = this.options.panelWorkspace.getPanelFrameElement(panelId);
+    if (!frame) {
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'panel-dock-overlay panel-split-overlay';
+
+    const highlight = document.createElement('div');
+    highlight.className = 'panel-dock-highlight';
+    overlay.appendChild(highlight);
+
+    document.body.appendChild(overlay);
+    document.body.classList.add('panel-move-placement-active');
+
+    const state: MovePlacementState = {
+      mode: 'move',
+      panelId,
+      region: 'bottom',
+      overlay,
+      highlight,
+      cleanup: () => undefined,
+    };
+    this.movePlacementState = state;
+
+    const handle = () => {
+      this.updateMovePlacementOverlay();
+    };
+    window.addEventListener('resize', handle);
+    document.addEventListener('scroll', handle, true);
+
+    state.cleanup = () => {
+      window.removeEventListener('resize', handle);
+      document.removeEventListener('scroll', handle, true);
+    };
+
+    this.updateMovePlacementOverlay();
+  }
+
+  private stopMovePlacement(): void {
+    if (!this.movePlacementState) {
+      return;
+    }
+    this.movePlacementState.cleanup();
+    this.movePlacementState.overlay.remove();
+    this.movePlacementState = null;
+    document.body.classList.remove('panel-move-placement-active');
+  }
+
+  private updateMovePlacementOverlay(): void {
+    const state = this.movePlacementState;
+    if (!state) {
+      return;
+    }
+    const frame = this.options.panelWorkspace.getPanelFrameElement(state.panelId);
+    if (!frame) {
+      this.stopMovePlacement();
+      return;
+    }
+    const rect = frame.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      state.highlight.style.display = 'none';
+      return;
+    }
+    const highlightRect = computeSplitPlacementHighlightRect(state.region, rect);
+    this.applySplitPlacementHighlight(state.highlight, highlightRect);
   }
 
   private updateSplitPlacementOverlay(): void {
@@ -1122,6 +1256,40 @@ export class KeyboardNavigationController {
     if (region !== state.region) {
       state.region = region;
       this.updateSplitPlacementOverlay();
+    }
+
+    return true;
+  }
+
+  private handleMovePlacementKey(event: KeyboardEvent): boolean {
+    const state = this.movePlacementState;
+    if (!state) {
+      return false;
+    }
+
+    if (event.key === 'Escape') {
+      this.stopMovePlacement();
+      return true;
+    }
+
+    if (event.key === 'Enter') {
+      this.options.panelWorkspace.movePanel(state.panelId, { region: state.region });
+      this.stopMovePlacement();
+      return true;
+    }
+
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+
+    const region = this.resolveSplitPlacementRegion(event.key);
+    if (!region) {
+      return false;
+    }
+
+    if (region !== state.region) {
+      state.region = region;
+      this.updateMovePlacementOverlay();
     }
 
     return true;

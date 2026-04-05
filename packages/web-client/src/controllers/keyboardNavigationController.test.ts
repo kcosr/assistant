@@ -32,6 +32,7 @@ function buildPanelWorkspace(
     isPanelTypeOpen: vi.fn(() => false),
     openPanel: vi.fn(() => null),
     openPanelLauncher: vi.fn(),
+    movePanel: vi.fn(),
     openModalPanel: vi.fn(() => null),
     focusLastPanelOfType: vi.fn(() => false),
     listHeaderPanelIds: vi.fn(() => headerPanels),
@@ -416,6 +417,50 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       compact: true,
       anchor: panelFrame,
     });
+    registry.detach();
+  });
+
+  it('starts move placement on ctrl+m and moves the active panel on enter', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, bubbles: true }),
+    );
+
+    expect(document.body.classList.contains('panel-move-placement-active')).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.movePanel).toHaveBeenCalledWith('panel-1', { region: 'bottom' });
+    expect(document.body.classList.contains('panel-move-placement-active')).toBe(false);
+    registry.detach();
+  });
+
+  it('changes move placement region with arrow keys', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame);
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, bubbles: true }),
+    );
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.movePanel).toHaveBeenCalledWith('panel-1', { region: 'left' });
     registry.detach();
   });
 
