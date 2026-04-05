@@ -627,8 +627,9 @@ async fn open_temp_html_attachment_file(
         .as_nanos();
     let path = temp_dir.join(format!("{nonce}-{final_name}"));
     fs::write(&path, decoded).map_err(|e| e.to_string())?;
+    let open_target = path.to_string_lossy().into_owned();
     app.opener()
-        .open_path(&path, None::<&str>)
+        .open_path(open_target, None::<&str>)
         .map_err(|e| e.to_string())
 }
 
