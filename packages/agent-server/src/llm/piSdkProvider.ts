@@ -97,11 +97,37 @@ async function resolveProviderId(providerRaw: string): Promise<string | undefine
   return match ?? trimmed;
 }
 
+function buildSyntheticPiSdkModel(options: {
+  providerId: string;
+  modelId: string;
+  baseUrl: string;
+}): Model<Api> {
+  const { providerId, modelId, baseUrl } = options;
+  return {
+    id: modelId,
+    name: modelId,
+    api: 'openai-responses',
+    provider: providerId,
+    baseUrl,
+    reasoning: true,
+    input: ['text'],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 128000,
+    maxTokens: 16000,
+  };
+}
+
 export async function resolvePiSdkModel(options: {
   modelSpec: string;
   defaultProvider?: string;
+  baseUrl?: string;
 }): Promise<PiSdkModelResolution> {
-  const { modelSpec, defaultProvider } = options;
+  const { modelSpec, defaultProvider, baseUrl } = options;
   const trimmedSpec = modelSpec.trim();
   if (!trimmedSpec) {
     throw new Error('Pi chat requires a non-empty model id');
@@ -132,6 +158,19 @@ export async function resolvePiSdkModel(options: {
   const { getModels } = await loadPiAiModule();
   const models = getModels(providerId as any);
   if (!models || models.length === 0) {
+    if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
+      const modelId = modelIdRaw.trim();
+      const syntheticModel = buildSyntheticPiSdkModel({
+        providerId,
+        modelId,
+        baseUrl: baseUrl.trim(),
+      });
+      return {
+        model: syntheticModel,
+        providerId,
+        modelId: syntheticModel.id,
+      };
+    }
     throw new Error(`No Pi models found for provider "${providerId}"`);
   }
 

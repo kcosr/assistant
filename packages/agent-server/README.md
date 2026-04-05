@@ -1012,6 +1012,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
       - `apiKey` (optional): API key override for the configured provider
       - `baseUrl` (optional): base URL override for the configured provider
+        - when `baseUrl` is set and the resolved provider has no built-in Pi model list, the server synthesizes an `openai-responses` model for the configured `provider/model` id so custom endpoints can be targeted without adding new config fields
       - `headers` (optional): custom HTTP headers to send with each request
       - connection overrides apply only when the resolved provider matches `config.provider`
       - `timeoutMs` (optional): request timeout in milliseconds

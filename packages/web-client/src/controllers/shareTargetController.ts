@@ -1,8 +1,13 @@
 /**
  * Share Target Controller
  *
- * Handles receiving shared content from other apps (via Capacitor plugin)
- * and provides a modal to select the destination:
+ * Handles receiving shared content from other apps (via Capacitor plugin).
+ *
+ * Shared content always opens the destination modal. On Android, the chat-based
+ * destinations (`Chat Input` and `Fetch to List`) prefer the configured native
+ * voice session and fall back to the normal session picker when none is set.
+ *
+ * Available destinations:
  * - Chat input
  * - New note
  * - Add to list
@@ -18,6 +23,7 @@ import type { SessionPickerOpenOptions } from './panelSessionPicker';
 export interface ShareTargetOptions {
   getSelectedSessionId: () => string | null;
   getActiveChatSessionId?: () => string | null;
+  getPreferredShareSessionId?: () => string | null;
   selectSession: (sessionId: string) => void;
   openSessionPicker: (options: SessionPickerOpenOptions) => void;
   getChatInputRuntimeForSession: (sessionId: string) => InputRuntime | null;
@@ -26,7 +32,7 @@ export interface ShareTargetOptions {
   isEnabled?: () => boolean;
 }
 
-interface SharedContent {
+export interface SharedContent {
   title?: string;
   text: string;
 }
@@ -68,9 +74,14 @@ type ShareModalElements = {
 };
 
 const MAX_PREVIEW_LENGTH = 200;
+const CHAT_INPUT_WAIT_ATTEMPTS = 12;
+const CHAT_INPUT_WAIT_MS = 50;
+const SHARE_SESSION_PICKER_ANCHOR_ID = 'share-session-picker-anchor';
+const SHARE_SESSION_PICKER_WIDTH = 320;
 
 let modalElements: ShareModalElements | null = null;
 let pendingContent: SharedContent | null = null;
+let pendingContentUsesPreferredShareSessionRouting = false;
 let controllerOptions: ShareTargetOptions | null = null;
 let isListenerRegistered = false;
 let isSubmitting = false;
@@ -87,6 +98,14 @@ function reportError(message: string, error?: unknown): void {
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeSessionId(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
@@ -121,9 +140,10 @@ function formatSharedContent(event: ShareReceivedEvent): SharedContent | null {
 }
 
 function ensureModal(): ShareModalElements {
-  if (modalElements) {
+  if (modalElements?.container.isConnected) {
     return modalElements;
   }
+  modalElements = null;
 
   const container = document.createElement('div');
   container.id = 'share-target-modal';
@@ -279,6 +299,11 @@ function hideShareModal(): void {
     modalElements.container.classList.remove('visible');
   }
   pendingContent = null;
+  pendingContentUsesPreferredShareSessionRouting = false;
+}
+
+function dismissShareModal(): void {
+  modalElements?.container.classList.remove('visible');
 }
 
 export function closeShareModal(): void {
@@ -289,28 +314,53 @@ export function isShareModalVisible(): boolean {
   return Boolean(modalElements?.container.classList.contains('visible'));
 }
 
-function shareToChatSession(sessionId: string): void {
+function waitForDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function waitForChatInputRuntime(sessionId: string): Promise<InputRuntime | null> {
+  const normalized = normalizeSessionId(sessionId);
+  if (!normalized || !controllerOptions) {
+    return null;
+  }
+  const immediate = controllerOptions.getChatInputRuntimeForSession(normalized);
+  if (immediate) {
+    return immediate;
+  }
+  for (let attempt = 0; attempt < CHAT_INPUT_WAIT_ATTEMPTS; attempt += 1) {
+    await waitForDelay(CHAT_INPUT_WAIT_MS);
+    const runtime = controllerOptions.getChatInputRuntimeForSession(normalized);
+    if (runtime) {
+      return runtime;
+    }
+  }
+  return null;
+}
+
+async function shareToChatSession(sessionId: string): Promise<boolean> {
   if (!pendingContent || !controllerOptions) {
-    return;
+    return false;
   }
 
   const normalized = sessionId.trim();
   if (!normalized) {
-    return;
+    return false;
   }
 
   controllerOptions.selectSession(normalized);
 
-  const runtime = controllerOptions.getChatInputRuntimeForSession(normalized);
+  const runtime = await waitForChatInputRuntime(normalized);
   if (!runtime) {
-    reportError('Unable to find a chat input for that session.');
-    return;
+    return false;
   }
 
   runtime.inputEl.value = pendingContent.text;
   runtime.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   runtime.focusInput();
   hideShareModal();
+  return true;
 }
 
 function resolveChatSessionId(): string | null {
@@ -324,8 +374,71 @@ function resolveChatSessionId(): string | null {
   return controllerOptions.getActiveChatSessionId?.() ?? null;
 }
 
+function resolvePreferredShareSessionId(): string | null {
+  return normalizeSessionId(controllerOptions?.getPreferredShareSessionId?.() ?? null);
+}
+
+function ensureShareSessionPickerAnchor(): HTMLElement {
+  let anchor = document.getElementById(SHARE_SESSION_PICKER_ANCHOR_ID) as HTMLElement | null;
+  if (!anchor) {
+    anchor = document.createElement('div');
+    anchor.id = SHARE_SESSION_PICKER_ANCHOR_ID;
+    anchor.tabIndex = -1;
+    anchor.setAttribute('aria-hidden', 'true');
+    anchor.style.position = 'fixed';
+    anchor.style.height = '1px';
+    anchor.style.opacity = '0';
+    anchor.style.pointerEvents = 'none';
+    document.body.appendChild(anchor);
+  }
+  const viewportWidth =
+    typeof window.innerWidth === 'number' && window.innerWidth > 0 ? window.innerWidth : 360;
+  const anchorWidth = Math.min(
+    SHARE_SESSION_PICKER_WIDTH,
+    Math.max(280, viewportWidth - 32),
+  );
+  const anchorLeft = Math.max(8, (viewportWidth - anchorWidth) / 2);
+  anchor.style.width = `${anchorWidth}px`;
+  anchor.style.left = `${anchorLeft}px`;
+  anchor.style.top = isCapacitorAndroid() ? '24vh' : '28vh';
+  return anchor;
+}
+
+function openShareSessionPicker(
+  _anchor: HTMLElement,
+  onSelectSession: (sessionId: string) => void,
+): void {
+  dismissShareModal();
+  controllerOptions?.openSessionPicker({
+    anchor: ensureShareSessionPickerAnchor(),
+    title: 'Select share session',
+    createSessionOptions: { openChatPanel: true, selectSession: true },
+    onSelectSession: (selectedSessionId) => {
+      onSelectSession(selectedSessionId);
+    },
+  });
+}
+
 function handleShareToChat(anchor: HTMLElement): void {
   if (!pendingContent || !controllerOptions) {
+    return;
+  }
+
+  if (pendingContentUsesPreferredShareSessionRouting) {
+    const preferredSessionId = resolvePreferredShareSessionId();
+    if (!preferredSessionId) {
+      openShareSessionPicker(anchor, (selectedSessionId) => {
+        void shareToChatSession(selectedSessionId);
+      });
+      return;
+    }
+    void shareToChatSession(preferredSessionId).then((delivered) => {
+      if (!delivered) {
+        openShareSessionPicker(anchor, (selectedSessionId) => {
+          void shareToChatSession(selectedSessionId);
+        });
+      }
+    });
     return;
   }
 
@@ -336,13 +449,13 @@ function handleShareToChat(anchor: HTMLElement): void {
       title: 'Select chat session',
       createSessionOptions: { openChatPanel: false, selectSession: false },
       onSelectSession: (selectedSessionId) => {
-        shareToChatSession(selectedSessionId);
+        void shareToChatSession(selectedSessionId);
       },
     });
     return;
   }
 
-  shareToChatSession(sessionId);
+  void shareToChatSession(sessionId);
 }
 
 async function callOperation<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -510,26 +623,26 @@ async function handleAddToListSubmit(): Promise<void> {
   }
 }
 
-function shareToChatSessionAndSubmit(sessionId: string, message: string): void {
+async function shareToChatSessionAndSubmit(sessionId: string, message: string): Promise<boolean> {
   if (!controllerOptions) {
-    return;
+    return false;
   }
 
   const normalized = sessionId.trim();
   if (!normalized) {
-    return;
+    return false;
   }
 
   controllerOptions.selectSession(normalized);
 
-  const runtime = controllerOptions.getChatInputRuntimeForSession(normalized);
+  const runtime = await waitForChatInputRuntime(normalized);
   if (!runtime) {
-    reportError('Unable to find a chat input for that session.');
-    return;
+    return false;
   }
 
   runtime.textInputController.sendUserText(message);
   hideShareModal();
+  return true;
 }
 
 function handleFetchToListSubmit(anchor: HTMLElement): void {
@@ -550,6 +663,24 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
 
   const message = `Fetch ${urlMatch[0]} and add it to the "${listName}" list with relevant context.`;
 
+  if (pendingContentUsesPreferredShareSessionRouting) {
+    const preferredSessionId = resolvePreferredShareSessionId();
+    if (!preferredSessionId) {
+      openShareSessionPicker(anchor, (selectedSessionId) => {
+        void shareToChatSessionAndSubmit(selectedSessionId, message);
+      });
+      return;
+    }
+    void shareToChatSessionAndSubmit(preferredSessionId, message).then((delivered) => {
+      if (!delivered) {
+        openShareSessionPicker(anchor, (selectedSessionId) => {
+          void shareToChatSessionAndSubmit(selectedSessionId, message);
+        });
+      }
+    });
+    return;
+  }
+
   const sessionId = resolveChatSessionId();
   if (!sessionId) {
     controllerOptions.openSessionPicker({
@@ -557,13 +688,13 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
       title: 'Select chat session',
       createSessionOptions: { openChatPanel: false, selectSession: false },
       onSelectSession: (selectedSessionId) => {
-        shareToChatSessionAndSubmit(selectedSessionId, message);
+        void shareToChatSessionAndSubmit(selectedSessionId, message);
       },
     });
     return;
   }
 
-  shareToChatSessionAndSubmit(sessionId, message);
+  void shareToChatSessionAndSubmit(sessionId, message);
 }
 
 async function handleShareToList(): Promise<void> {
@@ -576,6 +707,15 @@ async function handleShareToList(): Promise<void> {
   } else {
     await handleAddToListSubmit();
   }
+}
+
+export async function handleIncomingSharedContent(
+  content: SharedContent,
+  options?: { preferSessionRouting?: boolean },
+): Promise<void> {
+  pendingContent = content;
+  pendingContentUsesPreferredShareSessionRouting = options?.preferSessionRouting === true;
+  await showShareModal(content);
 }
 
 /**
@@ -618,7 +758,7 @@ export function initShareTarget(options: ShareTargetOptions): void {
 
         const content = formatSharedContent(event);
         if (content?.text) {
-          void showShareModal(content);
+          void handleIncomingSharedContent(content, { preferSessionRouting: true });
         }
       });
 
@@ -631,11 +771,11 @@ export function initShareTarget(options: ShareTargetOptions): void {
 }
 
 /**
- * Manually trigger share modal (for testing)
+ * Manually trigger share handling for the provided content.
  */
 export function showShareModalForContent(title: string | undefined, text: string): void {
   if (controllerOptions) {
     const content: SharedContent = title ? { title, text } : { text };
-    void showShareModal(content);
+    void handleIncomingSharedContent(content);
   }
 }

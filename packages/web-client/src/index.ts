@@ -5063,6 +5063,10 @@ async function main(): Promise<void> {
       const [onlySession] = activeSessions;
       return onlySession ?? null;
     },
+    getPreferredShareSessionId: () => {
+      const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+      return settings.preferredVoiceSessionId || null;
+    },
     selectSession,
     openSessionPicker,
     getChatInputRuntimeForSession,

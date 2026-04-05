@@ -24,6 +24,11 @@
 - Added installable PWA icons to the mobile web manifest so the mobile app can be added to a home screen with proper `any maskable` icon sizes from 48px through 512px.
 
 ### Changed
+- Allowed Pi-backed agents to target custom `provider/model` ids through `chat.config.baseUrl` by
+  synthesizing an `openai-responses` model when the provider has no built-in Pi model catalog.
+- Changed Android share-intent chat destinations to prefer the configured native voice session
+  while keeping the existing share destination modal and falling back to the chat session picker
+  when no preferred session is set.
 
 - Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
 - Changed coding tool registration to use a core `CodingToolHost` in the main tool catalog instead of routing coding tools through the plugin registry wrapper.

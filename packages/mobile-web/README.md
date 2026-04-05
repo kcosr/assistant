@@ -138,11 +138,13 @@ The following patches are applied automatically on `android:sync`:
 ### Share Intent (`patch-android-share.mjs`)
 
 - Adds intent-filter to receive shared text content from other apps
-- When content is shared to the app, a modal appears to select the destination:
+- Shared content still opens the in-app destination modal:
   - **Chat Input** - Populates the chat input field
   - **New Note** - Creates a new note with the shared content
   - **Add to List** - Adds a new item to a selected list
   - **Fetch to List** - (Only shown when shared content contains a URL) Sends the URL to the agent with a prompt to fetch the page content and add it to a selected list
+- On Android, the chat-based share actions (`Chat Input` and `Fetch to List`) prefer the configured
+  native voice session and fall back to the normal session picker when no preferred session is set
 
 ### Firebase Config (`patch-android-firebase.mjs`)
 

@@ -1273,8 +1273,12 @@ export async function runChatCompletionCore(
       const defaultProvider = piConfig?.provider;
       resolvedModel =
         defaultProvider === undefined
-          ? await resolvePiSdkModel({ modelSpec })
-          : await resolvePiSdkModel({ modelSpec, defaultProvider });
+          ? await resolvePiSdkModel({ modelSpec, ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}) })
+          : await resolvePiSdkModel({
+              modelSpec,
+              defaultProvider,
+              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+            });
     } catch (err) {
       throw new ChatRunError(
         'agent_config_error',

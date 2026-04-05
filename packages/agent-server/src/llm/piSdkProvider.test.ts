@@ -71,6 +71,64 @@ describe('resolvePiSdkModel', () => {
       }),
     ).rejects.toThrow(/provider\/model format/i);
   });
+
+  it('synthesizes a custom model when provider has no built-in models and baseUrl is configured', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai']);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    const resolved = await resolvePiSdkModel({
+      modelSpec: 'mock-scenarios/scenarios',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+    });
+
+    expect(resolved.providerId).toBe('mock-scenarios');
+    expect(resolved.modelId).toBe('scenarios');
+    expect(resolved.model).toMatchObject({
+      id: 'scenarios',
+      name: 'scenarios',
+      api: 'openai-responses',
+      provider: 'mock-scenarios',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      reasoning: true,
+      input: ['text'],
+      contextWindow: 128000,
+      maxTokens: 16000,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    });
+  });
+
+  it('still throws for unknown providers when no baseUrl is configured', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai']);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    await expect(
+      resolvePiSdkModel({
+        modelSpec: 'mock-scenarios/scenarios',
+      }),
+    ).rejects.toThrow('No Pi models found for provider "mock-scenarios"');
+  });
+
+  it('still throws when a known provider exists but the model id does not', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai']);
+    vi.mocked(getModels).mockImplementation((provider: string) => {
+      if (provider === 'openai') {
+        return [{ id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never];
+      }
+      return [];
+    });
+
+    await expect(
+      resolvePiSdkModel({
+        modelSpec: 'openai/not-a-real-model',
+        baseUrl: 'http://127.0.0.1:4010/v1',
+      }),
+    ).rejects.toThrow('Pi model "openai/not-a-real-model" was not found');
+  });
 });
 
 describe('resolvePiSdkAuthApiKey', () => {

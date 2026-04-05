@@ -645,6 +645,10 @@ Notes:
 - `config.provider`: default provider used when a model omits a prefix (required if any model omits a prefix).
 - `config.apiKey`, `config.baseUrl`, `config.headers`: optional connection overrides applied when
   the resolved provider matches `config.provider`.
+- When `config.baseUrl` is set and the chosen provider has no built-in Pi model catalog entry, the
+  server synthesizes an `openai-responses` model for the configured `provider/model` id. This
+  allows custom endpoints such as local mocks or proxies to be targeted without adding extra config
+  fields.
 - `config.maxTokens`, `config.temperature`, `config.timeoutMs`: optional Pi SDK request overrides.
 - `config.maxToolIterations`: max consecutive tool iterations before aborting with an error
   (default: 100).
