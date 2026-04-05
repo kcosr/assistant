@@ -15,6 +15,7 @@
 
 - Fixed keyboard handling so pressing `Enter` with an active empty panel opens the inline replace-panel picker, matching the empty panel replace button ([#92](https://github.com/kcosr/assistant/pull/92)).
 - Fixed Android native voice stop-command handling so successful recognition results with up to four words now trigger the local stop action whenever they include `stop` as a standalone word ([#92](https://github.com/kcosr/assistant/pull/92)).
+- Fixed Android back-button dismissal so the voice settings modal closes like other dialog-manager modals ([#92](https://github.com/kcosr/assistant/pull/92)).
 
 ### Removed
 

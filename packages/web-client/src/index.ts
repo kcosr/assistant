@@ -5000,7 +5000,7 @@ async function main(): Promise<void> {
       closeShareModal();
       return true;
     }
-    if (document.querySelector('.confirm-dialog-overlay')) {
+    if (dialogManager.hasOpenDialog) {
       dialogManager.closeOpenDialog();
       return true;
     }
