@@ -94,6 +94,42 @@ function createPanelInventoryPayload(): PanelInventoryPayload {
   };
 }
 
+function createChatSelectedInventoryPayload(): PanelInventoryPayload {
+  return {
+    type: 'panel_inventory',
+    panels: [
+      {
+        panelId: 'chat-1',
+        panelType: 'chat',
+        panelTitle: 'Assistant (bf5753d8)',
+        paneId: 'pane-1',
+        tabIndex: 0,
+        tabCount: 2,
+        visible: true,
+      },
+      {
+        panelId: 'empty-1',
+        panelType: 'empty',
+        panelTitle: 'Empty',
+        paneId: 'pane-1',
+        tabIndex: 1,
+        tabCount: 2,
+        visible: false,
+      },
+    ],
+    selectedPanelId: 'chat-1',
+    selectedChatPanelId: 'chat-1',
+    selectedPaneId: 'pane-1',
+    layout: {
+      kind: 'pane',
+      paneId: 'pane-1',
+      tabs: [{ panelId: 'chat-1' }, { panelId: 'empty-1' }],
+      activePanelId: 'chat-1',
+    },
+    headerPanels: [],
+  };
+}
+
 describe('panels plugin operations', () => {
   it('broadcasts to the current session by default', async () => {
     const { ctx, sessionHub } = await createTestEnvironment();
@@ -178,6 +214,27 @@ describe('panels plugin operations', () => {
     expect(withContext.panels[0]?.context).toEqual({ id: 'note-1', name: 'Scratchpad' });
   });
 
+  it('suppresses selectedPanelId from list output when the active panel is chat and includeChat is false', async () => {
+    resetPanelInventoryForTests();
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+
+    updatePanelInventory(createChatSelectedInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+
+    const listing = (await plugin.operations?.list({}, ctx)) as {
+      selectedPanelId: string | null;
+      selectedChatPanelId: string | null;
+      panels: Array<{ panelId: string; panelType: string }>;
+    };
+
+    expect(listing.selectedPanelId).toBeNull();
+    expect(listing.selectedChatPanelId).toBe('chat-1');
+    expect(listing.panels.some((panel) => panel.panelId === 'chat-1')).toBe(false);
+  });
+
   it('returns selected panel and pane information', async () => {
     resetPanelInventoryForTests();
     const { ctx } = await createTestEnvironment();
@@ -200,6 +257,63 @@ describe('panels plugin operations', () => {
     expect(selected.selectedPaneId).toBe('pane-1');
     expect(selected.panel?.panelId).toBe('notes-1');
     expect(selected.panel?.paneId).toBe('pane-1');
+  });
+
+  it('returns the active chat panel as the selected panel when includeChat is true', async () => {
+    resetPanelInventoryForTests();
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+
+    updatePanelInventory(createChatSelectedInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+
+    const selected = (await plugin.operations?.selected(
+      { includeChat: true, includeContext: true },
+      ctx,
+    )) as {
+      selectedPanelId: string | null;
+      selectedChatPanelId: string | null;
+      panel: { panelId?: string; panelType?: string; panelTitle?: string } | null;
+      chatPanel: { panelId?: string; panelType?: string; panelTitle?: string } | null;
+    };
+
+    expect(selected.selectedPanelId).toBe('chat-1');
+    expect(selected.selectedChatPanelId).toBe('chat-1');
+    expect(selected.panel).toMatchObject({
+      panelId: 'chat-1',
+      panelType: 'chat',
+      panelTitle: 'Assistant (bf5753d8)',
+    });
+    expect(selected.chatPanel).toMatchObject({
+      panelId: 'chat-1',
+      panelType: 'chat',
+      panelTitle: 'Assistant (bf5753d8)',
+    });
+  });
+
+  it('hides selected chat panel details from the primary selection when includeChat is false', async () => {
+    resetPanelInventoryForTests();
+    const { ctx } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+
+    updatePanelInventory(createChatSelectedInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+
+    const selected = (await plugin.operations?.selected({}, ctx)) as {
+      selectedPanelId: string | null;
+      selectedChatPanelId: string | null;
+      panel: unknown;
+      chatPanel?: unknown;
+    };
+
+    expect(selected.selectedPanelId).toBe('chat-1');
+    expect(selected.selectedChatPanelId).toBe('chat-1');
+    expect(selected.panel).toBeNull();
+    expect(selected.chatPanel).toBeNull();
   });
 
   it('lists active windows with selection state', async () => {
@@ -310,6 +424,37 @@ describe('panels plugin operations', () => {
         panelType: 'notes',
         mode: 'tab',
         targetPaneId: 'pane-1',
+      },
+    });
+  });
+
+  it('focuses an existing panel', async () => {
+    resetPanelInventoryForTests();
+    const { ctx, sessionHub } = await createTestEnvironment();
+    const plugin = createTestPlugin();
+    const sendSpy = vi.spyOn(sessionHub, 'sendToConnection').mockReturnValue(true);
+
+    updatePanelInventory(createPanelInventoryPayload(), {
+      windowId: 'window-a',
+      connectionId: 'conn-a',
+    });
+
+    const result = (await plugin.operations?.focus(
+      { panelId: 'lists-1', windowId: 'window-a' },
+      ctx,
+    )) as { ok?: boolean };
+
+    expect(result.ok).toBe(true);
+    expect(sendSpy.mock.calls[0]?.[0]).toBe('conn-a');
+    expect(sendSpy.mock.calls[0]?.[1]).toEqual({
+      type: 'panel_event',
+      panelId: 'workspace',
+      panelType: 'workspace',
+      windowId: 'window-a',
+      payload: {
+        type: 'panel_command',
+        command: 'focus_panel',
+        panelId: 'lists-1',
       },
     });
   });

@@ -4588,6 +4588,13 @@ async function main(): Promise<void> {
       }
       return true;
     }
+    if (command === 'focus_panel') {
+      const panelId = normalizeCommandString(record['panelId']);
+      if (panelId) {
+        panelWorkspace.activatePanel(panelId);
+      }
+      return true;
+    }
     if (command === 'close_panel') {
       const panelId = normalizeCommandString(record['panelId']);
       if (panelId) {

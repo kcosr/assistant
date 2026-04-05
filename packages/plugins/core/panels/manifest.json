@@ -209,6 +209,29 @@
       "capabilities": ["panels.manage"]
     },
     {
+      "id": "focus",
+      "summary": "Focus and activate an existing panel tab.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "panelId": {
+            "type": "string",
+            "description": "Panel instance id to focus."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session id to target (defaults to current session)."
+          },
+          "windowId": {
+            "type": "string",
+            "description": "Optional window id to target."
+          }
+        },
+        "required": ["panelId"]
+      },
+      "capabilities": ["panels.manage"]
+    },
+    {
       "id": "close",
       "summary": "Close a panel and replace it with an empty placeholder.",
       "inputSchema": {
