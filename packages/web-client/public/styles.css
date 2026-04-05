@@ -4511,7 +4511,7 @@ body.panel-reordering {
 
 .chat-typing-indicator {
   display: none;
-  margin: calc(-1 * var(--spacing-md)) 0 var(--spacing-sm) var(--spacing-xl);
+  margin: calc(-1 * var(--spacing-md)) 0 var(--spacing-sm) 0;
   color: var(--color-text-muted);
 }
 

@@ -1614,6 +1614,264 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('emits multiple thinking blocks within one Pi run when reasoning resumes after tools', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    mockPiAgentPrompt.mockImplementationOnce(async ({ emit }) => {
+      const toolUseMessage = createAssistantMessage({
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        api: 'openai-responses',
+        stopReason: 'toolUse',
+        content: [
+          {
+            type: 'toolCall',
+            id: 'call-1',
+            name: 'read',
+            arguments: { path: 'README.md' },
+          },
+        ],
+      });
+
+      const thinkingOne = 'First reasoning block.';
+      const thinkingTwo = 'Second reasoning block.';
+
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: '' }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_start',
+          contentIndex: 0,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: '' }],
+          }),
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: thinkingOne }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_delta',
+          contentIndex: 0,
+          delta: thinkingOne,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: thinkingOne }],
+          }),
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: thinkingOne }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_end',
+          contentIndex: 0,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: thinkingOne }],
+          }),
+        },
+      });
+
+      await emit({ type: 'message_end', message: toolUseMessage });
+      await emit({
+        type: 'tool_execution_start',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        args: { path: 'README.md' },
+      });
+      await emit({
+        type: 'tool_execution_end',
+        toolCallId: 'call-1',
+        toolName: 'read',
+        args: { path: 'README.md' },
+        result: { content: [{ type: 'text', text: 'done' }], details: { ok: true } },
+        isError: false,
+      });
+      await emit({
+        type: 'message_end',
+        message: {
+          role: 'toolResult' as const,
+          toolCallId: 'call-1',
+          toolName: 'read',
+          content: [{ type: 'text', text: 'done' }],
+          details: { ok: true },
+          isError: false,
+          timestamp: Date.now(),
+        },
+      });
+
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: '' }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_start',
+          contentIndex: 0,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: '' }],
+          }),
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: thinkingTwo }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_delta',
+          contentIndex: 0,
+          delta: thinkingTwo,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: thinkingTwo }],
+          }),
+        },
+      });
+      await emit({
+        type: 'message_update',
+        message: createAssistantMessage({
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          api: 'openai-responses',
+          content: [{ type: 'thinking', thinking: thinkingTwo }],
+        }),
+        assistantMessageEvent: {
+          type: 'thinking_end',
+          contentIndex: 0,
+          partial: createAssistantMessage({
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            api: 'openai-responses',
+            content: [{ type: 'thinking', thinking: thinkingTwo }],
+          }),
+        },
+      });
+
+      const finalAssistantMessage = createAssistantMessage({
+        text: 'Final answer.',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        api: 'openai-responses',
+      });
+      await emit({ type: 'message_end', message: finalAssistantMessage });
+      await emit({
+        type: 'turn_end',
+        message: finalAssistantMessage,
+        toolResults: [],
+      });
+    });
+
+    const broadcast: ServerMessage[] = [];
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+          },
+        ]),
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      recordSessionActivity: async () => undefined,
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's-thinking',
+        title: 'Thinking Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Investigate', sessionId: 's-thinking' },
+      state,
+      sessionId: 's-thinking',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      agentTools: [],
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    const thinkingDoneEvents = broadcast.filter(
+      (message): message is Extract<ServerMessage, { type: 'transcript_event' }> =>
+        message.type === 'transcript_event' &&
+        message.event.kind === 'thinking' &&
+        message.event.chatEventType === 'thinking_done',
+    );
+
+    expect(thinkingDoneEvents).toHaveLength(2);
+    expect(thinkingDoneEvents.map((message) => message.event.payload)).toEqual([
+      { text: 'First reasoning block.' },
+      { text: 'Second reasoning block.' },
+    ]);
+  });
+
   it('emits live Pi tool_call before tool_result even when tool persistence is delayed', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,

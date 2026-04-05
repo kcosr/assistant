@@ -112,6 +112,7 @@
 - Fixed workspace panel command handling to understand the pane-aware panel tool payloads for tab insertion, split creation, header pinning, and pane-targeted moves.
 - Fixed headless `sessions_message` tool exposure so agent turns now preserve scheduled-sessions and search services when building native agent tools, restoring `scheduled_sessions_*` tool execution in assistant-agent runs.
 - Fixed plugin operation tool schemas to preserve advanced JSON Schema fields like `$defs`, `$ref`, and `allOf`, and updated the questions tool manifest to use `$defs` refs so questionnaire tool exposure no longer fails with unresolved `#/definitions/field` references.
+- Fixed Pi live reasoning streaming to reset between multiple thinking blocks in a single turn, preventing interleaved reasoning/tool scenarios from mutating stale thinking text across phases.
 
 ### Removed
 

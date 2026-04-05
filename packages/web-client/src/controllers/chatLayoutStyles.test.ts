@@ -96,6 +96,6 @@ describe('chat layout styles', () => {
 
     expect(indicatorBlock).toContain('.chat-typing-indicator {');
     expect(indicatorBlock).toContain('display: none;');
-    expect(indicatorBlock).toContain('margin: calc(-1 * var(--spacing-md)) 0 var(--spacing-sm) var(--spacing-xl);');
+    expect(indicatorBlock).toContain('margin: calc(-1 * var(--spacing-md)) 0 var(--spacing-sm) 0;');
   });
 });

@@ -437,7 +437,6 @@ function createChatRunStreamHandlers(options: {
 
   let thinkingText = '';
   let thinkingStarted = false;
-  let thinkingCompleted = false;
   const requestPayload = createRequestPayload(getRequestId(state, requestId, responseId));
 
   const buildAgentExchangePayload = (): { agentExchangeId?: string } => {
@@ -482,6 +481,7 @@ function createChatRunStreamHandlers(options: {
       return;
     }
     thinkingStarted = true;
+    thinkingText = '';
     if (state.activeChatRun) {
       state.activeChatRun.outputStarted = true;
     }
@@ -535,15 +535,14 @@ function createChatRunStreamHandlers(options: {
   };
 
   const emitThinkingDone = async (textValue: string): Promise<void> => {
-    if (thinkingCompleted) {
+    const finalText = textValue || thinkingText;
+    if (!thinkingStarted && !finalText) {
       return;
     }
-    thinkingCompleted = true;
-    const finalText = textValue || thinkingText;
-    thinkingText = finalText;
     if (!thinkingStarted && finalText) {
       await emitThinkingStart();
     }
+    thinkingText = finalText;
     const message: ServerThinkingDoneMessage = {
       type: 'thinking_done',
       responseId,
@@ -574,6 +573,9 @@ function createChatRunStreamHandlers(options: {
         events,
       );
     }
+
+    thinkingStarted = false;
+    thinkingText = '';
   };
 
   const emitTextDelta = async (
