@@ -98,8 +98,16 @@ describe('attachmentActions', () => {
   });
 
   it('opens HTML attachments via Tauri shell when running on desktop', async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce('/tmp/assistant-html-attachments/attachment.html')
+      .mockResolvedValueOnce(undefined);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<html><body>Hello</body></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      }),
+    );
     (window as Window & { __TAURI__?: object }).__TAURI__ = {
       core: { invoke },
       event: { listen: vi.fn() },
@@ -107,10 +115,14 @@ describe('attachmentActions', () => {
 
     await openHtmlAttachmentInBrowser('/api/attachments/s1/a1');
 
-    expect(invoke).toHaveBeenCalledWith('plugin:shell|open', {
-      path: 'http://localhost/assistant/api/attachments/s1/a1',
+    expect(fetchSpy).toHaveBeenCalledWith('/assistant/api/attachments/s1/a1', { method: 'GET' });
+    expect(invoke).toHaveBeenNthCalledWith(1, 'write_temp_html_attachment_file', {
+      fileName: 'attachment.html',
+      contentBase64: 'PGh0bWw+PGJvZHk+SGVsbG88L2JvZHk+PC9odG1sPg==',
     });
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(invoke).toHaveBeenNthCalledWith(2, 'plugin:shell|open', {
+      path: '/tmp/assistant-html-attachments/attachment.html',
+    });
   });
 
   it('opens HTML attachments via the Android Capacitor attachment bridge', async () => {

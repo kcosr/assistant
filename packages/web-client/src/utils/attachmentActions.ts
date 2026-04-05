@@ -8,6 +8,10 @@ type AssistantAttachmentOpenArgs = {
   contentType: string;
   contentBase64: string;
 };
+type AssistantAttachmentTempFileArgs = {
+  fileName: string;
+  contentBase64: string;
+};
 type AssistantAttachmentOpenTarget = {
   openHtmlAttachment?: (args: AssistantAttachmentOpenArgs) => Promise<unknown> | unknown;
 };
@@ -204,7 +208,16 @@ export async function openHtmlAttachmentInBrowser(
   if (isTauri()) {
     const invoke = getTauriInvoke();
     if (invoke) {
-      await invoke('plugin:shell|open', { path: resolvedUrl });
+      const response = await apiFetch(url, { method: 'GET' });
+      if (!response.ok) {
+        throw new Error(`Failed to open attachment (${response.status})`);
+      }
+      const buffer = await response.arrayBuffer();
+      const tempPath = await invoke<string>('write_temp_html_attachment_file', {
+        fileName,
+        contentBase64: arrayBufferToBase64(buffer),
+      } satisfies AssistantAttachmentTempFileArgs);
+      await invoke('plugin:shell|open', { path: tempPath });
       return;
     }
   }

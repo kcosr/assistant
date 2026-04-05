@@ -1137,19 +1137,21 @@ describe('ChatRenderer', () => {
     await vi.waitFor(() => {
       expect(writeText).toHaveBeenCalled();
     });
-    expect(writeText.mock.calls[0]?.[0]).toContain('Hello');
-    expect(writeText.mock.calls[0]?.[0]).toContain('World');
-    expect(writeText.mock.calls[0]?.[0]).not.toContain('#');
+    expect(writeText.mock.calls[0]?.[0]).toBe('# Hello\n\nWorld');
 
     const toggleButton = container.querySelector<HTMLButtonElement>(
       '.attachment-tool-copy-toggle-button',
     );
     toggleButton?.click();
     const markdownItem = container.querySelector<HTMLButtonElement>('.attachment-tool-copy-menu-item');
+    expect(markdownItem?.textContent).toBe('Copy formatted');
     markdownItem?.click();
     await vi.waitFor(() => {
-      expect(writeText).toHaveBeenLastCalledWith('# Hello\n\nWorld');
+      expect(writeText).toHaveBeenCalledTimes(2);
     });
+    expect(writeText.mock.calls[1]?.[0]).toContain('Hello');
+    expect(writeText.mock.calls[1]?.[0]).toContain('World');
+    expect(writeText.mock.calls[1]?.[0]).not.toContain('#');
   });
 
   it('shows attachment expand failures inline and keeps the expand action available', async () => {

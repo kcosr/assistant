@@ -31,7 +31,8 @@ interface CopyDropdownOptions {
 }
 
 /**
- * Create a copy dropdown with Copy (plain text) and Copy Markdown options.
+ * Create a copy dropdown with Copy Markdown as the primary action and formatted/plain text
+ * as the alternate when both representations are available.
  * Returns the wrapper element.
  */
 function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
@@ -44,7 +45,7 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
   mainButton.type = 'button';
   mainButton.className = `${classPrefix}-button ${classPrefix}-main-button`;
   mainButton.textContent = 'Copy';
-  mainButton.setAttribute('aria-label', 'Copy as plain text');
+  mainButton.setAttribute('aria-label', getMarkdown ? 'Copy as markdown' : 'Copy formatted text');
 
   const toggleButton = document.createElement('button');
   toggleButton.type = 'button';
@@ -57,7 +58,7 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
   const markdownItem = document.createElement('button');
   markdownItem.type = 'button';
   markdownItem.className = `${classPrefix}-menu-item`;
-  markdownItem.textContent = 'Copy Markdown';
+  markdownItem.textContent = getMarkdown ? 'Copy formatted' : 'Copy Markdown';
 
   // Disable markdown option if not available
   const markdownAvailable = Boolean(getMarkdown);
@@ -139,7 +140,8 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
     event.preventDefault();
     event.stopPropagation();
     setMenuOpen(false);
-    void Promise.resolve(getPlainText())
+    const primaryCopy = getMarkdown ?? getPlainText;
+    void Promise.resolve(primaryCopy())
       .then((text) => copyToClipboard(text))
       .then((ok) => {
         if (ok) {
@@ -155,7 +157,7 @@ function createCopyDropdown(options: CopyDropdownOptions): HTMLElement {
       return;
     }
     setMenuOpen(false);
-    void Promise.resolve(getMarkdown!())
+    void Promise.resolve(getPlainText())
       .then((text) => copyToClipboard(text))
       .then((ok) => {
         if (ok) {

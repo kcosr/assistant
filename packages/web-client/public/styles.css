@@ -5642,7 +5642,7 @@ textarea.interaction-input {
 .markdown-code-copy-menu {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: 0;
   margin-top: var(--spacing-xs);
   min-width: 160px;
   background-color: var(--color-bg-elevated);
@@ -6031,7 +6031,7 @@ textarea.interaction-input {
 .attachment-tool-copy-menu {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: 0;
   margin-top: var(--spacing-xs);
   min-width: 160px;
   background-color: var(--color-bg-elevated);

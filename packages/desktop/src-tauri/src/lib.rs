@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::net::TcpListener;
@@ -584,6 +585,43 @@ async fn save_artifact_file(path: String, content_base64: String) -> Result<(), 
     fs::write(&path, decoded).map_err(|e| e.to_string())
 }
 
+/// Write HTML attachment content to a temporary local file and return its path.
+#[tauri::command]
+async fn write_temp_html_attachment_file(
+    file_name: String,
+    content_base64: String,
+) -> Result<String, String> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(content_base64)
+        .map_err(|e| e.to_string())?;
+
+    let requested_name = Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("attachment.html");
+    let safe_name = requested_name.replace(['/', '\\', ':'], "_");
+    let final_name = if safe_name.ends_with(".html") || safe_name.ends_with(".htm") {
+        safe_name
+    } else {
+        format!("{safe_name}.html")
+    };
+
+    let temp_dir = std::env::temp_dir().join("assistant-html-attachments");
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let path = temp_dir.join(format!("{nonce}-{final_name}"));
+    fs::write(&path, decoded).map_err(|e| e.to_string())?;
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Failed to encode temporary attachment path".to_string())
+}
+
 /// Restart the proxy with current settings.
 async fn restart_proxy_internal(state: &AppState) -> Result<(), String> {
     // Stop existing proxies
@@ -670,6 +708,7 @@ pub fn run() {
             get_proxy_url,
             get_ws_proxy_port,
             save_artifact_file,
+            write_temp_html_attachment_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
