@@ -69,6 +69,12 @@ type PanelCloseArgs = {
   windowId?: string;
 };
 
+type PanelFocusArgs = {
+  panelId: string;
+  sessionId?: string;
+  windowId?: string;
+};
+
 type PanelReplaceArgs = {
   panelId: string;
   panelType: string;
@@ -377,6 +383,18 @@ function parsePanelReplaceArgs(raw: unknown): PanelReplaceArgs {
     panelId,
     panelType,
     ...(binding ? { binding } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(windowId ? { windowId } : {}),
+  };
+}
+
+function parsePanelFocusArgs(raw: unknown): PanelFocusArgs {
+  const obj = asObject(raw);
+  const panelId = parseRequiredString(obj, 'panelId', 'panelId');
+  const sessionId = parseOptionalString(obj, 'sessionId', 'sessionId');
+  const windowId = parseOptionalString(obj, 'windowId', 'windowId');
+  return {
+    panelId,
     ...(sessionId ? { sessionId } : {}),
     ...(windowId ? { windowId } : {}),
   };
@@ -987,6 +1005,19 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           ...(resolvedWindowId ? { windowId: resolvedWindowId } : {}),
           ...(resolvedPaneId ? { paneId: resolvedPaneId } : {}),
         };
+      },
+      focus: async (args, ctx) => {
+        const parsed = parsePanelFocusArgs(args);
+        return sendPanelCommand(
+          {
+            type: 'panel_command',
+            command: 'focus_panel',
+            panelId: parsed.panelId,
+          },
+          ctx,
+          parsed.sessionId,
+          parsed.windowId,
+        );
       },
       close: async (args, ctx) => {
         const parsed = parsePanelCloseArgs(args);

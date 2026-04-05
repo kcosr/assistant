@@ -189,6 +189,65 @@ describe('PanelWorkspaceController rename flow', () => {
     navigator.detach();
   });
 
+  it('publishes the active chat panel as the selected panel in inventory', () => {
+    const registry = new PanelRegistry();
+    registry.register({ type: 'chat', title: 'Chat' }, createChromePanel('Chat'));
+    registry.register({ type: 'empty', title: 'Empty' }, createChromePanel('Empty'));
+
+    const panelEvents: unknown[] = [];
+    const host = new PanelHostController({
+      registry,
+      sendPanelEvent: (event) => {
+        panelEvents.push(event);
+      },
+    });
+
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      dialogManager: new DialogManager(),
+      loadLayout: () => ({
+        layout: pane('pane-1', ['chat-1', 'empty-1'], 'chat-1'),
+        panels: {
+          'chat-1': { panelId: 'chat-1', panelType: 'chat' },
+          'empty-1': { panelId: 'empty-1', panelType: 'empty' },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+    });
+    host.setPanelWorkspace(workspace);
+    workspace.attach();
+    workspace.focusPanel('chat-1');
+
+    const inventoryPayload = panelEvents
+      .map((event) => (event as { payload?: unknown }).payload)
+      .filter(
+        (
+          payload,
+        ): payload is {
+          type: string;
+          selectedPanelId: string | null;
+          selectedChatPanelId: string | null;
+          panels: Array<{ panelId: string; panelType: string }>;
+        } =>
+          !!payload &&
+          typeof payload === 'object' &&
+          (payload as { type?: string }).type === 'panel_inventory',
+      )
+      .at(-1);
+
+    expect(inventoryPayload?.selectedPanelId).toBe('chat-1');
+    expect(inventoryPayload?.selectedChatPanelId).toBe('chat-1');
+    expect(inventoryPayload?.panels.find((panel) => panel.panelId === 'chat-1')).toMatchObject({
+      panelType: 'chat',
+    });
+  });
+
   it('clears a custom title on empty submission and keeps the chrome title on the panel default', async () => {
     const registry = new PanelRegistry();
     registry.register({ type: 'lists', title: 'Lists' }, createChromePanel('Lists'));

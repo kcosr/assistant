@@ -2699,6 +2699,17 @@ export class ChatRenderer {
       return existing;
     }
 
+    const existingDomNode = responseEl.querySelector<HTMLDivElement>(
+      `.assistant-text[data-segment="${segmentIdx}"]`,
+    );
+    if (existingDomNode) {
+      if (phase) {
+        existingDomNode.dataset['phase'] = phase;
+      }
+      this.assistantTextElements.set(segmentKey, existingDomNode);
+      return existingDomNode;
+    }
+
     const textEl = document.createElement('div');
     textEl.className = 'assistant-text';
     textEl.dataset['segment'] = String(segmentIdx);

@@ -3522,9 +3522,7 @@ export class PanelWorkspaceController {
       .map((panelId) => this.buildPanelInventoryEntry(panelId))
       .filter((panel): panel is PanelInventoryPayload['panels'][number] => panel !== null);
     const selectedPanelId =
-      this.activeNonChatPanelId && this.layout.panels[this.activeNonChatPanelId]
-        ? this.activeNonChatPanelId
-        : null;
+      this.activePanelId && this.layout.panels[this.activePanelId] ? this.activePanelId : null;
     const selectedChatPanelId =
       this.activeChatPanelId && this.layout.panels[this.activeChatPanelId]
         ? this.activeChatPanelId

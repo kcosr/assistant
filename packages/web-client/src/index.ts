@@ -142,6 +142,7 @@ import { CHAT_PANEL_SERVICES_CONTEXT_KEY, type ChatPanelServices } from './utils
 import {
   computeUnfinishedRequestIds,
   dedupeProjectedTranscriptEvents,
+  filterBufferedTranscriptEventsAfterReplay,
   finishTranscriptHydration,
 } from './utils/transcriptReplay';
 import {
@@ -453,10 +454,13 @@ async function main(): Promise<void> {
       typeof revision === 'number' && chatRenderer.getProjectedTranscriptRevision() === revision
         ? chatRenderer.getHighestProjectedSequence()
         : -1;
-    const unappliedEvents =
-      highestAppliedSequence >= 0
-        ? eventsToApply.filter((event) => event.sequence > highestAppliedSequence)
-        : eventsToApply;
+    const renderedEvents =
+      highestAppliedSequence >= 0 ? chatRenderer.getStoredProjectedTranscriptEvents() : [];
+    const unappliedEvents = filterBufferedTranscriptEventsAfterReplay(
+      eventsToApply,
+      renderedEvents,
+      highestAppliedSequence,
+    );
     const unresolvedEvents =
       typeof revision === 'number'
         ? pendingEvents.filter((event) => event.revision > revision)
@@ -4581,6 +4585,13 @@ async function main(): Promise<void> {
       if (panelId && pinToHeader) {
         panelWorkspace.pinPanelById(panelId);
         panelWorkspace.focusPanel(panelId);
+      }
+      return true;
+    }
+    if (command === 'focus_panel') {
+      const panelId = normalizeCommandString(record['panelId']);
+      if (panelId) {
+        panelWorkspace.activatePanel(panelId);
       }
       return true;
     }

@@ -239,6 +239,13 @@ export function listPanels(options: PanelInventoryOptions = {}): {
   const panels = snapshot.panels
     .filter((panel) => includeChat || panel.panelType !== 'chat')
     .map((panel) => stripPanelContext(panel, includeContext));
+  const selectedPanelId =
+    !includeChat &&
+    snapshot.selectedPanelId != null &&
+    snapshot.panels.find((panel) => panel.panelId === snapshot.selectedPanelId)?.panelType ===
+      'chat'
+      ? null
+      : snapshot.selectedPanelId;
 
   const result: {
     windowId?: string;
@@ -251,7 +258,7 @@ export function listPanels(options: PanelInventoryOptions = {}): {
   } = {
     ...(windowId ? { windowId } : {}),
     panels,
-    selectedPanelId: snapshot.selectedPanelId,
+    selectedPanelId,
     selectedChatPanelId: snapshot.selectedChatPanelId,
     selectedPaneId: snapshot.selectedPaneId,
   };
@@ -291,6 +298,8 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
     snapshot.selectedPanelId != null
       ? (snapshot.panels.find((entry) => entry.panelId === snapshot.selectedPanelId) ?? null)
       : null;
+  const selectedPanel =
+    panel && !includeChat && panel.panelType === 'chat' ? null : panel;
   const chatPanel =
     includeChat && snapshot.selectedChatPanelId != null
       ? (snapshot.panels.find((entry) => entry.panelId === snapshot.selectedChatPanelId) ?? null)
@@ -310,7 +319,7 @@ export function getSelectedPanels(options: PanelInventoryOptions = {}): {
     selectedPanelId: snapshot.selectedPanelId,
     selectedChatPanelId: snapshot.selectedChatPanelId,
     selectedPaneId: snapshot.selectedPaneId,
-    panel: panel ? stripPanelContext(panel, includeContext) : null,
+    panel: selectedPanel ? stripPanelContext(selectedPanel, includeContext) : null,
     chatPanel: chatPanel ? stripPanelContext(chatPanel, includeContext) : null,
   };
   if (includeLayout) {

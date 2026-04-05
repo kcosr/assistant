@@ -6,9 +6,18 @@
 
 ### Added
 
+- Added `panels_focus` so agents can activate an existing panel tab without reopening or moving it.
+
 ### Changed
 
+- Changed panel targeting defaults to follow the actually focused pane, including when chat is the active tab, so panel opens resolve next to where the user is looking.
+
 ### Fixed
+
+- Fixed desktop HTML attachment opens to use a single native Tauri command that writes and opens the temporary `.html` file, avoiding host-specific failures from the previous split write/open path.
+- Fixed the Tauri desktop build for HTML attachment opening by passing an owned string path to the opener plugin, restoring successful Mac desktop builds.
+- Fixed chat transcript hydration so stale buffered live events no longer re-apply already-finalized assistant text after canonical replay, preventing transient duplicate final messages that disappeared on refresh.
+- Fixed panel inventory and `panels_selected` to report the actual active chat tab as the selected panel instead of surfacing a stale `empty` placeholder when chat is focused.
 
 ### Removed
 
