@@ -11,15 +11,12 @@
 
 ### Added
 
-- Added persistent `attachment_send` tool support with assistant-owned attachment storage, replayable attachment bubbles, download routes, HTML blob-open handling, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83))
-- Added configurable `attachment_send` preview snippet limits plus inline expand/collapse for truncated attachment previews in chat. ([#88](https://github.com/kcosr/assistant/pull/88))
-- Added inline attachment copy actions for `attachment_send`, including plain-text copy and markdown plain/raw copy dropdowns in attachment bubbles.
+- Added persistent `attachment_send` support with assistant-owned attachment storage, replayable attachment bubbles, download/open handling, truncated-preview expand/collapse, copy actions, and cleanup on session/history deletion. ([#83](https://github.com/kcosr/assistant/pull/83)) ([#88](https://github.com/kcosr/assistant/pull/88))
 - Added an animated activity bar above chat inputs while a bound session is busy.
 - Added inline thumbnail previews and open actions for image attachments sent through `attachment_send`.
 - Added in-app overlay viewing for inline image attachments, including thumbnail tap-to-open and a close button.
 - Added rooted per-agent `contextFiles` prompt injection with config-relative roots, root-confined glob includes, startup preload caching, fail-fast file validation, and system-prompt insertion after instruction skills.
-- Added Android native voice `TTS gain` settings with a 25%-500% playback control, Android PCM software gain, runtime gain reporting, and an Android source-tree `android:test` entrypoint that syncs Capacitor before Gradle tests. ([#87](https://github.com/kcosr/assistant/pull/87))
-- Added Android native recognition cues with configurable cue gain and startup pre-roll settings, persistent notification toggles for media-button capture and `Off/Tool/Response` voice mode cycling, and a local spoken `stop` abort path. ([#89](https://github.com/kcosr/assistant/pull/89))
+- Added Android native voice controls for TTS gain, recognition cue gain and pre-roll, persistent notification toggles for media-button capture, `Off/Tool/Response` voice mode cycling, and a local spoken `stop` abort path. ([#87](https://github.com/kcosr/assistant/pull/87)) ([#89](https://github.com/kcosr/assistant/pull/89))
 - Added lists item search support for filter-only queries, including normalized search filter inputs when no text query is provided. ([#89](https://github.com/kcosr/assistant/pull/89))
 - Added installable PWA icons to the mobile web manifest so the mobile app can be added to a home screen with proper `any maskable` icon sizes from 48px through 512px.
 
@@ -34,81 +31,32 @@
 - Changed list selection commands to live under the `<n> selected` menu instead of `Actions`,
   reordered them to put `Move to Top`, `Move to Bottom`, and `Move to List` first, and preserved
   the current order of moved items.
-
-- Changed coding plugin execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` instead of assistant-local copied tool implementations.
-- Changed coding tool registration to use a core `CodingToolHost` in the main tool catalog instead of routing coding tools through the plugin registry wrapper.
-- Changed Pi session replay to project transcript events directly from canonical Pi JSONL instead of reconstructing ChatEvent history first.
-- Changed live transcript_event delivery to project directly on the server with request-context tracking across batches instead of reusing replay batch projection.
-- Changed the web client transcript renderer to consume projected transcript kinds directly instead of reconstructing legacy chat-event wrappers internally.
-- Changed canonical Pi custom transcript entries to use explicit `assistant.<event_type>` records instead of the generic `assistant.event` envelope.
-- Changed Pi session restore in SessionHub to load canonical Pi replay messages directly instead of reconstructing `chatMessages` through ChatEvent replay.
-- Changed server-side Pi transcript persistence helpers to write canonical Pi custom entries directly instead of routing those writes through EventStore mirroring.
-- Changed Pi questionnaire recovery to load canonical projected transcript events directly instead of reconstructing questionnaire state from Pi ChatEvent replay.
-- Changed SessionHub to restore Pi-backed sessions only through canonical replay messages; `loadSessionEvents` no longer exposes Pi ChatEvent reconstruction on the runtime path.
+- Changed coding tool execution to source `bash`, `read`, `write`, `edit`, `ls`, `find`, and `grep` directly from `@mariozechner/pi-coding-agent` through a core `CodingToolHost` instead of assistant-local copied tool implementations and plugin-wrapper registration.
+- Changed Pi-backed session runtime, persistence, and replay to use canonical Pi history plus direct `transcript_event` projection end-to-end instead of reconstructing legacy ChatEvent history or mirroring through EventStore overlays.
 - Changed Android flavor deploys to build from staged repo-local copies while treating `packages/mobile-web/android` as committed source, keeping tracked native files untouched during packaging. ([#85](https://github.com/kcosr/assistant/pull/85))
 - Changed Android voice notifications to use a public lock-screen-visible channel, compact `Voice (State)` titles, and synced session titles for the preferred or active session. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed Android flavor staging to reuse installed `node_modules` instead of copying them into per-flavor staged builds. ([#86](https://github.com/kcosr/assistant/pull/86))
 - Changed attachment MIME inference so files with unknown extensions download as `application/octet-stream` while extensionless text still defaults to `text/plain`. ([#83](https://github.com/kcosr/assistant/pull/83))
 - Changed tool scoping so read-only `panels_tree` is treated like the existing always-available panel inspection tools, while mutating panel commands remain gated.
-- Changed panel workspace layout and navigation to model tabs at the pane level, so center placement now tabs into the targeted pane directly and the UI exposes explicit pane/tab actions instead of split tab-mode toggles.
-- Changed pane tab dragging so tabs can be reordered within a pane, detached into new splits, and dropped onto other panes as tabs.
-- Changed pane-local add flows such as pane `+`, panel split actions, and `Ctrl+S` to use a compact in-pane panel picker when placement is already known, and allowed dragging lone pane tabs while leaving an `empty` placeholder behind in the source pane instead of collapsing that area.
-- Changed `Ctrl+T` to open the compact add-tab picker for the active pane, and changed the top-row `+` button to use the same inline add-tab flow instead of the full global panel launcher.
-- Changed panel keyboard controls so `Ctrl+M` now mirrors drag/drop more closely: it first targets another visible panel, then places the active panel `left/right/top/bottom/center` relative to that target, including center-to-tab moves.
-- Changed compact in-pane panel pickers to show the current action in the header, submit directly from the focused row without redundant per-row add buttons, and use that same compact flow for inline panel replacement.
-- Changed empty-pane and toolbar replace actions to use explicit compact replace pickers, and suspended background keyboard shortcuts while the compact picker is open so arrow keys and enter stay scoped to the picker.
-- Changed compact panel pickers to keep a searchable filter input visible in compact mode, with keyboard navigation staying inside the picker while filtering.
-- Changed newly created unbound chat panels to open the session picker without auto-focusing the chat input, and stopped merely selecting an existing chat panel from stealing focus into the composer.
-- Changed mobile pane rendering to hide the tabs header when a pane only has a single tab.
-- Changed the panels tool contract to be pane-aware, adding explicit window discovery, pane selection metadata, and `tab`/`split`/`header` modes for agent-driven layout commands instead of the older placement-only API.
-- Changed user-message panel XML context to include `window-id`, `pane-id`, `pane-tab-count`, and `pane-tab-panel-ids` so agents can target the current pane and tab group directly.
+- Changed panel workspace layout and navigation to use pane-local tabs and explicit pane/tab actions instead of split-level tab mode, including detachable tabs, compact searchable in-pane add/replace pickers, dedicated keyboard add/move flows, horizontally scrollable tab rails, mobile single-tab header hiding, and pane-aware agent panel commands with richer window/pane context.
 
 ### Fixed
 
 - Fixed chat activity indicators so the input activity bar, chat-log typing dots, session panel busy state, and mic/stop button all derive from a single authoritative request-activity source — seeded from the transcript on the first load for a session and on reconnect, maintained by live WebSocket events afterwards — and no longer stick in a busy state after transcript refreshes, interrupted requests, or transient fetch failures. The mic/stop button stays responsive for voice input instead of trapping the user in a stop state that previously required restarting the app.
 - Fixed attachment persistence to enforce the 4 MB size cap in the store as well as the tool layer, preventing oversized writes from non-tool callers. ([#83](https://github.com/kcosr/assistant/pull/83))
-- Fixed Pi session sync replay drift that could duplicate persisted assistant reasoning/messages after callback history changes ([#81](https://github.com/kcosr/assistant/pull/81))
-- Fixed Pi-backed active session attach/replay so a second client immediately replays the initial in-flight user turn instead of rendering a cut-off streamed transcript until refresh ([#81](https://github.com/kcosr/assistant/pull/81))
-- Fixed Pi replay so late raw provider messages already mirrored into explicit app turns no longer get reassigned onto a newer turn during reload ([#82](https://github.com/kcosr/assistant/pull/82))
-- Fixed interrupted Pi turns so visible aborted assistant output is synced into the Pi session file before turn close, preserving interrupted reload replay for assistant text, thinking, and tool-call content ([#82](https://github.com/kcosr/assistant/pull/82))
-- Fixed direct Pi transcript persistence helpers to fall back cleanly when lightweight SessionHub shims do not expose cached-session accessors.
+- Fixed Pi-backed session replay, refresh, reconnect, and request-history editing so visible turns, interrupted output, callback/tool activity, and mid-stream reload state stay aligned with canonical Pi history instead of dropping, duplicating, or resetting transcript state. ([#81](https://github.com/kcosr/assistant/pull/81)) ([#82](https://github.com/kcosr/assistant/pull/82))
 - Fixed systemd startup for Pi-backed sessions by removing top-level CommonJS requires of ESM-only `@mariozechner/pi-ai` and `@mariozechner/pi-coding-agent` packages.
-- Fixed live Pi transcript updates so normal session activity no longer resets the in-memory transcript revision and clears visible history on each new turn.
-- Fixed native Pi tool execution to hydrate `requestId`/`responseId`/`turnId` from the active run at execute time, restoring `attachment_send` and other request-scoped tools.
-- Fixed Pi transcript replay dropping visible user turns when canonical `user` messages coexisted with overlay request markers.
-- Fixed live Pi submit handling so the sending client immediately receives request-start and user-turn transcript events instead of waiting for assistant output or refresh.
-- Fixed refreshed Pi sessions so restored chat bindings are re-subscribed on websocket open and continue receiving live transcript updates without requiring another UI change.
-- Fixed refreshed Pi sessions so replay hydration is single-flight and primes the live transcript sequence, preventing post-refresh live turns from wiping visible history or restarting transcript sequencing from zero.
-- Fixed Pi coding-tool rendering so imported `bash`, `read`, `edit`, `find`, `grep`, and `ls` results use semantic output views again, including diff rendering for `edit` and actual stdout/file-content display for `bash` and `read`.
+- Fixed live Pi transcript delivery so request-start, user turns, tool activity, reasoning blocks, and refresh/reconnect hydration stay in sync instead of resetting revisions, losing visible turns, or waiting for a later replay to render.
+- Fixed Pi coding-tool execution and rendering so imported `bash`, `read`, `edit`, `find`, `grep`, and `ls` use semantic transcript views again, preserve proper tool_call/tool_result ordering, stream true deltas, and hydrate request-scoped ids correctly for request-owned tools like `attachment_send`.
 - Fixed assistant markdown code blocks to shrink-wrap to their content up to the available message width instead of always stretching full-width.
-- Fixed refreshed Pi sessions so the next live turn re-aligns transcript revision and sequence from canonical Pi history before emitting websocket transcript events, preventing post-refresh submits from being dropped as stale.
-- Fixed refreshed Pi sessions so a mid-stream reload reconstructs the active in-flight turn from transient live transcript state on the first refresh without persisting streaming chunk noise into the Pi session log.
-- Fixed refreshed Pi transcript delivery so pre-runtime live events buffer instead of being dropped and live sequence gaps trigger a forced transcript reload instead of leaving the page stranded on a stale in-flight turn.
-- Fixed refreshed Pi subscriptions so `hello` and `subscribe` re-seed live transcript state from canonical Pi history before marking the session ready, preventing mid-stream reloads from attaching to stale sequence state.
-- Fixed Pi mid-stream replay after refresh so the sessions replay path shares the same in-flight live transcript overlay state as the websocket runtime, restoring already-streamed chunks on the first reload.
-- Fixed native Pi tool streaming so cumulative partial tool output is converted into true deltas instead of duplicating earlier lines until the final tool result arrives.
-- Fixed live Pi assistant and request-end transcript emission to bypass the old EventStore gate, restoring immediate in-page rendering of submitted turns instead of only showing them after replay refresh.
-- Fixed Pi live transcript revision handling so ordinary session revision bumps no longer make the client reset to only the newest turn during live rendering.
-- Fixed Pi request-history replay after middle-request deletion so partial `providers.pi-cli` transcript revision aliases no longer hide the canonical Pi session file and collapse the visible transcript to zero events.
-- Fixed canonical Pi replay so duplicate request-start markers no longer orphan the active request/response state or split later tool activity onto a fresh synthetic response.
 - Fixed coding-plugin startup under systemd by loading ESM-only `@mariozechner/pi-coding-agent` through its installed runtime entrypoint instead of emitting a top-level CommonJS package require.
-- Fixed Pi transcript/session cleanup so clearing a Pi-backed session removes provider transcript metadata entirely, Pi agent subscription failures surface as normal run errors, and mixed-revision buffered replay now forces a reload instead of silently dropping buffered events.
-- Fixed refreshed Pi transcript buffering so reset replay treats already-covered buffered events as stale, preventing same-revision overlap from trapping the client in an infinite replay/reload loop and flashing the chat view.
-- Fixed refreshed Pi transcript hydration so replay marks hydration complete before flushing buffered live events, preventing `assistant_done` and `request_end` from getting stranded until a later reload.
-- Fixed live `agents_message` rendering so Pi tool transcript events keep `tool_call` ahead of `tool_result`, preventing async agent exchanges from showing raw JSON input/output until refresh.
-- Fixed live Pi bash tool input streaming so tool input chunks use end offsets consistently, preventing reload-during-run cases from dropping the opening command text and rendering only a trailing fragment like `}`.
-- Fixed interrupted Pi transcript sync so late raw provider-tail messages are dropped from canonical replay sync, logged into the Pi transcript as visible warnings, and replayed against the explicit request they still belong to instead of creating a fake new in-flight turn.
-- Fixed Pi `openai-codex` OAuth resolution so the native Pi runtime reads `~/.pi/agent/auth.json` directly again, canonicalizes OAuth provider ids, and exposes the resolved key through `pi-agent-core`'s `getApiKey` path instead of depending on `pi-coding-agent` `AuthStorage`.
-- Fixed Pi request-history `trim_after` edits so they remove orphan conversational tail entries outside explicit request markers, and clear stale client typing/request state before the forced transcript reload.
+- Fixed Pi transcript cleanup and request-history edits so clearing a Pi-backed session removes stale provider transcript metadata, late provider tails no longer create fake turns, and `trim_after` removes orphaned conversational tails while resetting stale client request state.
 - Fixed attachment metadata corruption from concurrent `attachment_send` calls by serializing per-session attachment mutations and writing `metadata.json` atomically, preventing inline preview failures and 500 download/open responses.
 - Fixed live tool-input rendering so streamed partial JSON for tools like `bash`, `write`, `read`, `find`, `grep`, and `agents_message` is rendered from semantic partial arguments instead of raw JSON until the final tool call arrives.
 - Fixed filesystem-backed `attachment_send` calls to accept relative paths resolved from the session working directory, matching the cwd-oriented behavior of Pi coding tools.
 - Fixed Pi-path tool execution to invoke resolved native `AgentTool`s directly during runs and nested `agents_message` flows instead of bouncing back through `ToolHost.callTool(...)`.
 - Fixed sender-side session typing indicators so transcript replay no longer re-applies stale optimistic local typing after a turn has already completed.
-- Fixed unbound chat panel creation so launcher-created chat panes explicitly auto-open the session picker on mount instead of relying on focus timing.
-- Fixed chat tab and session-label hydration so bound chat panels refresh from session names immediately after binding and on page-load session summary sync instead of waiting for a later click-triggered rerender.
-- Fixed chat title refresh so routine `session_updated` syncs no longer force a full workspace rerender when a panel title has not actually changed.
-- Fixed chat transcript auto-scroll so loading a chat panel, selecting a session, and replaying the latest transcript settle fully to the bottom instead of stopping slightly above the newest messages.
+- Fixed chat panel/session UX so new unbound chat panes auto-open the session picker without stealing composer focus, panel titles hydrate immediately from session names, auto-scroll settles to the latest message, and the typing indicator aligns with other left-aligned chat text.
 - Fixed workspace panel command handling to understand the pane-aware panel tool payloads for tab insertion, split creation, header pinning, and pane-targeted moves.
 - Fixed headless `sessions_message` tool exposure so agent turns now preserve scheduled-sessions and search services when building native agent tools, restoring `scheduled_sessions_*` tool execution in assistant-agent runs.
 - Fixed plugin operation tool schemas to preserve advanced JSON Schema fields like `$defs`, `$ref`, and `allOf`, and updated the questions tool manifest to use `$defs` refs so questionnaire tool exposure no longer fails with unresolved `#/definitions/field` references.
