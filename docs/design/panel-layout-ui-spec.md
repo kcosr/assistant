@@ -194,7 +194,7 @@ Right-clicking (or long-pressing) a panel header should expose:
 - **Header panel navigation**: `Ctrl + H` (left/right or `A`/`D` cycles pinned header panels, `Enter` or `↓` focuses selected header panel, `1-9` toggle, `0` cycles pages, `Esc` exits)
 - **Cycle panel focus**: `Ctrl/Cmd + ]` / `Ctrl/Cmd + [`
 - **Split panel**: `Ctrl + S` (active panel only; arrows/WASD choose region, `Enter` opens the compact picker for that region, `Esc` cancels)
-- **Move panel**: `Ctrl + M` (active panel only; arrows/WASD choose region, `Enter` moves the panel into that edge placement, `Esc` cancels)
+- **Move panel**: `Ctrl + M` (active panel only; arrows/WASD first choose the target panel, `Enter` switches to placement, arrows/WASD or `C` choose `left/right/top/bottom/center`, `Enter` confirms, `Esc` backs out/cancels)
 - **Focus last panel by type**: `Ctrl + A` artifacts, `Ctrl + C` chat, `Ctrl + D` diff, `Ctrl + F` files, `Ctrl + L` lists, `Ctrl + N` notes
 - **Add tab to active pane**: `Ctrl + T` (opens the compact picker targeted to the active pane)
 - **Close panel**: `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) (replaces with empty placeholder)

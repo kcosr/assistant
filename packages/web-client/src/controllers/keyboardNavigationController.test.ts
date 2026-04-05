@@ -420,7 +420,7 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
-  it('starts move placement on ctrl+m and moves the active panel on enter', () => {
+  it('starts move placement on ctrl+m and moves the active panel on enter after choosing a region', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -437,13 +437,14 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     expect(document.body.classList.contains('panel-move-placement-active')).toBe(true);
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
     expect(options.panelWorkspace.movePanel).toHaveBeenCalledWith('panel-1', { region: 'bottom' });
     expect(document.body.classList.contains('panel-move-placement-active')).toBe(false);
     registry.detach();
   });
 
-  it('changes move placement region with arrow keys', () => {
+  it('changes move placement region with arrow keys during region selection', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';
     panelFrame.dataset['panelId'] = 'panel-1';
@@ -457,10 +458,74 @@ describe('KeyboardNavigationController panel shortcuts', () => {
       new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, bubbles: true }),
     );
 
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
     expect(options.panelWorkspace.movePanel).toHaveBeenCalledWith('panel-1', { region: 'left' });
+    registry.detach();
+  });
+
+  it('lets ctrl+m target another panel and move into it as a center tab', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    Object.defineProperty(panelFrame, 'getBoundingClientRect', {
+      value: () => new DOMRect(0, 0, 200, 200),
+    });
+    document.body.appendChild(panelFrame);
+
+    const otherPanelFrame = document.createElement('div');
+    otherPanelFrame.className = 'panel-frame';
+    otherPanelFrame.dataset['panelId'] = 'panel-2';
+    Object.defineProperty(otherPanelFrame, 'getBoundingClientRect', {
+      value: () => new DOMRect(260, 0, 200, 200),
+    });
+    document.body.appendChild(otherPanelFrame);
+
+    const options = buildOptions(panelFrame);
+    options.panelWorkspace.getPanelFrameElement = vi.fn((panelId: string) =>
+      panelId === 'panel-1' ? panelFrame : panelId === 'panel-2' ? otherPanelFrame : null,
+    );
+    options.panelWorkspace.getLayoutRoot = vi.fn(
+      () =>
+        ({
+          kind: 'split',
+          splitId: 'split-1',
+          direction: 'horizontal',
+          sizes: [1, 1],
+          children: [
+            {
+              kind: 'pane',
+              paneId: 'pane-1',
+              tabs: [{ panelId: 'panel-1' }],
+              activePanelId: 'panel-1',
+            },
+            {
+              kind: 'pane',
+              paneId: 'pane-2',
+              tabs: [{ panelId: 'panel-2' }],
+              activePanelId: 'panel-2',
+            },
+          ],
+        }) as ReturnType<PanelWorkspaceController['getLayoutRoot']>,
+    );
+
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller, { panelNavigation: true });
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'm', ctrlKey: true, bubbles: true }),
+    );
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.movePanel).toHaveBeenCalledWith(
+      'panel-1',
+      { region: 'center' },
+      'panel-2',
+    );
     registry.detach();
   });
 

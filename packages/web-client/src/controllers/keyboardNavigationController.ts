@@ -46,7 +46,7 @@ export interface KeyboardNavigationControllerOptions {
 type FocusZone = 'sidebar' | 'input';
 type ArrowDirection = 'left' | 'right' | 'up' | 'down';
 type SplitPlacementRegion = 'left' | 'right' | 'top' | 'bottom';
-type MovePlacementRegion = SplitPlacementRegion;
+type MovePlacementRegion = SplitPlacementRegion | 'center';
 
 interface LayoutNavState {
   mode: 'layout';
@@ -72,9 +72,13 @@ interface SplitPlacementState {
 interface MovePlacementState {
   mode: 'move';
   panelId: string;
+  phase: 'target' | 'region';
+  targetPanelId: string;
+  page: number;
   region: MovePlacementRegion;
   overlay: HTMLElement;
   highlight: HTMLElement;
+  badges: HTMLElement[];
   cleanup: () => void;
 }
 
@@ -1138,9 +1142,13 @@ export class KeyboardNavigationController {
     const state: MovePlacementState = {
       mode: 'move',
       panelId,
+      phase: 'target',
+      targetPanelId: panelId,
+      page: 0,
       region: 'bottom',
       overlay,
       highlight,
+      badges: [],
       cleanup: () => undefined,
     };
     this.movePlacementState = state;
@@ -1164,6 +1172,7 @@ export class KeyboardNavigationController {
       return;
     }
     this.movePlacementState.cleanup();
+    this.clearMovePlacementBadges(this.movePlacementState);
     this.movePlacementState.overlay.remove();
     this.movePlacementState = null;
     document.body.classList.remove('panel-move-placement-active');
@@ -1174,7 +1183,9 @@ export class KeyboardNavigationController {
     if (!state) {
       return;
     }
-    const frame = this.options.panelWorkspace.getPanelFrameElement(state.panelId);
+    const frame = this.options.panelWorkspace.getPanelFrameElement(
+      state.phase === 'target' ? state.targetPanelId : state.targetPanelId,
+    );
     if (!frame) {
       this.stopMovePlacement();
       return;
@@ -1184,8 +1195,67 @@ export class KeyboardNavigationController {
       state.highlight.style.display = 'none';
       return;
     }
-    const highlightRect = computeSplitPlacementHighlightRect(state.region, rect);
+    if (state.phase === 'target') {
+      this.showMovePlacementTargetBadges(state);
+      this.applySplitPlacementHighlight(state.highlight, rect);
+      return;
+    }
+    this.clearMovePlacementBadges(state);
+    const highlightRect = computeMovePlacementHighlightRect(state.region, rect);
     this.applySplitPlacementHighlight(state.highlight, highlightRect);
+  }
+
+  private showMovePlacementTargetBadges(state: MovePlacementState): void {
+    this.clearMovePlacementBadges(state);
+    const panels = this.getVisiblePanelOrder();
+    if (panels.length === 0) {
+      return;
+    }
+    if (!panels.includes(state.targetPanelId)) {
+      state.targetPanelId = panels[0] ?? state.targetPanelId;
+    }
+    const selectedIndex = panels.indexOf(state.targetPanelId);
+    const pageSize = 9;
+    const totalPages = Math.max(1, Math.ceil(panels.length / pageSize));
+    const nextPage = selectedIndex >= 0 ? Math.floor(selectedIndex / pageSize) : 0;
+    state.page = Math.min(nextPage, Math.max(totalPages - 1, 0));
+    if (state.page >= totalPages) {
+      state.page = 0;
+    }
+    const startIndex = state.page * pageSize;
+    const endIndex = Math.min(panels.length, startIndex + pageSize);
+    for (let index = startIndex; index < endIndex; index += 1) {
+      const panelId = panels[index];
+      if (!panelId) {
+        continue;
+      }
+      const anchorEl = this.options.panelWorkspace.getPanelFrameElement(panelId);
+      if (!anchorEl) {
+        continue;
+      }
+      const rect = anchorEl.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        continue;
+      }
+      const badge = document.createElement('div');
+      badge.className = 'panel-nav-badge';
+      badge.textContent = String(index - startIndex + 1);
+      const offset = 6;
+      badge.style.left = `${rect.left + offset}px`;
+      badge.style.top = `${rect.top + offset}px`;
+      state.overlay.appendChild(badge);
+      state.badges.push(badge);
+    }
+  }
+
+  private clearMovePlacementBadges(state: MovePlacementState): void {
+    if (state.badges.length === 0) {
+      return;
+    }
+    for (const badge of state.badges) {
+      badge.remove();
+    }
+    state.badges = [];
   }
 
   private updateSplitPlacementOverlay(): void {
@@ -1268,12 +1338,31 @@ export class KeyboardNavigationController {
     }
 
     if (event.key === 'Escape') {
+      if (state.phase === 'region') {
+        state.phase = 'target';
+        this.updateMovePlacementOverlay();
+        return true;
+      }
       this.stopMovePlacement();
       return true;
     }
 
     if (event.key === 'Enter') {
-      this.options.panelWorkspace.movePanel(state.panelId, { region: state.region });
+      if (state.phase === 'target') {
+        state.phase = 'region';
+        state.region = state.targetPanelId !== state.panelId ? 'center' : 'bottom';
+        this.updateMovePlacementOverlay();
+        return true;
+      }
+      const targetPanelId =
+        state.targetPanelId && state.targetPanelId !== state.panelId ? state.targetPanelId : undefined;
+      if (state.region !== 'center' || targetPanelId) {
+        if (targetPanelId) {
+          this.options.panelWorkspace.movePanel(state.panelId, { region: state.region }, targetPanelId);
+        } else {
+          this.options.panelWorkspace.movePanel(state.panelId, { region: state.region });
+        }
+      }
       this.stopMovePlacement();
       return true;
     }
@@ -1282,16 +1371,90 @@ export class KeyboardNavigationController {
       return false;
     }
 
-    const region = this.resolveSplitPlacementRegion(event.key);
+    if (state.phase === 'target') {
+      if (event.key === '0') {
+        return this.advanceMoveTargetPage();
+      }
+      if (event.key >= '1' && event.key <= '9') {
+        const index = Number.parseInt(event.key, 10) - 1;
+        return this.selectMoveTarget(index);
+      }
+      const direction = this.resolveArrowDirection(event.key.length === 1 ? event.key.toLowerCase() : event.key);
+      if (!direction) {
+        return false;
+      }
+      const panels = this.getVisiblePanelOrder();
+      if (panels.length === 0) {
+        return true;
+      }
+      const currentId = panels.includes(state.targetPanelId) ? state.targetPanelId : (panels[0] ?? state.targetPanelId);
+      if (!currentId) {
+        return true;
+      }
+      const nextPanelId = this.findSpatialNeighbor(currentId, panels, direction);
+      if (!nextPanelId) {
+        return true;
+      }
+      state.targetPanelId = nextPanelId;
+      this.updateMovePlacementOverlay();
+      return true;
+    }
+
+    const region = this.resolveMovePlacementRegion(event.key);
     if (!region) {
       return false;
     }
-
     if (region !== state.region) {
       state.region = region;
       this.updateMovePlacementOverlay();
     }
 
+    return true;
+  }
+
+  private resolveMovePlacementRegion(key: string): MovePlacementRegion | null {
+    const normalized = key.length === 1 ? key.toLowerCase() : key;
+    if (normalized === 'c') {
+      return 'center';
+    }
+    return this.resolveSplitPlacementRegion(key);
+  }
+
+  private advanceMoveTargetPage(): boolean {
+    const state = this.movePlacementState;
+    if (!state || state.phase !== 'target') {
+      return false;
+    }
+    const panels = this.getVisiblePanelOrder();
+    if (panels.length === 0) {
+      return true;
+    }
+    const pageSize = 9;
+    const totalPages = Math.max(1, Math.ceil(panels.length / pageSize));
+    if (totalPages <= 1) {
+      return true;
+    }
+    state.page = (state.page + 1) % totalPages;
+    const nextIndex = Math.min(state.page * pageSize, panels.length - 1);
+    state.targetPanelId = panels[nextIndex] ?? state.targetPanelId;
+    this.updateMovePlacementOverlay();
+    return true;
+  }
+
+  private selectMoveTarget(relativeIndex: number): boolean {
+    const state = this.movePlacementState;
+    if (!state || state.phase !== 'target') {
+      return false;
+    }
+    const panels = this.getVisiblePanelOrder();
+    const pageSize = 9;
+    const index = state.page * pageSize + relativeIndex;
+    const panelId = panels[index];
+    if (!panelId) {
+      return true;
+    }
+    state.targetPanelId = panelId;
+    this.updateMovePlacementOverlay();
     return true;
   }
 
@@ -2106,7 +2269,7 @@ export class KeyboardNavigationController {
 }
 
 function computeSplitPlacementHighlightRect(
-  region: SplitPlacementRegion,
+  region: MovePlacementRegion,
   rect: DOMRect,
 ): { left: number; top: number; width: number; height: number } {
   const edgeRatio = 0.5;
@@ -2150,4 +2313,11 @@ function computeSplitPlacementHighlightRect(
     width: rect.width * (1 - inset * 2),
     height: rect.height * (1 - inset * 2),
   };
+}
+
+function computeMovePlacementHighlightRect(
+  region: MovePlacementRegion,
+  rect: DOMRect,
+): { left: number; top: number; width: number; height: number } {
+  return computeSplitPlacementHighlightRect(region, rect);
 }
