@@ -213,11 +213,10 @@ export async function openHtmlAttachmentInBrowser(
         throw new Error(`Failed to open attachment (${response.status})`);
       }
       const buffer = await response.arrayBuffer();
-      const tempPath = await invoke<string>('write_temp_html_attachment_file', {
+      await invoke('open_temp_html_attachment_file', {
         fileName,
         contentBase64: arrayBufferToBase64(buffer),
       } satisfies AssistantAttachmentTempFileArgs);
-      await invoke('plugin:shell|open', { path: tempPath });
       return;
     }
   }

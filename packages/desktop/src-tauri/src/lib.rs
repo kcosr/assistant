@@ -1,3 +1,4 @@
+use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Bytes, Incoming};
@@ -5,7 +6,6 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fs;
@@ -16,6 +16,7 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
@@ -79,7 +80,10 @@ mod tests {
 
     #[test]
     fn falls_back_to_default_backend_url_when_env_blank() {
-        assert_eq!(resolve_default_backend_url(Some("   ")), DEFAULT_BACKEND_URL);
+        assert_eq!(
+            resolve_default_backend_url(Some("   ")),
+            DEFAULT_BACKEND_URL
+        );
     }
 }
 
@@ -322,8 +326,13 @@ async fn handle_websocket_connection(
                 .with_no_client_auth(),
         ));
 
-        match tokio_tungstenite::connect_async_tls_with_config(&ws_url, None, false, Some(connector))
-            .await
+        match tokio_tungstenite::connect_async_tls_with_config(
+            &ws_url,
+            None,
+            false,
+            Some(connector),
+        )
+        .await
         {
             Ok((ws, _)) => ws,
             Err(e) => {
@@ -585,12 +594,13 @@ async fn save_artifact_file(path: String, content_base64: String) -> Result<(), 
     fs::write(&path, decoded).map_err(|e| e.to_string())
 }
 
-/// Write HTML attachment content to a temporary local file and return its path.
+/// Write HTML attachment content to a temporary local file and open it.
 #[tauri::command]
-async fn write_temp_html_attachment_file(
+async fn open_temp_html_attachment_file(
+    app: AppHandle,
     file_name: String,
     content_base64: String,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(content_base64)
         .map_err(|e| e.to_string())?;
@@ -617,9 +627,9 @@ async fn write_temp_html_attachment_file(
         .as_nanos();
     let path = temp_dir.join(format!("{nonce}-{final_name}"));
     fs::write(&path, decoded).map_err(|e| e.to_string())?;
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| "Failed to encode temporary attachment path".to_string())
+    app.opener()
+        .open_path(&path, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 /// Restart the proxy with current settings.
@@ -643,8 +653,7 @@ async fn restart_proxy_internal(state: &AppState) -> Result<(), String> {
         start_http_proxy(backend_url.clone(), skip_cert_validation).await?;
 
     // Start WebSocket proxy
-    let (ws_port, ws_shutdown_tx) =
-        start_ws_proxy(backend_url, skip_cert_validation).await?;
+    let (ws_port, ws_shutdown_tx) = start_ws_proxy(backend_url, skip_cert_validation).await?;
 
     // Update state
     {
@@ -708,7 +717,7 @@ pub fn run() {
             get_proxy_url,
             get_ws_proxy_port,
             save_artifact_file,
-            write_temp_html_attachment_file,
+            open_temp_html_attachment_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
