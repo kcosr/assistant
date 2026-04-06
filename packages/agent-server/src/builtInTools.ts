@@ -1,4 +1,4 @@
-import type { AttachmentToolResult, ChatEvent } from '@assistant/shared';
+import type { AttachmentToolResult, ChatEvent, SessionConfig } from '@assistant/shared';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import { resolveAgentSession } from './sessionResolution';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
 import type { EventStore } from './events';
 import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chatEventUtils';
+import { parseSessionConfigInput } from './sessionConfig';
 import type { SkillSummary } from './skills';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
@@ -31,20 +32,13 @@ import {
   formatAttachmentTooLargeMessage,
 } from './attachments/constants';
 
-interface AgentMessageSessionConfig {
-  model?: string;
-  thinking?: string;
-  workingDir?: string;
-  skills?: string[];
-}
-
 interface AgentMessageArgs {
   agentId: string;
   content: string;
   sessionStrategy: 'latest' | 'create' | 'latest-or-create' | string;
   mode: 'sync' | 'async';
   timeoutSeconds: number;
-  sessionConfig?: AgentMessageSessionConfig;
+  sessionConfig?: SessionConfig;
 }
 
 type VoicePromptArgs = {
@@ -485,42 +479,18 @@ function parseAgentMessageArgs(raw: unknown): AgentMessageArgs {
     }
   }
 
-  let sessionConfig: AgentMessageSessionConfig | undefined;
+  let sessionConfig: SessionConfig | undefined;
   if ('sessionConfig' in obj) {
-    const raw = obj['sessionConfig'];
-    if (raw !== undefined && raw !== null) {
-      if (typeof raw !== 'object' || Array.isArray(raw)) {
-        throw createToolError('invalid_arguments', 'sessionConfig must be an object when provided');
+    try {
+      const parsed = parseSessionConfigInput({
+        value: obj['sessionConfig'],
+        allowSessionTitle: false,
+      });
+      if (parsed) {
+        sessionConfig = parsed;
       }
-      const sc = raw as Record<string, unknown>;
-      const cfg: AgentMessageSessionConfig = {};
-      if (sc['model'] !== undefined) {
-        if (typeof sc['model'] !== 'string') {
-          throw createToolError('invalid_arguments', 'sessionConfig.model must be a string');
-        }
-        cfg.model = sc['model'];
-      }
-      if (sc['thinking'] !== undefined) {
-        if (typeof sc['thinking'] !== 'string') {
-          throw createToolError('invalid_arguments', 'sessionConfig.thinking must be a string');
-        }
-        cfg.thinking = sc['thinking'];
-      }
-      if (sc['workingDir'] !== undefined) {
-        if (typeof sc['workingDir'] !== 'string') {
-          throw createToolError('invalid_arguments', 'sessionConfig.workingDir must be a string');
-        }
-        cfg.workingDir = sc['workingDir'];
-      }
-      if (sc['skills'] !== undefined) {
-        if (!Array.isArray(sc['skills']) || sc['skills'].some((s: unknown) => typeof s !== 'string')) {
-          throw createToolError('invalid_arguments', 'sessionConfig.skills must be an array of strings');
-        }
-        cfg.skills = sc['skills'] as string[];
-      }
-      if (Object.keys(cfg).length > 0) {
-        sessionConfig = cfg;
-      }
+    } catch (err) {
+      throw createToolError('invalid_arguments', (err as Error).message);
     }
   }
 

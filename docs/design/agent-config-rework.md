@@ -339,6 +339,14 @@ Used by three entry points:
 
 Session config stays as-is. The current fields are sufficient and the interface is additive -- new fields (e.g., `extends`, `contextFiles`, `systemPromptAppend`, scoping adjustments) can be added later without breaking changes.
 
+### `sessionConfig` and Session Resolution Strategies
+
+When `sessionConfig` is provided to `agents_message`:
+
+- **`create`**: Config is always applied to the new session.
+- **`latest-or-create`**: Config is applied only when a new session is created. If an existing session is found, `sessionConfig` is silently ignored (applying config overrides mid-conversation would be surprising). Callers that need specific config should use `"create"`.
+- **`latest`** / explicit session ID: Config is ignored (no session creation occurs).
+
 ## Migration
 
 No backwards compatibility is needed. However, the existing flat agent array format still works -- agents without `extends` resolve identically to today. The `templates` section is optional. Adoption is incremental:
