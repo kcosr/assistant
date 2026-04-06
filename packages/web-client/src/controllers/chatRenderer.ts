@@ -1638,8 +1638,9 @@ export class ChatRenderer {
     const offset = event.payload.offset;
     const eventToolName = event.payload.toolName;
 
-    // Dedup: ignore if we've already processed up to this offset
-    const lastOffset = this.toolOutputOffsets.get(callId) ?? 0;
+    // Dedup: ignore if we've already processed up to this offset.
+    // Default to -1 so the first chunk (offset=0) is not incorrectly skipped.
+    const lastOffset = this.toolOutputOffsets.get(callId) ?? -1;
     if (offset <= lastOffset) {
       return;
     }
