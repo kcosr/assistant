@@ -858,6 +858,7 @@ export class ChatRenderer {
     const existingBubble =
       this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
     const bubble = existingBubble ?? appendMessage(turnEl, 'user', text);
+    this.resetUserBubblePresentation(bubble);
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
     this.setUserBubbleText(bubble, text);
@@ -885,6 +886,7 @@ export class ChatRenderer {
     const existingBubble =
       this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
     const bubble = existingBubble ?? appendMessage(turnEl, 'user', transcription);
+    this.resetUserBubblePresentation(bubble);
     this.setUserBubbleText(bubble, transcription);
     bubble.classList.add('user-audio');
     bubble.dataset['inputType'] = 'audio';
@@ -925,6 +927,29 @@ export class ChatRenderer {
 
   private findUnifiedUserBubbleForTurn(turnEl: HTMLDivElement): HTMLDivElement | null {
     return turnEl.querySelector<HTMLDivElement>('.message.user[data-renderer="unified"]');
+  }
+
+  private resetUserBubblePresentation(bubble: HTMLDivElement): void {
+    bubble.classList.remove('user-audio', 'agent-message');
+    delete bubble.dataset['inputType'];
+    bubble.removeAttribute('aria-label');
+
+    const avatar = bubble.querySelector<HTMLDivElement>('.message-avatar');
+    if (avatar) {
+      avatar.classList.remove('user-audio-avatar', 'agent-message-badge');
+      avatar.replaceChildren();
+      avatar.textContent = 'U';
+      avatar.removeAttribute('aria-hidden');
+      avatar.removeAttribute('title');
+    }
+
+    const content = bubble.querySelector<HTMLDivElement>('.message-content');
+    if (content) {
+      const agentBody = content.querySelector<HTMLDivElement>('.agent-message-body');
+      const text = agentBody?.textContent ?? content.textContent ?? '';
+      content.replaceChildren();
+      content.textContent = text;
+    }
   }
 
   private setUserBubbleText(bubble: HTMLDivElement, text: string): void {

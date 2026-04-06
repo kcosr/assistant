@@ -726,6 +726,108 @@ describe('ChatRenderer', () => {
     expect(userMessages[0]?.textContent).toContain('yo');
   });
 
+  it('normalizes audio styling when the same turn reuses a user bubble for plain text', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'audio-e1',
+        kind: 'user_message',
+        chatEventType: 'user_audio',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { transcription: 'spoken yo', durationMs: 500 },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-e2',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'typed yo' },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(bubble).not.toBeNull();
+    if (!bubble) return;
+    expect(container.querySelectorAll('.turn[data-turn-id="turn-user"] .message.user')).toHaveLength(1);
+    expect(bubble.classList.contains('user-audio')).toBe(false);
+    expect(bubble.dataset['inputType']).toBeUndefined();
+    expect(bubble.textContent).toContain('typed yo');
+    expect(bubble.querySelector('.voice-event-icon-microphone')).toBeNull();
+    expect(bubble.querySelector('.message-avatar')?.textContent).toBe('U');
+  });
+
+  it('removes agent styling when the same turn reuses a user bubble for a plain user message', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Source Agent',
+    });
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'user-agent',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'agent text', fromAgentId: 'source' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-plain',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'plain text' },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(bubble).not.toBeNull();
+    if (!bubble) return;
+    expect(container.querySelectorAll('.turn[data-turn-id="turn-user"] .message.user')).toHaveLength(1);
+    expect(bubble.classList.contains('agent-message')).toBe(false);
+    expect(bubble.querySelector('.agent-message-label')).toBeNull();
+    expect(bubble.querySelector('.agent-message-body')).toBeNull();
+    expect(bubble.textContent).toContain('plain text');
+    expect(bubble.querySelector('.message-avatar')?.textContent).toBe('U');
+  });
+
   it('renders voice tool failures inline on the speaker bubble', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
