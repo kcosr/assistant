@@ -539,6 +539,27 @@ function createChatRunStreamHandlers(options: {
     if (!thinkingStarted && !finalText) {
       return;
     }
+    logDebugChatEventRecord({
+      enabled: Boolean(debugChatCompletions),
+      log,
+      ...(debugDataDir ? { dataDir: debugDataDir } : {}),
+      record: {
+        timestamp: new Date().toISOString(),
+        direction: 'event',
+        eventType: 'thinking_done_emit',
+        provider,
+        sessionId,
+        responseId,
+        ...(turnId ? { turnId } : {}),
+        ...(debugChatCompletionsContext !== undefined
+          ? { debugContext: debugChatCompletionsContext }
+          : {}),
+        thinkingStarted,
+        sourceTextProvided: Boolean(textValue),
+        textLength: finalText.length,
+        textPreview: previewDebugText(finalText),
+      },
+    });
     if (!thinkingStarted && finalText) {
       await emitThinkingStart();
     }

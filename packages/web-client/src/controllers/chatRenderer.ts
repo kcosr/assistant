@@ -258,8 +258,10 @@ export class ChatRenderer {
   }
 
   private debugLog(message: string, data: Record<string, unknown>): void {
-    void message;
-    void data;
+    if (!this.isDebugEnabled()) {
+      return;
+    }
+    console.log(`[client][renderer] ${message}`, data);
   }
 
   private previewText(text: string | undefined): string {
@@ -1025,6 +1027,15 @@ export class ChatRenderer {
     thinkingEl.textContent = text;
     thinkingEl.dataset['eventId'] = event.id;
     thinkingEl.dataset['renderer'] = 'unified';
+    this.debugLog('thinking_done_applied', {
+      eventId: event.id,
+      turnId: event.turnId ?? null,
+      responseId,
+      segmentIdx,
+      segmentKey,
+      textLength: text.length,
+      textPreview: this.previewText(text),
+    });
   }
 
   private renderInfoMessage(
@@ -1146,14 +1157,14 @@ export class ChatRenderer {
         );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
       }
 
       this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
       return;
     }
 
@@ -1169,6 +1180,9 @@ export class ChatRenderer {
       this.updatePendingAttachmentToolBubble(bubble, this.getPendingAttachmentSummary(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
       return;
     }
 
@@ -1294,11 +1308,23 @@ export class ChatRenderer {
       }
     }
 
-    // Mark text segment break so any text after this tool goes into a new element
-    // (only if we created a new block - streaming blocks already handled)
-    if (responseId && !existingBlock) {
+    // Tool calls define the structural boundary between pre-tool and post-tool text.
+    // Streaming tool_input chunks can arrive before final thinking settles, so they must
+    // not advance the shared segment index on their own.
+    if (responseId) {
       this.markTextSegmentBreak(responseId);
     }
+
+    this.debugLog('tool_call_applied', {
+      eventId: event.id,
+      turnId: event.turnId ?? null,
+      responseId: responseId ?? null,
+      toolCallId: callId,
+      toolName,
+      existingBlock,
+      nextTextSegmentIdx: responseId ? (this.textSegmentIndex.get(responseId) ?? 0) : null,
+      pendingTextSegmentBreak: responseId ? this.needsNewTextSegment.has(responseId) : false,
+    });
   }
 
   private handleToolInputChunk(
@@ -1346,9 +1372,6 @@ export class ChatRenderer {
         );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
       }
       const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
       if (parsedText !== null) {
@@ -1404,11 +1427,6 @@ export class ChatRenderer {
 
       // Show initial pending state
       setToolOutputBlockPending(block, '', { state: 'running' });
-
-      // Mark text segment break for the next assistant text
-      if (responseId) {
-        this.markTextSegmentBreak(responseId);
-      }
     }
 
     // Update the input section with streaming args

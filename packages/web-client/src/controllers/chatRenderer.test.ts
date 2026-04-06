@@ -3215,6 +3215,82 @@ describe('ChatRenderer', () => {
     expect(toolIndex).toBeLessThan(secondThinkingIndex);
   });
 
+  it('keeps finalized thinking before a tool when tool input streams first', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('thinking_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'The user wants me to check the list again.' },
+      }),
+      createBaseEvent('tool_input_chunk', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'lists_items_list',
+          chunk: '{"listId":"today"}',
+          offset: 17,
+        },
+      }) as ChatEvent,
+      createBaseEvent('thinking_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'The user wants me to check the list again.' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e4',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'lists_items_list',
+          args: { listId: 'today' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e5',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          result: [{ title: 'Pick up inside 🧺' }],
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e6',
+        responseId: 'r1',
+        payload: { text: 'Pick up inside 🧺' },
+      }),
+    ]);
+
+    const response = container.querySelector<HTMLDivElement>('.assistant-response');
+    expect(response).not.toBeNull();
+    if (!response) return;
+
+    const thinkingBlocks = response.querySelectorAll<HTMLDivElement>('.thinking-content');
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0]?.textContent).toBe('The user wants me to check the list again.');
+
+    const toolContainer = response.querySelector<HTMLDivElement>('.tool-calls');
+    expect(toolContainer).not.toBeNull();
+    if (!toolContainer) return;
+
+    const assistantTexts = response.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.textContent).toContain('Pick up inside');
+
+    const children = Array.from(response.children);
+    const thinkingIndex = children.indexOf(thinkingBlocks[0]!);
+    const toolIndex = children.indexOf(toolContainer);
+    const assistantIndex = children.indexOf(assistantTexts[0]!);
+    expect(thinkingIndex).toBeLessThan(toolIndex);
+    expect(toolIndex).toBeLessThan(assistantIndex);
+  });
+
   it('deduplicates chunks with same or lower offset', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
