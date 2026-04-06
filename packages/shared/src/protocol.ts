@@ -49,6 +49,7 @@ const SERVER_MESSAGE_TYPE_VALUES = [
   'session_deleted',
   'session_updated',
   'session_history_changed',
+  'notification_event',
 ] as const;
 
 export const ServerMessageTypeSchema = z.enum(SERVER_MESSAGE_TYPE_VALUES);
@@ -836,6 +837,33 @@ export const ServerSessionHistoryChangedMessageSchema = z.object({
   revision: z.number().int().nonnegative().optional(),
 });
 
+export const NotificationSourceSchema = z.enum(['tool', 'http', 'cli']);
+export type NotificationSource = z.infer<typeof NotificationSourceSchema>;
+
+export const NotificationRecordSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  body: z.string(),
+  createdAt: z.string(),
+  readAt: z.string().nullable(),
+  source: NotificationSourceSchema,
+  sessionId: z.string().nullable(),
+  sessionTitle: z.string().nullable(),
+  tts: z.boolean(),
+});
+export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
+
+export const ServerNotificationEventMessageSchema = z.object({
+  type: z.literal('notification_event'),
+  event: z.enum(['created', 'updated', 'removed', 'snapshot']),
+  notification: NotificationRecordSchema.optional(),
+  id: z.string().optional(),
+  notifications: z.array(NotificationRecordSchema).optional(),
+});
+export type ServerNotificationEventMessage = z.infer<
+  typeof ServerNotificationEventMessageSchema
+>;
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerSessionReadyMessageSchema,
   ServerTextDeltaMessageSchema,
@@ -866,6 +894,7 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerSessionDeletedMessageSchema,
   ServerSessionUpdatedMessageSchema,
   ServerSessionHistoryChangedMessageSchema,
+  ServerNotificationEventMessageSchema,
 ]);
 
 export type ServerSessionReadyMessage = z.infer<typeof ServerSessionReadyMessageSchema>;

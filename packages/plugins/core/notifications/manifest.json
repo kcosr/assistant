@@ -1,0 +1,146 @@
+{
+  "id": "notifications",
+  "version": "0.1.0",
+  "description": "Receive, persist, display, and clear notifications from agents, tools, and external scripts.",
+  "surfaces": { "tool": true, "http": true, "cli": true },
+  "panels": [
+    {
+      "type": "notifications",
+      "title": "Notifications",
+      "icon": "bell",
+      "description": "Browse and manage notifications from agents, tools, and scripts.",
+      "multiInstance": false,
+      "defaultSessionBinding": "global",
+      "sessionScope": "global",
+      "capabilities": ["notifications.read", "notifications.write"]
+    }
+  ],
+  "server": {
+    "provides": ["notifications"],
+    "capabilities": ["notifications.read", "notifications.write"]
+  },
+  "web": {
+    "bundlePath": "/plugins/notifications/bundle.js",
+    "stylesPath": "/plugins/notifications/styles.css"
+  },
+  "operations": [
+    {
+      "id": "create",
+      "summary": "Create a notification.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Notification title."
+          },
+          "body": {
+            "type": "string",
+            "description": "Notification body text."
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional session ID to link this notification to."
+          },
+          "tts": {
+            "type": "boolean",
+            "description": "Request text-to-speech playback for this notification."
+          },
+          "source": {
+            "type": "string",
+            "enum": ["tool", "http", "cli"],
+            "description": "Notification source. Defaults to 'tool'."
+          }
+        },
+        "required": ["title", "body"]
+      },
+      "http": { "successStatus": 201 },
+      "capabilities": ["notifications.write"]
+    },
+    {
+      "id": "list",
+      "summary": "List notifications, newest first.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "unreadOnly": {
+            "type": "boolean",
+            "description": "Only return unread notifications."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of notifications to return."
+          },
+          "offset": {
+            "type": "number",
+            "description": "Number of notifications to skip."
+          }
+        }
+      },
+      "capabilities": ["notifications.read"]
+    },
+    {
+      "id": "get",
+      "summary": "Get a single notification by ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Notification ID."
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["notifications.read"]
+    },
+    {
+      "id": "toggle_read",
+      "summary": "Toggle a notification's read/unread state.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Notification ID."
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["notifications.write"]
+    },
+    {
+      "id": "mark_all_read",
+      "summary": "Mark all notifications as read.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["notifications.write"]
+    },
+    {
+      "id": "clear",
+      "summary": "Delete a single notification.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Notification ID."
+          }
+        },
+        "required": ["id"]
+      },
+      "capabilities": ["notifications.write"]
+    },
+    {
+      "id": "clear_all",
+      "summary": "Delete all notifications.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["notifications.write"]
+    }
+  ]
+}

@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added core notifications panel plugin with server-side storage, tool/HTTP/CLI ingress, live WebSocket panel updates, All/Unread filtering, Card/Compact density modes, read/unread toggle, session-linked navigation with resolved session titles, overflow menu for bulk actions, and panel tab unread-count badge.
 - Added bang shell command feature (`!command`) for executing shell commands directly in chat with real-time streaming output, dedicated terminal bubble rendering, and `_assistant_` prefix LLM suppression. Gated behind `bangCommandEnabled` agent config flag (default: false). ([#94](https://github.com/kcosr/assistant/pull/94))
 - Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
