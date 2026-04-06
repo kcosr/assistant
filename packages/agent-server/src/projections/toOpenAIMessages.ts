@@ -1,5 +1,6 @@
 import type { ChatEvent } from '@assistant/shared';
 
+import { ASSISTANT_INTERNAL_TOOL_PREFIX } from '../bangCommand';
 import { getAgentCallbackText, getUserVisibleUserText } from '../chatEventText';
 import type {
   ChatCompletionMessage,
@@ -12,6 +13,18 @@ function isReplayableAssistantText(event: ChatEvent & { type: 'assistant_done' }
 
 export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
   const messages: ChatCompletionMessage[] = [];
+
+  // Suppress internal assistant tool events from LLM context.
+  // Track by toolCallId because toolName is optional on tool_result payloads.
+  const suppressedToolCallIds = new Set(
+    events
+      .filter(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.payload.toolName.startsWith(ASSISTANT_INTERNAL_TOOL_PREFIX),
+      )
+      .map((event) => (event as ChatEvent & { type: 'tool_call' }).payload.toolCallId),
+  );
 
   for (const event of events) {
     switch (event.type) {
@@ -52,6 +65,9 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
       }
 
       case 'tool_call': {
+        if (suppressedToolCallIds.has(event.payload.toolCallId)) {
+          break;
+        }
         const toolCall: ChatCompletionToolCallMessageToolCall = {
           id: event.payload.toolCallId,
           type: 'function',
@@ -80,6 +96,9 @@ export function toOpenAIMessages(events: ChatEvent[]): ChatCompletionMessage[] {
       }
 
       case 'tool_result': {
+        if (suppressedToolCallIds.has(event.payload.toolCallId)) {
+          break;
+        }
         const { toolCallId, result, error } = event.payload;
 
         const content = JSON.stringify({

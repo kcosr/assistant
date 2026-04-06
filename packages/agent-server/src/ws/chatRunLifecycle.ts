@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AssistantMessage as PiAssistantMessage, Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type {
+  AssistantMessage as PiAssistantMessage,
+  Message as PiSdkMessage,
+} from '@mariozechner/pi-ai';
 import type {
   ChatEvent,
   ClientAudioCapabilities,
@@ -9,6 +12,8 @@ import type {
   ServerTextDoneMessage,
   ServerUserMessageMessage,
 } from '@assistant/shared';
+
+import { detectBangCommand, handleBangCommand } from '../bangCommand';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
 import type { AgentDefinition, PiSdkChatConfig } from '../agents';
@@ -288,11 +293,33 @@ export async function handleTextInputWithChatCompletions(options: {
     return;
   }
 
-  const text = message.text.trim();
+  let text = message.text.trim();
   if (!text) {
     sendError('empty_text', 'Text input must not be empty');
     return;
   }
+
+  // ── Bang command interception ──────────────────────────────────────────
+  const bangResult = detectBangCommand(text);
+  if (bangResult.isBang) {
+    if (!bangResult.command) {
+      sendError('empty_bang_command', 'Shell command must not be empty (usage: !<command>)');
+      return;
+    }
+    const workingDir = state.summary.attributes?.core?.workingDir as string | undefined;
+    await handleBangCommand({
+      command: bangResult.command,
+      sessionId,
+      sessionHub,
+      eventStore,
+      ...(workingDir ? { workingDir } : {}),
+    });
+    return;
+  }
+  if (!bangResult.isBang && bangResult.isEscape) {
+    text = bangResult.text;
+  }
+  // ── End bang command interception ───────────────────────────────────────
 
   const requestId = randomUUID();
 
@@ -525,9 +552,7 @@ export async function handleTextInputWithChatCompletions(options: {
       shouldEmitChatEvents,
       includeAgentExchangeIdInMessages: false,
       trackTextStartedAt: true,
-      ...(debugChatCompletionsContext !== undefined
-        ? { debugChatCompletionsContext }
-        : {}),
+      ...(debugChatCompletionsContext !== undefined ? { debugChatCompletionsContext } : {}),
       log,
       ...(agent ? { agent } : {}),
       ...(eventStore ? { eventStore } : {}),
@@ -572,12 +597,9 @@ export async function handleTextInputWithChatCompletions(options: {
         ...(runResult.provider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
       });
       if (timedOut) {
-        sendError(
-          'upstream_timeout',
-          'Chat backend request timed out',
-          undefined,
-          { retryable: true },
-        );
+        sendError('upstream_timeout', 'Chat backend request timed out', undefined, {
+          retryable: true,
+        });
       }
       return;
     }
@@ -602,7 +624,9 @@ export async function handleTextInputWithChatCompletions(options: {
         requestId,
         text: visibleAssistant.text,
         ...(visibleAssistant.phase ? { phase: visibleAssistant.phase } : {}),
-        ...(visibleAssistant.textSignature ? { textSignature: visibleAssistant.textSignature } : {}),
+        ...(visibleAssistant.textSignature
+          ? { textSignature: visibleAssistant.textSignature }
+          : {}),
       };
       sessionHub.broadcastToSession(sessionId, doneMessage);
 
@@ -721,25 +745,19 @@ export async function handleTextInputWithChatCompletions(options: {
       interruptReason: timedOut ? 'timeout' : 'error',
       error: {
         code: timedOut ? 'upstream_timeout' : isChatRunError(err) ? err.code : 'upstream_error',
-        message:
-          timedOut
-            ? 'Chat backend request timed out'
-            : isChatRunError(err)
-              ? err.message
-              : 'Chat backend error',
+        message: timedOut
+          ? 'Chat backend request timed out'
+          : isChatRunError(err)
+            ? err.message
+            : 'Chat backend error',
       },
       prependEvents: buildInterruptedAssistantEvents(),
       ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),
     });
     if (timedOut) {
-      sendError(
-        'upstream_timeout',
-        'Chat backend request timed out',
-        undefined,
-        {
-          retryable: true,
-        },
-      );
+      sendError('upstream_timeout', 'Chat backend request timed out', undefined, {
+        retryable: true,
+      });
       return;
     }
     if (isChatRunError(err)) {

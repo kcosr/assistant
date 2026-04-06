@@ -2,6 +2,7 @@ import type { ChatEvent } from '@assistant/shared';
 
 import type { Tool } from './tools';
 import type { AgentRegistry } from './agents';
+import { ASSISTANT_INTERNAL_TOOL_PREFIX } from './bangCommand';
 import { getAgentCallbackText, getUserVisibleUserText } from './chatEventText';
 import { buildSystemPrompt } from './systemPrompt';
 import type {
@@ -34,6 +35,21 @@ export function buildChatMessagesFromEvents(
       .filter((event) => event.type === 'interrupt')
       .map((event) => event.responseId?.trim())
       .filter((responseId): responseId is string => Boolean(responseId)),
+  );
+
+  // Collect toolCallIds for internal assistant tools (e.g. _assistant_shell)
+  // so we can suppress both the tool_call AND tool_result from LLM history.
+  // We track by toolCallId rather than toolName because toolName is optional
+  // on tool_result payloads — an orphaned role:'tool' message would crash the
+  // LLM completion request.
+  const suppressedToolCallIds = new Set(
+    events
+      .filter(
+        (event) =>
+          event.type === 'tool_call' &&
+          event.payload.toolName.startsWith(ASSISTANT_INTERNAL_TOOL_PREFIX),
+      )
+      .map((event) => (event as ChatEvent & { type: 'tool_call' }).payload.toolCallId),
   );
 
   const promptOptions = {
@@ -197,6 +213,9 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'tool_call': {
+        if (suppressedToolCallIds.has(event.payload.toolCallId)) {
+          break;
+        }
         closeAssistantTextSegment(event.responseId?.trim());
         let argsJson = '{}';
         try {
@@ -237,6 +256,9 @@ export function buildChatMessagesFromEvents(
         break;
       }
       case 'tool_result': {
+        if (suppressedToolCallIds.has(event.payload.toolCallId)) {
+          break;
+        }
         closeAssistantToolCallSegment();
         closeAssistantTextSegment(event.responseId?.trim());
         const content = JSON.stringify({
