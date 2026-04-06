@@ -4670,7 +4670,8 @@ body.panel-reordering {
   margin-bottom: var(--spacing-md);
 }
 
-.questionnaire-submission-indicator {
+.questionnaire-submission-indicator,
+.agent-callback-indicator {
   display: block;
   font-size: var(--font-size-xs);
   font-style: italic;

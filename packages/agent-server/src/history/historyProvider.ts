@@ -816,6 +816,7 @@ function normalizeTurnComparablePayload(event: ChatEvent): unknown {
   }
   if (event.type === 'tool_result') {
     return {
+      ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
       result: event.payload.result,
       error: event.payload.error,
     };
@@ -1176,6 +1177,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const turnId = ensureTurn(entry, timestamp);
     if (!turnId) {
       return;
@@ -1190,6 +1192,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
       type: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },
@@ -1753,6 +1756,7 @@ function buildProjectedTranscriptFromPiSession(
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const requestId = ensureRequest(entry, timestamp);
     const responseId = ensureResponseId(entry, requestId);
     pushProjected({
@@ -1762,6 +1766,7 @@ function buildProjectedTranscriptFromPiSession(
       chatEventType: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },
@@ -2675,6 +2680,7 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const turnId = ensureTurn(entry, timestamp);
     if (!turnId) {
       return;
@@ -2689,6 +2695,7 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
       type: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },

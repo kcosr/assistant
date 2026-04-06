@@ -2167,6 +2167,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container, {
       getAgentDisplayName: () => 'Coding Agent',
+      getExpandToolOutput: () => true,
     });
 
     replayLegacyEvents(renderer, [
@@ -2211,6 +2212,110 @@ describe('ChatRenderer', () => {
 
     const titleEl = agentToolBlock?.querySelector<HTMLElement>('.tool-output-title');
     expect(titleEl?.textContent).toBe('Coding Agent');
+    const outputBody = agentToolBlock?.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('Tests passed.');
+  });
+
+  it('renders sync agents_message results from the response field instead of raw JSON', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Coding Agent',
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-agent',
+          toolName: 'agents_message',
+          args: {
+            agentId: 'coding',
+            content: 'Fix the test',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-agent',
+          result: {
+            agentId: 'coding',
+            mode: 'sync',
+            status: 'complete',
+            responseId: 'resp-agent',
+            response: 'Fixed the failing test.',
+            durationMs: 1200,
+            toolCallCount: 1,
+            toolCalls: [{ name: 'bash', durationMs: 300 }],
+          },
+        },
+      }),
+    ]);
+
+    const agentToolBlock = container.querySelector<HTMLDivElement>(
+      '.tool-output-block.agent-message-exchange',
+    );
+    expect(agentToolBlock).not.toBeNull();
+    if (!agentToolBlock) return;
+
+    const outputBody = agentToolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('Fixed the failing test.');
+    expect(outputBody?.textContent).not.toContain('"agentId": "coding"');
+  });
+
+  it('renders sync agents_message results from tool_result payloads without a prior tool_call', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Claude Code',
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-agent',
+          toolName: 'agents_message',
+          result: {
+            agentId: 'claude-cli',
+            mode: 'sync',
+            status: 'complete',
+            responseId: 'resp-agent',
+            response: '/home/kevin',
+            durationMs: 4101,
+            toolCallCount: 0,
+            toolCalls: [],
+          },
+        },
+      }),
+    ]);
+
+    const agentToolBlock = container.querySelector<HTMLDivElement>(
+      '.tool-output-block.agent-message-exchange',
+    );
+    expect(agentToolBlock).not.toBeNull();
+    if (!agentToolBlock) return;
+
+    const outputBody = agentToolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('/home/kevin');
+    expect(outputBody?.textContent).not.toContain('"agentId": "claude-cli"');
   });
 
   it('handles streaming assistant chunks before assistant_done', () => {

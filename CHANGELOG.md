@@ -23,6 +23,7 @@
 - Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events ([#PR](<pr-url>)).
 - Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session ([#PR](<pr-url>)).
 - Fixed chat user-bubble rendering during replay hydration so refreshes reuse a single unified user bubble per turn instead of transiently showing duplicate user messages while an in-flight turn is rebuilding ([#PR](<pr-url>)).
+- Fixed `agents_message` sync tool results in chat so the tool output body shows the returned `response` text by default instead of falling back to the full raw JSON object ([#PR](<pr-url>)).
 
 ### Removed
 

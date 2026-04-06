@@ -12,6 +12,7 @@ import type { ProjectedTranscriptEvent } from '@assistant/shared';
 import {
   appendAndBroadcastChatEvents,
   emitInteractionPendingEvent,
+  emitToolResultEvent,
   emitToolOutputChunkEvent,
   getBufferedLiveTranscriptEvents,
   getLiveTranscriptSequenceWatermark,
@@ -262,6 +263,39 @@ describe('chatEventUtils live broadcast behavior', () => {
         sequence: 1,
       }),
     ]);
+  });
+
+  it('broadcasts tool_result payloads with toolName for Pi sessions', async () => {
+    const eventStore = createEventStore();
+    const { sessionHub, broadcastToSession, appendAssistantEvent } = createSessionHub('pi');
+
+    await emitToolResultEvent({
+      eventStore,
+      sessionHub,
+      sessionId: 's1',
+      turnId: 'req-1',
+      responseId: 'resp-1',
+      toolCallId: 'tool-1',
+      toolName: 'agents_message',
+      result: { response: '/home/kevin' },
+    });
+
+    expect(eventStore.append).not.toHaveBeenCalled();
+    expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
+    expect(broadcastToSession).toHaveBeenCalledTimes(1);
+    expect(broadcastToSession.mock.calls[0]?.[1]).toMatchObject({
+      type: 'transcript_event',
+      event: {
+        sessionId: 's1',
+        requestId: 'req-1',
+        kind: 'tool_result',
+        payload: {
+          toolCallId: 'tool-1',
+          toolName: 'agents_message',
+          result: { response: '/home/kevin' },
+        },
+      },
+    });
   });
 
   it('merges buffered non-transient live events into Pi replay until canonical history catches up', async () => {

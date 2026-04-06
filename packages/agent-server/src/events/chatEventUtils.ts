@@ -36,6 +36,7 @@ export interface EmitToolResultEventParams {
   turnId: string;
   responseId: string;
   toolCallId: string;
+  toolName: string;
   result: unknown;
   error?: { code: string; message: string } | undefined;
 }
@@ -200,8 +201,17 @@ export function emitToolInputChunkEvent(params: EmitToolInputChunkParams): void 
  * Emit a tool_result ChatEvent and broadcast to clients.
  */
 export function emitToolResultEvent(params: EmitToolResultEventParams): Promise<void> {
-  const { eventStore, sessionHub, sessionId, turnId, responseId, toolCallId, result, error } =
-    params;
+  const {
+    eventStore,
+    sessionHub,
+    sessionId,
+    turnId,
+    responseId,
+    toolCallId,
+    toolName,
+    result,
+    error,
+  } = params;
 
   const events: ChatEvent[] = [
     {
@@ -213,6 +223,7 @@ export function emitToolResultEvent(params: EmitToolResultEventParams): Promise<
       type: 'tool_result',
       payload: {
         toolCallId,
+        toolName,
         result: result ?? null,
         ...(error ? { error } : {}),
       },

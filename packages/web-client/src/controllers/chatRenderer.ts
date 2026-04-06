@@ -1618,12 +1618,15 @@ export class ChatRenderer {
   private handleToolResult(
     event: RenderedTranscriptEvent<{
       toolCallId: string;
+      toolName?: string;
       result?: unknown;
       error?: { code: string; message: string };
     }>,
   ): void {
     const callId = event.payload.toolCallId;
     const responseId = this.getResponseId(event.responseId);
+    const resultToolName = event.payload.toolName?.trim() || undefined;
+    const streamedToolName = this.toolOutputToolNames.get(callId) ?? undefined;
 
     // Clean up streaming state
     this.toolOutputBuffers.delete(callId);
@@ -1679,12 +1682,35 @@ export class ChatRenderer {
         responseId,
         event.timestamp,
       );
-
-      block = createToolOutputBlock({
-        callId,
-        toolName: event.payload.toolCallId,
-        expanded: this.shouldExpandToolOutput(),
-      });
+      const toolName = resultToolName ?? streamedToolName ?? 'tool';
+      if (toolName === 'agents_message') {
+        const resultObj =
+          event.payload.result && typeof event.payload.result === 'object'
+            ? (event.payload.result as Record<string, unknown>)
+            : null;
+        const agentId =
+          resultObj && typeof resultObj['agentId'] === 'string'
+            ? (resultObj['agentId'] as string)
+            : 'agent';
+        const agentDisplayName =
+          this.options.getAgentDisplayName?.(agentId) ??
+          agentId.charAt(0).toUpperCase() + agentId.slice(1).toLowerCase() + ' Agent';
+        block = createToolOutputBlock({
+          callId,
+          toolName: agentDisplayName,
+          expanded: this.shouldExpandToolOutput(),
+        });
+        block.classList.add('agent-message-exchange');
+        block.dataset['toolName'] = 'agents_message';
+      } else {
+        const headerLabel = extractToolCallLabel(toolName, '');
+        block = createToolOutputBlock({
+          callId,
+          toolName,
+          expanded: this.shouldExpandToolOutput(),
+          ...(headerLabel ? { headerLabel } : {}),
+        });
+      }
       block.dataset['toolCallId'] = callId;
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
@@ -1703,6 +1729,16 @@ export class ChatRenderer {
 
     if (!block) {
       return;
+    }
+
+    if (resultToolName) {
+      const currentToolName = block.dataset['toolName'];
+      if (!currentToolName || currentToolName === callId) {
+        block.dataset['toolName'] = resultToolName;
+      }
+      if (resultToolName === 'agents_message') {
+        block.classList.add('agent-message-exchange');
+      }
     }
 
     // Ensure the input section is populated if we have args stored on the event.
@@ -2561,6 +2597,9 @@ export class ChatRenderer {
     messageEl.classList.remove('pending');
     messageEl.classList.add('resolved');
 
+    // Add a turn-level indicator similar to the questionnaire submission one
+    this.renderAgentCallbackIndicator(event);
+
     // Check if this is a tool block (agents_message) or agent-message element
     const isToolBlock = messageEl.classList.contains('tool-output-block');
 
@@ -2635,6 +2674,31 @@ export class ChatRenderer {
     }
     turnEl.appendChild(indicator);
 
+  }
+
+  private renderAgentCallbackIndicator(
+    event: RenderedTranscriptEvent<{
+      messageId: string;
+      fromAgentId: string;
+      fromSessionId: string;
+      result: string;
+    }>,
+  ): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
+
+    const fromAgentId = event.payload.fromAgentId;
+    const displayName =
+      this.options.getAgentDisplayName?.(fromAgentId) ??
+      fromAgentId.charAt(0).toUpperCase() + fromAgentId.slice(1);
+
+    const indicator = document.createElement('div');
+    indicator.className = 'agent-callback-indicator';
+    indicator.textContent = `Received response from ${displayName}`;
+    indicator.dataset['eventId'] = event.id;
+    indicator.dataset['renderer'] = 'unified';
+    indicator.dataset['messageId'] = event.payload.messageId;
+    turnEl.appendChild(indicator);
   }
 
   // Interrupts and errors are rendered as indicators on the current turn.

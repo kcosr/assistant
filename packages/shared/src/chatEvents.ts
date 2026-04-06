@@ -120,6 +120,7 @@ export type ToolResultError = z.infer<typeof ToolResultErrorSchema>;
 
 export const ToolResultPayloadSchema = z.object({
   toolCallId: z.string(),
+  toolName: z.string().optional(),
   result: z.unknown(),
   error: ToolResultErrorSchema.optional(),
 });

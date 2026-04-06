@@ -63,20 +63,16 @@ export function formatToolResultText(options: {
           ? (record['message'] as string).trim()
           : undefined;
 
-      if (mode === 'sync') {
-        if (response) {
-          return response;
-        }
-        if (message) {
-          return message;
-        }
-      } else if (mode === 'async') {
-        if (status === 'started' || status === 'queued') {
-          return 'Waiting for response';
-        }
-        if (message) {
-          return message;
-        }
+      if (mode === 'async' && (status === 'started' || status === 'queued')) {
+        return 'Waiting for response';
+      }
+      if (response) {
+        return response;
+      }
+      if (message) {
+        return message;
+      }
+      if (mode === 'async') {
         return '';
       }
     }

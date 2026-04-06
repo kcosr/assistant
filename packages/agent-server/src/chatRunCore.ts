@@ -1471,6 +1471,30 @@ export async function runChatCompletionCore(
         ?.filter((block) => block.type === 'text' && typeof block.text === 'string')
         .map((block) => block.text as string)
         .join('');
+
+      // The PI SDK wraps tool results in content blocks.  Normalise to
+      // the plain object the tool handler originally returned so that
+      // tool-specific formatting (agents_message, etc.) works correctly
+      // for both the live WS message and the persisted ChatEvent.
+      // Only attempt to parse when the text looks like a JSON object or
+      // array to avoid silently reinterpreting scalars like true / 123.
+      let normalizedResult: unknown = result;
+      if (textResult) {
+        const trimmed = textResult.trim();
+        if (
+          (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']'))
+        ) {
+          try {
+            normalizedResult = JSON.parse(trimmed);
+          } catch {
+            normalizedResult = textResult;
+          }
+        } else {
+          normalizedResult = textResult;
+        }
+      }
+
       const toolResultMessage: ServerToolResultMessage = {
         type: 'tool_result',
         callId: event.toolCallId,
@@ -1480,7 +1504,7 @@ export async function runChatCompletionCore(
         ...(getAgentExchangeId(state, getAgentExchangeIdFn)
           ? { agentExchangeId: getAgentExchangeId(state, getAgentExchangeIdFn) }
           : {}),
-        result,
+        result: normalizedResult,
         ...(event.isError
           ? {
               error: {
@@ -1499,7 +1523,8 @@ export async function runChatCompletionCore(
           turnId,
           responseId,
           toolCallId: event.toolCallId,
-          result,
+          toolName: event.toolName,
+          result: normalizedResult,
           ...(event.isError
             ? {
                 error: {
