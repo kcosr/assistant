@@ -6,9 +6,16 @@
 
 ### Added
 
+- Added `chat.thinking` support for `claude-cli` agents: the composer now surfaces the thinking picker for Claude agents, and the selected level is translated to Claude's `--effort` flag (`none`/`off` suppress the flag, `xhigh` maps to `max`, and `low`/`medium`/`high`/`max` pass through) ([#92](https://github.com/kcosr/assistant/pull/92)).
+- Added a native Android voice setting in the web voice settings menu to enable or disable the local recognized `stop` command ([#92](https://github.com/kcosr/assistant/pull/92)).
+
 ### Changed
 
 ### Fixed
+
+- Fixed keyboard handling so pressing `Enter` with an active empty panel opens the inline replace-panel picker, matching the empty panel replace button ([#92](https://github.com/kcosr/assistant/pull/92)).
+- Fixed Android native voice stop-command handling so successful recognition results with up to four words now trigger the local stop action whenever they include `stop` as a standalone word ([#92](https://github.com/kcosr/assistant/pull/92)).
+- Fixed Android back-button dismissal so the voice settings modal closes like other dialog-manager modals ([#92](https://github.com/kcosr/assistant/pull/92)).
 
 ### Removed
 

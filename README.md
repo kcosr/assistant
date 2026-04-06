@@ -132,6 +132,7 @@ export PATH="$PATH:$HOME/.pi/skills/notes:$HOME/.pi/skills/lists"
 | `Cmd/Ctrl + Shift + ↑/↓` | Jump to top/bottom of chat |
 | `Ctrl + Shift + Cmd + W` (macOS) / `Ctrl + Shift + Alt + W` (others) | Close panel (replace with placeholder) |
 | `Ctrl + Shift + Cmd + X` (macOS) / `Ctrl + Shift + Alt + X` (others) | Remove panel from layout |
+| `Enter` | Replace active empty panel |
 | `Shift + Enter` | Submit modal form (e.g., from tags input in notes/lists) |
 | `Cmd + Click` (macOS) / `Ctrl + Click` (others) | Focus a non-chat panel (chat panels focus on regular click) |
 | `Tab` / `Shift + Tab` | Cycle focus between sidebar and input (when input is empty) |

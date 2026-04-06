@@ -1006,7 +1006,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `chat` (only for `type: "chat"` or when `type` is omitted)
   - `provider` (default `"pi"`): `"pi"`, `"claude-cli"`, `"codex-cli"`, or `"pi-cli"`
   - `models` (optional array): allowed model ids for `"pi"` and CLI providers; first is default. For `"pi"` and `"pi-cli"`, entries may be `provider/model` and are split into `--provider` + `--model` (Pi CLI only).
-  - `thinking` (optional array): allowed thinking levels for `"pi"`, `"pi-cli"`, and `"codex-cli"`; first is default (Pi passes through to SDK reasoning; Codex maps to `model_reasoning_effort`)
+  - `thinking` (optional array): allowed thinking levels for `"pi"`, `"pi-cli"`, `"codex-cli"`, and `"claude-cli"`; first is default (Pi passes through to SDK reasoning; Codex maps to `model_reasoning_effort`; Claude maps to `--effort`, translating `none`/`off` to no flag and `xhigh` to `max`)
   - `config`:
     - for `provider: "pi"`:
       - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
@@ -1021,7 +1021,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
     - for `provider: "claude-cli"`:
       - `workdir` (optional): working directory for the Claude CLI
-      - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`)
+      - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--output-format`, `--session-id`, `--resume`, `-p`, `--include-partial-messages`, `--verbose`; when `chat.models` is set, `--model` is also managed by the server; when `chat.thinking` is set, `--effort` is also managed by the server)
     - for `provider: "codex-cli"`:
       - `workdir` (optional): working directory for the Codex CLI
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--json`, `resume`)
@@ -1030,7 +1030,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - `extraArgs` (optional array): additional CLI args (reserved flags are managed by the server and must not be included: `--mode`, `--session`, `--session-dir`, `--continue`, `-p`; when `chat.models` is set, `--model` and `--provider` are also managed by the server; when `chat.thinking` is set, `--thinking` is also managed by the server)
     - For interactive CLI-backed chat runs, `chat.config.workdir` and `chat.config.wrapper.env` values support the session-scoped macro `${session.workingDir}`. This resolves from `attributes.core.workingDir`, so agents using `sessionWorkingDir` can pass either a fixed directory or a picked directory through to direct CLI `cwd` handling or wrapper env vars such as `CONTAINER_CWD`.
   - For CLI providers (`"claude-cli"`, `"codex-cli"`, `"pi-cli"`), the agent server starts each CLI in its own POSIX process group and, on user cancel, sends a `SIGTERM` followed by a `SIGKILL` to that group. This ensures any subprocesses launched by the CLI (for example `bash` commands) are cleaned up when a chat run is aborted.
-  - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set.
+  - When `chat.models` is set for a CLI provider, `--model` is managed by the server and must not be included in `extraArgs`. For `"pi-cli"`, `--provider` is also managed by the server when `chat.models` is set, and `--thinking` is managed by the server when `chat.thinking` is set. For `"codex-cli"`, `model_reasoning_effort` is managed by the server when `chat.thinking` is set. For `"claude-cli"`, `--effort` is managed by the server when `chat.thinking` is set (`none`/`off` suppresses the flag, `xhigh` is translated to `max`, and `low`/`medium`/`high`/`max` pass through).
 - `external` (only for `type: "external"`)
   - `inputUrl`: outbound HTTP endpoint that receives user input payloads
   - `callbackBaseUrl`: base URL for computing `callbackUrl` (path prefix allowed)

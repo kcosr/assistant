@@ -30,6 +30,7 @@ final class AssistantVoiceConfig {
     static final float MIN_RECOGNITION_CUE_GAIN = 0.25f;
     static final float MAX_RECOGNITION_CUE_GAIN = 5.0f;
     static final float DEFAULT_RECOGNITION_CUE_GAIN = 1.0f;
+    static final boolean DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED = true;
     static final int MIN_STARTUP_PRE_ROLL_MS = 0;
     static final int MAX_STARTUP_PRE_ROLL_MS = 4096;
     static final int DEFAULT_STARTUP_PRE_ROLL_MS = 512;
@@ -54,6 +55,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_TTS_GAIN = "tts_gain";
     private static final String KEY_RECOGNITION_CUE_ENABLED = "recognition_cue_enabled";
     private static final String KEY_RECOGNITION_CUE_GAIN = "recognition_cue_gain";
+    private static final String KEY_RECOGNIZE_STOP_COMMAND_ENABLED = "recognize_stop_command_enabled";
     private static final String KEY_STARTUP_PRE_ROLL_MS = "startup_pre_roll_ms";
     private static final String KEY_MEDIA_BUTTONS_ENABLED = "media_buttons_enabled";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
@@ -76,6 +78,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_TTS_GAIN = "ttsGain";
     static final String EXTRA_RECOGNITION_CUE_ENABLED = "recognitionCueEnabled";
     static final String EXTRA_RECOGNITION_CUE_GAIN = "recognitionCueGain";
+    static final String EXTRA_RECOGNIZE_STOP_COMMAND_ENABLED = "recognizeStopCommandEnabled";
     static final String EXTRA_STARTUP_PRE_ROLL_MS = "startupPreRollMs";
     static final String EXTRA_MEDIA_BUTTONS_ENABLED = "mediaButtonsEnabled";
 
@@ -97,6 +100,7 @@ final class AssistantVoiceConfig {
     final float ttsGain;
     final boolean recognitionCueEnabled;
     final float recognitionCueGain;
+    final boolean recognizeStopCommandEnabled;
     final int startupPreRollMs;
     final boolean mediaButtonsEnabled;
 
@@ -119,6 +123,7 @@ final class AssistantVoiceConfig {
         float ttsGain,
         boolean recognitionCueEnabled,
         float recognitionCueGain,
+        boolean recognizeStopCommandEnabled,
         int startupPreRollMs,
         boolean mediaButtonsEnabled
     ) {
@@ -158,6 +163,7 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             DEFAULT_RECOGNITION_CUE_GAIN
         );
+        this.recognizeStopCommandEnabled = recognizeStopCommandEnabled;
         this.startupPreRollMs = normalizeStartupPreRollMs(
             startupPreRollMs,
             DEFAULT_STARTUP_PRE_ROLL_MS
@@ -189,6 +195,10 @@ final class AssistantVoiceConfig {
             prefs.getFloat(KEY_TTS_GAIN, DEFAULT_TTS_GAIN),
             prefs.getBoolean(KEY_RECOGNITION_CUE_ENABLED, DEFAULT_RECOGNITION_CUE_ENABLED),
             prefs.getFloat(KEY_RECOGNITION_CUE_GAIN, DEFAULT_RECOGNITION_CUE_GAIN),
+            prefs.getBoolean(
+                KEY_RECOGNIZE_STOP_COMMAND_ENABLED,
+                DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED
+            ),
             prefs.getInt(KEY_STARTUP_PRE_ROLL_MS, DEFAULT_STARTUP_PRE_ROLL_MS),
             prefs.getBoolean(KEY_MEDIA_BUTTONS_ENABLED, DEFAULT_MEDIA_BUTTONS_ENABLED)
         );
@@ -215,6 +225,10 @@ final class AssistantVoiceConfig {
             .putFloat(KEY_TTS_GAIN, config.ttsGain)
             .putBoolean(KEY_RECOGNITION_CUE_ENABLED, config.recognitionCueEnabled)
             .putFloat(KEY_RECOGNITION_CUE_GAIN, config.recognitionCueGain)
+            .putBoolean(
+                KEY_RECOGNIZE_STOP_COMMAND_ENABLED,
+                config.recognizeStopCommandEnabled
+            )
             .putInt(KEY_STARTUP_PRE_ROLL_MS, config.startupPreRollMs)
             .putBoolean(KEY_MEDIA_BUTTONS_ENABLED, config.mediaButtonsEnabled)
             .apply();
@@ -276,6 +290,10 @@ final class AssistantVoiceConfig {
                 EXTRA_RECOGNITION_CUE_GAIN,
                 fallback.recognitionCueGain
             ),
+            intent.getBooleanExtra(
+                EXTRA_RECOGNIZE_STOP_COMMAND_ENABLED,
+                fallback.recognizeStopCommandEnabled
+            ),
             intent.getIntExtra(EXTRA_STARTUP_PRE_ROLL_MS, fallback.startupPreRollMs),
             intent.getBooleanExtra(EXTRA_MEDIA_BUTTONS_ENABLED, fallback.mediaButtonsEnabled)
         );
@@ -299,6 +317,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_TTS_GAIN, ttsGain);
         intent.putExtra(EXTRA_RECOGNITION_CUE_ENABLED, recognitionCueEnabled);
         intent.putExtra(EXTRA_RECOGNITION_CUE_GAIN, recognitionCueGain);
+        intent.putExtra(EXTRA_RECOGNIZE_STOP_COMMAND_ENABLED, recognizeStopCommandEnabled);
         intent.putExtra(EXTRA_STARTUP_PRE_ROLL_MS, startupPreRollMs);
         intent.putExtra(EXTRA_MEDIA_BUTTONS_ENABLED, mediaButtonsEnabled);
         return intent;
@@ -431,6 +450,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -456,6 +476,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -488,6 +509,7 @@ final class AssistantVoiceConfig {
             && ttsGain == config.ttsGain
             && recognitionCueEnabled == config.recognitionCueEnabled
             && recognitionCueGain == config.recognitionCueGain
+            && recognizeStopCommandEnabled == config.recognizeStopCommandEnabled
             && startupPreRollMs == config.startupPreRollMs
             && mediaButtonsEnabled == config.mediaButtonsEnabled;
     }
@@ -513,6 +535,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -541,6 +564,10 @@ final class AssistantVoiceConfig {
             (float) settings.optDouble("ttsGain", ttsGain),
             settings.optBoolean("recognitionCueEnabled", recognitionCueEnabled),
             (float) settings.optDouble("recognitionCueGain", recognitionCueGain),
+            settings.optBoolean(
+                "recognizeStopCommandEnabled",
+                recognizeStopCommandEnabled
+            ),
             settings.optInt("startupPreRollMs", startupPreRollMs),
             mediaButtonsEnabled
         );
@@ -566,6 +593,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -591,6 +619,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -616,6 +645,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -641,6 +671,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );
@@ -666,6 +697,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             enabled
         );
@@ -691,6 +723,7 @@ final class AssistantVoiceConfig {
             ttsGain,
             recognitionCueEnabled,
             recognitionCueGain,
+            recognizeStopCommandEnabled,
             startupPreRollMs,
             mediaButtonsEnabled
         );

@@ -421,6 +421,66 @@ describe('loadConfig', () => {
     });
   });
 
+  it('supports claude-cli thinking config', async () => {
+    const filePath = createTempFile('config-claude-cli-thinking');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'claude-cli',
+          displayName: 'Claude CLI',
+          description: 'Claude via CLI',
+          chat: {
+            provider: 'claude-cli',
+            thinking: ['none', 'low', 'high', 'xhigh'],
+            config: {
+              extraArgs: ['--dangerously-skip-permissions'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    const config = loadConfig(filePath);
+    expect(config.agents).toHaveLength(1);
+    const [agent] = config.agents;
+    if (!agent) {
+      throw new Error('Expected agent to be defined');
+    }
+    expect(agent.chat).toEqual({
+      provider: 'claude-cli',
+      thinking: ['none', 'low', 'high', 'xhigh'],
+      config: {
+        extraArgs: ['--dangerously-skip-permissions'],
+      },
+    });
+  });
+
+  it('rejects claude-cli --effort extraArgs when thinking is configured', async () => {
+    const filePath = createTempFile('config-claude-cli-thinking-conflict');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'claude-cli',
+          displayName: 'Claude CLI',
+          description: 'Claude via CLI',
+          chat: {
+            provider: 'claude-cli',
+            thinking: ['high'],
+            config: {
+              extraArgs: ['--effort', 'high'],
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow(/--effort/);
+  });
+
   it('supports codex-cli thinking config', async () => {
     const filePath = createTempFile('config-codex-cli-thinking');
     const configJson = {

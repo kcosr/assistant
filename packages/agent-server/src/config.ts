@@ -445,19 +445,20 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
       };
     } else if (provider === 'claude-cli' || provider === 'codex-cli') {
       const models = parseChatModels({ agentId, modelsRaw: rawChat.models });
-      const thinking =
-        provider === 'codex-cli'
-          ? parseChatThinking({ agentId, thinkingRaw: rawChat.thinking })
-          : undefined;
+      const thinking = parseChatThinking({ agentId, thinkingRaw: rawChat.thinking });
       const config =
         rawChat.config !== undefined && rawChat.config !== null
           ? CliChatConfigSchema.parse(rawChat.config)
           : undefined;
       if (provider === 'claude-cli') {
         if (config?.extraArgs) {
-          const reservedArgs = models
-            ? [...CLAUDE_CLI_RESERVED_ARGS, '--model']
-            : CLAUDE_CLI_RESERVED_ARGS;
+          const reservedArgs: string[] = [...CLAUDE_CLI_RESERVED_ARGS];
+          if (models) {
+            reservedArgs.push('--model');
+          }
+          if (thinking) {
+            reservedArgs.push('--effort');
+          }
           assertNoReservedArgs({
             agentId,
             provider: 'claude-cli',
@@ -468,6 +469,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         base.chat = {
           provider: 'claude-cli',
           ...(models ? { models } : {}),
+          ...(thinking ? { thinking } : {}),
           ...(config
             ? {
                 config: {

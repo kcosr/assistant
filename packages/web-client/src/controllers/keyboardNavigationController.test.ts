@@ -589,6 +589,42 @@ describe('KeyboardNavigationController panel shortcuts', () => {
     registry.detach();
   });
 
+  it('opens the replace picker on Enter when the active panel is empty', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], null, 'empty');
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.openPanelLauncher).toHaveBeenCalledWith({
+      replacePanelId: 'panel-1',
+      compact: true,
+      anchor: panelFrame,
+    });
+    registry.detach();
+  });
+
+  it('does not open the replace picker on Enter when the active panel is not empty', () => {
+    const panelFrame = document.createElement('div');
+    panelFrame.className = 'panel-frame is-active';
+    panelFrame.dataset['panelId'] = 'panel-1';
+    document.body.appendChild(panelFrame);
+
+    const options = buildOptions(panelFrame, [], null, 'lists');
+    const controller = new KeyboardNavigationController(options);
+    const registry = attachShortcutRegistry(controller);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(options.panelWorkspace.openPanelLauncher).not.toHaveBeenCalled();
+    registry.detach();
+  });
+
   it('exits layout navigation on ctrl+p while active', () => {
     const panelFrame = document.createElement('div');
     panelFrame.className = 'panel-frame is-active';

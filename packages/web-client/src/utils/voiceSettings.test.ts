@@ -17,6 +17,7 @@ describe('voiceSettings', () => {
   it('defaults tts gain to 100%', () => {
     expect(createDefaultVoiceSettings().ttsGain).toBe(1);
     expect(ttsGainToPercent(createDefaultVoiceSettings().ttsGain)).toBe(100);
+    expect(createDefaultVoiceSettings().recognizeStopCommandEnabled).toBe(true);
     expect(createDefaultVoiceSettings().recognitionCueEnabled).toBe(true);
     expect(createDefaultVoiceSettings().recognitionCueGain).toBe(1);
     expect(recognitionCueGainToPercent(createDefaultVoiceSettings().recognitionCueGain)).toBe(100);
@@ -60,5 +61,10 @@ describe('voiceSettings', () => {
     expect(normalizeVoiceSettings({ startupPreRollMs: '99999' }).startupPreRollMs).toBe(4096);
     expect(normalizeStartupPreRollMs('513.6')).toBe(514);
     expect(formatStartupPreRollMsLabel(512)).toBe('512 ms');
+  });
+
+  it('preserves the recognize stop command setting', () => {
+    expect(normalizeVoiceSettings({ recognizeStopCommandEnabled: false }).recognizeStopCommandEnabled)
+      .toBe(false);
   });
 });

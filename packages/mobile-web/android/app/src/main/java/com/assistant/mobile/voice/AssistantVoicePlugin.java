@@ -319,6 +319,7 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("ttsGain", (double) current.ttsGain);
         voiceSettings.put("recognitionCueEnabled", current.recognitionCueEnabled);
         voiceSettings.put("recognitionCueGain", (double) current.recognitionCueGain);
+        voiceSettings.put("recognizeStopCommandEnabled", current.recognizeStopCommandEnabled);
         voiceSettings.put("startupPreRollMs", current.startupPreRollMs);
 
         JSObject payload = new JSObject();

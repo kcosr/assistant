@@ -12,6 +12,8 @@ export interface WebClientElements {
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
   voiceRecognitionEndSilenceInput: HTMLInputElement;
+  voiceRecognizeStopCommandControl: HTMLElement;
+  voiceRecognizeStopCommandCheckbox: HTMLInputElement;
   voiceRecognitionCueControl: HTMLElement;
   voiceRecognitionCueCheckbox: HTMLInputElement;
   voiceRecognitionCueGainControl: HTMLElement;
@@ -95,6 +97,12 @@ export function getWebClientElements(): WebClientElements | null {
   const voiceRecognitionEndSilenceInput = getElement<HTMLInputElement>(
     'voice-recognition-end-silence-input',
   );
+  const voiceRecognizeStopCommandControl = getElement<HTMLElement>(
+    'voice-recognize-stop-command-control',
+  );
+  const voiceRecognizeStopCommandCheckbox = getElement<HTMLInputElement>(
+    'voice-recognize-stop-command-checkbox',
+  );
   const voiceRecognitionCueControl = getElement<HTMLElement>('voice-recognition-cue-control');
   const voiceRecognitionCueCheckbox = getElement<HTMLInputElement>(
     'voice-recognition-cue-checkbox',
@@ -146,6 +154,8 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
     !voiceRecognitionEndSilenceInput ||
+    !voiceRecognizeStopCommandControl ||
+    !voiceRecognizeStopCommandCheckbox ||
     !voiceRecognitionCueControl ||
     !voiceRecognitionCueCheckbox ||
     !voiceRecognitionCueGainControl ||
@@ -181,6 +191,8 @@ export function getWebClientElements(): WebClientElements | null {
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,
     voiceRecognitionEndSilenceInput,
+    voiceRecognizeStopCommandControl,
+    voiceRecognizeStopCommandCheckbox,
     voiceRecognitionCueControl,
     voiceRecognitionCueCheckbox,
     voiceRecognitionCueGainControl,

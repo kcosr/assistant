@@ -52,6 +52,7 @@ function createVoiceSettingsInputs(): {
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInputEl: HTMLInputElement;
   voiceRecognitionEndSilenceInputEl: HTMLInputElement;
+  voiceRecognizeStopCommandCheckboxEl: HTMLInputElement;
   voiceRecognitionCueCheckboxEl: HTMLInputElement;
   voiceRecognitionCueGainSliderEl: HTMLInputElement;
   voiceRecognitionCueGainValueEl: HTMLElement;
@@ -91,6 +92,7 @@ function createVoiceSettingsInputs(): {
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
     voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
     voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+    voiceRecognizeStopCommandCheckboxEl: document.createElement('input'),
     voiceRecognitionCueCheckboxEl: document.createElement('input'),
     voiceRecognitionCueGainSliderEl,
     voiceRecognitionCueGainValueEl: document.createElement('span'),
@@ -111,6 +113,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     recognitionStartTimeoutMs: 30000,
     recognitionCompletionTimeoutMs: 60000,
     recognitionEndSilenceMs: 1200,
+    recognizeStopCommandEnabled: true,
     ttsGain: 1,
     recognitionCueEnabled: true,
     recognitionCueGain: 1,
@@ -831,6 +834,7 @@ describe('SpeechAudioController.micButtonState', () => {
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
       voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
       voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceRecognizeStopCommandCheckboxEl: document.createElement('input'),
       voiceRecognitionCueCheckboxEl: document.createElement('input'),
       voiceRecognitionCueGainSliderEl: document.createElement('input'),
       voiceRecognitionCueGainValueEl: document.createElement('span'),
