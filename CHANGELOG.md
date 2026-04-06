@@ -21,6 +21,7 @@
 
 ### Fixed
 
+- Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
 - Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))
 - Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session. ([#93](https://github.com/kcosr/assistant/pull/93))
