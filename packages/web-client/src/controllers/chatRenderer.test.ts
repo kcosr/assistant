@@ -299,7 +299,7 @@ describe('ChatRenderer', () => {
     expect(messages[0]?.textContent).toContain('hello');
   });
 
-  it('requests reload when a live projected event arrives with a sequence gap', () => {
+  it('requests reload when a live projected event arrives with an uncovered sequence gap', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);
@@ -329,6 +329,47 @@ describe('ChatRenderer', () => {
     );
 
     expect(result).toBe('reload');
+  });
+
+  it('applies a sparse live request_start when replay watermark already covers skipped sequences', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents(
+      [
+        createProjectedEvent(0, {
+          kind: 'request_start',
+          chatEventType: 'turn_start',
+          payload: { trigger: 'user' },
+        }),
+        createProjectedEvent(23, {
+          kind: 'assistant_message',
+          chatEventType: 'assistant_done',
+          responseId: 'r1',
+          payload: { text: 'done' },
+        }),
+      ],
+      {
+        reset: true,
+        watermarkSequence: 55,
+      },
+    );
+
+    const result = renderer.handleNewProjectedEvent(
+      createProjectedEvent(56, {
+        eventId: 'request-start-56',
+        requestId: 't2',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    expect(result).toBe('applied');
   });
 
   it('requests reload when a replay batch mixes transcript revisions', () => {

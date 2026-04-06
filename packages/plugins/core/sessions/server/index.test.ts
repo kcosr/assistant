@@ -535,6 +535,88 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it('uses the generic live transcript high-water mark for replay cursors when canonical history omits transient events', async () => {
+    const sessionIndex = new SessionIndex(
+      createTempFile('sessions-plugin-events-generic-live-watermark'),
+    );
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+      historyProvider: {
+        getHistory: vi.fn(async () => [
+          {
+            id: 'turn-1-start',
+            timestamp: 1000,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+          {
+            id: 'turn-1-user',
+            timestamp: 1001,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'user_message',
+            payload: { text: 'hello' },
+          },
+          {
+            id: 'turn-1-done',
+            timestamp: 1003,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'assistant_done',
+            payload: { text: 'done' },
+          },
+          {
+            id: 'turn-1-end',
+            timestamp: 1004,
+            sessionId: 'session-1',
+            turnId: 'turn-1',
+            type: 'turn_end',
+            payload: {},
+          },
+        ]),
+      },
+    } as ToolContext;
+
+    const created = (await plugin.operations?.create(
+      { agentId: 'general', sessionConfig: { workingDir: '/tmp/project' } },
+      ctx,
+    )) as SessionSummary;
+
+    seedLiveTranscriptSessionState({
+      sessionId: created.sessionId,
+      revision: 1,
+      nextSequence: 6,
+    });
+
+    try {
+      const result = (await plugin.operations?.events(
+        { sessionId: created.sessionId, force: true },
+        ctx,
+      )) as SessionReplayResponse;
+
+      expect(result.nextCursor).toBe('1:5');
+      expect(result.events).toHaveLength(4);
+    } finally {
+      resetLiveTranscriptSessionState(created.sessionId);
+    }
+  });
+
   it('loads Pi replay events directly from canonical Pi session history', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi'));
     const agentRegistry = new AgentRegistry([

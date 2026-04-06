@@ -398,6 +398,22 @@ async function main(): Promise<void> {
     console.log(`[client][replay] ${message}`, data);
   }
 
+  function parseReplayCursorSequence(cursor: string | null | undefined): number | null {
+    if (typeof cursor !== 'string') {
+      return null;
+    }
+    const trimmed = cursor.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const separator = trimmed.lastIndexOf(':');
+    if (separator === -1) {
+      return null;
+    }
+    const sequence = Number.parseInt(trimmed.slice(separator + 1), 10);
+    return Number.isInteger(sequence) && sequence >= 0 ? sequence : null;
+  }
+
   function clearSessionTranscriptState(sessionId: string): void {
     const trimmed = sessionId.trim();
     if (!trimmed) {
@@ -4345,6 +4361,7 @@ async function main(): Promise<void> {
         const projectedEvents = dedupeProjectedTranscriptEvents(
           Array.isArray(replay.events) ? replay.events : [],
         );
+        const replayCursorSequence = parseReplayCursorSequence(replay.nextCursor ?? null);
         logTranscriptDebug('load_response', {
           sessionId: trimmed,
           eventCount: projectedEvents.length,
@@ -4363,10 +4380,21 @@ async function main(): Promise<void> {
         const shouldResetTranscript = activeForceReload || replay.reset || !replayState.loaded;
         if (shouldResetTranscript) {
           if (projectedEvents.length > 0) {
-            chatRenderer.replayProjectedEvents(projectedEvents, { reset: true });
+            chatRenderer.replayProjectedEvents(projectedEvents, {
+              reset: true,
+              ...(replayCursorSequence !== null
+                ? { watermarkSequence: replayCursorSequence }
+                : {}),
+            });
             chatScrollManager.scrollToBottomAfterLayout();
           } else {
             chatRenderer.clear();
+            if (replayCursorSequence !== null) {
+              chatRenderer.setProjectedTranscriptSequenceWatermark(
+                replay.revision,
+                replayCursorSequence,
+              );
+            }
             ensureEmptySessionHint(chatLogEl);
             chatScrollManager.scrollToBottomAfterLayout();
           }
@@ -4374,8 +4402,14 @@ async function main(): Promise<void> {
             didFreshSeed = true;
           }
         } else if (projectedEvents.length > 0) {
-          chatRenderer.replayProjectedEvents(projectedEvents);
+          chatRenderer.replayProjectedEvents(projectedEvents, {
+            ...(replayCursorSequence !== null
+              ? { watermarkSequence: replayCursorSequence }
+              : {}),
+          });
           chatScrollManager.scrollToBottomAfterLayout();
+        } else if (replayCursorSequence !== null) {
+          chatRenderer.setProjectedTranscriptSequenceWatermark(replay.revision, replayCursorSequence);
         }
 
         replayState.loaded = true;

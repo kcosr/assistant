@@ -210,6 +210,8 @@ export class ChatRenderer {
     InteractionResponseEvent['payload']
   >();
   private readonly projectedTranscriptEvents = new Map<number, ProjectedTranscriptEvent>();
+  private projectedTranscriptWatermarkRevision: number | null = null;
+  private projectedTranscriptWatermarkSequence = -1;
   private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
   private attachmentImageViewerOverlay: HTMLDivElement | null = null;
   private attachmentImageViewerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -558,6 +560,26 @@ export class ChatRenderer {
     return this.projectedTranscriptRevision;
   }
 
+  setProjectedTranscriptSequenceWatermark(revision: number, sequence: number): void {
+    const normalizedRevision = Math.max(0, revision);
+    const normalizedSequence = Math.max(-1, sequence);
+    if (
+      this.projectedTranscriptWatermarkRevision === null ||
+      normalizedRevision > this.projectedTranscriptWatermarkRevision
+    ) {
+      this.projectedTranscriptWatermarkRevision = normalizedRevision;
+      this.projectedTranscriptWatermarkSequence = normalizedSequence;
+      return;
+    }
+    if (normalizedRevision < this.projectedTranscriptWatermarkRevision) {
+      return;
+    }
+    this.projectedTranscriptWatermarkSequence = Math.max(
+      this.projectedTranscriptWatermarkSequence,
+      normalizedSequence,
+    );
+  }
+
   /**
    * Returns the full set of projected transcript events currently tracked by
    * the renderer, ordered by sequence. Used to drive authoritative activity
@@ -569,9 +591,22 @@ export class ChatRenderer {
     );
   }
 
+  private getProjectedTranscriptFrontierSequence(): number {
+    const highestSequence = this.getHighestProjectedSequence();
+    if (
+      this.projectedTranscriptRevision !== null &&
+      this.projectedTranscriptWatermarkRevision === this.projectedTranscriptRevision
+    ) {
+      return Math.max(highestSequence, this.projectedTranscriptWatermarkSequence);
+    }
+    return highestSequence;
+  }
+
   private resetProjectedTranscriptState(): void {
     this.projectedTranscriptEvents.clear();
     this.projectedTranscriptRevision = null;
+    this.projectedTranscriptWatermarkRevision = null;
+    this.projectedTranscriptWatermarkSequence = -1;
   }
 
   private resetRenderState(): void {
@@ -620,13 +655,26 @@ export class ChatRenderer {
 
   replayProjectedEvents(
     events: ProjectedTranscriptEvent[],
-    options: { reset?: boolean } = {},
+    options: { reset?: boolean; watermarkSequence?: number } = {},
   ): ProjectedTranscriptApplyResult {
     const normalized = dedupeProjectedTranscriptEvents(events);
+    const maxIncomingSequence = normalized.reduce(
+      (highest, event) => Math.max(highest, event.sequence),
+      -1,
+    );
     if (options.reset) {
       this.resetProjectedTranscriptState();
     }
     if (normalized.length === 0) {
+      if (
+        typeof options.watermarkSequence === 'number' &&
+        this.projectedTranscriptRevision !== null
+      ) {
+        this.setProjectedTranscriptSequenceWatermark(
+          this.projectedTranscriptRevision,
+          options.watermarkSequence,
+        );
+      }
       if (options.reset) {
         this.renderStoredProjectedTranscript();
       }
@@ -661,11 +709,15 @@ export class ChatRenderer {
       for (const event of revisionEvents) {
         this.projectedTranscriptEvents.set(event.sequence, event);
       }
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'applied';
     }
 
-    const highestSequence = this.getHighestProjectedSequence();
+    const highestSequence = this.getProjectedTranscriptFrontierSequence();
     let expectedSequence = highestSequence + 1;
     let requiresReplay = false;
     let requiresRerender = false;
@@ -690,11 +742,19 @@ export class ChatRenderer {
     }
 
     if (requiresReplay) {
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'reload';
     }
 
     if (requiresRerender) {
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'applied';
     }
@@ -702,6 +762,10 @@ export class ChatRenderer {
     for (const event of appendedEvents) {
       this.renderProjectedEvent(event);
     }
+    this.setProjectedTranscriptSequenceWatermark(
+      incomingRevision,
+      Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+    );
     return 'applied';
   }
 

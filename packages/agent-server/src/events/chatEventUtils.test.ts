@@ -7,11 +7,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentRegistry } from '../agents';
 import type { EventStore } from './eventStore';
 import type { LogicalSessionState, SessionHub } from '../sessionHub';
+import type { ProjectedTranscriptEvent } from '@assistant/shared';
+
 import {
   appendAndBroadcastChatEvents,
   emitInteractionPendingEvent,
   emitToolOutputChunkEvent,
   getBufferedLiveTranscriptEvents,
+  getLiveTranscriptSequenceWatermark,
+  mergeBufferedLiveTranscriptEvents,
   resetLiveTranscriptSessionState,
   seedLiveTranscriptSessionState,
   syncLiveTranscriptSessionStateFromPiHistory,
@@ -160,6 +164,29 @@ describe('chatEventUtils live broadcast behavior', () => {
     });
   });
 
+  it('reports the live transcript sequence high-water mark for the active revision', () => {
+    seedLiveTranscriptSessionState({
+      sessionId: 's-watermark',
+      revision: 3,
+      nextSequence: 7,
+    });
+
+    expect(
+      getLiveTranscriptSequenceWatermark({
+        sessionId: 's-watermark',
+        revision: 3,
+      }),
+    ).toBe(6);
+    expect(
+      getLiveTranscriptSequenceWatermark({
+        sessionId: 's-watermark',
+        revision: 2,
+      }),
+    ).toBeUndefined();
+
+    resetLiveTranscriptSessionState('s-watermark');
+  });
+
   it('broadcasts transcript_event for transient pi tool output', () => {
     const { sessionHub, broadcastToSession } = createSessionHub('pi');
 
@@ -235,6 +262,166 @@ describe('chatEventUtils live broadcast behavior', () => {
         sequence: 1,
       }),
     ]);
+  });
+
+  it('merges buffered non-transient live events into Pi replay until canonical history catches up', async () => {
+    const { sessionHub } = createSessionHub('pi', 'pi-overlay-catchup');
+
+    await appendAndBroadcastChatEvents(
+      { sessionHub, sessionId: 'pi-overlay-catchup' },
+      [
+        {
+          id: 'evt-start',
+          sessionId: 'pi-overlay-catchup',
+          turnId: 'req-live',
+          timestamp: Date.now(),
+          type: 'turn_start',
+          payload: { trigger: 'user' },
+        },
+        {
+          id: 'evt-user',
+          sessionId: 'pi-overlay-catchup',
+          turnId: 'req-live',
+          timestamp: Date.now(),
+          type: 'user_message',
+          payload: { text: 'hello' },
+        },
+        {
+          id: 'evt-done',
+          sessionId: 'pi-overlay-catchup',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'hi back' },
+        },
+        {
+          id: 'evt-end',
+          sessionId: 'pi-overlay-catchup',
+          turnId: 'req-live',
+          timestamp: Date.now(),
+          type: 'turn_end',
+          payload: { status: 'completed' },
+        },
+      ],
+    );
+
+    const canonicalEvents: ProjectedTranscriptEvent[] = [
+      {
+        sessionId: 'pi-overlay-catchup',
+        revision: 1,
+        sequence: 0,
+        eventId: 'canonical-start',
+        kind: 'request_start',
+        requestId: 'req-live',
+        timestamp: new Date().toISOString(),
+        chatEventType: 'turn_start',
+        payload: { trigger: 'user' },
+      },
+      {
+        sessionId: 'pi-overlay-catchup',
+        revision: 1,
+        sequence: 1,
+        eventId: 'canonical-user',
+        kind: 'user_message',
+        requestId: 'req-live',
+        timestamp: new Date().toISOString(),
+        chatEventType: 'user_message',
+        payload: { text: 'hello' },
+      },
+    ];
+
+    expect(
+      mergeBufferedLiveTranscriptEvents({
+        sessionId: 'pi-overlay-catchup',
+        revision: 1,
+        events: canonicalEvents,
+      }).map((event) => `${event.sequence}:${event.kind}:${event.chatEventType}`),
+    ).toEqual([
+      '0:request_start:turn_start',
+      '1:user_message:user_message',
+      '2:assistant_message:assistant_done',
+      '3:request_end:turn_end',
+    ]);
+  });
+
+  it('drops buffered Pi overlay events once canonical replay already contains the completed turn', async () => {
+    const { sessionHub } = createSessionHub('pi', 'pi-overlay-prune');
+
+    await appendAndBroadcastChatEvents(
+      { sessionHub, sessionId: 'pi-overlay-prune' },
+      [
+        {
+          id: 'evt-thinking',
+          sessionId: 'pi-overlay-prune',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'thinking_chunk',
+          payload: { text: 'thinking' },
+        },
+        {
+          id: 'evt-assistant',
+          sessionId: 'pi-overlay-prune',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'assistant_chunk',
+          payload: { text: 'partial' },
+        },
+        {
+          id: 'evt-done',
+          sessionId: 'pi-overlay-prune',
+          turnId: 'req-live',
+          responseId: 'resp-live',
+          timestamp: Date.now(),
+          type: 'assistant_done',
+          payload: { text: 'done' },
+        },
+        {
+          id: 'evt-end',
+          sessionId: 'pi-overlay-prune',
+          turnId: 'req-live',
+          timestamp: Date.now(),
+          type: 'turn_end',
+          payload: { status: 'completed' },
+        },
+      ],
+    );
+
+    const canonicalEvents: ProjectedTranscriptEvent[] = [
+      {
+        sessionId: 'pi-overlay-prune',
+        revision: 1,
+        sequence: 2,
+        eventId: 'canonical-done',
+        kind: 'assistant_message',
+        requestId: 'req-live',
+        responseId: 'resp-live',
+        timestamp: new Date().toISOString(),
+        chatEventType: 'assistant_done',
+        payload: { text: 'done' },
+      },
+      {
+        sessionId: 'pi-overlay-prune',
+        revision: 1,
+        sequence: 3,
+        eventId: 'canonical-end',
+        kind: 'request_end',
+        requestId: 'req-live',
+        timestamp: new Date().toISOString(),
+        chatEventType: 'turn_end',
+        payload: { status: 'completed' },
+      },
+    ];
+
+    expect(
+      mergeBufferedLiveTranscriptEvents({
+        sessionId: 'pi-overlay-prune',
+        revision: 1,
+        events: canonicalEvents,
+      }),
+    ).toEqual(canonicalEvents);
   });
 
   it('keeps live transcript sequence stable across ordinary session revision changes', async () => {
@@ -324,6 +511,64 @@ describe('chatEventUtils live broadcast behavior', () => {
       }),
     );
     expect(appendAssistantEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not allow same-revision reseeding to move nextSequence backward', async () => {
+    seedLiveTranscriptSessionState({
+      sessionId: 'seed-monotonic-same-revision',
+      revision: 3,
+      nextSequence: 9,
+    });
+
+    seedLiveTranscriptSessionState({
+      sessionId: 'seed-monotonic-same-revision',
+      revision: 3,
+      nextSequence: 4,
+    });
+
+    expect(
+      getBufferedLiveTranscriptEvents({
+        sessionId: 'seed-monotonic-same-revision',
+        revision: 3,
+      }),
+    ).toEqual([]);
+
+    const { sessionHub, broadcastToSession } = createSessionHub('pi', 'seed-monotonic-same-revision');
+    const state = sessionHub.getSessionState('seed-monotonic-same-revision');
+    if (!state) {
+      throw new Error('expected seeded session state');
+    }
+    state.summary.sessionId = 'seed-monotonic-same-revision';
+    state.summary.agentId = 'pi';
+
+    try {
+      await appendAndBroadcastChatEvents(
+        { sessionHub, sessionId: 'seed-monotonic-same-revision' },
+        [
+          {
+            id: 'evt-seed-guard',
+            sessionId: 'seed-monotonic-same-revision',
+            turnId: 'req-seed-guard',
+            timestamp: Date.now(),
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+        ],
+      );
+
+      expect(broadcastToSession).toHaveBeenCalledWith(
+        'seed-monotonic-same-revision',
+        expect.objectContaining({
+          type: 'transcript_event',
+          event: expect.objectContaining({
+            revision: 3,
+            sequence: 9,
+          }),
+        }),
+      );
+    } finally {
+      resetLiveTranscriptSessionState('seed-monotonic-same-revision');
+    }
   });
 
   it('does not reseed live Pi transcript revision on ordinary summary revision bumps', async () => {
@@ -453,6 +698,176 @@ describe('chatEventUtils live broadcast behavior', () => {
           event: expect.objectContaining({
             revision: 7,
             sequence: 4,
+          }),
+        }),
+      );
+    } finally {
+      resetLiveTranscriptSessionState(sessionId);
+      await fs.rm(baseDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not rewind live Pi sequence when canonical history is shorter than the live high-water mark', async () => {
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'assistant-pi-live-no-rewind-'));
+    const cwd = '/home/kevin';
+    const sessionId = 'pi-live-no-rewind';
+    const piSessionId = 'pi-live-no-rewind-file';
+    const encodedCwd = `--${cwd.replace(/^[/\\]/, '').replace(/[\\/:]/g, '-')}--`;
+    const sessionDir = path.join(baseDir, encodedCwd);
+    await fs.mkdir(sessionDir, { recursive: true });
+    const sessionPath = path.join(sessionDir, `2026-04-02T00-00-00-000Z_${piSessionId}.jsonl`);
+    await fs.writeFile(
+      sessionPath,
+      [
+        JSON.stringify({
+          type: 'session',
+          version: 3,
+          id: piSessionId,
+          timestamp: '2026-04-02T00:00:00.000Z',
+          cwd,
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-start',
+          parentId: null,
+          timestamp: '2026-04-02T00:00:01.000Z',
+          customType: 'assistant.request_start',
+          data: { v: 1, requestId: 'request-1', trigger: 'user' },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-user',
+          parentId: 'req-start',
+          timestamp: '2026-04-02T00:00:02.000Z',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: '@mock[interleaved-reasoning-tools]' }],
+            timestamp: 1,
+          },
+        }),
+        JSON.stringify({
+          type: 'message',
+          id: 'msg-assistant',
+          parentId: 'msg-user',
+          timestamp: '2026-04-02T00:00:03.000Z',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'done' }],
+            provider: 'mock-scenarios',
+            model: 'scenarios',
+            api: 'openai-responses',
+            usage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 0,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            timestamp: 2,
+          },
+        }),
+        JSON.stringify({
+          type: 'custom',
+          id: 'req-end',
+          parentId: 'msg-assistant',
+          timestamp: '2026-04-02T00:00:04.000Z',
+          customType: 'assistant.request_end',
+          data: { v: 1, requestId: 'request-1', status: 'completed' },
+        }),
+      ].join('\n'),
+      'utf8',
+    );
+
+    const appendAssistantEvent = vi.fn(async () => undefined);
+    const broadcastToSession = vi.fn();
+    const agentRegistry = {
+      getAgent: vi.fn(() => ({ id: 'agent-pi', chat: { provider: 'pi' } })),
+    } as unknown as AgentRegistry;
+    const summary = {
+      sessionId,
+      agentId: 'agent-pi',
+      revision: 1,
+      attributes: {
+        providers: {
+          pi: { sessionId: piSessionId, cwd, transcriptRevision: 1 },
+        },
+      },
+    };
+    const state = {
+      summary,
+      chatMessages: [],
+    } as unknown as LogicalSessionState;
+    const sessionHub: SessionHub = {
+      getSessionState: vi.fn(() => state),
+      getSessionIndex: vi.fn(() => ({
+        getSession: vi.fn(async () => summary),
+      })),
+      getAgentRegistry: vi.fn(() => agentRegistry),
+      getPiSessionWriter: vi.fn(() => ({
+        appendAssistantEvent,
+        getBaseDir: () => baseDir,
+      })),
+      updateSessionAttributes: vi.fn(async () => summary),
+      broadcastToSession,
+    } as unknown as SessionHub;
+
+    seedLiveTranscriptSessionState({
+      sessionId,
+      revision: 1,
+      nextSequence: 5,
+    });
+
+    try {
+      await syncLiveTranscriptSessionStateFromPiHistory({
+        sessionHub,
+        sessionId,
+        summary,
+      });
+
+      await appendAndBroadcastChatEvents(
+        { sessionHub, sessionId },
+        [
+          {
+            id: 'evt-next-turn',
+            sessionId,
+            turnId: 'request-2',
+            timestamp: Date.now(),
+            type: 'turn_start',
+            payload: { trigger: 'user' },
+          },
+          {
+            id: 'evt-next-user',
+            sessionId,
+            turnId: 'request-2',
+            timestamp: Date.now(),
+            type: 'user_message',
+            payload: { text: 'next question' },
+          },
+        ],
+      );
+
+      expect(broadcastToSession).toHaveBeenNthCalledWith(
+        1,
+        sessionId,
+        expect.objectContaining({
+          type: 'transcript_event',
+          event: expect.objectContaining({
+            revision: 1,
+            sequence: 5,
+            kind: 'request_start',
+          }),
+        }),
+      );
+      expect(broadcastToSession).toHaveBeenNthCalledWith(
+        2,
+        sessionId,
+        expect.objectContaining({
+          type: 'transcript_event',
+          event: expect.objectContaining({
+            revision: 1,
+            sequence: 6,
+            kind: 'user_message',
           }),
         }),
       );
@@ -627,7 +1042,7 @@ describe('chatEventUtils live broadcast behavior', () => {
         type: 'transcript_event',
         event: {
           revision: 7,
-          sequence: 4,
+          sequence: 36,
           requestId: 'request-2',
           kind: 'request_start',
         },
@@ -636,7 +1051,7 @@ describe('chatEventUtils live broadcast behavior', () => {
         type: 'transcript_event',
         event: {
           revision: 7,
-          sequence: 5,
+          sequence: 37,
           requestId: 'request-2',
           kind: 'user_message',
           payload: { text: 'second turn' },
