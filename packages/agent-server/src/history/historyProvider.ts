@@ -816,6 +816,7 @@ function normalizeTurnComparablePayload(event: ChatEvent): unknown {
   }
   if (event.type === 'tool_result') {
     return {
+      ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
       result: event.payload.result,
       error: event.payload.error,
     };
@@ -1176,6 +1177,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const turnId = ensureTurn(entry, timestamp);
     if (!turnId) {
       return;
@@ -1190,6 +1192,7 @@ function buildChatEventsFromClaudeSession(content: string, sessionId: string): C
       type: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },
@@ -1753,6 +1756,7 @@ function buildProjectedTranscriptFromPiSession(
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const requestId = ensureRequest(entry, timestamp);
     const responseId = ensureResponseId(entry, requestId);
     pushProjected({
@@ -1762,6 +1766,7 @@ function buildProjectedTranscriptFromPiSession(
       chatEventType: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },
@@ -2053,7 +2058,17 @@ function buildProjectedTranscriptFromPiSession(
         overlayEventType === 'questionnaire_reprompt' ||
         overlayEventType === 'questionnaire_update'
       ) {
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        // Questionnaire lifecycle events are emitted without a turnId (they
+        // happen between the original assistant turn and the callback turn).
+        // Attach to the last closed turn so we don't create an empty synthetic
+        // turn that shows up as a bare divider on replay.
+        const isQuestionnaire =
+          overlayEventType === 'questionnaire_reprompt' || overlayEventType === 'questionnaire_update';
+        const requestId =
+          requestIdFromEntry ||
+          (isQuestionnaire
+            ? (currentRequestId ?? lastClosedExplicitRequestId ?? ensureRequest(entry, timestamp))
+            : ensureRequest(entry, timestamp));
         pushProjected({
           timestamp,
           requestId,
@@ -2071,7 +2086,13 @@ function buildProjectedTranscriptFromPiSession(
         overlayEventType === 'interaction_response' ||
         overlayEventType === 'questionnaire_submission'
       ) {
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        // Same rationale as above — questionnaire_submission events lack a
+        // turnId and land between turns.
+        const requestId =
+          requestIdFromEntry ||
+          (overlayEventType === 'questionnaire_submission'
+            ? (currentRequestId ?? lastClosedExplicitRequestId ?? ensureRequest(entry, timestamp))
+            : ensureRequest(entry, timestamp));
         pushProjected({
           timestamp,
           requestId,
@@ -2675,6 +2696,7 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
     if (!toolCallId || emittedToolResults.has(toolCallId)) {
       return;
     }
+    const meta = resolveToolMeta(toolCallId, '', {});
     const turnId = ensureTurn(entry, timestamp);
     if (!turnId) {
       return;
@@ -2689,6 +2711,7 @@ function buildChatEventsFromCodexSession(content: string, sessionId: string): Ch
       type: 'tool_result',
       payload: {
         toolCallId,
+        ...(meta.toolName ? { toolName: meta.toolName } : {}),
         result,
         ...(error ? { error } : {}),
       },

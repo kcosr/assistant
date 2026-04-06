@@ -190,6 +190,7 @@ export function createCliToolCallbacks(options: CliToolCallbackOptions): CliTool
         turnId,
         responseId,
         toolCallId: callId,
+        toolName,
         result: result ?? null,
         error:
           ok === false

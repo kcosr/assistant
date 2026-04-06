@@ -213,6 +213,7 @@ export function sliceProjectedTranscript(options: {
   events: ProjectedTranscriptEvent[];
   afterCursor?: string;
   force?: boolean;
+  cursorSequence?: number;
 }): {
   reset: boolean;
   events: ProjectedTranscriptEvent[];
@@ -220,7 +221,10 @@ export function sliceProjectedTranscript(options: {
 } {
   const { revision, events, afterCursor, force = false } = options;
   const parsedCursor = parseReplayCursor(afterCursor);
-  const nextCursor = events.length > 0 ? formatReplayCursor(revision, events.length - 1) : undefined;
+  const highestSequence = events.length > 0 ? events[events.length - 1]?.sequence ?? -1 : -1;
+  const watermarkSequence = Math.max(highestSequence, options.cursorSequence ?? -1);
+  const nextCursor =
+    watermarkSequence >= 0 ? formatReplayCursor(revision, watermarkSequence) : undefined;
 
   if (force || !parsedCursor) {
     return {
@@ -238,7 +242,7 @@ export function sliceProjectedTranscript(options: {
     };
   }
 
-  if (parsedCursor.sequence >= events.length) {
+  if (parsedCursor.sequence >= watermarkSequence) {
     return {
       reset: false,
       events: [],

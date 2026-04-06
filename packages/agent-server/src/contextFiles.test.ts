@@ -2,14 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { AgentDefinition } from './agents';
-import {
-  buildContextFilesPrompt,
-  clearContextFilesCachesForTests,
-  preloadContextFilesForAgents,
-} from './contextFiles';
+import { buildContextFilesPrompt } from './contextFiles';
 
 function createTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`));
@@ -28,10 +24,6 @@ function createAgent(contextFiles: AgentDefinition['contextFiles']): AgentDefini
     ...(contextFiles ? { contextFiles } : {}),
   };
 }
-
-afterEach(() => {
-  clearContextFilesCachesForTests();
-});
 
 describe('contextFiles', () => {
   it('builds a prompt in source order, include order, and lexical match order', () => {
@@ -138,15 +130,4 @@ describe('contextFiles', () => {
     expect(() => buildContextFilesPrompt(agent)).toThrow(/resolves outside root/);
   });
 
-  it('uses preloaded cache after startup', () => {
-    const root = createTempDir('context-files-preload');
-    const filePath = path.join(root, 'README.md');
-    writeTextFile(filePath, 'cached content');
-
-    const agent = createAgent([{ root, include: ['README.md'] }]);
-    preloadContextFilesForAgents([agent]);
-    fs.unlinkSync(filePath);
-
-    expect(buildContextFilesPrompt(agent)).toContain('cached content');
-  });
 });

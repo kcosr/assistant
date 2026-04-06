@@ -299,7 +299,7 @@ describe('ChatRenderer', () => {
     expect(messages[0]?.textContent).toContain('hello');
   });
 
-  it('requests reload when a live projected event arrives with a sequence gap', () => {
+  it('requests reload when a live projected event arrives with an uncovered sequence gap', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
     document.body.appendChild(container);
@@ -329,6 +329,47 @@ describe('ChatRenderer', () => {
     );
 
     expect(result).toBe('reload');
+  });
+
+  it('applies a sparse live request_start when replay watermark already covers skipped sequences', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.replayProjectedEvents(
+      [
+        createProjectedEvent(0, {
+          kind: 'request_start',
+          chatEventType: 'turn_start',
+          payload: { trigger: 'user' },
+        }),
+        createProjectedEvent(23, {
+          kind: 'assistant_message',
+          chatEventType: 'assistant_done',
+          responseId: 'r1',
+          payload: { text: 'done' },
+        }),
+      ],
+      {
+        reset: true,
+        watermarkSequence: 55,
+      },
+    );
+
+    const result = renderer.handleNewProjectedEvent(
+      createProjectedEvent(56, {
+        eventId: 'request-start-56',
+        requestId: 't2',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+
+    expect(result).toBe('applied');
   });
 
   it('requests reload when a replay batch mixes transcript revisions', () => {
@@ -613,6 +654,178 @@ describe('ChatRenderer', () => {
     expect(bubbles[1]?.textContent).not.toContain('accepted');
     expect(container.querySelector('[data-tool-name="voice_speak"].tool-output-block')).toBeNull();
     expect(container.querySelector('[data-tool-name="voice_ask"].tool-output-block')).toBeNull();
+  });
+
+  it('does not append a duplicate user bubble when the same projected user event is rendered twice', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const event = createProjectedEvent(0, {
+      eventId: 'user-e1',
+      kind: 'user_message',
+      chatEventType: 'user_message',
+      requestId: 'turn-user',
+      responseId: undefined,
+      payload: { text: 'yo' },
+    });
+
+    renderer.renderProjectedEvent(event);
+    renderer.renderProjectedEvent(event);
+
+    const userMessages = container.querySelectorAll<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]?.dataset['eventId']).toBe('user-e1');
+    expect(userMessages[0]?.textContent).toContain('yo');
+  });
+
+  it('reuses the same user bubble when the same turn renders another user_message event', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'user-e1',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'yo' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-e2',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'yo' },
+      }),
+    );
+
+    const userMessages = container.querySelectorAll<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]?.dataset['eventId']).toBe('user-e2');
+    expect(userMessages[0]?.textContent).toContain('yo');
+  });
+
+  it('normalizes audio styling when the same turn reuses a user bubble for plain text', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'audio-e1',
+        kind: 'user_message',
+        chatEventType: 'user_audio',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { transcription: 'spoken yo', durationMs: 500 },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-e2',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'typed yo' },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(bubble).not.toBeNull();
+    if (!bubble) return;
+    expect(container.querySelectorAll('.turn[data-turn-id="turn-user"] .message.user')).toHaveLength(1);
+    expect(bubble.classList.contains('user-audio')).toBe(false);
+    expect(bubble.dataset['inputType']).toBeUndefined();
+    expect(bubble.textContent).toContain('typed yo');
+    expect(bubble.querySelector('.voice-event-icon-microphone')).toBeNull();
+    expect(bubble.querySelector('.message-avatar')?.textContent).toBe('U');
+  });
+
+  it('removes agent styling when the same turn reuses a user bubble for a plain user message', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Source Agent',
+    });
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'user-agent',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'agent text', fromAgentId: 'source' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-plain',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'plain text' },
+      }),
+    );
+
+    const bubble = container.querySelector<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(bubble).not.toBeNull();
+    if (!bubble) return;
+    expect(container.querySelectorAll('.turn[data-turn-id="turn-user"] .message.user')).toHaveLength(1);
+    expect(bubble.classList.contains('agent-message')).toBe(false);
+    expect(bubble.querySelector('.agent-message-label')).toBeNull();
+    expect(bubble.querySelector('.agent-message-body')).toBeNull();
+    expect(bubble.textContent).toContain('plain text');
+    expect(bubble.querySelector('.message-avatar')?.textContent).toBe('U');
   });
 
   it('renders voice tool failures inline on the speaker bubble', () => {
@@ -1954,6 +2167,7 @@ describe('ChatRenderer', () => {
 
     const renderer = new ChatRenderer(container, {
       getAgentDisplayName: () => 'Coding Agent',
+      getExpandToolOutput: () => true,
     });
 
     replayLegacyEvents(renderer, [
@@ -1998,6 +2212,110 @@ describe('ChatRenderer', () => {
 
     const titleEl = agentToolBlock?.querySelector<HTMLElement>('.tool-output-title');
     expect(titleEl?.textContent).toBe('Coding Agent');
+    const outputBody = agentToolBlock?.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('Tests passed.');
+  });
+
+  it('renders sync agents_message results from the response field instead of raw JSON', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Coding Agent',
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-agent',
+          toolName: 'agents_message',
+          args: {
+            agentId: 'coding',
+            content: 'Fix the test',
+          },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-agent',
+          result: {
+            agentId: 'coding',
+            mode: 'sync',
+            status: 'complete',
+            responseId: 'resp-agent',
+            response: 'Fixed the failing test.',
+            durationMs: 1200,
+            toolCallCount: 1,
+            toolCalls: [{ name: 'bash', durationMs: 300 }],
+          },
+        },
+      }),
+    ]);
+
+    const agentToolBlock = container.querySelector<HTMLDivElement>(
+      '.tool-output-block.agent-message-exchange',
+    );
+    expect(agentToolBlock).not.toBeNull();
+    if (!agentToolBlock) return;
+
+    const outputBody = agentToolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('Fixed the failing test.');
+    expect(outputBody?.textContent).not.toContain('"agentId": "coding"');
+  });
+
+  it('renders sync agents_message results from tool_result payloads without a prior tool_call', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container, {
+      getAgentDisplayName: () => 'Claude Code',
+      getExpandToolOutput: () => true,
+    });
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('turn_start', {
+        id: 'e0',
+        turnId: 't1',
+        payload: { trigger: 'user' },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-agent',
+          toolName: 'agents_message',
+          result: {
+            agentId: 'claude-cli',
+            mode: 'sync',
+            status: 'complete',
+            responseId: 'resp-agent',
+            response: '/home/kevin',
+            durationMs: 4101,
+            toolCallCount: 0,
+            toolCalls: [],
+          },
+        },
+      }),
+    ]);
+
+    const agentToolBlock = container.querySelector<HTMLDivElement>(
+      '.tool-output-block.agent-message-exchange',
+    );
+    expect(agentToolBlock).not.toBeNull();
+    if (!agentToolBlock) return;
+
+    const outputBody = agentToolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.textContent).toContain('/home/kevin');
+    expect(outputBody?.textContent).not.toContain('"agentId": "claude-cli"');
   });
 
   it('handles streaming assistant chunks before assistant_done', () => {
@@ -3213,6 +3531,82 @@ describe('ChatRenderer', () => {
     const secondThinkingIndex = children.indexOf(thinkingBlocks[1]!);
     expect(firstThinkingIndex).toBeLessThan(toolIndex);
     expect(toolIndex).toBeLessThan(secondThinkingIndex);
+  });
+
+  it('keeps finalized thinking before a tool when tool input streams first', () => {
+    const container = document.createElement('div');
+    container.className = 'chat-log';
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    replayLegacyEvents(renderer, [
+      createBaseEvent('thinking_chunk', {
+        id: 'e1',
+        responseId: 'r1',
+        payload: { text: 'The user wants me to check the list again.' },
+      }),
+      createBaseEvent('tool_input_chunk', {
+        id: 'e2',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'lists_items_list',
+          chunk: '{"listId":"today"}',
+          offset: 17,
+        },
+      }) as ChatEvent,
+      createBaseEvent('thinking_done', {
+        id: 'e3',
+        responseId: 'r1',
+        payload: { text: 'The user wants me to check the list again.' },
+      }),
+      createBaseEvent('tool_call', {
+        id: 'e4',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          toolName: 'lists_items_list',
+          args: { listId: 'today' },
+        },
+      }),
+      createBaseEvent('tool_result', {
+        id: 'e5',
+        responseId: 'r1',
+        payload: {
+          toolCallId: 'tc1',
+          result: [{ title: 'Pick up inside 🧺' }],
+        },
+      }),
+      createBaseEvent('assistant_done', {
+        id: 'e6',
+        responseId: 'r1',
+        payload: { text: 'Pick up inside 🧺' },
+      }),
+    ]);
+
+    const response = container.querySelector<HTMLDivElement>('.assistant-response');
+    expect(response).not.toBeNull();
+    if (!response) return;
+
+    const thinkingBlocks = response.querySelectorAll<HTMLDivElement>('.thinking-content');
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0]?.textContent).toBe('The user wants me to check the list again.');
+
+    const toolContainer = response.querySelector<HTMLDivElement>('.tool-calls');
+    expect(toolContainer).not.toBeNull();
+    if (!toolContainer) return;
+
+    const assistantTexts = response.querySelectorAll<HTMLDivElement>('.assistant-text');
+    expect(assistantTexts).toHaveLength(1);
+    expect(assistantTexts[0]?.textContent).toContain('Pick up inside');
+
+    const children = Array.from(response.children);
+    const thinkingIndex = children.indexOf(thinkingBlocks[0]!);
+    const toolIndex = children.indexOf(toolContainer);
+    const assistantIndex = children.indexOf(assistantTexts[0]!);
+    expect(thinkingIndex).toBeLessThan(toolIndex);
+    expect(toolIndex).toBeLessThan(assistantIndex);
   });
 
   it('deduplicates chunks with same or lower offset', () => {

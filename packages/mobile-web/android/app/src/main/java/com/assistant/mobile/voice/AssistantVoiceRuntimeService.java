@@ -966,6 +966,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!isWatchedSessionId(prompt.sessionId)) {
             return;
         }
+        if (config.ttsPreferredSessionOnly
+            && !prompt.sessionId.equals(config.preferredVoiceSessionId)) {
+            return;
+        }
         if (
             AssistantVoiceInteractionRules.shouldAutoplayEvent(
                 config.audioMode,

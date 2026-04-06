@@ -48,6 +48,20 @@
           "timeout": {
             "type": "number",
             "description": "Timeout in seconds for sync mode (default: 300)."
+          },
+          "sessionConfig": {
+            "type": "object",
+            "description": "Optional session configuration overrides (model, thinking, workingDir, skills) applied when a new session is created.",
+            "properties": {
+              "model": { "type": "string", "description": "Model to use for the new session." },
+              "thinking": { "type": "string", "description": "Thinking level for the new session." },
+              "workingDir": { "type": "string", "description": "Working directory for the new session (must be an absolute path)." },
+              "skills": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Instruction skill ids to select for the new session."
+              }
+            }
           }
         },
         "required": ["agentId", "content"]

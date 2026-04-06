@@ -480,7 +480,7 @@ export class ServerMessageHandler {
         }
 
         void this.options.refreshSessions(message.sessionId);
-        void this.options.loadSessionTranscript(message.sessionId, { force: true });
+        void this.options.loadSessionTranscript(message.sessionId);
 
         if (
           this.options.getAutoFocusChatOnSessionReady() &&

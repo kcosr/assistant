@@ -27,6 +27,7 @@ import { loadCanonicalPiTranscriptEvents } from '../../../../agent-server/src/hi
 import { getPiTranscriptRevision } from '../../../../agent-server/src/history/piTranscriptRevision';
 import {
   getActiveLiveTranscriptRevision,
+  getLiveTranscriptSequenceWatermark,
   mergeBufferedLiveTranscriptEvents,
   seedLiveTranscriptSessionState,
 } from '../../../../agent-server/src/events/chatEventUtils';
@@ -463,9 +464,15 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             revision: replayRevision,
             events: projected,
           });
+          const liveHighWaterSequence =
+            getLiveTranscriptSequenceWatermark({
+              sessionId,
+              revision: replayRevision,
+            }) ?? -1;
           const sliced = sliceProjectedTranscript({
             revision: replayRevision,
             events: replayEvents,
+            ...(liveHighWaterSequence >= 0 ? { cursorSequence: liveHighWaterSequence } : {}),
             ...(afterCursor ? { afterCursor } : {}),
             force,
           });
@@ -493,9 +500,15 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           ...(force ? { force } : {}),
         });
         const projected = projectTranscriptEvents({ sessionId, revision, events });
+        const liveHighWaterSequence =
+          getLiveTranscriptSequenceWatermark({
+            sessionId,
+            revision,
+          }) ?? -1;
         const sliced = sliceProjectedTranscript({
           revision,
           events: projected,
+          ...(liveHighWaterSequence >= 0 ? { cursorSequence: liveHighWaterSequence } : {}),
           ...(afterCursor ? { afterCursor } : {}),
           force,
         });

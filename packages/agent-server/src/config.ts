@@ -5,6 +5,8 @@ import { z } from 'zod';
 import type { AgentDefinition } from './agents';
 import { DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS } from './attachments/constants';
 import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
+import { normalizeInstructionSkillSourcesForConfigDir } from './instructionSkills';
+import { resolveAgentTemplates } from './templateResolution';
 
 const NonEmptyTrimmedStringSchema = z.string().trim().min(1);
 const AbsolutePathSchema = NonEmptyTrimmedStringSchema.refine(
@@ -880,10 +882,6 @@ function deepSubstitute<T>(value: T): T {
   return value;
 }
 
-function applyEnvSubstitution(config: AppConfig): AppConfig {
-  return deepSubstitute(config);
-}
-
 export function loadConfig(configPath: string): AppConfig {
   const resolvedPath = path.resolve(configPath);
   const configDir = path.dirname(resolvedPath);
@@ -909,14 +907,27 @@ export function loadConfig(configPath: string): AppConfig {
     );
   }
 
-  const config = applyEnvSubstitution(AppConfigSchema.parse(parsedJson));
+  // 1. Env substitution on raw JSON (before template resolution and Zod)
+  const substituted = deepSubstitute(parsedJson);
+
+  // 2. Resolve templates (operates on raw JSON, consumes `templates` section)
+  const resolved = resolveAgentTemplates(substituted as Record<string, unknown>);
+
+  // 3. Zod validation and transformation
+  const config = AppConfigSchema.parse(resolved);
+
+  // 4. Normalize file paths relative to config directory
   const agents = config.agents.map((agent) => {
     const contextFiles = agent.contextFiles
       ? normalizeContextFileSourcesForConfigDir(agent.contextFiles, configDir)
       : undefined;
+    const skills = agent.skills
+      ? normalizeInstructionSkillSourcesForConfigDir(agent.skills, configDir)
+      : undefined;
     return {
       ...agent,
       ...(contextFiles ? { contextFiles } : {}),
+      ...(skills ? { skills } : {}),
     };
   });
   const profiles = normalizeProfiles(config.profiles ?? []);

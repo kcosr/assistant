@@ -13,39 +13,12 @@ describe('getWebClientElements', () => {
   });
 
   it('returns the voice settings controls when present', () => {
-    document.body.innerHTML = `
-      <button id="controls-toggle-button"></button>
-      <button id="voice-settings-button"></button>
-      <div id="voice-settings-modal"></div>
-      <button id="voice-settings-close-button"></button>
-      <select id="audio-mode-select"></select>
-      <input id="auto-listen-checkbox" type="checkbox" />
-      <input id="voice-adapter-base-url-input" type="url" />
-      <select id="voice-preferred-session-select"></select>
-      <select id="voice-mic-input-select"></select>
-      <input id="voice-recognition-start-timeout-input" type="number" />
-      <input id="voice-recognition-completion-timeout-input" type="number" />
-      <input id="voice-recognition-end-silence-input" type="number" />
-      <div id="voice-recognize-stop-command-control"></div>
-      <input id="voice-recognize-stop-command-checkbox" type="checkbox" />
-      <div id="voice-recognition-cue-control"></div>
-      <input id="voice-recognition-cue-checkbox" type="checkbox" />
-      <div id="voice-recognition-cue-gain-control"></div>
-      <input id="voice-recognition-cue-gain-slider" type="range" />
-      <span id="voice-recognition-cue-gain-value"></span>
-      <div id="voice-startup-pre-roll-control"></div>
-      <input id="voice-startup-pre-roll-slider" type="range" />
-      <span id="voice-startup-pre-roll-value"></span>
-      <div id="voice-tts-gain-control"></div>
-      <input id="voice-tts-gain-slider" type="range" />
-      <span id="voice-tts-gain-value"></span>
-      <input id="autofocus-chat-checkbox" type="checkbox" />
-      <input id="keyboard-shortcuts-checkbox" type="checkbox" />
-      <input id="auto-scroll-checkbox" type="checkbox" />
-      <input id="synthesized-panel-titles-checkbox" type="checkbox" />
-      <div id="status"></div>
-      <div id="panel-workspace"></div>
-    `;
+    const html = fs.readFileSync(
+      path.resolve(process.cwd(), 'packages/web-client/public/index.html'),
+      'utf8',
+    );
+    const dom = new JSDOM(html);
+    document.body.innerHTML = dom.window.document.body.innerHTML;
 
     const elements = getWebClientElements();
 
@@ -57,6 +30,9 @@ describe('getWebClientElements', () => {
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
     expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
     expect(elements?.voicePreferredSessionSelect.id).toBe('voice-preferred-session-select');
+    expect(elements?.voiceTtsPreferredSessionOnlyCheckbox.id).toBe(
+      'voice-tts-preferred-session-only-checkbox',
+    );
     expect(elements?.voiceMicInputSelect.id).toBe('voice-mic-input-select');
     expect(elements?.voiceRecognitionStartTimeoutInput.id).toBe(
       'voice-recognition-start-timeout-input',

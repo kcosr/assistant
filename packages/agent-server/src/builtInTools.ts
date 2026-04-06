@@ -1,4 +1,4 @@
-import type { AttachmentToolResult, ChatEvent } from '@assistant/shared';
+import type { AttachmentToolResult, ChatEvent, SessionConfig } from '@assistant/shared';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +15,7 @@ import { resolveAgentSession } from './sessionResolution';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
 import type { EventStore } from './events';
 import { appendAndBroadcastChatEvents, createChatEventBase } from './events/chatEventUtils';
+import { parseSessionConfigInput } from './sessionConfig';
 import type { SkillSummary } from './skills';
 import { resolveAgentToolExposureForHost } from './toolExposure';
 import type { ScheduledSessionService } from './scheduledSessions/scheduledSessionService';
@@ -37,6 +38,7 @@ interface AgentMessageArgs {
   sessionStrategy: 'latest' | 'create' | 'latest-or-create' | string;
   mode: 'sync' | 'async';
   timeoutSeconds: number;
+  sessionConfig?: SessionConfig;
 }
 
 type VoicePromptArgs = {
@@ -477,7 +479,26 @@ function parseAgentMessageArgs(raw: unknown): AgentMessageArgs {
     }
   }
 
-  return { agentId, content, sessionStrategy, mode, timeoutSeconds };
+  let sessionConfig: SessionConfig | undefined;
+  if ('sessionConfig' in obj) {
+    try {
+      const parsed = parseSessionConfigInput({
+        value: obj['sessionConfig'],
+        allowSessionTitle: false,
+      });
+      if (parsed) {
+        sessionConfig = parsed;
+      }
+    } catch (err) {
+      throw createToolError('invalid_arguments', (err as Error).message);
+    }
+  }
+
+  const result: AgentMessageArgs = { agentId, content, sessionStrategy, mode, timeoutSeconds };
+  if (sessionConfig) {
+    result.sessionConfig = sessionConfig;
+  }
+  return result;
 }
 
 interface AsyncAgentMessageContext {
@@ -799,6 +820,7 @@ export async function handleAgentMessage(
       effectiveSessionIndex,
       sessionHub,
       agentRegistry,
+      parsed.sessionConfig,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

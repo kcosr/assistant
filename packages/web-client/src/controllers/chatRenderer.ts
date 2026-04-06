@@ -210,6 +210,8 @@ export class ChatRenderer {
     InteractionResponseEvent['payload']
   >();
   private readonly projectedTranscriptEvents = new Map<number, ProjectedTranscriptEvent>();
+  private projectedTranscriptWatermarkRevision: number | null = null;
+  private projectedTranscriptWatermarkSequence = -1;
   private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
   private attachmentImageViewerOverlay: HTMLDivElement | null = null;
   private attachmentImageViewerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -258,8 +260,10 @@ export class ChatRenderer {
   }
 
   private debugLog(message: string, data: Record<string, unknown>): void {
-    void message;
-    void data;
+    if (!this.isDebugEnabled()) {
+      return;
+    }
+    console.log(`[client][renderer] ${message}`, data);
   }
 
   private previewText(text: string | undefined): string {
@@ -556,6 +560,26 @@ export class ChatRenderer {
     return this.projectedTranscriptRevision;
   }
 
+  setProjectedTranscriptSequenceWatermark(revision: number, sequence: number): void {
+    const normalizedRevision = Math.max(0, revision);
+    const normalizedSequence = Math.max(-1, sequence);
+    if (
+      this.projectedTranscriptWatermarkRevision === null ||
+      normalizedRevision > this.projectedTranscriptWatermarkRevision
+    ) {
+      this.projectedTranscriptWatermarkRevision = normalizedRevision;
+      this.projectedTranscriptWatermarkSequence = normalizedSequence;
+      return;
+    }
+    if (normalizedRevision < this.projectedTranscriptWatermarkRevision) {
+      return;
+    }
+    this.projectedTranscriptWatermarkSequence = Math.max(
+      this.projectedTranscriptWatermarkSequence,
+      normalizedSequence,
+    );
+  }
+
   /**
    * Returns the full set of projected transcript events currently tracked by
    * the renderer, ordered by sequence. Used to drive authoritative activity
@@ -567,9 +591,22 @@ export class ChatRenderer {
     );
   }
 
+  private getProjectedTranscriptFrontierSequence(): number {
+    const highestSequence = this.getHighestProjectedSequence();
+    if (
+      this.projectedTranscriptRevision !== null &&
+      this.projectedTranscriptWatermarkRevision === this.projectedTranscriptRevision
+    ) {
+      return Math.max(highestSequence, this.projectedTranscriptWatermarkSequence);
+    }
+    return highestSequence;
+  }
+
   private resetProjectedTranscriptState(): void {
     this.projectedTranscriptEvents.clear();
     this.projectedTranscriptRevision = null;
+    this.projectedTranscriptWatermarkRevision = null;
+    this.projectedTranscriptWatermarkSequence = -1;
   }
 
   private resetRenderState(): void {
@@ -618,13 +655,26 @@ export class ChatRenderer {
 
   replayProjectedEvents(
     events: ProjectedTranscriptEvent[],
-    options: { reset?: boolean } = {},
+    options: { reset?: boolean; watermarkSequence?: number } = {},
   ): ProjectedTranscriptApplyResult {
     const normalized = dedupeProjectedTranscriptEvents(events);
+    const maxIncomingSequence = normalized.reduce(
+      (highest, event) => Math.max(highest, event.sequence),
+      -1,
+    );
     if (options.reset) {
       this.resetProjectedTranscriptState();
     }
     if (normalized.length === 0) {
+      if (
+        typeof options.watermarkSequence === 'number' &&
+        this.projectedTranscriptRevision !== null
+      ) {
+        this.setProjectedTranscriptSequenceWatermark(
+          this.projectedTranscriptRevision,
+          options.watermarkSequence,
+        );
+      }
       if (options.reset) {
         this.renderStoredProjectedTranscript();
       }
@@ -659,11 +709,15 @@ export class ChatRenderer {
       for (const event of revisionEvents) {
         this.projectedTranscriptEvents.set(event.sequence, event);
       }
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'applied';
     }
 
-    const highestSequence = this.getHighestProjectedSequence();
+    const highestSequence = this.getProjectedTranscriptFrontierSequence();
     let expectedSequence = highestSequence + 1;
     let requiresReplay = false;
     let requiresRerender = false;
@@ -688,11 +742,19 @@ export class ChatRenderer {
     }
 
     if (requiresReplay) {
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'reload';
     }
 
     if (requiresRerender) {
+      this.setProjectedTranscriptSequenceWatermark(
+        incomingRevision,
+        Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+      );
       this.renderStoredProjectedTranscript();
       return 'applied';
     }
@@ -700,6 +762,10 @@ export class ChatRenderer {
     for (const event of appendedEvents) {
       this.renderProjectedEvent(event);
     }
+    this.setProjectedTranscriptSequenceWatermark(
+      incomingRevision,
+      Math.max(maxIncomingSequence, options.watermarkSequence ?? -1),
+    );
     return 'applied';
   }
 
@@ -789,9 +855,13 @@ export class ChatRenderer {
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const text = this.getRenderableUserText(event);
-    const bubble = appendMessage(turnEl, 'user', text);
+    const existingBubble =
+      this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
+    const bubble = existingBubble ?? appendMessage(turnEl, 'user', text);
+    this.resetUserBubblePresentation(bubble);
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
+    this.setUserBubbleText(bubble, text);
     const fromAgentId = event.payload.fromAgentId?.trim();
     if (fromAgentId) {
       const displayName =
@@ -813,7 +883,11 @@ export class ChatRenderer {
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const transcription = this.getRenderableUserText(event);
-    const bubble = appendMessage(turnEl, 'user', transcription);
+    const existingBubble =
+      this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
+    const bubble = existingBubble ?? appendMessage(turnEl, 'user', transcription);
+    this.resetUserBubblePresentation(bubble);
+    this.setUserBubbleText(bubble, transcription);
     bubble.classList.add('user-audio');
     bubble.dataset['inputType'] = 'audio';
     bubble.dataset['eventId'] = event.id;
@@ -836,6 +910,60 @@ export class ChatRenderer {
     const rawText =
       'transcription' in event.payload ? event.payload.transcription : event.payload.text;
     return stripContextLine(rawText);
+  }
+
+  private findRenderedUserBubble(
+    turnEl: HTMLDivElement,
+    eventId: string,
+  ): HTMLDivElement | null {
+    const bubbles = turnEl.querySelectorAll<HTMLDivElement>('.message.user[data-event-id]');
+    for (const bubble of Array.from(bubbles)) {
+      if (bubble.dataset['eventId'] === eventId) {
+        return bubble;
+      }
+    }
+    return null;
+  }
+
+  private findUnifiedUserBubbleForTurn(turnEl: HTMLDivElement): HTMLDivElement | null {
+    return turnEl.querySelector<HTMLDivElement>('.message.user[data-renderer="unified"]');
+  }
+
+  private resetUserBubblePresentation(bubble: HTMLDivElement): void {
+    bubble.classList.remove('user-audio', 'agent-message');
+    delete bubble.dataset['inputType'];
+    bubble.removeAttribute('aria-label');
+
+    const avatar = bubble.querySelector<HTMLDivElement>('.message-avatar');
+    if (avatar) {
+      avatar.classList.remove('user-audio-avatar', 'agent-message-badge');
+      avatar.replaceChildren();
+      avatar.textContent = 'U';
+      avatar.removeAttribute('aria-hidden');
+      avatar.removeAttribute('title');
+    }
+
+    const content = bubble.querySelector<HTMLDivElement>('.message-content');
+    if (content) {
+      const agentBody = content.querySelector<HTMLDivElement>('.agent-message-body');
+      const text = agentBody?.textContent ?? content.textContent ?? '';
+      content.replaceChildren();
+      content.textContent = text;
+    }
+  }
+
+  private setUserBubbleText(bubble: HTMLDivElement, text: string): void {
+    const agentBody = bubble.querySelector<HTMLDivElement>('.agent-message-body');
+    if (agentBody) {
+      agentBody.textContent = text;
+      return;
+    }
+    const content = bubble.querySelector<HTMLDivElement>('.message-content');
+    if (content) {
+      content.textContent = text;
+      return;
+    }
+    bubble.textContent = text;
   }
 
   private handleAssistantChunk(event: RenderedTranscriptEvent<AssistantChunkEvent['payload']>): void {
@@ -1025,6 +1153,15 @@ export class ChatRenderer {
     thinkingEl.textContent = text;
     thinkingEl.dataset['eventId'] = event.id;
     thinkingEl.dataset['renderer'] = 'unified';
+    this.debugLog('thinking_done_applied', {
+      eventId: event.id,
+      turnId: event.turnId ?? null,
+      responseId,
+      segmentIdx,
+      segmentKey,
+      textLength: text.length,
+      textPreview: this.previewText(text),
+    });
   }
 
   private renderInfoMessage(
@@ -1146,14 +1283,14 @@ export class ChatRenderer {
         );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
       }
 
       this.updateVoiceToolBubble(bubble, toolName, this.getVoiceToolText(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
       return;
     }
 
@@ -1169,6 +1306,9 @@ export class ChatRenderer {
       this.updatePendingAttachmentToolBubble(bubble, this.getPendingAttachmentSummary(args));
       this.toolInputBuffers.delete(callId);
       this.toolInputOffsets.delete(callId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
       return;
     }
 
@@ -1294,11 +1434,23 @@ export class ChatRenderer {
       }
     }
 
-    // Mark text segment break so any text after this tool goes into a new element
-    // (only if we created a new block - streaming blocks already handled)
-    if (responseId && !existingBlock) {
+    // Tool calls define the structural boundary between pre-tool and post-tool text.
+    // Streaming tool_input chunks can arrive before final thinking settles, so they must
+    // not advance the shared segment index on their own.
+    if (responseId) {
       this.markTextSegmentBreak(responseId);
     }
+
+    this.debugLog('tool_call_applied', {
+      eventId: event.id,
+      turnId: event.turnId ?? null,
+      responseId: responseId ?? null,
+      toolCallId: callId,
+      toolName,
+      existingBlock,
+      nextTextSegmentIdx: responseId ? (this.textSegmentIndex.get(responseId) ?? 0) : null,
+      pendingTextSegmentBreak: responseId ? this.needsNewTextSegment.has(responseId) : false,
+    });
   }
 
   private handleToolInputChunk(
@@ -1346,9 +1498,6 @@ export class ChatRenderer {
         );
         toolCallsContainer.appendChild(bubble);
         this.toolCallElements.set(callId, bubble);
-        if (responseId) {
-          this.markTextSegmentBreak(responseId);
-        }
       }
       const parsedText = this.getVoiceToolTextFromArgsJson(newBuffer);
       if (parsedText !== null) {
@@ -1404,11 +1553,6 @@ export class ChatRenderer {
 
       // Show initial pending state
       setToolOutputBlockPending(block, '', { state: 'running' });
-
-      // Mark text segment break for the next assistant text
-      if (responseId) {
-        this.markTextSegmentBreak(responseId);
-      }
     }
 
     // Update the input section with streaming args
@@ -1474,12 +1618,15 @@ export class ChatRenderer {
   private handleToolResult(
     event: RenderedTranscriptEvent<{
       toolCallId: string;
+      toolName?: string;
       result?: unknown;
       error?: { code: string; message: string };
     }>,
   ): void {
     const callId = event.payload.toolCallId;
     const responseId = this.getResponseId(event.responseId);
+    const resultToolName = event.payload.toolName?.trim() || undefined;
+    const streamedToolName = this.toolOutputToolNames.get(callId) ?? undefined;
 
     // Clean up streaming state
     this.toolOutputBuffers.delete(callId);
@@ -1535,12 +1682,35 @@ export class ChatRenderer {
         responseId,
         event.timestamp,
       );
-
-      block = createToolOutputBlock({
-        callId,
-        toolName: event.payload.toolCallId,
-        expanded: this.shouldExpandToolOutput(),
-      });
+      const toolName = resultToolName ?? streamedToolName ?? 'tool';
+      if (toolName === 'agents_message') {
+        const resultObj =
+          event.payload.result && typeof event.payload.result === 'object'
+            ? (event.payload.result as Record<string, unknown>)
+            : null;
+        const agentId =
+          resultObj && typeof resultObj['agentId'] === 'string'
+            ? (resultObj['agentId'] as string)
+            : 'agent';
+        const agentDisplayName =
+          this.options.getAgentDisplayName?.(agentId) ??
+          agentId.charAt(0).toUpperCase() + agentId.slice(1).toLowerCase() + ' Agent';
+        block = createToolOutputBlock({
+          callId,
+          toolName: agentDisplayName,
+          expanded: this.shouldExpandToolOutput(),
+        });
+        block.classList.add('agent-message-exchange');
+        block.dataset['toolName'] = 'agents_message';
+      } else {
+        const headerLabel = extractToolCallLabel(toolName, '');
+        block = createToolOutputBlock({
+          callId,
+          toolName,
+          expanded: this.shouldExpandToolOutput(),
+          ...(headerLabel ? { headerLabel } : {}),
+        });
+      }
       block.dataset['toolCallId'] = callId;
       block.dataset['eventId'] = event.id;
       block.dataset['renderer'] = 'unified';
@@ -1559,6 +1729,16 @@ export class ChatRenderer {
 
     if (!block) {
       return;
+    }
+
+    if (resultToolName) {
+      const currentToolName = block.dataset['toolName'];
+      if (!currentToolName || currentToolName === callId) {
+        block.dataset['toolName'] = resultToolName;
+      }
+      if (resultToolName === 'agents_message') {
+        block.classList.add('agent-message-exchange');
+      }
     }
 
     // Ensure the input section is populated if we have args stored on the event.
@@ -2417,6 +2597,9 @@ export class ChatRenderer {
     messageEl.classList.remove('pending');
     messageEl.classList.add('resolved');
 
+    // Add a turn-level indicator similar to the questionnaire submission one
+    this.renderAgentCallbackIndicator(event);
+
     // Check if this is a tool block (agents_message) or agent-message element
     const isToolBlock = messageEl.classList.contains('tool-output-block');
 
@@ -2491,6 +2674,31 @@ export class ChatRenderer {
     }
     turnEl.appendChild(indicator);
 
+  }
+
+  private renderAgentCallbackIndicator(
+    event: RenderedTranscriptEvent<{
+      messageId: string;
+      fromAgentId: string;
+      fromSessionId: string;
+      result: string;
+    }>,
+  ): void {
+    const turnId = this.getTurnId(event.turnId, event.id);
+    const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
+
+    const fromAgentId = event.payload.fromAgentId;
+    const displayName =
+      this.options.getAgentDisplayName?.(fromAgentId) ??
+      fromAgentId.charAt(0).toUpperCase() + fromAgentId.slice(1);
+
+    const indicator = document.createElement('div');
+    indicator.className = 'agent-callback-indicator';
+    indicator.textContent = `Received response from ${displayName}`;
+    indicator.dataset['eventId'] = event.id;
+    indicator.dataset['renderer'] = 'unified';
+    indicator.dataset['messageId'] = event.payload.messageId;
+    turnEl.appendChild(indicator);
   }
 
   // Interrupts and errors are rendered as indicators on the current turn.

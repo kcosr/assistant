@@ -696,6 +696,7 @@ describe('ClaudeSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'tool_result' }>
       | undefined;
     expect(toolResult?.payload.toolCallId).toBe('toolu-1');
+    expect(toolResult?.payload.toolName).toBe('bash');
     expect(toolResult?.payload.result).toEqual(toolResultPayload);
   });
 
@@ -836,6 +837,7 @@ describe('CodexSessionHistoryProvider', () => {
       | Extract<ChatEvent, { type: 'tool_result' }>
       | undefined;
     expect(toolResult?.payload.toolCallId).toBe('call-1');
+    expect(toolResult?.payload.toolName).toBe('shell_command');
     expect(toolResult?.payload.result).toBe('ok');
 
     const customToolResult = events.find(
@@ -843,6 +845,7 @@ describe('CodexSessionHistoryProvider', () => {
         event.type === 'tool_result' &&
         event.payload.toolCallId === 'call-2',
     ) as Extract<ChatEvent, { type: 'tool_result' }> | undefined;
+    expect(customToolResult?.payload.toolName).toBe('apply_patch');
     expect(customToolResult?.payload.result).toEqual({ output: 'Success' });
 
     const assistant = events.find((event) => event.type === 'assistant_done') as

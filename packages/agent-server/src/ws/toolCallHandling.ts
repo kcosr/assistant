@@ -707,6 +707,7 @@ export async function handleChatToolCalls(options: {
         turnId,
         responseId,
         toolCallId: call.id,
+        toolName: call.name,
         result,
         error,
       });
