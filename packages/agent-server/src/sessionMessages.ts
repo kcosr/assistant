@@ -222,6 +222,7 @@ export async function startSessionMessage(options: {
       command: bangResult.command,
       sessionId: input.sessionId,
       sessionHub,
+      summary: state.summary,
       ...(eventStore ? { eventStore } : {}),
       ...(workingDir ? { workingDir } : {}),
     });

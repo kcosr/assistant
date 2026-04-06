@@ -311,6 +311,7 @@ export async function handleTextInputWithChatCompletions(options: {
       command: bangResult.command,
       sessionId,
       sessionHub,
+      summary: state.summary,
       eventStore,
       ...(workingDir ? { workingDir } : {}),
     });

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 import type { SessionHub } from './sessionHub';
+import type { SessionSummary } from './sessionIndex';
 import type { EventStore } from './events';
 import {
   appendAndBroadcastChatEvents,
@@ -231,6 +232,7 @@ export interface HandleBangCommandOptions {
   command: string;
   sessionId: string;
   sessionHub: SessionHub;
+  summary: SessionSummary;
   eventStore?: EventStore;
   /** Session working directory (from core.workingDir), or undefined. */
   workingDir?: string;
@@ -243,15 +245,38 @@ export interface HandleBangCommandOptions {
  * then persists tool_call + tool_result events.
  */
 export async function handleBangCommand(options: HandleBangCommandOptions): Promise<void> {
-  const { command, sessionId, sessionHub, eventStore, workingDir, timeoutMs, maxOutputBytes } =
-    options;
+  const {
+    command,
+    sessionId,
+    sessionHub,
+    summary,
+    eventStore,
+    workingDir,
+    timeoutMs,
+    maxOutputBytes,
+  } = options;
 
   const cwd = workingDir || process.cwd();
   const toolCallId = randomUUID() as string;
   const turnId = randomUUID() as string;
   const responseId = randomUUID() as string;
 
-  // 1. Emit turn_start + tool_call_start so clients see the spinner immediately
+  // 1. Emit turn_start so clients see the spinner and Pi gets request boundaries
+  //    for turn deletion support.
+  const piSessionWriter = sessionHub.getPiSessionWriter?.();
+  let currentSummary = summary;
+  if (piSessionWriter) {
+    const updatedSummary = await piSessionWriter.appendTurnStart({
+      summary: currentSummary,
+      turnId,
+      trigger: 'user',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+    });
+    if (updatedSummary) {
+      currentSummary = updatedSummary;
+    }
+  }
+
   const turnStartEvents: ChatEvent[] = [
     {
       ...createChatEventBase({ sessionId, turnId }),
@@ -348,7 +373,16 @@ export async function handleBangCommand(options: HandleBangCommandOptions): Prom
     ...toolError,
   });
 
-  // 5. Close the turn
+  // 5. Close the turn — write Pi request boundary for turn deletion support
+  if (piSessionWriter) {
+    await piSessionWriter.appendTurnEnd({
+      summary: currentSummary,
+      turnId,
+      status: 'completed',
+      updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+    });
+  }
+
   const turnEndEvents: ChatEvent[] = [
     {
       ...createChatEventBase({ sessionId, turnId, responseId }),
