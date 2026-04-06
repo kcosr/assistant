@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added bang shell command feature (`!command`) for executing shell commands directly in chat with real-time streaming output, dedicated terminal bubble rendering, and `_assistant_` prefix LLM suppression. Gated behind `bangCommandEnabled` agent config flag (default: false). ([#94](https://github.com/kcosr/assistant/pull/94))
 - Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
@@ -20,6 +21,7 @@
 
 ### Fixed
 
+- Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))
 - Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Fixed chat user-bubble rendering during replay hydration so refreshes reuse a single unified user bubble per turn instead of transiently showing duplicate user messages while an in-flight turn is rebuilding. ([#93](https://github.com/kcosr/assistant/pull/93))
