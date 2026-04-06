@@ -35,6 +35,7 @@ final class AssistantVoiceConfig {
     static final int MAX_STARTUP_PRE_ROLL_MS = 4096;
     static final int DEFAULT_STARTUP_PRE_ROLL_MS = 512;
     static final boolean DEFAULT_MEDIA_BUTTONS_ENABLED = false;
+    static final boolean DEFAULT_TTS_PREFERRED_SESSION_ONLY = false;
 
     private static final String PREFS_NAME = "assistant_voice_runtime";
     private static final String KEY_AUDIO_MODE = "audio_mode";
@@ -58,6 +59,7 @@ final class AssistantVoiceConfig {
     private static final String KEY_RECOGNIZE_STOP_COMMAND_ENABLED = "recognize_stop_command_enabled";
     private static final String KEY_STARTUP_PRE_ROLL_MS = "startup_pre_roll_ms";
     private static final String KEY_MEDIA_BUTTONS_ENABLED = "media_buttons_enabled";
+    private static final String KEY_TTS_PREFERRED_SESSION_ONLY = "tts_preferred_session_only";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
 
@@ -81,6 +83,7 @@ final class AssistantVoiceConfig {
     static final String EXTRA_RECOGNIZE_STOP_COMMAND_ENABLED = "recognizeStopCommandEnabled";
     static final String EXTRA_STARTUP_PRE_ROLL_MS = "startupPreRollMs";
     static final String EXTRA_MEDIA_BUTTONS_ENABLED = "mediaButtonsEnabled";
+    static final String EXTRA_TTS_PREFERRED_SESSION_ONLY = "ttsPreferredSessionOnly";
 
     final String audioMode;
     final boolean autoListenEnabled;
@@ -103,6 +106,7 @@ final class AssistantVoiceConfig {
     final boolean recognizeStopCommandEnabled;
     final int startupPreRollMs;
     final boolean mediaButtonsEnabled;
+    final boolean ttsPreferredSessionOnly;
 
     AssistantVoiceConfig(
         String audioMode,
@@ -125,7 +129,8 @@ final class AssistantVoiceConfig {
         float recognitionCueGain,
         boolean recognizeStopCommandEnabled,
         int startupPreRollMs,
-        boolean mediaButtonsEnabled
+        boolean mediaButtonsEnabled,
+        boolean ttsPreferredSessionOnly
     ) {
         this.audioMode = normalizeAudioMode(audioMode);
         this.autoListenEnabled = autoListenEnabled;
@@ -169,6 +174,7 @@ final class AssistantVoiceConfig {
             DEFAULT_STARTUP_PRE_ROLL_MS
         );
         this.mediaButtonsEnabled = mediaButtonsEnabled;
+        this.ttsPreferredSessionOnly = ttsPreferredSessionOnly;
     }
 
     static AssistantVoiceConfig load(Context context) {
@@ -200,7 +206,8 @@ final class AssistantVoiceConfig {
                 DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED
             ),
             prefs.getInt(KEY_STARTUP_PRE_ROLL_MS, DEFAULT_STARTUP_PRE_ROLL_MS),
-            prefs.getBoolean(KEY_MEDIA_BUTTONS_ENABLED, DEFAULT_MEDIA_BUTTONS_ENABLED)
+            prefs.getBoolean(KEY_MEDIA_BUTTONS_ENABLED, DEFAULT_MEDIA_BUTTONS_ENABLED),
+            prefs.getBoolean(KEY_TTS_PREFERRED_SESSION_ONLY, DEFAULT_TTS_PREFERRED_SESSION_ONLY)
         );
     }
 
@@ -231,6 +238,7 @@ final class AssistantVoiceConfig {
             )
             .putInt(KEY_STARTUP_PRE_ROLL_MS, config.startupPreRollMs)
             .putBoolean(KEY_MEDIA_BUTTONS_ENABLED, config.mediaButtonsEnabled)
+            .putBoolean(KEY_TTS_PREFERRED_SESSION_ONLY, config.ttsPreferredSessionOnly)
             .apply();
     }
 
@@ -295,7 +303,11 @@ final class AssistantVoiceConfig {
                 fallback.recognizeStopCommandEnabled
             ),
             intent.getIntExtra(EXTRA_STARTUP_PRE_ROLL_MS, fallback.startupPreRollMs),
-            intent.getBooleanExtra(EXTRA_MEDIA_BUTTONS_ENABLED, fallback.mediaButtonsEnabled)
+            intent.getBooleanExtra(EXTRA_MEDIA_BUTTONS_ENABLED, fallback.mediaButtonsEnabled),
+            intent.getBooleanExtra(
+                EXTRA_TTS_PREFERRED_SESSION_ONLY,
+                fallback.ttsPreferredSessionOnly
+            )
         );
     }
 
@@ -320,6 +332,7 @@ final class AssistantVoiceConfig {
         intent.putExtra(EXTRA_RECOGNIZE_STOP_COMMAND_ENABLED, recognizeStopCommandEnabled);
         intent.putExtra(EXTRA_STARTUP_PRE_ROLL_MS, startupPreRollMs);
         intent.putExtra(EXTRA_MEDIA_BUTTONS_ENABLED, mediaButtonsEnabled);
+        intent.putExtra(EXTRA_TTS_PREFERRED_SESSION_ONLY, ttsPreferredSessionOnly);
         return intent;
     }
 
@@ -452,7 +465,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -478,7 +492,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -511,7 +526,8 @@ final class AssistantVoiceConfig {
             && recognitionCueGain == config.recognitionCueGain
             && recognizeStopCommandEnabled == config.recognizeStopCommandEnabled
             && startupPreRollMs == config.startupPreRollMs
-            && mediaButtonsEnabled == config.mediaButtonsEnabled;
+            && mediaButtonsEnabled == config.mediaButtonsEnabled
+            && ttsPreferredSessionOnly == config.ttsPreferredSessionOnly;
     }
 
     @Override
@@ -537,7 +553,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -569,7 +586,8 @@ final class AssistantVoiceConfig {
                 recognizeStopCommandEnabled
             ),
             settings.optInt("startupPreRollMs", startupPreRollMs),
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            settings.optBoolean("ttsPreferredSessionOnly", ttsPreferredSessionOnly)
         );
     }
 
@@ -595,7 +613,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -621,7 +640,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -647,7 +667,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -673,7 +694,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -699,7 +721,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            enabled
+            enabled,
+            ttsPreferredSessionOnly
         );
     }
 
@@ -725,7 +748,8 @@ final class AssistantVoiceConfig {
             recognitionCueGain,
             recognizeStopCommandEnabled,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            ttsPreferredSessionOnly
         );
     }
 

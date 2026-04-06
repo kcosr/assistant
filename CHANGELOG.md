@@ -11,6 +11,7 @@
 - Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics.
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging.
 - Added skills root normalization relative to config directory (matching existing context files behavior).
+- Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions.
 
 ### Changed
 

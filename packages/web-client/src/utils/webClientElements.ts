@@ -8,6 +8,7 @@ export interface WebClientElements {
   autoListenCheckbox: HTMLInputElement;
   voiceAdapterBaseUrlInput: HTMLInputElement;
   voicePreferredSessionSelect: HTMLSelectElement;
+  voiceTtsPreferredSessionOnlyCheckbox: HTMLInputElement;
   voiceMicInputSelect: HTMLSelectElement;
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
   voiceRecognitionCompletionTimeoutInput: HTMLInputElement;
@@ -87,6 +88,9 @@ export function getWebClientElements(): WebClientElements | null {
   const voicePreferredSessionSelect = getElement<HTMLSelectElement>(
     'voice-preferred-session-select',
   );
+  const voiceTtsPreferredSessionOnlyCheckbox = getElement<HTMLInputElement>(
+    'voice-tts-preferred-session-only-checkbox',
+  );
   const voiceMicInputSelect = getElement<HTMLSelectElement>('voice-mic-input-select');
   const voiceRecognitionStartTimeoutInput = getElement<HTMLInputElement>(
     'voice-recognition-start-timeout-input',
@@ -150,6 +154,7 @@ export function getWebClientElements(): WebClientElements | null {
     !autoListenCheckbox ||
     !voiceAdapterBaseUrlInput ||
     !voicePreferredSessionSelect ||
+    !voiceTtsPreferredSessionOnlyCheckbox ||
     !voiceMicInputSelect ||
     !voiceRecognitionStartTimeoutInput ||
     !voiceRecognitionCompletionTimeoutInput ||
@@ -187,6 +192,7 @@ export function getWebClientElements(): WebClientElements | null {
     autoListenCheckbox,
     voiceAdapterBaseUrlInput,
     voicePreferredSessionSelect,
+    voiceTtsPreferredSessionOnlyCheckbox,
     voiceMicInputSelect,
     voiceRecognitionStartTimeoutInput,
     voiceRecognitionCompletionTimeoutInput,

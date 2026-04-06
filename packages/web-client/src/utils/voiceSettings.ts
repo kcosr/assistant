@@ -21,6 +21,7 @@ export interface VoiceSettings {
   autoListenEnabled: boolean;
   voiceAdapterBaseUrl: string;
   preferredVoiceSessionId: string;
+  ttsPreferredSessionOnly: boolean;
   selectedMicDeviceId: string;
   recognitionStartTimeoutMs: number;
   recognitionCompletionTimeoutMs: number;
@@ -143,6 +144,7 @@ export function createDefaultVoiceSettings(options?: {
     autoListenEnabled: isAndroid,
     voiceAdapterBaseUrl: DEFAULT_VOICE_ADAPTER_BASE_URL,
     preferredVoiceSessionId: '',
+    ttsPreferredSessionOnly: false,
     selectedMicDeviceId: '',
     recognitionStartTimeoutMs: DEFAULT_RECOGNITION_START_TIMEOUT_MS,
     recognitionCompletionTimeoutMs: DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
@@ -175,6 +177,10 @@ export function normalizeVoiceSettings(
         : defaults.autoListenEnabled,
     voiceAdapterBaseUrl: normalizeUrl(record['voiceAdapterBaseUrl']),
     preferredVoiceSessionId: normalizeOptionalString(record['preferredVoiceSessionId']),
+    ttsPreferredSessionOnly:
+      typeof record['ttsPreferredSessionOnly'] === 'boolean'
+        ? record['ttsPreferredSessionOnly']
+        : defaults.ttsPreferredSessionOnly,
     selectedMicDeviceId: normalizeOptionalString(record['selectedMicDeviceId']),
     recognitionStartTimeoutMs: normalizePositiveInt(
       record['recognitionStartTimeoutMs'],
@@ -211,6 +217,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.autoListenEnabled === right.autoListenEnabled &&
     left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
     left.preferredVoiceSessionId === right.preferredVoiceSessionId &&
+    left.ttsPreferredSessionOnly === right.ttsPreferredSessionOnly &&
     left.selectedMicDeviceId === right.selectedMicDeviceId &&
     left.recognitionStartTimeoutMs === right.recognitionStartTimeoutMs &&
     left.recognitionCompletionTimeoutMs === right.recognitionCompletionTimeoutMs &&

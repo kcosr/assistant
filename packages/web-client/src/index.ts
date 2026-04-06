@@ -524,6 +524,7 @@ async function main(): Promise<void> {
     autoListenCheckbox: autoListenCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
     voicePreferredSessionSelect: voicePreferredSessionSelectEl,
+    voiceTtsPreferredSessionOnlyCheckbox: voiceTtsPreferredSessionOnlyCheckboxEl,
     voiceMicInputSelect: voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
     voiceRecognitionCompletionTimeoutInput: voiceRecognitionCompletionTimeoutInputEl,
@@ -1100,6 +1101,7 @@ async function main(): Promise<void> {
     applyVoiceSettingsToChatInputs({
       ...currentSettings,
       preferredVoiceSessionId: '',
+      ttsPreferredSessionOnly: false,
     });
   }
 
@@ -3616,6 +3618,7 @@ async function main(): Promise<void> {
       recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
       recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
       preferredVoiceSessionId: voicePreferredSessionSelectEl.value,
+      ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
       recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
       recognitionCueGain: recognitionCueGainPercentToValue(
         voiceRecognitionCueGainSliderEl.value,
@@ -3640,6 +3643,7 @@ async function main(): Promise<void> {
   autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voicePreferredSessionSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  voiceTtsPreferredSessionOnlyCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceMicInputSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceRecognitionCompletionTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
@@ -3662,6 +3666,7 @@ async function main(): Promise<void> {
     if (voicePreferredSessionSelectEl.value !== settings.preferredVoiceSessionId) {
       voicePreferredSessionSelectEl.value = '';
     }
+    voiceTtsPreferredSessionOnlyCheckboxEl.checked = settings.ttsPreferredSessionOnly;
     voiceMicInputSelectEl.value = settings.selectedMicDeviceId;
     if (voiceMicInputSelectEl.value !== settings.selectedMicDeviceId) {
       voiceMicInputSelectEl.value = '';

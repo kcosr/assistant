@@ -109,6 +109,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     autoListenEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
     preferredVoiceSessionId: '',
+    ttsPreferredSessionOnly: false,
     selectedMicDeviceId: '',
     recognitionStartTimeoutMs: 30000,
     recognitionCompletionTimeoutMs: 60000,
