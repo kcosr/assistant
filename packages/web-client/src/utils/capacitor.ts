@@ -3,14 +3,50 @@
  * These functions safely no-op when not running in a Capacitor context.
  */
 
+export type NativeThemeScheme = 'light' | 'dark';
+
+type StatusBarPlugin = {
+  setStyle: (opts: { style: unknown }) => Promise<void> | void;
+};
+
+type StatusBarStyleValues = {
+  Dark: unknown;
+  Light: unknown;
+};
+
 // Helper to dynamically import Capacitor plugins without TypeScript resolution
 const importModule = new Function('specifier', 'return import(specifier)') as <T>(
   specifier: string,
 ) => Promise<T>;
 
-/**
- * Check if running in Capacitor Android context.
- */
+let lastAppliedStatusBarStyle: 'dark' | 'light' | null = null;
+let requestedStatusBarStyle: 'dark' | 'light' | null = null;
+let pendingStatusBarSync: Promise<void> | null = null;
+let lastStatusBarSyncFailed = false;
+
+function getCapacitorGlobal(): {
+  Plugins?: {
+    App?: unknown;
+    StatusBar?: unknown;
+  };
+  App?: unknown;
+  StatusBar?: unknown;
+  registerPlugin?: (name: string) => unknown;
+} | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return ((window as unknown as { Capacitor?: unknown }).Capacitor ?? null) as {
+    Plugins?: {
+      App?: unknown;
+      StatusBar?: unknown;
+    };
+    App?: unknown;
+    StatusBar?: unknown;
+    registerPlugin?: (name: string) => unknown;
+  } | null;
+}
+
 /**
  * Check if running in Capacitor Android context.
  */
@@ -77,9 +113,7 @@ export async function setupBackButtonHandler(
         }
         return null;
       } catch {
-        const cap = (window as unknown as {
-          Capacitor?: { Plugins?: { App?: unknown }; App?: unknown };
-        }).Capacitor;
+        const cap = getCapacitorGlobal();
         const appPlugin = (
           (cap?.Plugins?.App as {
             addListener?: (
@@ -160,8 +194,111 @@ function setupKeyboardDetection(): void {
   window.visualViewport.addEventListener('resize', handleResize);
 }
 
+async function loadStatusBarPlugin(
+  importer: typeof importModule,
+): Promise<{ StatusBar: StatusBarPlugin; Style: StatusBarStyleValues } | null> {
+  try {
+    const { StatusBar, Style } = await importer<{
+      StatusBar: StatusBarPlugin;
+      Style: StatusBarStyleValues;
+    }>('@capacitor/status-bar');
+    if (StatusBar && typeof StatusBar.setStyle === 'function') {
+      return { StatusBar, Style };
+    }
+  } catch {
+    // Fall through to the global Capacitor bridge.
+  }
+
+  const cap = getCapacitorGlobal();
+  const statusBarPlugin = (
+    (cap?.Plugins?.StatusBar as StatusBarPlugin | undefined) ??
+    (cap?.StatusBar as StatusBarPlugin | undefined) ??
+    (typeof cap?.registerPlugin === 'function'
+      ? (cap.registerPlugin('StatusBar') as StatusBarPlugin)
+      : null)
+  ) as StatusBarPlugin | null;
+  if (!statusBarPlugin || typeof statusBarPlugin.setStyle !== 'function') {
+    return null;
+  }
+
+  // The native bridge accepts string enum values even without the ESM wrapper.
+  return {
+    StatusBar: statusBarPlugin,
+    Style: {
+      Dark: 'DARK',
+      Light: 'LIGHT',
+    },
+  };
+}
+
+export async function syncStatusBarThemeForScheme(
+  scheme: NativeThemeScheme,
+  options?: {
+    importModule?: typeof importModule;
+    isAndroid?: () => boolean;
+    force?: boolean;
+  },
+): Promise<void> {
+  const isAndroid = options?.isAndroid ?? isCapacitorAndroid;
+  if (!isAndroid()) {
+    return;
+  }
+
+  const styleKey = scheme === 'dark' ? 'dark' : 'light';
+  if (options?.force && lastAppliedStatusBarStyle === styleKey && !pendingStatusBarSync) {
+    lastAppliedStatusBarStyle = null;
+  }
+  requestedStatusBarStyle = styleKey;
+  if (lastAppliedStatusBarStyle === styleKey && !pendingStatusBarSync) {
+    return;
+  }
+  if (pendingStatusBarSync) {
+    await pendingStatusBarSync;
+    return;
+  }
+
+  const importer = options?.importModule ?? importModule;
+
+  pendingStatusBarSync = (async () => {
+    try {
+      lastStatusBarSyncFailed = false;
+      const statusBarModule = await loadStatusBarPlugin(importer);
+      if (!statusBarModule) {
+        return;
+      }
+      const { StatusBar, Style } = statusBarModule;
+
+      while (requestedStatusBarStyle && requestedStatusBarStyle !== lastAppliedStatusBarStyle) {
+        const nextStyle = requestedStatusBarStyle;
+        await StatusBar.setStyle({
+          style: nextStyle === 'dark' ? Style.Dark : Style.Light,
+        });
+        lastAppliedStatusBarStyle = nextStyle;
+      }
+    } catch {
+      // Not in Capacitor context or plugin not available.
+      lastStatusBarSyncFailed = true;
+    } finally {
+      pendingStatusBarSync = null;
+    }
+  })();
+
+  await pendingStatusBarSync;
+  if (
+    requestedStatusBarStyle &&
+    requestedStatusBarStyle !== lastAppliedStatusBarStyle &&
+    !pendingStatusBarSync &&
+    !lastStatusBarSyncFailed
+  ) {
+    await syncStatusBarThemeForScheme(
+      requestedStatusBarStyle === 'dark' ? 'dark' : 'light',
+      options,
+    );
+  }
+}
+
 /**
- * Configure mobile-specific styles and status bar.
+ * Configure mobile-specific layout shims for Capacitor Android.
  *
  * Adds fixed padding for Android status bar and navigation bar since
  * CSS safe-area-inset doesn't work reliably in Android WebView.
@@ -176,20 +313,6 @@ export async function configureStatusBar(): Promise<void> {
 
     // Detect keyboard visibility and hide bottom padding when keyboard is up
     setupKeyboardDetection();
-  }
-
-  try {
-    const { StatusBar, Style } = await importModule<{
-      StatusBar: {
-        setStyle: (opts: { style: unknown }) => Promise<void>;
-      };
-      Style: { Dark: unknown; Light: unknown };
-    }>('@capacitor/status-bar');
-
-    // Dark style (light text) to match our dark theme
-    await StatusBar.setStyle({ style: Style.Dark });
-  } catch {
-    // Not in Capacitor context or plugin not available
   }
 }
 
@@ -335,4 +458,11 @@ export async function openExternalUrl(url: string): Promise<void> {
   } catch {
     // Ignore failures opening the URL on web.
   }
+}
+
+export function __resetCapacitorTestState(): void {
+  lastAppliedStatusBarStyle = null;
+  requestedStatusBarStyle = null;
+  pendingStatusBarSync = null;
+  lastStatusBarSyncFailed = false;
 }
