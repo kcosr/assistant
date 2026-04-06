@@ -2058,7 +2058,17 @@ function buildProjectedTranscriptFromPiSession(
         overlayEventType === 'questionnaire_reprompt' ||
         overlayEventType === 'questionnaire_update'
       ) {
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        // Questionnaire lifecycle events are emitted without a turnId (they
+        // happen between the original assistant turn and the callback turn).
+        // Attach to the last closed turn so we don't create an empty synthetic
+        // turn that shows up as a bare divider on replay.
+        const isQuestionnaire =
+          overlayEventType === 'questionnaire_reprompt' || overlayEventType === 'questionnaire_update';
+        const requestId =
+          requestIdFromEntry ||
+          (isQuestionnaire
+            ? (currentRequestId ?? lastClosedExplicitRequestId ?? ensureRequest(entry, timestamp))
+            : ensureRequest(entry, timestamp));
         pushProjected({
           timestamp,
           requestId,
@@ -2076,7 +2086,13 @@ function buildProjectedTranscriptFromPiSession(
         overlayEventType === 'interaction_response' ||
         overlayEventType === 'questionnaire_submission'
       ) {
-        const requestId = requestIdFromEntry || ensureRequest(entry, timestamp);
+        // Same rationale as above — questionnaire_submission events lack a
+        // turnId and land between turns.
+        const requestId =
+          requestIdFromEntry ||
+          (overlayEventType === 'questionnaire_submission'
+            ? (currentRequestId ?? lastClosedExplicitRequestId ?? ensureRequest(entry, timestamp))
+            : ensureRequest(entry, timestamp));
         pushProjected({
           timestamp,
           requestId,
