@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.18.2] - 2026-04-06
 
 ### Breaking Changes
 
@@ -18,6 +18,7 @@
 - Fixed Android back-button dismissal so the voice settings modal closes like other dialog-manager modals ([#92](https://github.com/kcosr/assistant/pull/92)).
 
 ### Removed
+
 
 ## [0.18.1] - 2026-04-05
 
