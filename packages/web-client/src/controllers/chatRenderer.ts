@@ -855,9 +855,12 @@ export class ChatRenderer {
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const text = this.getRenderableUserText(event);
-    const bubble = appendMessage(turnEl, 'user', text);
+    const existingBubble =
+      this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
+    const bubble = existingBubble ?? appendMessage(turnEl, 'user', text);
     bubble.dataset['eventId'] = event.id;
     bubble.dataset['renderer'] = 'unified';
+    this.setUserBubbleText(bubble, text);
     const fromAgentId = event.payload.fromAgentId?.trim();
     if (fromAgentId) {
       const displayName =
@@ -879,7 +882,10 @@ export class ChatRenderer {
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
     const transcription = this.getRenderableUserText(event);
-    const bubble = appendMessage(turnEl, 'user', transcription);
+    const existingBubble =
+      this.findRenderedUserBubble(turnEl, event.id) ?? this.findUnifiedUserBubbleForTurn(turnEl);
+    const bubble = existingBubble ?? appendMessage(turnEl, 'user', transcription);
+    this.setUserBubbleText(bubble, transcription);
     bubble.classList.add('user-audio');
     bubble.dataset['inputType'] = 'audio';
     bubble.dataset['eventId'] = event.id;
@@ -902,6 +908,37 @@ export class ChatRenderer {
     const rawText =
       'transcription' in event.payload ? event.payload.transcription : event.payload.text;
     return stripContextLine(rawText);
+  }
+
+  private findRenderedUserBubble(
+    turnEl: HTMLDivElement,
+    eventId: string,
+  ): HTMLDivElement | null {
+    const bubbles = turnEl.querySelectorAll<HTMLDivElement>('.message.user[data-event-id]');
+    for (const bubble of Array.from(bubbles)) {
+      if (bubble.dataset['eventId'] === eventId) {
+        return bubble;
+      }
+    }
+    return null;
+  }
+
+  private findUnifiedUserBubbleForTurn(turnEl: HTMLDivElement): HTMLDivElement | null {
+    return turnEl.querySelector<HTMLDivElement>('.message.user[data-renderer="unified"]');
+  }
+
+  private setUserBubbleText(bubble: HTMLDivElement, text: string): void {
+    const agentBody = bubble.querySelector<HTMLDivElement>('.agent-message-body');
+    if (agentBody) {
+      agentBody.textContent = text;
+      return;
+    }
+    const content = bubble.querySelector<HTMLDivElement>('.message-content');
+    if (content) {
+      content.textContent = text;
+      return;
+    }
+    bubble.textContent = text;
   }
 
   private handleAssistantChunk(event: RenderedTranscriptEvent<AssistantChunkEvent['payload']>): void {

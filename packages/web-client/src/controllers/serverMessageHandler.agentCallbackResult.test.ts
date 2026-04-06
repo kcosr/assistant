@@ -255,7 +255,7 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
   });
 
-  it('forces transcript reload when a session becomes ready', async () => {
+  it('loads the transcript when a session becomes ready', async () => {
     const { handler, refreshSessions, loadSessionTranscript } = makeHandler();
 
     await handler.handle({
@@ -267,7 +267,7 @@ describe('ServerMessageHandler typing indicator', () => {
     });
 
     expect(refreshSessions).toHaveBeenCalledWith('s-1');
-    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1', { force: true });
+    expect(loadSessionTranscript).toHaveBeenCalledWith('s-1');
   });
 
   it('clears cached transcript state when a session is cleared', async () => {

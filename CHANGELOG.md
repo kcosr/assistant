@@ -19,6 +19,10 @@
 
 ### Fixed
 
+- Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events ([#PR](<pr-url>)).
+- Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session ([#PR](<pr-url>)).
+- Fixed chat user-bubble rendering during replay hydration so refreshes reuse a single unified user bubble per turn instead of transiently showing duplicate user messages while an in-flight turn is rebuilding ([#PR](<pr-url>)).
+
 ### Removed
 
 ## [0.18.2] - 2026-04-06

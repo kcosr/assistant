@@ -656,6 +656,76 @@ describe('ChatRenderer', () => {
     expect(container.querySelector('[data-tool-name="voice_ask"].tool-output-block')).toBeNull();
   });
 
+  it('does not append a duplicate user bubble when the same projected user event is rendered twice', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+    const event = createProjectedEvent(0, {
+      eventId: 'user-e1',
+      kind: 'user_message',
+      chatEventType: 'user_message',
+      requestId: 'turn-user',
+      responseId: undefined,
+      payload: { text: 'yo' },
+    });
+
+    renderer.renderProjectedEvent(event);
+    renderer.renderProjectedEvent(event);
+
+    const userMessages = container.querySelectorAll<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]?.dataset['eventId']).toBe('user-e1');
+    expect(userMessages[0]?.textContent).toContain('yo');
+  });
+
+  it('reuses the same user bubble when the same turn renders another user_message event', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderer.renderProjectedEvent(
+      createProjectedEvent(0, {
+        eventId: 'turn-start',
+        kind: 'request_start',
+        chatEventType: 'turn_start',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { trigger: 'user' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(1, {
+        eventId: 'user-e1',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'yo' },
+      }),
+    );
+    renderer.renderProjectedEvent(
+      createProjectedEvent(2, {
+        eventId: 'user-e2',
+        kind: 'user_message',
+        chatEventType: 'user_message',
+        requestId: 'turn-user',
+        responseId: undefined,
+        payload: { text: 'yo' },
+      }),
+    );
+
+    const userMessages = container.querySelectorAll<HTMLDivElement>(
+      '.turn[data-turn-id="turn-user"] .message.user',
+    );
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]?.dataset['eventId']).toBe('user-e2');
+    expect(userMessages[0]?.textContent).toContain('yo');
+  });
+
   it('renders voice tool failures inline on the speaker bubble', () => {
     const container = document.createElement('div');
     container.className = 'chat-log';
