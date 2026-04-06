@@ -300,8 +300,12 @@ export async function handleTextInputWithChatCompletions(options: {
   }
 
   // ── Bang command interception ──────────────────────────────────────────
+  const bangAgentId = state.summary.agentId;
+  const bangAgent = bangAgentId ? sessionHub.getAgentRegistry().getAgent(bangAgentId) : undefined;
+  const bangEnabled = bangAgent?.bangCommandEnabled === true;
+
   const bangResult = detectBangCommand(text);
-  if (bangResult.isBang) {
+  if (bangEnabled && bangResult.isBang) {
     if (!bangResult.command) {
       sendError('empty_bang_command', 'Shell command must not be empty (usage: !<command>)');
       return;
@@ -317,7 +321,7 @@ export async function handleTextInputWithChatCompletions(options: {
     });
     return;
   }
-  if (!bangResult.isBang && bangResult.isEscape) {
+  if (bangEnabled && !bangResult.isBang && bangResult.isEscape) {
     text = bangResult.text;
   }
   // ── End bang command interception ───────────────────────────────────────

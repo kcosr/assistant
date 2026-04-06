@@ -95,6 +95,12 @@ export interface AgentDefinition {
     callbackBaseUrl: string;
   };
   /**
+   * Whether to enable the bang shell command feature (!command) for this agent.
+   * When true, users can type !<command> in chat to execute shell commands
+   * server-side. Defaults to false when omitted.
+   */
+  bangCommandEnabled?: boolean;
+  /**
    * Optional visibility flag for built-in clients (UI and agents_* tools).
    * When false, the agent is hidden from built-in discovery and delegation.
    * Defaults to true when omitted.

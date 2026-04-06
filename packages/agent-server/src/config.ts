@@ -311,6 +311,7 @@ const RawAgentConfigSchema = z.object({
   capabilityDenylist: GlobPatternListSchema,
   agentAllowlist: GlobPatternListSchema,
   agentDenylist: GlobPatternListSchema,
+  bangCommandEnabled: z.boolean().optional().nullable(),
   uiVisible: z.boolean().optional().nullable(),
   apiExposed: z.boolean().optional().nullable(),
   sessionWorkingDir: SessionWorkingDirConfigSchema.optional(),
@@ -370,6 +371,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
     capabilityDenylist,
     agentAllowlist,
     agentDenylist,
+    bangCommandEnabled,
     uiVisible,
     apiExposed,
     sessionWorkingDir,
@@ -607,6 +609,9 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
   if (agentDenylist) {
     extended.agentDenylist = agentDenylist;
   }
+  if (bangCommandEnabled !== undefined && bangCommandEnabled !== null) {
+    extended.bangCommandEnabled = bangCommandEnabled;
+  }
   if (uiVisible !== undefined && uiVisible !== null) {
     extended.uiVisible = uiVisible;
   }
@@ -702,11 +707,7 @@ export const SessionsConfigSchema = z.object({
 export type SessionsConfig = z.infer<typeof SessionsConfigSchema>;
 
 export const AttachmentsConfigSchema = z.object({
-  previewSnippetChars: z
-    .number()
-    .int()
-    .min(1)
-    .default(DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS),
+  previewSnippetChars: z.number().int().min(1).default(DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS),
 });
 
 export type AttachmentsConfig = z.infer<typeof AttachmentsConfigSchema>;

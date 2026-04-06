@@ -207,16 +207,21 @@ export async function startSessionMessage(options: {
   }
 
   // ── Bang command interception ──────────────────────────────────────────
+  const bangAgentRegistry = options.agentRegistry ?? sessionHub.getAgentRegistry();
+  const bangSummary = await requireSessionSummary(sessionIndex, input.sessionId);
+  const bangAgentId = bangSummary.agentId;
+  const bangAgent = bangAgentId ? bangAgentRegistry.getAgent(bangAgentId) : undefined;
+  const bangEnabled = bangAgent?.bangCommandEnabled === true;
+
   const bangResult = detectBangCommand(content.trim());
-  if (bangResult.isBang) {
+  if (bangEnabled && bangResult.isBang) {
     if (!bangResult.command) {
       throw new ToolError(
         'invalid_arguments',
         'Shell command must not be empty (usage: !<command>)',
       );
     }
-    const summary = await requireSessionSummary(sessionIndex, input.sessionId);
-    const state = await sessionHub.ensureSessionState(input.sessionId, summary);
+    const state = await sessionHub.ensureSessionState(input.sessionId, bangSummary);
     const workingDir = state.summary.attributes?.core?.workingDir as string | undefined;
     await handleBangCommand({
       command: bangResult.command,
@@ -229,8 +234,8 @@ export async function startSessionMessage(options: {
     return {
       response: {
         sessionId: input.sessionId,
-        sessionName: summary.name ?? input.sessionId,
-        agentId: summary.agentId ?? null,
+        sessionName: bangSummary.name ?? input.sessionId,
+        agentId: bangSummary.agentId ?? null,
         created: false,
         status: 'complete',
         responseId: randomUUID(),
@@ -242,7 +247,7 @@ export async function startSessionMessage(options: {
       },
     };
   }
-  if (!bangResult.isBang && bangResult.isEscape) {
+  if (bangEnabled && !bangResult.isBang && bangResult.isEscape) {
     content = bangResult.text;
   }
   // ── End bang command interception ───────────────────────────────────────
