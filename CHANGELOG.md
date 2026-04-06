@@ -4,26 +4,28 @@
 
 ### Breaking Changes
 
-- Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`.
+- Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`. ([#93](https://github.com/kcosr/assistant/pull/93))
 
 ### Added
 
-- Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics.
-- Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging.
-- Added skills root normalization relative to config directory (matching existing context files behavior).
-- Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions.
+- Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
+- Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions. ([#93](https://github.com/kcosr/assistant/pull/93))
 
 ### Changed
 
-- Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart.
-- Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions.
+- Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 
 ### Fixed
 
-- Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events ([#PR](<pr-url>)).
-- Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session ([#PR](<pr-url>)).
-- Fixed chat user-bubble rendering during replay hydration so refreshes reuse a single unified user bubble per turn instead of transiently showing duplicate user messages while an in-flight turn is rebuilding ([#PR](<pr-url>)).
-- Fixed `agents_message` sync tool results in chat so the tool output body shows the returned `response` text by default instead of falling back to the full raw JSON object ([#PR](<pr-url>)).
+- Fixed Pi transcript replay and live hydration so canonical replay cursors, projected sequence watermarks, and same-revision live state stay monotonic across reloads/reconnects instead of rewinding, forcing reload loops, or resurfacing already-rendered events. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Fixed Pi refresh/reconnect transcript startup so redundant session-ready reloads no longer trigger overlapping reset-style replay passes for the same session. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Fixed chat user-bubble rendering during replay hydration so refreshes reuse a single unified user bubble per turn instead of transiently showing duplicate user messages while an in-flight turn is rebuilding. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Fixed thinking/text segment boundaries around streamed tool input so repeated reasoning no longer appears before and after a tool call in the same turn. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Fixed `agents_message` tool rendering so sync results show the returned `response` text and async callbacks surface a clearer completion indicator in the tool block UI. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Fixed Pi replay around questionnaire submissions so the hidden follow-up turn indicator no longer renders an empty turn before the questionnaire submission marker. ([#93](https://github.com/kcosr/assistant/pull/93))
 
 ### Removed
 
