@@ -31,12 +31,20 @@ import {
   formatAttachmentTooLargeMessage,
 } from './attachments/constants';
 
+interface AgentMessageSessionConfig {
+  model?: string;
+  thinking?: string;
+  workingDir?: string;
+  skills?: string[];
+}
+
 interface AgentMessageArgs {
   agentId: string;
   content: string;
   sessionStrategy: 'latest' | 'create' | 'latest-or-create' | string;
   mode: 'sync' | 'async';
   timeoutSeconds: number;
+  sessionConfig?: AgentMessageSessionConfig;
 }
 
 type VoicePromptArgs = {
@@ -477,7 +485,50 @@ function parseAgentMessageArgs(raw: unknown): AgentMessageArgs {
     }
   }
 
-  return { agentId, content, sessionStrategy, mode, timeoutSeconds };
+  let sessionConfig: AgentMessageSessionConfig | undefined;
+  if ('sessionConfig' in obj) {
+    const raw = obj['sessionConfig'];
+    if (raw !== undefined && raw !== null) {
+      if (typeof raw !== 'object' || Array.isArray(raw)) {
+        throw createToolError('invalid_arguments', 'sessionConfig must be an object when provided');
+      }
+      const sc = raw as Record<string, unknown>;
+      const cfg: AgentMessageSessionConfig = {};
+      if (sc['model'] !== undefined) {
+        if (typeof sc['model'] !== 'string') {
+          throw createToolError('invalid_arguments', 'sessionConfig.model must be a string');
+        }
+        cfg.model = sc['model'];
+      }
+      if (sc['thinking'] !== undefined) {
+        if (typeof sc['thinking'] !== 'string') {
+          throw createToolError('invalid_arguments', 'sessionConfig.thinking must be a string');
+        }
+        cfg.thinking = sc['thinking'];
+      }
+      if (sc['workingDir'] !== undefined) {
+        if (typeof sc['workingDir'] !== 'string') {
+          throw createToolError('invalid_arguments', 'sessionConfig.workingDir must be a string');
+        }
+        cfg.workingDir = sc['workingDir'];
+      }
+      if (sc['skills'] !== undefined) {
+        if (!Array.isArray(sc['skills']) || sc['skills'].some((s: unknown) => typeof s !== 'string')) {
+          throw createToolError('invalid_arguments', 'sessionConfig.skills must be an array of strings');
+        }
+        cfg.skills = sc['skills'] as string[];
+      }
+      if (Object.keys(cfg).length > 0) {
+        sessionConfig = cfg;
+      }
+    }
+  }
+
+  const result: AgentMessageArgs = { agentId, content, sessionStrategy, mode, timeoutSeconds };
+  if (sessionConfig) {
+    result.sessionConfig = sessionConfig;
+  }
+  return result;
 }
 
 interface AsyncAgentMessageContext {
@@ -799,6 +850,7 @@ export async function handleAgentMessage(
       effectiveSessionIndex,
       sessionHub,
       agentRegistry,
+      parsed.sessionConfig,
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

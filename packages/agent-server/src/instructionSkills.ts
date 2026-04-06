@@ -30,8 +30,6 @@ type RootDiscoveryResult = {
   skillsByName: Map<string, DiscoveredInstructionSkill>;
 };
 
-const rootCache = new Map<string, RootDiscoveryResult>();
-
 function expandHomeDir(input: string): string {
   if (input === '~') {
     return os.homedir();
@@ -334,23 +332,7 @@ function discoverRootSkills(options: { root: string; warn: (message: string) => 
 }
 
 function getRootDiscovery(options: { root: string; warn: (message: string) => void }): RootDiscoveryResult | null {
-  const { root, warn } = options;
-  const expanded = expandHomeDir(root);
-  const rootPath = path.isAbsolute(expanded) ? expanded : path.resolve(process.cwd(), expanded);
-
-  const cacheKey = rootPath;
-  const existing = rootCache.get(cacheKey);
-  if (existing) {
-    return existing;
-  }
-
-  const discovered = discoverRootSkills({ root, warn });
-  if (!discovered) {
-    return null;
-  }
-
-  rootCache.set(cacheKey, discovered);
-  return discovered;
+  return discoverRootSkills(options);
 }
 
 function normalizeSourceDefaults(source: InstructionSkillSource): { root: string; available: string[]; inline: string[] } {
@@ -365,22 +347,6 @@ function normalizeSourceDefaults(source: InstructionSkillSource): { root: string
     available: hasAvailable ? (source.available as string[]) : [],
     inline: hasInline ? (source.inline as string[]) : [],
   };
-}
-
-export function preloadInstructionSkillsForAgents(
-  agents: AgentDefinition[],
-  log: (level: 'warn', message: string) => void = (_level, message) => console.warn(message),
-): void {
-  for (const agent of agents) {
-    const sources = Array.isArray(agent.skills) ? agent.skills : [];
-    for (const source of sources) {
-      const normalized = normalizeSourceDefaults(source);
-      getRootDiscovery({
-        root: normalized.root,
-        warn: (message) => log('warn', `[skills] ${message}`),
-      });
-    }
-  }
 }
 
 function resolveInstructionSkillSelections(
@@ -549,4 +515,29 @@ export function buildInstructionSkillsPrompt(
   }
 
   return ['', ...blocks].join('\n');
+}
+
+/**
+ * Normalize instruction skill source roots relative to the config file directory,
+ * matching the behavior of normalizeContextFileSourcesForConfigDir.
+ */
+export function normalizeInstructionSkillSourcesForConfigDir(
+  sources: InstructionSkillSource[] | undefined,
+  configDir: string,
+): InstructionSkillSource[] | undefined {
+  if (!sources || sources.length === 0) {
+    return undefined;
+  }
+
+  return sources.map((source) => {
+    const expandedRoot = expandHomeDir(source.root);
+    const resolvedRoot = path.isAbsolute(expandedRoot)
+      ? path.normalize(expandedRoot)
+      : path.resolve(configDir, expandedRoot);
+    return {
+      root: resolvedRoot,
+      ...(source.available !== undefined ? { available: source.available } : {}),
+      ...(source.inline !== undefined ? { inline: source.inline } : {}),
+    };
+  });
 }

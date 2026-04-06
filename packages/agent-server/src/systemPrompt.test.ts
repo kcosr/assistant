@@ -4,7 +4,6 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentRegistry } from './agents';
-import { clearContextFilesCachesForTests } from './contextFiles';
 import { buildSystemPrompt } from './systemPrompt';
 import type { SkillSummary } from './skills';
 import type { Tool } from './tools';
@@ -29,7 +28,6 @@ function writeSkill(options: {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  clearContextFilesCachesForTests();
 });
 
 describe('buildSystemPrompt', () => {

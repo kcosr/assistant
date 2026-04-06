@@ -4,9 +4,18 @@
 
 ### Breaking Changes
 
+- Removed `loadAgentDefinitionsFromFile()` from `agents.ts` — all agent loading now goes through `loadConfig()` in `config.ts`.
+
 ### Added
 
+- Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics.
+- Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging.
+- Added skills root normalization relative to config directory (matching existing context files behavior).
+
 ### Changed
+
+- Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart.
+- Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions.
 
 ### Fixed
 

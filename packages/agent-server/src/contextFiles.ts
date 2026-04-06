@@ -23,9 +23,6 @@ type SourceDiscovery = {
   }>;
 };
 
-const sourceDiscoveryCache = new Map<string, SourceDiscovery>();
-const contextPromptCache = new Map<string, string>();
-
 function expandHomeDir(input: string): string {
   if (input === '~') {
     return os.homedir();
@@ -122,11 +119,6 @@ function ensureDirectoryRoot(rootPath: string): { rootPath: string; rootRealpath
 }
 
 function collectFilesForSource(source: ContextFileSource): SourceDiscovery {
-  const cached = sourceDiscoveryCache.get(source.root);
-  if (cached) {
-    return cached;
-  }
-
   const { rootPath, rootRealpath } = ensureDirectoryRoot(source.root);
   const files: SourceDiscovery['files'] = [];
 
@@ -249,9 +241,7 @@ function collectFilesForSource(source: ContextFileSource): SourceDiscovery {
   walkDirectory(rootRealpath, '', activeRealpaths);
   files.sort((a, b) => a.matchPath.localeCompare(b.matchPath));
 
-  const discovery = { rootPath, rootRealpath, files };
-  sourceDiscoveryCache.set(source.root, discovery);
-  return discovery;
+  return { rootPath, rootRealpath, files };
 }
 
 function resolveSourceFiles(source: ContextFileSource): ContextFileRecord[] {
@@ -303,32 +293,6 @@ function buildContextPrompt(records: ContextFileRecord[]): string {
   return sections.join('\n');
 }
 
-function getContextPromptCacheKey(agent: AgentDefinition): string {
-  return JSON.stringify(agent.contextFiles ?? []);
-}
-
-function resolveContextPrompt(agent: AgentDefinition): string {
-  const sources = Array.isArray(agent.contextFiles) ? agent.contextFiles : [];
-  if (sources.length === 0) {
-    return '';
-  }
-
-  const records: ContextFileRecord[] = [];
-  const seenRealpaths = new Set<string>();
-
-  for (const source of sources) {
-    for (const record of resolveSourceFiles(source)) {
-      if (seenRealpaths.has(record.realpath)) {
-        continue;
-      }
-      seenRealpaths.add(record.realpath);
-      records.push(record);
-    }
-  }
-
-  return buildContextPrompt(records);
-}
-
 export function normalizeContextFileSourcesForConfigDir(
   sources: ContextFileSource[] | undefined,
   configDir: string,
@@ -349,33 +313,24 @@ export function normalizeContextFileSourcesForConfigDir(
   });
 }
 
-export function preloadContextFilesForAgents(agents: AgentDefinition[]): void {
-  for (const agent of agents) {
-    if (!agent.contextFiles || agent.contextFiles.length === 0) {
-      continue;
-    }
-    const cacheKey = getContextPromptCacheKey(agent);
-    if (!contextPromptCache.has(cacheKey)) {
-      contextPromptCache.set(cacheKey, resolveContextPrompt(agent));
-    }
-  }
-}
-
 export function buildContextFilesPrompt(agent: AgentDefinition | undefined): string {
   if (!agent?.contextFiles || agent.contextFiles.length === 0) {
     return '';
   }
-  const cacheKey = getContextPromptCacheKey(agent);
-  const existing = contextPromptCache.get(cacheKey);
-  if (existing !== undefined) {
-    return existing;
-  }
-  const prompt = resolveContextPrompt(agent);
-  contextPromptCache.set(cacheKey, prompt);
-  return prompt;
-}
 
-export function clearContextFilesCachesForTests(): void {
-  sourceDiscoveryCache.clear();
-  contextPromptCache.clear();
+  const sources = agent.contextFiles;
+  const records: ContextFileRecord[] = [];
+  const seenRealpaths = new Set<string>();
+
+  for (const source of sources) {
+    for (const record of resolveSourceFiles(source)) {
+      if (seenRealpaths.has(record.realpath)) {
+        continue;
+      }
+      seenRealpaths.add(record.realpath);
+      records.push(record);
+    }
+  }
+
+  return buildContextPrompt(records);
 }

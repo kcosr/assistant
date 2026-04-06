@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { AgentRegistry } from './agents';
-import { clearContextFilesCachesForTests, preloadContextFilesForAgents } from './contextFiles';
 import { SessionHub } from './sessionHub';
 import { SessionIndex } from './sessionIndex';
 import type { LogicalSessionState } from './sessionHub';
@@ -15,10 +14,6 @@ import { createToolHost } from './tools';
 function createTempFile(prefix: string): string {
   return path.join(os.tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(16)}.jsonl`);
 }
-
-afterEach(() => {
-  clearContextFilesCachesForTests();
-});
 
 describe('updateSystemPromptWithTools', () => {
   it('preserves project directory in the system prompt', async () => {
@@ -92,10 +87,10 @@ describe('updateSystemPromptWithTools', () => {
     expect(state.chatMessages[0]?.content).toContain('voice-style interaction');
   });
 
-  it('preserves preloaded context files in the rebuilt system prompt', async () => {
+  it('includes context files in the rebuilt system prompt', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'system-prompt-updater-context-files-'));
     const filePath = path.join(root, 'README.md');
-    fs.writeFileSync(filePath, 'Context from preload', 'utf8');
+    fs.writeFileSync(filePath, 'Context file content', 'utf8');
 
     const agent = {
       agentId: 'general',
@@ -104,8 +99,6 @@ describe('updateSystemPromptWithTools', () => {
       contextFiles: [{ root, include: ['README.md'] }],
     };
     const agentRegistry = new AgentRegistry([agent]);
-    preloadContextFilesForAgents([agent]);
-    fs.unlinkSync(filePath);
 
     const sessionIndex = new SessionIndex(createTempFile('system-prompt-updater-context-files'));
     const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
@@ -134,6 +127,6 @@ describe('updateSystemPromptWithTools', () => {
     });
 
     expect(state.chatMessages[0]?.content).toContain('## Context Files');
-    expect(state.chatMessages[0]?.content).toContain('Context from preload');
+    expect(state.chatMessages[0]?.content).toContain('Context file content');
   });
 });

@@ -1,0 +1,327 @@
+{
+  "templates": {
+    "containerized": {
+      "chat": {
+        "config": {
+          "wrapper": {
+            "path": "/home/kevin/devtools/container/run.sh",
+            "env": {
+              "PERSISTENT": "1",
+              "PROXY": "1",
+              "SIDECAR": "1",
+              "CONTAINER_NAME": "assistant"
+            }
+          }
+        }
+      }
+    },
+    "containerized-coding": {
+      "extends": "containerized",
+      "chat": {
+        "config": {
+          "workdir": "${session.workingDir}",
+          "wrapper": {
+            "env": {
+              "CONTAINER_CWD": "${session.workingDir}"
+            }
+          }
+        }
+      },
+      "sessionWorkingDir": {
+        "mode": "prompt",
+        "roots": ["/home/kevin/worktrees"]
+      }
+    },
+    "pi-sdk-default": {
+      "chat": {
+        "models": [
+          "openai-codex/gpt-5.4-mini",
+          "openai-codex/gpt-5.4",
+          "openai-codex/gpt-5.3-codex"
+        ],
+        "thinking": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    "agent-context": {
+      "skills": [
+        { "root": "~/.agents/skills" },
+        { "root": "~/assistant/skills" }
+      ],
+      "contextFiles": [
+        {
+          "root": "~/assistant",
+          "include": ["AGENTS.md", "repos.md"]
+        }
+      ]
+    },
+    "coding-tools": {
+      "toolAllowlist": [
+        "bash",
+        "edit",
+        "find",
+        "grep",
+        "ls",
+        "read",
+        "write",
+        "attachment_send",
+        "lists_*",
+        "notes_*",
+        "panels_*",
+        "search_*",
+        "time-tracker_*"
+      ]
+    }
+  },
+  "agents": [
+    {
+      "agentId": "claude-cli",
+      "extends": "containerized-coding",
+      "displayName": "Claude Code",
+      "description": "Claude Code",
+      "chat": {
+        "provider": "claude-cli",
+        "models": ["opus", "sonnet", "haiku"],
+        "thinking": ["none", "low", "medium", "high", "xhigh"],
+        "config": {
+          "extraArgs": ["--dangerously-skip-permissions"]
+        }
+      }
+    },
+    {
+      "agentId": "codex-cli",
+      "extends": "containerized-coding",
+      "displayName": "Codex",
+      "description": "Codex",
+      "chat": {
+        "provider": "codex-cli",
+        "models": ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"],
+        "thinking": ["none", "low", "medium", "high", "xhigh"],
+        "config": {
+          "extraArgs": ["--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox"]
+        }
+      }
+    },
+    {
+      "agentId": "pi-cli",
+      "extends": "containerized-coding",
+      "displayName": "pi",
+      "description": "pi",
+      "chat": {
+        "provider": "pi-cli",
+        "models": ["openai-codex/gpt-5.4", "openai-codex/gpt-5.4-mini"],
+        "thinking": ["medium", "off", "low", "high", "xhigh"]
+      }
+    },
+    {
+      "agentId": "assistant",
+      "extends": ["pi-sdk-default", "agent-context"],
+      "displayName": "Assistant",
+      "description": "Personal assistant for notes, lists, and time tracking.",
+      "chat": {
+        "models": [
+          "zai/glm-5-turbo",
+          "openai-codex/gpt-5.4-mini",
+          "openai-codex/gpt-5.4",
+          "openai-codex/gpt-5.3-codex"
+        ]
+      },
+      "systemPrompt": "You are a personal assistant that helps manage notes, lists, and time tracking.\n\nYou can:\n- Create and manage notes (thoughts, meeting notes, documents)\n- Create and manage lists (reading lists, shopping, movies, tasks)\n- Track time against tasks with timers and manual entries\n\nWhen the user asks you to save a URL, use the url_fetch_fetch tool with mode \"metadata\" to retrieve the page title and description before adding it.\n\nWhen displaying multiple items, format them as a markdown table with minimal relevant columns. Keep it concise.",
+      "toolAllowlist": [
+        "bash",
+        "edit",
+        "find",
+        "grep",
+        "lists_*",
+        "ls",
+        "notes_*",
+        "panels_*",
+        "questions_*",
+        "read",
+        "scheduled_sessions_*",
+        "search_*",
+        "time-tracker_*",
+        "url_fetch_fetch",
+        "voice_ask",
+        "voice_speak",
+        "write",
+        "attachment_send",
+        "agents_*",
+        "links_*"
+      ],
+      "sessionWorkingDir": {
+        "mode": "fixed",
+        "path": "/home/kevin/assistant"
+      }
+    },
+    {
+      "agentId": "general",
+      "extends": ["pi-sdk-default", "coding-tools"],
+      "displayName": "General",
+      "description": "A helpful general-purpose assistant for everyday tasks.",
+      "systemPrompt": "You are a helpful general-purpose assistant.\n\nYou have access to:\n- File operations: read, write, edit files; search with grep; find files; list directories; run shell commands\n- Notes: create, read, search, and manage markdown notes\n- Lists: create and manage personal lists (tasks, reading, shopping, etc.)\n- Time tracking: track time against tasks with timers\n- Panels: view and manage workspace panels\n- Search: search across all data\n\nBe concise and helpful. When working with files, show paths clearly."
+    },
+    {
+      "agentId": "coding",
+      "extends": ["pi-sdk-default", "coding-tools"],
+      "displayName": "Coding",
+      "description": "Expert coding assistant for file operations and code editing.",
+      "systemPrompt": "You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read: Read file contents (supports text files and images)\n- bash: Execute bash commands in the working directory\n- edit: Make surgical edits to files (find exact text and replace)\n- write: Create or overwrite files (creates parent directories automatically)\n- grep: Search file contents for patterns (uses ripgrep when available, respects .gitignore)\n- find: Find files by glob pattern (uses fd when available, respects .gitignore)\n- ls: List directory contents\n\nYou also have access to notes, lists, panels, search, and time tracking tools.\n\nGuidelines:\n- Use grep/find/ls tools for file exploration (faster than bash, respects .gitignore)\n- Use read to examine files before editing\n- Use edit for precise changes (old text must match exactly)\n- Use write only for new files or complete rewrites\n- Be concise in your responses\n- Show file paths clearly when working with files",
+      "sessionWorkingDir": {
+        "mode": "prompt",
+        "roots": ["/home/kevin/worktrees"]
+      }
+    },
+    {
+      "agentId": "triage",
+      "extends": ["pi-sdk-default", "agent-context"],
+      "displayName": "Triage",
+      "description": "Planning agent: review, create worktree, build PLAN.md, get review, hand off to codex.",
+      "chat": {
+        "models": [
+          "openai-codex/gpt-5.4",
+          "openai-codex/gpt-5.4-mini",
+          "openai-codex/gpt-5.3-codex"
+        ],
+        "thinking": [
+          "high",
+          "none",
+          "low",
+          "medium",
+          "xhigh"
+        ]
+      },
+      "systemPrompt": "You are a concise planning agent. Keep chat responses short \u2014 capture details in PLAN.md, not in conversation.\n\nYour workflow:\n1. **Review** \u2014 Understand the task. Read relevant code, issues, or context.\n2. **Worktree** \u2014 Use the worktrees skill to create an isolated worktree for the work.\n3. **PLAN.md** \u2014 Create a plan at .plans/<task-slug>/PLAN.md in the repository root (not the worktree root). The task slug should match the worktree branch suffix (e.g., feat/foo-bar \u2192 .plans/foo-bar/PLAN.md). Cover: goal, approach, files to change, open questions, and acceptance criteria. Additional design docs can go in the same directory.\n4. **Questions** \u2014 Use the questions tool to present the user with clarifying questions before proceeding.\n5. **Review** \u2014 When the user asks, use the agent-runner-review skill to get the plan reviewed by external reviewers.\n6. **Hand off** \u2014 When the user asks, use the termstation-agent skill to create a codex peer session in the worktree, instructing it to review .plans/<task-slug>/PLAN.md and present the user with any final questions/issues before beginning implementation.\n\nSteps 5 and 6 are user-initiated \u2014 do not run them automatically.\n\nWhen the user starts a session, respond with a brief summary of what you'll do together (review \u2192 worktree \u2192 PLAN.md \u2192 questions \u2192 optional review \u2192 optional hand off) then get started.\n\nGuidelines:\n- Be concise. One-liner status updates in chat; depth goes in .plans/<task-slug>/PLAN.md.\n- Use the visual-explainer skill when diagrams or visual overviews would help.\n- Use questions tool for structured input, not free-form chat.\n- When handing off to codex, include the absolute worktree path and point it at .plans/<task-slug>/PLAN.md.\n- When sending messages to other agents, provide the full path to the working directory.",
+      "toolAllowlist": [
+        "bash",
+        "edit",
+        "find",
+        "grep",
+        "lists_*",
+        "ls",
+        "notes_*",
+        "questions_*",
+        "read",
+        "search_*",
+        "voice_ask",
+        "voice_speak",
+        "write",
+        "attachment_send",
+        "agents_*"
+      ],
+      "sessionWorkingDir": {
+        "mode": "prompt",
+        "roots": ["/home/kevin/worktrees"]
+      }
+    },
+    {
+      "agentId": "explorer",
+      "extends": "pi-sdk-default",
+      "displayName": "Explorer",
+      "description": "Read-only codebase explorer with concise feedback.",
+      "chat": {
+        "thinking": ["low", "none", "medium", "high", "xhigh"]
+      },
+      "systemPrompt": "You are a read-only codebase explorer. Your job is to explore code and give concise, actionable feedback.\n\nGuidelines:\n- Always include file paths and line numbers in your references (e.g. src/foo.ts:42).\n- Be concise. Lead with findings, not process.\n- You cannot edit files \u2014 only read and search.\n- When exploring, use grep and find to locate relevant code efficiently before reading files.\n-If the target directory is unclear, ask the user for clarification.",
+      "toolAllowlist": ["read", "write", "edit", "grep", "find", "ls", "bash"],
+      "sessionWorkingDir": {
+        "mode": "prompt",
+        "roots": ["/home/kevin/worktrees"]
+      }
+    },
+    {
+      "agentId": "termstation-external",
+      "displayName": "TermStation",
+      "description": "TermStation",
+      "type": "external",
+      "external": {
+        "inputUrl": "http://localhost:3011/termstation-assistant-adapter",
+        "callbackBaseUrl": "http://host.containers.internal:3000"
+      }
+    },
+    {
+      "agentId": "mock-scenarios",
+      "displayName": "Mock Scenarios",
+      "description": "Scripted mock LLM backend. Prefix messages with @mock[scenario-id] to drive scenarios.",
+      "chat": {
+        "config": {
+          "provider": "mock-scenarios",
+          "baseUrl": "http://127.0.0.1:4010/v1",
+          "apiKey": "mock"
+        },
+        "models": ["mock-scenarios/scenarios"],
+        "thinking": ["medium", "none", "low", "high"]
+      },
+      "systemPrompt": "You are connected to mock-llm-provider, a scripted test backend. Users drive scenario replay with @mock[scenario-id] prefixes. The backend replays canned assistant turns regardless of what you would say; just relay user messages through unchanged.",
+      "toolAllowlist": ["read", "ls", "grep", "find", "attachment_send", "questions_*"]
+    }
+  ],
+  "profiles": [
+    { "id": "default" },
+    { "id": "scratch" },
+    { "id": "work" }
+  ],
+  "plugins": {
+    "scheduled-sessions": {
+      "enabled": true,
+      "gitVersioning": { "enabled": true, "intervalMinutes": 1 }
+    },
+    "chat": { "enabled": true },
+    "search": { "enabled": true },
+    "questions": { "enabled": true },
+    "interactive-tools": { "enabled": true },
+    "panels": { "enabled": true },
+    "sessions": { "enabled": true },
+    "artifacts": { "enabled": true },
+    "agents": { "enabled": true },
+    "url-fetch": { "enabled": true },
+    "lists": {
+      "enabled": true,
+      "instances": ["scratch"],
+      "gitVersioning": { "enabled": true, "intervalMinutes": 1 }
+    },
+    "notes": {
+      "enabled": true,
+      "instances": ["scratch"],
+      "gitVersioning": { "enabled": true, "intervalMinutes": 1 }
+    },
+    "time-tracker": {
+      "enabled": true,
+      "gitVersioning": { "enabled": true, "intervalMinutes": 1 }
+    },
+    "hello": { "enabled": true },
+    "session-info": { "enabled": true },
+    "files": { "enabled": true, "workspaceRoot": "${HOME}/worktrees" },
+    "diff": {
+      "enabled": true,
+      "gitVersioning": { "enabled": true, "intervalMinutes": 1 },
+      "instances": [
+        { "id": "default", "label": "Default", "workspaceRoot": "/home/kevin/worktrees" }
+      ]
+    },
+    "terminal": { "enabled": true, "debug": true },
+    "ws-echo": { "enabled": true },
+    "coding": {
+      "enabled": true,
+      "mode": "local",
+      "local": {
+        "workspaceRoot": "${session.workingDir}",
+        "allowOutsideWorkspaceRoot": true
+      }
+    },
+    "links": { "enabled": true, "spotify": { "rewriteWebUrlsToUris": true } }
+  },
+  "backup": {
+    "directory": "backups",
+    "recent": { "enabled": true, "maxBackups": 128 },
+    "archive": { "enabled": true, "throttleMinutes": 60, "maxBackups": 168 }
+  },
+  "XXXmcpServers": [
+    { "name": "codex", "command": "codex", "args": ["mcp-server"] }
+  ]
+}
