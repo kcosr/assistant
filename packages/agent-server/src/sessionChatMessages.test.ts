@@ -53,9 +53,7 @@ describe('buildChatMessagesFromEvents', () => {
     expect(messages.length).toBe(2);
     expect(messages[0]?.role).toBe('system');
     expect(messages[1]?.role).toBe('user');
-    expect(messages[1]?.content).toBe(
-      '[Callback from target-agent]: Callback from target agent',
-    );
+    expect(messages[1]?.content).toBe('[Callback from target-agent]: Callback from target agent');
   });
 
   it('preserves visible interrupted assistant output when rebuilding prompt messages', () => {
@@ -113,9 +111,7 @@ describe('buildChatMessagesFromEvents', () => {
 
     expect(messages.length).toBe(1);
     expect(messages[0]?.role).toBe('system');
-    expect(messages[0]?.content).toContain(
-      'Project directory: /home/kevin/worktrees/project-a',
-    );
+    expect(messages[0]?.content).toContain('Project directory: /home/kevin/worktrees/project-a');
   });
 
   it('preserves tool call boundaries when rebuilding prompt messages', () => {
@@ -370,7 +366,12 @@ describe('buildChatMessagesFromEvents', () => {
 
     const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
 
-    expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'assistant']);
+    expect(messages.map((message) => message.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'assistant',
+    ]);
     expect(messages[2]).toMatchObject({
       role: 'assistant',
       content: 'Let me check.',
@@ -383,5 +384,119 @@ describe('buildChatMessagesFromEvents', () => {
       assistantTextPhase: 'final_answer',
       assistantTextSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
     });
+  });
+
+  it('suppresses _assistant_ prefixed tool calls and results from LLM history', () => {
+    const registry = new AgentRegistry([]);
+    const sessionId = 'session-bang';
+    const timestamp = Date.now();
+    const events: ChatEvent[] = [
+      {
+        id: 'evt-user',
+        timestamp,
+        sessionId,
+        type: 'user_message',
+        payload: { text: 'Before the bang' },
+      },
+      {
+        id: 'evt-shell-call',
+        timestamp: timestamp + 1,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-shell',
+          toolName: '_assistant_shell',
+          args: { command: 'pwd', cwd: '/tmp' },
+        },
+      },
+      {
+        id: 'evt-shell-result',
+        timestamp: timestamp + 2,
+        sessionId,
+        responseId: 'resp-1',
+        type: 'tool_result',
+        payload: {
+          toolCallId: 'call-shell',
+          toolName: '_assistant_shell',
+          result: { output: '/tmp', exitCode: 0 },
+        },
+      },
+      {
+        id: 'evt-normal-call',
+        timestamp: timestamp + 3,
+        sessionId,
+        responseId: 'resp-2',
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-normal',
+          toolName: 'lists_list',
+          args: { limit: 5 },
+        },
+      },
+      {
+        id: 'evt-normal-result',
+        timestamp: timestamp + 4,
+        sessionId,
+        responseId: 'resp-2',
+        type: 'tool_result',
+        payload: {
+          toolCallId: 'call-normal',
+          result: { ok: true },
+        },
+      },
+    ];
+
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
+
+    // Should have: system, user, assistant (tool_call for lists_list), tool (result for lists_list)
+    // The _assistant_shell call and result should be suppressed
+    const roles = messages.map((m) => m.role);
+    expect(roles).toEqual(['system', 'user', 'assistant', 'tool']);
+
+    // The remaining tool call should be lists_list, not _assistant_shell
+    const assistantMsg = messages[2] as Record<string, unknown>;
+    const toolCalls = assistantMsg?.['tool_calls'] as Array<{ function: { name: string } }>;
+    expect(toolCalls?.[0]?.function?.name).toBe('lists_list');
+
+    // The remaining tool result should reference call-normal, not call-shell
+    const toolMsg = messages[3] as Record<string, unknown>;
+    expect(toolMsg?.['tool_call_id']).toBe('call-normal');
+  });
+
+  it('suppresses tool_result by toolCallId even when toolName is missing', () => {
+    const registry = new AgentRegistry([]);
+    const sessionId = 'session-bang-no-name';
+    const timestamp = Date.now();
+    const events: ChatEvent[] = [
+      {
+        id: 'evt-shell-call',
+        timestamp,
+        sessionId,
+        type: 'tool_call',
+        payload: {
+          toolCallId: 'call-shell',
+          toolName: '_assistant_shell',
+          args: { command: 'ls' },
+        },
+      },
+      {
+        id: 'evt-shell-result',
+        timestamp: timestamp + 1,
+        sessionId,
+        type: 'tool_result',
+        payload: {
+          toolCallId: 'call-shell',
+          // toolName intentionally omitted — this is the case Gemini flagged
+          result: { output: 'file.txt' },
+        },
+      },
+    ];
+
+    const messages = buildChatMessagesFromEvents(events, registry, undefined, []);
+
+    // Only system message — both shell events suppressed
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role).toBe('system');
   });
 });

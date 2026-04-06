@@ -92,6 +92,7 @@ export type ProjectedTranscriptApplyResult = 'applied' | 'ignored' | 'reload';
 
 const VOICE_TOOL_NAMES = new Set(['voice_speak', 'voice_ask']);
 const ATTACHMENT_TOOL_NAME = 'attachment_send';
+const TERMINAL_TOOL_NAME = '_assistant_shell';
 
 type AttachmentExpansionState =
   | { status: 'loading' }
@@ -212,7 +213,10 @@ export class ChatRenderer {
   private readonly projectedTranscriptEvents = new Map<number, ProjectedTranscriptEvent>();
   private projectedTranscriptWatermarkRevision: number | null = null;
   private projectedTranscriptWatermarkSequence = -1;
-  private readonly attachmentExpansionStates = new WeakMap<HTMLDivElement, AttachmentExpansionState>();
+  private readonly attachmentExpansionStates = new WeakMap<
+    HTMLDivElement,
+    AttachmentExpansionState
+  >();
   private attachmentImageViewerOverlay: HTMLDivElement | null = null;
   private attachmentImageViewerEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
   // Track text segment index per response.
@@ -448,25 +452,43 @@ export class ChatRenderer {
       case 'tool_call':
         this.handleToolCall({
           ...projectedBase,
-          payload: event.payload as { toolCallId: string; toolName: string; args?: Record<string, unknown> },
+          payload: event.payload as {
+            toolCallId: string;
+            toolName: string;
+            args?: Record<string, unknown>;
+          },
         });
         break;
       case 'tool_input':
         this.handleToolInputChunk({
           ...projectedBase,
-          payload: event.payload as { toolCallId: string; toolName: string; chunk: string; offset: number },
+          payload: event.payload as {
+            toolCallId: string;
+            toolName: string;
+            chunk: string;
+            offset: number;
+          },
         });
         break;
       case 'tool_output':
         this.handleToolOutputChunk({
           ...projectedBase,
-          payload: event.payload as { toolCallId: string; toolName: string; chunk: string; offset: number },
+          payload: event.payload as {
+            toolCallId: string;
+            toolName: string;
+            chunk: string;
+            offset: number;
+          },
         });
         break;
       case 'tool_result':
         this.handleToolResult({
           ...projectedBase,
-          payload: event.payload as { toolCallId: string; result?: unknown; error?: { code: string; message: string } },
+          payload: event.payload as {
+            toolCallId: string;
+            result?: unknown;
+            error?: { code: string; message: string };
+          },
         });
         break;
       case 'interaction_request':
@@ -522,7 +544,12 @@ export class ChatRenderer {
         if (event.chatEventType === 'agent_callback') {
           this.handleAgentCallback({
             ...projectedBase,
-            payload: event.payload as { messageId: string; fromAgentId: string; fromSessionId: string; result: string },
+            payload: event.payload as {
+              messageId: string;
+              fromAgentId: string;
+              fromSessionId: string;
+              result: string;
+            },
           });
           break;
         }
@@ -873,7 +900,6 @@ export class ChatRenderer {
           .join(' ');
       decorateUserMessageAsAgent(bubble, displayName || fromAgentId);
     }
-
   }
 
   private handleUserAudio(
@@ -912,10 +938,7 @@ export class ChatRenderer {
     return stripContextLine(rawText);
   }
 
-  private findRenderedUserBubble(
-    turnEl: HTMLDivElement,
-    eventId: string,
-  ): HTMLDivElement | null {
+  private findRenderedUserBubble(turnEl: HTMLDivElement, eventId: string): HTMLDivElement | null {
     const bubbles = turnEl.querySelectorAll<HTMLDivElement>('.message.user[data-event-id]');
     for (const bubble of Array.from(bubbles)) {
       if (bubble.dataset['eventId'] === eventId) {
@@ -966,7 +989,9 @@ export class ChatRenderer {
     bubble.textContent = text;
   }
 
-  private handleAssistantChunk(event: RenderedTranscriptEvent<AssistantChunkEvent['payload']>): void {
+  private handleAssistantChunk(
+    event: RenderedTranscriptEvent<AssistantChunkEvent['payload']>,
+  ): void {
     const responseId = this.getResponseId(event.responseId);
     if (!responseId) {
       return;
@@ -1312,6 +1337,41 @@ export class ChatRenderer {
       return;
     }
 
+    if (this.isTerminalToolName(toolName)) {
+      let bubble = this.toolCallElements.get(callId) ?? null;
+      if (!bubble) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        const terminalCommand = typeof args['command'] === 'string' ? args['command'] : undefined;
+        bubble = this.createTerminalBubble(callId, terminalCommand);
+        bubble.dataset['eventId'] = event.id;
+        bubble.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(bubble);
+        this.toolCallElements.set(callId, bubble);
+      }
+
+      // Apply any buffered streaming output
+      const buffered = this.toolOutputBuffers.get(callId);
+      if (buffered) {
+        this.updateTerminalBubbleStreaming(bubble, buffered);
+      }
+      this.toolInputBuffers.delete(callId);
+      this.toolInputOffsets.delete(callId);
+      if (responseId) {
+        this.markTextSegmentBreak(responseId);
+      }
+      return;
+    }
+
     // Check if block was already created by tool_input_chunk streaming
     let block = this.toolCallElements.get(callId);
     const existingBlock = !!block;
@@ -1578,8 +1638,9 @@ export class ChatRenderer {
     const offset = event.payload.offset;
     const eventToolName = event.payload.toolName;
 
-    // Dedup: ignore if we've already processed up to this offset
-    const lastOffset = this.toolOutputOffsets.get(callId) ?? 0;
+    // Dedup: ignore if we've already processed up to this offset.
+    // Default to -1 so the first chunk (offset=0) is not incorrectly skipped.
+    const lastOffset = this.toolOutputOffsets.get(callId) ?? -1;
     if (offset <= lastOffset) {
       return;
     }
@@ -1601,6 +1662,11 @@ export class ChatRenderer {
       this.isVoiceToolName(block.dataset['toolName'] ?? '') ||
       this.isAttachmentToolName(block.dataset['toolName'] ?? '')
     ) {
+      return;
+    }
+
+    if (this.isTerminalToolName(block.dataset['toolName'] ?? '')) {
+      this.updateTerminalBubbleStreaming(block, newBuffer);
       return;
     }
 
@@ -1659,8 +1725,42 @@ export class ChatRenderer {
       }
       return;
     }
+    if (block && this.isTerminalToolName(existingToolName)) {
+      const resultObj =
+        event.payload.result && typeof event.payload.result === 'object'
+          ? (event.payload.result as Record<string, unknown>)
+          : {};
+      this.finalizeTerminalBubble(block, resultObj, event.payload.error);
+      return;
+    }
     if (!block) {
       if (this.questionnaireToolCalls.has(callId)) {
+        return;
+      }
+      // Terminal tool result without a prior tool_call (e.g., on replay)
+      const resolvedToolName = resultToolName ?? streamedToolName ?? '';
+      if (this.isTerminalToolName(resolvedToolName)) {
+        const responseEl = this.getOrCreateToolCallContainer(
+          event.id,
+          event.turnId,
+          callId,
+          responseId,
+          event.timestamp,
+        );
+        block = this.createTerminalBubble(callId);
+        block.dataset['eventId'] = event.id;
+        block.dataset['renderer'] = 'unified';
+        const toolCallsContainer = this.getOrCreateToolCallsContainer(
+          responseEl,
+          responseId ?? undefined,
+        );
+        toolCallsContainer.appendChild(block);
+        this.toolCallElements.set(callId, block);
+        const resultObj =
+          event.payload.result && typeof event.payload.result === 'object'
+            ? (event.payload.result as Record<string, unknown>)
+            : {};
+        this.finalizeTerminalBubble(block, resultObj, event.payload.error);
         return;
       }
       const attachmentResult = getAttachmentToolResult(event.payload.result);
@@ -2673,7 +2773,6 @@ export class ChatRenderer {
       indicator.dataset['questionnaireTitle'] = payload.schemaTitle;
     }
     turnEl.appendChild(indicator);
-
   }
 
   private renderAgentCallbackIndicator(
@@ -2721,9 +2820,7 @@ export class ChatRenderer {
     }
   }
 
-  private handleError(
-    event: RenderedTranscriptEvent<{ code: string; message: string }>,
-  ): void {
+  private handleError(event: RenderedTranscriptEvent<{ code: string; message: string }>): void {
     const turnId = this.getTurnId(event.turnId, event.id);
     const turnEl = this.getOrCreateTurnContainer(turnId, event.timestamp);
 
@@ -3068,7 +3165,8 @@ export class ChatRenderer {
     return (
       toolName !== 'agents_message' &&
       !this.isVoiceToolName(toolName) &&
-      !this.isAttachmentToolName(toolName)
+      !this.isAttachmentToolName(toolName) &&
+      !this.isTerminalToolName(toolName)
     );
   }
 
@@ -3078,6 +3176,116 @@ export class ChatRenderer {
 
   private isAttachmentToolName(toolName: string): boolean {
     return toolName === ATTACHMENT_TOOL_NAME;
+  }
+
+  private isTerminalToolName(toolName: string): boolean {
+    return toolName === TERMINAL_TOOL_NAME;
+  }
+
+  private createTerminalBubble(callId: string, command?: string): HTMLDivElement {
+    const bubble = document.createElement('div');
+    bubble.className = 'message assistant terminal-tool-bubble';
+    bubble.dataset['toolCallId'] = callId;
+    bubble.dataset['toolName'] = TERMINAL_TOOL_NAME;
+    bubble.dataset['status'] = 'pending';
+    bubble.style.display = 'flex';
+    bubble.style.flexDirection = 'column';
+    bubble.style.gap = '8px';
+    bubble.style.padding = '12px 14px';
+    bubble.style.borderRadius = '14px';
+    bubble.style.border = '1px solid var(--color-border-subtle)';
+    bubble.style.background = 'var(--color-bg-elevated)';
+    bubble.style.maxWidth = '680px';
+
+    const header = document.createElement('div');
+    header.className = 'terminal-tool-header';
+    header.style.display = 'inline-flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '8px';
+    header.style.color = 'var(--color-text-secondary)';
+    header.style.fontSize = '0.78em';
+    header.style.fontWeight = '600';
+    header.style.letterSpacing = '0.04em';
+    header.style.textTransform = 'uppercase';
+    header.appendChild(this.createTerminalIcon());
+
+    const label = document.createElement('span');
+    label.className = 'terminal-tool-label';
+    label.textContent = 'Terminal';
+    header.appendChild(label);
+
+    // Input block — shows the command immediately
+    const inputBlock = document.createElement('div');
+    inputBlock.className = 'terminal-tool-input markdown-content';
+    inputBlock.style.color = 'var(--color-message-assistant-text)';
+    inputBlock.style.lineHeight = 'var(--line-height-relaxed)';
+    if (command) {
+      applyMarkdownToElement(inputBlock, '```sh\n' + command + '\n```');
+    }
+    this.applyTerminalPreStyles(inputBlock);
+
+    // Output block — populated by streaming chunks and finalized result
+    const outputBlock = document.createElement('div');
+    outputBlock.className = 'terminal-tool-output markdown-content';
+    outputBlock.style.color = 'var(--color-message-assistant-text)';
+    outputBlock.style.lineHeight = 'var(--line-height-relaxed)';
+
+    bubble.append(header, inputBlock, outputBlock);
+    return bubble;
+  }
+
+  private updateTerminalBubbleStreaming(bubble: HTMLDivElement, text: string): void {
+    const outputBlock = bubble.querySelector<HTMLDivElement>('.terminal-tool-output');
+    if (outputBlock) {
+      applyMarkdownToElement(outputBlock, '```\n' + text.trimEnd() + '\n```');
+      this.applyTerminalPreStyles(outputBlock);
+    }
+  }
+
+  private finalizeTerminalBubble(
+    bubble: HTMLDivElement,
+    result: { output?: string; exitCode?: number | null; timedOut?: boolean; truncated?: boolean },
+    error?: { code: string; message: string },
+  ): void {
+    bubble.dataset['status'] = 'complete';
+    const isError =
+      !!error || (result.exitCode != null && result.exitCode !== 0) || result.timedOut;
+
+    if (isError) {
+      bubble.classList.add('error');
+      bubble.style.borderColor = 'var(--color-error-border)';
+      bubble.style.background = 'var(--color-error-soft)';
+    }
+
+    const outputBlock = bubble.querySelector<HTMLDivElement>('.terminal-tool-output');
+    if (outputBlock) {
+      const output = typeof result.output === 'string' ? result.output : '';
+      applyMarkdownToElement(outputBlock, output);
+      this.applyTerminalPreStyles(outputBlock);
+    }
+  }
+
+  /** Make `pre` blocks inside terminal bubbles span the full width. */
+  private applyTerminalPreStyles(container: HTMLDivElement): void {
+    const preEls = container.querySelectorAll<HTMLPreElement>('pre');
+    for (const pre of preEls) {
+      pre.style.display = 'block';
+      pre.style.width = '100%';
+    }
+  }
+
+  private createTerminalIcon(): HTMLSpanElement {
+    const icon = document.createElement('span');
+    icon.className = 'terminal-event-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.style.display = 'inline-flex';
+    icon.style.alignItems = 'center';
+    icon.style.justifyContent = 'center';
+    icon.style.width = '18px';
+    icon.style.height = '18px';
+    icon.innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><polyline points="4 17 10 11 4 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="19" x2="20" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return icon;
   }
 
   private getVoiceToolText(args: Record<string, unknown>): string {
@@ -3354,7 +3562,10 @@ export class ChatRenderer {
           console.error('[attachments] Failed to copy attachment', error);
           button.disabled = false;
           button.textContent = originalLabel;
-          this.showAttachmentToolActionError(button.closest<HTMLDivElement>('.attachment-tool-bubble') ?? bubble, 'Failed to copy attachment.');
+          this.showAttachmentToolActionError(
+            button.closest<HTMLDivElement>('.attachment-tool-bubble') ?? bubble,
+            'Failed to copy attachment.',
+          );
         });
     });
   }
@@ -3518,7 +3729,8 @@ export class ChatRenderer {
 
     const metaEl = bubble.querySelector<HTMLElement>('.attachment-tool-meta');
     if (metaEl) {
-      metaEl.textContent = summary.title && summary.fileName ? summary.fileName : 'Preparing attachment…';
+      metaEl.textContent =
+        summary.title && summary.fileName ? summary.fileName : 'Preparing attachment…';
     }
 
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
@@ -3564,12 +3776,16 @@ export class ChatRenderer {
     const previewEl = bubble.querySelector<HTMLDivElement>('.attachment-tool-preview');
     const expansionState = this.attachmentExpansionStates.get(bubble);
     const expandedText =
-      expansionState?.status === 'ready' && expansionState.expanded ? expansionState.fullText : undefined;
+      expansionState?.status === 'ready' && expansionState.expanded
+        ? expansionState.fullText
+        : undefined;
     if (previewEl) {
       previewEl.replaceChildren();
       previewEl.classList.remove('expanded');
       if (typeof expandedText === 'string') {
-        this.renderAttachmentPreviewContent(previewEl, attachment, expandedText, { expanded: true });
+        this.renderAttachmentPreviewContent(previewEl, attachment, expandedText, {
+          expanded: true,
+        });
       } else if (this.isImageAttachmentPreviewable(attachment)) {
         this.renderAttachmentPreviewContent(previewEl, attachment, '', {});
       } else if (
@@ -3683,10 +3899,12 @@ export class ChatRenderer {
       if (attachment.openUrl && attachment.openMode === 'browser_blob') {
         const openButton = this.createAttachmentActionButton('Open', () => {
           this.clearAttachmentToolActionError(bubble);
-          void openHtmlAttachmentInBrowser(attachment.openUrl!, attachment.fileName).catch((error) => {
-            console.error('[attachments] Failed to open HTML attachment', error);
-            this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
-          });
+          void openHtmlAttachmentInBrowser(attachment.openUrl!, attachment.fileName).catch(
+            (error) => {
+              console.error('[attachments] Failed to open HTML attachment', error);
+              this.showAttachmentToolActionError(bubble, 'Failed to open attachment.');
+            },
+          );
         });
         actionsEl.appendChild(openButton);
       }

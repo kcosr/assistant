@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AgentDefinition, AgentRegistry } from './agents';
+import { detectBangCommand, handleBangCommand } from './bangCommand';
 import { processUserMessage, isSessionBusy } from './chatProcessor';
 import type { ChatCompletionToolCallState } from './chatCompletionTypes';
 import type { EnvConfig } from './envConfig';
@@ -200,10 +201,56 @@ export async function startSessionMessage(options: {
 }): Promise<SessionMessageStartResult> {
   const { input, sessionIndex, sessionHub, toolHost, envConfig, eventStore } = options;
 
-  const content = input.content;
+  let content = input.content;
   if (!content.trim()) {
     throw new ToolError('invalid_arguments', 'content must be a non-empty string');
   }
+
+  // ── Bang command interception ──────────────────────────────────────────
+  const bangAgentRegistry = options.agentRegistry ?? sessionHub.getAgentRegistry();
+  const bangSummary = await requireSessionSummary(sessionIndex, input.sessionId);
+  const bangAgentId = bangSummary.agentId;
+  const bangAgent = bangAgentId ? bangAgentRegistry.getAgent(bangAgentId) : undefined;
+  const bangEnabled = bangAgent?.bangCommandEnabled === true;
+
+  const bangResult = detectBangCommand(content.trim());
+  if (bangEnabled && bangResult.isBang) {
+    if (!bangResult.command) {
+      throw new ToolError(
+        'invalid_arguments',
+        'Shell command must not be empty (usage: !<command>)',
+      );
+    }
+    const state = await sessionHub.ensureSessionState(input.sessionId, bangSummary);
+    const workingDir = state.summary.attributes?.core?.workingDir as string | undefined;
+    await handleBangCommand({
+      command: bangResult.command,
+      sessionId: input.sessionId,
+      sessionHub,
+      summary: state.summary,
+      ...(eventStore ? { eventStore } : {}),
+      ...(workingDir ? { workingDir } : {}),
+    });
+    return {
+      response: {
+        sessionId: input.sessionId,
+        sessionName: bangSummary.name ?? input.sessionId,
+        agentId: bangSummary.agentId ?? null,
+        created: false,
+        status: 'complete',
+        responseId: randomUUID(),
+        response: '',
+        truncated: false,
+        durationMs: 0,
+        toolCallCount: 0,
+        toolCalls: [],
+      },
+    };
+  }
+  if (bangEnabled && !bangResult.isBang && bangResult.isEscape) {
+    content = bangResult.text;
+  }
+  // ── End bang command interception ───────────────────────────────────────
 
   const inputType = input.inputType ?? 'text';
   if (inputType !== 'text' && inputType !== 'audio') {
