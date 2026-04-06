@@ -12,6 +12,7 @@
       "multiInstance": false,
       "defaultSessionBinding": "global",
       "sessionScope": "global",
+      "defaultPinned": true,
       "capabilities": ["notifications.read", "notifications.write"]
     }
   ],
