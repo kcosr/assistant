@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { setupAndroidAppLifecycleHandlers, setupBackButtonHandler } from './capacitor';
+import {
+  __resetCapacitorTestState,
+  setupAndroidAppLifecycleHandlers,
+  setupBackButtonHandler,
+  syncStatusBarThemeForScheme,
+} from './capacitor';
 
 type BackButtonListener = (event: { canGoBack?: boolean }) => void;
 
@@ -23,6 +28,7 @@ const createAppMock = () => {
 
 describe('setupBackButtonHandler', () => {
   afterEach(() => {
+    __resetCapacitorTestState();
     vi.restoreAllMocks();
   });
 
@@ -115,6 +121,7 @@ const createAppStateMock = () => {
 
 describe('setupAndroidAppLifecycleHandlers', () => {
   afterEach(() => {
+    __resetCapacitorTestState();
     vi.restoreAllMocks();
   });
 
@@ -180,5 +187,203 @@ describe('setupAndroidAppLifecycleHandlers', () => {
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
     document.dispatchEvent(new Event('visibilitychange'));
     expect(onResume).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('syncStatusBarThemeForScheme', () => {
+  afterEach(() => {
+    __resetCapacitorTestState();
+    delete (window as typeof window & { Capacitor?: unknown }).Capacitor;
+    vi.restoreAllMocks();
+  });
+
+  it('maps dark scheme to Style.Dark', async () => {
+    const setStyle = vi.fn(async () => {});
+    const importModule = (async () => ({
+      StatusBar: { setStyle },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    expect(setStyle).toHaveBeenCalledWith({ style: 'DARK' });
+  });
+
+  it('maps light scheme to Style.Light', async () => {
+    const setStyle = vi.fn(async () => {});
+    const importModule = (async () => ({
+      StatusBar: { setStyle },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('light', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    expect(setStyle).toHaveBeenCalledWith({ style: 'LIGHT' });
+  });
+
+  it('is a no-op outside Android', async () => {
+    const importModule = vi.fn(async () => ({
+      StatusBar: { setStyle: vi.fn(async () => {}) },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => false,
+    });
+
+    expect(importModule).not.toHaveBeenCalled();
+  });
+
+  it('dedupes repeated syncs for the same scheme', async () => {
+    const setStyle = vi.fn(async () => {});
+    const importModule = (async () => ({
+      StatusBar: { setStyle },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    expect(setStyle).toHaveBeenCalledTimes(1);
+  });
+
+  it('reapplies the same scheme when forced', async () => {
+    const setStyle = vi.fn(async () => {});
+    const importModule = (async () => ({
+      StatusBar: { setStyle },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+      force: true,
+    });
+
+    expect(setStyle).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies the latest requested scheme after an in-flight update completes', async () => {
+    let resolveFirstCall: (() => void) | null = null;
+    const firstCallDone = new Promise<void>((resolve) => {
+      resolveFirstCall = resolve;
+    });
+    const setStyle = vi.fn(async ({ style }: { style: string }) => {
+      if (style === 'DARK') {
+        await firstCallDone;
+      }
+    });
+    const importModule = (async () => ({
+      StatusBar: { setStyle },
+      Style: { Dark: 'DARK', Light: 'LIGHT' },
+    })) as unknown as <T>(specifier: string) => Promise<T>;
+
+    const firstSync = syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+    await Promise.resolve();
+    const secondSync = syncStatusBarThemeForScheme('light', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    if (typeof resolveFirstCall !== 'function') {
+      throw new Error('Expected first call resolver to be assigned');
+    }
+    (resolveFirstCall as () => void)();
+    await Promise.all([firstSync, secondSync]);
+
+    expect(setStyle.mock.calls).toEqual([[{ style: 'DARK' }], [{ style: 'LIGHT' }]]);
+  });
+
+  it('swallows importer failures', async () => {
+    const importModule = vi.fn(async () => {
+      throw new Error('boom');
+    }) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await expect(
+      syncStatusBarThemeForScheme('dark', {
+        importModule,
+        isAndroid: () => true,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('falls back to the global Capacitor StatusBar plugin when import fails', async () => {
+    const setStyle = vi.fn(async () => {});
+    (
+      window as typeof window & {
+        Capacitor?: {
+          Plugins?: {
+            StatusBar?: {
+              setStyle: typeof setStyle;
+            };
+          };
+        };
+      }
+    ).Capacitor = {
+      Plugins: {
+        StatusBar: {
+          setStyle,
+        },
+      },
+    };
+
+    const importModule = vi.fn(async () => {
+      throw new Error('boom');
+    }) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('light', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    expect(setStyle).toHaveBeenCalledWith({ style: 'LIGHT' });
+  });
+
+  it('registers the global Capacitor StatusBar plugin when import fails', async () => {
+    const setStyle = vi.fn(async () => {});
+    const registerPlugin = vi.fn(() => ({
+      setStyle,
+    }));
+    (
+      window as typeof window & {
+        Capacitor?: {
+          registerPlugin?: typeof registerPlugin;
+        };
+      }
+    ).Capacitor = {
+      registerPlugin,
+    };
+
+    const importModule = vi.fn(async () => {
+      throw new Error('boom');
+    }) as unknown as <T>(specifier: string) => Promise<T>;
+
+    await syncStatusBarThemeForScheme('dark', {
+      importModule,
+      isAndroid: () => true,
+    });
+
+    expect(registerPlugin).toHaveBeenCalledWith('StatusBar');
+    expect(setStyle).toHaveBeenCalledWith({ style: 'DARK' });
   });
 });

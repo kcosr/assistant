@@ -237,6 +237,7 @@ import { apiFetch, getApiBaseUrl, getWebSocketUrl } from './utils/api';
 import {
   configureStatusBar,
   isCapacitorAndroid,
+  syncStatusBarThemeForScheme,
   setupAndroidAppLifecycleHandlers,
   setupBackButtonHandler,
 } from './utils/capacitor';
@@ -292,6 +293,8 @@ async function main(): Promise<void> {
       deactivateWindowSlot(WINDOW_ID);
     },
     onResume: () => {
+      const scheme = document.documentElement.getAttribute('data-theme-scheme') === 'dark' ? 'dark' : 'light';
+      void syncStatusBarThemeForScheme(scheme, { force: true });
       startHeartbeat();
       ensureConnected('capacitor-resume');
       void refreshSessions();
@@ -3412,6 +3415,7 @@ async function main(): Promise<void> {
   let themePreferences = loadThemePreferences();
   const syncThemePreferences = (source: 'init' | 'user' | 'system'): void => {
     const detail = applyThemePreferences(themePreferences, { source });
+    void syncStatusBarThemeForScheme(detail.scheme);
     themePreferences = {
       themeId: detail.themeId,
       uiFont: detail.uiFont,
