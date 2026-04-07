@@ -62,6 +62,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'created',
+            revision: expect.any(Number),
             notification: expect.objectContaining({ title: 'Hello' }),
           }),
         }),
@@ -200,6 +201,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'updated',
+            revision: expect.any(Number),
           }),
         }),
       );
@@ -224,6 +226,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'snapshot',
+            revision: expect.any(Number),
           }),
         }),
       );
@@ -250,6 +253,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'removed',
+            revision: expect.any(Number),
             id: created.id,
           }),
         }),
@@ -283,6 +287,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'snapshot',
+            revision: expect.any(Number),
             notifications: [],
           }),
         }),
@@ -321,6 +326,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'snapshot',
+            revision: expect.any(Number),
             notifications: expect.arrayContaining([
               expect.objectContaining({ title: 'Test' }),
             ]),
@@ -366,6 +372,7 @@ describe('notifications server plugin', () => {
           payload: expect.objectContaining({
             type: 'notification_update',
             event: 'updated',
+            revision: expect.any(Number),
             notification: expect.objectContaining({
               id: created.id,
               readAt: expect.any(String),
