@@ -54,6 +54,8 @@ describe('notifications panel', () => {
 
   beforeEach(async () => {
     panelFactory = null;
+    delete (window as any).AssistantNativeVoice;
+    delete (window as any).Capacitor;
     (window as any).ASSISTANT_PANEL_REGISTRY = {
       registerPanel: (_panelType: string, factory: () => PanelModule) => {
         panelFactory = factory;
@@ -366,6 +368,89 @@ describe('notifications panel', () => {
     const sessionLink = container.querySelector('.notif-session-link');
     expect(sessionLink).not.toBeNull();
     expect(sessionLink?.textContent).toContain('My Session');
+
+    handle.unmount();
+  });
+
+  it('renders Android-native Speaker and Mic actions for voice-capable notifications', async () => {
+    const performNotificationSpeaker = vi.fn();
+    const performNotificationMic = vi.fn();
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker,
+      performNotificationMic,
+    };
+    (window as any).Capacitor = {
+      getPlatform: () => 'android',
+    };
+
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            sessionTitle: 'Session 1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    const actionButtons = container.querySelectorAll('.notif-action-btn');
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0]?.textContent).toContain('Speaker');
+    expect(actionButtons[1]?.textContent).toContain('Mic');
+
+    (actionButtons[0] as HTMLElement).click();
+    (actionButtons[1] as HTMLElement).click();
+
+    expect(performNotificationSpeaker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notification: expect.objectContaining({ id: 'n1' }),
+      }),
+    );
+    expect(performNotificationMic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notification: expect.objectContaining({ id: 'n1' }),
+      }),
+    );
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('does not render native voice actions when the Android bridge is unavailable', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-action-btn')).toBeNull();
 
     handle.unmount();
   });

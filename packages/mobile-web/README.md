@@ -191,7 +191,8 @@ The following patches are applied automatically on `android:sync`:
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
   metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale
   queued asks can be invalidated before recognition begins.
-- Durable session-linked notifications expose native `Speaker` and `Mic` actions. Manual actions
+- Durable session-linked notifications expose `Speaker` and `Mic` actions both from the Android
+  system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,
   and discard interrupted automatic playback instead of requeueing it.
 - Automatic voice admission remains local-only. If the Android runtime was not alive when a
@@ -285,6 +286,7 @@ This command:
 - builds debug APK
 - installs on all connected `adb` devices
 - launches each flavor app after install
+- skips unresponsive devices after an adb probe/install timeout and reports them at the end
 - restores `capacitor.config.json` to its original contents when finished
 
 Optional:

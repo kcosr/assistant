@@ -22,6 +22,21 @@ interface NotificationRecord {
   sessionActivitySeq: number | null;
 }
 
+interface AssistantNativeVoiceBridgeTarget {
+  performNotificationSpeaker?: (args: { notification: NotificationRecord }) => void | Promise<void>;
+  performNotificationMic?: (args: { notification: NotificationRecord }) => void | Promise<void>;
+}
+
+interface AssistantNativeVoiceBridgeHost {
+  AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+  Capacitor?: {
+    Plugins?: {
+      AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+    };
+    getPlatform?: () => string;
+  };
+}
+
 type FilterMode = 'all' | 'unread';
 type DensityMode = 'card' | 'compact';
 
@@ -48,6 +63,7 @@ const ICON_PATHS: Record<string, string> = {
   inbox: 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M22 12h-4l-3 3h-6l-3-3H2',
   attention: 'M12 9v4 M12 17h.01 M10.29 3.86l-7.5 13A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.71-3l-7.5-13a2 2 0 0 0-3.42 0z',
   close: 'M18 6L6 18 M6 6l12 12',
+  mic: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v1a7 7 0 0 1-14 0v-1 M12 18v4 M8 22h8',
 };
 
 function createSvgIcon(pathD: string, className = 'notif-icon'): SVGSVGElement {
@@ -81,6 +97,60 @@ function formatRelativeTime(isoString: string): string {
   if (diffDays === 1) return 'yesterday';
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function getNativeVoiceBridgeTarget(): AssistantNativeVoiceBridgeTarget | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const host = window as unknown as AssistantNativeVoiceBridgeHost;
+  return host.AssistantNativeVoice ?? host.Capacitor?.Plugins?.AssistantNativeVoice ?? null;
+}
+
+function isAndroidNativeVoiceAvailable(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const host = window as unknown as AssistantNativeVoiceBridgeHost;
+  const target = getNativeVoiceBridgeTarget();
+  if (!target) {
+    return false;
+  }
+  const platform = host.Capacitor?.getPlatform?.();
+  return !platform || platform === 'android';
+}
+
+function invokeNativeVoiceAction(
+  methodName: keyof AssistantNativeVoiceBridgeTarget,
+  notification: NotificationRecord,
+): boolean {
+  const target = getNativeVoiceBridgeTarget();
+  const method = target?.[methodName];
+  if (typeof method !== 'function') {
+    return false;
+  }
+  try {
+    const result = method({ notification });
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      void Promise.resolve(result).catch((error: unknown) => {
+        console.warn(`[notifications] ${String(methodName)} failed`, error);
+      });
+    }
+    return true;
+  } catch (error) {
+    console.warn(`[notifications] ${String(methodName)} failed`, error);
+    return false;
+  }
+}
+
+function resolveSpokenText(notification: NotificationRecord): string {
+  if (notification.ttsText && notification.ttsText.trim()) {
+    return notification.ttsText.trim();
+  }
+  if (notification.body.trim()) {
+    return notification.body.trim();
+  }
+  return notification.title.trim();
 }
 
 (function () {
@@ -257,6 +327,10 @@ function formatRelativeTime(isoString: string): string {
         const isRead = n.readAt !== null;
         const isCompact = state.density === 'compact';
         const isExpanded = state.expandedIds.has(n.id);
+        const nativeVoiceAvailable = isAndroidNativeVoiceAvailable();
+        const spokenText = resolveSpokenText(n);
+        const canSpeak = nativeVoiceAvailable && spokenText.length > 0;
+        const canListen = nativeVoiceAvailable && !!n.sessionId;
 
         const item = document.createElement('div');
         item.className = `notif-item${isRead ? ' notif-item-read' : ''}${isCompact ? ' notif-item-compact' : ''}`;
@@ -333,6 +407,47 @@ function formatRelativeTime(isoString: string): string {
           bodyEl.className = 'notif-body-text';
           bodyEl.textContent = n.body;
           content.appendChild(bodyEl);
+
+          if (canSpeak || canListen) {
+            const actionsEl = document.createElement('div');
+            actionsEl.className = 'notif-actions';
+
+            if (canSpeak) {
+              const speakBtn = document.createElement('button');
+              speakBtn.type = 'button';
+              speakBtn.className = 'notif-action-btn';
+              speakBtn.title = 'Speak notification';
+              speakBtn.setAttribute('aria-label', 'Speak notification');
+              speakBtn.appendChild(createSvgIcon(ICON_PATHS.volume, 'notif-icon notif-icon-xs'));
+              const label = document.createElement('span');
+              label.textContent = 'Speaker';
+              speakBtn.appendChild(label);
+              speakBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                invokeNativeVoiceAction('performNotificationSpeaker', n);
+              });
+              actionsEl.appendChild(speakBtn);
+            }
+
+            if (canListen) {
+              const micBtn = document.createElement('button');
+              micBtn.type = 'button';
+              micBtn.className = 'notif-action-btn';
+              micBtn.title = 'Speak then listen';
+              micBtn.setAttribute('aria-label', 'Speak then listen');
+              micBtn.appendChild(createSvgIcon(ICON_PATHS.mic, 'notif-icon notif-icon-xs'));
+              const label = document.createElement('span');
+              label.textContent = 'Mic';
+              micBtn.appendChild(label);
+              micBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                invokeNativeVoiceAction('performNotificationMic', n);
+              });
+              actionsEl.appendChild(micBtn);
+            }
+
+            content.appendChild(actionsEl);
+          }
 
           // Session link
           if (n.sessionId) {

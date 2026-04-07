@@ -32,6 +32,7 @@ public final class AssistantVoicePlugin extends Plugin {
     private static final String TAG = "AssistantVoicePlugin";
     private static final String PENDING_ACTION_SET_VOICE_SETTINGS = "set_voice_settings";
     private static final String PENDING_ACTION_START_LISTEN = "start_manual_listen";
+    private static final String PENDING_ACTION_NOTIFICATION_MIC = "notification_mic";
 
     private BroadcastReceiver receiver;
     private String pendingPermissionAction = "";
@@ -191,6 +192,40 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void performNotificationSpeaker(PluginCall call) {
+        AssistantVoiceNotificationRecord notification = extractNotification(call);
+        if (notification == null) {
+            call.reject("notification is required");
+            return;
+        }
+        ContextCompat.startForegroundService(
+            getContext(),
+            AssistantVoiceRuntimeService.notificationSpeakerIntent(getContext(), notification)
+        );
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
+    public void performNotificationMic(PluginCall call) {
+        AssistantVoiceNotificationRecord notification = extractNotification(call);
+        if (notification == null) {
+            call.reject("notification is required");
+            return;
+        }
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            pendingPermissionAction = PENDING_ACTION_NOTIFICATION_MIC;
+            saveCall(call);
+            requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
+            return;
+        }
+        ContextCompat.startForegroundService(
+            getContext(),
+            AssistantVoiceRuntimeService.notificationMicIntent(getContext(), notification)
+        );
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void listInputDevices(PluginCall call) {
         Log.d(TAG, "listInputDevices invoked");
         JSArray devices = new JSArray();
@@ -263,6 +298,14 @@ public final class AssistantVoicePlugin extends Plugin {
                 getContext(),
                 AssistantVoiceRuntimeService.startManualListenIntent(getContext(), sessionId)
             );
+        } else if (PENDING_ACTION_NOTIFICATION_MIC.equals(pendingPermissionAction)) {
+            AssistantVoiceNotificationRecord notification = extractNotification(savedCall);
+            if (notification != null) {
+                ContextCompat.startForegroundService(
+                    getContext(),
+                    AssistantVoiceRuntimeService.notificationMicIntent(getContext(), notification)
+                );
+            }
         }
 
         pendingPermissionAction = "";
@@ -345,6 +388,31 @@ public final class AssistantVoicePlugin extends Plugin {
     ) {
         JSONObject settings = call.getData().optJSONObject("settings");
         return settings == null ? null : current.withVoiceSettings(settings);
+    }
+
+    private AssistantVoiceNotificationRecord extractNotification(PluginCall call) {
+        JSONObject notification = call.getData().optJSONObject("notification");
+        if (notification == null) {
+            return null;
+        }
+        Integer sessionActivitySeq =
+            notification.has("sessionActivitySeq") && !notification.isNull("sessionActivitySeq")
+                ? Integer.valueOf(notification.optInt("sessionActivitySeq"))
+                : null;
+        return new AssistantVoiceNotificationRecord(
+            notification.optString("id", null),
+            notification.optString("kind", null),
+            notification.optString("source", null),
+            notification.optString("title", null),
+            notification.optString("body", null),
+            notification.optString("readAt", null),
+            notification.optString("sessionId", null),
+            notification.optString("sessionTitle", null),
+            notification.optString("voiceMode", null),
+            notification.optString("ttsText", null),
+            notification.optString("sourceEventId", null),
+            sessionActivitySeq
+        );
     }
 
     private boolean hasVoiceModePermissions() {

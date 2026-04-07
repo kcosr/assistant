@@ -268,6 +268,36 @@
   -webkit-box-orient: vertical;
 }
 
+.notif-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.notif-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary, #9aa4b6);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.2;
+  transition: color 0.1s, background-color 0.1s, border-color 0.1s;
+}
+
+.notif-action-btn:hover,
+.notif-action-btn:focus-visible {
+  color: var(--color-text-primary, #e6ebf5);
+  border-color: var(--color-accent, #7aa2f7);
+  background: rgba(122, 162, 247, 0.08);
+}
+
 /* Session link */
 
 .notif-session-link {
