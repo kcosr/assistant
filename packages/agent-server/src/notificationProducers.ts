@@ -39,8 +39,8 @@ export async function publishFinalResponseNotification(options: {
           : {}),
       },
       source: 'system',
-      sessionHub: options.sessionHub,
-      sessionIndex: options.sessionIndex,
+      ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),
+      ...(options.sessionIndex ? { sessionIndex: options.sessionIndex } : {}),
     });
   } catch {
     // Notification transport is optional relative to the chat response.

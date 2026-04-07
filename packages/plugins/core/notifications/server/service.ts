@@ -137,12 +137,16 @@ export async function createNotificationRecord(options: {
         title: options.input.title,
         body: options.input.body,
         sessionId,
-        sessionTitle,
-        tts: options.input.tts,
-        voiceMode: options.input.voiceMode,
-        ttsText: options.input.ttsText,
-        sourceEventId: options.input.sourceEventId,
-        sessionActivitySeq: options.input.sessionActivitySeq,
+        ...(sessionTitle !== undefined ? { sessionTitle } : {}),
+        ...(options.input.tts !== undefined ? { tts: options.input.tts } : {}),
+        ...(options.input.voiceMode !== undefined ? { voiceMode: options.input.voiceMode } : {}),
+        ...(options.input.ttsText !== undefined ? { ttsText: options.input.ttsText } : {}),
+        ...(options.input.sourceEventId !== undefined
+          ? { sourceEventId: options.input.sourceEventId }
+          : {}),
+        ...(options.input.sessionActivitySeq !== undefined
+          ? { sessionActivitySeq: options.input.sessionActivitySeq }
+          : {}),
       },
       options.source,
     );

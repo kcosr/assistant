@@ -120,8 +120,8 @@ async function publishVoiceToolNotification(options: {
         ...(sessionActivitySeq !== null ? { sessionActivitySeq } : {}),
       },
       source: 'tool',
-      sessionHub: ctx.sessionHub,
-      sessionIndex: ctx.sessionIndex,
+      ...(ctx.sessionHub ? { sessionHub: ctx.sessionHub } : {}),
+      ...(ctx.sessionIndex ? { sessionIndex: ctx.sessionIndex } : {}),
     });
   } catch {
     // Notifications are optional for voice tools; the transcript tool-call path still exists.
