@@ -2219,7 +2219,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         String normalizedClientId = trim(adapterClientId);
         if (!normalizedClientId.isEmpty()) {
-          putJson(body, "clientId", normalizedClientId);
+            putJson(body, "clientId", normalizedClientId);
         }
         return body;
     }
@@ -2229,7 +2229,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         putJson(body, "requestId", trim(requestId));
         String normalizedClientId = trim(adapterClientId);
         if (!normalizedClientId.isEmpty()) {
-          putJson(body, "clientId", normalizedClientId);
+            putJson(body, "clientId", normalizedClientId);
         }
         return body;
     }
@@ -2531,11 +2531,12 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private static int durableNotificationId(String notificationId) {
-        return DURABLE_NOTIFICATION_ID_OFFSET + Math.abs(trim(notificationId).hashCode());
+        return DURABLE_NOTIFICATION_ID_OFFSET + (trim(notificationId).hashCode() & 0x7FFFFFFF);
     }
 
     private static int durableNotificationRequestCode(String notificationId, int actionIndex) {
-        return durableNotificationId(notificationId) * 10 + Math.max(0, actionIndex);
+        int baseId = trim(notificationId).hashCode() & 0x7FFFFFFF;
+        return DURABLE_NOTIFICATION_ID_OFFSET + baseId + Math.max(0, actionIndex);
     }
 
     private String postJson(String url, JSONObject body) throws IOException {
