@@ -39,7 +39,7 @@ const ICON_PATHS: Record<string, string> = {
   moreVertical: 'M12 12h.01 M12 5h.01 M12 19h.01',
   volume: 'M11 5L6 9H2v6h4l5 4V5z M19.07 4.93a10 10 0 0 1 0 14.14 M15.54 8.46a5 5 0 0 1 0 7.07',
   externalLink: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14L21 3',
-  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
+  messageSquare: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
 };
 
 function createSvgIcon(pathD: string, className = 'notif-icon'): SVGSVGElement {
@@ -204,7 +204,7 @@ function formatRelativeTime(isoString: string): string {
       const emptyState = document.createElement('div');
       emptyState.className = 'notif-empty';
       emptyState.innerHTML = `
-        <div class="notif-empty-icon">${createSvgIcon(ICON_PATHS.bell, 'notif-icon notif-icon-lg').outerHTML}</div>
+        <div class="notif-empty-icon">${createSvgIcon(ICON_PATHS.messageSquare, 'notif-icon notif-icon-lg').outerHTML}</div>
         <div class="notif-empty-text">No notifications</div>
       `;
       body.appendChild(emptyState);

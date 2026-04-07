@@ -7,7 +7,7 @@
     {
       "type": "notifications",
       "title": "Notifications",
-      "icon": "bell",
+      "icon": "messageSquare",
       "description": "Browse and manage notifications from agents, tools, and scripts.",
       "multiInstance": false,
       "defaultSessionBinding": "global",
