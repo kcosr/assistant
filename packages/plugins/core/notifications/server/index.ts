@@ -123,12 +123,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     const eventType = payload['type'];
 
     if (eventType === 'request_snapshot') {
-      const { notifications } = await store.list();
+      const { notifications, revision } = await store.snapshot();
       ctx.sendToClient({
         type: 'panel_event',
         panelId: event.panelId,
         panelType: PANEL_TYPE,
-        payload: buildPanelEvent('snapshot', store.revision, { notifications }),
+        payload: buildPanelEvent('snapshot', revision, { notifications }),
       });
     } else if (eventType === 'toggle_read') {
       const id = payload['id'];
@@ -141,8 +141,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       }
     } else if (eventType === 'mark_all_read') {
       await store.markAllRead();
-      const { notifications } = await store.list();
-      broadcastFromPanelCtx(ctx, 'snapshot', store.revision, { notifications });
+      const { notifications, revision } = await store.snapshot();
+      broadcastFromPanelCtx(ctx, 'snapshot', revision, { notifications });
     } else if (eventType === 'clear') {
       const id = payload['id'];
       if (typeof id !== 'string') {
@@ -224,8 +224,8 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
       mark_all_read: async (_args, ctx) => {
         const count = await store.markAllRead();
-        const { notifications } = await store.list();
-        broadcastNotificationEvent(ctx, 'snapshot', store.revision, { notifications });
+        const { notifications, revision } = await store.snapshot();
+        broadcastNotificationEvent(ctx, 'snapshot', revision, { notifications });
         return { marked: count };
       },
 

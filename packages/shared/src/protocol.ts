@@ -856,6 +856,7 @@ export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
 export const ServerNotificationEventMessageSchema = z.object({
   type: z.literal('notification_event'),
   event: z.enum(['created', 'updated', 'removed', 'snapshot']),
+  revision: z.number().int().nonnegative(),
   notification: NotificationRecordSchema.optional(),
   id: z.string().optional(),
   notifications: z.array(NotificationRecordSchema).optional(),

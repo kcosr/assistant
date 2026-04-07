@@ -13,6 +13,12 @@ interface StoreData {
   notifications: NotificationRecord[];
 }
 
+export interface NotificationSnapshot {
+  notifications: NotificationRecord[];
+  total: number;
+  revision: number;
+}
+
 const DEFAULT_MAX_NOTIFICATIONS = 500;
 
 export class NotificationsStore {
@@ -20,8 +26,11 @@ export class NotificationsStore {
   private data: StoreData = { notifications: [] };
   private loaded = false;
   private maxNotifications: number;
-  private writeQueue: Promise<void> = Promise.resolve();
   private _revision = 0;
+
+  // Mutex: all public methods that touch state run through this queue
+  // so that load+mutate+save is fully serialized.
+  private opQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly dataDir: string,
@@ -33,6 +42,14 @@ export class NotificationsStore {
 
   get revision(): number {
     return this._revision;
+  }
+
+  /** Run `fn` exclusively — no other operation can interleave. */
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.opQueue.then(fn, fn);
+    // Keep the queue going even if fn rejects; callers get the rejection.
+    this.opQueue = next.catch(() => {});
+    return next;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -55,14 +72,8 @@ export class NotificationsStore {
     this.loaded = true;
   }
 
-  private save(): Promise<void> {
-    // Chain writes so they execute sequentially, preventing concurrent
-    // writes from clobbering each other on disk.
-    this.writeQueue = this.writeQueue.then(
-      () => writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8'),
-      () => writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8'),
-    );
-    return this.writeQueue;
+  private async save(): Promise<void> {
+    await writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8');
   }
 
   private bumpRevision(): void {
@@ -98,116 +109,151 @@ export class NotificationsStore {
     input: { title: string; body: string; sessionId?: string | null; sessionTitle?: string | null; tts?: boolean },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    const record: NotificationRecord = {
-      id: crypto.randomUUID(),
-      title: input.title,
-      body: input.body,
-      createdAt: new Date().toISOString(),
-      readAt: null,
-      source,
-      sessionId: input.sessionId ?? null,
-      sessionTitle: input.sessionTitle ?? null,
-      tts: input.tts ?? false,
-    };
+      const record: NotificationRecord = {
+        id: crypto.randomUUID(),
+        title: input.title,
+        body: input.body,
+        createdAt: new Date().toISOString(),
+        readAt: null,
+        source,
+        sessionId: input.sessionId ?? null,
+        sessionTitle: input.sessionTitle ?? null,
+        tts: input.tts ?? false,
+      };
 
-    this.data.notifications.unshift(record);
-    this.pruneIfNeeded();
-    this.bumpRevision();
-    await this.save();
+      this.data.notifications.unshift(record);
+      this.pruneIfNeeded();
+      this.bumpRevision();
+      await this.save();
 
-    return record;
+      return record;
+    });
   }
 
   async list(options: NotificationListOptions = {}): Promise<NotificationListResult> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    let filtered = this.data.notifications;
-    if (options.unreadOnly) {
-      filtered = filtered.filter((n) => n.readAt === null);
-    }
+      let filtered = this.data.notifications;
+      if (options.unreadOnly) {
+        filtered = filtered.filter((n) => n.readAt === null);
+      }
 
-    const total = filtered.length;
-    const offset = options.offset ?? 0;
-    const limit = options.limit ?? filtered.length;
-    const notifications = filtered.slice(offset, offset + limit);
+      const total = filtered.length;
+      const offset = options.offset ?? 0;
+      const limit = options.limit ?? filtered.length;
+      const notifications = filtered.slice(offset, offset + limit);
 
-    return { notifications, total };
+      return { notifications, total };
+    });
+  }
+
+  /** Return the full notification list with the current revision, atomically. */
+  async snapshot(options: NotificationListOptions = {}): Promise<NotificationSnapshot> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      let filtered = this.data.notifications;
+      if (options.unreadOnly) {
+        filtered = filtered.filter((n) => n.readAt === null);
+      }
+
+      const total = filtered.length;
+      const offset = options.offset ?? 0;
+      const limit = options.limit ?? filtered.length;
+      const notifications = filtered.slice(offset, offset + limit);
+
+      return { notifications, total, revision: this._revision };
+    });
   }
 
   async get(id: string): Promise<NotificationRecord | null> {
-    await this.ensureLoaded();
-    return this.data.notifications.find((n) => n.id === id) ?? null;
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+      return this.data.notifications.find((n) => n.id === id) ?? null;
+    });
   }
 
   async toggleRead(id: string): Promise<NotificationRecord | null> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    const notification = this.data.notifications.find((n) => n.id === id);
-    if (!notification) {
-      return null;
-    }
+      const notification = this.data.notifications.find((n) => n.id === id);
+      if (!notification) {
+        return null;
+      }
 
-    notification.readAt = notification.readAt === null ? new Date().toISOString() : null;
-    this.bumpRevision();
-    await this.save();
+      notification.readAt = notification.readAt === null ? new Date().toISOString() : null;
+      this.bumpRevision();
+      await this.save();
 
-    return notification;
+      return notification;
+    });
   }
 
   async markAllRead(): Promise<number> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    let count = 0;
-    const now = new Date().toISOString();
-    for (const notification of this.data.notifications) {
-      if (notification.readAt === null) {
-        notification.readAt = now;
-        count++;
+      let count = 0;
+      const now = new Date().toISOString();
+      for (const notification of this.data.notifications) {
+        if (notification.readAt === null) {
+          notification.readAt = now;
+          count++;
+        }
       }
-    }
 
-    if (count > 0) {
-      this.bumpRevision();
-      await this.save();
-    }
+      if (count > 0) {
+        this.bumpRevision();
+        await this.save();
+      }
 
-    return count;
+      return count;
+    });
   }
 
   async remove(id: string): Promise<boolean> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    const index = this.data.notifications.findIndex((n) => n.id === id);
-    if (index === -1) {
-      return false;
-    }
+      const index = this.data.notifications.findIndex((n) => n.id === id);
+      if (index === -1) {
+        return false;
+      }
 
-    this.data.notifications.splice(index, 1);
-    this.bumpRevision();
-    await this.save();
+      this.data.notifications.splice(index, 1);
+      this.bumpRevision();
+      await this.save();
 
-    return true;
+      return true;
+    });
   }
 
   async removeAll(): Promise<number> {
-    await this.ensureLoaded();
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
 
-    const count = this.data.notifications.length;
-    if (count === 0) {
-      return 0;
-    }
+      const count = this.data.notifications.length;
+      if (count === 0) {
+        return 0;
+      }
 
-    this.data.notifications = [];
-    this.bumpRevision();
-    await this.save();
+      this.data.notifications = [];
+      this.bumpRevision();
+      await this.save();
 
-    return count;
+      return count;
+    });
   }
 
   async unreadCount(): Promise<number> {
-    await this.ensureLoaded();
-    return this.data.notifications.filter((n) => n.readAt === null).length;
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+      return this.data.notifications.filter((n) => n.readAt === null).length;
+    });
   }
 }
