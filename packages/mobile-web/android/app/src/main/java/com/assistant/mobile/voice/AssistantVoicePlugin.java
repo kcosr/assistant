@@ -413,19 +413,27 @@ public final class AssistantVoicePlugin extends Plugin {
                 ? Integer.valueOf(notification.optInt("sessionActivitySeq"))
                 : null;
         return new AssistantVoiceNotificationRecord(
-            notification.optString("id", null),
-            notification.optString("kind", null),
-            notification.optString("source", null),
-            notification.optString("title", null),
-            notification.optString("body", null),
-            notification.optString("readAt", null),
-            notification.optString("sessionId", null),
-            notification.optString("sessionTitle", null),
-            notification.optString("voiceMode", null),
-            notification.optString("ttsText", null),
-            notification.optString("sourceEventId", null),
+            optTrimmedString(notification, "id", null),
+            optTrimmedString(notification, "kind", null),
+            optTrimmedString(notification, "source", null),
+            optTrimmedString(notification, "title", null),
+            optTrimmedString(notification, "body", null),
+            optTrimmedString(notification, "readAt", null),
+            optTrimmedString(notification, "sessionId", null),
+            optTrimmedString(notification, "sessionTitle", null),
+            optTrimmedString(notification, "voiceMode", null),
+            optTrimmedString(notification, "ttsText", null),
+            optTrimmedString(notification, "sourceEventId", null),
             sessionActivitySeq
         );
+    }
+
+    private static String optTrimmedString(JSONObject object, String key, String fallback) {
+        if (object == null || key == null || key.isEmpty() || object.isNull(key)) {
+            return fallback;
+        }
+        String value = object.optString(key, fallback);
+        return value == null ? null : value.trim();
     }
 
     private boolean hasVoiceModePermissions() {

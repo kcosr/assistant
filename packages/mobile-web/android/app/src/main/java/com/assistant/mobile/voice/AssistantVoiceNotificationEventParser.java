@@ -90,9 +90,9 @@ final class AssistantVoiceNotificationEventParser {
         if (object == null) {
             return null;
         }
-        String id = trim(object.optString("id"));
-        String title = trim(object.optString("title"));
-        String body = trim(object.optString("body"));
+        String id = optTrimmedString(object, "id", "");
+        String title = optTrimmedString(object, "title", "");
+        String body = optTrimmedString(object, "body", "");
         if (id.isEmpty() || title.isEmpty() || body.isEmpty()) {
             return null;
         }
@@ -102,18 +102,25 @@ final class AssistantVoiceNotificationEventParser {
                 : null;
         return new AssistantVoiceNotificationRecord(
             id,
-            object.optString("kind", "notification"),
-            object.optString("source", "tool"),
+            optTrimmedString(object, "kind", "notification"),
+            optTrimmedString(object, "source", "tool"),
             title,
             body,
-            object.optString("readAt", ""),
-            object.optString("sessionId", ""),
-            object.optString("sessionTitle", ""),
-            object.optString("voiceMode", "none"),
-            object.optString("ttsText", ""),
-            object.optString("sourceEventId", ""),
+            optTrimmedString(object, "readAt", ""),
+            optTrimmedString(object, "sessionId", ""),
+            optTrimmedString(object, "sessionTitle", ""),
+            optTrimmedString(object, "voiceMode", "none"),
+            optTrimmedString(object, "ttsText", ""),
+            optTrimmedString(object, "sourceEventId", ""),
             sessionActivitySeq
         );
+    }
+
+    private static String optTrimmedString(JSONObject object, String key, String fallback) {
+        if (object == null || key == null || key.isEmpty() || object.isNull(key)) {
+            return trim(fallback);
+        }
+        return trim(object.optString(key, fallback));
     }
 
     private static String trim(String value) {

@@ -79,4 +79,28 @@ public final class AssistantVoiceNotificationEventParserTest {
         assertEquals("notif-1", notifications.get(0).id);
         assertTrue(notifications.get(0).toAutomaticQueueItem(true).startsListeningAfterPlayback());
     }
+
+    @Test
+    public void fallsBackToBodyWhenTtsTextIsJsonNull() {
+        String response = "{"
+            + "\"result\":{"
+            + "\"notifications\":[{"
+            + "\"id\":\"notif-1\","
+            + "\"kind\":\"notification\","
+            + "\"source\":\"tool\","
+            + "\"title\":\"TEST\","
+            + "\"body\":\"This is a test\","
+            + "\"voiceMode\":\"speak\","
+            + "\"ttsText\":null"
+            + "}]"
+            + "}"
+            + "}";
+
+        List<AssistantVoiceNotificationRecord> notifications =
+            AssistantVoiceNotificationEventParser.parseListResponse(response);
+
+        assertEquals(1, notifications.size());
+        assertEquals("", notifications.get(0).ttsText);
+        assertEquals("This is a test", notifications.get(0).resolveSpokenText());
+    }
 }
