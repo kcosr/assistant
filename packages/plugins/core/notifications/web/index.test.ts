@@ -140,6 +140,40 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
+  it('updates an existing notification in place on updated events', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1', title: 'Old title', readAt: null })],
+      },
+    } as any);
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'updated',
+        notification: makeNotification({
+          id: 'n1',
+          title: 'Updated title',
+          readAt: '2024-01-01T00:00:00.000Z',
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Updated title');
+    expect(items[0]?.classList.contains('notif-item-read')).toBe(true);
+
+    handle.unmount();
+  });
+
   it('replaces singleton session attention rows on upserted events', async () => {
     const module = panelFactory!();
     const host = createHost();
@@ -228,6 +262,29 @@ describe('notifications panel', () => {
     item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(host.sendEvent).toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('sends clear when dismiss button is clicked', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1' })],
+      },
+    } as any);
+
+    const dismissBtn = container.querySelector('.notif-dismiss-btn') as HTMLElement;
+    dismissBtn.click();
+
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'clear', id: 'n1' });
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
 
     handle.unmount();
   });

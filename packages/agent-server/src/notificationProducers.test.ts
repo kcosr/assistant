@@ -69,6 +69,18 @@ describe('notification producers', () => {
     );
   });
 
+  it('uses summary revision for sessionActivitySeq even without sessionIndex', async () => {
+    await publishFinalResponseNotification({
+      sessionId: 'sess-1',
+      responseId: 'response-1',
+      text: 'Final answer',
+      summary: { revision: 8 } as any,
+    });
+
+    const { notifications } = await getNotificationsStore().list();
+    expect(notifications[0]?.sessionActivitySeq).toBe(8);
+  });
+
   it('clears session attention notifications on reply acceptance', async () => {
     const sessionHub = {
       broadcastToAll: vi.fn(),

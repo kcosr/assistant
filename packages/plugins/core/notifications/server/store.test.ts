@@ -119,6 +119,34 @@ describe('NotificationsStore', () => {
     });
   });
 
+  it('serializes concurrent session attention upserts for the same session', async () => {
+    const [first, second] = await Promise.all([
+      store.upsertSessionAttentionWithRevision(
+        {
+          title: 'Reply 1',
+          body: 'First answer',
+          sessionId: 'sess-1',
+        },
+        'system',
+      ),
+      store.upsertSessionAttentionWithRevision(
+        {
+          title: 'Reply 2',
+          body: 'Second answer',
+          sessionId: 'sess-1',
+        },
+        'system',
+      ),
+    ]);
+
+    const { notifications, total } = await store.list();
+    expect(total).toBe(1);
+    expect(notifications).toHaveLength(1);
+    expect(first.value.id).toBe(second.value.id);
+    expect([first.revision, second.revision].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect(['Reply 1', 'Reply 2']).toContain(notifications[0]?.title);
+  });
+
   it('removes session attention by session id', async () => {
     await store.upsertSessionAttention(
       {

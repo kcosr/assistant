@@ -440,5 +440,54 @@ describe('notifications server plugin', () => {
         }),
       );
     });
+
+    it('handles clear_session_attention via panel event', async () => {
+      const ctx = createMockCtx();
+      const created = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply',
+          body: 'Answer',
+          sessionId: 'sess-1',
+          source: 'system',
+        },
+        ctx,
+      )) as any;
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'clear_session_attention', sessionId: 'sess-1' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect((await plugin.operations!.list({}, ctx) as any).total).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'removed',
+            id: created.id,
+          }),
+        }),
+      );
+      expect(sendToAll).not.toHaveBeenCalled();
+    });
   });
 });

@@ -229,6 +229,33 @@
   white-space: nowrap;
 }
 
+.notif-dismiss-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary, #6b7280);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background-color 0.1s;
+}
+
+.notif-item:hover .notif-dismiss-btn,
+.notif-dismiss-btn:focus-visible {
+  opacity: 1;
+}
+
+.notif-dismiss-btn:hover {
+  color: var(--color-danger, #f87171);
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
+}
+
 /* Body text */
 
 .notif-body-text {

@@ -47,6 +47,7 @@ const ICON_PATHS: Record<string, string> = {
   externalLink: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14L21 3',
   inbox: 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M22 12h-4l-3 3h-6l-3-3H2',
   attention: 'M12 9v4 M12 17h.01 M10.29 3.86l-7.5 13A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.71-3l-7.5-13a2 2 0 0 0-3.42 0z',
+  close: 'M18 6L6 18 M6 6l12 12',
 };
 
 function createSvgIcon(pathD: string, className = 'notif-icon'): SVGSVGElement {
@@ -312,6 +313,17 @@ function formatRelativeTime(isoString: string): string {
         timeEl.className = 'notif-time';
         timeEl.textContent = formatRelativeTime(n.createdAt);
         titleRow.appendChild(timeEl);
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.className = 'notif-dismiss-btn';
+        dismissBtn.title = 'Dismiss notification';
+        dismissBtn.setAttribute('aria-label', 'Dismiss notification');
+        dismissBtn.appendChild(createSvgIcon(ICON_PATHS.close, 'notif-icon notif-icon-xs'));
+        dismissBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          host.sendEvent({ type: 'clear', id: n.id });
+        });
+        titleRow.appendChild(dismissBtn);
 
         content.appendChild(titleRow);
 

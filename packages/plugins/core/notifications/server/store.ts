@@ -327,14 +327,6 @@ export class NotificationsStore {
       if (existingIndex >= 0) {
         this.data.notifications.splice(existingIndex, 1);
       }
-
-      this.data.notifications = this.data.notifications.filter(
-        (notification) =>
-          !(
-            notification.kind === 'session_attention' &&
-            notification.sessionId === sessionId
-          ),
-      );
       this.data.notifications.unshift(record);
       this.pruneIfNeeded();
       this.bumpRevision();
