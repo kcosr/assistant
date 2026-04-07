@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- Fixed notifications service state sharing across the bundled notifications plugin and direct agent-server imports, so final assistant replies and built-in voice tools now persist durable notification records reliably.
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
 - Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))

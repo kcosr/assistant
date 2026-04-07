@@ -22,13 +22,31 @@ interface NotificationEventPayload {
   notifications?: NotificationRecord[];
 }
 
-let notificationsStore: NotificationsStore | null = null;
+const NOTIFICATIONS_SERVICE_STATE_KEY = Symbol.for('assistant.notifications.service');
+
+interface NotificationsServiceState {
+  store: NotificationsStore | null;
+}
+
+function getNotificationsServiceState(): NotificationsServiceState {
+  const globalState = globalThis as typeof globalThis & {
+    [NOTIFICATIONS_SERVICE_STATE_KEY]?: NotificationsServiceState;
+  };
+  const existing = globalState[NOTIFICATIONS_SERVICE_STATE_KEY];
+  if (existing) {
+    return existing;
+  }
+  const created: NotificationsServiceState = { store: null };
+  globalState[NOTIFICATIONS_SERVICE_STATE_KEY] = created;
+  return created;
+}
 
 function requireStore(): NotificationsStore {
-  if (!notificationsStore) {
+  const store = getNotificationsServiceState().store;
+  if (!store) {
     throw new Error('Notifications service has not been initialized');
   }
-  return notificationsStore;
+  return store;
 }
 
 function buildPanelEvent(
@@ -87,11 +105,11 @@ function broadcast(
 }
 
 export function initializeNotificationsService(dataDir: string): void {
-  notificationsStore = new NotificationsStore(dataDir);
+  getNotificationsServiceState().store = new NotificationsStore(dataDir);
 }
 
 export function shutdownNotificationsService(): void {
-  notificationsStore = null;
+  getNotificationsServiceState().store = null;
 }
 
 export function getNotificationsStore(): NotificationsStore {
