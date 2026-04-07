@@ -209,6 +209,19 @@
   align-items: center;
 }
 
+.notif-kind-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(122, 162, 247, 0.14);
+  color: var(--color-accent, #7aa2f7);
+  font-size: 10px;
+  line-height: 1;
+}
+
 .notif-time {
   flex-shrink: 0;
   font-size: 11px;

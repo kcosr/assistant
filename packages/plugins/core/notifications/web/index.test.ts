@@ -35,6 +35,7 @@ describe('notifications panel', () => {
   function makeNotification(overrides: Record<string, unknown> = {}) {
     return {
       id: `n-${Math.random().toString(36).slice(2)}`,
+      kind: 'notification',
       title: 'Test Notification',
       body: 'Test body',
       createdAt: new Date().toISOString(),
@@ -43,6 +44,10 @@ describe('notifications panel', () => {
       sessionId: null,
       sessionTitle: null,
       tts: false,
+      voiceMode: 'none',
+      ttsText: null,
+      sourceEventId: null,
+      sessionActivitySeq: null,
       ...overrides,
     };
   }
@@ -131,6 +136,48 @@ describe('notifications panel', () => {
     expect(items.length).toBe(2);
     // New notification should be first (newest first)
     expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('New One');
+
+    handle.unmount();
+  });
+
+  it('replaces singleton session attention rows on upserted events', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            sessionId: 'sess-1',
+            title: 'Latest 1',
+          }),
+        ],
+      },
+    } as any);
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'upserted',
+        notification: makeNotification({
+          id: 'attention-1',
+          kind: 'session_attention',
+          sessionId: 'sess-1',
+          title: 'Latest 2',
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Latest 2');
+    expect(items[0]?.querySelector('.notif-kind-badge')).not.toBeNull();
 
     handle.unmount();
   });

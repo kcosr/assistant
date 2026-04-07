@@ -14,6 +14,7 @@
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Added notification-backed Android voice queueing with durable `session_attention` response notifications, append-only `voice_speak` / `voice_ask` notifications, queue-driven `speak` / `speak_then_listen` playback, stale ask validation, and manual `Speaker` / `Mic` recovery actions.
 
 ### Changed
 

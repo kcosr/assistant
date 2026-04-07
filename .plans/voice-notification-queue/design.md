@@ -247,11 +247,12 @@ For existing voice tools, no new public tool-call parameter is required. The ser
 Durable notification records likely need:
 
 - `kind`
+- `source`
 - `sessionId`
 - `sessionTitle`
 - `sourceEventId` or correlation id
+- `sessionActivitySeq`
 - `voiceMode`
-- `voiceActions`
 - optional `ttsText` override for spoken playback
 
 `ttsText` should be treated as an internal notification-contract field, not necessarily a user-facing tool parameter. For `voice_speak` and `voice_ask`, the adapter can populate it from the tool's existing text payload without changing the tool API.
@@ -273,15 +274,18 @@ The contract should move toward an explicit notification model along these lines
 ```ts
 type NotificationKind = 'session_attention' | 'notification';
 type VoiceMode = 'none' | 'speak' | 'speak_then_listen';
+type NotificationSource = 'tool' | 'http' | 'cli' | 'system';
 
 type NotificationRecord = {
   id: string;
   kind: NotificationKind;
+  source: NotificationSource;
   title: string;
   body: string;
   sessionId?: string | null;
   sessionTitle?: string | null;
   sourceEventId?: string | null;
+  sessionActivitySeq?: number | null;
   tts: boolean;
   voiceMode: VoiceMode;
   ttsText?: string | null;
@@ -307,11 +311,13 @@ First-pass contract decisions should be:
 | --- | --- | --- | --- |
 | `id` | yes | Stable notification record id | Server-generated |
 | `kind` | yes | Storage and coalescing behavior | `session_attention` or `notification` |
+| `source` | yes | Provenance of the notification | Existing values plus `system` for server-originated assistant response attention |
 | `title` | yes | Visual label for panel and Android notification UI | Always present |
 | `body` | yes | Visual body text | Always present |
 | `sessionId` | no | Session the item is associated with | Required for `session_attention` and for any notification that offers `Mic` |
 | `sessionTitle` | no | Friendly session label | Optional display hint |
 | `sourceEventId` | no | Correlation id for the originating event | Strongly recommended for all server-generated voice-bearing items |
+| `sessionActivitySeq` | no | Server-generated ordering watermark within a session | Required for any item that may auto-enter `listen` |
 | `tts` | yes | Whether the item is eligible for spoken delivery affordances | `false` means visual-only |
 | `voiceMode` | yes | Local audio mode represented by the item | `none`, `speak`, or `speak_then_listen` |
 | `ttsText` | no | Spoken override text | If absent, Android falls back to normal spoken formatting |
@@ -322,6 +328,7 @@ Recommended first-pass invariants:
 
 - `kind = session_attention` requires `sessionId`
 - `kind = session_attention` should always have `voiceMode = speak`
+- `kind = session_attention` should always have `source = system`
 - `voiceMode = speak_then_listen` implies `tts = true`
 - `voiceMode = speak_then_listen` requires `sessionId`
 - `voiceMode = speak_then_listen` requires a server-generated per-session activity sequence marker
@@ -337,6 +344,93 @@ Android spoken text resolution should be:
 3. otherwise fall back to a client-formatted `title + body`
 
 The point of `ttsText` is not to add a new public tool parameter. It is to let the notification contract carry an explicit spoken override when needed.
+
+### Action derivation
+
+`voiceActions` does not need to be persisted as a first-pass field.
+
+Android actions should be derived from the stored record plus local runtime state:
+
+- `Speaker` is available when `tts = true`
+- `Mic` is available when `sessionId` is present
+- action enablement still depends on local runtime state such as connectivity and current execution
+
+This keeps the durable schema smaller while still allowing Android to present the right affordances.
+
+### `session_attention` body strategy
+
+For final assistant responses:
+
+- `body` should contain a panel-friendly excerpt or truncated summary for visual display
+- `ttsText` should contain the full spoken response text when TTS is enabled
+
+This lets the panel stay readable without sacrificing spoken completeness.
+
+### `session_attention` upsert semantics
+
+The store needs a real upsert operation for `session_attention`.
+
+Suggested behavior:
+
+- lookup by `(kind, sessionId)`
+- if no existing record exists, insert a new record
+- if a record exists:
+  - preserve `id`
+  - replace `title`, `body`, `source`, `sourceEventId`, `sessionActivitySeq`, `tts`, `voiceMode`, and `ttsText`
+  - set `createdAt` to the latest material update time
+  - reset `readAt` to `null`
+
+This ensures the item behaves as “latest pending attention for this session” instead of as historical append-only state.
+
+### Pruning policy
+
+Generic notification pruning should not be the primary lifecycle for `session_attention`.
+
+First-pass policy:
+
+- regular notifications continue to use the normal cap/pruning policy
+- `session_attention` items are expected to clear eagerly through dismiss or accepted user reply
+- store pruning logic should be kind-aware so singleton attention items are not treated exactly like append-only read history
+
+## Event Contract
+
+The stored record and the broadcast event should be treated as different shapes.
+
+Stored record:
+
+- durable
+- queryable
+- backs the panel
+- backs manual Android recovery
+
+Broadcast event:
+
+- real-time
+- carries revision and mutation intent
+- drives panel state updates and Android queue admission
+
+Suggested first-pass event shape:
+
+```ts
+type NotificationMutation = 'created' | 'upserted' | 'removed' | 'snapshot';
+
+type NotificationEvent = {
+  mutation: NotificationMutation;
+  revision: number;
+  notification?: NotificationRecord;
+  replacedId?: string | null;
+};
+```
+
+Recommended semantics:
+
+- `created` for append-only inserts
+- `upserted` for `session_attention` insert-or-replace mutations
+- `removed` for dismiss or clear-on-user-reply
+- `snapshot` for initial hydration
+
+The panel should replace by `id` on `upserted`, not append.
+Android should treat `upserted` as fresh work only when `sourceEventId` or `sessionActivitySeq` changed.
 
 ## Layer 2: Android local voice queue
 
@@ -420,9 +514,9 @@ The server-side producers should emit notifications like this:
 
 | Source | Durable kind | `tts` | `voiceMode` | Coalescing rule | Automatic local behavior |
 | --- | --- | --- | --- | --- | --- |
-| Final assistant response | `session_attention` | `true` when response voice is enabled for the producing path | `speak` in v1 | Upsert by `(kind, sessionId)` | Queue behind active work when runtime is alive |
+| Final assistant response | `session_attention` | `true` when response voice is enabled for the producing path | `speak` or `speak_then_listen` depending on local auto-listen | Upsert by `(kind, sessionId)` | Queue behind active work when runtime is alive |
 | `voice_speak` tool | `notification` | `true` | `speak` | Append-only | Queue behind active work when runtime is alive |
-| `voice_ask` tool | `notification` | `true` | `speak_then_listen` | Append-only | Durable/manual in v1; automatic execution deferred |
+| `voice_ask` tool | `notification` | `true` | `speak` or `speak_then_listen` depending on local auto-listen | Append-only | Queue behind active work when runtime is alive when validation succeeds |
 | Explicit notification without voice | `notification` | `false` | `none` | Append-only | Never auto-enqueue |
 | Explicit notification with TTS only | `notification` | `true` | `speak` | Append-only unless a future key says otherwise | Queue behind active work when runtime is alive |
 
@@ -431,6 +525,7 @@ Additional producer rules:
 - accepted user message submission for session `S` clears `session_attention` for `S`
 - manual dismiss clears only the targeted durable item
 - final assistant response producers should stop using the legacy direct Android autoplay path once the notification-backed path ships
+- clear-on-user-reply requires a concrete server hook in the user-message submission path, not just plugin-local logic
 
 ## Manual Recovery Rules
 
@@ -474,7 +569,7 @@ Android should consume notification events with these rules:
 | Voice runtime enabled and busy | Append automatic item behind active queue head |
 | Incoming item has `voiceMode = none` | Do not auto-enqueue |
 | Incoming item has `voiceMode = speak` | Enqueue `speak` |
-| Incoming item has `voiceMode = speak_then_listen` and first-pass automatic ask disabled | Keep durable item only; allow manual `Mic` |
+| Incoming item has `voiceMode = speak_then_listen` | Enqueue `speak_then_listen` only when local auto-listen is enabled and validation succeeds |
 | Manual `Speaker` tap | Interrupt current audio flow, discard interrupted automatic item, run `speak` now |
 | Manual `Mic` tap | Interrupt current audio flow, discard interrupted automatic item, run `listen` now |
 | User taps `Stop` | Cancel active voice execution and flush local queue |
@@ -483,6 +578,23 @@ Definitions:
 
 - `idle` means no active TTS, no active STT, and no currently executing queue head
 - `busy` means any active TTS, active STT, or active queue head is in progress
+
+### Queue constraints
+
+First-pass Android queue safeguards should include:
+
+- FIFO ordering for automatic admissions across sessions
+- manual actions jump ahead of automatic work
+- queue capacity cap of roughly 20 items
+- deduplication by `sourceEventId` when present
+- a short-lived in-memory recent-id set for admitted/completed items to avoid replay duplicates during reconnect while the service stays alive
+
+For `session_attention` specifically:
+
+- if a newer `upserted` item for the same session arrives before the queued automatic item starts, replace the queued pending item with the newer one
+- if the older item is already executing, do not interrupt it automatically
+
+Regular append-only notifications should not be coalesced this way.
 
 ### Pre-listen validation
 
@@ -515,6 +627,31 @@ Manual `Mic` should use a looser validation rule:
 - do not block manual listen merely because the originating item was superseded
 
 This preserves explicit user intent while still protecting automatic reply turns from stale context.
+
+Validation source of truth:
+
+- server remains the authority for `sessionActivitySeq`
+- Android may cache the latest known sequence from incoming notification events while connected
+- immediately before automatic recognition starts, Android should use a lightweight server validation check when local knowledge may be stale
+
+This avoids relying on wall-clock time or assuming the client has perfect ordering knowledge.
+
+## Transport And Cutover
+
+Preferred transport direction:
+
+- use the notifications event stream as the canonical transport for Android queue admission
+- do not keep transcript-event autoplay as a permanent parallel path
+
+Implementation note:
+
+- if Android cannot yet consume notification events directly, a temporary dual-path development phase is acceptable behind an implementation flag
+- final cutover should remove direct transcript autoplay admission once notification-event parity is verified
+
+Preferred end-state:
+
+- the same notification event stream that updates the panel also feeds Android queue admission
+- no second bespoke autoplay-only transport remains
 
 ## Candidate Ingress Sources
 

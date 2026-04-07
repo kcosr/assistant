@@ -93,6 +93,73 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void autoplaysOnlyUnreadNotificationsThatMatchTheCurrentAudioMode() {
+        AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
+            "notif-response",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-1",
+            4
+        );
+        AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "Prompt",
+            "What next?",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-2",
+            5
+        );
+        AssistantVoiceNotificationRecord readToolNotification = new AssistantVoiceNotificationRecord(
+            "notif-read",
+            "notification",
+            "tool",
+            "Read prompt",
+            "Already handled",
+            "2026-04-06T12:00:00.000Z",
+            "session-1",
+            "Session 1",
+            "speak",
+            "",
+            "event-3",
+            6
+        );
+
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            responseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            readToolNotification
+        ));
+    }
+
+    @Test
     public void onlySignalsSttEndForTheStillActiveRequest() {
         assertTrue(AssistantVoiceInteractionRules.shouldSendSttEndAfterMicStops("request-1", "request-1"));
         assertFalse(AssistantVoiceInteractionRules.shouldSendSttEndAfterMicStops("request-1", "request-2"));

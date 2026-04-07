@@ -26,8 +26,10 @@ import com.assistant.mobile.R;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.io.IOException;
 import java.util.UUID;
@@ -58,7 +60,21 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
     static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
     static final String ACTION_CYCLE_AUDIO_MODE = "com.assistant.mobile.voice.CYCLE_AUDIO_MODE";
+    static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
+    static final String ACTION_NOTIFICATION_MIC = "com.assistant.mobile.voice.NOTIFICATION_MIC";
+    static final String ACTION_NOTIFICATION_DISMISS = "com.assistant.mobile.voice.NOTIFICATION_DISMISS";
     static final String EXTRA_MANUAL_LISTEN_SESSION_ID = "manualListenSessionId";
+    static final String EXTRA_NOTIFICATION_ID = "notificationId";
+    static final String EXTRA_NOTIFICATION_KIND = "notificationKind";
+    static final String EXTRA_NOTIFICATION_SOURCE = "notificationSource";
+    static final String EXTRA_NOTIFICATION_TITLE = "notificationTitle";
+    static final String EXTRA_NOTIFICATION_BODY = "notificationBody";
+    static final String EXTRA_NOTIFICATION_SESSION_ID = "notificationSessionId";
+    static final String EXTRA_NOTIFICATION_SESSION_TITLE = "notificationSessionTitle";
+    static final String EXTRA_NOTIFICATION_VOICE_MODE = "notificationVoiceMode";
+    static final String EXTRA_NOTIFICATION_TTS_TEXT = "notificationTtsText";
+    static final String EXTRA_NOTIFICATION_SOURCE_EVENT_ID = "notificationSourceEventId";
+    static final String EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ = "notificationSessionActivitySeq";
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
     static final String BROADCAST_RUNTIME_ERROR = "com.assistant.mobile.voice.RUNTIME_ERROR";
@@ -67,7 +83,9 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static final String LEGACY_NOTIFICATION_CHANNEL_ID = "assistant_voice_mode";
     static final String NOTIFICATION_CHANNEL_ID = "assistant_voice_runtime_controls";
+    static final String DURABLE_NOTIFICATION_CHANNEL_ID = "assistant_session_notifications";
     static final int NOTIFICATION_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_DEFAULT;
+    static final int DURABLE_NOTIFICATION_CHANNEL_IMPORTANCE = NotificationManager.IMPORTANCE_DEFAULT;
     static final int NOTIFICATION_PRIORITY = NotificationCompat.PRIORITY_DEFAULT;
     static final int NOTIFICATION_VISIBILITY = NotificationCompat.VISIBILITY_PUBLIC;
     static final int NOTIFICATION_LOCKSCREEN_VISIBILITY = Notification.VISIBILITY_PUBLIC;
@@ -78,6 +96,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
     private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 320L;
+    private static final int MAX_PENDING_QUEUE_ITEMS = 25;
+    private static final int DURABLE_NOTIFICATION_ID_OFFSET = 24000;
     private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
         PlaybackState.ACTION_PLAY
             | PlaybackState.ACTION_PLAY_PAUSE
@@ -115,6 +135,10 @@ public final class AssistantVoiceRuntimeService extends Service {
     // both for prompt-driven playback and for manual notification/foreground listen.
     private String activeVoiceSessionId = "";
     private String activePromptToolName = "";
+    private AssistantVoiceQueueItem activeQueueItem = null;
+    private final List<AssistantVoiceQueueItem> queuedVoiceItems = new ArrayList<>();
+    private final Map<String, AssistantVoiceNotificationRecord> durableNotifications =
+        new LinkedHashMap<>();
     private String activeTtsRequestId = "";
     private String pendingPlaybackDrainRequestId = "";
     private boolean pendingPlaybackDrainStartsListening = false;
@@ -166,6 +190,47 @@ public final class AssistantVoiceRuntimeService extends Service {
             .putExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE, trim(audioMode));
     }
 
+    static Intent notificationSpeakerIntent(
+        Context context,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        return buildNotificationActionIntent(context, ACTION_NOTIFICATION_SPEAKER, notification);
+    }
+
+    static Intent notificationMicIntent(Context context, AssistantVoiceNotificationRecord notification) {
+        return buildNotificationActionIntent(context, ACTION_NOTIFICATION_MIC, notification);
+    }
+
+    static Intent notificationDismissIntent(
+        Context context,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        return buildNotificationActionIntent(context, ACTION_NOTIFICATION_DISMISS, notification);
+    }
+
+    private static Intent buildNotificationActionIntent(
+        Context context,
+        String action,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        Intent intent = new Intent(context, AssistantVoiceRuntimeService.class);
+        intent.setAction(action);
+        intent.putExtra(EXTRA_NOTIFICATION_ID, notification.id);
+        intent.putExtra(EXTRA_NOTIFICATION_KIND, notification.kind);
+        intent.putExtra(EXTRA_NOTIFICATION_SOURCE, notification.source);
+        intent.putExtra(EXTRA_NOTIFICATION_TITLE, notification.title);
+        intent.putExtra(EXTRA_NOTIFICATION_BODY, notification.body);
+        intent.putExtra(EXTRA_NOTIFICATION_SESSION_ID, notification.sessionId);
+        intent.putExtra(EXTRA_NOTIFICATION_SESSION_TITLE, notification.sessionTitle);
+        intent.putExtra(EXTRA_NOTIFICATION_VOICE_MODE, notification.voiceMode);
+        intent.putExtra(EXTRA_NOTIFICATION_TTS_TEXT, notification.ttsText);
+        intent.putExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID, notification.sourceEventId);
+        if (notification.sessionActivitySeq != null) {
+            intent.putExtra(EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ, notification.sessionActivitySeq);
+        }
+        return intent;
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -204,6 +269,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_NOT_STICKY;
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
+            clearQueuedVoiceItems();
             stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
             return START_STICKY;
         }
@@ -220,6 +286,18 @@ public final class AssistantVoiceRuntimeService extends Service {
                 ? intent.getStringExtra(AssistantVoiceConfig.EXTRA_AUDIO_MODE)
                 : config.audioMode;
             applyConfig(config.withAudioMode(nextNotificationAudioMode(currentMode)));
+            return START_STICKY;
+        }
+        if (ACTION_NOTIFICATION_SPEAKER.equals(action)) {
+            handleManualNotificationAction(intent, false);
+            return START_STICKY;
+        }
+        if (ACTION_NOTIFICATION_MIC.equals(action)) {
+            handleManualNotificationAction(intent, true);
+            return START_STICKY;
+        }
+        if (ACTION_NOTIFICATION_DISMISS.equals(action)) {
+            dismissDurableNotification(intent);
             return START_STICKY;
         }
         if (ACTION_APPLY_CONFIG.equals(action)) {
@@ -681,6 +759,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private void createNotificationChannel() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         ensureNotificationChannel(this, manager);
+        ensureDurableNotificationChannel(this, manager);
     }
 
     static void ensureNotificationChannel(Context context, NotificationManager manager) {
@@ -710,6 +789,23 @@ public final class AssistantVoiceRuntimeService extends Service {
         channel.setDescription(context.getString(R.string.assistant_voice_notification_channel_description));
         channel.setLockscreenVisibility(NOTIFICATION_LOCKSCREEN_VISIBILITY);
         return channel;
+    }
+
+    static void ensureDurableNotificationChannel(Context context, NotificationManager manager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || manager == null) {
+            return;
+        }
+        NotificationChannel channel = manager.getNotificationChannel(DURABLE_NOTIFICATION_CHANNEL_ID);
+        if (channel != null) {
+            return;
+        }
+        manager.createNotificationChannel(
+            new NotificationChannel(
+                DURABLE_NOTIFICATION_CHANNEL_ID,
+                context.getString(R.string.assistant_voice_durable_notification_channel_name),
+                DURABLE_NOTIFICATION_CHANNEL_IMPORTANCE
+            )
+        );
     }
 
     private String resolveNotificationSessionTitle() {
@@ -793,6 +889,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     sendAdapterClientState();
                     if (!hasActiveInteraction() && isRuntimeConnected()) {
                         updateState(STATE_IDLE, null);
+                        drainVoiceQueueIfPossible();
                     }
                 });
             }
@@ -872,8 +969,10 @@ public final class AssistantVoiceRuntimeService extends Service {
                         )
                     );
                     refreshWatchedSessionsAsync();
+                    refreshDurableNotificationsAsync();
                     if (!hasActiveInteraction() && isRuntimeConnected()) {
                         updateState(STATE_IDLE, null);
+                        drainVoiceQueueIfPossible();
                     }
                 });
             }
@@ -930,6 +1029,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        AssistantVoiceNotificationEventParser.NotificationUpdate notificationUpdate =
+            AssistantVoiceNotificationEventParser.parsePanelEvent(rawText);
+        if (notificationUpdate != null) {
+            handleNotificationUpdate(notificationUpdate);
+            return;
+        }
+
         String subscribedSessionId =
             AssistantVoiceSessionSocketProtocol.parseSubscriptionSessionId(rawText, "subscribed");
         if (!subscribedSessionId.isEmpty()) {
@@ -957,28 +1063,269 @@ public final class AssistantVoiceRuntimeService extends Service {
         if ("session_created".equals(messageType) || "session_deleted".equals(messageType)) {
             refreshWatchedSessionsAsync();
         }
+    }
 
-        AssistantVoicePromptEvent prompt =
-            AssistantVoiceSessionSocketProtocol.parsePlaybackMessage(rawText);
-        if (prompt == null) {
+    private void refreshDurableNotificationsAsync() {
+        if (destroyed) {
             return;
         }
-        if (!isWatchedSessionId(prompt.sessionId)) {
+        networkExecutor.execute(() -> {
+            List<AssistantVoiceNotificationRecord> notifications = fetchDurableNotifications();
+            mainHandler.post(() -> applyDurableNotificationSnapshot(notifications));
+        });
+    }
+
+    private List<AssistantVoiceNotificationRecord> fetchDurableNotifications() {
+        try {
+            JSONObject body = new JSONObject();
+            String response = postJson(
+                AssistantVoiceUrlUtils.assistantNotificationListUrl(config.assistantBaseUrl),
+                body
+            );
+            return AssistantVoiceNotificationEventParser.parseListResponse(response);
+        } catch (Exception error) {
+            Log.w(TAG, "Failed to refresh durable notifications", error);
+            return new ArrayList<>(durableNotifications.values());
+        }
+    }
+
+    private void handleNotificationUpdate(
+        AssistantVoiceNotificationEventParser.NotificationUpdate update
+    ) {
+        if (update == null) {
+            return;
+        }
+        switch (update.eventType) {
+            case "snapshot":
+                applyDurableNotificationSnapshot(update.notifications);
+                return;
+            case "created":
+            case "upserted":
+                if (update.notification == null) {
+                    return;
+                }
+                durableNotifications.put(update.notification.id, update.notification);
+                showDurableNotification(update.notification);
+                enqueueAutomaticNotification(update.notification);
+                return;
+            case "updated":
+                if (update.notification == null) {
+                    return;
+                }
+                durableNotifications.put(update.notification.id, update.notification);
+                if (shouldDisplayDurableNotification(update.notification)) {
+                    showDurableNotification(update.notification);
+                } else {
+                    cancelDurableNotification(update.notification.id);
+                }
+                return;
+            case "removed":
+                if (update.id.isEmpty()) {
+                    return;
+                }
+                durableNotifications.remove(update.id);
+                cancelDurableNotification(update.id);
+                removeQueuedItemsForNotification(update.id);
+                return;
+            default:
+                return;
+        }
+    }
+
+    private void applyDurableNotificationSnapshot(List<AssistantVoiceNotificationRecord> notifications) {
+        Set<String> previousIds = new LinkedHashSet<>(durableNotifications.keySet());
+        durableNotifications.clear();
+        if (notifications != null) {
+            for (AssistantVoiceNotificationRecord notification : notifications) {
+                if (notification != null) {
+                    durableNotifications.put(notification.id, notification);
+                }
+            }
+        }
+        reconcileDurableNotifications(previousIds);
+    }
+
+    private void reconcileDurableNotifications(Set<String> previousIds) {
+        if (previousIds != null) {
+            for (String previousId : previousIds) {
+                if (!durableNotifications.containsKey(previousId)) {
+                    cancelDurableNotification(previousId);
+                }
+            }
+        }
+        for (AssistantVoiceNotificationRecord notification : durableNotifications.values()) {
+            if (shouldDisplayDurableNotification(notification)) {
+                showDurableNotification(notification);
+            } else {
+                cancelDurableNotification(notification.id);
+            }
+        }
+    }
+
+    private boolean shouldDisplayDurableNotification(AssistantVoiceNotificationRecord notification) {
+        return notification != null
+            && notification.isUnread()
+            && (notification.isSessionAttention()
+                || notification.isSessionLinked()
+                || !"none".equals(notification.voiceMode));
+    }
+
+    private void showDurableNotification(AssistantVoiceNotificationRecord notification) {
+        if (!shouldDisplayDurableNotification(notification)) {
+            return;
+        }
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager == null) {
+            return;
+        }
+        PendingIntent contentIntent = PendingIntent.getActivity(
+            this,
+            durableNotificationRequestCode(notification.id, 0),
+            new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
+        NotificationCompat.Builder builder =
+            new NotificationCompat.Builder(this, DURABLE_NOTIFICATION_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(notification.title)
+                .setContentText(notification.body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(notification.body))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .setContentIntent(contentIntent)
+                .setDeleteIntent(
+                    PendingIntent.getService(
+                        this,
+                        durableNotificationRequestCode(notification.id, 1),
+                        notificationDismissIntent(this, notification),
+                        PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                    )
+                );
+        if (!notification.sessionTitle.isEmpty()) {
+            builder.setSubText(notification.sessionTitle);
+        }
+        if (!notification.resolveSpokenText().isEmpty()) {
+            builder.addAction(
+                android.R.drawable.ic_btn_speak_now,
+                getString(R.string.assistant_voice_notification_action_speaker),
+                PendingIntent.getService(
+                    this,
+                    durableNotificationRequestCode(notification.id, 2),
+                    notificationSpeakerIntent(this, notification),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            );
+        }
+        if (notification.isSessionLinked()) {
+            builder.addAction(
+                android.R.drawable.ic_btn_speak_now,
+                getString(R.string.assistant_voice_notification_action_mic),
+                PendingIntent.getService(
+                    this,
+                    durableNotificationRequestCode(notification.id, 3),
+                    notificationMicIntent(this, notification),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            );
+        }
+        manager.notify(durableNotificationId(notification.id), builder.build());
+    }
+
+    private void cancelDurableNotification(String notificationId) {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (manager != null) {
+            manager.cancel(durableNotificationId(notificationId));
+        }
+    }
+
+    private void enqueueAutomaticNotification(AssistantVoiceNotificationRecord notification) {
+        if (!config.isEnabled()
+            || !isRuntimeConnected()
+            || notification == null
+            || !AssistantVoiceInteractionRules.shouldAutoplayNotification(config.audioMode, notification)) {
             return;
         }
         if (config.ttsPreferredSessionOnly
-            && !prompt.sessionId.equals(config.preferredVoiceSessionId)) {
+            && !config.preferredVoiceSessionId.isEmpty()
+            && !config.preferredVoiceSessionId.equals(notification.sessionId)) {
             return;
         }
-        if (
-            AssistantVoiceInteractionRules.shouldAutoplayEvent(
-                config.audioMode,
-                prompt,
-                !hasActiveInteraction()
-            )
-        ) {
-            beginPromptPlayback(prompt);
+        AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(config.autoListenEnabled);
+        if (item == null) {
+            return;
         }
+        enqueueQueueItem(item, false);
+    }
+
+    private void enqueueQueueItem(AssistantVoiceQueueItem item, boolean front) {
+        if (item == null || item.sessionId.isEmpty()) {
+            return;
+        }
+        String dedupKey = item.dedupKey();
+        if (!dedupKey.isEmpty()) {
+            if (activeQueueItem != null && dedupKey.equals(activeQueueItem.dedupKey())) {
+                return;
+            }
+            for (AssistantVoiceQueueItem queued : queuedVoiceItems) {
+                if (dedupKey.equals(queued.dedupKey())) {
+                    return;
+                }
+            }
+        }
+        if (item.isSessionAttention()) {
+            removePendingSessionAttention(item.sessionId);
+        }
+        while (queuedVoiceItems.size() >= MAX_PENDING_QUEUE_ITEMS) {
+            queuedVoiceItems.remove(queuedVoiceItems.size() - 1);
+        }
+        if (front) {
+            queuedVoiceItems.add(0, item);
+        } else {
+            queuedVoiceItems.add(item);
+        }
+        drainVoiceQueueIfPossible();
+    }
+
+    private void removePendingSessionAttention(String sessionId) {
+        String normalizedSessionId = trim(sessionId);
+        for (int index = queuedVoiceItems.size() - 1; index >= 0; index -= 1) {
+            AssistantVoiceQueueItem item = queuedVoiceItems.get(index);
+            if (item.isSessionAttention() && normalizedSessionId.equals(item.sessionId)) {
+                queuedVoiceItems.remove(index);
+            }
+        }
+    }
+
+    private void removeQueuedItemsForNotification(String notificationId) {
+        String normalizedId = trim(notificationId);
+        for (int index = queuedVoiceItems.size() - 1; index >= 0; index -= 1) {
+            if (normalizedId.equals(queuedVoiceItems.get(index).notificationId)) {
+                queuedVoiceItems.remove(index);
+            }
+        }
+    }
+
+    private void clearQueuedVoiceItems() {
+        queuedVoiceItems.clear();
+    }
+
+    private void drainVoiceQueueIfPossible() {
+        if (destroyed
+            || hasActiveInteraction()
+            || activeQueueItem != null
+            || queuedVoiceItems.isEmpty()
+            || !config.isEnabled()
+            || !isRuntimeConnected()) {
+            return;
+        }
+        AssistantVoiceQueueItem next = queuedVoiceItems.remove(0);
+        if (next.isListenOnly()) {
+            activeQueueItem = next;
+            startRecognition(next.sessionId, "manual_notification_mic");
+            return;
+        }
+        beginQueuedPlayback(next);
     }
 
     private void syncAssistantSessionSubscriptions(
@@ -1227,10 +1574,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         String status = trim(message.optString("status"));
-        boolean startsListening = AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback(
-            activePromptToolName,
-            config.autoListenEnabled
-        );
+        boolean startsListening = activeQueueItem != null && activeQueueItem.startsListeningAfterPlayback();
         activeTtsRequestId = "";
 
         if ("completed".equals(status)) {
@@ -1244,6 +1588,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         clearActivePromptContext();
+        finishActiveQueueItem(true);
         if ("failed".equals(status)) {
             emitRuntimeError("Voice playback failed");
         }
@@ -1279,10 +1624,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         if (shouldStartListening) {
-            startRecognition(activeVoiceSessionId, "playback_completion");
+            validateQueuedRecognitionAndMaybeStart(requestId);
             return;
         }
         clearActivePromptContext();
+        finishActiveQueueItem(true);
         if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
         }
@@ -1336,6 +1682,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
 
         clearActivePromptContext();
+        finishActiveQueueItem(true);
         if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
         }
@@ -1370,8 +1717,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
     }
 
-    private void beginPromptPlayback(AssistantVoicePromptEvent prompt) {
-        if (!config.isEnabled() || prompt == null || hasActiveInteraction()) {
+    private void beginQueuedPlayback(AssistantVoiceQueueItem item) {
+        if (!config.isEnabled() || item == null || hasActiveInteraction() || !item.hasSpeech()) {
             return;
         }
         if (!adapterSocketConnected || adapterClientId.isEmpty()) {
@@ -1379,8 +1726,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         String requestId = UUID.randomUUID().toString();
-        activeVoiceSessionId = prompt.sessionId;
-        activePromptToolName = prompt.toolName;
+        activeQueueItem = item;
+        activeVoiceSessionId = item.sessionId;
+        activePromptToolName = item.executionMode;
         activeTtsRequestId = requestId;
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
@@ -1392,7 +1740,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 JSONObject body = new JSONObject();
                 body.put("clientId", adapterClientId);
                 body.put("requestId", requestId);
-                body.put("text", prompt.text);
+                body.put("text", item.spokenText);
                 postJson(AssistantVoiceUrlUtils.adapterTtsUrl(config.voiceAdapterBaseUrl), body);
             } catch (Exception error) {
                 mainHandler.post(() -> {
@@ -1401,6 +1749,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     }
                     activeTtsRequestId = "";
                     clearActivePromptContext();
+                    finishActiveQueueItem(true);
                     player.stop();
                     updateState(resolveInactiveState(), null);
                     emitRuntimeError("Voice playback request failed");
@@ -1413,7 +1762,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         String ttsRequestId = activeTtsRequestId;
         String listeningRequestId = activeSttRequestId;
         String speakingSessionId = activeVoiceSessionId;
-        String speakingToolName = activePromptToolName;
+        AssistantVoiceQueueItem interruptedQueueItem = activeQueueItem;
         boolean playManualStopCue =
             "manual_stop".equals(reason) && !listeningRequestId.isEmpty();
         boolean pendingArmingCue =
@@ -1445,19 +1794,26 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         if (transitionToRecognition && !speakingSessionId.isEmpty()) {
-            boolean allowPromptFollowup = AssistantVoiceInteractionRules
-                .shouldStartRecognitionAfterManualStop(
-                    speakingToolName,
-                    "manual_listen".equals(reason),
-                    config.autoListenEnabled
-                );
+            boolean allowPromptFollowup =
+                interruptedQueueItem != null
+                    ? interruptedQueueItem.startsListeningAfterPlayback()
+                        || "manual_listen".equals(reason)
+                    : AssistantVoiceInteractionRules.shouldStartRecognitionAfterManualStop(
+                        activePromptToolName,
+                        "manual_listen".equals(reason),
+                        config.autoListenEnabled
+                    );
             if (allowPromptFollowup) {
+                activeQueueItem = interruptedQueueItem != null ? interruptedQueueItem : activeQueueItem;
                 startRecognition(speakingSessionId, reason);
                 return;
             }
         }
 
         clearActivePromptContext();
+        boolean shouldDrainQueue =
+            !"manual_stop".equals(reason) && !"manual_notification_preempt".equals(reason);
+        finishActiveQueueItem(shouldDrainQueue);
         if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
         }
@@ -1670,6 +2026,156 @@ public final class AssistantVoiceRuntimeService extends Service {
                 mainHandler.post(() -> emitRuntimeError("Failed to submit recognized speech"));
             }
         });
+    }
+
+    private void finishActiveQueueItem(boolean drainQueue) {
+        activeQueueItem = null;
+        if (drainQueue) {
+            drainVoiceQueueIfPossible();
+        }
+    }
+
+    private void validateQueuedRecognitionAndMaybeStart(String requestId) {
+        AssistantVoiceQueueItem queueItem = activeQueueItem;
+        if (queueItem == null) {
+            clearActivePromptContext();
+            finishActiveQueueItem(true);
+            updateState(resolveInactiveState(), null);
+            return;
+        }
+        if (!queueItem.requiresListenValidation()) {
+            startRecognition(queueItem.sessionId, queueItem.manual ? "manual_notification_mic" : "playback_completion");
+            return;
+        }
+        Integer expectedSeq = queueItem.sessionActivitySeq;
+        networkExecutor.execute(() -> {
+            Integer currentSeq = fetchSessionActivityRevision(queueItem.sessionId);
+            mainHandler.post(() -> {
+                if (!requestId.equals(pendingPlaybackDrainRequestId) && activeQueueItem != queueItem) {
+                    return;
+                }
+                if (expectedSeq != null && currentSeq != null && currentSeq.intValue() > expectedSeq.intValue()) {
+                    clearActivePromptContext();
+                    finishActiveQueueItem(true);
+                    updateState(resolveInactiveState(), null);
+                    return;
+                }
+                startRecognition(
+                    queueItem.sessionId,
+                    queueItem.manual ? "manual_notification_mic" : "playback_completion"
+                );
+            });
+        });
+    }
+
+    private Integer fetchSessionActivityRevision(String sessionId) {
+        try {
+            JSONObject body = new JSONObject();
+            String response = postJson(
+                AssistantVoiceUrlUtils.assistantSessionListUrl(config.assistantBaseUrl),
+                body
+            );
+            JSONObject payload = new JSONObject(response);
+            JSONObject result =
+                payload.has("result") && payload.optJSONObject("result") != null
+                    ? payload.optJSONObject("result")
+                    : payload;
+            if (result == null) {
+                return null;
+            }
+            org.json.JSONArray sessions = result.optJSONArray("sessions");
+            if (sessions == null) {
+                return null;
+            }
+            for (int index = 0; index < sessions.length(); index += 1) {
+                JSONObject session = sessions.optJSONObject(index);
+                if (session == null) {
+                    continue;
+                }
+                if (trim(session.optString("sessionId")).equals(trim(sessionId))) {
+                    return session.has("revision") ? Integer.valueOf(session.optInt("revision")) : null;
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Failed to fetch session activity revision", error);
+        }
+        return null;
+    }
+
+    private void handleManualNotificationAction(Intent intent, boolean microphoneAction) {
+        AssistantVoiceNotificationRecord notification = notificationFromIntent(intent);
+        if (notification == null || notification.sessionId.isEmpty()) {
+            return;
+        }
+        if (!config.isEnabled()) {
+            emitRuntimeError("Voice mode is off");
+            return;
+        }
+        AssistantVoiceQueueItem item = microphoneAction
+            ? notification.toManualMicQueueItem(config.autoListenEnabled)
+            : notification.toManualSpeakerQueueItem();
+        if (item == null) {
+            if (microphoneAction) {
+                startManualListen(notification.sessionId);
+            }
+            return;
+        }
+        if (hasActiveInteraction()) {
+            stopCurrentInteraction(false, "manual_notification_preempt");
+        }
+        enqueueQueueItem(item, true);
+    }
+
+    private void dismissDurableNotification(Intent intent) {
+        String notificationId =
+            intent == null ? "" : trim(intent.getStringExtra(EXTRA_NOTIFICATION_ID));
+        if (notificationId.isEmpty()) {
+            return;
+        }
+        durableNotifications.remove(notificationId);
+        cancelDurableNotification(notificationId);
+        removeQueuedItemsForNotification(notificationId);
+        networkExecutor.execute(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("id", notificationId);
+                postJson(AssistantVoiceUrlUtils.assistantNotificationClearUrl(config.assistantBaseUrl), body);
+            } catch (Exception error) {
+                Log.w(TAG, "Failed to clear dismissed durable notification", error);
+            }
+        });
+    }
+
+    private AssistantVoiceNotificationRecord notificationFromIntent(Intent intent) {
+        if (intent == null) {
+            return null;
+        }
+        Integer sessionActivitySeq =
+            intent.hasExtra(EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ)
+                ? Integer.valueOf(intent.getIntExtra(EXTRA_NOTIFICATION_SESSION_ACTIVITY_SEQ, 0))
+                : null;
+        return new AssistantVoiceNotificationRecord(
+            intent.getStringExtra(EXTRA_NOTIFICATION_ID),
+            intent.getStringExtra(EXTRA_NOTIFICATION_KIND),
+            intent.getStringExtra(EXTRA_NOTIFICATION_SOURCE),
+            intent.getStringExtra(EXTRA_NOTIFICATION_TITLE),
+            intent.getStringExtra(EXTRA_NOTIFICATION_BODY),
+            "",
+            intent.getStringExtra(EXTRA_NOTIFICATION_SESSION_ID),
+            intent.getStringExtra(EXTRA_NOTIFICATION_SESSION_TITLE),
+            intent.getStringExtra(EXTRA_NOTIFICATION_VOICE_MODE),
+            intent.getStringExtra(EXTRA_NOTIFICATION_TTS_TEXT),
+            intent.getStringExtra(EXTRA_NOTIFICATION_SOURCE_EVENT_ID),
+            sessionActivitySeq
+        );
+    }
+
+    private static int durableNotificationId(String notificationId) {
+        return DURABLE_NOTIFICATION_ID_OFFSET + Math.abs(trim(notificationId).hashCode());
+    }
+
+    private static int durableNotificationRequestCode(String notificationId, int actionIndex) {
+        return durableNotificationId(notificationId) * 10 + Math.max(0, actionIndex);
     }
 
     private String postJson(String url, JSONObject body) throws IOException {

@@ -37,18 +37,28 @@ describe('NotificationsStore', () => {
   it('inserts with optional fields', async () => {
     const n = await store.insert(
       {
+        kind: 'notification',
         title: 'With Session',
         body: 'Body',
         sessionId: 'sess-1',
         sessionTitle: 'My Session',
         tts: true,
+        voiceMode: 'speak',
+        ttsText: 'Speak me',
+        sourceEventId: 'event-1',
+        sessionActivitySeq: 7,
       },
       'cli',
     );
 
+    expect(n.kind).toBe('notification');
     expect(n.sessionId).toBe('sess-1');
     expect(n.sessionTitle).toBe('My Session');
     expect(n.tts).toBe(true);
+    expect(n.voiceMode).toBe('speak');
+    expect(n.ttsText).toBe('Speak me');
+    expect(n.sourceEventId).toBe('event-1');
+    expect(n.sessionActivitySeq).toBe(7);
     expect(n.source).toBe('cli');
     expect(n.readAt).toBeNull();
   });
@@ -56,9 +66,73 @@ describe('NotificationsStore', () => {
   it('defaults optional fields to null/false', async () => {
     const n = await store.insert({ title: 'Basic', body: 'Body' }, 'tool');
 
+    expect(n.kind).toBe('notification');
     expect(n.sessionId).toBeNull();
     expect(n.sessionTitle).toBeNull();
     expect(n.tts).toBe(false);
+    expect(n.voiceMode).toBe('none');
+    expect(n.ttsText).toBeNull();
+    expect(n.sourceEventId).toBeNull();
+    expect(n.sessionActivitySeq).toBeNull();
+  });
+
+  it('upserts singleton session attention by session', async () => {
+    const first = await store.upsertSessionAttention(
+      {
+        title: 'Reply 1',
+        body: 'First answer',
+        sessionId: 'sess-1',
+        sessionTitle: 'Session 1',
+        tts: true,
+        voiceMode: 'speak_then_listen',
+        ttsText: 'First answer',
+        sourceEventId: 'response-1',
+        sessionActivitySeq: 4,
+      },
+      'system',
+    );
+    const second = await store.upsertSessionAttention(
+      {
+        title: 'Reply 2',
+        body: 'Second answer',
+        sessionId: 'sess-1',
+        sessionTitle: 'Session 1',
+        tts: true,
+        voiceMode: 'speak_then_listen',
+        ttsText: 'Second answer',
+        sourceEventId: 'response-2',
+        sessionActivitySeq: 5,
+      },
+      'system',
+    );
+
+    const { notifications, total } = await store.list();
+    expect(total).toBe(1);
+    expect(notifications[0]?.id).toBe(first.id);
+    expect(second.id).toBe(first.id);
+    expect(notifications[0]).toMatchObject({
+      kind: 'session_attention',
+      title: 'Reply 2',
+      source: 'system',
+      sourceEventId: 'response-2',
+      sessionActivitySeq: 5,
+    });
+  });
+
+  it('removes session attention by session id', async () => {
+    await store.upsertSessionAttention(
+      {
+        title: 'Reply',
+        body: 'Answer',
+        sessionId: 'sess-1',
+      },
+      'system',
+    );
+
+    const removed = await store.removeSessionAttention('sess-1');
+
+    expect(removed?.kind).toBe('session_attention');
+    expect((await store.list()).total).toBe(0);
   });
 
   it('gets a notification by id', async () => {
@@ -137,6 +211,23 @@ describe('NotificationsStore', () => {
     // Calling again should return 0
     const count2 = await store.removeAll();
     expect(count2).toBe(0);
+  });
+
+  it('returns atomic revisions from mutation helpers', async () => {
+    const inserted = await store.insertWithRevision({ title: 'A', body: 'Body' }, 'tool');
+    expect(inserted.revision).toBe(1);
+
+    const toggled = await store.toggleReadWithRevision(inserted.value.id);
+    expect(toggled?.revision).toBe(2);
+
+    const marked = await store.markAllReadSnapshot();
+    expect(marked.revision).toBe(2);
+
+    const removed = await store.removeWithRevision(inserted.value.id);
+    expect(removed?.revision).toBe(3);
+
+    const cleared = await store.removeAllSnapshot();
+    expect(cleared.revision).toBe(3);
   });
 
   it('filters by unreadOnly', async () => {
@@ -222,6 +313,7 @@ describe('NotificationsStore', () => {
     const parsed = JSON.parse(raw);
     expect(parsed.notifications).toHaveLength(1);
     expect(parsed.notifications[0].title).toBe('Check');
+    expect(parsed.notifications[0].kind).toBe('notification');
   });
 
   it('increments revision on each mutation', async () => {

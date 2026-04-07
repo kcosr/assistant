@@ -7,14 +7,19 @@ import { PanelChromeController } from '../../../../web-client/src/controllers/pa
 
 interface NotificationRecord {
   id: string;
+  kind: 'session_attention' | 'notification';
   title: string;
   body: string;
   createdAt: string;
   readAt: string | null;
-  source: 'tool' | 'http' | 'cli';
+  source: 'tool' | 'http' | 'cli' | 'system';
   sessionId: string | null;
   sessionTitle: string | null;
   tts: boolean;
+  voiceMode: 'none' | 'speak' | 'speak_then_listen';
+  ttsText: string | null;
+  sourceEventId: string | null;
+  sessionActivitySeq: number | null;
 }
 
 type FilterMode = 'all' | 'unread';
@@ -34,12 +39,14 @@ const ICON_PATHS: Record<string, string> = {
   tool: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
   http: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
   cli: 'M4 17l6-6-6-6 M12 19h8',
+  system: 'M12 2l7 4v6c0 5-3.4 9.4-7 10-3.6-.6-7-5-7-10V6l7-4z',
   chevronDown: 'M6 9l6 6 6-6',
   chevronUp: 'M18 15l-6-6-6 6',
   moreVertical: 'M12 12h.01 M12 5h.01 M12 19h.01',
   volume: 'M11 5L6 9H2v6h4l5 4V5z M19.07 4.93a10 10 0 0 1 0 14.14 M15.54 8.46a5 5 0 0 1 0 7.07',
   externalLink: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14L21 3',
   inbox: 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M22 12h-4l-3 3h-6l-3-3H2',
+  attention: 'M12 9v4 M12 17h.01 M10.29 3.86l-7.5 13A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.71-3l-7.5-13a2 2 0 0 0-3.42 0z',
 };
 
 function createSvgIcon(pathD: string, className = 'notif-icon'): SVGSVGElement {
@@ -274,6 +281,17 @@ function formatRelativeTime(isoString: string): string {
         titleEl.textContent = n.title;
         titleRow.appendChild(titleEl);
 
+        if (n.kind === 'session_attention') {
+          const attentionBadge = document.createElement('span');
+          attentionBadge.className = 'notif-kind-badge';
+          attentionBadge.title = 'Latest pending assistant reply';
+          attentionBadge.appendChild(createSvgIcon(ICON_PATHS.attention, 'notif-icon notif-icon-xs'));
+          const label = document.createElement('span');
+          label.textContent = 'Latest';
+          attentionBadge.appendChild(label);
+          titleRow.appendChild(attentionBadge);
+        }
+
         // Unread dot
         if (!isRead) {
           const dot = document.createElement('span');
@@ -453,11 +471,32 @@ function formatRelativeTime(isoString: string): string {
         notifications?: NotificationRecord[];
       }): void => {
         const eventRevision = typeof event.revision === 'number' ? event.revision : -1;
+        const upsertNotification = (notification: NotificationRecord): void => {
+          state.notifications = state.notifications.filter((existing) => {
+            if (existing.id === notification.id) {
+              return false;
+            }
+            return !(
+              notification.kind === 'session_attention' &&
+              existing.kind === 'session_attention' &&
+              existing.sessionId === notification.sessionId
+            );
+          });
+          state.notifications.unshift(notification);
+        };
 
         switch (event.event) {
           case 'created':
             if (event.notification) {
-              state.notifications.unshift(event.notification);
+              upsertNotification(event.notification);
+            }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
+            }
+            break;
+          case 'upserted':
+            if (event.notification) {
+              upsertNotification(event.notification);
             }
             if (eventRevision > knownRevision) {
               knownRevision = eventRevision;
@@ -522,6 +561,7 @@ function formatRelativeTime(isoString: string): string {
           ) {
             processEvent(payload as unknown as {
               event: string;
+              revision?: number;
               notification?: NotificationRecord;
               id?: string;
               notifications?: NotificationRecord[];

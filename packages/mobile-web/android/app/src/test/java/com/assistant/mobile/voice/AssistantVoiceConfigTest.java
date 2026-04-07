@@ -225,7 +225,8 @@ public final class AssistantVoiceConfigTest {
             recognitionCueGain,
             AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            false
         );
     }
 

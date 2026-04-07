@@ -1,18 +1,21 @@
 import type { CombinedPluginManifest } from '@assistant/shared';
 
-import type { ToolContext } from '../../../../agent-server/src/tools';
 import { ToolError } from '../../../../agent-server/src/tools';
 import type {
   PluginModule,
   PanelEventHandler,
-  PanelEventHandlerContext,
 } from '../../../../agent-server/src/plugins/types';
-import { NotificationsStore } from './store';
-import type { NotificationRecord, NotificationSource } from './types';
+import type { NotificationSource } from './types';
+import {
+  buildNotificationPanelEventMessage,
+  clearSessionAttentionForReply,
+  createNotificationRecord,
+  getNotificationsStore,
+  initializeNotificationsService,
+  shutdownNotificationsService,
+} from './service';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
-
-const PANEL_TYPE = 'notifications';
 
 function requireNonEmptyString(value: unknown, field: string): string {
   if (typeof value !== 'string') {
@@ -32,89 +35,11 @@ function asObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-interface NotificationEventPayload {
-  type: 'notification_update';
-  event: 'created' | 'updated' | 'removed' | 'snapshot';
-  revision: number;
-  notification?: NotificationRecord;
-  id?: string;
-  notifications?: NotificationRecord[];
-}
-
-function buildPanelEvent(
-  event: NotificationEventPayload['event'],
-  revision: number,
-  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
-): NotificationEventPayload {
-  return { type: 'notification_update', event, revision, ...payload };
-}
-
-function broadcastNotificationEvent(
-  ctx: ToolContext,
-  event: NotificationEventPayload['event'],
-  revision: number,
-  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
-): void {
-  const sessionHub = ctx.sessionHub;
-  if (!sessionHub) {
-    return;
-  }
-  sessionHub.broadcastToAll({
-    type: 'panel_event',
-    panelId: '*',
-    panelType: PANEL_TYPE,
-    sessionId: '*',
-    payload: buildPanelEvent(event, revision, payload),
-  });
-}
-
-function broadcastFromPanelCtx(
-  ctx: PanelEventHandlerContext,
-  event: NotificationEventPayload['event'],
-  revision: number,
-  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
-): void {
-  ctx.sendToAll({
-    type: 'panel_event',
-    panelId: '*',
-    panelType: PANEL_TYPE,
-    sessionId: '*',
-    payload: buildPanelEvent(event, revision, payload),
-  });
-}
-
-async function resolveSessionTitle(
-  ctx: ToolContext,
-  sessionId: string | null | undefined,
-): Promise<string | null> {
-  if (!sessionId || !ctx.sessionIndex) {
-    return null;
-  }
-  try {
-    const session = await ctx.sessionIndex.getSession(sessionId);
-    if (!session) {
-      return sessionId;
-    }
-    const attrs = session.attributes as
-      | { core?: { autoTitle?: string } }
-      | undefined;
-    return (
-      session.name ??
-      attrs?.core?.autoTitle ??
-      session.lastSnippet ??
-      sessionId
-    );
-  } catch {
-    return sessionId;
-  }
-}
-
-const VALID_SOURCES = new Set<string>(['tool', 'http', 'cli']);
+const VALID_SOURCES = new Set<string>(['tool', 'http', 'cli', 'system']);
 
 export function createPlugin(_options: PluginFactoryArgs): PluginModule {
-  let store: NotificationsStore;
-
   const panelEventHandler: PanelEventHandler = async (event, ctx) => {
+    const store = getNotificationsStore();
     const payload = event.payload as Record<string, unknown> | undefined;
     if (!payload || typeof payload !== 'object') {
       return;
@@ -125,36 +50,69 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     if (eventType === 'request_snapshot') {
       const { notifications, revision } = await store.snapshot();
       ctx.sendToClient({
-        type: 'panel_event',
+        ...buildNotificationPanelEventMessage({
+          event: 'snapshot',
+          revision,
+          notifications,
+        }),
         panelId: event.panelId,
-        panelType: PANEL_TYPE,
-        payload: buildPanelEvent('snapshot', revision, { notifications }),
       });
     } else if (eventType === 'toggle_read') {
       const id = payload['id'];
       if (typeof id !== 'string') {
         return;
       }
-      const notification = await store.toggleRead(id);
-      if (notification) {
-        broadcastFromPanelCtx(ctx, 'updated', store.revision, { notification });
+      const result = await store.toggleReadWithRevision(id);
+      if (result) {
+        ctx.sendToAll(
+          buildNotificationPanelEventMessage({
+            event: 'updated',
+            revision: result.revision,
+            notification: result.value,
+          }),
+        );
       }
     } else if (eventType === 'mark_all_read') {
-      await store.markAllRead();
-      const { notifications, revision } = await store.snapshot();
-      broadcastFromPanelCtx(ctx, 'snapshot', revision, { notifications });
+      const { notifications, revision } = await store.markAllReadSnapshot();
+      ctx.sendToAll(
+        buildNotificationPanelEventMessage({
+          event: 'snapshot',
+          revision,
+          notifications,
+        }),
+      );
     } else if (eventType === 'clear') {
       const id = payload['id'];
       if (typeof id !== 'string') {
         return;
       }
-      const removed = await store.remove(id);
+      const removed = await store.removeWithRevision(id);
       if (removed) {
-        broadcastFromPanelCtx(ctx, 'removed', store.revision, { id });
+        ctx.sendToAll(
+          buildNotificationPanelEventMessage({
+            event: 'removed',
+            revision: removed.revision,
+            id,
+          }),
+        );
       }
+    } else if (eventType === 'clear_session_attention') {
+      const sessionId = payload['sessionId'];
+      if (typeof sessionId !== 'string' || !sessionId.trim()) {
+        return;
+      }
+      await clearSessionAttentionForReply({ sessionId, sessionHub: ctx.sessionHub });
     } else if (eventType === 'clear_all') {
-      await store.removeAll();
-      broadcastFromPanelCtx(ctx, 'snapshot', store.revision, { notifications: [] });
+      const { count, notifications, revision } = await store.removeAllSnapshot();
+      if (count > 0) {
+        ctx.sendToAll(
+          buildNotificationPanelEventMessage({
+            event: 'snapshot',
+            revision,
+            notifications,
+          }),
+        );
+      }
     }
   };
 
@@ -173,20 +131,49 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         const source: NotificationSource = VALID_SOURCES.has(rawSource)
           ? (rawSource as NotificationSource)
           : 'tool';
+        const kind =
+          parsed['kind'] === 'session_attention' ? 'session_attention' : 'notification';
+        const voiceMode =
+          parsed['voiceMode'] === 'speak' ||
+          parsed['voiceMode'] === 'speak_then_listen' ||
+          parsed['voiceMode'] === 'none'
+            ? parsed['voiceMode']
+            : undefined;
+        const ttsText =
+          typeof parsed['ttsText'] === 'string' && parsed['ttsText'].trim()
+            ? parsed['ttsText'].trim()
+            : null;
+        const sourceEventId =
+          typeof parsed['sourceEventId'] === 'string' && parsed['sourceEventId'].trim()
+            ? parsed['sourceEventId'].trim()
+            : null;
+        const sessionActivitySeq =
+          typeof parsed['sessionActivitySeq'] === 'number' &&
+          Number.isFinite(parsed['sessionActivitySeq'])
+            ? Math.trunc(parsed['sessionActivitySeq'])
+            : null;
 
-        const sessionTitle = await resolveSessionTitle(ctx, sessionId);
-
-        const notification = await store.insert(
-          { title, body, sessionId, sessionTitle, tts },
+        const { notification } = await createNotificationRecord({
+          input: {
+            kind,
+            title,
+            body,
+            sessionId,
+            tts,
+            ...(voiceMode ? { voiceMode } : {}),
+            ...(ttsText ? { ttsText } : {}),
+            ...(sourceEventId ? { sourceEventId } : {}),
+            ...(sessionActivitySeq !== null ? { sessionActivitySeq } : {}),
+          },
           source,
-        );
-
-        broadcastNotificationEvent(ctx, 'created', store.revision, { notification });
-
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+        });
         return notification;
       },
 
       list: async (args) => {
+        const store = getNotificationsStore();
         const parsed = asObject(args);
         const unreadOnly = parsed['unreadOnly'] === true;
         const limit =
@@ -202,6 +189,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       },
 
       get: async (args) => {
+        const store = getNotificationsStore();
         const parsed = asObject(args);
         const id = requireNonEmptyString(parsed['id'], 'id');
         const notification = await store.get(id);
@@ -212,37 +200,66 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       },
 
       toggle_read: async (args, ctx) => {
+        const store = getNotificationsStore();
         const parsed = asObject(args);
         const id = requireNonEmptyString(parsed['id'], 'id');
-        const notification = await store.toggleRead(id);
-        if (!notification) {
+        const result = await store.toggleReadWithRevision(id);
+        if (!result) {
           throw new ToolError('not_found', `Notification not found: ${id}`);
         }
-        broadcastNotificationEvent(ctx, 'updated', store.revision, { notification });
-        return notification;
+        ctx.sessionHub?.broadcastToAll(
+          buildNotificationPanelEventMessage({
+            event: 'updated',
+            revision: result.revision,
+            notification: result.value,
+          }),
+        );
+        return result.value;
       },
 
       mark_all_read: async (_args, ctx) => {
-        const count = await store.markAllRead();
-        const { notifications, revision } = await store.snapshot();
-        broadcastNotificationEvent(ctx, 'snapshot', revision, { notifications });
+        const store = getNotificationsStore();
+        const { count, notifications, revision } = await store.markAllReadSnapshot();
+        ctx.sessionHub?.broadcastToAll(
+          buildNotificationPanelEventMessage({
+            event: 'snapshot',
+            revision,
+            notifications,
+          }),
+        );
         return { marked: count };
       },
 
       clear: async (args, ctx) => {
+        const store = getNotificationsStore();
         const parsed = asObject(args);
         const id = requireNonEmptyString(parsed['id'], 'id');
-        const removed = await store.remove(id);
+        const removed = await store.removeWithRevision(id);
         if (!removed) {
           throw new ToolError('not_found', `Notification not found: ${id}`);
         }
-        broadcastNotificationEvent(ctx, 'removed', store.revision, { id });
+        ctx.sessionHub?.broadcastToAll(
+          buildNotificationPanelEventMessage({
+            event: 'removed',
+            revision: removed.revision,
+            id,
+          }),
+        );
         return { ok: true };
       },
 
       clear_all: async (_args, ctx) => {
-        const count = await store.removeAll();
-        broadcastNotificationEvent(ctx, 'snapshot', store.revision, { notifications: [] });
+        const store = getNotificationsStore();
+        const { count, notifications, revision } = await store.removeAllSnapshot();
+        if (count > 0) {
+          ctx.sessionHub?.broadcastToAll(
+            buildNotificationPanelEventMessage({
+              event: 'snapshot',
+              revision,
+              notifications,
+            }),
+          );
+        }
         return { cleared: count };
       },
     },
@@ -252,11 +269,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
     },
 
     async initialize(dataDir): Promise<void> {
-      store = new NotificationsStore(dataDir);
+      initializeNotificationsService(dataDir);
     },
 
     async shutdown(): Promise<void> {
-      // No cleanup needed — store is file-based
+      shutdownNotificationsService();
     },
   };
 }

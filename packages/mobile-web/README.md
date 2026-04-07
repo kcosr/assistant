@@ -156,9 +156,10 @@ The following patches are applied automatically on `android:sync`:
 - The Android app includes a committed local Capacitor plugin, `AssistantNativeVoice`, and a foreground
   service, `AssistantVoiceRuntimeService`.
 - The native runtime receives voice-mode config from the web layer, subscribes to the selected
-  Assistant session over the main Assistant websocket for live `transcript_event` updates, plays
-  `voice_speak` / `voice_ask` tool calls through `agent-voice-adapter`, and submits successful
-  spoken replies back through the existing sessions message route.
+  Assistant session over the main Assistant websocket for live `transcript_event` updates,
+  consumes durable notifications from the notifications plugin over HTTP + `panel_event`
+  updates, plays queued `voice_speak` / `voice_ask` / response work through `agent-voice-adapter`,
+  and submits successful spoken replies back through the existing sessions message route.
 - Android-native voice settings now include a client-side `TTS gain` slider for native playback,
   clamped to `25%`-`500%`, and applied as PCM software gain inside the Android player.
 - Android-native recognition also plays positive/negative PCM cue tones on the same native media
@@ -183,9 +184,21 @@ The following patches are applied automatically on `android:sync`:
 - A final native STT transcript of exactly `stop` is treated as a local stop command instead of
   being forwarded to the LLM. That path plays the same negative completion cue used for canceled
   or aborted recognition and leaves the runtime idle without surfacing an error.
-- Session changes, adapter URL changes, or explicit stop actions terminate the current playback or
-  listening pass immediately; later prompts that arrive while a pass is active are rendered only
-  and are not queued for delayed autoplay.
+- Session-linked voice notifications now drive a one-at-a-time Android-local queue. If the runtime
+  is already alive, automatic `voice_speak`, `voice_ask`, and response-mode final replies queue
+  behind the active local interaction instead of being dropped solely because the runtime was busy.
+- Final assistant replies are persisted as one durable `session_attention` item per session, while
+  `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
+  metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale
+  queued asks can be invalidated before recognition begins.
+- Durable session-linked notifications expose native `Speaker` and `Mic` actions. Manual actions
+  reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,
+  and discard interrupted automatic playback instead of requeueing it.
+- Automatic voice admission remains local-only. If the Android runtime was not alive when a
+  notification arrived, the notification stays durable for manual recovery later, but missed
+  automatic playback is not replayed by default when the app comes back.
+- Session changes, adapter URL changes, or explicit `Stop` still terminate the current playback or
+  listening pass immediately, and `Stop` clears the current Android-local backlog.
 
 **Configuration:**
 

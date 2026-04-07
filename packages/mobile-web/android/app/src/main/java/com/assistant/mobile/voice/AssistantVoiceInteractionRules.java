@@ -43,6 +43,22 @@ final class AssistantVoiceInteractionRules {
         return "voice_ask".equals(toolName) || "assistant_response".equals(toolName);
     }
 
+    static boolean shouldAutoplayNotification(
+        String audioMode,
+        AssistantVoiceNotificationRecord notification
+    ) {
+        if (notification == null || !notification.isUnread()) {
+            return false;
+        }
+        if (notification.isSessionAttention()) {
+            return AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(audioMode);
+        }
+        if ("none".equals(notification.voiceMode)) {
+            return false;
+        }
+        return AssistantVoiceConfig.AUDIO_MODE_TOOL.equals(audioMode);
+    }
+
     static boolean shouldSendSttEndAfterMicStops(String activeRequestId, String stoppedRequestId) {
         String active = activeRequestId == null ? "" : activeRequestId.trim();
         String stopped = stoppedRequestId == null ? "" : stoppedRequestId.trim();

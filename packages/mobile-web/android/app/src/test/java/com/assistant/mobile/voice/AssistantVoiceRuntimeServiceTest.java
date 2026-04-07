@@ -372,6 +372,7 @@ public final class AssistantVoiceRuntimeServiceTest {
     }
 
     @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldHandleRecognizedStopCommandRespectsEnabledSetting() {
         assertEquals(
             false,

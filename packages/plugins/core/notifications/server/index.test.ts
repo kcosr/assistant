@@ -48,11 +48,13 @@ describe('notifications server plugin', () => {
       )) as any;
 
       expect(result.id).toBeDefined();
+      expect(result.kind).toBe('notification');
       expect(result.title).toBe('Hello');
       expect(result.body).toBe('World');
       expect(result.source).toBe('tool');
       expect(result.readAt).toBeNull();
       expect(result.tts).toBe(false);
+      expect(result.voiceMode).toBe('none');
       expect(result.sessionId).toBeNull();
 
       expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
@@ -127,6 +129,54 @@ describe('notifications server plugin', () => {
       )) as any;
 
       expect(result.source).toBe('tool');
+    });
+
+    it('upserts session attention and broadcasts singleton mutations', async () => {
+      const ctx = createMockCtx();
+      const first = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply 1',
+          body: 'First',
+          sessionId: 'sess-1',
+          source: 'system',
+          voiceMode: 'speak_then_listen',
+          sourceEventId: 'response-1',
+          sessionActivitySeq: 3,
+        },
+        ctx,
+      )) as any;
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const second = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply 2',
+          body: 'Second',
+          sessionId: 'sess-1',
+          source: 'system',
+          voiceMode: 'speak_then_listen',
+          sourceEventId: 'response-2',
+          sessionActivitySeq: 4,
+        },
+        ctx,
+      )) as any;
+
+      expect(second.id).toBe(first.id);
+      expect(second.kind).toBe('session_attention');
+      expect(second.sourceEventId).toBe('response-2');
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'upserted',
+            notification: expect.objectContaining({
+              id: first.id,
+              title: 'Reply 2',
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -292,6 +342,15 @@ describe('notifications server plugin', () => {
           }),
         }),
       );
+    });
+
+    it('does not broadcast when there is nothing to clear', async () => {
+      const ctx = createMockCtx();
+
+      const result = (await plugin.operations!.clear_all({}, ctx)) as any;
+
+      expect(result.cleared).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
     });
   });
 

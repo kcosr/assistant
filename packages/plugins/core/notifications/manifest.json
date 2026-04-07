@@ -39,6 +39,11 @@
             "type": "string",
             "description": "Notification body text."
           },
+          "kind": {
+            "type": "string",
+            "enum": ["notification", "session_attention"],
+            "description": "Storage behavior. session_attention is a per-session singleton."
+          },
           "sessionId": {
             "type": "string",
             "description": "Optional session ID to link this notification to."
@@ -47,9 +52,26 @@
             "type": "boolean",
             "description": "Request text-to-speech playback for this notification."
           },
+          "voiceMode": {
+            "type": "string",
+            "enum": ["none", "speak", "speak_then_listen"],
+            "description": "Android local voice execution intent for this notification."
+          },
+          "ttsText": {
+            "type": "string",
+            "description": "Optional spoken-text override used instead of the visible body."
+          },
+          "sourceEventId": {
+            "type": "string",
+            "description": "Optional originating event/tool correlation ID."
+          },
+          "sessionActivitySeq": {
+            "type": "number",
+            "description": "Optional server-generated session ordering marker for stale-item validation."
+          },
           "source": {
             "type": "string",
-            "enum": ["tool", "http", "cli"],
+            "enum": ["tool", "http", "cli", "system"],
             "description": "Notification source. Defaults to 'tool'."
           }
         },
