@@ -1190,6 +1190,12 @@ body.preload * {
 }
 
 @media (max-width: 720px) {
+  .global-aql-modal-overlay {
+    align-items: flex-start;
+    padding-top: 25vh;
+    padding-bottom: var(--spacing-lg);
+  }
+
   .toolbar-center {
     display: none;
   }
