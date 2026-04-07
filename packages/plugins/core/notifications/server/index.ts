@@ -35,6 +35,7 @@ function asObject(value: unknown): Record<string, unknown> {
 interface NotificationEventPayload {
   type: 'notification_update';
   event: 'created' | 'updated' | 'removed' | 'snapshot';
+  revision: number;
   notification?: NotificationRecord;
   id?: string;
   notifications?: NotificationRecord[];
@@ -42,15 +43,17 @@ interface NotificationEventPayload {
 
 function buildPanelEvent(
   event: NotificationEventPayload['event'],
-  payload: Omit<NotificationEventPayload, 'type' | 'event'>,
+  revision: number,
+  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
 ): NotificationEventPayload {
-  return { type: 'notification_update', event, ...payload };
+  return { type: 'notification_update', event, revision, ...payload };
 }
 
 function broadcastNotificationEvent(
   ctx: ToolContext,
   event: NotificationEventPayload['event'],
-  payload: Omit<NotificationEventPayload, 'type' | 'event'>,
+  revision: number,
+  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
 ): void {
   const sessionHub = ctx.sessionHub;
   if (!sessionHub) {
@@ -61,21 +64,22 @@ function broadcastNotificationEvent(
     panelId: '*',
     panelType: PANEL_TYPE,
     sessionId: '*',
-    payload: buildPanelEvent(event, payload),
+    payload: buildPanelEvent(event, revision, payload),
   });
 }
 
 function broadcastFromPanelCtx(
   ctx: PanelEventHandlerContext,
   event: NotificationEventPayload['event'],
-  payload: Omit<NotificationEventPayload, 'type' | 'event'>,
+  revision: number,
+  payload: Omit<NotificationEventPayload, 'type' | 'event' | 'revision'>,
 ): void {
   ctx.sendToAll({
     type: 'panel_event',
     panelId: '*',
     panelType: PANEL_TYPE,
     sessionId: '*',
-    payload: buildPanelEvent(event, payload),
+    payload: buildPanelEvent(event, revision, payload),
   });
 }
 
@@ -124,7 +128,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         type: 'panel_event',
         panelId: event.panelId,
         panelType: PANEL_TYPE,
-        payload: buildPanelEvent('snapshot', { notifications }),
+        payload: buildPanelEvent('snapshot', store.revision, { notifications }),
       });
     } else if (eventType === 'toggle_read') {
       const id = payload['id'];
@@ -133,12 +137,12 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       }
       const notification = await store.toggleRead(id);
       if (notification) {
-        broadcastFromPanelCtx(ctx, 'updated', { notification });
+        broadcastFromPanelCtx(ctx, 'updated', store.revision, { notification });
       }
     } else if (eventType === 'mark_all_read') {
       await store.markAllRead();
       const { notifications } = await store.list();
-      broadcastFromPanelCtx(ctx, 'snapshot', { notifications });
+      broadcastFromPanelCtx(ctx, 'snapshot', store.revision, { notifications });
     } else if (eventType === 'clear') {
       const id = payload['id'];
       if (typeof id !== 'string') {
@@ -146,11 +150,11 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       }
       const removed = await store.remove(id);
       if (removed) {
-        broadcastFromPanelCtx(ctx, 'removed', { id });
+        broadcastFromPanelCtx(ctx, 'removed', store.revision, { id });
       }
     } else if (eventType === 'clear_all') {
       await store.removeAll();
-      broadcastFromPanelCtx(ctx, 'snapshot', { notifications: [] });
+      broadcastFromPanelCtx(ctx, 'snapshot', store.revision, { notifications: [] });
     }
   };
 
@@ -177,7 +181,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           source,
         );
 
-        broadcastNotificationEvent(ctx, 'created', { notification });
+        broadcastNotificationEvent(ctx, 'created', store.revision, { notification });
 
         return notification;
       },
@@ -214,14 +218,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         if (!notification) {
           throw new ToolError('not_found', `Notification not found: ${id}`);
         }
-        broadcastNotificationEvent(ctx, 'updated', { notification });
+        broadcastNotificationEvent(ctx, 'updated', store.revision, { notification });
         return notification;
       },
 
       mark_all_read: async (_args, ctx) => {
         const count = await store.markAllRead();
         const { notifications } = await store.list();
-        broadcastNotificationEvent(ctx, 'snapshot', { notifications });
+        broadcastNotificationEvent(ctx, 'snapshot', store.revision, { notifications });
         return { marked: count };
       },
 
@@ -232,13 +236,13 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         if (!removed) {
           throw new ToolError('not_found', `Notification not found: ${id}`);
         }
-        broadcastNotificationEvent(ctx, 'removed', { id });
+        broadcastNotificationEvent(ctx, 'removed', store.revision, { id });
         return { ok: true };
       },
 
       clear_all: async (_args, ctx) => {
         const count = await store.removeAll();
-        broadcastNotificationEvent(ctx, 'snapshot', { notifications: [] });
+        broadcastNotificationEvent(ctx, 'snapshot', store.revision, { notifications: [] });
         return { cleared: count };
       },
     },

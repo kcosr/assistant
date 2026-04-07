@@ -90,6 +90,10 @@ function formatRelativeTime(isoString: string): string {
         menuOpen: false,
       };
 
+      // Monotonic revision counter from the server. Used to discard
+      // stale snapshots that arrive after newer incremental events.
+      let knownRevision = -1;
+
       // Load persisted state
       const persisted = host.loadPanelState() as {
         filter?: FilterMode;
@@ -443,14 +447,20 @@ function formatRelativeTime(isoString: string): string {
 
       const processEvent = (event: {
         event: string;
+        revision?: number;
         notification?: NotificationRecord;
         id?: string;
         notifications?: NotificationRecord[];
       }): void => {
+        const eventRevision = typeof event.revision === 'number' ? event.revision : -1;
+
         switch (event.event) {
           case 'created':
             if (event.notification) {
               state.notifications.unshift(event.notification);
+            }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
             }
             break;
           case 'updated':
@@ -460,23 +470,35 @@ function formatRelativeTime(isoString: string): string {
                 state.notifications[idx] = event.notification;
               }
             }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
+            }
             break;
           case 'removed':
             if (event.id) {
               state.notifications = state.notifications.filter((n) => n.id !== event.id);
               state.expandedIds.delete(event.id);
             }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
+            }
             break;
           case 'snapshot':
+            // Discard stale snapshots that arrive after newer incremental events.
+            if (eventRevision >= 0 && eventRevision < knownRevision) {
+              return;
+            }
             if (event.notifications) {
               state.notifications = event.notifications;
-              // Clean up expanded IDs for removed notifications
               const ids = new Set(state.notifications.map((n) => n.id));
               for (const id of state.expandedIds) {
                 if (!ids.has(id)) {
                   state.expandedIds.delete(id);
                 }
               }
+            }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
             }
             break;
         }

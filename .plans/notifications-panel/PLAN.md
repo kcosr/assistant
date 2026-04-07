@@ -250,6 +250,12 @@ The original plan specified:
 
 The store enforces a 500-notification cap with oldest-read pruning. Whether this should be configurable via plugin config (e.g., `plugins.notifications.maxNotifications`) is an open question.
 
+**Important:** Unread notifications are never pruned. If unread count exceeds the cap, the store grows beyond 500 items. This is intentional — silently discarding unread items would be worse than a larger store. The cap only trims the oldest read notifications.
+
+### Source provenance is caller-supplied
+
+The `create` operation accepts an optional `source` field (`tool`, `http`, `cli`) from the caller. This is trusted input — a caller can claim `source: 'cli'` while calling through the HTTP API. For v1, `source` is a presentation hint (controls which icon renders), not a security boundary. If source needs to reflect the actual ingress surface, it should be set by the operations framework / route handler rather than the caller.
+
 ## Acceptance criteria
 
 - Notifications can be created via tool, HTTP, and CLI operations and persist across server restarts.

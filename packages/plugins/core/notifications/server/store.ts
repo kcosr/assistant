@@ -20,6 +20,8 @@ export class NotificationsStore {
   private data: StoreData = { notifications: [] };
   private loaded = false;
   private maxNotifications: number;
+  private writeQueue: Promise<void> = Promise.resolve();
+  private _revision = 0;
 
   constructor(
     private readonly dataDir: string,
@@ -27,6 +29,10 @@ export class NotificationsStore {
   ) {
     this.dataPath = path.join(dataDir, 'notifications.json');
     this.maxNotifications = maxNotifications;
+  }
+
+  get revision(): number {
+    return this._revision;
   }
 
   private async ensureLoaded(): Promise<void> {
@@ -49,8 +55,18 @@ export class NotificationsStore {
     this.loaded = true;
   }
 
-  private async save(): Promise<void> {
-    await writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8');
+  private save(): Promise<void> {
+    // Chain writes so they execute sequentially, preventing concurrent
+    // writes from clobbering each other on disk.
+    this.writeQueue = this.writeQueue.then(
+      () => writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8'),
+      () => writeFile(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8'),
+    );
+    return this.writeQueue;
+  }
+
+  private bumpRevision(): void {
+    this._revision++;
   }
 
   private sortNewestFirst(): void {
@@ -63,14 +79,15 @@ export class NotificationsStore {
     if (this.data.notifications.length <= this.maxNotifications) {
       return;
     }
-    // Remove oldest read notifications first
+    // Remove oldest read notifications first.
+    // Note: unread notifications are never pruned — if unread count exceeds
+    // the cap, the store grows beyond maxNotifications. This is intentional
+    // to avoid silently discarding unread items.
     const read = this.data.notifications.filter((n) => n.readAt !== null);
     const unread = this.data.notifications.filter((n) => n.readAt === null);
 
     if (read.length + unread.length > this.maxNotifications) {
-      // Keep all unread, trim oldest read
       const readToKeep = Math.max(0, this.maxNotifications - unread.length);
-      // read is already sorted newest-first (from sortNewestFirst), keep the newest ones
       const keptRead = read.slice(0, readToKeep);
       this.data.notifications = [...unread, ...keptRead];
       this.sortNewestFirst();
@@ -97,6 +114,7 @@ export class NotificationsStore {
 
     this.data.notifications.unshift(record);
     this.pruneIfNeeded();
+    this.bumpRevision();
     await this.save();
 
     return record;
@@ -132,6 +150,7 @@ export class NotificationsStore {
     }
 
     notification.readAt = notification.readAt === null ? new Date().toISOString() : null;
+    this.bumpRevision();
     await this.save();
 
     return notification;
@@ -150,6 +169,7 @@ export class NotificationsStore {
     }
 
     if (count > 0) {
+      this.bumpRevision();
       await this.save();
     }
 
@@ -165,6 +185,7 @@ export class NotificationsStore {
     }
 
     this.data.notifications.splice(index, 1);
+    this.bumpRevision();
     await this.save();
 
     return true;
@@ -179,6 +200,7 @@ export class NotificationsStore {
     }
 
     this.data.notifications = [];
+    this.bumpRevision();
     await this.save();
 
     return count;

@@ -223,4 +223,50 @@ describe('NotificationsStore', () => {
     expect(parsed.notifications).toHaveLength(1);
     expect(parsed.notifications[0].title).toBe('Check');
   });
+
+  it('increments revision on each mutation', async () => {
+    expect(store.revision).toBe(0);
+
+    await store.insert({ title: 'A', body: 'B' }, 'tool');
+    expect(store.revision).toBe(1);
+
+    await store.insert({ title: 'B', body: 'B' }, 'tool');
+    expect(store.revision).toBe(2);
+
+    // markAllRead with unread items bumps revision
+    await store.markAllRead();
+    expect(store.revision).toBe(3);
+
+    const { notifications } = await store.list();
+    await store.remove(notifications[0].id);
+    expect(store.revision).toBe(4);
+
+    await store.insert({ title: 'C', body: 'D' }, 'tool');
+    await store.removeAll();
+    expect(store.revision).toBe(6);
+  });
+
+  it('does not increment revision for no-op markAllRead', async () => {
+    // No notifications to mark
+    await store.markAllRead();
+    expect(store.revision).toBe(0);
+  });
+
+  it('serializes concurrent writes without data loss', async () => {
+    // Fire multiple inserts concurrently
+    const results = await Promise.all([
+      store.insert({ title: 'A', body: 'B' }, 'tool'),
+      store.insert({ title: 'B', body: 'B' }, 'tool'),
+      store.insert({ title: 'C', body: 'B' }, 'tool'),
+    ]);
+
+    expect(results).toHaveLength(3);
+    const { notifications } = await store.list();
+    expect(notifications).toHaveLength(3);
+
+    // Verify persisted data matches by reloading from disk
+    const store2 = new NotificationsStore(tempDir);
+    const { notifications: reloaded } = await store2.list();
+    expect(reloaded).toHaveLength(3);
+  });
 });

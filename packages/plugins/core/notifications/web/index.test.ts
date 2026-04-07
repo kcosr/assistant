@@ -336,4 +336,55 @@ describe('notifications panel', () => {
 
     handle.unmount();
   });
+
+  it('discards stale snapshots that arrive after newer incremental events', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    // Receive a created event at revision 5
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'created',
+        revision: 5,
+        notification: makeNotification({ id: 'new-one', title: 'Latest' }),
+      },
+    } as any);
+
+    expect(container.querySelectorAll('.notif-item').length).toBe(1);
+
+    // A stale snapshot at revision 3 arrives late (from the initial request_snapshot)
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        revision: 3,
+        notifications: [makeNotification({ id: 'old', title: 'Old' })],
+      },
+    } as any);
+
+    // Should still show the newer notification, stale snapshot was discarded
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Latest');
+
+    // A fresh snapshot at revision 6 should be accepted
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        revision: 6,
+        notifications: [
+          makeNotification({ id: 'new-one', title: 'Latest' }),
+          makeNotification({ id: 'another', title: 'Another' }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelectorAll('.notif-item').length).toBe(2);
+
+    handle.unmount();
+  });
 });
