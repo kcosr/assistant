@@ -1300,6 +1300,9 @@ async function main(): Promise<void> {
       }
       setStatus(statusEl, `Voice error: ${message}`);
     });
+    nativeVoiceBridge.addOpenSessionListener((payload) => {
+      openChatPanelForSession(payload.sessionId);
+    });
     void nativeVoiceBridge.getState().then((payload) => {
       applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload?.state));
     });

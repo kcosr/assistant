@@ -98,7 +98,7 @@ export interface AssistantNativeVoiceBridgeTarget {
     | Promise<AssistantNativeVoiceInputDevice[]>;
   getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
   addListener?: (
-    eventName: 'stateChanged' | 'runtimeError',
+    eventName: 'stateChanged' | 'runtimeError' | 'openSession',
     listener: (payload: unknown) => void,
   ) => AssistantNativeVoiceListenerHandle | Promise<AssistantNativeVoiceListenerHandle>;
 }
@@ -226,6 +226,20 @@ export class AssistantNativeVoiceBridge {
     });
   }
 
+  addOpenSessionListener(
+    listener: (payload: { sessionId: string }) => void,
+  ): (() => void) | null {
+    return this.addListener('openSession', (payload) => {
+      const sessionId =
+        typeof (payload as { sessionId?: unknown } | null)?.sessionId === 'string'
+          ? ((payload as { sessionId: string }).sessionId ?? '').trim()
+          : '';
+      if (sessionId) {
+        listener({ sessionId });
+      }
+    });
+  }
+
   private getTarget(): AssistantNativeVoiceBridgeTarget | null {
     const host = this.getHost();
     if (!host) {
@@ -235,7 +249,7 @@ export class AssistantNativeVoiceBridge {
   }
 
   private addListener(
-    eventName: 'stateChanged' | 'runtimeError',
+    eventName: 'stateChanged' | 'runtimeError' | 'openSession',
     listener: (payload: unknown) => void,
   ): (() => void) | null {
     const target = this.getTarget();

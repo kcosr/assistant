@@ -78,8 +78,10 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static final String BROADCAST_STATE_CHANGED = "com.assistant.mobile.voice.STATE_CHANGED";
     static final String BROADCAST_RUNTIME_ERROR = "com.assistant.mobile.voice.RUNTIME_ERROR";
+    static final String BROADCAST_OPEN_SESSION = "com.assistant.mobile.voice.OPEN_SESSION";
     static final String EXTRA_STATE = "state";
     static final String EXTRA_MESSAGE = "message";
+    static final String EXTRA_OPEN_SESSION_ID = "openSessionId";
 
     static final String LEGACY_NOTIFICATION_CHANNEL_ID = "assistant_voice_mode";
     static final String NOTIFICATION_CHANNEL_ID = "assistant_voice_runtime_controls";
@@ -1268,17 +1270,22 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (manager == null) {
             return;
         }
+        Intent launchIntent = new Intent(this, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (notification.isSessionLinked()) {
+            launchIntent.putExtra(EXTRA_OPEN_SESSION_ID, notification.sessionId);
+        }
         PendingIntent contentIntent = PendingIntent.getActivity(
             this,
             durableNotificationRequestCode(notification.id, 0),
-            new Intent(this, MainActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            launchIntent,
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+        String displayTitle = resolveDurableNotificationTitle(notification);
         NotificationCompat.Builder builder =
             new NotificationCompat.Builder(this, DURABLE_NOTIFICATION_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(notification.title)
+                .setContentTitle(displayTitle)
                 .setContentText(notification.body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(notification.body))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -1292,7 +1299,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
                     )
                 );
-        if (!notification.sessionTitle.isEmpty()) {
+        if (!notification.sessionTitle.isEmpty() && !displayTitle.equals(notification.sessionTitle)) {
             builder.setSubText(notification.sessionTitle);
         }
         if (!notification.resolveSpokenText().isEmpty()) {
@@ -1320,6 +1327,19 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
         }
         manager.notify(durableNotificationId(notification.id), builder.build());
+    }
+
+    private String resolveDurableNotificationTitle(AssistantVoiceNotificationRecord notification) {
+        if (notification.isSessionAttention()) {
+            if (!notification.sessionTitle.isEmpty()) {
+                return notification.sessionTitle;
+            }
+            String configTitle = config.getSessionTitle(notification.sessionId);
+            if (!configTitle.isEmpty()) {
+                return configTitle;
+            }
+        }
+        return notification.title;
     }
 
     private void cancelDurableNotification(String notificationId) {

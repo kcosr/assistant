@@ -74,6 +74,14 @@ public final class AssistantVoicePlugin extends Plugin {
         );
 
         notifyListeners("stateChanged", buildStatePayload(), true);
+
+        checkLaunchIntentForOpenSession();
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        checkIntentForOpenSession(intent);
     }
 
     @Override
@@ -467,6 +475,28 @@ public final class AssistantVoicePlugin extends Plugin {
             + " kind=" + safe(notification.kind)
             + " voiceMode=" + safe(notification.voiceMode)
             + " hasSpeech=" + (!notification.resolveSpokenText().isEmpty());
+    }
+
+    private void checkLaunchIntentForOpenSession() {
+        if (getActivity() == null) {
+            return;
+        }
+        checkIntentForOpenSession(getActivity().getIntent());
+    }
+
+    private void checkIntentForOpenSession(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String sessionId = intent.getStringExtra(AssistantVoiceRuntimeService.EXTRA_OPEN_SESSION_ID);
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            return;
+        }
+        intent.removeExtra(AssistantVoiceRuntimeService.EXTRA_OPEN_SESSION_ID);
+        Log.d(TAG, "openSession from intent sessionId=" + safe(sessionId));
+        JSObject payload = new JSObject();
+        payload.put("sessionId", sessionId.trim());
+        notifyListeners("openSession", payload);
     }
 
     private static String safe(String value) {
