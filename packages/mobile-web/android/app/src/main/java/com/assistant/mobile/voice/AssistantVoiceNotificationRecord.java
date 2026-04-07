@@ -112,8 +112,6 @@ final class AssistantVoiceNotificationRecord {
     }
 
     AssistantVoiceQueueItem toManualMicQueueItem(boolean autoListenEnabled) {
-        String spokenText = resolveSpokenText();
-        String executionMode = spokenText.isEmpty() ? "listen_only" : "speak_then_listen";
         return new AssistantVoiceQueueItem(
             id,
             kind,
@@ -121,8 +119,8 @@ final class AssistantVoiceNotificationRecord {
             sourceEventId,
             sessionId,
             sessionTitle,
-            spokenText,
-            executionMode,
+            "",
+            "listen_only",
             sessionActivitySeq,
             true,
             true

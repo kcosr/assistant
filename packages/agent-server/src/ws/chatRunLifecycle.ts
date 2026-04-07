@@ -44,10 +44,7 @@ import { resolveVisibleAssistantText } from '../piAssistantText';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
 import { buildMessagesForPiSync, resolveInterruptedPiSyncMessages } from '../history/piSessionSync';
 import type { AgentTool } from '../tools';
-import {
-  clearReplyAttentionNotification,
-  publishFinalResponseNotification,
-} from '../notificationProducers';
+import { publishFinalResponseNotification } from '../notificationProducers';
 
 const LATE_PROVIDER_TAIL_CUSTOM_TYPE = 'assistant.late_provider_tail';
 
@@ -445,7 +442,6 @@ export async function handleTextInputWithChatCompletions(options: {
       },
       events,
     );
-    void clearReplyAttentionNotification({ sessionId, sessionHub });
   }
 
   // User message text now includes context line from client

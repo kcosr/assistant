@@ -1,10 +1,7 @@
 import type { SessionHub } from './sessionHub';
 import type { SessionSummary } from './sessionIndex';
 import type { ToolContext } from './tools';
-import {
-  clearSessionAttentionForReply,
-  createNotificationRecord,
-} from '../../plugins/core/notifications/server/service';
+import { createNotificationRecord } from '../../plugins/core/notifications/server/service';
 
 function getSessionActivitySeq(
   summary: Pick<SessionSummary, 'revision'> | null | undefined,
@@ -23,6 +20,7 @@ export async function publishFinalResponseNotification(options: {
   if (!options.text.trim()) {
     return;
   }
+  const sessionIndex = options.sessionIndex ?? options.sessionHub?.getSessionIndex();
   try {
     await createNotificationRecord({
       input: {
@@ -40,20 +38,9 @@ export async function publishFinalResponseNotification(options: {
       },
       source: 'system',
       ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),
-      ...(options.sessionIndex ? { sessionIndex: options.sessionIndex } : {}),
+      ...(sessionIndex ? { sessionIndex } : {}),
     });
   } catch {
     // Notification transport is optional relative to the chat response.
-  }
-}
-
-export async function clearReplyAttentionNotification(options: {
-  sessionId: string;
-  sessionHub?: SessionHub;
-}): Promise<void> {
-  try {
-    await clearSessionAttentionForReply(options);
-  } catch {
-    // Notification transport is optional relative to the chat input.
   }
 }

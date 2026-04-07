@@ -90,6 +90,23 @@ describe('notifications server plugin', () => {
       expect(result.sessionTitle).toBe('My Session');
     });
 
+    it('does not fall back to lastSnippet when no persisted title exists', async () => {
+      const ctx = createMockCtx({
+        sessionIndex: {
+          getSession: vi.fn().mockResolvedValue({
+            lastSnippet: 'latest user text',
+          }),
+        },
+      });
+
+      const result = (await plugin.operations!.create(
+        { title: 'T', body: 'B', sessionId: 'sess-1' },
+        ctx,
+      )) as any;
+
+      expect(result.sessionTitle).toBeNull();
+    });
+
     it('falls back to sessionId when session not found', async () => {
       const ctx = createMockCtx();
 

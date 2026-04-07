@@ -177,13 +177,15 @@ public final class AssistantVoicePlugin extends Plugin {
 
     @PluginMethod
     public void startManualListen(PluginCall call) {
+        String sessionId = call.getString("sessionId");
+        Log.d(TAG, "startManualListen invoked sessionId=" + safe(sessionId));
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = PENDING_ACTION_START_LISTEN;
             saveCall(call);
+            Log.d(TAG, "startManualListen awaiting microphone permission sessionId=" + safe(sessionId));
             requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
             return;
         }
-        String sessionId = call.getString("sessionId");
         ContextCompat.startForegroundService(
             getContext(),
             AssistantVoiceRuntimeService.startManualListenIntent(getContext(), sessionId)
@@ -195,9 +197,11 @@ public final class AssistantVoicePlugin extends Plugin {
     public void performNotificationSpeaker(PluginCall call) {
         AssistantVoiceNotificationRecord notification = extractNotification(call);
         if (notification == null) {
+            Log.w(TAG, "performNotificationSpeaker missing notification payload");
             call.reject("notification is required");
             return;
         }
+        Log.d(TAG, "performNotificationSpeaker invoked " + describeNotification(notification));
         ContextCompat.startForegroundService(
             getContext(),
             AssistantVoiceRuntimeService.notificationSpeakerIntent(getContext(), notification)
@@ -209,12 +213,15 @@ public final class AssistantVoicePlugin extends Plugin {
     public void performNotificationMic(PluginCall call) {
         AssistantVoiceNotificationRecord notification = extractNotification(call);
         if (notification == null) {
+            Log.w(TAG, "performNotificationMic missing notification payload");
             call.reject("notification is required");
             return;
         }
+        Log.d(TAG, "performNotificationMic invoked " + describeNotification(notification));
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = PENDING_ACTION_NOTIFICATION_MIC;
             saveCall(call);
+            Log.d(TAG, "performNotificationMic awaiting microphone permission " + describeNotification(notification));
             requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
             return;
         }
@@ -283,6 +290,7 @@ public final class AssistantVoicePlugin extends Plugin {
             return;
         }
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            Log.w(TAG, "handleMicrophonePermissionResult denied pendingAction=" + pendingPermissionAction);
             pendingPermissionAction = "";
             pendingVoiceSettings = null;
             savedCall.reject("Microphone permission is required");
@@ -290,10 +298,12 @@ public final class AssistantVoicePlugin extends Plugin {
             return;
         }
 
+        Log.d(TAG, "handleMicrophonePermissionResult granted pendingAction=" + pendingPermissionAction);
         if (PENDING_ACTION_SET_VOICE_SETTINGS.equals(pendingPermissionAction) && pendingVoiceSettings != null) {
             applyConfig(pendingVoiceSettings);
         } else if (PENDING_ACTION_START_LISTEN.equals(pendingPermissionAction)) {
             String sessionId = savedCall.getString("sessionId");
+            Log.d(TAG, "resuming startManualListen after permission sessionId=" + safe(sessionId));
             ContextCompat.startForegroundService(
                 getContext(),
                 AssistantVoiceRuntimeService.startManualListenIntent(getContext(), sessionId)
@@ -301,10 +311,13 @@ public final class AssistantVoicePlugin extends Plugin {
         } else if (PENDING_ACTION_NOTIFICATION_MIC.equals(pendingPermissionAction)) {
             AssistantVoiceNotificationRecord notification = extractNotification(savedCall);
             if (notification != null) {
+                Log.d(TAG, "resuming performNotificationMic after permission " + describeNotification(notification));
                 ContextCompat.startForegroundService(
                     getContext(),
                     AssistantVoiceRuntimeService.notificationMicIntent(getContext(), notification)
                 );
+            } else {
+                Log.w(TAG, "notification mic permission resumed without notification payload");
             }
         }
 
@@ -435,5 +448,21 @@ public final class AssistantVoicePlugin extends Plugin {
             return;
         }
         requestPermissionForAlias("microphone", call, "handleVoiceModePermissionResult");
+    }
+
+    private static String describeNotification(AssistantVoiceNotificationRecord notification) {
+        if (notification == null) {
+            return "notification=<null>";
+        }
+        return "notificationId=" + safe(notification.id)
+            + " sessionId=" + safe(notification.sessionId)
+            + " kind=" + safe(notification.kind)
+            + " voiceMode=" + safe(notification.voiceMode)
+            + " hasSpeech=" + (!notification.resolveSpokenText().isEmpty());
+    }
+
+    private static String safe(String value) {
+        String trimmed = value == null ? "" : value.trim();
+        return trimmed.isEmpty() ? "<empty>" : trimmed;
     }
 }

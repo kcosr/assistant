@@ -1,7 +1,7 @@
 import type { ServerMessage } from '@assistant/shared';
 
 import type { SessionHub } from '../../../../agent-server/src/sessionHub';
-import type { SessionIndex } from '../../../../agent-server/src/sessionIndex';
+import type { SessionIndex, SessionSummary } from '../../../../agent-server/src/sessionIndex';
 import { NotificationsStore } from './store';
 import type {
   CreateNotificationInput,
@@ -27,6 +27,8 @@ const NOTIFICATIONS_SERVICE_STATE_KEY = Symbol.for('assistant.notifications.serv
 interface NotificationsServiceState {
   store: NotificationsStore | null;
 }
+
+type SessionTitleSummary = Pick<SessionSummary, 'name' | 'attributes'>;
 
 function getNotificationsServiceState(): NotificationsServiceState {
   const globalState = globalThis as typeof globalThis & {
@@ -83,13 +85,22 @@ async function resolveSessionTitle(
     if (!session) {
       return sessionId;
     }
-    const attrs = session.attributes as
-      | { core?: { autoTitle?: string } }
-      | undefined;
-    return session.name ?? attrs?.core?.autoTitle ?? session.lastSnippet ?? sessionId;
+    return resolvePersistedSessionTitle(session);
   } catch {
     return sessionId;
   }
+}
+
+function resolvePersistedSessionTitle(summary: SessionTitleSummary | null | undefined): string | null {
+  const name = typeof summary?.name === 'string' ? summary.name.trim() : '';
+  if (name) {
+    return name;
+  }
+  const attrs = summary?.attributes as
+    | { core?: { autoTitle?: string | null } }
+    | undefined;
+  const autoTitle = typeof attrs?.core?.autoTitle === 'string' ? attrs.core.autoTitle.trim() : '';
+  return autoTitle || null;
 }
 
 function broadcast(
@@ -114,6 +125,31 @@ export function shutdownNotificationsService(): void {
 
 export function getNotificationsStore(): NotificationsStore {
   return requireStore();
+}
+
+export async function syncSessionNotificationTitles(options: {
+  sessionId: string;
+  summary: SessionTitleSummary | null | undefined;
+  sessionHub?: SessionHub;
+}): Promise<NotificationRecord[]> {
+  const store = getNotificationsServiceState().store;
+  if (!store) {
+    return [];
+  }
+
+  const result = await store.updateSessionTitleWithRevision(
+    options.sessionId,
+    resolvePersistedSessionTitle(options.summary),
+  );
+  if (!result) {
+    return [];
+  }
+
+  const snapshot = await store.snapshot();
+  broadcast(options.sessionHub, 'snapshot', snapshot.revision, {
+    notifications: snapshot.notifications,
+  });
+  return result.value;
 }
 
 export function buildNotificationPanelEventMessage(options: {

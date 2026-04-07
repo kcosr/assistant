@@ -43,10 +43,7 @@ import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
 import { resolveVisibleAssistantText } from './piAssistantText';
 import { buildMessagesForPiSync } from './history/piSessionSync';
-import {
-  clearReplyAttentionNotification,
-  publishFinalResponseNotification,
-} from './notificationProducers';
+import { publishFinalResponseNotification } from './notificationProducers';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -451,7 +448,6 @@ export async function processUserMessage(
       },
       events,
     );
-    void clearReplyAttentionNotification({ sessionId, sessionHub });
   }
   void sessionHub.recordSessionActivity(
     sessionId,

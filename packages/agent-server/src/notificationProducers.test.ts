@@ -4,10 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { SessionIndex } from './sessionIndex';
-import {
-  clearReplyAttentionNotification,
-  publishFinalResponseNotification,
-} from './notificationProducers';
+import { publishFinalResponseNotification } from './notificationProducers';
 import {
   getNotificationsStore,
   initializeNotificationsService,
@@ -81,9 +78,10 @@ describe('notification producers', () => {
     expect(notifications[0]?.sessionActivitySeq).toBe(8);
   });
 
-  it('clears session attention notifications on reply acceptance', async () => {
+  it('resolves sessionTitle from sessionHub when sessionIndex is omitted', async () => {
     const sessionHub = {
       broadcastToAll: vi.fn(),
+      getSessionIndex: () => sessionIndex,
     } as any;
 
     await publishFinalResponseNotification({
@@ -91,24 +89,10 @@ describe('notification producers', () => {
       responseId: 'response-1',
       text: 'Final answer',
       sessionHub,
-      sessionIndex,
-      summary: { revision: 2 } as any,
-    });
-    sessionHub.broadcastToAll.mockClear();
-
-    await clearReplyAttentionNotification({
-      sessionId: 'sess-1',
-      sessionHub,
+      summary: { revision: 5 } as any,
     });
 
-    expect((await getNotificationsStore().list()).total).toBe(0);
-    expect(sessionHub.broadcastToAll).toHaveBeenCalledWith(
-      expect.objectContaining({
-        payload: expect.objectContaining({
-          event: 'removed',
-          id: expect.any(String),
-        }),
-      }),
-    );
+    const { notifications } = await getNotificationsStore().list();
+    expect(notifications[0]?.sessionTitle).toBe('Demo session');
   });
 });

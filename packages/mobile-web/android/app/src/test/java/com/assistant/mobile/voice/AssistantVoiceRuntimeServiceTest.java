@@ -441,22 +441,36 @@ public final class AssistantVoiceRuntimeServiceTest {
     @Config(sdk = Build.VERSION_CODES.N)
     public void buildAdapterTtsRequestBodyTreatsClientIdAsOptional() {
         assertFalse(
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
                 .has("clientId")
         );
         assertEquals(
             "request-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
                 .optString("requestId")
         );
         assertEquals(
             "hello",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
                 .optString("text")
         );
         assertEquals(
+            "session-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "",
+                "request-1",
+                "hello",
+                " session-1 "
+            ).optString("sessionId")
+        );
+        assertEquals(
             "client-1",
-            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(" client-1 ", "request-1", "hello")
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                " client-1 ",
+                "request-1",
+                "hello",
+                ""
+            )
                 .optString("clientId")
         );
     }

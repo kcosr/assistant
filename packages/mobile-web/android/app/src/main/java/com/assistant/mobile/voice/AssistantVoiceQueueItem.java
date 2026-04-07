@@ -66,6 +66,48 @@ final class AssistantVoiceQueueItem {
         return notificationId;
     }
 
+    static AssistantVoiceQueueItem fromPrompt(
+        AssistantVoicePromptEvent prompt,
+        boolean autoListenEnabled
+    ) {
+        if (prompt == null) {
+            return null;
+        }
+        String sessionId = trim(prompt.sessionId);
+        String spokenText = trim(prompt.text);
+        if (sessionId.isEmpty() || spokenText.isEmpty()) {
+            return null;
+        }
+        String executionMode = "speak";
+        if (prompt.startsListeningAfterPlayback() && autoListenEnabled) {
+            executionMode = "speak_then_listen";
+        } else if (
+            prompt.isAssistantResponse()
+                && AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback(
+                    prompt.toolName,
+                    autoListenEnabled
+                )
+        ) {
+            executionMode = "speak_then_listen";
+        }
+        String dedupId = trim(prompt.toolCallId).isEmpty()
+            ? trim(prompt.eventId)
+            : trim(prompt.toolCallId);
+        return new AssistantVoiceQueueItem(
+            "",
+            "prompt",
+            "system",
+            dedupId,
+            sessionId,
+            "",
+            spokenText,
+            executionMode,
+            null,
+            false,
+            true
+        );
+    }
+
     private static String trim(String value) {
         return value == null ? "" : value.trim();
     }

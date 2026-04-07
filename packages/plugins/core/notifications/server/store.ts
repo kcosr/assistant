@@ -519,6 +519,48 @@ export class NotificationsStore {
     });
   }
 
+  async updateSessionTitleWithRevision(
+    sessionId: string,
+    sessionTitle: string | null,
+  ): Promise<NotificationMutationResult<NotificationRecord[]> | null> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      const normalizedSessionId = sessionId.trim();
+      if (!normalizedSessionId) {
+        return null;
+      }
+      const normalizedSessionTitle = normalizeNullableString(sessionTitle);
+      const updated: NotificationRecord[] = [];
+
+      for (let index = 0; index < this.data.notifications.length; index += 1) {
+        const notification = this.data.notifications[index];
+        if (!notification || notification.sessionId !== normalizedSessionId) {
+          continue;
+        }
+        if (notification.sessionTitle === normalizedSessionTitle) {
+          continue;
+        }
+
+        const nextNotification: NotificationRecord = {
+          ...notification,
+          sessionTitle: normalizedSessionTitle,
+        };
+        this.data.notifications[index] = nextNotification;
+        updated.push(nextNotification);
+      }
+
+      if (updated.length === 0) {
+        return null;
+      }
+
+      this.bumpRevision();
+      await this.save();
+
+      return { value: updated, revision: this._revision };
+    });
+  }
+
   async unreadCount(): Promise<number> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
