@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notifications Panel Design</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1117;
+        --panel: #171a22;
+        --panel-2: #1e2430;
+        --border: #2c3444;
+        --text: #e6ebf5;
+        --muted: #9aa4b6;
+        --accent: #7aa2f7;
+        --accent-2: #9ece6a;
+        --warn: #e0af68;
+        --code: #0b0d12;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: linear-gradient(180deg, #0d1016, #10131a 180px, #0f1117);
+        color: var(--text);
+        font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      body {
+        padding: 32px;
+      }
+      .page {
+        max-width: 1120px;
+        margin: 0 auto;
+        display: grid;
+        gap: 18px;
+      }
+      .hero,
+      .card {
+        background: rgba(23, 26, 34, 0.96);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 14px 48px rgba(0, 0, 0, 0.28);
+      }
+      .hero {
+        padding: 22px 24px;
+      }
+      .card {
+        padding: 18px 20px;
+      }
+      h1, h2, h3 {
+        margin: 0 0 10px;
+        line-height: 1.2;
+      }
+      h1 { font-size: 28px; }
+      h2 { font-size: 20px; }
+      h3 { font-size: 16px; margin-top: 18px; }
+      p, li { color: var(--text); }
+      .muted { color: var(--muted); }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .chip {
+        border: 1px solid var(--border);
+        background: rgba(122, 162, 247, 0.08);
+        color: var(--text);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 18px;
+      }
+      .diagram {
+        background: rgba(30, 36, 48, 0.55);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        overflow: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+      th, td {
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        vertical-align: top;
+        text-align: left;
+      }
+      th {
+        background: rgba(122, 162, 247, 0.08);
+      }
+      code, pre {
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      code {
+        background: rgba(255,255,255,0.06);
+        padding: 1px 5px;
+        border-radius: 6px;
+      }
+      pre {
+        background: var(--code);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        overflow: auto;
+        white-space: pre-wrap;
+      }
+      .callout {
+        border-left: 4px solid var(--accent);
+        padding: 12px 14px;
+        background: rgba(122, 162, 247, 0.08);
+        border-radius: 10px;
+        margin-top: 12px;
+      }
+      .warning {
+        border-left-color: var(--warn);
+        background: rgba(224, 175, 104, 0.08);
+      }
+      .two-col {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 18px;
+      }
+      @media (max-width: 860px) {
+        body { padding: 18px; }
+        .two-col { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="hero">
+        <h1>Notifications Panel Design</h1>
+        <p class="muted">
+          Proposed flow for a core bundled notifications surface: server-originated notifications,
+          durable storage, panel live updates, optional Android-gated TTS, and session-aware navigation.
+        </p>
+        <div class="chips">
+          <span class="chip">Core bundled panel/module</span>
+          <span class="chip">Sources: tool / HTTP / CLI</span>
+          <span class="chip">Newest first</span>
+          <span class="chip">All / Unread filter</span>
+          <span class="chip">Card / Compact view</span>
+          <span class="chip">Stay until cleared</span>
+          <span class="chip">TTS flag + Android gate</span>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>Locked product decisions</h2>
+          <ul>
+            <li>Notifications are created by <strong>server-side surfaces only</strong>: tool, HTTP, and CLI.</li>
+            <li>The notifications panel is a <strong>viewer and management surface</strong>, not a client-originated notification bus.</li>
+            <li>Each notification has <code>title</code>, <code>body</code>, <code>createdAt</code>, <code>read state</code>, optional <code>sessionId</code>, optional <code>tts</code>, and internal <code>source</code>.</li>
+            <li>Notifications are sorted <strong>newest first</strong> and persist until explicitly cleared.</li>
+            <li>Unread/read is represented both by state and by visual styling; the panel supports <strong>All</strong> and <strong>Unread</strong> filtering.</li>
+            <li>The panel supports <strong>Card</strong> and <strong>Compact</strong> density modes.</li>
+            <li>Tapping an item in either view toggles its <strong>read/unread</strong> state.</li>
+            <li>Compact view should expose a <strong>separate expand affordance</strong> so expansion does not steal the main tap action.</li>
+            <li>Bulk actions such as <strong>Mark all read</strong> and <strong>Clear all</strong> should live in an overflow menu rather than always-visible header buttons.</li>
+            <li>Notifications with a <code>sessionId</code> should expose a <strong>dedicated open/focus action</strong> on the session label or title. If invoked, it should focus an existing chat for that session when present; otherwise it should open a new chat tab.</li>
+            <li>Session-linked notifications should display a <strong>resolved session title</strong> in place of the raw id when available, with raw id fallback only when no title can be resolved.</li>
+            <li><code>tts: true</code> is only a request. Android may speak it only when the device-side notification/TTS gate is enabled.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h2>Recommended implementation shape</h2>
+          <ul>
+            <li>Create a <strong>core notifications module</strong> with a shared service layer.</li>
+            <li>Use three thin ingress adapters for <strong>tool</strong>, <strong>HTTP</strong>, and <strong>CLI</strong>.</li>
+            <li>Persist notifications in a server-side store behind a small repository/service API.</li>
+            <li>Broadcast live changes to panel clients over websocket, but likely with a <strong>dedicated notifications event class</strong> rather than only panel-local <code>panel_event</code> messages.</li>
+            <li>Use panel HTTP/operation calls for user actions such as mark-read and clear.</li>
+            <li>Use client layout context to locate an already-open chat panel for <code>sessionId</code> navigation.</li>
+            <li>Use client session summary/title context to resolve a human-readable session title for display, similar to existing chat/tab title behavior.</li>
+          </ul>
+          <div class="callout">
+            The design below assumes <strong>no client-originated notification creation</strong> over websocket.
+            Websocket is used only for <strong>server → client live updates</strong>, and notifications likely need their own maskable event class so Android/native clients can subscribe explicitly.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Architecture / data flow</h2>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart LR
+  A["Tool caller<br/>notifications_create"] --> S["NotificationsService"]
+  B["HTTP caller<br/>POST /api/notifications"] --> S
+  C["CLI caller<br/>assistant notifications add"] --> S
+  S --> V["Validate and normalize"]
+  V --> D[("NotificationsStore")]
+  D --> E["Persisted notification record"]
+  E --> W["SessionHub broadcast<br/>notification event stream"]
+  W --> P["Notifications panel"]
+  W --> N["Android or native host"]
+  N --> G{"Android TTS gate on?"}
+  G -- "no" --> X["Display only"]
+  G -- "yes and notification.tts = true" --> T["Speak title and body"]
+  P --> U["User marks read or clear"]
+  U --> M["HTTP or operation mutation"]
+  M --> S
+          </div>
+        </div>
+      </section>
+
+      <section class="two-col">
+        <div class="card">
+          <h2>Create-notification sequence</h2>
+          <div class="diagram">
+            <div class="mermaid">
+sequenceDiagram
+  participant Producer as Tool / HTTP / CLI caller
+  participant Ingress as Notifications ingress
+  participant Service as NotificationsService
+  participant Store as NotificationsStore
+  participant Hub as SessionHub
+  participant Panel as Notifications panel
+  participant Android as Android/native host
+
+  Producer->>Ingress: createNotification(input)
+  Ingress->>Service: normalized input + inferred source
+  Service->>Service: validate title/body/sessionId/tts
+  Service->>Store: insert(notification)
+  Store-->>Service: NotificationRecord
+  Service->>Hub: broadcast notification_created
+  Hub-->>Panel: notification_created
+  Hub-->>Android: notification_created if subscribed by mask
+  Android->>Android: check local TTS gate
+  alt gate on and notification.tts=true
+    Android->>Android: speak title/body
+  else gate off or notification.tts=false
+    Android->>Android: no autoplay
+  end
+  Service-->>Ingress: created record
+  Ingress-->>Producer: success payload
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Tap/open-session sequence</h2>
+          <div class="diagram">
+            <div class="mermaid">
+flowchart TD
+  A[User taps notification] --> B{notification.sessionId exists?}
+  B -- no --> C[No navigation; keep item openable only as a normal notification]
+  B -- yes --> D[Inspect panel.layout context]
+  D --> E{Existing chat panel bound\nto sessionId?}
+  E -- yes --> F[host.activatePanel(panelId)]
+  E -- no --> G[host.openPanel("chat", { binding: fixed sessionId, focus: true })]
+            </div>
+          </div>
+          <div class="callout warning">
+            The notifications panel can use existing host context such as <code>panel.layout</code>
+            to inspect open panels and bindings before deciding whether to focus or open a chat.
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Notification schema</h2>
+        <div class="diagram">
+          <div class="mermaid">
+flowchart TD
+  A["CreateNotificationInput<br/>title<br/>body<br/>sessionId optional<br/>tts optional"] --> B["NotificationRecord<br/>id<br/>title<br/>body<br/>createdAt<br/>readAt or null<br/>source<br/>sessionId or null<br/>tts"]
+  B --> C["notification_created event<br/>payload.notification = NotificationRecord"]
+  B --> D["notification_updated event<br/>payload.notification = NotificationRecord"]
+  B --> E["notification_removed event<br/>payload.id = notification id"]
+  B --> F["notification_snapshot event<br/>payload.notifications = NotificationRecord list"]
+          </div>
+        </div>
+
+        <h3>Suggested TypeScript interfaces</h3>
+<pre>type NotificationSource = 'tool' | 'http' | 'cli';
+
+interface NotificationRecord {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;      // ISO timestamp
+  readAt: string | null;  // null = unread
+  source: NotificationSource;
+  sessionId: string | null;
+  tts: boolean;
+}
+
+interface CreateNotificationInput {
+  title: string;
+  body: string;
+  sessionId?: string | null;
+  tts?: boolean;
+}
+
+interface NotificationListResult {
+  notifications: NotificationRecord[]; // newest first
+}
+</pre>
+        <div class="callout">
+          <strong>Read state recommendation:</strong> persist <code>readAt</code> instead of only a boolean.
+          The panel can still derive <code>isRead = readAt !== null</code>, but the server keeps richer state.
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Ingress and mutation interfaces</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Interface</th>
+              <th>Purpose</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Tool</td>
+              <td><code>notifications_create</code></td>
+              <td>Create a notification from an agent/tool flow</td>
+              <td>Ingress wrapper sets <code>source = 'tool'</code></td>
+            </tr>
+            <tr>
+              <td>HTTP</td>
+              <td><code>POST /api/notifications</code></td>
+              <td>Create a notification from scripts/services</td>
+              <td>Ingress wrapper sets <code>source = 'http'</code></td>
+            </tr>
+            <tr>
+              <td>CLI</td>
+              <td><code>assistant notifications add ...</code></td>
+              <td>Create a notification from shell/automation</td>
+              <td>Ingress wrapper sets <code>source = 'cli'</code></td>
+            </tr>
+            <tr>
+              <td>Panel load</td>
+              <td><code>GET /api/notifications</code> or equivalent operation</td>
+              <td>Fetch the current list</td>
+              <td>Return newest-first records</td>
+            </tr>
+            <tr>
+              <td>Panel action</td>
+              <td><code>POST /api/notifications/:id/read</code></td>
+              <td>Mark a single notification read</td>
+              <td>Could also support unread if needed later</td>
+            </tr>
+            <tr>
+              <td>Panel action</td>
+              <td><code>POST /api/notifications/read-all</code></td>
+              <td>Mark all current notifications read</td>
+              <td>Recommended as an overflow-menu action</td>
+            </tr>
+            <tr>
+              <td>Panel action</td>
+              <td><code>DELETE /api/notifications/:id</code></td>
+              <td>Clear one notification</td>
+              <td>Physical delete is acceptable for v1</td>
+            </tr>
+            <tr>
+              <td>Panel action</td>
+              <td><code>DELETE /api/notifications</code></td>
+              <td>Clear all notifications</td>
+              <td>Fits the “stay until cleared” model</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>WebSocket payloads for live updates</h2>
+<pre>// Dedicated maskable notification stream
+{
+  type: 'notification_event',
+  event: 'created',
+  notification: NotificationRecord
+}
+
+{
+  type: 'notification_event',
+  event: 'updated',
+  notification: NotificationRecord
+}
+
+{
+  type: 'notification_event',
+  event: 'removed',
+  id: 'notif_123'
+}
+
+// Optional bulk resync path after reconnect/load
+{
+  type: 'notification_event',
+  event: 'snapshot',
+  notifications: NotificationRecord[]
+}
+
+// Web panel can still translate these into local UI updates.
+// If helpful, the server may also emit panel_event messages for open notifications panels,
+// but Android/native subscription support should not depend on panel_event alone.
+</pre>
+        <div class="callout">
+          Recommendation: add <code>notification_event</code> as a distinct websocket message type,
+          then extend masked subscription handling so Android/native clients can explicitly opt into it.
+          This keeps notification delivery parallel to other selectively subscribed event classes.
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Panel behavior notes</h2>
+        <ul>
+          <li>Initial load fetches notifications from the server, sorted newest-first.</li>
+          <li>Filter state is local UI state: <strong>All</strong> vs <strong>Unread</strong>.</li>
+          <li>Density state is local UI state: <strong>Card</strong> vs <strong>Compact</strong>.</li>
+          <li>Main item tap toggles read/unread in either density mode.</li>
+          <li>Compact mode should provide a dedicated secondary control to expand one item for more detail.</li>
+          <li>Session-linked notifications should render a dedicated session label/title affordance that opens/focuses the session without overloading the main item tap.</li>
+          <li>Prefer showing a resolved session title from client session context; fall back to raw session id only when no title is known.</li>
+          <li>Read/unread should be shown through styling (outline, tint, dot, etc.), not heavy labels.</li>
+          <li>Source should primarily be conveyed by iconography; the stored <code>source</code> remains internal metadata.</li>
+          <li>If <code>tts</code> is true, show a subtle replay affordance in the item rather than treating it as a source or state icon.</li>
+          <li>Session-linked notifications should offer a single strong secondary action: open/focus session.</li>
+          <li>Bulk actions like mark-all-read and clear-all should live in an overflow menu to reduce clutter.</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Implementation notes worth preserving</h2>
+        <ul>
+          <li>The existing app already supports server → panel live updates through <code>panel_event</code>.</li>
+          <li>The panel host already exposes <code>activatePanel()</code> and <code>openPanel()</code>.</li>
+          <li>Client panel code can inspect host context such as <code>panel.layout</code> and <code>session.summaries</code> to resolve session-aware navigation.</li>
+          <li>This feature does <strong>not</strong> need client-originated notification creation over websocket.</li>
+        </ul>
+      </section>
+    </div>
+
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: 'dark',
+        securityLevel: 'loose',
+        themeVariables: {
+          primaryColor: '#1e2430',
+          primaryTextColor: '#e6ebf5',
+          primaryBorderColor: '#7aa2f7',
+          lineColor: '#9aa4b6',
+          secondaryColor: '#171a22',
+          tertiaryColor: '#0f1117',
+          background: '#171a22',
+          mainBkg: '#171a22',
+          secondBkg: '#1e2430',
+          tertiaryBkg: '#0f1117'
+        }
+      });
+    </script>
+  </body>
+</html>
