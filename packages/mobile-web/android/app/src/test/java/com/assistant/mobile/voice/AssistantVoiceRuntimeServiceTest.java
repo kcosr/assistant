@@ -22,6 +22,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceRuntimeServiceTest {
@@ -433,6 +434,49 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "request-2",
                 "request-1"
             )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsRequestBodyTreatsClientIdAsOptional() {
+        assertFalse(
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+                .has("clientId")
+        );
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+                .optString("requestId")
+        );
+        assertEquals(
+            "hello",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello")
+                .optString("text")
+        );
+        assertEquals(
+            "client-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(" client-1 ", "request-1", "hello")
+                .optString("clientId")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsStopRequestBodyTreatsClientIdAsOptional() {
+        assertFalse(
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
+                .has("clientId")
+        );
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
+                .optString("requestId")
+        );
+        assertEquals(
+            "client-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody(" client-1 ", "request-1")
+                .optString("clientId")
         );
     }
 

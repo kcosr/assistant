@@ -1721,7 +1721,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled() || item == null || hasActiveInteraction() || !item.hasSpeech()) {
             return;
         }
-        if (!adapterSocketConnected || adapterClientId.isEmpty()) {
+        if (!adapterSocketConnected) {
             return;
         }
 
@@ -1737,10 +1737,11 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         networkExecutor.execute(() -> {
             try {
-                JSONObject body = new JSONObject();
-                body.put("clientId", adapterClientId);
-                body.put("requestId", requestId);
-                body.put("text", item.spokenText);
+                JSONObject body = buildAdapterTtsRequestBody(
+                    adapterClientId,
+                    requestId,
+                    item.spokenText
+                );
                 postJson(AssistantVoiceUrlUtils.adapterTtsUrl(config.voiceAdapterBaseUrl), body);
             } catch (Exception error) {
                 mainHandler.post(() -> {
@@ -1924,18 +1925,41 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void requestAdapterTtsStop(String requestId) {
-        if (!adapterSocketConnected || adapterClientId.isEmpty() || requestId == null || requestId.trim().isEmpty()) {
+        if (!adapterSocketConnected || requestId == null || requestId.trim().isEmpty()) {
             return;
         }
         networkExecutor.execute(() -> {
             try {
-                JSONObject body = new JSONObject();
-                body.put("clientId", adapterClientId);
-                body.put("requestId", requestId);
+                JSONObject body = buildAdapterTtsStopRequestBody(adapterClientId, requestId);
                 postJson(AssistantVoiceUrlUtils.adapterTtsStopUrl(config.voiceAdapterBaseUrl), body);
             } catch (Exception ignored) {
             }
         });
+    }
+
+    static JSONObject buildAdapterTtsRequestBody(
+        String adapterClientId,
+        String requestId,
+        String text
+    ) {
+        JSONObject body = new JSONObject();
+        putJson(body, "requestId", trim(requestId));
+        putJson(body, "text", trim(text));
+        String normalizedClientId = trim(adapterClientId);
+        if (!normalizedClientId.isEmpty()) {
+          putJson(body, "clientId", normalizedClientId);
+        }
+        return body;
+    }
+
+    static JSONObject buildAdapterTtsStopRequestBody(String adapterClientId, String requestId) {
+        JSONObject body = new JSONObject();
+        putJson(body, "requestId", trim(requestId));
+        String normalizedClientId = trim(adapterClientId);
+        if (!normalizedClientId.isEmpty()) {
+          putJson(body, "clientId", normalizedClientId);
+        }
+        return body;
     }
 
     private void sendAdapterSttCancel(String requestId) {
