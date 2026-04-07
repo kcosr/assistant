@@ -2195,7 +2195,7 @@ export class PanelWorkspaceController {
         this.openPanelLauncher({
           pinToHeader: true,
           compact: true,
-          anchor: dockRoot,
+          anchor: addButton,
         });
       });
       const addWrapper = document.createElement('div');

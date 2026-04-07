@@ -522,9 +522,11 @@ export class PanelLauncherController {
     }
 
     let top = this.compact
-      ? anchorRect.top + (anchorRect.height - panelRect.height) / 2
+      ? this.pinToHeader
+        ? anchorRect.bottom + 8
+        : anchorRect.top + (anchorRect.height - panelRect.height) / 2
       : anchorRect.bottom + 8;
-    if (!this.compact && top + panelRect.height > window.innerHeight - padding) {
+    if ((!this.compact || this.pinToHeader) && top + panelRect.height > window.innerHeight - padding) {
       top = anchorRect.top - panelRect.height - 8;
     }
     if (top + panelRect.height > window.innerHeight - padding) {
