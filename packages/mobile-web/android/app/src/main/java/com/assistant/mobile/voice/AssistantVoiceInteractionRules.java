@@ -45,6 +45,7 @@ final class AssistantVoiceInteractionRules {
 
     static boolean shouldAutoplayNotification(
         String audioMode,
+        boolean standaloneNotificationPlaybackEnabled,
         AssistantVoiceNotificationRecord notification
     ) {
         if (notification == null || !notification.isUnread()) {
@@ -56,7 +57,7 @@ final class AssistantVoiceInteractionRules {
         if ("none".equals(notification.voiceMode)) {
             return false;
         }
-        return AssistantVoiceConfig.AUDIO_MODE_TOOL.equals(audioMode);
+        return standaloneNotificationPlaybackEnabled;
     }
 
     static boolean shouldSendSttEndAfterMicStops(String activeRequestId, String stoppedRequestId) {

@@ -6,6 +6,7 @@ export interface WebClientElements {
   voiceSettingsCloseButton: HTMLButtonElement;
   audioModeSelect: HTMLSelectElement;
   autoListenCheckbox: HTMLInputElement;
+  standaloneNotificationPlaybackCheckbox: HTMLInputElement;
   voiceAdapterBaseUrlInput: HTMLInputElement;
   voicePreferredSessionSelect: HTMLSelectElement;
   voiceTtsPreferredSessionOnlyCheckbox: HTMLInputElement;
@@ -84,6 +85,9 @@ export function getWebClientElements(): WebClientElements | null {
   const voiceSettingsCloseButton = getElement<HTMLButtonElement>('voice-settings-close-button');
   const audioModeSelect = getElement<HTMLSelectElement>('audio-mode-select');
   const autoListenCheckbox = getElement<HTMLInputElement>('auto-listen-checkbox');
+  const standaloneNotificationPlaybackCheckbox = getElement<HTMLInputElement>(
+    'standalone-notification-playback-checkbox',
+  );
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
   const voicePreferredSessionSelect = getElement<HTMLSelectElement>(
     'voice-preferred-session-select',
@@ -152,6 +156,7 @@ export function getWebClientElements(): WebClientElements | null {
     !voiceSettingsCloseButton ||
     !audioModeSelect ||
     !autoListenCheckbox ||
+    !standaloneNotificationPlaybackCheckbox ||
     !voiceAdapterBaseUrlInput ||
     !voicePreferredSessionSelect ||
     !voiceTtsPreferredSessionOnlyCheckbox ||
@@ -190,6 +195,7 @@ export function getWebClientElements(): WebClientElements | null {
     voiceSettingsCloseButton,
     audioModeSelect,
     autoListenCheckbox,
+    standaloneNotificationPlaybackCheckbox,
     voiceAdapterBaseUrlInput,
     voicePreferredSessionSelect,
     voiceTtsPreferredSessionOnlyCheckbox,

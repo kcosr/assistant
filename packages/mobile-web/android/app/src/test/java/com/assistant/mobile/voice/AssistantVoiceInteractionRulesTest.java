@@ -139,22 +139,27 @@ public final class AssistantVoiceInteractionRulesTest {
 
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false,
             responseNotification
         ));
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
             responseNotification
         ));
         assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
-            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            true,
             toolNotification
         ));
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false,
             toolNotification
         ));
         assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
             AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
             readToolNotification
         ));
     }

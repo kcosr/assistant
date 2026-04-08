@@ -14,22 +14,24 @@
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions. ([#93](https://github.com/kcosr/assistant/pull/93))
-- Added notification-backed Android voice queueing with durable `session_attention` response notifications, append-only `voice_speak` / `voice_ask` notifications, queue-driven `speak` / `speak_then_listen` playback, stale ask validation, and manual `Speaker` / `Mic` recovery actions.
+- Added notification-backed Android voice queueing with durable `session_attention` response notifications, append-only `voice_speak` / `voice_ask` notifications, queue-driven `speak` / `speak_then_listen` playback, stale ask validation, and manual `Play` / `Speak` recovery actions.
 
 ### Changed
 
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Changed native Android voice controls so the floating mobile FAB now owns voice start/stop with a target-session title chip, while the chat-row control becomes a stop-only turn button.
+- Changed Android voice settings to add a separate `Play standalone notifications aloud` toggle for sessionless notification autoplay instead of tying that behavior to the main `Audio Mode` selector.
 
 ### Fixed
 
 - Fixed notifications service state sharing across the bundled notifications plugin and direct agent-server imports, so final assistant replies and built-in voice tools now persist durable notification records reliably.
-- Fixed Android voice notification UX so in-app notification cards now expose the same `Speaker` and `Mic` actions as the durable Android system notifications.
-- Fixed Android native voice playback transport to stop requiring an adapter websocket `clientId` before issuing direct TTS requests, restoring `voice_speak`, notification-card `Speaker`, and spoken notification follow-ups against current adapter deployments.
+- Fixed Android voice notification UX so in-app notification cards now expose the same `Play` and `Speak` actions as the durable Android system notifications.
+- Fixed Android native voice playback transport to stop requiring an adapter websocket `clientId` before issuing direct TTS requests, restoring `voice_speak`, notification-card `Play`, and spoken notification follow-ups against current adapter deployments.
 - Fixed Android native voice runtime regressions so assistant `voice_speak` / `voice_ask` transcript events autoplay again, manual notification replays wait for in-flight TTS stops before restarting playback, and adb diagnostics now surface richer TTS/STT/socket failure details.
 - Fixed notifications panel session-attention cards to show the session title in the header, reliably activate existing bound chat panels from the session link, and suppress row-highlight/row-toggle behavior when tapping card controls.
-- Fixed notification-card controls so compact rows now surface inline `Speaker` / `Mic` buttons, redundant `Latest` / TTS glyphs are removed, and manual `Mic` actions jump straight into recognition instead of replaying TTS first.
+- Fixed notification-card controls so compact rows now surface inline `Play` / `Speak` buttons, redundant `Latest` / TTS glyphs are removed, and manual `Speak` actions jump straight into recognition instead of replaying TTS first.
+- Fixed standalone Android notifications so sessionless tool/CLI/HTTP notifications can autoplay from their own voice setting and manual `Play` no longer rejects them just because they are not tied to a session.
 - Fixed singleton `session_attention` notifications to persist after user replies instead of auto-clearing immediately.
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))

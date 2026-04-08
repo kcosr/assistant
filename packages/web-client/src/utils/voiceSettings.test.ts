@@ -22,6 +22,10 @@ describe('voiceSettings', () => {
     expect(createDefaultVoiceSettings().recognitionCueGain).toBe(1);
     expect(recognitionCueGainToPercent(createDefaultVoiceSettings().recognitionCueGain)).toBe(100);
     expect(createDefaultVoiceSettings().startupPreRollMs).toBe(512);
+    expect(createDefaultVoiceSettings().standaloneNotificationPlaybackEnabled).toBe(false);
+    expect(
+      createDefaultVoiceSettings({ isCapacitorAndroid: true }).standaloneNotificationPlaybackEnabled,
+    ).toBe(true);
   });
 
   it('clamps persisted tts gain into the supported range', () => {
@@ -66,5 +70,16 @@ describe('voiceSettings', () => {
   it('preserves the recognize stop command setting', () => {
     expect(normalizeVoiceSettings({ recognizeStopCommandEnabled: false }).recognizeStopCommandEnabled)
       .toBe(false);
+  });
+
+  it('preserves the standalone notification playback setting', () => {
+    expect(
+      normalizeVoiceSettings(
+        { standaloneNotificationPlaybackEnabled: false },
+        {
+          isCapacitorAndroid: true,
+        },
+      ).standaloneNotificationPlaybackEnabled,
+    ).toBe(false);
   });
 });

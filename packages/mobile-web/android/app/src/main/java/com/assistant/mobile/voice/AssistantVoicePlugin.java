@@ -385,6 +385,10 @@ public final class AssistantVoicePlugin extends Plugin {
         voiceSettings.put("recognitionCueGain", (double) current.recognitionCueGain);
         voiceSettings.put("recognizeStopCommandEnabled", current.recognizeStopCommandEnabled);
         voiceSettings.put("startupPreRollMs", current.startupPreRollMs);
+        voiceSettings.put(
+            "standaloneNotificationPlaybackEnabled",
+            current.standaloneNotificationPlaybackEnabled
+        );
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));

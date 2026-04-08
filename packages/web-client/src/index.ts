@@ -526,6 +526,7 @@ async function main(): Promise<void> {
     voiceSettingsCloseButton: voiceSettingsCloseButtonEl,
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
+    standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
     voicePreferredSessionSelect: voicePreferredSessionSelectEl,
     voiceTtsPreferredSessionOnlyCheckbox: voiceTtsPreferredSessionOnlyCheckboxEl,
@@ -1547,6 +1548,7 @@ async function main(): Promise<void> {
       cancelQueuedMessage,
       audioModeSelectEl,
       autoListenCheckboxEl,
+      standaloneNotificationPlaybackCheckboxEl,
       voiceAdapterBaseUrlInputEl,
       voiceMicInputSelectEl,
       voiceRecognitionStartTimeoutInputEl,
@@ -3639,6 +3641,7 @@ async function main(): Promise<void> {
       ...currentSettings,
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
+      standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
       voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
       selectedMicDeviceId: voiceMicInputSelectEl.value,
       recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
@@ -3669,6 +3672,7 @@ async function main(): Promise<void> {
   });
   audioModeSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  standaloneNotificationPlaybackCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voicePreferredSessionSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceTtsPreferredSessionOnlyCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
@@ -3688,6 +3692,8 @@ async function main(): Promise<void> {
     const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
+    standaloneNotificationPlaybackCheckboxEl.checked =
+      settings.standaloneNotificationPlaybackEnabled;
     voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
     syncPreferredVoiceSessionOptions();
     voicePreferredSessionSelectEl.value = settings.preferredVoiceSessionId;

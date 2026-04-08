@@ -73,6 +73,7 @@ describe('createInputRuntime', () => {
       cancelQueuedMessage: vi.fn(),
       audioModeSelectEl: select,
       autoListenCheckboxEl: autoListenCheckbox,
+      standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
       voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
@@ -92,6 +93,7 @@ describe('createInputRuntime', () => {
       initialVoiceSettings: {
         audioMode: 'tool',
         autoListenEnabled: true,
+        standaloneNotificationPlaybackEnabled: true,
         voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
         preferredVoiceSessionId: '',
         ttsPreferredSessionOnly: false,
@@ -194,6 +196,7 @@ describe('createInputRuntime', () => {
       cancelQueuedMessage: vi.fn(),
       audioModeSelectEl: select,
       autoListenCheckboxEl: autoListenCheckbox,
+      standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
       voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),

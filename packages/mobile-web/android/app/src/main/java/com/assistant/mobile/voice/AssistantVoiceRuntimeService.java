@@ -1311,7 +1311,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!notification.resolveSpokenText().isEmpty()) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
-                getString(R.string.assistant_voice_notification_action_speaker),
+                getString(R.string.assistant_voice_notification_action_play),
                 PendingIntent.getService(
                     this,
                     durableNotificationRequestCode(notification.id, 2),
@@ -1323,7 +1323,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (notification.isSessionLinked()) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
-                getString(R.string.assistant_voice_notification_action_mic),
+                getString(R.string.assistant_voice_notification_action_speak),
                 PendingIntent.getService(
                     this,
                     durableNotificationRequestCode(notification.id, 3),
@@ -1359,7 +1359,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()
             || !isRuntimeConnected()
             || notification == null
-            || !AssistantVoiceInteractionRules.shouldAutoplayNotification(config.audioMode, notification)) {
+            || !AssistantVoiceInteractionRules.shouldAutoplayNotification(
+                config.audioMode,
+                config.standaloneNotificationPlaybackEnabled,
+                notification
+            )) {
             return;
         }
         if (config.ttsPreferredSessionOnly
@@ -2462,7 +2466,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void handleManualNotificationAction(Intent intent, boolean microphoneAction) {
         AssistantVoiceNotificationRecord notification = notificationFromIntent(intent);
-        if (notification == null || notification.sessionId.isEmpty()) {
+        if (!canHandleManualNotificationAction(notification, microphoneAction)) {
             Log.w(
                 TAG,
                 "handleManualNotificationAction missing notification microphoneAction=" + microphoneAction
@@ -2507,6 +2511,16 @@ public final class AssistantVoiceRuntimeService extends Service {
             stopCurrentInteraction(false, "manual_notification_preempt");
         }
         enqueueQueueItem(item, true);
+    }
+
+    static boolean canHandleManualNotificationAction(
+        AssistantVoiceNotificationRecord notification,
+        boolean microphoneAction
+    ) {
+        if (notification == null) {
+            return false;
+        }
+        return !microphoneAction || !notification.sessionId.isEmpty();
     }
 
     private void dismissDurableNotification(Intent intent) {

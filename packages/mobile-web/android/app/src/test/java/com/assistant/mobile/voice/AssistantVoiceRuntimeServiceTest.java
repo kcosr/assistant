@@ -149,6 +149,38 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void canHandleManualNotificationSpeakerWithoutSessionButMicStillRequiresOne() {
+        AssistantVoiceNotificationRecord sessionlessNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "TEST",
+            "This is a test",
+            "",
+            "",
+            "",
+            "speak",
+            "Alternate speech",
+            "event-tool",
+            null
+        );
+
+        assertTrue(
+            AssistantVoiceRuntimeService.canHandleManualNotificationAction(
+                sessionlessNotification,
+                false
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.canHandleManualNotificationAction(
+                sessionlessNotification,
+                true
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void buildNotificationShowsModeToggleWhenVoiceIsDisabled() {
         Context context = RuntimeEnvironment.getApplication();
 
