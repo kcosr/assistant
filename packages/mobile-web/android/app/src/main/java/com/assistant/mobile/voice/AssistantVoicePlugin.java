@@ -130,6 +130,10 @@ public final class AssistantVoicePlugin extends Plugin {
         AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
         AssistantVoiceConfig updated = current.withSelection(panelId, sessionId);
         applyConfig(updated);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "panelId", safe(panelId));
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.record(getContext(), "plugin_set_selected_session", details);
         call.resolve(buildStatePayload());
     }
 
@@ -176,6 +180,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
     @PluginMethod
     public void stopCurrentInteraction(PluginCall call) {
+        AssistantVoiceEventLog.record(getContext(), "plugin_stop_current_interaction");
         ContextCompat.startForegroundService(
             getContext(),
             AssistantVoiceRuntimeService.stopCurrentInteractionIntent(getContext())
@@ -187,10 +192,18 @@ public final class AssistantVoicePlugin extends Plugin {
     public void startManualListen(PluginCall call) {
         String sessionId = call.getString("sessionId");
         Log.d(TAG, "startManualListen invoked sessionId=" + safe(sessionId));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.record(getContext(), "plugin_start_manual_listen", details);
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = PENDING_ACTION_START_LISTEN;
             saveCall(call);
             Log.d(TAG, "startManualListen awaiting microphone permission sessionId=" + safe(sessionId));
+            AssistantVoiceEventLog.record(
+                getContext(),
+                "plugin_start_manual_listen_permission_pending",
+                details
+            );
             requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
             return;
         }
@@ -210,6 +223,9 @@ public final class AssistantVoicePlugin extends Plugin {
             return;
         }
         Log.d(TAG, "performNotificationSpeaker invoked " + describeNotification(notification));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "notification", describeNotification(notification));
+        AssistantVoiceEventLog.record(getContext(), "plugin_notification_play", details);
         ContextCompat.startForegroundService(
             getContext(),
             AssistantVoiceRuntimeService.notificationSpeakerIntent(getContext(), notification)
@@ -226,10 +242,18 @@ public final class AssistantVoicePlugin extends Plugin {
             return;
         }
         Log.d(TAG, "performNotificationMic invoked " + describeNotification(notification));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "notification", describeNotification(notification));
+        AssistantVoiceEventLog.record(getContext(), "plugin_notification_speak", details);
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = PENDING_ACTION_NOTIFICATION_MIC;
             saveCall(call);
             Log.d(TAG, "performNotificationMic awaiting microphone permission " + describeNotification(notification));
+            AssistantVoiceEventLog.record(
+                getContext(),
+                "plugin_notification_speak_permission_pending",
+                details
+            );
             requestPermissionForAlias("microphone", call, "handleMicrophonePermissionResult");
             return;
         }
@@ -273,6 +297,10 @@ public final class AssistantVoicePlugin extends Plugin {
         if (!hasVoiceModePermissions()) {
             pendingPermissionAction = "";
             pendingVoiceSettings = null;
+            AssistantVoiceEventLog.record(
+                getContext(),
+                "plugin_voice_mode_permission_denied"
+            );
             savedCall.reject("Microphone and notification permissions are required");
             bridge.releaseCall(savedCall);
             return;
@@ -284,6 +312,7 @@ public final class AssistantVoicePlugin extends Plugin {
 
         pendingPermissionAction = "";
         pendingVoiceSettings = null;
+        AssistantVoiceEventLog.record(getContext(), "plugin_voice_mode_permission_granted");
         savedCall.resolve(buildStatePayload());
         bridge.releaseCall(savedCall);
     }
@@ -299,6 +328,9 @@ public final class AssistantVoicePlugin extends Plugin {
         }
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             Log.w(TAG, "handleMicrophonePermissionResult denied pendingAction=" + pendingPermissionAction);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "pendingAction", pendingPermissionAction);
+            AssistantVoiceEventLog.record(getContext(), "plugin_microphone_permission_denied", details);
             pendingPermissionAction = "";
             pendingVoiceSettings = null;
             savedCall.reject("Microphone permission is required");
@@ -307,6 +339,9 @@ public final class AssistantVoicePlugin extends Plugin {
         }
 
         Log.d(TAG, "handleMicrophonePermissionResult granted pendingAction=" + pendingPermissionAction);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "pendingAction", pendingPermissionAction);
+        AssistantVoiceEventLog.record(getContext(), "plugin_microphone_permission_granted", details);
         if (PENDING_ACTION_SET_VOICE_SETTINGS.equals(pendingPermissionAction) && pendingVoiceSettings != null) {
             applyConfig(pendingVoiceSettings);
         } else if (PENDING_ACTION_START_LISTEN.equals(pendingPermissionAction)) {

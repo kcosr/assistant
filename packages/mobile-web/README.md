@@ -177,6 +177,20 @@ The following patches are applied automatically on `android:sync`:
   cycle action for `Off`, `Tool`, or `Response`. `Off` leaves the foreground notification alive so
   the mode can be cycled back on without reopening the web UI, while the direct Speak/Stop action
   stays hidden when voice mode is disabled.
+- The native voice runtime also keeps a rolling app-private event log at `files/voice-runtime.log`
+  so random TTS/STT state issues can be inspected later over `adb`, even after the live logcat
+  window has moved on. Retrieve it with:
+
+```bash
+# default flavor
+adb -s <device> exec-out run-as com.assistant.app cat files/voice-runtime.log
+
+# work flavor
+adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
+```
+
+  For immediate live tracing, `adb logcat -d | rg 'AssistantVoice(RuntimeService|Plugin|EventLog|MicStreamer)'`
+  is still the fastest first pass.
 - The recognition start cue is an arming cue that plays with a short native media preroll, fully
   drains, then waits a brief settle delay before native mic startup begins. The completion cue is
   deferred until recording has actually stopped, capture focus has been released, and a longer

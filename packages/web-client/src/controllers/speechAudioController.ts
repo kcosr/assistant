@@ -12,6 +12,7 @@ import {
   ttsGainToPercent,
   type VoiceSettings,
 } from '../utils/voiceSettings';
+import { syncNativeInputDeviceSelect } from '../utils/nativeVoiceInputDevices';
 import type { SpeechInputController } from './speechInput';
 
 export interface AssistantNativeVoiceSelection {
@@ -449,10 +450,14 @@ export class SpeechAudioController {
     }
     const devices = await (this.options.nativeVoiceBridge?.listInputDevices() ??
       Promise.resolve([]));
+    this.setNativeInputDevices(devices);
+  }
+
+  setNativeInputDevices(devices: readonly AssistantNativeVoiceInputDevice[]): void {
     if (this.areNativeInputDevicesEqual(this.availableNativeInputDevices, devices)) {
       return;
     }
-    this.availableNativeInputDevices = devices;
+    this.availableNativeInputDevices = [...devices];
     console.log(
       `[client] SpeechAudio native input devices refreshed ${JSON.stringify({
         count: this.availableNativeInputDevices.length,
@@ -1035,40 +1040,11 @@ export class SpeechAudioController {
   }
 
   private syncNativeInputDeviceOptions(): void {
-    const selectEl = this.options.voiceMicInputSelectEl;
-    const selectedMicDeviceId = this.currentVoiceSettings.selectedMicDeviceId;
-    const devices = this.availableNativeInputDevices;
-    const existingValues = new Set<string>();
-    selectEl.replaceChildren();
-
-    const systemDefaultOption = document.createElement('option');
-    systemDefaultOption.value = '';
-    systemDefaultOption.textContent = 'System default';
-    selectEl.appendChild(systemDefaultOption);
-    existingValues.add('');
-
-    for (const device of devices) {
-      if (existingValues.has(device.id)) {
-        continue;
-      }
-      const option = document.createElement('option');
-      option.value = device.id;
-      option.textContent = device.label;
-      selectEl.appendChild(option);
-      existingValues.add(device.id);
-    }
-
-    if (selectedMicDeviceId && !existingValues.has(selectedMicDeviceId)) {
-      const unavailableOption = document.createElement('option');
-      unavailableOption.value = selectedMicDeviceId;
-      unavailableOption.textContent = `Unavailable device [id:${selectedMicDeviceId}]`;
-      selectEl.appendChild(unavailableOption);
-    }
-
-    selectEl.value = selectedMicDeviceId;
-    if (selectEl.value !== selectedMicDeviceId) {
-      selectEl.value = '';
-    }
+    syncNativeInputDeviceSelect(
+      this.options.voiceMicInputSelectEl,
+      this.currentVoiceSettings.selectedMicDeviceId,
+      this.availableNativeInputDevices,
+    );
   }
 
   private areNativeInputDevicesEqual(

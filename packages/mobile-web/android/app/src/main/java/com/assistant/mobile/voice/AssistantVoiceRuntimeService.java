@@ -98,6 +98,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long RECOGNITION_CUE_RETRY_DELAY_MS = 90L;
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
     private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 320L;
+    private static final long RECOGNITION_FAILURE_RETRY_FALLBACK_DELAY_MS = 1400L;
     private static final int MAX_PENDING_QUEUE_ITEMS = 25;
     private static final int DURABLE_NOTIFICATION_ID_OFFSET = 24000;
     private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
@@ -107,6 +108,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             | PlaybackState.ACTION_STOP;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final String RECOGNITION_ARMING_CUE_REQUEST_PREFIX = "__recognition_arming__:";
+    private static final String RECOGNITION_FAILURE_RETRY_CUE_REQUEST_PREFIX =
+        "__recognition_failure_retry__:";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
@@ -150,6 +153,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     private String pendingRecognitionArmingCueRequestId = "";
     private String adapterStoppedSttRequestId = "";
     private String pendingRecognitionCompletionCueRequestId = "";
+    private String pendingRecognitionCompletionPlaybackRequestId = "";
+    private String pendingRecognitionFailureRetrySessionId = "";
     private String stoppedRecognitionRequestId = "";
     private boolean pendingRecognitionCompletionCueSuccess = false;
     private boolean recognitionReadyCuePlayed = false;
@@ -273,12 +278,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_NOT_STICKY;
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
+            recordVoiceEvent("service_action_stop_current_interaction", null);
             clearQueuedVoiceItems();
             stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
             return START_STICKY;
         }
         if (ACTION_START_MANUAL_LISTEN.equals(action)) {
-            startManualListen(intent.getStringExtra(EXTRA_MANUAL_LISTEN_SESSION_ID));
+            String sessionId = intent.getStringExtra(EXTRA_MANUAL_LISTEN_SESSION_ID);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+            recordVoiceEvent("service_action_start_manual_listen", details);
+            startManualListen(sessionId);
             return START_STICKY;
         }
         if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
@@ -293,14 +303,17 @@ public final class AssistantVoiceRuntimeService extends Service {
             return START_STICKY;
         }
         if (ACTION_NOTIFICATION_SPEAKER.equals(action)) {
+            recordVoiceEvent("service_action_notification_play", eventDetailsWithNotification(intent));
             handleManualNotificationAction(intent, false);
             return START_STICKY;
         }
         if (ACTION_NOTIFICATION_MIC.equals(action)) {
+            recordVoiceEvent("service_action_notification_speak", eventDetailsWithNotification(intent));
             handleManualNotificationAction(intent, true);
             return START_STICKY;
         }
         if (ACTION_NOTIFICATION_DISMISS.equals(action)) {
+            recordVoiceEvent("service_action_notification_dismiss", eventDetailsWithNotification(intent));
             dismissDurableNotification(intent);
             return START_STICKY;
         }
@@ -1732,6 +1745,12 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " startsListening=" + startsListening
                 + " activeQueueItem=" + describeQueueItem(activeQueueItem)
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "status", safe(status));
+        AssistantVoiceEventLog.put(details, "error", safe(error));
+        AssistantVoiceEventLog.put(details, "startsListening", startsListening);
+        recordVoiceEvent("tts_end", details);
         if (matchesManualPreemptStop && !matchesActiveRequest) {
             pendingManualPreemptStopRequestId = "";
             enqueuePendingManualPreemptQueueItem("media_tts_end:" + safe(status));
@@ -1762,6 +1781,19 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handlePlaybackDrained(String requestId) {
+        String failureRetrySessionId = extractRecognitionFailureRetrySessionId(requestId);
+        if (!failureRetrySessionId.isEmpty()) {
+            if (!failureRetrySessionId.equals(trim(pendingRecognitionFailureRetrySessionId))) {
+                return;
+            }
+            pendingRecognitionFailureRetrySessionId = "";
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+            AssistantVoiceEventLog.put(details, "sessionId", safe(failureRetrySessionId));
+            recordVoiceEvent("recognition_retry_start", details);
+            startRecognition(failureRetrySessionId, "empty_transcript_retry");
+            return;
+        }
         String recognitionRequestId = extractRecognitionArmingCueRequestId(requestId);
         if (!recognitionRequestId.isEmpty()) {
             if (!shouldStartRecognitionAfterArmingCue(
@@ -1797,6 +1829,10 @@ public final class AssistantVoiceRuntimeService extends Service {
                 startRecognition(activeVoiceSessionId, "playback_completion");
                 return;
             }
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+            AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(activeQueueItem));
+            recordVoiceEvent("playback_drained_queue_validation", details);
             validateQueuedRecognitionAndMaybeStart(requestId);
             return;
         }
@@ -1829,6 +1865,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             text,
             config.recognizeStopCommandEnabled
         );
+        boolean shouldRetryAfterFailure = shouldRetryRecognitionAfterEmptyTranscript(
+            success,
+            canceled,
+            error,
+            sessionId
+        );
         boolean positiveCue = shouldUsePositiveRecognitionCue(success, text);
         boolean captureAlreadyStopped =
             shouldScheduleQueuedRecognitionCompletionCueAfterResult(
@@ -1837,7 +1879,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             );
 
         activeSttRequestId = "";
-        queueRecognitionCompletionCue(requestId, positiveCue && !localStopCommand);
+        queueRecognitionCompletionCue(
+            requestId,
+            positiveCue && !localStopCommand,
+            shouldRetryAfterFailure
+                ? buildRecognitionFailureRetryCueRequestId(sessionId)
+                : ""
+        );
         if (captureAlreadyStopped) {
             stoppedRecognitionRequestId = "";
             scheduleQueuedRecognitionCompletionCueIfNeeded(requestId);
@@ -1857,6 +1905,16 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " localStopCommand=" + localStopCommand
                 + " error=" + error
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.put(details, "success", success);
+        AssistantVoiceEventLog.put(details, "canceled", canceled);
+        AssistantVoiceEventLog.put(details, "textLength", text.length());
+        AssistantVoiceEventLog.put(details, "durationMs", durationMs);
+        AssistantVoiceEventLog.put(details, "localStopCommand", localStopCommand);
+        AssistantVoiceEventLog.put(details, "error", safe(error));
+        recordVoiceEvent("stt_result", details);
 
         clearActivePromptContext();
         finishActiveQueueItem(true);
@@ -1869,6 +1927,14 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (positiveCue && !sessionId.isEmpty()) {
             submitRecognizedSpeech(sessionId, text, durationMs);
+            return;
+        }
+        if (shouldRetryAfterFailure) {
+            JSONObject retryDetails = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(retryDetails, "requestId", safe(requestId));
+            AssistantVoiceEventLog.put(retryDetails, "sessionId", safe(sessionId));
+            AssistantVoiceEventLog.put(retryDetails, "error", safe(error));
+            recordVoiceEvent("recognition_retry_scheduled", retryDetails);
             return;
         }
         if (!canceled) {
@@ -1923,6 +1989,10 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " adapterClientIdPresent=" + !adapterClientId.isEmpty()
                 + " " + describeQueueItem(item)
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(item));
+        recordVoiceEvent("tts_begin", details);
         activeQueueItem = item;
         activeVoiceSessionId = item.sessionId;
         activePromptToolName = item.executionMode;
@@ -1979,6 +2049,14 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " activeSessionId=" + safe(speakingSessionId)
                 + " activeQueueItem=" + describeQueueItem(interruptedQueueItem)
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "reason", safe(reason));
+        AssistantVoiceEventLog.put(details, "transitionToRecognition", transitionToRecognition);
+        AssistantVoiceEventLog.put(details, "ttsRequestId", safe(ttsRequestId));
+        AssistantVoiceEventLog.put(details, "sttRequestId", safe(listeningRequestId));
+        AssistantVoiceEventLog.put(details, "activeSessionId", safe(speakingSessionId));
+        AssistantVoiceEventLog.put(details, "interruptedQueueItem", describeQueueItem(interruptedQueueItem));
+        recordVoiceEvent("stop_current_interaction", details);
         boolean playManualStopCue =
             "manual_stop".equals(reason) && !listeningRequestId.isEmpty();
         boolean pendingArmingCue =
@@ -2054,24 +2132,41 @@ public final class AssistantVoiceRuntimeService extends Service {
                     + " requestedSessionId=" + safe(requestedSessionId)
                     + " targetSessionId=" + safe(targetSessionId)
             );
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "requestedSessionId", safe(requestedSessionId));
+            AssistantVoiceEventLog.put(details, "targetSessionId", safe(targetSessionId));
+            recordVoiceEvent("manual_listen_skipped", details);
             return;
         }
         if (isPromptPlaybackActive()) {
             Log.d(TAG, "startManualListen interrupting active playback targetSessionId=" + targetSessionId);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "targetSessionId", safe(targetSessionId));
+            recordVoiceEvent("manual_listen_interrupt_playback", details);
             stopCurrentInteraction(true, "manual_listen");
             return;
         }
         if (!activeSttRequestId.isEmpty()) {
             Log.d(TAG, "startManualListen skipped activeSttRequestId=" + activeSttRequestId);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "targetSessionId", safe(targetSessionId));
+            AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+            recordVoiceEvent("manual_listen_skipped_active_stt", details);
             return;
         }
         Log.d(TAG, "startManualListen starting targetSessionId=" + targetSessionId);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "targetSessionId", safe(targetSessionId));
+        recordVoiceEvent("manual_listen_start", details);
         startRecognition(targetSessionId, "manual_listen");
     }
 
     private void startRecognition(String sessionId, String reason) {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             Log.d(TAG, "startRecognition skipped empty sessionId reason=" + reason);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "reason", safe(reason));
+            recordVoiceEvent("recognition_start_skipped_empty_session", details);
             return;
         }
         if (!config.isEnabled() || !adapterSocketConnected || adapterSocket == null) {
@@ -2083,11 +2178,22 @@ public final class AssistantVoiceRuntimeService extends Service {
                     + " adapterSocketPresent=" + (adapterSocket != null)
                     + " sessionId=" + trim(sessionId)
             );
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "sessionId", trim(sessionId));
+            AssistantVoiceEventLog.put(details, "reason", safe(reason));
+            AssistantVoiceEventLog.put(details, "adapterSocketConnected", adapterSocketConnected);
+            AssistantVoiceEventLog.put(details, "adapterSocketPresent", adapterSocket != null);
+            recordVoiceEvent("recognition_start_blocked", details);
             updateState(STATE_CONNECTING, null);
             return;
         }
         if (!activeSttRequestId.isEmpty()) {
             Log.d(TAG, "startRecognition skipped activeSttRequestId=" + activeSttRequestId + " reason=" + reason);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "sessionId", trim(sessionId));
+            AssistantVoiceEventLog.put(details, "reason", safe(reason));
+            AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+            recordVoiceEvent("recognition_start_skipped_active_stt", details);
             return;
         }
 
@@ -2097,6 +2203,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         activeSttRequestId = requestId;
         resetRecognitionCueState();
         Log.d(TAG, "startRecognition requestId=" + requestId + " sessionId=" + activeVoiceSessionId + " reason=" + reason);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "sessionId", safe(activeVoiceSessionId));
+        AssistantVoiceEventLog.put(details, "reason", safe(reason));
+        recordVoiceEvent("recognition_start", details);
 
         if (micStreamer == null) {
             activeSttRequestId = "";
@@ -2310,6 +2421,12 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " completionTimeoutMs=" + config.recognitionCompletionTimeoutMs
                 + " endSilenceMs=" + config.recognitionEndSilenceMs
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "sampleRate", sampleRate);
+        AssistantVoiceEventLog.put(details, "channels", channels);
+        AssistantVoiceEventLog.put(details, "encoding", safe(encoding));
+        recordVoiceEvent("mic_capture_started", details);
         updateState(STATE_LISTENING, null);
 
         JSONObject message = new JSONObject();
@@ -2326,6 +2443,10 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void handleMicCaptureStopped(String requestId) {
         Log.d(TAG, "handleMicCaptureStopped requestId=" + safe(requestId) + " active=" + safe(activeSttRequestId));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+        recordVoiceEvent("mic_capture_stopped", details);
         stoppedRecognitionRequestId = trim(requestId);
         player.endRecognitionCaptureFocus();
         if (scheduleQueuedRecognitionCompletionCueIfNeeded(requestId)) {
@@ -2346,6 +2467,11 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void submitRecognizedSpeech(String sessionId, String text, int durationMs) {
         Log.d(TAG, "submitRecognizedSpeech sessionId=" + sessionId + " textLength=" + text.length() + " durationMs=" + durationMs);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.put(details, "textLength", text.length());
+        AssistantVoiceEventLog.put(details, "durationMs", durationMs);
+        recordVoiceEvent("recognition_submit", details);
         networkExecutor.execute(() -> {
             try {
                 String content = text;
@@ -2359,8 +2485,15 @@ public final class AssistantVoiceRuntimeService extends Service {
                 body.put("inputType", "audio");
                 body.put("durationMs", durationMs);
                 postJson(AssistantVoiceUrlUtils.assistantSessionMessageUrl(config.assistantBaseUrl), body);
+                recordVoiceEvent("recognition_submit_sent", details);
             } catch (Exception error) {
                 Log.w(TAG, "submitRecognizedSpeech failed", error);
+                JSONObject errorDetails = AssistantVoiceEventLog.details();
+                AssistantVoiceEventLog.put(errorDetails, "sessionId", safe(sessionId));
+                AssistantVoiceEventLog.put(errorDetails, "textLength", text.length());
+                AssistantVoiceEventLog.put(errorDetails, "durationMs", durationMs);
+                AssistantVoiceEventLog.put(errorDetails, "error", safe(error.getMessage()));
+                recordVoiceEvent("recognition_submit_failed", errorDetails);
                 mainHandler.post(() -> emitRuntimeError("Failed to submit recognized speech"));
             }
         });
@@ -2390,6 +2523,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceQueueItem queueItem = activeQueueItem;
         if (queueItem == null) {
             Log.d(TAG, "validateQueuedRecognitionAndMaybeStart missing active queue item requestId=" + requestId);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+            recordVoiceEvent("queued_recognition_missing_item", details);
             clearActivePromptContext();
             finishActiveQueueItem(true);
             updateState(resolveInactiveState(), null);
@@ -2397,11 +2533,20 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (!queueItem.requiresListenValidation()) {
             Log.d(TAG, "validateQueuedRecognitionAndMaybeStart bypassed validation " + describeQueueItem(queueItem));
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+            AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(queueItem));
+            recordVoiceEvent("queued_recognition_validation_bypassed", details);
             startRecognition(queueItem.sessionId, queueItem.manual ? "manual_notification_mic" : "playback_completion");
             return;
         }
         Integer expectedSeq = queueItem.sessionActivitySeq;
         Log.d(TAG, "validateQueuedRecognitionAndMaybeStart fetching current revision expectedSeq=" + expectedSeq + " " + describeQueueItem(queueItem));
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "expectedSeq", expectedSeq);
+        AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(queueItem));
+        recordVoiceEvent("queued_recognition_validation_fetch", details);
         networkExecutor.execute(() -> {
             Integer currentSeq = fetchSessionActivityRevision(queueItem.sessionId);
             mainHandler.post(() -> {
@@ -2415,13 +2560,20 @@ public final class AssistantVoiceRuntimeService extends Service {
                         + " expectedSeq=" + expectedSeq
                         + " " + describeQueueItem(queueItem)
                 );
+                JSONObject resultDetails = AssistantVoiceEventLog.details();
+                AssistantVoiceEventLog.put(resultDetails, "requestId", safe(requestId));
+                AssistantVoiceEventLog.put(resultDetails, "expectedSeq", expectedSeq);
+                AssistantVoiceEventLog.put(resultDetails, "currentSeq", currentSeq);
+                AssistantVoiceEventLog.put(resultDetails, "queueItem", describeQueueItem(queueItem));
                 if (expectedSeq != null && currentSeq != null && currentSeq.intValue() > expectedSeq.intValue()) {
                     Log.d(TAG, "validateQueuedRecognitionAndMaybeStart skipped stale notification " + describeQueueItem(queueItem));
+                    recordVoiceEvent("queued_recognition_validation_stale", resultDetails);
                     clearActivePromptContext();
                     finishActiveQueueItem(true);
                     updateState(resolveInactiveState(), null);
                     return;
                 }
+                recordVoiceEvent("queued_recognition_validation_passed", resultDetails);
                 startRecognition(
                     queueItem.sessionId,
                     queueItem.manual ? "manual_notification_mic" : "playback_completion"
@@ -2483,6 +2635,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             "handleManualNotificationAction microphoneAction=" + microphoneAction
                 + " " + describeNotification(notification)
         );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "microphoneAction", microphoneAction);
+        AssistantVoiceEventLog.put(details, "notification", describeNotification(notification));
+        recordVoiceEvent("manual_notification_action", details);
         AssistantVoiceQueueItem item = microphoneAction
             ? notification.toManualMicQueueItem(config.autoListenEnabled)
             : notification.toManualSpeakerQueueItem();
@@ -2631,6 +2787,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void updateState(String nextState, String maybeErrorMessage) {
+        String previousState = runtimeState;
         String normalizedState = trim(nextState);
         String normalizedError = trim(maybeErrorMessage);
         if (normalizedState.isEmpty()) {
@@ -2639,6 +2796,19 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (runtimeState.equals(normalizedState) && normalizedError.isEmpty()) {
             return;
         }
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "previousState", safe(previousState));
+        AssistantVoiceEventLog.put(details, "nextState", safe(normalizedState));
+        AssistantVoiceEventLog.put(details, "error", safe(normalizedError));
+        AssistantVoiceEventLog.put(details, "activeVoiceSessionId", safe(activeVoiceSessionId));
+        AssistantVoiceEventLog.put(details, "selectedSessionId", safe(config.selectedSessionId));
+        AssistantVoiceEventLog.put(details, "preferredVoiceSessionId", safe(config.preferredVoiceSessionId));
+        AssistantVoiceEventLog.put(details, "activePromptToolName", safe(activePromptToolName));
+        AssistantVoiceEventLog.put(details, "activeTtsRequestId", safe(activeTtsRequestId));
+        AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+        AssistantVoiceEventLog.put(details, "activeQueueItem", describeQueueItem(activeQueueItem));
+        AssistantVoiceEventLog.put(details, "queueSize", queuedVoiceItems.size());
+        recordVoiceEvent("state_transition", details);
         runtimeState = normalizedState;
         AssistantVoiceConfig.saveRuntimeSnapshot(
             this,
@@ -2668,6 +2838,32 @@ public final class AssistantVoiceRuntimeService extends Service {
         errorIntent.setPackage(getPackageName());
         errorIntent.putExtra(EXTRA_MESSAGE, message);
         sendBroadcast(errorIntent);
+    }
+
+    private void recordVoiceEvent(String event, JSONObject details) {
+        JSONObject payload = details == null ? AssistantVoiceEventLog.details() : details;
+        AssistantVoiceEventLog.put(payload, "runtimeState", safe(runtimeState));
+        AssistantVoiceEventLog.put(payload, "activeVoiceSessionId", safe(activeVoiceSessionId));
+        AssistantVoiceEventLog.put(payload, "selectedSessionId", safe(config.selectedSessionId));
+        AssistantVoiceEventLog.put(payload, "preferredVoiceSessionId", safe(config.preferredVoiceSessionId));
+        AssistantVoiceEventLog.put(payload, "activePromptToolName", safe(activePromptToolName));
+        AssistantVoiceEventLog.put(payload, "activeTtsRequestId", safe(activeTtsRequestId));
+        AssistantVoiceEventLog.put(payload, "activeSttRequestId", safe(activeSttRequestId));
+        AssistantVoiceEventLog.put(payload, "activeQueueItem", describeQueueItem(activeQueueItem));
+        AssistantVoiceEventLog.put(payload, "queueSize", queuedVoiceItems.size());
+        AssistantVoiceEventLog.record(this, event, payload);
+    }
+
+    private JSONObject eventDetailsWithNotification(Intent intent) {
+        AssistantVoiceNotificationRecord notification = notificationFromIntent(intent);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "notification", describeNotification(notification));
+        AssistantVoiceEventLog.put(
+            details,
+            "notificationId",
+            safe(intent == null ? null : intent.getStringExtra(EXTRA_NOTIFICATION_ID))
+        );
+        return details;
     }
 
     static boolean shouldUsePositiveRecognitionCue(boolean success, String text) {
@@ -2724,15 +2920,26 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void resetRecognitionCueState() {
         pendingRecognitionCompletionCueRequestId = "";
+        pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
         pendingRecognitionArmingCueRequestId = "";
+        pendingRecognitionFailureRetrySessionId = "";
         stoppedRecognitionRequestId = "";
         recognitionReadyCuePlayed = false;
         recognitionCompletionCuePlayed = false;
     }
 
     private void queueRecognitionCompletionCue(String requestId, boolean success) {
+        queueRecognitionCompletionCue(requestId, success, "");
+    }
+
+    private void queueRecognitionCompletionCue(
+        String requestId,
+        boolean success,
+        String playbackRequestId
+    ) {
         pendingRecognitionCompletionCueRequestId = trim(requestId);
+        pendingRecognitionCompletionPlaybackRequestId = trim(playbackRequestId);
         pendingRecognitionCompletionCueSuccess = success;
     }
 
@@ -2741,9 +2948,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         boolean success = pendingRecognitionCompletionCueSuccess;
+        String playbackRequestId = pendingRecognitionCompletionPlaybackRequestId;
         pendingRecognitionCompletionCueRequestId = "";
+        pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
-        playRecognitionCompletionCueIfNeeded(success);
+        playRecognitionCompletionCueIfNeeded(success, playbackRequestId);
     }
 
     private boolean scheduleQueuedRecognitionCompletionCueIfNeeded(String requestId) {
@@ -2751,10 +2960,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             return false;
         }
         boolean success = pendingRecognitionCompletionCueSuccess;
+        String playbackRequestId = pendingRecognitionCompletionPlaybackRequestId;
         pendingRecognitionCompletionCueRequestId = "";
+        pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
         mainHandler.postDelayed(
-            () -> playRecognitionCompletionCueIfNeeded(success),
+            () -> playRecognitionCompletionCueIfNeeded(success, playbackRequestId),
             RECOGNITION_CUE_POST_STOP_DELAY_MS
         );
         return true;
@@ -2773,16 +2984,60 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void playRecognitionCompletionCueIfNeeded(boolean success) {
+        playRecognitionCompletionCueIfNeeded(success, "");
+    }
+
+    private void playRecognitionCompletionCueIfNeeded(boolean success, String playbackRequestId) {
         if (!config.recognitionCueEnabled || recognitionCompletionCuePlayed) {
+            triggerRecognitionFailureRetryIfNeeded(playbackRequestId, false);
             return;
         }
         recognitionCompletionCuePlayed = true;
         playRecognitionCueWithRetry(
-            "",
+            playbackRequestId,
             success
                 ? AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
                 : AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION,
             0
+        );
+        triggerRecognitionFailureRetryIfNeeded(playbackRequestId, true);
+    }
+
+    private void triggerRecognitionFailureRetryIfNeeded(
+        String playbackRequestId,
+        boolean cuePlaybackRequested
+    ) {
+        String retrySessionId = extractRecognitionFailureRetrySessionId(playbackRequestId);
+        if (retrySessionId.isEmpty()) {
+            return;
+        }
+        pendingRecognitionFailureRetrySessionId = retrySessionId;
+        if (!cuePlaybackRequested) {
+            mainHandler.post(() -> {
+                if (!retrySessionId.equals(trim(pendingRecognitionFailureRetrySessionId))) {
+                    return;
+                }
+                pendingRecognitionFailureRetrySessionId = "";
+                JSONObject details = AssistantVoiceEventLog.details();
+                AssistantVoiceEventLog.put(details, "sessionId", safe(retrySessionId));
+                recordVoiceEvent("recognition_retry_start", details);
+                startRecognition(retrySessionId, "empty_transcript_retry");
+            });
+            return;
+        }
+        mainHandler.postDelayed(
+            () -> {
+                if (!retrySessionId.equals(trim(pendingRecognitionFailureRetrySessionId))) {
+                    return;
+                }
+                pendingRecognitionFailureRetrySessionId = "";
+                JSONObject details = AssistantVoiceEventLog.details();
+                AssistantVoiceEventLog.put(details, "requestId", safe(playbackRequestId));
+                AssistantVoiceEventLog.put(details, "sessionId", safe(retrySessionId));
+                recordVoiceEvent("recognition_retry_fallback_start", details);
+                startRecognition(retrySessionId, "empty_transcript_retry");
+            },
+            RECOGNITION_FAILURE_RETRY_FALLBACK_DELAY_MS
         );
     }
 
@@ -2820,6 +3075,19 @@ public final class AssistantVoiceRuntimeService extends Service {
         return trim(normalized.substring(RECOGNITION_ARMING_CUE_REQUEST_PREFIX.length()));
     }
 
+    static String buildRecognitionFailureRetryCueRequestId(String sessionId) {
+        String normalized = trim(sessionId);
+        return normalized.isEmpty() ? "" : RECOGNITION_FAILURE_RETRY_CUE_REQUEST_PREFIX + normalized;
+    }
+
+    static String extractRecognitionFailureRetrySessionId(String playbackRequestId) {
+        String normalized = trim(playbackRequestId);
+        if (!normalized.startsWith(RECOGNITION_FAILURE_RETRY_CUE_REQUEST_PREFIX)) {
+            return "";
+        }
+        return trim(normalized.substring(RECOGNITION_FAILURE_RETRY_CUE_REQUEST_PREFIX.length()));
+    }
+
     static boolean shouldStartRecognitionAfterArmingCue(
         String pendingRecognitionRequestId,
         String playbackRequestId
@@ -2827,6 +3095,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         return trim(pendingRecognitionRequestId).equals(
             extractRecognitionArmingCueRequestId(playbackRequestId)
         );
+    }
+
+    static boolean shouldRetryRecognitionAfterEmptyTranscript(
+        boolean success,
+        boolean canceled,
+        String error,
+        String sessionId
+    ) {
+        return !success
+            && !canceled
+            && "empty_transcript".equals(trim(error))
+            && !trim(sessionId).isEmpty();
     }
 
     private String explainQueueDrainBlock() {

@@ -370,6 +370,64 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionFailureRetryCueRequestIdRoundTripsSessionId() {
+        String sessionId = "6475d5c6-121f-48e0-93ed-725e72948dd9";
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionFailureRetryCueRequestId(sessionId);
+
+        assertEquals(
+            sessionId,
+            AssistantVoiceRuntimeService.extractRecognitionFailureRetrySessionId(playbackRequestId)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldRetryRecognitionAfterEmptyTranscriptOnlyForSessionBoundFailures() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                true,
+                false,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                true,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "no_usable_speech",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "empty_transcript",
+                ""
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
         assertEquals(
             true,

@@ -114,6 +114,7 @@ import {
   ttsGainPercentToValue,
   type VoiceSettings,
 } from './utils/voiceSettings';
+import { syncNativeInputDeviceSelect } from './utils/nativeVoiceInputDevices';
 import { getPanelContextKey } from './utils/panelContext';
 import type { ContextPreviewData } from './controllers/contextPreviewController';
 import { bindVoiceSettingsBlurResetHandlers } from './utils/voiceSettingsBlurReset';
@@ -1381,6 +1382,47 @@ async function main(): Promise<void> {
       getActiveChatInputRuntime() ?? chatPanelsById.values().next().value?.inputRuntime ?? null
     );
   }
+
+  const VOICE_SETTINGS_DEVICE_REFRESH_RETRY_MS = [700, 1800] as const;
+  let voiceSettingsDeviceRefreshTimers: ReturnType<typeof setTimeout>[] = [];
+
+  const clearVoiceSettingsDeviceRefreshTimers = (): void => {
+    for (const timer of voiceSettingsDeviceRefreshTimers) {
+      clearTimeout(timer);
+    }
+    voiceSettingsDeviceRefreshTimers = [];
+  };
+
+  const isVoiceSettingsModalOpen = (): boolean =>
+    !voiceSettingsModalEl.hidden && voiceSettingsModalEl.classList.contains('open');
+
+  const refreshVoiceSettingsNativeInputDevices = async (): Promise<void> => {
+    if (!useNativeVoiceRuntime) {
+      return;
+    }
+    const devices = await (nativeVoiceBridge?.listInputDevices() ?? Promise.resolve([]));
+    const primaryRuntime = getPrimaryChatInputRuntime();
+    if (primaryRuntime?.speechAudioController) {
+      primaryRuntime.speechAudioController.setNativeInputDevices(devices);
+      return;
+    }
+    const settings = primaryRuntime?.getVoiceSettings() ?? initialVoiceSettings;
+    syncNativeInputDeviceSelect(voiceMicInputSelectEl, settings.selectedMicDeviceId, devices);
+  };
+
+  const scheduleVoiceSettingsNativeInputDeviceRefreshes = (): void => {
+    clearVoiceSettingsDeviceRefreshTimers();
+    void refreshVoiceSettingsNativeInputDevices();
+    for (const delayMs of VOICE_SETTINGS_DEVICE_REFRESH_RETRY_MS) {
+      const timer = setTimeout(() => {
+        if (!isVoiceSettingsModalOpen()) {
+          return;
+        }
+        void refreshVoiceSettingsNativeInputDevices();
+      }, delayMs);
+      voiceSettingsDeviceRefreshTimers.push(timer);
+    }
+  };
 
   function hasChatPanelActiveOutput(panelId: string): boolean {
     const entry = chatPanelsById.get(panelId);
@@ -3668,6 +3710,7 @@ async function main(): Promise<void> {
   });
   settingsDropdownController.attach();
   const closeVoiceSettingsModal = (): void => {
+    clearVoiceSettingsDeviceRefreshTimers();
     voiceSettingsModalEl.hidden = true;
     voiceSettingsModalEl.style.display = 'none';
     voiceSettingsModalEl.classList.remove('open');
@@ -3680,7 +3723,7 @@ async function main(): Promise<void> {
     voiceSettingsModalEl.style.display = 'flex';
     voiceSettingsModalEl.classList.add('open');
     dialogManager.registerExternalDialog(voiceSettingsModalEl, closeVoiceSettingsModal);
-    void getPrimaryChatInputRuntime()?.speechAudioController?.refreshNativeInputDevices();
+    scheduleVoiceSettingsNativeInputDeviceRefreshes();
     audioModeSelectEl.focus();
   };
   const syncVoiceSettingsFromInputs = (): void => {
