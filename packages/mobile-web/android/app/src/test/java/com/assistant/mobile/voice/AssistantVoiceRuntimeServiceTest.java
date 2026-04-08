@@ -309,6 +309,35 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveRecognitionSubmitSessionIdUsesLatestSelectedSessionForManualListen() {
+        assertEquals(
+            "session-new",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+                "session-old",
+                "voice_manual",
+                "session-new"
+            )
+        );
+        assertEquals(
+            "session-old",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+                "session-old",
+                "assistant_response",
+                "session-new"
+            )
+        );
+        assertEquals(
+            "session-old",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+                "session-old",
+                "voice_manual",
+                ""
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
         assertEquals(
             true,

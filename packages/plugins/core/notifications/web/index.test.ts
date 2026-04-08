@@ -78,6 +78,7 @@ describe('notifications panel', () => {
 
     expect(container.querySelector('.notif-body')).not.toBeNull();
     expect(container.querySelector('.notif-empty')).not.toBeNull();
+    expect(container.querySelector('.notif-stop-btn')).toBeNull();
 
     // Should have sent request_snapshot on mount
     expect(host.sendEvent).toHaveBeenCalledWith({ type: 'request_snapshot' });
@@ -922,9 +923,9 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
-  it('renders a disabled stop button when no native voice interaction is active', async () => {
+  it('does not render a redundant header stop button even when native voice is available', async () => {
     (window as any).AssistantNativeVoice = {
-      getState: vi.fn().mockResolvedValue({ state: 'idle' }),
+      getState: vi.fn().mockResolvedValue({ state: 'speaking' }),
       addListener: vi.fn(() => ({ remove: vi.fn() })),
       stopCurrentInteraction: vi.fn(),
     };
@@ -939,43 +940,7 @@ describe('notifications panel', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const stopBtn = container.querySelector('.notif-stop-btn') as HTMLButtonElement;
-    expect(stopBtn).not.toBeNull();
-    expect(stopBtn.disabled).toBe(true);
-
-    handle.unmount();
-  });
-
-  it('enables the stop button and stops the active native voice interaction', async () => {
-    let stateChangedListener: ((payload: unknown) => void) | null = null;
-    const stopCurrentInteraction = vi.fn();
-    (window as any).AssistantNativeVoice = {
-      getState: vi.fn().mockResolvedValue({ state: 'speaking' }),
-      addListener: vi.fn((_eventName: string, listener: (payload: unknown) => void) => {
-        stateChangedListener = listener;
-        return { remove: vi.fn() };
-      }),
-      stopCurrentInteraction,
-    };
-    (window as any).Capacitor = {
-      getPlatform: () => 'android',
-    };
-
-    const module = panelFactory!();
-    const host = createHost();
-    const container = document.createElement('div');
-    const handle = module.mount(container, host, {});
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const stopBtn = container.querySelector('.notif-stop-btn') as HTMLButtonElement;
-    expect(stopBtn.disabled).toBe(false);
-
-    stopBtn.click();
-    expect(stopCurrentInteraction).toHaveBeenCalledTimes(1);
-
-    stateChangedListener?.({ state: 'idle' });
-    expect(stopBtn.disabled).toBe(true);
+    expect(container.querySelector('.notif-stop-btn')).toBeNull();
 
     handle.unmount();
   });

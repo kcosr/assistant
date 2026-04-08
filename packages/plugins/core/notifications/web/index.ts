@@ -36,28 +36,6 @@ type SessionSummary = SessionLabelSummary & {
 interface AssistantNativeVoiceBridgeTarget {
   performNotificationSpeaker?: (args: { notification: NotificationRecord }) => void | Promise<void>;
   performNotificationMic?: (args: { notification: NotificationRecord }) => void | Promise<void>;
-  stopCurrentInteraction?: () => void | Promise<void>;
-  getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
-  addListener?: (
-    eventName: 'stateChanged',
-    listener: (payload: unknown) => void,
-  ) => AssistantNativeVoiceListenerHandle | Promise<AssistantNativeVoiceListenerHandle>;
-}
-
-interface AssistantNativeVoiceListenerHandle {
-  remove?: () => void | Promise<void>;
-}
-
-type AssistantNativeVoiceRuntimeState =
-  | 'disabled'
-  | 'connecting'
-  | 'idle'
-  | 'speaking'
-  | 'listening'
-  | 'error';
-
-interface AssistantNativeVoiceStatePayload {
-  state?: string | null;
 }
 
 interface AssistantNativeVoiceBridgeHost {
@@ -227,22 +205,6 @@ function resolveClientSessionLabel(
   return resolveSessionBaseLabel(summary, agentSummaries);
 }
 
-function normalizeNativeVoiceRuntimeState(
-  value: string | null | undefined,
-): AssistantNativeVoiceRuntimeState | null {
-  switch (value) {
-    case 'disabled':
-    case 'connecting':
-    case 'idle':
-    case 'speaking':
-    case 'listening':
-    case 'error':
-      return value;
-    default:
-      return null;
-  }
-}
-
 (function () {
   if (!window.ASSISTANT_PANEL_REGISTRY) {
     return;
@@ -264,8 +226,6 @@ function normalizeNativeVoiceRuntimeState(
       let initialSnapshotReceived = false;
       let snapshotRetryCount = 0;
       let snapshotRetryTimer: number | null = null;
-      let nativeVoiceRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
-
       // Load persisted state
       const persisted = host.loadPanelState() as {
         filter?: FilterMode;
@@ -340,15 +300,6 @@ function normalizeNativeVoiceRuntimeState(
       densityBtn.className = 'notif-toggle-btn';
       densityBtn.title = 'Toggle Card / Compact';
       controlsEl.appendChild(densityBtn);
-
-      const stopBtn = document.createElement('button');
-      stopBtn.type = 'button';
-      stopBtn.className = 'notif-toggle-btn notif-stop-btn';
-      stopBtn.title = 'No active voice interaction';
-      stopBtn.setAttribute('aria-label', 'No active voice interaction');
-      stopBtn.appendChild(createSvgIcon(ICON_PATHS.stop));
-      stopBtn.disabled = true;
-      controlsEl.appendChild(stopBtn);
 
       // Overflow menu button
       const menuBtn = document.createElement('button');
@@ -426,23 +377,6 @@ function normalizeNativeVoiceRuntimeState(
         host.persistPanelState({ filter: state.filter, density: state.density });
       };
 
-      const hasActiveNativeVoiceInteraction = (): boolean =>
-        nativeVoiceRuntimeState === 'speaking' || nativeVoiceRuntimeState === 'listening';
-
-      const updateStopButtonState = (): void => {
-        const enabled = isAndroidNativeVoiceAvailable() && hasActiveNativeVoiceInteraction();
-        stopBtn.disabled = !enabled;
-        stopBtn.classList.toggle('is-active', enabled);
-        let label = 'No active voice interaction';
-        if (nativeVoiceRuntimeState === 'speaking') {
-          label = 'Stop voice playback';
-        } else if (nativeVoiceRuntimeState === 'listening') {
-          label = 'Stop voice listening';
-        }
-        stopBtn.title = label;
-        stopBtn.setAttribute('aria-label', label);
-      };
-
       const clearSnapshotRetry = (): void => {
         if (snapshotRetryTimer !== null) {
           window.clearTimeout(snapshotRetryTimer);
@@ -476,30 +410,6 @@ function normalizeNativeVoiceRuntimeState(
         }
         if (isModalPanel) {
           host.closePanel(panelId);
-        }
-      };
-
-      const stopCurrentVoiceInteraction = (): void => {
-        if (!hasActiveNativeVoiceInteraction()) {
-          return;
-        }
-        const target = getNativeVoiceBridgeTarget();
-        const method = target?.stopCurrentInteraction;
-        if (typeof method !== 'function') {
-          return;
-        }
-        console.info('[notifications] stop voice interaction', {
-          state: nativeVoiceRuntimeState,
-        });
-        try {
-          const result = method();
-          if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-            void Promise.resolve(result).catch((error: unknown) => {
-              console.warn('[notifications] stop voice interaction failed', error);
-            });
-          }
-        } catch (error) {
-          console.warn('[notifications] stop voice interaction failed', error);
         }
       };
 
@@ -861,11 +771,6 @@ function normalizeNativeVoiceRuntimeState(
         render();
       });
 
-      stopBtn.addEventListener('click', (event) => {
-        event.stopPropagation();
-        stopCurrentVoiceInteraction();
-      });
-
       menuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         state.menuOpen = !state.menuOpen;
@@ -1001,66 +906,6 @@ function normalizeNativeVoiceRuntimeState(
         render();
       });
 
-      const target = getNativeVoiceBridgeTarget();
-      let unsubscribeNativeVoiceState: (() => void) | null = null;
-      if (typeof target?.addListener === 'function') {
-        try {
-          const result = target.addListener('stateChanged', (payload: unknown) => {
-            const state = normalizeNativeVoiceRuntimeState(
-              (payload as AssistantNativeVoiceStatePayload | null)?.state,
-            );
-            nativeVoiceRuntimeState = state;
-            updateStopButtonState();
-          });
-          const removeHandle = (handle: AssistantNativeVoiceListenerHandle | null): void => {
-            if (!handle || typeof handle.remove !== 'function') {
-              return;
-            }
-            void Promise.resolve(handle.remove()).catch((error: unknown) => {
-              console.warn('[notifications] native voice state listener remove failed', error);
-            });
-          };
-          if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-            let active = true;
-            unsubscribeNativeVoiceState = () => {
-              active = false;
-            };
-            void Promise.resolve(result)
-              .then((handle) => {
-                if (!active) {
-                  removeHandle((handle as AssistantNativeVoiceListenerHandle | null) ?? null);
-                  return;
-                }
-                unsubscribeNativeVoiceState = () => {
-                  removeHandle((handle as AssistantNativeVoiceListenerHandle | null) ?? null);
-                };
-              })
-              .catch((error: unknown) => {
-                console.warn('[notifications] native voice state listener failed', error);
-              });
-          } else {
-            const handle = (result as AssistantNativeVoiceListenerHandle | null) ?? null;
-            unsubscribeNativeVoiceState = () => {
-              removeHandle(handle);
-            };
-          }
-        } catch (error) {
-          console.warn('[notifications] native voice state listener failed', error);
-        }
-      }
-      if (typeof target?.getState === 'function') {
-        void Promise.resolve(target.getState())
-          .then((payload) => {
-            nativeVoiceRuntimeState = normalizeNativeVoiceRuntimeState(payload?.state);
-            updateStopButtonState();
-          })
-          .catch((error: unknown) => {
-            console.warn('[notifications] native voice getState failed', error);
-          });
-      } else {
-        updateStopButtonState();
-      }
-
       // Initial render
       render();
 
@@ -1086,7 +931,6 @@ function normalizeNativeVoiceRuntimeState(
           clearSnapshotRetry();
           unsubscribeSessionSummaries();
           unsubscribeAgentSummaries();
-          unsubscribeNativeVoiceState?.();
           document.removeEventListener('click', closeMenu);
           chromeController.destroy();
           container.innerHTML = '';

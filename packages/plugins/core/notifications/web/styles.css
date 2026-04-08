@@ -37,15 +37,6 @@
   cursor: default;
 }
 
-.notif-stop-btn {
-  padding: 2px 4px;
-}
-
-.notif-stop-btn .notif-icon {
-  width: 16px;
-  height: 16px;
-}
-
 .notif-menu-btn {
   padding: 2px 4px;
   border: none;

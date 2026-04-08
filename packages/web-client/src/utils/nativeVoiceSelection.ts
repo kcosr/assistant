@@ -21,19 +21,13 @@ function normalizeId(value?: string | null): string | null {
 export function resolveNativeVoiceSelectedSession(
   input: NativeVoiceSelectionInput,
 ): NativeVoiceSelectedSession | null {
-  if (input.activePanelType !== 'chat') {
-    return null;
-  }
-
-  const panelId = normalizeId(input.activePanelId);
-  if (!panelId) {
-    return null;
-  }
-
-  const sessionId = normalizeId(input.fixedSessionId) ?? normalizeId(input.inputSessionId);
+  const sessionId = normalizeId(input.inputSessionId) ?? normalizeId(input.fixedSessionId);
   if (!sessionId) {
     return null;
   }
+
+  const panelId =
+    input.activePanelType === 'chat' ? (normalizeId(input.activePanelId) ?? '') : '';
 
   return { panelId, sessionId };
 }

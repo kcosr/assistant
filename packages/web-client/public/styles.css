@@ -2098,6 +2098,57 @@ button.settings-dropdown-item {
   height: 18px;
 }
 
+.command-palette-fab.voice-fab {
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--color-accent-primary) 88%, white), var(--color-accent-primary));
+  color: var(--color-text-on-accent);
+}
+
+.command-palette-fab.voice-fab.voice-fab-disabled {
+  background: color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-border-default));
+  color: var(--color-text-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.command-palette-fab.voice-fab.voice-fab-listening {
+  background: var(--theme-danger);
+  color: var(--color-text-on-accent);
+}
+
+.command-palette-fab.voice-fab.voice-fab-speaking {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 193, 107, 0.95), rgba(255, 152, 0, 0.92) 38%, rgba(255, 85, 85, 0.96) 100%);
+  color: var(--color-text-on-accent);
+  animation: native-voice-button-pulse 1.2s ease-in-out infinite;
+}
+
+.command-palette-fab.voice-fab.voice-fab-speaking .icon-sm {
+  animation: native-voice-pulse 1.2s ease-in-out infinite;
+}
+
+.voice-fab-session-chip {
+  position: fixed;
+  z-index: 201;
+  max-width: min(60vw, 280px);
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-accent-primary));
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-fab-session-chip.is-visible {
+  display: inline-flex;
+  align-items: center;
+}
+
 .command-palette-input {
   padding: var(--spacing-xs) var(--spacing-md);
   border-bottom: 1px solid var(--color-border-subtle);
@@ -6503,6 +6554,28 @@ textarea.interaction-input {
     background-color: var(--color-accent-primary);
     color: var(--color-text-primary);
   }
+}
+
+.input-mic-button.stop-only {
+  background: color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-border-default));
+  color: var(--color-text-muted);
+  border-color: color-mix(in srgb, var(--color-border-default) 85%, transparent);
+}
+
+.input-mic-button.stop-only.stop-only-active {
+  background: var(--theme-danger);
+  color: var(--color-text-on-accent);
+  border-color: color-mix(in srgb, var(--theme-danger) 70%, transparent);
+}
+
+.input-mic-button.stop-only.stop-only-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.input-mic-button.stop-only:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .mic-icon {

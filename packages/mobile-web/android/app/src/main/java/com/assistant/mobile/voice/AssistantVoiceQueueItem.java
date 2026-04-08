@@ -51,6 +51,10 @@ final class AssistantVoiceQueueItem {
         return "speak_then_listen".equals(executionMode);
     }
 
+    boolean requiresSession() {
+        return isListenOnly() || startsListeningAfterPlayback();
+    }
+
     boolean requiresListenValidation() {
         return startsListeningAfterPlayback() && !allowListenWithoutValidation && sessionActivitySeq != null;
     }

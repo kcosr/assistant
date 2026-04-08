@@ -210,6 +210,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   }
 
   let speechAudioController: SpeechAudioController | null = null;
+  const stopOnlyButtonMode = Boolean(options.useNativeVoiceRuntime && isCapacitorAndroid());
 
   const textInputController = new TextInputController({
     form: elements.form,
@@ -270,7 +271,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     elements.form.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     elements.inputEl.disabled = disabled;
     elements.clearButtonEl.disabled = disabled;
-    elements.micButtonEl.disabled = disabled || !hasSpeechInput;
+    elements.micButtonEl.disabled = stopOnlyButtonMode ? disabled : disabled || !hasSpeechInput;
     if (elements.submitButtonEl) {
       elements.submitButtonEl.disabled = disabled;
     }
@@ -364,6 +365,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     },
     voiceSettingsStorageKey: options.voiceSettingsStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
+    buttonMode: stopOnlyButtonMode ? 'stop-only' : 'voice',
     initialVoiceSettings,
     useNativeVoiceRuntime: options.useNativeVoiceRuntime,
     nativeVoiceBridge: options.nativeVoiceBridge,

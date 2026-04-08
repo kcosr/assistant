@@ -84,4 +84,33 @@ public final class AssistantVoiceQueueItemTest {
         assertEquals("", item.spokenText);
         assertTrue(item.isListenOnly());
     }
+
+    @Test
+    public void toolNotificationSpeakerPlaybackDoesNotRequireASession() {
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "TEST",
+            "This is a test",
+            "",
+            "",
+            "",
+            "speak",
+            "Alternate speech",
+            "event-tool",
+            null
+        );
+
+        AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true);
+        AssistantVoiceQueueItem manualItem = notification.toManualSpeakerQueueItem();
+
+        assertNotNull(automaticItem);
+        assertNotNull(manualItem);
+        assertEquals("", automaticItem.sessionId);
+        assertEquals("", manualItem.sessionId);
+        assertTrue(!automaticItem.requiresSession());
+        assertTrue(!manualItem.requiresSession());
+        assertEquals("Alternate speech", automaticItem.spokenText);
+    }
 }

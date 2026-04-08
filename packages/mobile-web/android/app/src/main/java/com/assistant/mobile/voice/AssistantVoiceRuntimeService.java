@@ -814,7 +814,13 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private String resolveNotificationSessionTitle() {
         if (hasActiveInteraction()) {
-            return config.getSessionTitle(activeVoiceSessionId);
+            return config.getSessionTitle(
+                resolveRecognitionSubmitSessionId(
+                    activeVoiceSessionId,
+                    activePromptToolName,
+                    config.selectedSessionId
+                )
+            );
         }
         String preferredTitle = config.getSessionTitle(config.preferredVoiceSessionId);
         if (!preferredTitle.isEmpty()) {
@@ -1369,7 +1375,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void enqueueQueueItem(AssistantVoiceQueueItem item, boolean front) {
-        if (item == null || item.sessionId.isEmpty()) {
+        if (item == null || (item.requiresSession() && item.sessionId.isEmpty())) {
             Log.d(TAG, "enqueueQueueItem dropped invalid item=" + describeQueueItem(item));
             return;
         }
@@ -1804,7 +1810,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
-        String sessionId = activeVoiceSessionId;
+        String sessionId = resolveRecognitionSubmitSessionId(
+            activeVoiceSessionId,
+            activePromptToolName,
+            config.selectedSessionId
+        );
         boolean success = message.optBoolean("success", false);
         boolean canceled = message.optBoolean("canceled", false);
         String text = trim(message.optString("text"));
@@ -2350,6 +2360,19 @@ public final class AssistantVoiceRuntimeService extends Service {
                 mainHandler.post(() -> emitRuntimeError("Failed to submit recognized speech"));
             }
         });
+    }
+
+    static String resolveRecognitionSubmitSessionId(
+        String activeSessionId,
+        String promptToolName,
+        String selectedSessionId
+    ) {
+        String normalizedActiveSessionId = trim(activeSessionId);
+        String normalizedSelectedSessionId = trim(selectedSessionId);
+        if ("voice_manual".equals(trim(promptToolName)) && !normalizedSelectedSessionId.isEmpty()) {
+            return normalizedSelectedSessionId;
+        }
+        return normalizedActiveSessionId;
     }
 
     private void finishActiveQueueItem(boolean drainQueue) {

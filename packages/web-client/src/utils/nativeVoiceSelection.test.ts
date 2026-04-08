@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveNativeVoiceSelectedSession } from './nativeVoiceSelection';
 
 describe('resolveNativeVoiceSelectedSession', () => {
-  it('uses the active chat panel with the fixed session binding when present', () => {
+  it('prefers the selected input session over the active chat binding when both are present', () => {
     expect(
       resolveNativeVoiceSelectedSession({
         activePanelId: 'panel-1',
@@ -13,7 +13,7 @@ describe('resolveNativeVoiceSelectedSession', () => {
       }),
     ).toEqual({
       panelId: 'panel-1',
-      sessionId: 'session-fixed',
+      sessionId: 'session-input',
     });
   });
 
@@ -39,6 +39,23 @@ describe('resolveNativeVoiceSelectedSession', () => {
         fixedSessionId: 'session-fixed',
         inputSessionId: 'session-input',
       }),
-    ).toBeNull();
+    ).toEqual({
+      panelId: '',
+      sessionId: 'session-input',
+    });
+  });
+
+  it('keeps the selected input session even when no chat panel is active', () => {
+    expect(
+      resolveNativeVoiceSelectedSession({
+        activePanelId: null,
+        activePanelType: 'list',
+        fixedSessionId: null,
+        inputSessionId: 'session-input',
+      }),
+    ).toEqual({
+      panelId: '',
+      sessionId: 'session-input',
+    });
   });
 });

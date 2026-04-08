@@ -48,6 +48,34 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('can open without autofocus for the voice-chip session picker flow', async () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    anchor.textContent = 'open';
+    document.body.appendChild(anchor);
+    anchor.focus();
+
+    controller.open({
+      anchor,
+      title: 'Select voice session',
+      autoFocusSearch: false,
+      onSelectSession: () => undefined,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const searchInput = document.querySelector<HTMLInputElement>('.session-picker-search');
+    expect(searchInput).toBeTruthy();
+    expect(document.activeElement).toBe(anchor);
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({

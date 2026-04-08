@@ -26,6 +26,7 @@ export interface AgentSummary {
 export interface SessionPickerOpenOptions {
   anchor: HTMLElement;
   title: string;
+  autoFocusSearch?: boolean;
   disabledSessionIds?: Set<string>;
   allowUnbound?: boolean;
   createSessionOptions?: CreateSessionOptions;
@@ -401,9 +402,11 @@ export class SessionPickerController {
     renderList();
     this.positionMenu(menu, options.anchor);
 
-    setTimeout(() => {
-      searchInput.focus();
-    }, 0);
+    if (options.autoFocusSearch !== false) {
+      setTimeout(() => {
+        searchInput.focus();
+      }, 0);
+    }
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;

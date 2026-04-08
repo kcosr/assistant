@@ -86,6 +86,7 @@ import { getWebClientElements } from './utils/webClientElements';
 import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboardShortcuts';
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
+import { setupVoiceFab, type VoiceFabHandle } from './utils/voiceFab';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
   applyThemePreferences,
@@ -1131,6 +1132,27 @@ async function main(): Promise<void> {
     return null;
   }
 
+  function getVoiceFabSpeechController() {
+    const selectedSessionId = normalizeSessionId(inputSessionId);
+    if (selectedSessionId) {
+      return getChatInputRuntimeForSession(selectedSessionId)?.speechAudioController ?? null;
+    }
+    return getPrimaryChatInputRuntime()?.speechAudioController ?? null;
+  }
+
+  function getSelectedSessionTitle(): string | null {
+    const selectedSessionId = normalizeSessionId(inputSessionId);
+    if (!selectedSessionId) {
+      return null;
+    }
+    const summary = sessionSummaries.find((entry) => entry.sessionId === selectedSessionId) ?? null;
+    if (!summary) {
+      return selectedSessionId.slice(0, 8);
+    }
+    const label = resolveSessionBaseLabel(summary, agentSummaries);
+    return label || selectedSessionId.slice(0, 8);
+  }
+
   function getActiveChatPanelEntry(): ChatPanelEntry | null {
     const active =
       (panelHostController?.getContext('panel.active') as {
@@ -1190,14 +1212,10 @@ async function main(): Promise<void> {
     if (!fallbackSessionId) {
       return null;
     }
-    const fallbackEntry = getChatPanelEntryForSession(fallbackSessionId);
-    if (!fallbackEntry) {
-      return null;
-    }
     return resolveNativeVoiceSelectedSession({
-      activePanelId: fallbackEntry.panelId,
-      activePanelType: 'chat',
-      fixedSessionId: fallbackEntry.bindingSessionId,
+      activePanelId: null,
+      activePanelType: null,
+      fixedSessionId: null,
       inputSessionId: fallbackSessionId,
     });
   }
@@ -1287,6 +1305,7 @@ async function main(): Promise<void> {
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.speechAudioController?.setNativeRuntimeState(state);
     }
+    voiceFabHandle?.update();
   }
 
   if (useNativeVoiceRuntime) {
@@ -1780,6 +1799,7 @@ async function main(): Promise<void> {
         : (sessionSummaries.find((summary) => summary.sessionId === inputSessionId) ?? null);
     panelHostController.setContext('session.activeSummary', activeSummary);
     panelWorkspace?.refreshPanelTitles();
+    voiceFabHandle?.update();
   }
 
   function mergePanelManifest(
@@ -2016,6 +2036,7 @@ async function main(): Promise<void> {
   let sessionTypingIndicatorController: SessionTypingIndicatorController | null = null;
   let panelLauncherController: PanelLauncherController | null = null;
   let commandPaletteController: CommandPaletteController | null = null;
+  let voiceFabHandle: VoiceFabHandle | null = null;
   let sessionPickerController: SessionPickerController | null = null;
   let sessionComposerController: SessionComposerController | null = null;
   let connectionManager: ConnectionManager | null = null;
@@ -4007,21 +4028,42 @@ async function main(): Promise<void> {
         })
       : null;
   commandPaletteController?.attach();
-  setupCommandPaletteFab({
-    button: commandPaletteFab,
-    icon: ICONS.search,
-    openCommandPalette: () => {
-      if (commandPaletteController) {
-        commandPaletteController.open();
-        return;
-      }
-      if (commandPaletteButton) {
-        commandPaletteButton.click();
-      }
-    },
-    isMobileViewport,
-    isCapacitorAndroid,
-  });
+  if (useNativeVoiceRuntime && isCapacitorAndroid()) {
+    voiceFabHandle = setupVoiceFab({
+      button: commandPaletteFab,
+      isVisible: () => isCapacitorAndroid(),
+      getSpeechController: () => getVoiceFabSpeechController(),
+      getSessionTitle: () => getSelectedSessionTitle(),
+      onSessionChipClick: (anchor) => {
+        openSessionPicker({
+          anchor,
+          title: 'Select voice session',
+          autoFocusSearch: false,
+          onSelectSession: (sessionId) => {
+            setInputSessionId(sessionId);
+            voiceFabHandle?.showSessionChip();
+            voiceFabHandle?.update();
+          },
+        });
+      },
+    });
+  } else {
+    setupCommandPaletteFab({
+      button: commandPaletteFab,
+      icon: ICONS.search,
+      openCommandPalette: () => {
+        if (commandPaletteController) {
+          commandPaletteController.open();
+          return;
+        }
+        if (commandPaletteButton) {
+          commandPaletteButton.click();
+        }
+      },
+      isMobileViewport,
+      isCapacitorAndroid,
+    });
+  }
 
   if (layoutDropdown) {
     const presetButtons = layoutDropdown.querySelectorAll<HTMLButtonElement>('[data-layout]');

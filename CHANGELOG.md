@@ -20,6 +20,7 @@
 
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Changed native Android voice controls so the floating mobile FAB now owns voice start/stop with a target-session title chip, while the chat-row control becomes a stop-only turn button.
 
 ### Fixed
 
