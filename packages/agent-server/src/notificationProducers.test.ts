@@ -78,6 +78,27 @@ describe('notification producers', () => {
     expect(notifications[0]?.sessionActivitySeq).toBe(8);
   });
 
+  it('uses post-activity revision so stale-ask validation sees the current seq', async () => {
+    // Simulates the call-site pattern: recordSessionActivity bumps revision,
+    // then publishFinalResponseNotification receives the post-bump summary.
+    const preBumpRevision = 103;
+    const postBumpRevision = 104;
+
+    // Simulate what recordSessionActivity returns after bumping.
+    const postActivitySummary = { revision: postBumpRevision } as any;
+
+    await publishFinalResponseNotification({
+      sessionId: 'sess-1',
+      responseId: 'response-1',
+      text: 'Final answer',
+      summary: postActivitySummary,
+    });
+
+    const { notifications } = await getNotificationsStore().list();
+    expect(notifications[0]?.sessionActivitySeq).toBe(postBumpRevision);
+    expect(notifications[0]?.sessionActivitySeq).not.toBe(preBumpRevision);
+  });
+
   it('resolves sessionTitle from sessionHub when sessionIndex is omitted', async () => {
     const sessionHub = {
       broadcastToAll: vi.fn(),

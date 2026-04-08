@@ -775,19 +775,27 @@ export async function processUserMessage(
       if (ttsSessionForRun) {
         await ttsSessionForRun.finish();
       }
+      let notificationSummary = state.summary;
+      try {
+        const postActivitySummary = await sessionHub.recordSessionActivity(
+          sessionId,
+          visibleAssistant.text.length > 120
+            ? `${visibleAssistant.text.slice(0, 117)}…`
+            : visibleAssistant.text,
+        );
+        if (postActivitySummary) {
+          notificationSummary = postActivitySummary;
+        }
+      } catch {
+        // Session-activity persistence is best-effort; use pre-bump summary.
+      }
       void publishFinalResponseNotification({
         sessionId,
         responseId,
         text: visibleAssistant.text,
         sessionHub,
-        summary: state.summary,
+        summary: notificationSummary,
       });
-      void sessionHub.recordSessionActivity(
-        sessionId,
-        visibleAssistant.text.length > 120
-          ? `${visibleAssistant.text.slice(0, 117)}…`
-          : visibleAssistant.text,
-      );
       const assistantTimestampMs =
         (runResult.piSdkMessage &&
         runResult.piSdkMessage.role === 'assistant' &&
