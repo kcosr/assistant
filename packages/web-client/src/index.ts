@@ -942,6 +942,26 @@ async function main(): Promise<void> {
     }
     return fallback;
   };
+  const getOpenChatPanelEntryForSession = (
+    sessionId: string | null,
+    options: { excludePanelId?: string | null } = {},
+  ): ChatPanelEntry | null => {
+    const entries = getChatPanelEntriesForSession(sessionId).filter(
+      (entry) => entry.panelId !== options.excludePanelId,
+    );
+    if (entries.length === 0) {
+      return null;
+    }
+    const activePanelId =
+      (panelHostController?.getContext('panel.active') as { panelId?: string } | null)?.panelId ?? null;
+    if (activePanelId) {
+      const activeEntry = entries.find((entry) => entry.panelId === activePanelId);
+      if (activeEntry) {
+        return activeEntry;
+      }
+    }
+    return entries[0] ?? null;
+  };
   const setInputSessionId = (sessionId: string | null): void => {
     const nextSessionId = normalizeSessionId(sessionId);
     if (isSettingInputSession) {
@@ -1140,7 +1160,8 @@ async function main(): Promise<void> {
   }
 
   function getVoiceFabSpeechController() {
-    return resolveVoiceFabController({
+    const selectedSessionId = normalizeSessionId(inputSessionId);
+    const controller = resolveVoiceFabController({
       inputSessionId,
       getControllerForSession: (sessionId) =>
         getChatInputRuntimeForSession(sessionId)?.speechAudioController ?? null,
@@ -1148,6 +1169,14 @@ async function main(): Promise<void> {
       primaryController: getPrimaryChatInputRuntime()?.speechAudioController ?? null,
       nativeRuntimeState: nativeVoiceRuntimeState,
     });
+    if (!controller) {
+      return null;
+    }
+    return {
+      getVoiceFabState: () => controller.getVoiceFabStateForSession(selectedSessionId),
+      startVoiceFromFab: () => controller.startVoiceFromFabForSession(selectedSessionId),
+      stopVoiceFromFab: () => controller.stopVoiceFromFab(),
+    };
   }
 
   function getSelectedSessionTitle(): string | null {
@@ -1664,23 +1693,32 @@ async function main(): Promise<void> {
       if (!anchor) {
         return;
       }
-      const disabledSessionIds = new Set<string>();
+      const openSessionIds = new Set<string>();
       for (const candidate of chatPanelsById.values()) {
         if (candidate.panelId === panelId) {
           continue;
         }
         if (candidate.bindingSessionId) {
-          disabledSessionIds.add(candidate.bindingSessionId);
+          openSessionIds.add(candidate.bindingSessionId);
         }
       }
       openSessionPicker({
         anchor,
         title: 'Select session',
         allowUnbound: true,
-        ...(disabledSessionIds.size > 0 ? { disabledSessionIds } : {}),
+        ...(openSessionIds.size > 0 ? { openSessionIds } : {}),
         createSessionOptions: { openChatPanel: false, selectSession: false },
         onSelectSession: (sessionId) => {
           host.setBinding({ mode: 'fixed', sessionId });
+        },
+        onSelectOpenSession: (sessionId) => {
+          const existing = getOpenChatPanelEntryForSession(sessionId, { excludePanelId: panelId });
+          if (!existing) {
+            host.setBinding({ mode: 'fixed', sessionId });
+            return;
+          }
+          panelWorkspace?.activatePanel(existing.panelId);
+          void loadSessionTranscript(sessionId);
         },
         onSelectUnbound: () => {
           host.setBinding(null);

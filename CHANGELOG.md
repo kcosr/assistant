@@ -24,6 +24,8 @@
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Changed native Android voice controls so the floating mobile FAB now owns voice start/stop with a target-session title chip, while the chat-row control becomes a stop-only turn button.
 - Changed Android voice settings to add a separate `Play standalone notifications aloud` toggle for sessionless notification autoplay instead of tying that behavior to the main `Audio Mode` selector.
+- Changed chat-panel session pickers so sessions already open in another chat panel remain selectable and switch focus to the existing panel instead of being blocked.
+- Changed lists tool rendering in chat to show concise formatted requests and markdown-table results for list and list-item tools, while keeping the raw JSON toggle.
 
 ### Fixed
 
@@ -35,6 +37,7 @@
 - Fixed notification-card controls so compact rows now surface inline `Play` / `Speak` buttons, redundant `Latest` / TTS glyphs are removed, and manual `Speak` actions jump straight into recognition instead of replaying TTS first.
 - Fixed standalone Android notifications so sessionless tool/CLI/HTTP notifications can autoplay from their own voice setting and manual `Play` no longer rejects them just because they are not tied to a session.
 - Fixed singleton `session_attention` notifications to persist after user replies instead of auto-clearing immediately.
+- Fixed the floating Android voice FAB so it stays enabled on the sessions panel and continues targeting the selected session even when that session is not currently bound to the active panel.
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
 - Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))

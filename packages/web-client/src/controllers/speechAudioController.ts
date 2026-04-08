@@ -1357,10 +1357,17 @@ export class SpeechAudioController {
     enabled: boolean;
     mode: 'idle' | 'speaking' | 'listening';
   } {
+    return this.getVoiceFabStateForSession(this.options.getSessionId());
+  }
+
+  getVoiceFabStateForSession(sessionId: string | null): {
+    enabled: boolean;
+    mode: 'idle' | 'speaking' | 'listening';
+  } {
     if (!this.isUsingNativeVoiceRuntime()) {
       return { enabled: false, mode: 'idle' };
     }
-    const hasSession = Boolean(this.options.getSessionId());
+    const hasSession = Boolean(sessionId && sessionId.trim().length > 0);
     if (this.isNativeListening()) {
       return { enabled: true, mode: 'listening' };
     }
@@ -1375,17 +1382,24 @@ export class SpeechAudioController {
   }
 
   async startVoiceFromFab(): Promise<boolean> {
+    return this.startVoiceFromFabForSession(this.options.getSessionId());
+  }
+
+  async startVoiceFromFabForSession(sessionId: string | null): Promise<boolean> {
     if (!this.isUsingNativeVoiceRuntime()) {
       return false;
     }
-    const sessionId = this.options.getSessionId();
-    if (!sessionId) {
+    const normalizedSessionId = sessionId?.trim() ?? '';
+    if (!normalizedSessionId) {
       return false;
     }
     this.continuousListeningMode = false;
-    const started = this.options.nativeVoiceBridge?.startManualListen(sessionId) ?? false;
+    const started = this.options.nativeVoiceBridge?.startManualListen(normalizedSessionId) ?? false;
     if (!started) {
-      this.logState('fab-start-abort', { reason: 'native-start-unavailable', sessionId });
+      this.logState('fab-start-abort', {
+        reason: 'native-start-unavailable',
+        sessionId: normalizedSessionId,
+      });
     }
     return started;
   }

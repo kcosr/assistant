@@ -67,5 +67,5 @@ export function resolveVoiceFabController<T>(
     return input.activeController ?? input.primaryController ?? null;
   }
 
-  return selectedSessionId ? null : (input.primaryController ?? null);
+  return input.primaryController ?? input.activeController ?? null;
 }

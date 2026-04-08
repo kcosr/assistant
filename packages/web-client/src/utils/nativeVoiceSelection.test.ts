@@ -105,15 +105,18 @@ describe('resolveVoiceFabController', () => {
     ).toBe(primary);
   });
 
-  it('returns null when the selected session has no controller and native voice is idle', () => {
+  it('falls back to the primary controller when the selected session has no controller and native voice is idle', () => {
+    const active = { id: 'active' };
+    const primary = { id: 'primary' };
+
     expect(
       resolveVoiceFabController({
         inputSessionId: 'session-missing',
         getControllerForSession: () => null,
-        activeController: { id: 'active' },
-        primaryController: { id: 'primary' },
+        activeController: active,
+        primaryController: primary,
         nativeRuntimeState: 'idle',
       }),
-    ).toBeNull();
+    ).toBe(primary);
   });
 });

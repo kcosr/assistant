@@ -310,4 +310,34 @@ describe('SessionPickerController', () => {
 
     controller.close();
   });
+
+  it('keeps open sessions selectable and routes them through the open-session handler', () => {
+    const onSelectSession = vi.fn();
+    const onSelectOpenSession = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      openSessionIds: new Set(['s1']),
+      onSelectSession,
+      onSelectOpenSession,
+    });
+
+    const item = document.querySelector<HTMLDivElement>('.session-picker-item[data-session-id="s1"]');
+    expect(item?.classList.contains('disabled')).toBe(false);
+    expect(item?.textContent).toContain('(open)');
+
+    item?.click();
+
+    expect(onSelectOpenSession).toHaveBeenCalledWith('s1');
+    expect(onSelectSession).not.toHaveBeenCalled();
+  });
 });

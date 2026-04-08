@@ -4052,6 +4052,125 @@ describe('ChatRenderer', () => {
     expect(outputBody?.textContent).toContain('const value = 1;');
   });
 
+  it('renders list item tool input/output as formatted markdown tables with a JSON toggle', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-lists-items',
+          toolName: 'lists_items_list',
+          args: {
+            listId: 'today',
+            tags: ['home'],
+          },
+        },
+      }),
+    );
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-lists-items',
+          result: [
+            {
+              id: 'item-1',
+              listId: 'today',
+              position: 0,
+              title: 'Buy milk',
+              url: 'https://example.com/milk',
+              notes: 'Buy oat milk on the way home',
+              customFields: { priority: 'high' },
+              tags: ['errand'],
+            },
+          ],
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-lists-items"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    toolBlock.querySelector<HTMLButtonElement>('.tool-output-header')?.click();
+
+    const inputBody = toolBlock.querySelector<HTMLElement>('.tool-output-input-body');
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(inputBody?.textContent).toContain('List:');
+    expect(inputBody?.textContent).toContain('today');
+    expect(inputBody?.textContent).not.toContain('"listId"');
+    expect(outputBody?.querySelector('table')).not.toBeNull();
+    expect(outputBody?.textContent).toContain('Buy milk');
+    expect(outputBody?.textContent).toContain('https://example.com/milk');
+    expect(outputBody?.textContent).toContain('high');
+    expect(outputBody?.textContent).toContain('errand');
+
+    toolBlock.querySelector<HTMLButtonElement>('.tool-output-result .tool-output-json-toggle')?.click();
+    expect(outputBody?.textContent).toContain('"title"');
+    expect(outputBody?.textContent).toContain('"customFields"');
+  });
+
+  it('renders list definition tool results as concise tables instead of raw metadata', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const renderer = new ChatRenderer(container);
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_call', {
+        id: 'e1',
+        payload: {
+          toolCallId: 'tc-lists-get',
+          toolName: 'lists_get',
+          args: { id: 'shopping' },
+        },
+      }),
+    );
+
+    renderLegacyEvent(
+      renderer,
+      createBaseEvent('tool_result', {
+        id: 'e2',
+        payload: {
+          toolCallId: 'tc-lists-get',
+          result: {
+            id: 'shopping',
+            name: 'Shopping',
+            description: 'Household errands',
+            tags: ['home'],
+            favorite: true,
+            createdAt: '2026-04-08T00:00:00.000Z',
+            updatedAt: '2026-04-08T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+
+    const toolBlock = container.querySelector<HTMLDivElement>('[data-tool-call-id="tc-lists-get"]');
+    expect(toolBlock).not.toBeNull();
+    if (!toolBlock) return;
+
+    toolBlock.querySelector<HTMLButtonElement>('.tool-output-header')?.click();
+
+    const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
+    expect(outputBody?.querySelector('table')).not.toBeNull();
+    expect(outputBody?.textContent).toContain('Shopping');
+    expect(outputBody?.textContent).toContain('shopping');
+    expect(outputBody?.textContent).not.toContain('2026-04-08T00:00:00.000Z');
+
+    toolBlock.querySelector<HTMLButtonElement>('.tool-output-result .tool-output-json-toggle')?.click();
+    expect(outputBody?.textContent).toContain('"createdAt"');
+    expect(outputBody?.textContent).toContain('"updatedAt"');
+  });
+
   it('renders edit tool results as a diff instead of the success summary', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

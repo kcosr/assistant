@@ -28,9 +28,11 @@ export interface SessionPickerOpenOptions {
   title: string;
   autoFocusSearch?: boolean;
   disabledSessionIds?: Set<string>;
+  openSessionIds?: Set<string>;
   allowUnbound?: boolean;
   createSessionOptions?: CreateSessionOptions;
   onSelectSession: (sessionId: string) => void;
+  onSelectOpenSession?: (sessionId: string) => void;
   onSelectUnbound?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onClearSession?: (sessionId: string) => void;
@@ -102,6 +104,7 @@ export class SessionPickerController {
         .filter((entry) => entry[0] && entry[1]),
     );
     const disabled = options.disabledSessionIds ?? new Set<string>();
+    const openSessionIds = options.openSessionIds ?? new Set<string>();
 
     const getAgentLabel = (agentId?: string): string => {
       const trimmed = typeof agentId === 'string' ? agentId.trim() : '';
@@ -355,9 +358,13 @@ export class SessionPickerController {
         for (const session of filteredSessions) {
           const label = this.formatSessionLabel(session, agentSummaries);
           const isDisabled = disabled.has(session.sessionId);
+          const isOpen = openSessionIds.has(session.sessionId);
           addItem(
-            isDisabled ? `${label} (open)` : label,
-            () => options.onSelectSession(session.sessionId),
+            isOpen ? `${label} (open)` : label,
+            () =>
+              isOpen && options.onSelectOpenSession
+                ? options.onSelectOpenSession(session.sessionId)
+                : options.onSelectSession(session.sessionId),
             { disabled: isDisabled, sessionId: session.sessionId },
           );
         }

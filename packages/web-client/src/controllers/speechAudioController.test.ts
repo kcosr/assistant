@@ -1080,6 +1080,47 @@ describe('SpeechAudioController.nativeFabControl', () => {
     expect(controller.stopVoiceFromFab()).toBe(true);
     expect(stopCurrentInteraction).toHaveBeenCalledTimes(1);
   });
+
+  it('uses an explicit selected session for the floating button helpers', async () => {
+    const startManualListen = vi.fn();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => 'session-bound-panel',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'tool' }),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: new AssistantNativeVoiceBridge(() => ({
+        AssistantNativeVoice: {
+          startManualListen,
+        },
+      })),
+    });
+
+    controller.setAudioMode('tool');
+
+    await expect(controller.startVoiceFromFabForSession('session-selected')).resolves.toBe(true);
+    expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-selected' });
+    expect(controller.getVoiceFabStateForSession('session-selected')).toEqual({
+      enabled: true,
+      mode: 'idle',
+    });
+  });
 });
 
 describe('SpeechAudioController.longPress', () => {

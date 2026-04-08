@@ -321,6 +321,345 @@ function tryParseJsonRecord(rawJson: string | undefined): Record<string, unknown
   }
 }
 
+function tryParseJsonValue(rawJson: string | undefined): unknown {
+  if (!rawJson || rawJson.trim().length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(rawJson) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+const LIST_ITEM_QUERY_TOOL_NAMES = new Set([
+  'lists_items_list',
+  'lists_items_search',
+  'lists_items_aql',
+]);
+const LIST_ITEM_MUTATION_TOOL_NAMES = new Set(['lists_item_add', 'lists_item_update']);
+const LIST_DEFINITION_TOOL_NAMES = new Set([
+  'lists_list',
+  'lists_get',
+  'lists_create',
+  'lists_update',
+]);
+
+type ListsToolInputPreview = Pick<ToolInputPreview, 'headerLabel' | 'label' | 'formattedText' | 'renderMode'>;
+
+function isListItemLike(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value['title'] === 'string' &&
+    (typeof value['position'] === 'number' || typeof value['listId'] === 'string')
+  );
+}
+
+function isListDefinitionLike(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value['id'] === 'string' &&
+    typeof value['name'] === 'string'
+  );
+}
+
+function normalizeListsTableText(value: string, maxLength = 120): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function formatListsTableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return normalizeListsTableText(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => formatListsTableValue(entry))
+      .filter((entry) => entry.length > 0)
+      .join(', ');
+  }
+  if (isRecord(value)) {
+    return normalizeListsTableText(JSON.stringify(value));
+  }
+  return normalizeListsTableText(String(value));
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  if (!value) {
+    return '';
+  }
+  return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+}
+
+function buildMarkdownTable(headers: string[], rows: string[][]): string {
+  const headerRow = `| ${headers.map(escapeMarkdownTableCell).join(' | ')} |`;
+  const separatorRow = `| ${headers.map(() => '---').join(' | ')} |`;
+  const bodyRows = rows.map(
+    (row) => `| ${row.map((value) => escapeMarkdownTableCell(value)).join(' | ')} |`,
+  );
+  return [headerRow, separatorRow, ...bodyRows].join('\n');
+}
+
+function formatTags(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+  return value
+    .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+    .filter((tag) => tag.length > 0)
+    .join(', ');
+}
+
+function getListsToolInputPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+): ListsToolInputPreview | null {
+  if (
+    !LIST_ITEM_QUERY_TOOL_NAMES.has(toolName) &&
+    !LIST_ITEM_MUTATION_TOOL_NAMES.has(toolName) &&
+    !LIST_DEFINITION_TOOL_NAMES.has(toolName)
+  ) {
+    return null;
+  }
+
+  const lines: string[] = [];
+  const listId = typeof args['listId'] === 'string' ? args['listId'].trim() : '';
+  const id = typeof args['id'] === 'string' ? args['id'].trim() : '';
+  const name = typeof args['name'] === 'string' ? args['name'].trim() : '';
+  const title = typeof args['title'] === 'string' ? args['title'].trim() : '';
+  const lookupTitle = typeof args['lookupTitle'] === 'string' ? args['lookupTitle'].trim() : '';
+  const query = typeof args['query'] === 'string' ? args['query'].trim() : '';
+  const tags = formatTags(args['tags']);
+  const url = typeof args['url'] === 'string' ? args['url'].trim() : '';
+  const notes = typeof args['notes'] === 'string' ? args['notes'].trim() : '';
+  const position = typeof args['position'] === 'number' ? String(args['position']) : '';
+
+  if (listId) {
+    lines.push(`- List: \`${listId}\``);
+  } else if (id && (toolName === 'lists_get' || toolName === 'lists_update')) {
+    lines.push(`- List: \`${id}\``);
+  }
+  if (name && (toolName === 'lists_create' || toolName === 'lists_update')) {
+    lines.push(`- Name: ${name}`);
+  }
+  if (title) {
+    lines.push(`- Title: ${title}`);
+  } else if (lookupTitle) {
+    lines.push(`- Item: ${lookupTitle}`);
+  }
+  if (query) {
+    lines.push(`- Query: ${query}`);
+  }
+  if (position) {
+    lines.push(`- Position: ${position}`);
+  }
+  if (url) {
+    lines.push(`- URL: ${url}`);
+  }
+  if (notes) {
+    lines.push(`- Notes: ${normalizeListsTableText(notes)}`);
+  }
+  if (tags) {
+    lines.push(`- Tags: ${tags}`);
+  }
+
+  const customFields = args['customFields'];
+  if (isRecord(customFields)) {
+    for (const [key, value] of Object.entries(customFields)) {
+      const formattedValue = formatListsTableValue(value);
+      if (!formattedValue) {
+        continue;
+      }
+      lines.push(`- ${key}: ${formattedValue}`);
+    }
+  }
+
+  const fallbackHeaderLabel = title || name || listId || id || query || lookupTitle;
+  if (lines.length === 0) {
+    return null;
+  }
+
+  return {
+    headerLabel: fallbackHeaderLabel,
+    label: 'Request',
+    formattedText: lines.join('\n'),
+    renderMode: 'markdown',
+  };
+}
+
+function formatListsItemRows(items: Record<string, unknown>[]): string {
+  const includeUrl = items.some((item) => typeof item['url'] === 'string' && item['url'].trim().length > 0);
+  const includeNotes = items.some(
+    (item) => typeof item['notes'] === 'string' && item['notes'].trim().length > 0,
+  );
+  const customFieldOrder: string[] = [];
+  const customFieldSeen = new Set<string>();
+  for (const item of items) {
+    const customFields = item['customFields'];
+    if (!isRecord(customFields)) {
+      continue;
+    }
+    for (const [key, value] of Object.entries(customFields)) {
+      if (customFieldSeen.has(key) || formatListsTableValue(value).length === 0) {
+        continue;
+      }
+      customFieldSeen.add(key);
+      customFieldOrder.push(key);
+    }
+  }
+  const includeTags = items.some((item) => formatTags(item['tags']).length > 0);
+
+  const headers = ['Position', 'Title'];
+  if (includeUrl) {
+    headers.push('URL');
+  }
+  if (includeNotes) {
+    headers.push('Notes');
+  }
+  for (const key of customFieldOrder) {
+    headers.push(key);
+  }
+  if (includeTags) {
+    headers.push('Tags');
+  }
+
+  const rows = items.map((item) => {
+    const row = [
+      typeof item['position'] === 'number' ? String(item['position']) : '',
+      typeof item['title'] === 'string' ? item['title'].trim() : '',
+    ];
+    if (includeUrl) {
+      row.push(typeof item['url'] === 'string' ? item['url'].trim() : '');
+    }
+    if (includeNotes) {
+      row.push(typeof item['notes'] === 'string' ? normalizeListsTableText(item['notes']) : '');
+    }
+    const customFields = isRecord(item['customFields']) ? item['customFields'] : null;
+    for (const key of customFieldOrder) {
+      row.push(customFields ? formatListsTableValue(customFields[key]) : '');
+    }
+    if (includeTags) {
+      row.push(formatTags(item['tags']));
+    }
+    return row;
+  });
+
+  return buildMarkdownTable(headers, rows);
+}
+
+function formatListsDefinitionRows(lists: Record<string, unknown>[]): string {
+  const includeDescription = lists.some(
+    (list) => typeof list['description'] === 'string' && list['description'].trim().length > 0,
+  );
+  const includeDefaultTags = lists.some((list) => formatTags(list['defaultTags']).length > 0);
+  const includeTags = lists.some((list) => formatTags(list['tags']).length > 0);
+  const includeFavorite = lists.some((list) => list['favorite'] === true);
+
+  const headers = ['Name', 'ID'];
+  if (includeDescription) {
+    headers.push('Description');
+  }
+  if (includeDefaultTags) {
+    headers.push('Default tags');
+  }
+  if (includeTags) {
+    headers.push('Tags');
+  }
+  if (includeFavorite) {
+    headers.push('Favorite');
+  }
+
+  const rows = lists.map((list) => {
+    const row = [
+      typeof list['name'] === 'string' ? list['name'].trim() : '',
+      typeof list['id'] === 'string' ? list['id'].trim() : '',
+    ];
+    if (includeDescription) {
+      row.push(
+        typeof list['description'] === 'string'
+          ? normalizeListsTableText(list['description'])
+          : '',
+      );
+    }
+    if (includeDefaultTags) {
+      row.push(formatTags(list['defaultTags']));
+    }
+    if (includeTags) {
+      row.push(formatTags(list['tags']));
+    }
+    if (includeFavorite) {
+      row.push(list['favorite'] === true ? 'Yes' : '');
+    }
+    return row;
+  });
+
+  return buildMarkdownTable(headers, rows);
+}
+
+function getListsToolResultPreview(toolName: string, rawValue: unknown): ToolResultPreview | null {
+  if (LIST_ITEM_QUERY_TOOL_NAMES.has(toolName)) {
+    if (!Array.isArray(rawValue)) {
+      return null;
+    }
+    const items = rawValue.filter(isListItemLike);
+    if (items.length === 0) {
+      return null;
+    }
+    return {
+      formattedText: formatListsItemRows(items),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (LIST_ITEM_MUTATION_TOOL_NAMES.has(toolName)) {
+    if (!isListItemLike(rawValue)) {
+      return null;
+    }
+    return {
+      formattedText: formatListsItemRows([rawValue]),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (toolName === 'lists_get' || toolName === 'lists_create' || toolName === 'lists_update') {
+    if (!isListDefinitionLike(rawValue)) {
+      return null;
+    }
+    return {
+      formattedText: formatListsDefinitionRows([rawValue]),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (toolName === 'lists_list') {
+    if (!Array.isArray(rawValue)) {
+      return null;
+    }
+    const lists = rawValue.filter(isListDefinitionLike);
+    if (lists.length === 0) {
+      return null;
+    }
+    return {
+      formattedText: formatListsDefinitionRows(lists),
+      renderMode: 'markdown',
+    };
+  }
+
+  return null;
+}
+
 function getToolInputPreview(toolName: string, argsJson: string): ToolInputPreview {
   const parsed = tryParseToolArgs(argsJson);
   if (!parsed) {
@@ -335,6 +674,15 @@ function getToolInputPreview(toolName: string, argsJson: string): ToolInputPrevi
   const { args, complete } = parsed;
   const rawJson = complete ? JSON.stringify(args) : undefined;
   const prettyJson = complete ? JSON.stringify(args, null, 2) : undefined;
+
+  const listsPreview = getListsToolInputPreview(toolName, args);
+  if (listsPreview) {
+    return {
+      ...listsPreview,
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
 
   if (toolName === 'agents_message' && typeof args['content'] === 'string') {
     return {
@@ -500,6 +848,14 @@ function getToolResultPreview(options: {
       formattedText: outputText,
       renderMode: 'raw',
     };
+  }
+
+  const listsResultPreview = getListsToolResultPreview(
+    toolName,
+    tryParseJsonValue(outputStatus?.rawJson) ?? tryParseJsonValue(outputText),
+  );
+  if (listsResultPreview) {
+    return listsResultPreview;
   }
 
   return null;
@@ -1010,7 +1366,12 @@ function renderToolOutputResult(state: ToolOutputBlockState): void {
         toggleBtn,
         () => {
           outputBody.innerHTML = '';
-          if (isMarkdownResult || agentCallback || isAgentMessage) {
+          if (
+            isMarkdownResult ||
+            agentCallback ||
+            isAgentMessage ||
+            resultPreview?.renderMode === 'markdown'
+          ) {
             outputBody.classList.add('markdown-content');
           }
           applyMarkdownToElement(outputBody, formattedMarkdown);
