@@ -76,6 +76,41 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('highlights the selected bound session and avoids search autofocus', async () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [
+        { sessionId: 's1', name: 'Session 1' },
+        { sessionId: 's2', name: 'Session 2' },
+      ],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    anchor.textContent = 'open';
+    document.body.appendChild(anchor);
+    anchor.focus();
+
+    controller.open({
+      anchor,
+      title: 'Select session',
+      selectedSessionId: 's2',
+      autoFocusSearch: false,
+      onSelectSession: () => undefined,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const selectedItem = document.querySelector<HTMLElement>(
+      '.session-picker-item[data-session-id="s2"]',
+    );
+    expect(selectedItem?.classList.contains('selected')).toBe(true);
+    expect(selectedItem?.classList.contains('focused')).toBe(true);
+    expect(document.activeElement).toBe(anchor);
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({

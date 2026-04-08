@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.util.Base64;
 import android.util.Log;
 import android.view.KeyEvent;
 
@@ -99,6 +100,9 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long RECOGNITION_CUE_POST_ARMING_DELAY_MS = 120L;
     private static final long RECOGNITION_CUE_POST_STOP_DELAY_MS = 320L;
     private static final long RECOGNITION_FAILURE_RETRY_FALLBACK_DELAY_MS = 1400L;
+    private static final long RECOGNITION_SUBMIT_TIMEOUT_MS = 15000L;
+    private static final long PLAYBACK_DRAIN_TIMEOUT_MS = 2500L;
+    private static final long PLAYBACK_DRAIN_TIMEOUT_MARGIN_MS = 1200L;
     private static final int MAX_PENDING_QUEUE_ITEMS = 25;
     private static final int DURABLE_NOTIFICATION_ID_OFFSET = 24000;
     private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
@@ -108,6 +112,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             | PlaybackState.ACTION_STOP;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final String RECOGNITION_ARMING_CUE_REQUEST_PREFIX = "__recognition_arming__:";
+    private static final String RECOGNITION_COMPLETION_CUE_REQUEST_PREFIX =
+        "__recognition_completion__:";
     private static final String RECOGNITION_FAILURE_RETRY_CUE_REQUEST_PREFIX =
         "__recognition_failure_retry__:";
 
@@ -147,14 +153,21 @@ public final class AssistantVoiceRuntimeService extends Service {
     private String activeTtsRequestId = "";
     private String pendingPlaybackDrainRequestId = "";
     private boolean pendingPlaybackDrainStartsListening = false;
+    private String pendingPlaybackDrainTimeoutRequestId = "";
+    private int activeTtsTextLength = 0;
+    private int activeTtsAudioChunkCount = 0;
+    private int activeTtsAudioBytes = 0;
+    private int activeTtsSampleRate = 0;
     private String pendingManualPreemptStopRequestId = "";
     private AssistantVoiceQueueItem pendingManualPreemptQueueItem = null;
     private String activeSttRequestId = "";
     private String pendingRecognitionArmingCueRequestId = "";
     private String adapterStoppedSttRequestId = "";
     private String pendingRecognitionCompletionCueRequestId = "";
+    private String pendingRecognitionCompletionCuePlaybackRequestId = "";
     private String pendingRecognitionCompletionPlaybackRequestId = "";
     private String pendingRecognitionFailureRetrySessionId = "";
+    private String pendingRecognitionSubmitSessionId = "";
     private String stoppedRecognitionRequestId = "";
     private boolean pendingRecognitionCompletionCueSuccess = false;
     private boolean recognitionReadyCuePlayed = false;
@@ -162,6 +175,9 @@ public final class AssistantVoiceRuntimeService extends Service {
     private boolean watchedSessionRefreshInFlight = false;
     private boolean watchedSessionRefreshPending = false;
     private boolean destroyed = false;
+    private final Runnable clearPendingRecognitionSubmitRunnable = () ->
+        clearPendingRecognitionSubmit("timeout", true);
+    private final Runnable playbackDrainTimeoutRunnable = this::handlePlaybackDrainTimeout;
 
     public static Intent applyConfigIntent(Context context, AssistantVoiceConfig config) {
         Intent intent = new Intent(context, AssistantVoiceRuntimeService.class);
@@ -279,7 +295,6 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         if (ACTION_STOP_CURRENT_INTERACTION.equals(action)) {
             recordVoiceEvent("service_action_stop_current_interaction", null);
-            clearQueuedVoiceItems();
             stopCurrentInteraction(isPromptPlaybackActive(), "manual_stop");
             return START_STICKY;
         }
@@ -365,11 +380,14 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         boolean preferredSessionChanged =
             !previous.preferredVoiceSessionId.equals(updated.preferredVoiceSessionId);
+        boolean selectedSessionChanged =
+            !previous.selectedSessionId.equals(updated.selectedSessionId);
         boolean audioModeChanged = !previous.audioMode.equals(updated.audioMode);
         boolean adapterUrlChanged = !previous.voiceAdapterBaseUrl.equals(updated.voiceAdapterBaseUrl);
         boolean assistantUrlChanged = !previous.assistantBaseUrl.equals(updated.assistantBaseUrl);
 
         if (!updated.isEnabled()) {
+            clearQueuedVoiceItems();
             stopCurrentInteraction(false, "voice_mode_disabled");
             disconnectAdapterSocket();
             disconnectAssistantSocket();
@@ -380,6 +398,22 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         startInForeground();
         syncMediaSession();
+
+        if (shouldRetargetActiveManualRecognition(
+            previous.selectedSessionId,
+            updated.selectedSessionId,
+            activeSttRequestId,
+            activePromptToolName
+        )) {
+            activeVoiceSessionId = trim(updated.selectedSessionId);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "previousSelectedSessionId", safe(previous.selectedSessionId));
+            AssistantVoiceEventLog.put(details, "updatedSelectedSessionId", safe(updated.selectedSessionId));
+            AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+            recordVoiceEvent("manual_listen_retarget", details);
+            AssistantVoiceConfig.saveRuntimeSnapshot(this, runtimeState, null, activeVoiceSessionId);
+            refreshNotification();
+        }
 
         if (adapterUrlChanged || assistantUrlChanged) {
             stopCurrentInteraction(false, "config_changed");
@@ -405,6 +439,8 @@ public final class AssistantVoiceRuntimeService extends Service {
             connectAssistantSocketIfNeeded();
             refreshWatchedSessionsAsync();
         } else if (preferredSessionChanged) {
+            refreshNotification();
+        } else if (selectedSessionChanged && hasActiveInteraction()) {
             refreshNotification();
         } else if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
@@ -522,6 +558,12 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static boolean shouldToggleMediaButtonToStop(String state, boolean hasActiveInteraction) {
         return shouldStopForMediaButtonToggle(state, hasActiveInteraction);
+    }
+
+    static boolean shouldDrainQueueAfterStop(String reason) {
+        String normalizedReason = trim(reason);
+        return !"manual_notification_preempt".equals(normalizedReason)
+            && !"voice_mode_disabled".equals(normalizedReason);
     }
 
     private static String describeKeyEvent(KeyEvent event) {
@@ -827,13 +869,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private String resolveNotificationSessionTitle() {
         if (hasActiveInteraction()) {
-            return config.getSessionTitle(
-                resolveRecognitionSubmitSessionId(
-                    activeVoiceSessionId,
-                    activePromptToolName,
-                    config.selectedSessionId
-                )
-            );
+            return config.getSessionTitle(activeVoiceSessionId);
         }
         String preferredTitle = config.getSessionTitle(config.preferredVoiceSessionId);
         if (!preferredTitle.isEmpty()) {
@@ -1235,7 +1271,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         AssistantVoiceQueueItem item =
-            AssistantVoiceQueueItem.fromPrompt(prompt, config.autoListenEnabled);
+            AssistantVoiceQueueItem.fromPrompt(
+                prompt,
+                config.autoListenEnabled,
+                config.notificationTitlePlaybackEnabled,
+                config.getSessionTitle(prompt.sessionId)
+            );
         if (item == null) {
             Log.d(TAG, "handlePromptEvent skipped prompt with no queue item");
             return;
@@ -1321,7 +1362,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!notification.sessionTitle.isEmpty() && !displayTitle.equals(notification.sessionTitle)) {
             builder.setSubText(notification.sessionTitle);
         }
-        if (!notification.resolveSpokenText(config.notificationTitlePlaybackEnabled).isEmpty()) {
+        if (!resolveNotificationSpokenText(notification).isEmpty()) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
                 getString(R.string.assistant_voice_notification_action_play),
@@ -1361,6 +1402,32 @@ public final class AssistantVoiceRuntimeService extends Service {
         return notification.title;
     }
 
+    private String resolveNotificationSpokenTitle(AssistantVoiceNotificationRecord notification) {
+        if (notification == null) {
+            return "";
+        }
+        if (notification.isSessionLinked()) {
+            if (!notification.sessionTitle.isEmpty()) {
+                return notification.sessionTitle;
+            }
+            String configTitle = config.getSessionTitle(notification.sessionId);
+            if (!configTitle.isEmpty()) {
+                return configTitle;
+            }
+        }
+        return notification.title;
+    }
+
+    private String resolveNotificationSpokenText(AssistantVoiceNotificationRecord notification) {
+        if (notification == null) {
+            return "";
+        }
+        return notification.resolveSpokenText(
+            config.notificationTitlePlaybackEnabled,
+            resolveNotificationSpokenTitle(notification)
+        );
+    }
+
     private void cancelDurableNotification(String notificationId) {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) {
@@ -1386,7 +1453,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(
             config.autoListenEnabled,
-            config.notificationTitlePlaybackEnabled
+            config.notificationTitlePlaybackEnabled,
+            resolveNotificationSpokenTitle(notification)
         );
         if (item == null) {
             return;
@@ -1675,16 +1743,22 @@ public final class AssistantVoiceRuntimeService extends Service {
             }
             if ("media_tts_audio_chunk".equals(type)) {
                 String requestId = trim(message.optString("requestId"));
+                String chunkBase64 = message.optString("chunkBase64");
+                int decodedBytes = estimateBase64DecodedBytes(chunkBase64);
                 Log.d(
                     TAG,
                     "adapter media_tts_audio_chunk requestId=" + requestId
                         + " active=" + activeTtsRequestId
-                        + " chunkLength=" + trim(message.optString("chunkBase64")).length()
+                        + " chunkLength=" + trim(chunkBase64).length()
+                        + " decodedBytes=" + decodedBytes
                 );
                 if (requestId.equals(activeTtsRequestId)) {
+                    activeTtsSampleRate = Math.max(0, message.optInt("sampleRate", 0));
+                    activeTtsAudioChunkCount += 1;
+                    activeTtsAudioBytes += decodedBytes;
                     player.enqueueChunk(
                         requestId,
-                        message.optString("chunkBase64"),
+                        chunkBase64,
                         message.optInt("sampleRate", 24000)
                     );
                 }
@@ -1753,6 +1827,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "status", safe(status));
         AssistantVoiceEventLog.put(details, "error", safe(error));
         AssistantVoiceEventLog.put(details, "startsListening", startsListening);
+        AssistantVoiceEventLog.put(details, "textLength", activeTtsTextLength);
+        AssistantVoiceEventLog.put(details, "sampleRate", activeTtsSampleRate);
+        AssistantVoiceEventLog.put(details, "audioChunkCount", activeTtsAudioChunkCount);
+        AssistantVoiceEventLog.put(details, "audioBytes", activeTtsAudioBytes);
         recordVoiceEvent("tts_end", details);
         if (matchesManualPreemptStop && !matchesActiveRequest) {
             pendingManualPreemptStopRequestId = "";
@@ -1764,11 +1842,17 @@ public final class AssistantVoiceRuntimeService extends Service {
         if ("completed".equals(status)) {
             pendingPlaybackDrainRequestId = requestId;
             pendingPlaybackDrainStartsListening = startsListening;
+            schedulePlaybackDrainTimeout(
+                requestId,
+                activeTtsAudioBytes,
+                activeTtsSampleRate
+            );
             player.finishStream(requestId);
             return;
         }
 
         player.stop();
+        clearPlaybackDrainTimeout(requestId);
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         clearActivePromptContext();
@@ -1784,6 +1868,15 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void handlePlaybackDrained(String requestId) {
+        clearPlaybackDrainTimeout(requestId);
+        String completionCueRequestId = extractRecognitionCompletionCueRequestId(requestId);
+        if (!completionCueRequestId.isEmpty()) {
+            if (!requestId.equals(trim(pendingRecognitionCompletionCuePlaybackRequestId))) {
+                return;
+            }
+            handleRecognitionCompletionCueFinished(requestId, "");
+            return;
+        }
         String failureRetrySessionId = extractRecognitionFailureRetrySessionId(requestId);
         if (!failureRetrySessionId.isEmpty()) {
             if (!failureRetrySessionId.equals(trim(pendingRecognitionFailureRetrySessionId))) {
@@ -1853,11 +1946,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
-        String sessionId = resolveRecognitionSubmitSessionId(
-            activeVoiceSessionId,
-            activePromptToolName,
-            config.selectedSessionId
-        );
+        String sessionId = resolveRecognitionSubmitSessionId(activeVoiceSessionId);
         boolean success = message.optBoolean("success", false);
         boolean canceled = message.optBoolean("canceled", false);
         String text = trim(message.optString("text"));
@@ -1920,6 +2009,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         recordVoiceEvent("stt_result", details);
 
         clearActivePromptContext();
+        if (shouldBlockQueueDuringRecognitionSubmit(config.audioMode, sessionId, positiveCue)) {
+            beginPendingRecognitionSubmit(sessionId);
+        }
         finishActiveQueueItem(true);
         if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
@@ -1995,11 +2087,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         JSONObject details = AssistantVoiceEventLog.details();
         AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
         AssistantVoiceEventLog.put(details, "queueItem", describeQueueItem(item));
+        AssistantVoiceEventLog.put(details, "textLength", trim(item.spokenText).length());
         recordVoiceEvent("tts_begin", details);
         activeQueueItem = item;
         activeVoiceSessionId = item.sessionId;
         activePromptToolName = item.executionMode;
         activeTtsRequestId = requestId;
+        activeTtsTextLength = trim(item.spokenText).length();
+        activeTtsAudioChunkCount = 0;
+        activeTtsAudioBytes = 0;
+        activeTtsSampleRate = 0;
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
         player.startStream(requestId);
@@ -2030,7 +2127,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     clearActivePromptContext();
                     finishActiveQueueItem(true);
                     player.stop();
-                    updateState(resolveInactiveState(), null);
+                    updateStateIfNoActiveInteraction();
                     clearPendingManualPreemptState("tts_request_failure");
                     emitRuntimeError("Voice playback request failed");
                 });
@@ -2068,6 +2165,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         activeTtsRequestId = "";
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
+        clearPlaybackDrainTimeout("");
         pendingRecognitionArmingCueRequestId = "";
         player.stop();
 
@@ -2115,8 +2213,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
 
         clearActivePromptContext();
-        boolean shouldDrainQueue =
-            !"manual_stop".equals(reason) && !"manual_notification_preempt".equals(reason);
+        boolean shouldDrainQueue = shouldDrainQueueAfterStop(reason);
         finishActiveQueueItem(shouldDrainQueue);
         if (!hasActiveInteraction()) {
             updateState(resolveInactiveState(), null);
@@ -2489,6 +2586,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 body.put("durationMs", durationMs);
                 postJson(AssistantVoiceUrlUtils.assistantSessionMessageUrl(config.assistantBaseUrl), body);
                 recordVoiceEvent("recognition_submit_sent", details);
+                mainHandler.post(() -> clearPendingRecognitionSubmit("submit_sent", true));
             } catch (Exception error) {
                 Log.w(TAG, "submitRecognizedSpeech failed", error);
                 JSONObject errorDetails = AssistantVoiceEventLog.details();
@@ -2497,22 +2595,35 @@ public final class AssistantVoiceRuntimeService extends Service {
                 AssistantVoiceEventLog.put(errorDetails, "durationMs", durationMs);
                 AssistantVoiceEventLog.put(errorDetails, "error", safe(error.getMessage()));
                 recordVoiceEvent("recognition_submit_failed", errorDetails);
-                mainHandler.post(() -> emitRuntimeError("Failed to submit recognized speech"));
+                mainHandler.post(() -> {
+                    clearPendingRecognitionSubmit("submit_failed", true);
+                    emitRuntimeError("Failed to submit recognized speech");
+                });
             }
         });
     }
 
-    static String resolveRecognitionSubmitSessionId(
-        String activeSessionId,
-        String promptToolName,
-        String selectedSessionId
+    static String resolveRecognitionSubmitSessionId(String activeSessionId) {
+        return trim(activeSessionId);
+    }
+
+    static boolean shouldRetargetActiveManualRecognition(
+        String previousSelectedSessionId,
+        String updatedSelectedSessionId,
+        String activeSttRequestId,
+        String activePromptToolName
     ) {
-        String normalizedActiveSessionId = trim(activeSessionId);
-        String normalizedSelectedSessionId = trim(selectedSessionId);
-        if ("voice_manual".equals(trim(promptToolName)) && !normalizedSelectedSessionId.isEmpty()) {
-            return normalizedSelectedSessionId;
+        if (trim(activeSttRequestId).isEmpty()) {
+            return false;
         }
-        return normalizedActiveSessionId;
+        if (!"voice_manual".equals(trim(activePromptToolName))) {
+            return false;
+        }
+        String normalizedUpdatedSelectedSessionId = trim(updatedSelectedSessionId);
+        if (normalizedUpdatedSelectedSessionId.isEmpty()) {
+            return false;
+        }
+        return !normalizedUpdatedSelectedSessionId.equals(trim(previousSelectedSessionId));
     }
 
     private void finishActiveQueueItem(boolean drainQueue) {
@@ -2531,7 +2642,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             recordVoiceEvent("queued_recognition_missing_item", details);
             clearActivePromptContext();
             finishActiveQueueItem(true);
-            updateState(resolveInactiveState(), null);
+            updateStateIfNoActiveInteraction();
             return;
         }
         if (!queueItem.requiresListenValidation()) {
@@ -2573,7 +2684,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     recordVoiceEvent("queued_recognition_validation_stale", resultDetails);
                     clearActivePromptContext();
                     finishActiveQueueItem(true);
-                    updateState(resolveInactiveState(), null);
+                    updateStateIfNoActiveInteraction();
                     return;
                 }
                 recordVoiceEvent("queued_recognition_validation_passed", resultDetails);
@@ -2644,7 +2755,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         recordVoiceEvent("manual_notification_action", details);
         AssistantVoiceQueueItem item = microphoneAction
             ? notification.toManualMicQueueItem(config.autoListenEnabled)
-            : notification.toManualSpeakerQueueItem(config.notificationTitlePlaybackEnabled);
+            : notification.toManualSpeakerQueueItem(
+                config.notificationTitlePlaybackEnabled,
+                resolveNotificationSpokenTitle(notification)
+            );
         if (item == null) {
             if (microphoneAction) {
                 Log.d(TAG, "handleManualNotificationAction falling back to manual listen sessionId=" + notification.sessionId);
@@ -2762,6 +2876,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         return !activeTtsRequestId.isEmpty() || !activeSttRequestId.isEmpty();
     }
 
+    static boolean shouldUpdateStateAfterQueueAdvance(boolean hasActiveInteraction) {
+        return !hasActiveInteraction;
+    }
+
+    private void updateStateIfNoActiveInteraction() {
+        if (shouldUpdateStateAfterQueueAdvance(hasActiveInteraction())) {
+            updateState(resolveInactiveState(), null);
+        }
+    }
+
     private String resolveInactiveState() {
         if (!config.isEnabled()) {
             return STATE_DISABLED;
@@ -2816,7 +2940,8 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceConfig.saveRuntimeSnapshot(
             this,
             normalizedState,
-            normalizedError.isEmpty() ? null : normalizedError
+            normalizedError.isEmpty() ? null : normalizedError,
+            activeVoiceSessionId
         );
         refreshNotification();
         Intent stateIntent = new Intent(BROADCAST_STATE_CHANGED);
@@ -2836,7 +2961,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         Log.w(TAG, "emitRuntimeError message=" + safe(message));
-        AssistantVoiceConfig.saveRuntimeSnapshot(this, runtimeState, message);
+        AssistantVoiceConfig.saveRuntimeSnapshot(this, runtimeState, message, activeVoiceSessionId);
         Intent errorIntent = new Intent(BROADCAST_RUNTIME_ERROR);
         errorIntent.setPackage(getPackageName());
         errorIntent.putExtra(EXTRA_MESSAGE, message);
@@ -2923,6 +3048,7 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private void resetRecognitionCueState() {
         pendingRecognitionCompletionCueRequestId = "";
+        pendingRecognitionCompletionCuePlaybackRequestId = "";
         pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
         pendingRecognitionArmingCueRequestId = "";
@@ -2941,7 +3067,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         boolean success,
         String playbackRequestId
     ) {
-        pendingRecognitionCompletionCueRequestId = trim(requestId);
+        String normalizedRequestId = trim(requestId);
+        pendingRecognitionCompletionCueRequestId = normalizedRequestId;
+        pendingRecognitionCompletionCuePlaybackRequestId =
+            buildRecognitionCompletionCueRequestId(normalizedRequestId);
         pendingRecognitionCompletionPlaybackRequestId = trim(playbackRequestId);
         pendingRecognitionCompletionCueSuccess = success;
     }
@@ -2951,11 +3080,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         boolean success = pendingRecognitionCompletionCueSuccess;
+        String cuePlaybackRequestId = pendingRecognitionCompletionCuePlaybackRequestId;
         String playbackRequestId = pendingRecognitionCompletionPlaybackRequestId;
         pendingRecognitionCompletionCueRequestId = "";
-        pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
-        playRecognitionCompletionCueIfNeeded(success, playbackRequestId);
+        playRecognitionCompletionCueIfNeeded(success, cuePlaybackRequestId, playbackRequestId);
     }
 
     private boolean scheduleQueuedRecognitionCompletionCueIfNeeded(String requestId) {
@@ -2963,12 +3092,16 @@ public final class AssistantVoiceRuntimeService extends Service {
             return false;
         }
         boolean success = pendingRecognitionCompletionCueSuccess;
+        String cuePlaybackRequestId = pendingRecognitionCompletionCuePlaybackRequestId;
         String playbackRequestId = pendingRecognitionCompletionPlaybackRequestId;
         pendingRecognitionCompletionCueRequestId = "";
-        pendingRecognitionCompletionPlaybackRequestId = "";
         pendingRecognitionCompletionCueSuccess = false;
         mainHandler.postDelayed(
-            () -> playRecognitionCompletionCueIfNeeded(success, playbackRequestId),
+            () -> playRecognitionCompletionCueIfNeeded(
+                success,
+                cuePlaybackRequestId,
+                playbackRequestId
+            ),
             RECOGNITION_CUE_POST_STOP_DELAY_MS
         );
         return true;
@@ -2987,23 +3120,53 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private void playRecognitionCompletionCueIfNeeded(boolean success) {
-        playRecognitionCompletionCueIfNeeded(success, "");
+        playRecognitionCompletionCueIfNeeded(success, "", "");
     }
 
     private void playRecognitionCompletionCueIfNeeded(boolean success, String playbackRequestId) {
+        playRecognitionCompletionCueIfNeeded(success, "", playbackRequestId);
+    }
+
+    private void playRecognitionCompletionCueIfNeeded(
+        boolean success,
+        String cuePlaybackRequestId,
+        String playbackRequestId
+    ) {
         if (!config.recognitionCueEnabled || recognitionCompletionCuePlayed) {
-            triggerRecognitionFailureRetryIfNeeded(playbackRequestId, false);
+            handleRecognitionCompletionCueFinished(cuePlaybackRequestId, playbackRequestId);
             return;
         }
         recognitionCompletionCuePlayed = true;
         playRecognitionCueWithRetry(
-            playbackRequestId,
+            cuePlaybackRequestId,
             success
                 ? AssistantVoicePcmPlayer.RecognitionCueType.SUCCESS_COMPLETION
                 : AssistantVoicePcmPlayer.RecognitionCueType.FAILURE_COMPLETION,
             0
         );
-        triggerRecognitionFailureRetryIfNeeded(playbackRequestId, true);
+    }
+
+    private void handleRecognitionCompletionCueFinished(
+        String cuePlaybackRequestId,
+        String playbackRequestId
+    ) {
+        String normalizedCuePlaybackRequestId = trim(cuePlaybackRequestId);
+        if (!normalizedCuePlaybackRequestId.isEmpty()
+            && normalizedCuePlaybackRequestId.equals(
+                trim(pendingRecognitionCompletionCuePlaybackRequestId)
+            )) {
+            pendingRecognitionCompletionCuePlaybackRequestId = "";
+        }
+        String followupPlaybackRequestId = trim(playbackRequestId);
+        if (followupPlaybackRequestId.isEmpty()) {
+            followupPlaybackRequestId = trim(pendingRecognitionCompletionPlaybackRequestId);
+        }
+        pendingRecognitionCompletionPlaybackRequestId = "";
+        if (!followupPlaybackRequestId.isEmpty()) {
+            triggerRecognitionFailureRetryIfNeeded(followupPlaybackRequestId, false);
+            return;
+        }
+        drainVoiceQueueIfPossible();
     }
 
     private void triggerRecognitionFailureRetryIfNeeded(
@@ -3070,12 +3233,27 @@ public final class AssistantVoiceRuntimeService extends Service {
         return normalized.isEmpty() ? "" : RECOGNITION_ARMING_CUE_REQUEST_PREFIX + normalized;
     }
 
+    static String buildRecognitionCompletionCueRequestId(String requestId) {
+        String normalized = trim(requestId);
+        return normalized.isEmpty()
+            ? ""
+            : RECOGNITION_COMPLETION_CUE_REQUEST_PREFIX + normalized;
+    }
+
     static String extractRecognitionArmingCueRequestId(String playbackRequestId) {
         String normalized = trim(playbackRequestId);
         if (!normalized.startsWith(RECOGNITION_ARMING_CUE_REQUEST_PREFIX)) {
             return "";
         }
         return trim(normalized.substring(RECOGNITION_ARMING_CUE_REQUEST_PREFIX.length()));
+    }
+
+    static String extractRecognitionCompletionCueRequestId(String playbackRequestId) {
+        String normalized = trim(playbackRequestId);
+        if (!normalized.startsWith(RECOGNITION_COMPLETION_CUE_REQUEST_PREFIX)) {
+            return "";
+        }
+        return trim(normalized.substring(RECOGNITION_COMPLETION_CUE_REQUEST_PREFIX.length()));
     }
 
     static String buildRecognitionFailureRetryCueRequestId(String sessionId) {
@@ -3112,9 +3290,37 @@ public final class AssistantVoiceRuntimeService extends Service {
             && !trim(sessionId).isEmpty();
     }
 
+    static boolean shouldBlockQueueDuringRecognitionSubmit(
+        String audioMode,
+        String sessionId,
+        boolean submitSucceeded
+    ) {
+        return submitSucceeded
+            && AssistantVoiceConfig.AUDIO_MODE_RESPONSE.equals(trim(audioMode))
+            && !trim(sessionId).isEmpty();
+    }
+
+    static boolean shouldUsePlaybackDrainTimeoutFallback(
+        String pendingPlaybackDrainRequestId,
+        String activeTtsRequestId,
+        String requestId
+    ) {
+        String normalizedRequestId = trim(requestId);
+        return !normalizedRequestId.isEmpty()
+            && trim(activeTtsRequestId).isEmpty()
+            && normalizedRequestId.equals(trim(pendingPlaybackDrainRequestId));
+    }
+
     private String explainQueueDrainBlock() {
         if (destroyed) {
             return "destroyed";
+        }
+        if (!pendingRecognitionSubmitSessionId.isEmpty()) {
+            return "pending_recognition_submit";
+        }
+        if (!pendingRecognitionCompletionCueRequestId.isEmpty()
+            || !pendingRecognitionCompletionCuePlaybackRequestId.isEmpty()) {
+            return "pending_recognition_completion_cue";
         }
         if (isManualPreemptStopInFlight()) {
             return "manual_preempt_stop_in_flight";
@@ -3185,6 +3391,109 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
         pendingManualPreemptStopRequestId = "";
         pendingManualPreemptQueueItem = null;
+    }
+
+    private void beginPendingRecognitionSubmit(String sessionId) {
+        String normalizedSessionId = trim(sessionId);
+        if (normalizedSessionId.isEmpty()) {
+            return;
+        }
+        pendingRecognitionSubmitSessionId = normalizedSessionId;
+        mainHandler.removeCallbacks(clearPendingRecognitionSubmitRunnable);
+        mainHandler.postDelayed(
+            clearPendingRecognitionSubmitRunnable,
+            RECOGNITION_SUBMIT_TIMEOUT_MS
+        );
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "sessionId", safe(normalizedSessionId));
+        recordVoiceEvent("recognition_submit_pending", details);
+    }
+
+    private void clearPendingRecognitionSubmit(String reason, boolean drainQueue) {
+        String normalizedSessionId = trim(pendingRecognitionSubmitSessionId);
+        if (normalizedSessionId.isEmpty()) {
+            return;
+        }
+        pendingRecognitionSubmitSessionId = "";
+        mainHandler.removeCallbacks(clearPendingRecognitionSubmitRunnable);
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "reason", safe(reason));
+        AssistantVoiceEventLog.put(details, "sessionId", safe(normalizedSessionId));
+        recordVoiceEvent("recognition_submit_cleared", details);
+        if (drainQueue) {
+            drainVoiceQueueIfPossible();
+        }
+    }
+
+    private void schedulePlaybackDrainTimeout(String requestId, int audioBytes, int sampleRate) {
+        String normalizedRequestId = trim(requestId);
+        if (normalizedRequestId.isEmpty()) {
+            return;
+        }
+        pendingPlaybackDrainTimeoutRequestId = normalizedRequestId;
+        mainHandler.removeCallbacks(playbackDrainTimeoutRunnable);
+        mainHandler.postDelayed(
+            playbackDrainTimeoutRunnable,
+            resolvePlaybackDrainTimeoutMs(audioBytes, sampleRate)
+        );
+    }
+
+    static long resolvePlaybackDrainTimeoutMs(int audioBytes, int sampleRate) {
+        int normalizedBytes = Math.max(0, audioBytes);
+        int normalizedSampleRate = Math.max(0, sampleRate);
+        if (normalizedBytes <= 0 || normalizedSampleRate <= 0) {
+            return PLAYBACK_DRAIN_TIMEOUT_MS;
+        }
+        long bytesPerSecond = normalizedSampleRate * 2L;
+        if (bytesPerSecond <= 0L) {
+            return PLAYBACK_DRAIN_TIMEOUT_MS;
+        }
+        long estimatedPlaybackMs = (normalizedBytes * 1000L) / bytesPerSecond;
+        long timeoutMs = estimatedPlaybackMs + PLAYBACK_DRAIN_TIMEOUT_MARGIN_MS;
+        return Math.max(PLAYBACK_DRAIN_TIMEOUT_MS, timeoutMs);
+    }
+
+    private void clearPlaybackDrainTimeout(String requestId) {
+        String normalizedRequestId = trim(requestId);
+        if (!normalizedRequestId.isEmpty()
+            && !normalizedRequestId.equals(trim(pendingPlaybackDrainTimeoutRequestId))) {
+            return;
+        }
+        pendingPlaybackDrainTimeoutRequestId = "";
+        mainHandler.removeCallbacks(playbackDrainTimeoutRunnable);
+    }
+
+    private void handlePlaybackDrainTimeout() {
+        String requestId = trim(pendingPlaybackDrainTimeoutRequestId);
+        if (!shouldUsePlaybackDrainTimeoutFallback(
+            pendingPlaybackDrainRequestId,
+            activeTtsRequestId,
+            requestId
+        )) {
+            return;
+        }
+        pendingPlaybackDrainTimeoutRequestId = "";
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "requestId", safe(requestId));
+        AssistantVoiceEventLog.put(details, "pendingPlaybackDrainRequestId", safe(pendingPlaybackDrainRequestId));
+        AssistantVoiceEventLog.put(details, "textLength", activeTtsTextLength);
+        AssistantVoiceEventLog.put(details, "sampleRate", activeTtsSampleRate);
+        AssistantVoiceEventLog.put(details, "audioChunkCount", activeTtsAudioChunkCount);
+        AssistantVoiceEventLog.put(details, "audioBytes", activeTtsAudioBytes);
+        recordVoiceEvent("playback_drain_timeout", details);
+        handlePlaybackDrained(requestId);
+    }
+
+    private static int estimateBase64DecodedBytes(String value) {
+        String normalized = trim(value);
+        if (normalized.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Base64.decode(normalized, Base64.DEFAULT).length;
+        } catch (IllegalArgumentException error) {
+            return 0;
+        }
     }
 
     private static String describeNotification(AssistantVoiceNotificationRecord notification) {

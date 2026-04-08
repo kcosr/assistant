@@ -27,6 +27,7 @@ export interface SessionPickerOpenOptions {
   anchor: HTMLElement;
   title: string;
   autoFocusSearch?: boolean;
+  selectedSessionId?: string | null;
   disabledSessionIds?: Set<string>;
   openSessionIds?: Set<string>;
   allowUnbound?: boolean;
@@ -170,13 +171,17 @@ export class SessionPickerController {
       const addItem = (
         label: string,
         onSelect: () => void | Promise<void>,
-        itemOptions?: { disabled?: boolean; sessionId?: string },
+        itemOptions?: { disabled?: boolean; sessionId?: string; selected?: boolean },
       ): void => {
         const item = document.createElement('div');
         item.className = 'session-picker-item';
         item.setAttribute('role', 'button');
         if (itemOptions?.sessionId) {
           item.dataset['sessionId'] = itemOptions.sessionId;
+        }
+        if (itemOptions?.selected) {
+          item.classList.add('selected');
+          item.setAttribute('aria-current', 'true');
         }
 
         const normalState = document.createElement('div');
@@ -359,13 +364,14 @@ export class SessionPickerController {
           const label = this.formatSessionLabel(session, agentSummaries);
           const isDisabled = disabled.has(session.sessionId);
           const isOpen = openSessionIds.has(session.sessionId);
+          const isSelected = session.sessionId === options.selectedSessionId;
           addItem(
             isOpen ? `${label} (open)` : label,
             () =>
               isOpen && options.onSelectOpenSession
                 ? options.onSelectOpenSession(session.sessionId)
                 : options.onSelectSession(session.sessionId),
-            { disabled: isDisabled, sessionId: session.sessionId },
+            { disabled: isDisabled, sessionId: session.sessionId, selected: isSelected },
           );
         }
       }
@@ -402,7 +408,12 @@ export class SessionPickerController {
       }
 
       if (this.items.length > 0) {
-        this.setFocusedIndex(0);
+        const selectedIndex = options.selectedSessionId
+          ? this.items.findIndex(
+              (entry) => entry.element.dataset['sessionId'] === options.selectedSessionId,
+            )
+          : -1;
+        this.setFocusedIndex(selectedIndex >= 0 ? selectedIndex : 0);
       }
     };
 

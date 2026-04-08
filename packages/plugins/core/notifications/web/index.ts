@@ -530,6 +530,21 @@ function resolveClientSessionLabel(
           }
           event.stopPropagation();
         };
+        const bindInteractiveButton = (
+          button: HTMLElement,
+          onClick: (event: Event) => void,
+        ): void => {
+          button.addEventListener('pointerdown', markInteractivePress);
+          button.addEventListener('pointerup', clearInteractivePress);
+          button.addEventListener('pointercancel', clearInteractivePress);
+          button.addEventListener('mousedown', markInteractivePress);
+          button.addEventListener('mouseup', clearInteractivePress);
+          button.addEventListener('mouseleave', clearInteractivePress);
+          button.addEventListener('click', (event) => {
+            stopInteractiveClick(event);
+            onClick(event);
+          });
+        };
 
         // Source icon
         const sourceIcon = document.createElement('button');
@@ -542,11 +557,7 @@ function resolveClientSessionLabel(
             n.kind === 'session_attention' ? ICON_PATHS.inbox : (ICON_PATHS[n.source] ?? ICON_PATHS.tool),
           ),
         );
-        sourceIcon.addEventListener('pointerdown', markInteractivePress);
-        sourceIcon.addEventListener('pointerup', clearInteractivePress);
-        sourceIcon.addEventListener('pointercancel', clearInteractivePress);
-        sourceIcon.addEventListener('click', (event) => {
-          stopInteractiveClick(event);
+        bindInteractiveButton(sourceIcon, () => {
           host.sendEvent({ type: 'toggle_read', id: n.id });
         });
         item.appendChild(sourceIcon);
@@ -669,14 +680,9 @@ function resolveClientSessionLabel(
         const dismissBtn = document.createElement('button');
         dismissBtn.type = 'button';
         dismissBtn.className = 'notif-dismiss-btn';
-        dismissBtn.title = 'Dismiss notification';
-        dismissBtn.setAttribute('aria-label', 'Dismiss notification');
+        dismissBtn.setAttribute('aria-label', 'Dismiss');
         dismissBtn.appendChild(createSvgIcon(ICON_PATHS.close, 'notif-icon notif-icon-xs'));
-        dismissBtn.addEventListener('pointerdown', markInteractivePress);
-        dismissBtn.addEventListener('pointerup', clearInteractivePress);
-        dismissBtn.addEventListener('pointercancel', clearInteractivePress);
-        dismissBtn.addEventListener('click', (e) => {
-          stopInteractiveClick(e);
+        bindInteractiveButton(dismissBtn, () => {
           host.sendEvent({ type: 'clear', id: n.id });
         });
         titleRow.appendChild(dismissBtn);

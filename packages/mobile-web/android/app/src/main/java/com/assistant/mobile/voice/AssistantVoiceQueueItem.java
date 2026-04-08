@@ -72,13 +72,16 @@ final class AssistantVoiceQueueItem {
 
     static AssistantVoiceQueueItem fromPrompt(
         AssistantVoicePromptEvent prompt,
-        boolean autoListenEnabled
+        boolean autoListenEnabled,
+        boolean includeTitle,
+        String sessionTitle
     ) {
         if (prompt == null) {
             return null;
         }
         String sessionId = trim(prompt.sessionId);
-        String spokenText = trim(prompt.text);
+        String normalizedSessionTitle = trim(sessionTitle);
+        String spokenText = resolvePromptSpokenText(prompt, includeTitle, normalizedSessionTitle);
         if (sessionId.isEmpty() || spokenText.isEmpty()) {
             return null;
         }
@@ -103,13 +106,35 @@ final class AssistantVoiceQueueItem {
             "system",
             dedupId,
             sessionId,
-            "",
+            normalizedSessionTitle,
             spokenText,
             executionMode,
             null,
             false,
             true
         );
+    }
+
+    private static String resolvePromptSpokenText(
+        AssistantVoicePromptEvent prompt,
+        boolean includeTitle,
+        String sessionTitle
+    ) {
+        if (prompt == null) {
+            return "";
+        }
+        String speech = trim(prompt.text);
+        if (speech.isEmpty()) {
+            return "";
+        }
+        if (!includeTitle || !prompt.isAssistantResponse()) {
+            return speech;
+        }
+        String normalizedSessionTitle = trim(sessionTitle);
+        if (normalizedSessionTitle.isEmpty() || normalizedSessionTitle.equals(speech)) {
+            return speech;
+        }
+        return normalizedSessionTitle + ": " + speech;
     }
 
     private static String trim(String value) {

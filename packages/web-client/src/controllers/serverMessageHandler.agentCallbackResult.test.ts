@@ -358,11 +358,12 @@ describe('ServerMessageHandler typing indicator', () => {
       details: { sessionId: 's-target' },
     });
 
+    const firstCall = appendMessage.mock.calls[0] as [HTMLElement, string, string] | undefined;
     expect(appendMessage).toHaveBeenCalledTimes(1);
-    expect(appendMessage.mock.calls[0]?.[0]).toBe(targetRuntime.elements.chatLog);
-    expect(appendMessage.mock.calls[0]?.[0]).not.toBe(selectedRuntime.elements.chatLog);
-    expect(appendMessage.mock.calls[0]?.[1]).toBe('error');
-    expect(appendMessage.mock.calls[0]?.[2]).toBe('Bad target session');
+    expect(firstCall?.[0]).toBe(targetRuntime.elements.chatLog);
+    expect(firstCall?.[0]).not.toBe(selectedRuntime.elements.chatLog);
+    expect(firstCall?.[1]).toBe('error');
+    expect(firstCall?.[2]).toBe('Bad target session');
     expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-target', 'error');
     expect(syncSessionRequestActivityUi).toHaveBeenCalledWith('s-target', false);
   });

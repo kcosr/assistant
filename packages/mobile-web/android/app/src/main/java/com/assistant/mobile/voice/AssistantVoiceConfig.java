@@ -68,6 +68,7 @@ final class AssistantVoiceConfig {
         "notification_title_playback_enabled";
     private static final String KEY_RUNTIME_STATE = "runtime_state";
     private static final String KEY_RUNTIME_ERROR = "runtime_error";
+    private static final String KEY_RUNTIME_ACTIVE_SESSION_ID = "runtime_active_session_id";
 
     static final String EXTRA_AUDIO_MODE = "audioMode";
     static final String EXTRA_AUTO_LISTEN_ENABLED = "autoListenEnabled";
@@ -384,11 +385,17 @@ final class AssistantVoiceConfig {
         return intent;
     }
 
-    static void saveRuntimeSnapshot(Context context, String state, String errorMessage) {
+    static void saveRuntimeSnapshot(
+        Context context,
+        String state,
+        String errorMessage,
+        String activeSessionId
+    ) {
         prefs(context)
             .edit()
             .putString(KEY_RUNTIME_STATE, normalizeOptional(state))
             .putString(KEY_RUNTIME_ERROR, emptyToNull(errorMessage))
+            .putString(KEY_RUNTIME_ACTIVE_SESSION_ID, emptyToNull(normalizeOptional(activeSessionId)))
             .apply();
     }
 
@@ -398,6 +405,10 @@ final class AssistantVoiceConfig {
 
     static String loadRuntimeError(Context context) {
         return normalizeOptional(prefs(context).getString(KEY_RUNTIME_ERROR, null));
+    }
+
+    static String loadRuntimeActiveSessionId(Context context) {
+        return normalizeOptional(prefs(context).getString(KEY_RUNTIME_ACTIVE_SESSION_ID, null));
     }
 
     private static SharedPreferences prefs(Context context) {

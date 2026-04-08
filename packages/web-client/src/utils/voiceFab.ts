@@ -11,7 +11,11 @@ export interface VoiceFabOptions {
   button: HTMLButtonElement | null;
   isVisible: () => boolean;
   getSpeechController: () => VoiceFabSpeechController | null;
-  getSessionTitle: () => string | null;
+  getSessionChipState: (mode: 'idle' | 'speaking' | 'listening') => {
+    visible: boolean;
+    interactive: boolean;
+    title: string | null;
+  };
   onSessionChipClick: (anchor: HTMLElement) => void;
 }
 
@@ -44,17 +48,6 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
   chip.type = 'button';
   chip.className = 'voice-fab-session-chip';
   chip.hidden = true;
-  let chipTimeout: ReturnType<typeof setTimeout> | null = null;
-  let chipListeningActive = false;
-  let previousMode: 'idle' | 'speaking' | 'listening' = 'idle';
-
-  const clearChipTimeout = (): void => {
-    if (!chipTimeout) {
-      return;
-    }
-    clearTimeout(chipTimeout);
-    chipTimeout = null;
-  };
 
   const positionChip = (): void => {
     const rect = button.getBoundingClientRect();
@@ -73,29 +66,31 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
   };
 
   const hideSessionChip = (): void => {
-    clearChipTimeout();
-    chipListeningActive = false;
     chip.classList.remove('is-visible');
+    chip.classList.remove('is-interactive');
+    chip.disabled = false;
     chip.hidden = true;
   };
 
-  const showSessionChip = (): void => {
-    const title = options.getSessionTitle()?.trim();
-    if (!title) {
+  const renderSessionChip = (mode: 'idle' | 'speaking' | 'listening'): void => {
+    const chipState = options.getSessionChipState(mode);
+    const title = chipState.title?.trim() ?? '';
+    if (!chipState.visible || !title) {
       hideSessionChip();
       return;
     }
     chip.textContent = title;
+    chip.disabled = !chipState.interactive;
     chip.hidden = false;
     chip.classList.add('is-visible');
+    chip.classList.toggle('is-interactive', chipState.interactive);
     positionChip();
-    chipListeningActive = false;
-    clearChipTimeout();
-    chipTimeout = setTimeout(() => {
-      if (!chipListeningActive) {
-        hideSessionChip();
-      }
-    }, 2600);
+  };
+
+  const showSessionChip = (): void => {
+    const controller = options.getSpeechController();
+    const mode = controller?.getVoiceFabState().mode ?? 'idle';
+    renderSessionChip(mode);
   };
 
   const update = (): void => {
@@ -108,13 +103,7 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
 
     const controller = options.getSpeechController();
     const state = controller?.getVoiceFabState() ?? { enabled: false, mode: 'idle' as const };
-    if (state.mode === 'listening' && !chip.hidden) {
-      chipListeningActive = true;
-      clearChipTimeout();
-      positionChip();
-    } else if (chipListeningActive && previousMode === 'listening' && state.mode !== 'listening') {
-      hideSessionChip();
-    }
+    renderSessionChip(state.mode);
     button.classList.add('voice-fab');
     button.classList.toggle('voice-fab-speaking', state.mode === 'speaking');
     button.classList.toggle('voice-fab-listening', state.mode === 'listening');
@@ -135,14 +124,6 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
       button.setAttribute('title', state.enabled ? 'Start voice input' : 'No selected session');
     }
 
-    if (!chip.hidden) {
-      const title = options.getSessionTitle()?.trim();
-      if (title) {
-        chip.textContent = title;
-        positionChip();
-      }
-    }
-    previousMode = state.mode;
   };
 
   const handleButtonClick = async (): Promise<void> => {
@@ -153,7 +134,6 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     const state = controller.getVoiceFabState();
     if (state.mode === 'speaking' || state.mode === 'listening') {
       controller.stopVoiceFromFab();
-      hideSessionChip();
       update();
       return;
     }
@@ -177,8 +157,10 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
   };
 
   const handleChipClick = (event: MouseEvent): void => {
+    if (chip.disabled || chip.hidden) {
+      return;
+    }
     event.preventDefault();
-    clearChipTimeout();
     options.onSessionChipClick(chip);
   };
 
@@ -195,7 +177,6 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     showSessionChip,
     hideSessionChip,
     destroy: () => {
-      clearChipTimeout();
       if (typeof window !== 'undefined') {
         window.removeEventListener('resize', handleResize);
       }

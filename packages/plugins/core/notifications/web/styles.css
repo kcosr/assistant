@@ -236,22 +236,25 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   padding: 0;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text-secondary, #9aa4b6);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.1s, background-color 0.1s, border-color 0.1s, transform 0.08s;
+  transition: color 0.1s, opacity 0.1s;
+  opacity: 0.8;
 }
 
 .notif-dismiss-btn:focus-visible {
   color: var(--color-danger, #f87171);
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.12);
+  opacity: 1;
+  outline: 2px solid rgba(248, 113, 113, 0.28);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 /* Body text */
@@ -383,12 +386,7 @@
 
   .notif-dismiss-btn:hover {
     color: var(--color-danger, #f87171);
-    border-color: rgba(248, 113, 113, 0.35);
-    background: rgba(248, 113, 113, 0.12);
-  }
-
-  .notif-dismiss-btn:active {
-    transform: translateY(1px);
+    opacity: 1;
   }
 
   .notif-action-btn:hover {

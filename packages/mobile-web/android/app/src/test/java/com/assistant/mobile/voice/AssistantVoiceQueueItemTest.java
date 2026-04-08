@@ -18,7 +18,12 @@ public final class AssistantVoiceQueueItemTest {
             "Question?"
         );
 
-        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(prompt, true);
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
+            prompt,
+            true,
+            false,
+            ""
+        );
 
         assertNotNull(item);
         assertEquals("session-1", item.sessionId);
@@ -37,7 +42,12 @@ public final class AssistantVoiceQueueItemTest {
             "Answer"
         );
 
-        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(prompt, false);
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
+            prompt,
+            false,
+            false,
+            ""
+        );
 
         assertNotNull(item);
         assertEquals("speak", item.executionMode);
@@ -49,15 +59,62 @@ public final class AssistantVoiceQueueItemTest {
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
                 new AssistantVoicePromptEvent("event-3", "", "", "voice_speak", "Hello"),
-                true
+                true,
+                false,
+                ""
             )
         );
         assertNull(
             AssistantVoiceQueueItem.fromPrompt(
                 new AssistantVoicePromptEvent("event-4", "session-4", "", "voice_speak", " "),
-                true
+                true,
+                false,
+                ""
             )
         );
+    }
+
+    @Test
+    public void fromPromptPrefixesAssistantResponseWithSessionTitleWhenEnabled() {
+        AssistantVoicePromptEvent prompt = new AssistantVoicePromptEvent(
+            "event-5",
+            "session-5",
+            "response-5",
+            "assistant_response",
+            "Answer"
+        );
+
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
+            prompt,
+            false,
+            true,
+            "Project Alpha"
+        );
+
+        assertNotNull(item);
+        assertEquals("Project Alpha", item.sessionTitle);
+        assertEquals("Project Alpha: Answer", item.spokenText);
+    }
+
+    @Test
+    public void fromPromptLeavesNonAssistantPromptUnprefixedWhenTitlePlaybackEnabled() {
+        AssistantVoicePromptEvent prompt = new AssistantVoicePromptEvent(
+            "event-6",
+            "session-6",
+            "call-6",
+            "voice_ask",
+            "Question?"
+        );
+
+        AssistantVoiceQueueItem item = AssistantVoiceQueueItem.fromPrompt(
+            prompt,
+            true,
+            true,
+            "Project Beta"
+        );
+
+        assertNotNull(item);
+        assertEquals("Question?", item.spokenText);
     }
 
     @Test
@@ -102,8 +159,8 @@ public final class AssistantVoiceQueueItemTest {
             null
         );
 
-        AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true, false);
-        AssistantVoiceQueueItem manualItem = notification.toManualSpeakerQueueItem(false);
+        AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true, false, null);
+        AssistantVoiceQueueItem manualItem = notification.toManualSpeakerQueueItem(false, null);
 
         assertNotNull(automaticItem);
         assertNotNull(manualItem);
@@ -112,5 +169,32 @@ public final class AssistantVoiceQueueItemTest {
         assertTrue(!automaticItem.requiresSession());
         assertTrue(!manualItem.requiresSession());
         assertEquals("Alternate speech", automaticItem.spokenText);
+    }
+
+    @Test
+    public void sessionLinkedNotificationUsesSessionTitleForSpokenPrefix() {
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-2",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-2",
+            "Project Alpha",
+            "speak",
+            "Speak me",
+            "event-2",
+            Integer.valueOf(3)
+        );
+
+        AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(
+            true,
+            true,
+            null
+        );
+
+        assertNotNull(item);
+        assertEquals("Project Alpha: Speak me", item.spokenText);
     }
 }

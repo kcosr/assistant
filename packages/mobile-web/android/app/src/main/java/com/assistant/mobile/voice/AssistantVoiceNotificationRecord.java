@@ -55,6 +55,10 @@ final class AssistantVoiceNotificationRecord {
     }
 
     String resolveSpokenText(boolean includeTitle) {
+        return resolveSpokenText(includeTitle, null);
+    }
+
+    String resolveSpokenText(boolean includeTitle, String titleOverride) {
         String speech = "";
         if (!ttsText.isEmpty()) {
             speech = ttsText;
@@ -63,17 +67,19 @@ final class AssistantVoiceNotificationRecord {
         } else if (!title.isEmpty()) {
             speech = title;
         }
-        if (!includeTitle || title.isEmpty() || speech.isEmpty() || title.equals(speech)) {
+        String spokenTitle = resolveSpokenTitle(titleOverride);
+        if (!includeTitle || spokenTitle.isEmpty() || speech.isEmpty() || spokenTitle.equals(speech)) {
             return speech;
         }
-        return title + ": " + speech;
+        return spokenTitle + ": " + speech;
     }
 
     AssistantVoiceQueueItem toAutomaticQueueItem(
         boolean autoListenEnabled,
-        boolean includeTitle
+        boolean includeTitle,
+        String titleOverride
     ) {
-        String spokenText = resolveSpokenText(includeTitle);
+        String spokenText = resolveSpokenText(includeTitle, titleOverride);
         if (spokenText.isEmpty()) {
             return null;
         }
@@ -96,8 +102,8 @@ final class AssistantVoiceNotificationRecord {
         );
     }
 
-    AssistantVoiceQueueItem toManualSpeakerQueueItem(boolean includeTitle) {
-        String spokenText = resolveSpokenText(includeTitle);
+    AssistantVoiceQueueItem toManualSpeakerQueueItem(boolean includeTitle, String titleOverride) {
+        String spokenText = resolveSpokenText(includeTitle, titleOverride);
         if (spokenText.isEmpty()) {
             return null;
         }
@@ -134,5 +140,16 @@ final class AssistantVoiceNotificationRecord {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String resolveSpokenTitle(String titleOverride) {
+        String normalizedOverride = trim(titleOverride);
+        if (!normalizedOverride.isEmpty()) {
+            return normalizedOverride;
+        }
+        if (isSessionLinked() && !sessionTitle.isEmpty()) {
+            return sessionTitle;
+        }
+        return title;
     }
 }

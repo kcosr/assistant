@@ -377,6 +377,7 @@ public final class AssistantVoicePlugin extends Plugin {
             AssistantVoiceConfig.saveRuntimeSnapshot(
                 getContext(),
                 AssistantVoiceRuntimeService.STATE_DISABLED,
+                null,
                 null
             );
             notifyListeners("stateChanged", buildStatePayload(), true);
@@ -428,9 +429,11 @@ public final class AssistantVoicePlugin extends Plugin {
             "notificationTitlePlaybackEnabled",
             current.notificationTitlePlaybackEnabled
         );
+        String activeSessionId = AssistantVoiceConfig.loadRuntimeActiveSessionId(getContext());
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
+        payload.put("activeSessionId", activeSessionId.isEmpty() ? null : activeSessionId);
         payload.put("voiceSettings", voiceSettings);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);

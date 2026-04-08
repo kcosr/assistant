@@ -43,7 +43,7 @@ public final class AssistantVoiceNotificationEventParserTest {
         assertEquals("notif-1", update.notification.id);
         assertEquals("session_attention", update.notification.kind);
         assertEquals("Speak me", update.notification.resolveSpokenText(false));
-        assertEquals("Latest assistant reply: Speak me", update.notification.resolveSpokenText(true));
+        assertEquals("My Session: Speak me", update.notification.resolveSpokenText(true));
         assertEquals(Integer.valueOf(4), update.notification.sessionActivitySeq);
     }
 
@@ -79,7 +79,7 @@ public final class AssistantVoiceNotificationEventParserTest {
         assertEquals(1, notifications.size());
         assertEquals("notif-1", notifications.get(0).id);
         assertTrue(
-            notifications.get(0).toAutomaticQueueItem(true, false).startsListeningAfterPlayback()
+            notifications.get(0).toAutomaticQueueItem(true, false, null).startsListeningAfterPlayback()
         );
     }
 

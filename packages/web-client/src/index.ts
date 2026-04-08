@@ -26,6 +26,7 @@ import {
   AssistantNativeVoiceBridge,
   type AssistantNativeVoiceInputContext,
   type AssistantNativeVoiceRuntimeState,
+  type AssistantNativeVoiceStatePayload,
   type AssistantNativeVoiceSelection,
 } from './controllers/speechAudioController';
 import {
@@ -90,6 +91,7 @@ import { KeyboardShortcutRegistry, createShortcutService } from './utils/keyboar
 import { applyTagColorsToRoot } from './utils/tagColors';
 import { setupCommandPaletteFab } from './utils/commandPaletteFab';
 import { setupVoiceFab, type VoiceFabHandle } from './utils/voiceFab';
+import { resolveVoiceFabSessionChipState } from './utils/voiceFabSessionChip';
 import { loadClientPreferences, wirePreferencesCheckboxes } from './utils/clientPreferences';
 import {
   applyThemePreferences,
@@ -878,6 +880,8 @@ async function main(): Promise<void> {
 
   let inputSessionId: string | null = null;
   let nativeVoiceRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
+  let nativeVoiceActiveSessionId: string | null = null;
+  let nativeVoiceBridgeSelectedSessionId: string | null = null;
   let isSettingInputSession = false;
   let pendingInputSessionId: string | null | undefined = undefined;
   let panelHostController: PanelHostController | null = null;
@@ -1174,23 +1178,48 @@ async function main(): Promise<void> {
       return null;
     }
     return {
-      getVoiceFabState: () => controller.getVoiceFabStateForSession(selectedSessionId),
+      getVoiceFabState: () => {
+        const baseState = controller.getVoiceFabStateForSession(selectedSessionId);
+        if (nativeVoiceRuntimeState === 'speaking') {
+          return { enabled: true, mode: 'speaking' as const };
+        }
+        if (nativeVoiceRuntimeState === 'listening') {
+          return { enabled: true, mode: 'listening' as const };
+        }
+        return baseState;
+      },
       startVoiceFromFab: () => controller.startVoiceFromFabForSession(selectedSessionId),
       stopVoiceFromFab: () => controller.stopVoiceFromFab(),
     };
   }
 
-  function getSelectedSessionTitle(): string | null {
-    const selectedSessionId = normalizeSessionId(inputSessionId);
-    if (!selectedSessionId) {
+  function resolveSessionTitle(sessionId: string | null): string | null {
+    const normalizedSessionId = normalizeSessionId(sessionId);
+    if (!normalizedSessionId) {
       return null;
     }
-    const summary = sessionSummaries.find((entry) => entry.sessionId === selectedSessionId) ?? null;
+    const summary =
+      sessionSummaries.find((entry) => entry.sessionId === normalizedSessionId) ?? null;
     if (!summary) {
-      return selectedSessionId.slice(0, 8);
+      return normalizedSessionId.slice(0, 8);
     }
     const label = resolveSessionBaseLabel(summary, agentSummaries);
-    return label || selectedSessionId.slice(0, 8);
+    return label || normalizedSessionId.slice(0, 8);
+  }
+
+  function getVoiceFabSessionChipState(mode: 'idle' | 'speaking' | 'listening'): {
+    visible: boolean;
+    interactive: boolean;
+    title: string | null;
+  } {
+    return resolveVoiceFabSessionChipState({
+      mode,
+      inputSessionId,
+      nativeVoiceBridgeSelectedSessionId,
+      nativeVoiceActiveSessionId,
+      normalizeSessionId,
+      resolveSessionTitle,
+    });
   }
 
   function getActiveChatPanelEntry(): ChatPanelEntry | null {
@@ -1337,20 +1366,37 @@ async function main(): Promise<void> {
     }
   }
 
-  function applyNativeVoiceRuntimeState(state: AssistantNativeVoiceRuntimeState | null): void {
-    if (nativeVoiceRuntimeState === state) {
+  function applyNativeVoiceRuntimePayload(
+    payload: AssistantNativeVoiceStatePayload | null | undefined,
+  ): void {
+    const nextState = normalizeNativeVoiceRuntimeState(payload?.state);
+    const nextActiveSessionId = normalizeSessionId(
+      typeof payload?.activeSessionId === 'string' ? payload.activeSessionId : null,
+    );
+    const nextBridgeSelectedSessionId = normalizeSessionId(
+      typeof payload?.selectedSession?.sessionId === 'string'
+        ? payload.selectedSession.sessionId
+        : null,
+    );
+    if (
+      nativeVoiceRuntimeState === nextState &&
+      nativeVoiceActiveSessionId === nextActiveSessionId &&
+      nativeVoiceBridgeSelectedSessionId === nextBridgeSelectedSessionId
+    ) {
       return;
     }
-    nativeVoiceRuntimeState = state;
+    nativeVoiceRuntimeState = nextState;
+    nativeVoiceActiveSessionId = nextActiveSessionId;
+    nativeVoiceBridgeSelectedSessionId = nextBridgeSelectedSessionId;
     for (const entry of chatPanelsById.values()) {
-      entry.inputRuntime.speechAudioController?.setNativeRuntimeState(state);
+      entry.inputRuntime.speechAudioController?.setNativeRuntimeState(nextState);
     }
     voiceFabHandle?.update();
   }
 
   if (useNativeVoiceRuntime) {
     nativeVoiceBridge.addStateChangedListener((payload) => {
-      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload.state));
+      applyNativeVoiceRuntimePayload(payload);
     });
     nativeVoiceBridge.addRuntimeErrorListener((payload) => {
       const message = typeof payload.message === 'string' ? payload.message.trim() : '';
@@ -1363,7 +1409,7 @@ async function main(): Promise<void> {
       openChatPanelForSession(payload.sessionId);
     });
     void nativeVoiceBridge.getState().then((payload) => {
-      applyNativeVoiceRuntimeState(normalizeNativeVoiceRuntimeState(payload?.state));
+      applyNativeVoiceRuntimePayload(payload);
     });
   }
 
@@ -1708,6 +1754,8 @@ async function main(): Promise<void> {
         anchor,
         title: 'Select session',
         allowUnbound: true,
+        selectedSessionId: bindingSessionId,
+        autoFocusSearch: !bindingSessionId,
         ...(openSessionIds.size > 0 ? { openSessionIds } : {}),
         createSessionOptions: { openChatPanel: false, selectSession: false },
         onSelectSession: (sessionId) => {
@@ -4201,7 +4249,7 @@ async function main(): Promise<void> {
       button: commandPaletteFab,
       isVisible: () => isCapacitorAndroid(),
       getSpeechController: () => getVoiceFabSpeechController(),
-      getSessionTitle: () => getSelectedSessionTitle(),
+      getSessionChipState: (mode) => getVoiceFabSessionChipState(mode),
       onSessionChipClick: (anchor) => {
         openSessionPicker({
           anchor,
@@ -4209,7 +4257,6 @@ async function main(): Promise<void> {
           autoFocusSearch: false,
           onSelectSession: (sessionId) => {
             setInputSessionId(sessionId);
-            voiceFabHandle?.showSessionChip();
             voiceFabHandle?.update();
           },
         });

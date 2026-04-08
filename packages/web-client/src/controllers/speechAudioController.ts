@@ -68,6 +68,7 @@ export type AssistantNativeVoiceRuntimeState =
 
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
+  activeSessionId?: string | null;
   voiceSettings?: VoiceSettings;
   inputContext?: AssistantNativeVoiceInputContext;
   assistantBaseUrl?: string;

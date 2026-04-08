@@ -240,7 +240,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getSessionId: options.getSelectedSessionId,
     getSocket: options.getSocket,
     onBeforeSend: () => {
-      speechAudioController?.stopPushToTalk();
+      // Native voice is app-global on Android, so a typed send in another panel
+      // should not cancel an in-flight recognition interaction.
+      if (!stopOnlyButtonMode) {
+        speechAudioController?.stopPushToTalk();
+      }
     },
     onAfterSend: () => {
       // Clear context selection after sending message

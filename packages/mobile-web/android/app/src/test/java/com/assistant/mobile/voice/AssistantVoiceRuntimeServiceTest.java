@@ -341,29 +341,63 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void resolveRecognitionSubmitSessionIdUsesLatestSelectedSessionForManualListen() {
+    public void resolveRecognitionSubmitSessionIdKeepsActiveRecognitionTarget() {
         assertEquals(
-            "session-new",
-            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+            "session-old",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId("session-old")
+        );
+        assertEquals(
+            "",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId("")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldRetargetActiveManualRecognitionOnlyWhenLiveManualSelectionChanges() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
                 "session-old",
-                "voice_manual",
-                "session-new"
+                "session-new",
+                "stt-1",
+                "voice_manual"
             )
         );
         assertEquals(
-            "session-old",
-            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
                 "session-old",
-                "assistant_response",
-                "session-new"
+                "session-old",
+                "stt-1",
+                "voice_manual"
             )
         );
         assertEquals(
-            "session-old",
-            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
                 "session-old",
-                "voice_manual",
-                ""
+                "",
+                "stt-1",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+                "session-old",
+                "session-new",
+                "",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+                "session-old",
+                "session-new",
+                "stt-1",
+                "speak_then_listen"
             )
         );
     }
@@ -428,6 +462,97 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldBlockQueueDuringRecognitionSubmitOnlyForResponseModeSuccessfulSessionBoundSubmits() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "session-1",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_TOOL,
+                "session-1",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "session-1",
+                false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUsePlaybackDrainTimeoutFallbackOnlyWhenAwaitingDrainWithoutActiveTts() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "",
+                "request-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "request-1",
+                "request-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "",
+                "request-2"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "",
+                "",
+                "request-1"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolvePlaybackDrainTimeoutScalesWithAudioDuration() {
+        assertEquals(
+            7600L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(307200, 24000)
+        );
+        assertEquals(
+            3150L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(93600, 24000)
+        );
+        assertEquals(
+            2500L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(0, 24000)
+        );
+        assertEquals(
+            2500L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(307200, 0)
+        );
+        assertEquals(
+            99625L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(4724400, 24000)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
         assertEquals(
             true,
@@ -449,6 +574,18 @@ public final class AssistantVoiceRuntimeServiceTest {
                 AssistantVoiceRuntimeService.STATE_LISTENING,
                 false
             )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldDrainQueueAfterStopKeepsManualStopFlowingButClearsForModeOff() {
+        assertTrue(AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("manual_stop"));
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("manual_notification_preempt")
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("voice_mode_disabled")
         );
     }
 
@@ -628,6 +765,24 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionCompletionCueRequestIdRoundTripsThroughPlaybackMarker() {
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionCompletionCueRequestId(" request-1 ");
+
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.extractRecognitionCompletionCueRequestId(
+                playbackRequestId
+            )
+        );
+        assertEquals(
+            "",
+            AssistantVoiceRuntimeService.extractRecognitionCompletionCueRequestId("tts-1")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldStartRecognitionAfterArmingCueMatchesPendingRecognitionRequest() {
         assertEquals(
             true,
@@ -649,6 +804,17 @@ public final class AssistantVoiceRuntimeServiceTest {
                 "",
                 AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId("request-1")
             )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUpdateStateAfterQueueAdvanceOnlyWhenNothingElseIsActive() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldUpdateStateAfterQueueAdvance(false)
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUpdateStateAfterQueueAdvance(true)
         );
     }
 

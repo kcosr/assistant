@@ -227,4 +227,115 @@ describe('createInputRuntime', () => {
     runtime.setIncludePanelContext(false);
     expect(contextPreviewEl.classList.contains('visible')).toBe(false);
   });
+
+  it('does not stop native voice recognition when submitting text', () => {
+    if (typeof globalThis.WebSocket === 'undefined') {
+      (globalThis as unknown as { WebSocket: unknown }).WebSocket = { OPEN: 1 };
+    }
+
+    document.body.innerHTML = `
+      <form></form>
+      <input />
+      <button></button>
+      <button></button>
+      <button><svg class="mic-icon"></svg></button>
+      <select><option value="off">Off</option><option value="tool">Tool</option></select>
+      <input type="checkbox" />
+    `;
+
+    const [form, inputEl, clearButtonEl, _submitButtonEl, micButtonEl, select, autoListenCheckbox] =
+      Array.from(document.body.children) as [
+        HTMLFormElement,
+        HTMLInputElement,
+        HTMLButtonElement,
+        HTMLButtonElement,
+        HTMLButtonElement,
+        HTMLSelectElement,
+        HTMLInputElement,
+      ];
+
+    inputEl.value = 'hello from another panel';
+
+    const send = vi.fn();
+    const socket = { readyState: WebSocket.OPEN, send } as unknown as WebSocket;
+    const stopCurrentInteraction = vi.fn();
+    const nativeVoiceBridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        stopCurrentInteraction,
+      },
+    }));
+
+    createInputRuntime({
+      elements: {
+        contextPreviewEl: null,
+        pendingMessageListEl: null,
+        form,
+        inputEl,
+        clearButtonEl,
+        contextToggleButtonEl: null,
+        briefToggleButtonEl: null,
+        micButtonEl,
+        submitButtonEl: null,
+      },
+      getSelectedSessionId: () => 'session-a',
+      getChatRuntimeForSession: () => null,
+      getSocket: () => socket,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      showSessionTypingIndicator: vi.fn(),
+      appendMessage: vi.fn(),
+      appendExternalSentIndicator: vi.fn(),
+      setAssistantBubbleTyping: vi.fn(),
+      scrollMessageIntoView: vi.fn(),
+      buildContextLine: vi.fn(() => ''),
+      getActiveContextItem: () => null,
+      getActiveContextItemName: () => null,
+      getActiveContextItemDescription: () => null,
+      getSelectedItemIds: () => [],
+      getActivePanelContext: () => null,
+      getContextPreviewData: () => null,
+      getIsSessionExternal: () => false,
+      getAgentDisplayName: () => 'Agent',
+      cancelQueuedMessage: vi.fn(),
+      audioModeSelectEl: select,
+      autoListenCheckboxEl: autoListenCheckbox,
+      standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
+      notificationTitlePlaybackCheckboxEl: document.createElement('input'),
+      voiceAdapterBaseUrlInputEl: document.createElement('input'),
+      voiceMicInputSelectEl: document.createElement('select'),
+      voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionCompletionTimeoutInputEl: document.createElement('input'),
+      voiceRecognitionEndSilenceInputEl: document.createElement('input'),
+      voiceRecognizeStopCommandCheckboxEl: document.createElement('input'),
+      voiceRecognitionCueCheckboxEl: document.createElement('input'),
+      voiceRecognitionCueGainSliderEl: document.createElement('input'),
+      voiceRecognitionCueGainValueEl: document.createElement('span'),
+      voiceStartupPreRollSliderEl: document.createElement('input'),
+      voiceStartupPreRollValueEl: document.createElement('span'),
+      voiceTtsGainSliderEl: document.createElement('input'),
+      voiceTtsGainValueEl: document.createElement('span'),
+      initialIncludePanelContext: true,
+      initialBriefModeEnabled: false,
+      speechFeaturesEnabled: false,
+      initialVoiceSettings: createDefaultVoiceSettings(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge,
+      initialNativeVoiceRuntimeState: 'listening',
+    });
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(stopCurrentInteraction).not.toHaveBeenCalled();
+    expect(
+      send.mock.calls.some(([payload]) => {
+        try {
+          return JSON.parse(payload as string).type === 'text_input';
+        } catch {
+          return false;
+        }
+      }),
+    ).toBe(true);
+  });
 });

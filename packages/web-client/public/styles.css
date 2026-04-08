@@ -2108,6 +2108,7 @@ button.settings-dropdown-item {
   background: color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-border-default));
   color: var(--color-text-muted);
   box-shadow: var(--shadow-sm);
+  opacity: 1;
 }
 
 .command-palette-fab.voice-fab.voice-fab-listening {
@@ -2142,11 +2143,16 @@ button.settings-dropdown-item {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: default;
 }
 
 .voice-fab-session-chip.is-visible {
   display: inline-flex;
   align-items: center;
+}
+
+.voice-fab-session-chip.is-interactive {
+  cursor: pointer;
 }
 
 .command-palette-input {
@@ -3442,6 +3448,19 @@ body.panel-reordering {
 .session-picker-item:hover,
 .session-picker-item.focused {
   background-color: var(--color-bg-hover);
+}
+
+.session-picker-item.selected {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+}
+
+.session-picker-item.selected .session-picker-item-label {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.session-picker-item.selected.focused {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 18%, var(--color-bg-hover));
 }
 
 .session-picker-item.disabled {
