@@ -95,8 +95,19 @@ vi.mock('../llm/piAgentAuth', () => ({
   resolvePiAgentAuthApiKey: vi.fn(async () => undefined),
 }));
 
+vi.mock('../notificationProducers', async () => {
+  const actual = await vi.importActual<typeof import('../notificationProducers')>(
+    '../notificationProducers',
+  );
+  return {
+    ...actual,
+    publishFinalResponseNotification: vi.fn(async () => undefined),
+  };
+});
+
 import { handleTextInputWithChatCompletions } from './chatRunLifecycle';
 import { resolvePiSdkModel, runPiSdkChatCompletionIteration } from '../llm/piSdkProvider';
+import { publishFinalResponseNotification } from '../notificationProducers';
 
 function createAssistantMessage(options: {
   text?: string;
@@ -744,6 +755,86 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       ),
     ).toBe(true);
     expect(transcriptEvents.some((message) => message.event.kind === 'request_end')).toBe(true);
+  });
+
+  it('publishes the final-response notification with the post-activity summary revision', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async () => ({
+      text: 'Stored final answer',
+      toolCalls: [],
+      aborted: false,
+      assistantMessage: createAssistantMessage({
+        text: 'Stored final answer',
+        provider: 'openai-codex',
+        model: 'gpt-5.4',
+        api: 'openai-responses',
+      }) as any,
+    }));
+
+    const recordSessionActivity = vi.fn(async () => ({
+      sessionId: 's1',
+      createdAt: '2026-04-07T00:00:00.000Z',
+      updatedAt: '2026-04-07T00:00:01.000Z',
+      revision: 104,
+      model: 'openai/gpt-5.4',
+    }));
+
+    const sessionHub: SessionHub = {
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      broadcastToAll: () => undefined,
+      recordSessionActivity,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: '2026-04-07T00:00:00.000Z',
+        updatedAt: '2026-04-07T00:00:00.000Z',
+        revision: 103,
+        model: 'openai/gpt-5.4',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError: () => undefined,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Stored final answer');
+    expect(publishFinalResponseNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 's1',
+        responseId: expect.any(String),
+        text: 'Stored final answer',
+        summary: expect.objectContaining({ revision: 104 }),
+      }),
+    );
+    expect(recordSessionActivity.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(publishFinalResponseNotification).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it('does not dedupe a new Pi user turn solely because the text matches the last replayed user message', async () => {

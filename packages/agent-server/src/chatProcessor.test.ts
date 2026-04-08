@@ -106,8 +106,17 @@ vi.mock('./llm/piSdkProvider', async () => {
   };
 });
 
+vi.mock('./notificationProducers', async () => {
+  const actual = await vi.importActual<typeof import('./notificationProducers')>('./notificationProducers');
+  return {
+    ...actual,
+    publishFinalResponseNotification: vi.fn(async () => undefined),
+  };
+});
+
 import { runPiSdkChatCompletionIteration, resolvePiSdkModel } from './llm/piSdkProvider';
 import { processUserMessage } from './chatProcessor';
+import { publishFinalResponseNotification } from './notificationProducers';
 
 function createAssistantMessage(options: {
   text?: string;
@@ -800,6 +809,124 @@ describe('processUserMessage stream event emission', () => {
       { text: 'Internal note', phase: 'commentary' },
       { text: 'Final answer', phase: 'final_answer' },
     ]);
+  });
+
+  it('still publishes the final-response notification when recordSessionActivity fails', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      await options.onDeltaText?.('Final answer', 'Final answer', 'final_answer');
+      return {
+        text: 'Final answer',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: 'Final answer',
+              textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+            },
+          ],
+          api: 'openai-responses',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              total: 0,
+            },
+          },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        },
+      };
+    });
+
+    const recordSessionActivity = vi.fn(async () => {
+      throw new Error('write failed');
+    });
+
+    const sessionHub: SessionHub = {
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity,
+      processNextQueuedMessage: async () => false,
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: '2026-04-07T00:00:00.000Z',
+        updatedAt: '2026-04-07T00:00:00.000Z',
+        revision: 103,
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await expect(
+      processUserMessage({
+        sessionId: 's1',
+        state,
+        text: 'hi',
+        sessionHub,
+        envConfig: {
+          apiKey: 'test-api-key',
+          port: 0,
+          toolsEnabled: false,
+          dataDir: '/tmp/assistant-tests',
+          audioInputMode: 'manual',
+          audioSampleRate: 24000,
+          audioTranscriptionEnabled: false,
+          audioOutputVoice: undefined,
+          audioOutputSpeed: undefined,
+          ttsModel: 'gpt-4o-mini-tts',
+          ttsVoice: undefined,
+          ttsFrameDurationMs: 250,
+          ttsBackend: 'openai',
+          elevenLabsApiKey: undefined,
+          elevenLabsVoiceId: undefined,
+          elevenLabsModelId: undefined,
+          elevenLabsBaseUrl: undefined,
+          maxMessagesPerMinute: 60,
+          maxAudioBytesPerMinute: 2_000_000,
+          maxToolCallsPerMinute: 30,
+          debugChatCompletions: false,
+          debugHttpRequests: false,
+        } as EnvConfig,
+        chatCompletionTools: [],
+        handleChatToolCalls: async () => undefined,
+        outputMode: 'text',
+        ttsBackendFactory: null,
+      }),
+    ).resolves.toMatchObject({
+      response: 'Final answer',
+      truncated: false,
+    });
+
+    expect(recordSessionActivity).toHaveBeenCalledWith('s1', 'Final answer');
+    expect(publishFinalResponseNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 's1',
+        text: 'Final answer',
+        summary: expect.objectContaining({ revision: 103 }),
+      }),
+    );
   });
 
   it('persists timeout failure events and closes the turn', async () => {
