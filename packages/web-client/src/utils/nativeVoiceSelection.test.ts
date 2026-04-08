@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveNativeVoiceSelectedSession } from './nativeVoiceSelection';
+import { resolveNativeVoiceSelectedSession, resolveVoiceFabController } from './nativeVoiceSelection';
 
 describe('resolveNativeVoiceSelectedSession', () => {
   it('prefers the selected input session over the active chat binding when both are present', () => {
@@ -57,5 +57,63 @@ describe('resolveNativeVoiceSelectedSession', () => {
       panelId: '',
       sessionId: 'session-input',
     });
+  });
+});
+
+describe('resolveVoiceFabController', () => {
+  it('uses the selected session controller when available', () => {
+    const selected = { id: 'selected' };
+    const active = { id: 'active' };
+
+    expect(
+      resolveVoiceFabController({
+        inputSessionId: 'session-selected',
+        getControllerForSession: (sessionId) =>
+          sessionId === 'session-selected' ? selected : null,
+        activeController: active,
+        primaryController: active,
+        nativeRuntimeState: 'idle',
+      }),
+    ).toBe(selected);
+  });
+
+  it('falls back to an active controller while native listening is active', () => {
+    const active = { id: 'active' };
+
+    expect(
+      resolveVoiceFabController({
+        inputSessionId: 'session-missing',
+        getControllerForSession: () => null,
+        activeController: active,
+        primaryController: null,
+        nativeRuntimeState: 'listening',
+      }),
+    ).toBe(active);
+  });
+
+  it('falls back to the primary controller while native speaking is active', () => {
+    const primary = { id: 'primary' };
+
+    expect(
+      resolveVoiceFabController({
+        inputSessionId: 'session-missing',
+        getControllerForSession: () => null,
+        activeController: null,
+        primaryController: primary,
+        nativeRuntimeState: 'speaking',
+      }),
+    ).toBe(primary);
+  });
+
+  it('returns null when the selected session has no controller and native voice is idle', () => {
+    expect(
+      resolveVoiceFabController({
+        inputSessionId: 'session-missing',
+        getControllerForSession: () => null,
+        activeController: { id: 'active' },
+        primaryController: { id: 'primary' },
+        nativeRuntimeState: 'idle',
+      }),
+    ).toBeNull();
   });
 });

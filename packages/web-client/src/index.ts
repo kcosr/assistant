@@ -28,7 +28,10 @@ import {
   type AssistantNativeVoiceRuntimeState,
   type AssistantNativeVoiceSelection,
 } from './controllers/speechAudioController';
-import { resolveNativeVoiceSelectedSession } from './utils/nativeVoiceSelection';
+import {
+  resolveNativeVoiceSelectedSession,
+  resolveVoiceFabController,
+} from './utils/nativeVoiceSelection';
 import { resolveInputContext } from './utils/inputContext';
 import { AsyncValueSync } from './utils/asyncValueSync';
 import { KeyboardNavigationController } from './controllers/keyboardNavigationController';
@@ -1134,11 +1137,14 @@ async function main(): Promise<void> {
   }
 
   function getVoiceFabSpeechController() {
-    const selectedSessionId = normalizeSessionId(inputSessionId);
-    if (selectedSessionId) {
-      return getChatInputRuntimeForSession(selectedSessionId)?.speechAudioController ?? null;
-    }
-    return getPrimaryChatInputRuntime()?.speechAudioController ?? null;
+    return resolveVoiceFabController({
+      inputSessionId,
+      getControllerForSession: (sessionId) =>
+        getChatInputRuntimeForSession(sessionId)?.speechAudioController ?? null,
+      activeController: getActiveChatInputRuntime()?.speechAudioController ?? null,
+      primaryController: getPrimaryChatInputRuntime()?.speechAudioController ?? null,
+      nativeRuntimeState: nativeVoiceRuntimeState,
+    });
   }
 
   function getSelectedSessionTitle(): string | null {

@@ -3,6 +3,15 @@ export type NativeVoiceSelectedSession = {
   sessionId: string;
 };
 
+export type NativeVoiceRuntimeState =
+  | 'disabled'
+  | 'connecting'
+  | 'idle'
+  | 'speaking'
+  | 'listening'
+  | 'error'
+  | null;
+
 type NativeVoiceSelectionInput = {
   activePanelId?: string | null;
   activePanelType?: string | null;
@@ -30,4 +39,33 @@ export function resolveNativeVoiceSelectedSession(
     input.activePanelType === 'chat' ? (normalizeId(input.activePanelId) ?? '') : '';
 
   return { panelId, sessionId };
+}
+
+type VoiceFabControllerInput<T> = {
+  inputSessionId?: string | null;
+  getControllerForSession: (sessionId: string) => T | null;
+  activeController?: T | null;
+  primaryController?: T | null;
+  nativeRuntimeState?: NativeVoiceRuntimeState;
+};
+
+export function resolveVoiceFabController<T>(
+  input: VoiceFabControllerInput<T>,
+): T | null {
+  const selectedSessionId = normalizeId(input.inputSessionId);
+  if (selectedSessionId) {
+    const selectedController = input.getControllerForSession(selectedSessionId);
+    if (selectedController) {
+      return selectedController;
+    }
+  }
+
+  if (
+    input.nativeRuntimeState === 'speaking' ||
+    input.nativeRuntimeState === 'listening'
+  ) {
+    return input.activeController ?? input.primaryController ?? null;
+  }
+
+  return selectedSessionId ? null : (input.primaryController ?? null);
 }

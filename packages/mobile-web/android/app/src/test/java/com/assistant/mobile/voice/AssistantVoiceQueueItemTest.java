@@ -32,7 +32,7 @@ public final class AssistantVoiceQueueItemTest {
         AssistantVoicePromptEvent prompt = new AssistantVoicePromptEvent(
             "event-2",
             "session-2",
-            "",
+            "response-2",
             "assistant_response",
             "Answer"
         );
@@ -41,7 +41,7 @@ public final class AssistantVoiceQueueItemTest {
 
         assertNotNull(item);
         assertEquals("speak", item.executionMode);
-        assertEquals("event-2", item.dedupKey());
+        assertEquals("response-2", item.dedupKey());
     }
 
     @Test
