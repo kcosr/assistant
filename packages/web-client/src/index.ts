@@ -129,6 +129,8 @@ import {
 import { ensureEmptySessionHint } from './utils/emptySessionHint';
 import { areKeyboardShortcutsBlockedByOverlay } from './utils/keyboardShortcutGuards';
 import { ListColumnPreferencesClient } from './utils/listColumnPreferences';
+import { closeMobileBackButtonOverlay } from './utils/mobileBackButtonOverlays';
+import { exportSelfContainedChatPanelHtml } from './utils/chatPanelHtmlExport';
 import { ToolOutputPreferencesClient } from './utils/toolOutputPreferences';
 import { ThinkingPreferencesClient } from './utils/thinkingPreferences';
 import { PluginSettingsClient } from './utils/pluginSettingsClient';
@@ -1659,6 +1661,44 @@ async function main(): Promise<void> {
         { signal: abortController.signal },
       );
     }
+    if (dom.exportHtmlButtonEl) {
+      dom.exportHtmlButtonEl.disabled = true;
+      dom.exportHtmlButtonEl.addEventListener(
+        'click',
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const sessionId = bindingSessionId;
+          const chatPanelEl = runtime.elements.chatPanel;
+          if (!sessionId || !chatPanelEl) {
+            return;
+          }
+          const button = dom.exportHtmlButtonEl;
+          if (!button) {
+            return;
+          }
+          button.disabled = true;
+          void exportSelfContainedChatPanelHtml({
+            chatPanelEl,
+            sessionTitle: getSessionLabel(sessionId),
+            getCanonicalToolBlock: (callId) => runtime.chatRenderer.getCanonicalToolBlock(callId),
+          })
+            .then(({ fileName }) => {
+              setStatus(statusEl, `Exported ${fileName}`);
+            })
+            .catch((error) => {
+              console.error('[chat-export] Failed to export chat as HTML', error);
+              setStatus(statusEl, 'Failed to export chat as HTML');
+            })
+            .finally(() => {
+              if (dom.exportHtmlButtonEl) {
+                dom.exportHtmlButtonEl.disabled = !bindingSessionId;
+              }
+            });
+        },
+        { signal: abortController.signal },
+      );
+    }
     if (dom.sessionLabelEl) {
       dom.sessionLabelEl.addEventListener(
         'click',
@@ -1698,6 +1738,9 @@ async function main(): Promise<void> {
       }
       if (dom.refreshButtonEl) {
         dom.refreshButtonEl.disabled = !sessionId;
+      }
+      if (dom.exportHtmlButtonEl) {
+        dom.exportHtmlButtonEl.disabled = !sessionId;
       }
       if (!sessionId) {
         entry.runtime.chatRenderer.clear();
@@ -5096,6 +5139,9 @@ async function main(): Promise<void> {
   };
 
   const handleAndroidBackButton = (_event: { canGoBack: boolean }): boolean => {
+    if (closeMobileBackButtonOverlay()) {
+      return true;
+    }
     if (isShareModalVisible()) {
       closeShareModal();
       return true;

@@ -15,6 +15,7 @@
 - Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added notification-backed Android voice queueing with durable `session_attention` response notifications, append-only `voice_speak` / `voice_ask` notifications, queue-driven `speak` / `speak_then_listen` playback, stale ask validation, and manual `Play` / `Speak` recovery actions.
+- Added self-contained HTML export from chat panels, preserving rendered chat formatting, offline tool expand/collapse behavior, and embedded attachment previews/downloads.
 
 ### Changed
 

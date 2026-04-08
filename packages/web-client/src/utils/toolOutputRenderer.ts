@@ -100,6 +100,111 @@ interface ToolOutputBlockState {
 
 const toolOutputBlockStates = new WeakMap<HTMLDivElement, ToolOutputBlockState>();
 
+function writeToolOutputSnapshotDataset(block: HTMLDivElement, state: ToolOutputBlockState): void {
+  block.dataset['snapshotToolName'] = state.toolName;
+  block.dataset['snapshotInputKind'] = state.input.kind;
+  switch (state.input.kind) {
+    case 'formatted':
+      block.dataset['snapshotArgsJson'] = state.input.argsJson;
+      delete block.dataset['snapshotInputText'];
+      delete block.dataset['snapshotInputLabel'];
+      break;
+    case 'streaming':
+    case 'custom':
+      block.dataset['snapshotInputText'] = state.input.text;
+      block.dataset['snapshotInputLabel'] = state.input.label;
+      delete block.dataset['snapshotArgsJson'];
+      break;
+    case 'none':
+    default:
+      delete block.dataset['snapshotArgsJson'];
+      delete block.dataset['snapshotInputText'];
+      delete block.dataset['snapshotInputLabel'];
+      break;
+  }
+
+  block.dataset['snapshotOutputText'] = state.outputText;
+  if (state.outputStatus) {
+    try {
+      block.dataset['snapshotOutputStatus'] = JSON.stringify(state.outputStatus);
+    } catch {
+      delete block.dataset['snapshotOutputStatus'];
+    }
+  } else {
+    delete block.dataset['snapshotOutputStatus'];
+  }
+}
+
+function readToolOutputSnapshotStatus(block: HTMLDivElement): ToolOutputStatus | undefined {
+  const raw = block.dataset['snapshotOutputStatus'];
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as ToolOutputStatus;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildToolOutputSnapshotStateFromDataset(
+  source: HTMLDivElement,
+  clone: HTMLDivElement,
+): ToolOutputBlockState | null {
+  const headerButton = clone.querySelector<HTMLButtonElement>('.tool-output-header');
+  const toggleIcon = clone.querySelector<HTMLSpanElement>('.tool-output-toggle');
+  const content = clone.querySelector<HTMLDivElement>('.tool-output-content');
+  const inputSection = clone.querySelector<HTMLDivElement>('.tool-output-input');
+  const outputSection = clone.querySelector<HTMLDivElement>('.tool-output-result');
+  if (!headerButton || !toggleIcon || !content || !inputSection || !outputSection) {
+    return null;
+  }
+
+  const inputKind = source.dataset['snapshotInputKind'] ?? (source.dataset['argsJson'] ? 'formatted' : 'none');
+  let input: ToolOutputInputState;
+  switch (inputKind) {
+    case 'formatted':
+      input = {
+        kind: 'formatted',
+        argsJson: source.dataset['snapshotArgsJson'] ?? source.dataset['argsJson'] ?? '',
+      };
+      break;
+    case 'streaming':
+      input = {
+        kind: 'streaming',
+        text: source.dataset['snapshotInputText'] ?? '',
+        label: source.dataset['snapshotInputLabel'] ?? 'Input',
+      };
+      break;
+    case 'custom':
+      input = {
+        kind: 'custom',
+        text: source.dataset['snapshotInputText'] ?? '',
+        label: source.dataset['snapshotInputLabel'] ?? 'Input',
+      };
+      break;
+    case 'none':
+    default:
+      input = { kind: 'none' };
+      break;
+  }
+
+  const outputStatus = readToolOutputSnapshotStatus(source);
+  return {
+    headerButton,
+    toggleIcon,
+    content,
+    inputSection,
+    outputSection,
+    toolName: source.dataset['snapshotToolName'] ?? source.dataset['toolName'] ?? 'tool',
+    input,
+    outputText: source.dataset['snapshotOutputText'] ?? '',
+    ...(outputStatus ? { outputStatus } : {}),
+    nearViewport: true,
+    staticContent: false,
+  };
+}
+
 export function getToolOutputToggleSymbol(expanded: boolean): string {
   return expanded ? '▼' : '▶';
 }
@@ -488,6 +593,10 @@ export function createToolOutputBlock(options: ToolOutputBlockOptions): HTMLDivE
     nearViewport: true,
     staticContent: false,
   });
+  const state = toolOutputBlockStates.get(block);
+  if (state) {
+    writeToolOutputSnapshotDataset(block, state);
+  }
 
   block.appendChild(headerButton);
   block.appendChild(content);
@@ -1017,6 +1126,54 @@ export function setToolOutputBlockExpanded(block: HTMLDivElement, expanded: bool
   syncToolOutputBlockContent(block);
 }
 
+export function materializeToolOutputBlockForSnapshot(block: HTMLDivElement): void {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
+    return;
+  }
+  renderToolOutputInput(state);
+  renderToolOutputResult(state);
+}
+
+export function cloneToolOutputBlockForSnapshot(source: HTMLDivElement): HTMLDivElement {
+  const clone = source.cloneNode(true) as HTMLDivElement;
+  const state = getToolOutputBlockState(source);
+  const snapshotState = state
+    ? (() => {
+        const headerButton = clone.querySelector<HTMLButtonElement>('.tool-output-header');
+        const toggleIcon = clone.querySelector<HTMLSpanElement>('.tool-output-toggle');
+        const content = clone.querySelector<HTMLDivElement>('.tool-output-content');
+        const inputSection = clone.querySelector<HTMLDivElement>('.tool-output-input');
+        const outputSection = clone.querySelector<HTMLDivElement>('.tool-output-result');
+        if (!headerButton || !toggleIcon || !content || !inputSection || !outputSection) {
+          return null;
+        }
+        return {
+          ...state,
+          headerButton,
+          toggleIcon,
+          content,
+          inputSection,
+          outputSection,
+          nearViewport: true,
+        } satisfies ToolOutputBlockState;
+      })()
+    : buildToolOutputSnapshotStateFromDataset(source, clone);
+
+  if (!snapshotState) {
+    clone.dataset['exportSnapshotState'] = 'incomplete';
+    clone.dataset['exportSnapshotInputLength'] = '0';
+    clone.dataset['exportSnapshotOutputLength'] = '0';
+    return clone;
+  }
+  renderToolOutputInput(snapshotState);
+  renderToolOutputResult(snapshotState);
+  clone.dataset['exportSnapshotState'] = state ? 'present' : 'rehydrated';
+  clone.dataset['exportSnapshotInputLength'] = `${snapshotState.inputSection.textContent?.trim().length ?? 0}`;
+  clone.dataset['exportSnapshotOutputLength'] = `${snapshotState.outputSection.textContent?.trim().length ?? 0}`;
+  return clone;
+}
+
 export function updateToolOutputBlockStreamingInput(
   block: HTMLDivElement,
   text: string,
@@ -1028,6 +1185,7 @@ export function updateToolOutputBlockStreamingInput(
   }
   const preview = getToolInputPreview(state.toolName, text);
   state.input = { kind: 'streaming', text, label: preview.label || label };
+  writeToolOutputSnapshotDataset(block, state);
   syncToolOutputBlockContent(block);
 }
 
@@ -1184,6 +1342,7 @@ export function updateToolOutputBlockContent(
   } else {
     delete state.outputStatus;
   }
+  writeToolOutputSnapshotDataset(block, state);
   if (canUseStreamingPlainTextOutput(status, toolName)) {
     const streamingPre = state.outputSection.querySelector<HTMLPreElement>(
       '.tool-output-streaming-pre',
@@ -1231,6 +1390,7 @@ export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string)
   block.dataset['argsJson'] = argsJson;
   state.input =
     argsJson.trim().length > 0 ? { kind: 'formatted', argsJson } : { kind: 'none' };
+  writeToolOutputSnapshotDataset(block, state);
   syncToolOutputBlockContent(block);
 }
 
@@ -1273,6 +1433,7 @@ export function setToolOutputBlockPending(
     outputStatus.statusLabel = statusLabel;
   }
   blockState.outputStatus = outputStatus;
+  writeToolOutputSnapshotDataset(block, blockState);
   syncToolOutputBlockContent(block);
 }
 
