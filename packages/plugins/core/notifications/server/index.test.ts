@@ -300,6 +300,36 @@ describe('notifications server plugin', () => {
     });
   });
 
+  describe('mark_all_unread operation', () => {
+    it('marks all unread and broadcasts snapshot', async () => {
+      const ctx = createMockCtx();
+      const first = (await plugin.operations!.create({ title: 'A', body: 'B' }, ctx)) as any;
+      await plugin.operations!.create({ title: 'B', body: 'B' }, ctx);
+      await plugin.operations!.toggle_read({ id: first.id }, ctx);
+      await plugin.operations!.mark_all_read({}, ctx);
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const result = (await plugin.operations!.mark_all_unread({}, ctx)) as any;
+
+      expect(result.marked).toBe(2);
+
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'panel_event',
+          panelType: 'notifications',
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'snapshot',
+            revision: expect.any(Number),
+            notifications: expect.arrayContaining([
+              expect.objectContaining({ readAt: null }),
+            ]),
+          }),
+        }),
+      );
+    });
+  });
+
   describe('clear operation', () => {
     it('removes a notification and broadcasts', async () => {
       const ctx = createMockCtx();
@@ -453,6 +483,56 @@ describe('notifications server plugin', () => {
               id: created.id,
               readAt: expect.any(String),
             }),
+          }),
+        }),
+      );
+    });
+
+    it('handles mark_all_unread via panel event', async () => {
+      const ctx = createMockCtx();
+      const created = (await plugin.operations!.create(
+        { title: 'Toggle', body: 'B' },
+        ctx,
+      )) as any;
+      await plugin.operations!.toggle_read({ id: created.id }, ctx);
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_unread' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'panel_event',
+          panelType: 'notifications',
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'snapshot',
+            revision: expect.any(Number),
+            notifications: expect.arrayContaining([
+              expect.objectContaining({
+                id: created.id,
+                readAt: null,
+              }),
+            ]),
           }),
         }),
       );

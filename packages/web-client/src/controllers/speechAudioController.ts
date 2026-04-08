@@ -351,6 +351,7 @@ export interface SpeechAudioControllerOptions {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -985,6 +986,8 @@ export class SpeechAudioController {
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
     this.options.standaloneNotificationPlaybackCheckboxEl.checked =
       this.currentVoiceSettings.standaloneNotificationPlaybackEnabled;
+    this.options.notificationTitlePlaybackCheckboxEl.checked =
+      this.currentVoiceSettings.notificationTitlePlaybackEnabled;
     this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
     this.syncNativeInputDeviceOptions();
     this.options.voiceRecognitionStartTimeoutInputEl.value = String(
@@ -1026,6 +1029,7 @@ export class SpeechAudioController {
     this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
     this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
     this.options.standaloneNotificationPlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
+    this.options.notificationTitlePlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceMicInputSelectEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;

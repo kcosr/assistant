@@ -592,6 +592,71 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
+  it('expands long notification text inline without triggering card navigation', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n-expand',
+            sessionId: 'sess-1',
+            body:
+              'First line of a longer notification body that should expand.\n'
+              + 'Second line that is only visible once expanded.',
+          }),
+        ],
+      },
+    } as any);
+
+    const expandBtn = container.querySelector('.notif-expand-btn-inline') as HTMLButtonElement;
+    expect(expandBtn).not.toBeNull();
+
+    const bodyEl = container.querySelector('.notif-body-text') as HTMLElement;
+    expect(bodyEl.classList.contains('notif-body-text-expanded')).toBe(false);
+
+    expandBtn.click();
+
+    expect(host.openPanel).not.toHaveBeenCalled();
+    expect(container.querySelector('.notif-body-text-expanded')).not.toBeNull();
+    expect(container.querySelector('.notif-expand-btn-inline')?.getAttribute('aria-label')).toBe(
+      'Collapse details',
+    );
+
+    (container.querySelector('.notif-expand-btn-inline') as HTMLButtonElement).click();
+
+    expect(container.querySelector('.notif-body-text-expanded')).toBeNull();
+    expect(container.querySelector('.notif-expand-btn-inline')?.getAttribute('aria-label')).toBe(
+      'Expand details',
+    );
+
+    handle.unmount();
+  });
+
+  it('does not render an inline expand caret for short card notifications', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n-short', body: 'Short body' })],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-expand-btn-inline')).toBeNull();
+
+    handle.unmount();
+  });
+
   it('toggles filter between all and unread', async () => {
     const module = panelFactory!();
     const host = createHost();
@@ -982,6 +1047,75 @@ describe('notifications panel', () => {
     markAllBtn.click();
 
     expect(host.sendEvent).toHaveBeenCalledWith({ type: 'mark_all_read' });
+
+    handle.unmount();
+  });
+
+  it('anchors the overflow menu dropdown to the menu button wrapper', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    const menuAnchor = container.querySelector('.notif-menu-anchor') as HTMLElement;
+    const dropdown = container.querySelector('.notif-menu-dropdown') as HTMLElement;
+
+    expect(menuAnchor).not.toBeNull();
+    expect(dropdown.parentElement).toBe(menuAnchor);
+
+    handle.unmount();
+  });
+
+  it('sends mark_all_unread when overflow menu item is clicked after everything is read', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({ id: 'n1', readAt: new Date().toISOString() }),
+          makeNotification({ id: 'n2', readAt: new Date().toISOString() }),
+        ],
+      },
+    } as any);
+
+    const menuBtn = container.querySelector('.notif-menu-btn') as HTMLElement;
+    menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: false }));
+
+    const dropdown = container.querySelector('.notif-menu-dropdown') as HTMLElement;
+    const markAllBtn = dropdown.querySelector('.notif-menu-item') as HTMLElement;
+    expect(markAllBtn.textContent).toBe('Mark all unread');
+
+    markAllBtn.click();
+
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'mark_all_unread' });
+
+    handle.unmount();
+  });
+
+  it('toggles read state when the left icon button is clicked', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1', sessionId: 'sess-1' })],
+      },
+    } as any);
+
+    const toggleBtn = container.querySelector('.notif-read-toggle-btn') as HTMLElement;
+    toggleBtn.click();
+
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+    expect(host.openPanel).not.toHaveBeenCalled();
 
     handle.unmount();
   });

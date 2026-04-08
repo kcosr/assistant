@@ -20,6 +20,7 @@ export interface VoiceSettings {
   audioMode: AudioMode;
   autoListenEnabled: boolean;
   standaloneNotificationPlaybackEnabled: boolean;
+  notificationTitlePlaybackEnabled: boolean;
   voiceAdapterBaseUrl: string;
   preferredVoiceSessionId: string;
   ttsPreferredSessionOnly: boolean;
@@ -144,6 +145,7 @@ export function createDefaultVoiceSettings(options?: {
     audioMode: isAndroid ? 'tool' : 'off',
     autoListenEnabled: isAndroid,
     standaloneNotificationPlaybackEnabled: isAndroid,
+    notificationTitlePlaybackEnabled: false,
     voiceAdapterBaseUrl: DEFAULT_VOICE_ADAPTER_BASE_URL,
     preferredVoiceSessionId: '',
     ttsPreferredSessionOnly: false,
@@ -181,6 +183,10 @@ export function normalizeVoiceSettings(
       typeof record['standaloneNotificationPlaybackEnabled'] === 'boolean'
         ? record['standaloneNotificationPlaybackEnabled']
         : defaults.standaloneNotificationPlaybackEnabled,
+    notificationTitlePlaybackEnabled:
+      typeof record['notificationTitlePlaybackEnabled'] === 'boolean'
+        ? record['notificationTitlePlaybackEnabled']
+        : defaults.notificationTitlePlaybackEnabled,
     voiceAdapterBaseUrl: normalizeUrl(record['voiceAdapterBaseUrl']),
     preferredVoiceSessionId: normalizeOptionalString(record['preferredVoiceSessionId']),
     ttsPreferredSessionOnly:
@@ -222,6 +228,7 @@ export function areVoiceSettingsEqual(left: VoiceSettings, right: VoiceSettings)
     left.audioMode === right.audioMode &&
     left.autoListenEnabled === right.autoListenEnabled &&
     left.standaloneNotificationPlaybackEnabled === right.standaloneNotificationPlaybackEnabled &&
+    left.notificationTitlePlaybackEnabled === right.notificationTitlePlaybackEnabled &&
     left.voiceAdapterBaseUrl === right.voiceAdapterBaseUrl &&
     left.preferredVoiceSessionId === right.preferredVoiceSessionId &&
     left.ttsPreferredSessionOnly === right.ttsPreferredSessionOnly &&

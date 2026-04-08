@@ -31,6 +31,9 @@ describe('getWebClientElements', () => {
     expect(elements?.standaloneNotificationPlaybackCheckbox?.id).toBe(
       'standalone-notification-playback-checkbox',
     );
+    expect(elements?.notificationTitlePlaybackCheckbox?.id).toBe(
+      'notification-title-playback-checkbox',
+    );
     expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
     expect(elements?.voicePreferredSessionSelect.id).toBe('voice-preferred-session-select');
     expect(elements?.voiceTtsPreferredSessionOnlyCheckbox.id).toBe(

@@ -54,21 +54,26 @@ final class AssistantVoiceNotificationRecord {
         return "session_attention".equals(kind);
     }
 
-    String resolveSpokenText() {
+    String resolveSpokenText(boolean includeTitle) {
+        String speech = "";
         if (!ttsText.isEmpty()) {
-            return ttsText;
+            speech = ttsText;
+        } else if (!body.isEmpty()) {
+            speech = body;
+        } else if (!title.isEmpty()) {
+            speech = title;
         }
-        if (!body.isEmpty()) {
-            return body;
+        if (!includeTitle || title.isEmpty() || speech.isEmpty() || title.equals(speech)) {
+            return speech;
         }
-        if (!title.isEmpty()) {
-            return title;
-        }
-        return "";
+        return title + ": " + speech;
     }
 
-    AssistantVoiceQueueItem toAutomaticQueueItem(boolean autoListenEnabled) {
-        String spokenText = resolveSpokenText();
+    AssistantVoiceQueueItem toAutomaticQueueItem(
+        boolean autoListenEnabled,
+        boolean includeTitle
+    ) {
+        String spokenText = resolveSpokenText(includeTitle);
         if (spokenText.isEmpty()) {
             return null;
         }
@@ -91,8 +96,8 @@ final class AssistantVoiceNotificationRecord {
         );
     }
 
-    AssistantVoiceQueueItem toManualSpeakerQueueItem() {
-        String spokenText = resolveSpokenText();
+    AssistantVoiceQueueItem toManualSpeakerQueueItem(boolean includeTitle) {
+        String spokenText = resolveSpokenText(includeTitle);
         if (spokenText.isEmpty()) {
             return null;
         }

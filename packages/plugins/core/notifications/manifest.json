@@ -142,6 +142,15 @@
       "capabilities": ["notifications.write"]
     },
     {
+      "id": "mark_all_unread",
+      "summary": "Mark all notifications as unread.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      },
+      "capabilities": ["notifications.write"]
+    },
+    {
       "id": "clear",
       "summary": "Delete a single notification.",
       "inputSchema": {

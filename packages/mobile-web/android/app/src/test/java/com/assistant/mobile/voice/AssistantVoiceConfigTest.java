@@ -128,6 +128,15 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void withVoiceSettingsReadsNotificationTitlePlaybackSetting() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("notificationTitlePlaybackEnabled", true)
+        );
+
+        assertTrue(updated.notificationTitlePlaybackEnabled);
+    }
+
+    @Test
     public void saveAndLoadPersistMediaButtonsEnabled() {
         Context context = RuntimeEnvironment.getApplication();
         AssistantVoiceConfig.save(context, createConfig(true));
@@ -236,7 +245,8 @@ public final class AssistantVoiceConfigTest {
             startupPreRollMs,
             mediaButtonsEnabled,
             false,
-            true
+            true,
+            false
         );
     }
 

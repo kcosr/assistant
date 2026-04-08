@@ -23,6 +23,7 @@ describe('voiceSettings', () => {
     expect(recognitionCueGainToPercent(createDefaultVoiceSettings().recognitionCueGain)).toBe(100);
     expect(createDefaultVoiceSettings().startupPreRollMs).toBe(512);
     expect(createDefaultVoiceSettings().standaloneNotificationPlaybackEnabled).toBe(false);
+    expect(createDefaultVoiceSettings().notificationTitlePlaybackEnabled).toBe(false);
     expect(
       createDefaultVoiceSettings({ isCapacitorAndroid: true }).standaloneNotificationPlaybackEnabled,
     ).toBe(true);
@@ -81,5 +82,13 @@ describe('voiceSettings', () => {
         },
       ).standaloneNotificationPlaybackEnabled,
     ).toBe(false);
+  });
+
+  it('preserves the notification title playback setting', () => {
+    expect(
+      normalizeVoiceSettings({
+        notificationTitlePlaybackEnabled: true,
+      }).notificationTitlePlaybackEnabled,
+    ).toBe(true);
   });
 });

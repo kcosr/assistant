@@ -24,8 +24,10 @@
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Changed native Android voice controls so the floating mobile FAB now owns voice start/stop with a target-session title chip, while the chat-row control becomes a stop-only turn button.
 - Changed Android voice settings to add a separate `Play standalone notifications aloud` toggle for sessionless notification autoplay instead of tying that behavior to the main `Audio Mode` selector.
+- Changed Android voice settings to add a `Read notification title before speech text` toggle so notification playback can prepend the title before `ttsText` or body speech.
 - Changed chat-panel session pickers so sessions already open in another chat panel remain selectable and switch focus to the existing panel instead of being blocked.
 - Changed lists tool rendering in chat to show concise formatted requests and markdown-table results for list and list-item tools, while keeping the raw JSON toggle.
+- Changed the notifications panel bulk read action into a read/unread toggle and made the leading row icon toggle read state for individual notifications.
 
 ### Fixed
 

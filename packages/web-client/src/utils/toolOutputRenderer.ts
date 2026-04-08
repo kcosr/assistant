@@ -434,7 +434,7 @@ function getListsToolInputPreview(
     return null;
   }
 
-  const lines: string[] = [];
+  const rows: string[][] = [];
   const listId = typeof args['listId'] === 'string' ? args['listId'].trim() : '';
   const id = typeof args['id'] === 'string' ? args['id'].trim() : '';
   const name = typeof args['name'] === 'string' ? args['name'].trim() : '';
@@ -447,32 +447,32 @@ function getListsToolInputPreview(
   const position = typeof args['position'] === 'number' ? String(args['position']) : '';
 
   if (listId) {
-    lines.push(`- List: \`${listId}\``);
+    rows.push(['List', `\`${listId}\``]);
   } else if (id && (toolName === 'lists_get' || toolName === 'lists_update')) {
-    lines.push(`- List: \`${id}\``);
+    rows.push(['List', `\`${id}\``]);
   }
   if (name && (toolName === 'lists_create' || toolName === 'lists_update')) {
-    lines.push(`- Name: ${name}`);
+    rows.push(['Name', name]);
   }
   if (title) {
-    lines.push(`- Title: ${title}`);
+    rows.push(['Title', title]);
   } else if (lookupTitle) {
-    lines.push(`- Item: ${lookupTitle}`);
+    rows.push(['Item', lookupTitle]);
   }
   if (query) {
-    lines.push(`- Query: ${query}`);
+    rows.push(['Query', query]);
   }
   if (position) {
-    lines.push(`- Position: ${position}`);
+    rows.push(['Position', position]);
   }
   if (url) {
-    lines.push(`- URL: ${url}`);
+    rows.push(['URL', url]);
   }
   if (notes) {
-    lines.push(`- Notes: ${normalizeListsTableText(notes)}`);
+    rows.push(['Notes', normalizeListsTableText(notes)]);
   }
   if (tags) {
-    lines.push(`- Tags: ${tags}`);
+    rows.push(['Tags', tags]);
   }
 
   const customFields = args['customFields'];
@@ -482,19 +482,19 @@ function getListsToolInputPreview(
       if (!formattedValue) {
         continue;
       }
-      lines.push(`- ${key}: ${formattedValue}`);
+      rows.push([key, formattedValue]);
     }
   }
 
   const fallbackHeaderLabel = title || name || listId || id || query || lookupTitle;
-  if (lines.length === 0) {
+  if (rows.length === 0) {
     return null;
   }
 
   return {
     headerLabel: fallbackHeaderLabel,
     label: 'Request',
-    formattedText: lines.join('\n'),
+    formattedText: buildMarkdownTable(['Field', 'Value'], rows),
     renderMode: 'markdown',
   };
 }

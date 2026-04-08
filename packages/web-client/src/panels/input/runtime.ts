@@ -74,6 +74,7 @@ export interface InputRuntimeOptions {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -333,6 +334,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckboxEl: options.standaloneNotificationPlaybackCheckboxEl,
+    notificationTitlePlaybackCheckboxEl: options.notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
     voiceMicInputSelectEl: options.voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,

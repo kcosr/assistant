@@ -205,6 +205,10 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   `voice_speak` and `voice_ask` remain append-only notifications with explicit `voiceMode`
   metadata. Auto-listen-capable items carry a server-generated session activity sequence so stale
   queued asks can be invalidated before recognition begins.
+- Voice settings also include a `Read notification title before speech text` toggle. When enabled,
+  notification playback prepends the notification title before the configured `ttsText` or body
+  content using a spoken `Title: ...` join, which is especially useful for standalone CLI/HTTP/tool
+  notifications.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

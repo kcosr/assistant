@@ -1321,7 +1321,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!notification.sessionTitle.isEmpty() && !displayTitle.equals(notification.sessionTitle)) {
             builder.setSubText(notification.sessionTitle);
         }
-        if (!notification.resolveSpokenText().isEmpty()) {
+        if (!notification.resolveSpokenText(config.notificationTitlePlaybackEnabled).isEmpty()) {
             builder.addAction(
                 android.R.drawable.ic_btn_speak_now,
                 getString(R.string.assistant_voice_notification_action_play),
@@ -1384,7 +1384,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             && !config.preferredVoiceSessionId.equals(notification.sessionId)) {
             return;
         }
-        AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(config.autoListenEnabled);
+        AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(
+            config.autoListenEnabled,
+            config.notificationTitlePlaybackEnabled
+        );
         if (item == null) {
             return;
         }
@@ -2641,7 +2644,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         recordVoiceEvent("manual_notification_action", details);
         AssistantVoiceQueueItem item = microphoneAction
             ? notification.toManualMicQueueItem(config.autoListenEnabled)
-            : notification.toManualSpeakerQueueItem();
+            : notification.toManualSpeakerQueueItem(config.notificationTitlePlaybackEnabled);
         if (item == null) {
             if (microphoneAction) {
                 Log.d(TAG, "handleManualNotificationAction falling back to manual listen sessionId=" + notification.sessionId);
@@ -3193,7 +3196,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             + " kind=" + safe(notification.kind)
             + " voiceMode=" + safe(notification.voiceMode)
             + " unread=" + notification.isUnread()
-            + " hasSpeech=" + !notification.resolveSpokenText().isEmpty()
+            + " hasSpeech=" + !notification.resolveSpokenText(false).isEmpty()
             + " sessionActivitySeq=" + notification.sessionActivitySeq;
     }
 

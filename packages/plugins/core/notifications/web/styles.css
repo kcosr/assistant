@@ -47,6 +47,12 @@
   height: 16px;
 }
 
+.notif-menu-anchor {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 /* Overflow menu */
 
 .notif-menu-dropdown {
@@ -158,11 +164,22 @@
   width: 24px;
   height: 24px;
   margin-top: 1px;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--color-text-tertiary, #6b7280);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .notif-item:not(.notif-item-read) .notif-source-icon {
   color: var(--color-accent, #7aa2f7);
+}
+
+.notif-read-toggle-btn:focus-visible {
+  outline: 2px solid rgba(122, 162, 247, 0.45);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 /* Content area */
@@ -219,21 +236,22 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-text-tertiary, #6b7280);
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-secondary, #9aa4b6);
   cursor: pointer;
-  opacity: 0;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.1s, color 0.1s, background-color 0.1s;
+  transition: color 0.1s, background-color 0.1s, border-color 0.1s, transform 0.08s;
 }
 
 .notif-dismiss-btn:focus-visible {
-  opacity: 1;
+  color: var(--color-danger, #f87171);
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.12);
 }
 
 /* Body text */
@@ -246,6 +264,14 @@
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.notif-body-text-expanded {
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: initial;
+  white-space: pre-wrap;
 }
 
 .notif-actions {
@@ -308,16 +334,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   background: transparent;
-  border: none;
-  border-radius: 3px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--color-text-tertiary, #6b7280);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.1s, background-color 0.1s;
+  transition: color 0.1s, background-color 0.1s, border-color 0.1s;
+}
+
+.notif-expand-btn-inline {
+  margin-left: auto;
 }
 
 /* Icon sizes */
@@ -351,13 +381,14 @@
     background-color: var(--color-bg-hover, rgba(255, 255, 255, 0.03));
   }
 
-  .notif-item:hover .notif-dismiss-btn {
-    opacity: 1;
-  }
-
   .notif-dismiss-btn:hover {
     color: var(--color-danger, #f87171);
-    background: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
+    border-color: rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.12);
+  }
+
+  .notif-dismiss-btn:active {
+    transform: translateY(1px);
   }
 
   .notif-action-btn:hover {
@@ -368,6 +399,7 @@
 
   .notif-expand-btn:hover {
     color: var(--color-text-primary, #e6ebf5);
+    border-color: var(--color-border, rgba(255, 255, 255, 0.1));
     background-color: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
   }
 }

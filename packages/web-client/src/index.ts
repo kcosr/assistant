@@ -533,6 +533,7 @@ async function main(): Promise<void> {
     audioModeSelect: audioModeSelectEl,
     autoListenCheckbox: autoListenCheckboxEl,
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
+    notificationTitlePlaybackCheckbox: notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
     voicePreferredSessionSelect: voicePreferredSessionSelectEl,
     voiceTtsPreferredSessionOnlyCheckbox: voiceTtsPreferredSessionOnlyCheckboxEl,
@@ -1628,6 +1629,7 @@ async function main(): Promise<void> {
       audioModeSelectEl,
       autoListenCheckboxEl,
       standaloneNotificationPlaybackCheckboxEl,
+      notificationTitlePlaybackCheckboxEl,
       voiceAdapterBaseUrlInputEl,
       voiceMicInputSelectEl,
       voiceRecognitionStartTimeoutInputEl,
@@ -2363,6 +2365,32 @@ async function main(): Promise<void> {
     }
   }
 
+  function resetMissingChatSessionBinding(sessionId: string): void {
+    const normalized = normalizeSessionId(sessionId);
+    if (!normalized) {
+      return;
+    }
+    clearSessionTranscriptState(normalized);
+    unbindChatPanelsForSession(normalized);
+    if (inputSessionId === normalized) {
+      setInputSessionId(null);
+    }
+  }
+
+  function pruneMissingChatSessionBindings(): void {
+    if (chatPanelsById.size === 0) {
+      return;
+    }
+    const existingSessionIds = new Set(sessionSummaries.map((summary) => summary.sessionId));
+    for (const entry of chatPanelsById.values()) {
+      const sessionId = entry.bindingSessionId;
+      if (!sessionId || existingSessionIds.has(sessionId)) {
+        continue;
+      }
+      resetMissingChatSessionBinding(sessionId);
+    }
+  }
+
   function unbindAllChatPanels(): void {
     if (!panelHostController) {
       return;
@@ -3079,6 +3107,7 @@ async function main(): Promise<void> {
     },
     setSessionSummaries: (summaries) => {
       sessionSummaries = summaries;
+      pruneMissingChatSessionBindings();
       currentModelBySession.clear();
       currentThinkingBySession.clear();
       for (const summary of summaries) {
@@ -3772,6 +3801,7 @@ async function main(): Promise<void> {
       audioMode: audioModeSelectEl.value,
       autoListenEnabled: autoListenCheckboxEl.checked,
       standaloneNotificationPlaybackEnabled: standaloneNotificationPlaybackCheckboxEl.checked,
+      notificationTitlePlaybackEnabled: notificationTitlePlaybackCheckboxEl.checked,
       voiceAdapterBaseUrl: voiceAdapterBaseUrlInputEl.value,
       selectedMicDeviceId: voiceMicInputSelectEl.value,
       recognitionStartTimeoutMs: voiceRecognitionStartTimeoutInputEl.value,
@@ -3803,6 +3833,7 @@ async function main(): Promise<void> {
   audioModeSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   standaloneNotificationPlaybackCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  notificationTitlePlaybackCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voicePreferredSessionSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceTtsPreferredSessionOnlyCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
@@ -3824,6 +3855,7 @@ async function main(): Promise<void> {
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;
+    notificationTitlePlaybackCheckboxEl.checked = settings.notificationTitlePlaybackEnabled;
     voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
     syncPreferredVoiceSessionOptions();
     voicePreferredSessionSelectEl.value = settings.preferredVoiceSessionId;
@@ -4536,6 +4568,9 @@ async function main(): Promise<void> {
         });
         if (!eventsResponse.ok) {
           console.error('Failed to fetch session events', sessionId, eventsResponse.status);
+          if (eventsResponse.status === 404 || eventsResponse.status === 410) {
+            resetMissingChatSessionBinding(trimmed);
+          }
           chatRenderer.clear();
           ensureEmptySessionHint(chatLogEl);
           replayState.loaded = false;

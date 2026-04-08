@@ -102,8 +102,8 @@ public final class AssistantVoiceQueueItemTest {
             null
         );
 
-        AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true);
-        AssistantVoiceQueueItem manualItem = notification.toManualSpeakerQueueItem();
+        AssistantVoiceQueueItem automaticItem = notification.toAutomaticQueueItem(true, false);
+        AssistantVoiceQueueItem manualItem = notification.toManualSpeakerQueueItem(false);
 
         assertNotNull(automaticItem);
         assertNotNull(manualItem);

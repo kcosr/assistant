@@ -81,6 +81,15 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           notifications,
         }),
       );
+    } else if (eventType === 'mark_all_unread') {
+      const { notifications, revision } = await store.markAllUnreadSnapshot();
+      ctx.sendToAll(
+        buildNotificationPanelEventMessage({
+          event: 'snapshot',
+          revision,
+          notifications,
+        }),
+      );
     } else if (eventType === 'clear') {
       const id = payload['id'];
       if (typeof id !== 'string') {
@@ -220,6 +229,19 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
       mark_all_read: async (_args, ctx) => {
         const store = getNotificationsStore();
         const { count, notifications, revision } = await store.markAllReadSnapshot();
+        ctx.sessionHub?.broadcastToAll(
+          buildNotificationPanelEventMessage({
+            event: 'snapshot',
+            revision,
+            notifications,
+          }),
+        );
+        return { marked: count };
+      },
+
+      mark_all_unread: async (_args, ctx) => {
+        const store = getNotificationsStore();
+        const { count, notifications, revision } = await store.markAllUnreadSnapshot();
         ctx.sessionHub?.broadcastToAll(
           buildNotificationPanelEventMessage({
             event: 'snapshot',

@@ -48,6 +48,7 @@ function createVoiceSettingsInputs(): {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
   standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -89,6 +90,7 @@ function createVoiceSettingsInputs(): {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
     standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
+    notificationTitlePlaybackCheckboxEl: document.createElement('input'),
     voiceAdapterBaseUrlInputEl: document.createElement('input'),
     voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
@@ -110,6 +112,7 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
     audioMode: 'off',
     autoListenEnabled: false,
     standaloneNotificationPlaybackEnabled: false,
+    notificationTitlePlaybackEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
     preferredVoiceSessionId: '',
     ttsPreferredSessionOnly: false,
@@ -834,6 +837,7 @@ describe('SpeechAudioController.micButtonState', () => {
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
       standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
+      notificationTitlePlaybackCheckboxEl: document.createElement('input'),
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
       voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),

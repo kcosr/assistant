@@ -75,6 +75,7 @@ const ICON_PATHS: Record<string, string> = {
   system: 'M12 2l7 4v6c0 5-3.4 9.4-7 10-3.6-.6-7-5-7-10V6l7-4z',
   chevronDown: 'M6 9l6 6 6-6',
   chevronUp: 'M18 15l-6-6-6 6',
+  chevronRight: 'M9 6l6 6-6 6',
   moreVertical: 'M12 12h.01 M12 5h.01 M12 19h.01',
   stop: 'M8 8h8v8H8z',
   volume: 'M11 5L6 9H2v6h4l5 4V5z M19.07 4.93a10 10 0 0 1 0 14.14 M15.54 8.46a5 5 0 0 1 0 7.07',
@@ -188,10 +189,17 @@ function resolveSpokenText(notification: NotificationRecord): string {
   return notification.title.trim();
 }
 
+function canExpandNotificationBody(body: string): boolean {
+  const trimmed = body.trim();
+  return trimmed.length > 160 || trimmed.includes('\n');
+}
+
 function isInteractiveTarget(target: EventTarget | null): boolean {
   return target instanceof Element
     && Boolean(
-      target.closest('.notif-action-btn, .notif-dismiss-btn, .notif-expand-btn'),
+      target.closest(
+        '.notif-action-btn, .notif-dismiss-btn, .notif-expand-btn, .notif-read-toggle-btn',
+      ),
     );
 }
 
@@ -302,11 +310,15 @@ function resolveClientSessionLabel(
       controlsEl.appendChild(densityBtn);
 
       // Overflow menu button
+      const menuAnchor = document.createElement('div');
+      menuAnchor.className = 'notif-menu-anchor';
+      controlsEl.appendChild(menuAnchor);
+
       const menuBtn = document.createElement('button');
       menuBtn.className = 'notif-toggle-btn notif-menu-btn';
       menuBtn.title = 'More actions';
       menuBtn.appendChild(createSvgIcon(ICON_PATHS.moreVertical));
-      controlsEl.appendChild(menuBtn);
+      menuAnchor.appendChild(menuBtn);
 
       // Overflow menu dropdown
       const menuDropdown = document.createElement('div');
@@ -323,7 +335,7 @@ function resolveClientSessionLabel(
       clearAllBtn.textContent = 'Clear all';
       menuDropdown.appendChild(clearAllBtn);
 
-      controlsEl.appendChild(menuDropdown);
+      menuAnchor.appendChild(menuDropdown);
 
       // Chrome controller
       const chromeController = new PanelChromeController({
@@ -371,6 +383,13 @@ function resolveClientSessionLabel(
 
       const updateDensityButton = (): void => {
         densityBtn.textContent = state.density === 'card' ? 'Card' : 'Compact';
+      };
+
+      const updateMarkAllButton = (): void => {
+        const unreadCount = state.notifications.filter((n) => n.readAt === null).length;
+        const markUnread = state.notifications.length > 0 && unreadCount === 0;
+        markAllReadBtn.textContent = markUnread ? 'Mark all unread' : 'Mark all read';
+        markAllReadBtn.dataset['action'] = markUnread ? 'mark_all_unread' : 'mark_all_read';
       };
 
       const persistState = (): void => {
@@ -489,6 +508,9 @@ function resolveClientSessionLabel(
         }
         const canSpeak = nativeVoiceAvailable && spokenText.length > 0;
         const canListen = nativeVoiceAvailable && !!n.sessionId;
+        const canExpand = isCompact
+          ? n.body.trim().length > 0 || canSpeak || canListen
+          : canExpandNotificationBody(n.body);
 
         const item = document.createElement('div');
         item.className = `notif-item${isRead ? ' notif-item-read' : ''}${isCompact ? ' notif-item-compact' : ''}${n.sessionId ? ' notif-item-linkable' : ''}`;
@@ -510,14 +532,23 @@ function resolveClientSessionLabel(
         };
 
         // Source icon
-        const sourceIcon = document.createElement('div');
-        sourceIcon.className = 'notif-source-icon';
-        sourceIcon.title = n.source;
+        const sourceIcon = document.createElement('button');
+        sourceIcon.type = 'button';
+        sourceIcon.className = 'notif-source-icon notif-read-toggle-btn';
+        sourceIcon.title = isRead ? 'Mark unread' : 'Mark read';
+        sourceIcon.setAttribute('aria-label', isRead ? 'Mark unread' : 'Mark read');
         sourceIcon.appendChild(
           createSvgIcon(
             n.kind === 'session_attention' ? ICON_PATHS.inbox : (ICON_PATHS[n.source] ?? ICON_PATHS.tool),
           ),
         );
+        sourceIcon.addEventListener('pointerdown', markInteractivePress);
+        sourceIcon.addEventListener('pointerup', clearInteractivePress);
+        sourceIcon.addEventListener('pointercancel', clearInteractivePress);
+        sourceIcon.addEventListener('click', (event) => {
+          stopInteractiveClick(event);
+          host.sendEvent({ type: 'toggle_read', id: n.id });
+        });
         item.appendChild(sourceIcon);
 
         // Content area
@@ -532,6 +563,30 @@ function resolveClientSessionLabel(
         titleEl.className = 'notif-title';
         titleEl.textContent = displayTitle;
         titleRow.appendChild(titleEl);
+
+        if (canExpand) {
+          const expandBtn = document.createElement('button');
+          expandBtn.type = 'button';
+          expandBtn.className = 'notif-expand-btn notif-expand-btn-inline';
+          expandBtn.title = isExpanded ? 'Collapse details' : 'Expand details';
+          expandBtn.setAttribute('aria-label', isExpanded ? 'Collapse details' : 'Expand details');
+          expandBtn.appendChild(
+            createSvgIcon(
+              isExpanded ? ICON_PATHS.chevronDown : ICON_PATHS.chevronRight,
+              'notif-icon notif-icon-xs',
+            ),
+          );
+          expandBtn.addEventListener('click', (e) => {
+            stopInteractiveClick(e);
+            if (state.expandedIds.has(n.id)) {
+              state.expandedIds.delete(n.id);
+            } else {
+              state.expandedIds.add(n.id);
+            }
+            render();
+          });
+          titleRow.appendChild(expandBtn);
+        }
 
         // Unread dot
         if (!isRead) {
@@ -617,6 +672,9 @@ function resolveClientSessionLabel(
         dismissBtn.title = 'Dismiss notification';
         dismissBtn.setAttribute('aria-label', 'Dismiss notification');
         dismissBtn.appendChild(createSvgIcon(ICON_PATHS.close, 'notif-icon notif-icon-xs'));
+        dismissBtn.addEventListener('pointerdown', markInteractivePress);
+        dismissBtn.addEventListener('pointerup', clearInteractivePress);
+        dismissBtn.addEventListener('pointercancel', clearInteractivePress);
         dismissBtn.addEventListener('click', (e) => {
           stopInteractiveClick(e);
           host.sendEvent({ type: 'clear', id: n.id });
@@ -628,7 +686,7 @@ function resolveClientSessionLabel(
         // Body (always shown in card mode, expanded-only in compact)
         if (!isCompact || isExpanded) {
           const bodyEl = document.createElement('div');
-          bodyEl.className = 'notif-body-text';
+          bodyEl.className = `notif-body-text${isExpanded ? ' notif-body-text-expanded' : ''}`;
           bodyEl.textContent = n.body;
           content.appendChild(bodyEl);
 
@@ -666,30 +724,6 @@ function resolveClientSessionLabel(
 
         item.appendChild(content);
 
-        // Compact expand chevron
-        if (isCompact) {
-          const expandBtn = document.createElement('button');
-          expandBtn.type = 'button';
-          expandBtn.className = 'notif-expand-btn';
-          expandBtn.title = isExpanded ? 'Collapse' : 'Expand';
-          expandBtn.appendChild(
-            createSvgIcon(
-              isExpanded ? ICON_PATHS.chevronUp : ICON_PATHS.chevronDown,
-              'notif-icon notif-icon-xs',
-            ),
-          );
-          expandBtn.addEventListener('click', (e) => {
-            stopInteractiveClick(e);
-            if (state.expandedIds.has(n.id)) {
-              state.expandedIds.delete(n.id);
-            } else {
-              state.expandedIds.add(n.id);
-            }
-            render();
-          });
-          item.appendChild(expandBtn);
-        }
-
         // Main item tap toggles read/unread
         item.addEventListener('click', (event) => {
           clearInteractivePress();
@@ -721,6 +755,7 @@ function resolveClientSessionLabel(
 
         updateFilterButton();
         updateDensityButton();
+        updateMarkAllButton();
         updateBadge();
       };
 
@@ -780,7 +815,12 @@ function resolveClientSessionLabel(
       markAllReadBtn.addEventListener('click', () => {
         state.menuOpen = false;
         menuDropdown.style.display = 'none';
-        host.sendEvent({ type: 'mark_all_read' });
+        host.sendEvent({
+          type:
+            markAllReadBtn.dataset['action'] === 'mark_all_unread'
+              ? 'mark_all_unread'
+              : 'mark_all_read',
+        });
       });
 
       clearAllBtn.addEventListener('click', () => {

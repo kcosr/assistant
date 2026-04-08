@@ -332,6 +332,61 @@ describe('ServerMessageHandler typing indicator', () => {
     expect(refreshSessions).toHaveBeenCalledWith(null);
   });
 
+  it('routes session-scoped websocket errors to the affected session runtime instead of the selected session', async () => {
+    const selectedRuntime = {
+      elements: { chatLog: document.createElement('div') },
+    } as unknown as ChatRuntime;
+    const targetRuntime = {
+      elements: { chatLog: document.createElement('div') },
+    } as unknown as ChatRuntime;
+    const appendMessage = vi.fn(() => document.createElement('div'));
+    const setChatPanelStatusForSession = vi.fn();
+    const syncSessionRequestActivityUi = vi.fn();
+    const { handler } = makeHandler({
+      getSelectedSessionId: () => 's-selected',
+      getChatRuntimeForSession: (sessionId) =>
+        sessionId === 's-target' ? targetRuntime : selectedRuntime,
+      appendMessage,
+      setChatPanelStatusForSession,
+      syncSessionRequestActivityUi,
+    });
+
+    await handler.handle({
+      type: 'error',
+      code: 'invalid_session_id',
+      message: 'Bad target session',
+      details: { sessionId: 's-target' },
+    });
+
+    expect(appendMessage).toHaveBeenCalledTimes(1);
+    expect(appendMessage.mock.calls[0]?.[0]).toBe(targetRuntime.elements.chatLog);
+    expect(appendMessage.mock.calls[0]?.[0]).not.toBe(selectedRuntime.elements.chatLog);
+    expect(appendMessage.mock.calls[0]?.[1]).toBe('error');
+    expect(appendMessage.mock.calls[0]?.[2]).toBe('Bad target session');
+    expect(setChatPanelStatusForSession).toHaveBeenCalledWith('s-target', 'error');
+    expect(syncSessionRequestActivityUi).toHaveBeenCalledWith('s-target', false);
+  });
+
+  it('does not append a session_deleted error bubble into the currently selected unrelated session', async () => {
+    const selectedRuntime = {
+      elements: { chatLog: document.createElement('div') },
+    } as unknown as ChatRuntime;
+    const appendMessage = vi.fn(() => document.createElement('div'));
+    const { handler } = makeHandler({
+      getSelectedSessionId: () => 's-selected',
+      getChatRuntimeForSession: () => selectedRuntime,
+      appendMessage,
+    });
+
+    await handler.handle({
+      type: 'error',
+      code: 'session_deleted',
+      message: 'This session has been deleted. Please switch to another session.',
+    });
+
+    expect(appendMessage).not.toHaveBeenCalled();
+  });
+
   it('scrolls visible chat panels to bottom on turn_start', async () => {
     const scrollToBottom = vi.fn();
     const scrollToBottomAfterLayout = vi.fn();

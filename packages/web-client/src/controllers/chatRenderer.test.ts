@@ -4103,7 +4103,10 @@ describe('ChatRenderer', () => {
 
     const inputBody = toolBlock.querySelector<HTMLElement>('.tool-output-input-body');
     const outputBody = toolBlock.querySelector<HTMLElement>('.tool-output-output-body');
-    expect(inputBody?.textContent).toContain('List:');
+    expect(inputBody?.querySelector('table')).not.toBeNull();
+    expect(inputBody?.textContent).toContain('Field');
+    expect(inputBody?.textContent).toContain('Value');
+    expect(inputBody?.textContent).toContain('List');
     expect(inputBody?.textContent).toContain('today');
     expect(inputBody?.textContent).not.toContain('"listId"');
     expect(outputBody?.querySelector('table')).not.toBeNull();

@@ -424,6 +424,10 @@ public final class AssistantVoicePlugin extends Plugin {
             "standaloneNotificationPlaybackEnabled",
             current.standaloneNotificationPlaybackEnabled
         );
+        voiceSettings.put(
+            "notificationTitlePlaybackEnabled",
+            current.notificationTitlePlaybackEnabled
+        );
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
@@ -513,7 +517,7 @@ public final class AssistantVoicePlugin extends Plugin {
             + " sessionId=" + safe(notification.sessionId)
             + " kind=" + safe(notification.kind)
             + " voiceMode=" + safe(notification.voiceMode)
-            + " hasSpeech=" + (!notification.resolveSpokenText().isEmpty());
+            + " hasSpeech=" + (!notification.resolveSpokenText(false).isEmpty());
     }
 
     private void checkLaunchIntentForOpenSession() {

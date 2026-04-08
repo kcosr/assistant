@@ -436,6 +436,37 @@ export class NotificationsStore {
     });
   }
 
+  async markAllUnread(): Promise<number> {
+    const result = await this.markAllUnreadSnapshot();
+    return result.count;
+  }
+
+  async markAllUnreadSnapshot(): Promise<NotificationSnapshot & { count: number }> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      let count = 0;
+      for (const notification of this.data.notifications) {
+        if (notification.readAt !== null) {
+          notification.readAt = null;
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        this.bumpRevision();
+        await this.save();
+      }
+
+      return {
+        count,
+        notifications: [...this.data.notifications],
+        total: this.data.notifications.length,
+        revision: this._revision,
+      };
+    });
+  }
+
   async remove(id: string): Promise<boolean> {
     const result = await this.removeWithRevision(id);
     return result !== null;
