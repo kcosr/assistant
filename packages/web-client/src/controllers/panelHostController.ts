@@ -23,6 +23,7 @@ export interface PanelWorkspaceHandle {
   openPanel(panelType: string, options?: PanelOpenOptions): string | null;
   openModalPanel?(panelType: string, options?: PanelOpenOptions): string | null;
   closePanel(panelId: string): void;
+  closePanelToPlaceholder?(panelId: string): void;
   activatePanel(panelId: string): void;
   movePanel(panelId: string, placement: PanelPlacement, targetPanelId?: string): void;
   openPanelMenu?(panelId: string, anchor: HTMLElement): void;
@@ -492,6 +493,10 @@ export class PanelHostController {
       openModalPanel: (panelType, options) =>
         this.workspace?.openModalPanel?.(panelType, options) ?? null,
       closePanel: (panelId) => {
+        if (typeof this.workspace?.closePanelToPlaceholder === 'function') {
+          this.workspace.closePanelToPlaceholder(panelId);
+          return;
+        }
         this.workspace?.closePanel(panelId);
       },
       activatePanel: (panelId) => {
