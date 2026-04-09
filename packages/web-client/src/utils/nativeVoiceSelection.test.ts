@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveNativeVoiceSelectedSession, resolveVoiceFabController } from './nativeVoiceSelection';
+import {
+  resolveNativeVoiceSelectedSession,
+  resolveVoiceFabController,
+  resolveVoiceFabTargetSessionId,
+} from './nativeVoiceSelection';
 
 describe('resolveNativeVoiceSelectedSession', () => {
   it('prefers the selected input session over the active chat binding when both are present', () => {
@@ -134,5 +138,37 @@ describe('resolveVoiceFabController', () => {
         nativeRuntimeState: 'idle',
       }),
     ).toBe(primary);
+  });
+});
+
+describe('resolveVoiceFabTargetSessionId', () => {
+  it('prefers the current input session', () => {
+    expect(
+      resolveVoiceFabTargetSessionId({
+        inputSessionId: 'session-input',
+        nativeVoiceBridgeSelectedSessionId: 'session-bridge',
+        preferredVoiceSessionId: 'session-preferred',
+      }),
+    ).toBe('session-input');
+  });
+
+  it('prefers the preferred voice session when no input session exists', () => {
+    expect(
+      resolveVoiceFabTargetSessionId({
+        inputSessionId: null,
+        nativeVoiceBridgeSelectedSessionId: 'session-bridge',
+        preferredVoiceSessionId: 'session-preferred',
+      }),
+    ).toBe('session-preferred');
+  });
+
+  it('falls back to the bridge-selected session when there is no preferred session', () => {
+    expect(
+      resolveVoiceFabTargetSessionId({
+        inputSessionId: null,
+        nativeVoiceBridgeSelectedSessionId: 'session-bridge',
+        preferredVoiceSessionId: null,
+      }),
+    ).toBe('session-bridge');
   });
 });

@@ -32,6 +32,7 @@ import {
 import {
   resolveNativeVoiceSelectedSession,
   resolveVoiceFabController,
+  resolveVoiceFabTargetSessionId,
 } from './utils/nativeVoiceSelection';
 import { resolveInputContext } from './utils/inputContext';
 import { AsyncValueSync } from './utils/asyncValueSync';
@@ -698,6 +699,7 @@ async function main(): Promise<void> {
   });
 
   const initialVoiceSettings = initialPreferences.voice;
+  let currentVoiceSettings = initialVoiceSettings;
   let keyboardShortcutsEnabled = initialPreferences.keyboardShortcutsEnabled;
   const keyboardShortcutBindings = initialPreferences.keyboardShortcutBindings;
   let autoFocusChatOnSessionReady = initialPreferences.autoFocusChatOnSessionReady;
@@ -1165,10 +1167,27 @@ async function main(): Promise<void> {
     return null;
   }
 
+  function getVoiceFabPanelSessionId(): string | null {
+    const active =
+      (panelHostController?.getContext('panel.active') as {
+        panelId?: string;
+        panelType?: string;
+      } | null) ?? null;
+    if (active?.panelType !== 'chat') {
+      return null;
+    }
+    return normalizeSessionId(inputSessionId);
+  }
+
   function getVoiceFabSpeechController() {
-    const selectedSessionId = normalizeSessionId(inputSessionId);
+    const panelSessionId = getVoiceFabPanelSessionId();
+    const targetSessionId = resolveVoiceFabTargetSessionId({
+      inputSessionId: panelSessionId,
+      nativeVoiceBridgeSelectedSessionId,
+      preferredVoiceSessionId: currentVoiceSettings.preferredVoiceSessionId,
+    });
     const controller = resolveVoiceFabController({
-      inputSessionId,
+      inputSessionId: panelSessionId,
       getControllerForSession: (sessionId) =>
         getChatInputRuntimeForSession(sessionId)?.speechAudioController ?? null,
       activeController: getActiveChatInputRuntime()?.speechAudioController ?? null,
@@ -1176,11 +1195,45 @@ async function main(): Promise<void> {
       nativeRuntimeState: nativeVoiceRuntimeState,
     });
     if (!controller) {
-      return null;
+      if (!useNativeVoiceRuntime) {
+        return null;
+      }
+      return {
+        getVoiceFabState: () => {
+          if (nativeVoiceRuntimeState === 'speaking') {
+            return { enabled: true, mode: 'speaking' as const };
+          }
+          if (nativeVoiceRuntimeState === 'listening') {
+            return { enabled: true, mode: 'listening' as const };
+          }
+          return {
+            enabled: Boolean(targetSessionId),
+            mode: 'idle' as const,
+          };
+        },
+        startVoiceFromFab: async () => {
+          const normalizedTargetSessionId = normalizeSessionId(targetSessionId);
+          if (!normalizedTargetSessionId) {
+            return false;
+          }
+          await nativeVoiceBridge.setSessionTitles(getNativeVoiceSessionTitles());
+          return nativeVoiceBridge.startManualListen(normalizedTargetSessionId);
+        },
+        stopVoiceFromFab: () => {
+          if (
+            nativeVoiceRuntimeState === 'speaking' ||
+            nativeVoiceRuntimeState === 'listening'
+          ) {
+            void nativeVoiceBridge.stopCurrentInteraction();
+            return true;
+          }
+          return false;
+        },
+      };
     }
     return {
       getVoiceFabState: () => {
-        const baseState = controller.getVoiceFabStateForSession(selectedSessionId);
+        const baseState = controller.getVoiceFabStateForSession(targetSessionId);
         if (nativeVoiceRuntimeState === 'speaking') {
           return { enabled: true, mode: 'speaking' as const };
         }
@@ -1189,7 +1242,7 @@ async function main(): Promise<void> {
         }
         return baseState;
       },
-      startVoiceFromFab: () => controller.startVoiceFromFabForSession(selectedSessionId),
+      startVoiceFromFab: () => controller.startVoiceFromFabForSession(targetSessionId),
       stopVoiceFromFab: () => controller.stopVoiceFromFab(),
     };
   }
@@ -1213,12 +1266,14 @@ async function main(): Promise<void> {
     interactive: boolean;
     title: string | null;
   } {
+    const panelSessionId = getVoiceFabPanelSessionId();
     return resolveVoiceFabSessionChipState({
       mode,
-      inputSessionId,
+      inputSessionId: panelSessionId,
       nativeVoiceBridgeSelectedSessionId,
       nativeVoiceActiveSessionId,
       nativeVoiceActiveDisplayTitle,
+      preferredVoiceSessionId: currentVoiceSettings.preferredVoiceSessionId,
       normalizeSessionId,
       resolveSessionTitle,
     });
@@ -1325,6 +1380,7 @@ async function main(): Promise<void> {
   }
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
+    currentVoiceSettings = settings;
     const primary = getPrimaryChatInputRuntime();
     if (primary) {
       primary.setVoiceSettings(settings);

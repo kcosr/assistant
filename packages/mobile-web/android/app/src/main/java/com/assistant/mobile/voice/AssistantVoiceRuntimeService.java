@@ -319,7 +319,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             JSONObject details = AssistantVoiceEventLog.details();
             AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
             recordVoiceEvent("service_action_retarget_active_recognition", details);
-            retargetActiveManualRecognition(sessionId);
+            retargetActiveRecognition(sessionId);
             return START_STICKY;
         }
         if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
@@ -1396,12 +1396,12 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     private String resolveDurableNotificationTitle(AssistantVoiceNotificationRecord notification) {
         if (notification.isSessionAttention()) {
-            if (!notification.sessionTitle.isEmpty()) {
-                return notification.sessionTitle;
-            }
             String configTitle = config.getSessionTitle(notification.sessionId);
             if (!configTitle.isEmpty()) {
                 return configTitle;
+            }
+            if (!notification.sessionTitle.isEmpty()) {
+                return notification.sessionTitle;
             }
         }
         return notification.title;
@@ -1412,12 +1412,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             return "";
         }
         if (notification.isSessionLinked()) {
-            if (!notification.sessionTitle.isEmpty()) {
-                return notification.sessionTitle;
-            }
             String configTitle = config.getSessionTitle(notification.sessionId);
             if (!configTitle.isEmpty()) {
                 return configTitle;
+            }
+            if (!notification.sessionTitle.isEmpty()) {
+                return notification.sessionTitle;
             }
         }
         return notification.title;
@@ -2615,7 +2615,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         return trim(activeSessionId);
     }
 
-    static boolean shouldRetargetActiveManualRecognition(
+    static boolean shouldRetargetActiveRecognition(
         String previousSelectedSessionId,
         String updatedSelectedSessionId,
         String activeSttRequestId,
@@ -2624,7 +2624,12 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (trim(activeSttRequestId).isEmpty()) {
             return false;
         }
-        if (!"voice_manual".equals(trim(activePromptToolName))) {
+        String normalizedActivePromptToolName = trim(activePromptToolName);
+        if (
+            !normalizedActivePromptToolName.isEmpty()
+                && !"voice_manual".equals(normalizedActivePromptToolName)
+                && !"speak_then_listen".equals(normalizedActivePromptToolName)
+        ) {
             return false;
         }
         String normalizedUpdatedSelectedSessionId = trim(updatedSelectedSessionId);
@@ -2634,10 +2639,10 @@ public final class AssistantVoiceRuntimeService extends Service {
         return !normalizedUpdatedSelectedSessionId.equals(trim(previousSelectedSessionId));
     }
 
-    private void retargetActiveManualRecognition(String sessionId) {
+    private void retargetActiveRecognition(String sessionId) {
         String normalizedSessionId = trim(sessionId);
         if (
-            !shouldRetargetActiveManualRecognition(
+            !shouldRetargetActiveRecognition(
                 activeVoiceSessionId,
                 normalizedSessionId,
                 activeSttRequestId,
@@ -2652,7 +2657,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "previousSelectedSessionId", safe(previousSessionId));
         AssistantVoiceEventLog.put(details, "updatedSelectedSessionId", safe(normalizedSessionId));
         AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
-        recordVoiceEvent("manual_listen_retarget", details);
+        recordVoiceEvent("active_recognition_retarget", details);
         syncRuntimeSnapshot(true);
     }
 

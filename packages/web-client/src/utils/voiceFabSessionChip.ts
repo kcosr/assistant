@@ -7,11 +7,12 @@ export interface VoiceFabSessionChipState {
 }
 
 export interface ResolveVoiceFabSessionChipStateArgs {
-  mode: VoiceFabChipMode;
   inputSessionId: string | null;
+  mode: VoiceFabChipMode;
   nativeVoiceBridgeSelectedSessionId: string | null;
   nativeVoiceActiveSessionId: string | null;
   nativeVoiceActiveDisplayTitle: string | null;
+  preferredVoiceSessionId: string | null;
   normalizeSessionId: (sessionId: string | null) => string | null;
   resolveSessionTitle: (sessionId: string | null) => string | null;
 }
@@ -25,6 +26,7 @@ export function resolveVoiceFabSessionChipState(
     nativeVoiceBridgeSelectedSessionId,
     nativeVoiceActiveSessionId,
     nativeVoiceActiveDisplayTitle,
+    preferredVoiceSessionId,
     normalizeSessionId,
     resolveSessionTitle,
   } = args;
@@ -45,6 +47,7 @@ export function resolveVoiceFabSessionChipState(
     const sessionId =
       normalizeSessionId(nativeVoiceActiveSessionId) ??
       normalizeSessionId(inputSessionId) ??
+      normalizeSessionId(preferredVoiceSessionId) ??
       normalizeSessionId(nativeVoiceBridgeSelectedSessionId);
     return {
       visible: Boolean(sessionId),
@@ -56,6 +59,7 @@ export function resolveVoiceFabSessionChipState(
   const sessionId =
     normalizeSessionId(nativeVoiceActiveSessionId) ??
     normalizeSessionId(inputSessionId) ??
+    normalizeSessionId(preferredVoiceSessionId) ??
     normalizeSessionId(nativeVoiceBridgeSelectedSessionId);
   return {
     visible: Boolean(sessionId),

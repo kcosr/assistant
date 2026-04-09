@@ -41,6 +41,22 @@ export function resolveNativeVoiceSelectedSession(
   return { panelId, sessionId };
 }
 
+type VoiceFabTargetSessionInput = {
+  inputSessionId?: string | null;
+  nativeVoiceBridgeSelectedSessionId?: string | null;
+  preferredVoiceSessionId?: string | null;
+};
+
+export function resolveVoiceFabTargetSessionId(
+  input: VoiceFabTargetSessionInput,
+): string | null {
+  return (
+    normalizeId(input.inputSessionId) ??
+    normalizeId(input.preferredVoiceSessionId) ??
+    normalizeId(input.nativeVoiceBridgeSelectedSessionId)
+  );
+}
+
 type VoiceFabControllerInput<T> = {
   inputSessionId?: string | null;
   getControllerForSession: (sessionId: string) => T | null;

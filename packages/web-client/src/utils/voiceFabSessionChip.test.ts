@@ -19,6 +19,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: 'active-session',
         nativeVoiceActiveDisplayTitle: null,
+        preferredVoiceSessionId: 'preferred-session',
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -37,6 +38,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: 'active-session',
         nativeVoiceActiveDisplayTitle: null,
+        preferredVoiceSessionId: 'preferred-session',
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -55,6 +57,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: null,
         nativeVoiceActiveDisplayTitle: null,
+        preferredVoiceSessionId: 'preferred-session',
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -73,6 +76,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: null,
         nativeVoiceActiveDisplayTitle: 'Tool Notification',
+        preferredVoiceSessionId: 'preferred-session',
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -80,6 +84,25 @@ describe('resolveVoiceFabSessionChipState', () => {
       visible: true,
       interactive: false,
       title: 'Tool Notification',
+    });
+  });
+
+  it('falls back to the preferred voice session before the bridge-selected session', () => {
+    expect(
+      resolveVoiceFabSessionChipState({
+        mode: 'listening',
+        inputSessionId: null,
+        nativeVoiceBridgeSelectedSessionId: 'bridge-session',
+        nativeVoiceActiveSessionId: null,
+        nativeVoiceActiveDisplayTitle: null,
+        preferredVoiceSessionId: 'preferred-session',
+        normalizeSessionId,
+        resolveSessionTitle,
+      }),
+    ).toEqual({
+      visible: true,
+      interactive: true,
+      title: 'title:preferred-session',
     });
   });
 });

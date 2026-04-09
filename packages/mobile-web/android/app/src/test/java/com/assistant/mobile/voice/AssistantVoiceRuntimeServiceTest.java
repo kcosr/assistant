@@ -18,6 +18,12 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -186,6 +192,47 @@ public final class AssistantVoiceRuntimeServiceTest {
         int secondClear = AssistantVoiceRuntimeService.durableNotificationRequestCode("b", 0);
 
         assertFalse(firstSpeaker == secondClear);
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void sessionAttentionNotificationPrefersConfigTitleOverStoredSessionTitle() throws Exception {
+        AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+        setRuntimeConfig(
+            service,
+            createConfig(sessionTitles("session-1", "Assistant"))
+        );
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-1",
+            "session-1",
+            "speak",
+            "Reply body",
+            "event-1",
+            Integer.valueOf(4)
+        );
+
+        assertEquals(
+            "Assistant",
+            String.valueOf(invokePrivateStringMethod(
+                service,
+                "resolveDurableNotificationTitle",
+                notification
+            ))
+        );
+        assertEquals(
+            "Assistant",
+            String.valueOf(invokePrivateStringMethod(
+                service,
+                "resolveNotificationSpokenTitle",
+                notification
+            ))
+        );
     }
 
     @Test
@@ -363,10 +410,10 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
-    public void shouldRetargetActiveManualRecognitionOnlyWhenLiveManualSelectionChanges() {
+    public void shouldRetargetActiveRecognitionOnlyWhenLiveListeningSelectionChanges() {
         assertEquals(
             true,
-            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
                 "session-old",
                 "session-new",
                 "stt-1",
@@ -375,7 +422,7 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
         assertEquals(
             false,
-            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
                 "session-old",
                 "session-old",
                 "stt-1",
@@ -384,7 +431,7 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
         assertEquals(
             false,
-            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
                 "session-old",
                 "",
                 "stt-1",
@@ -393,7 +440,7 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
         assertEquals(
             false,
-            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
                 "session-old",
                 "session-new",
                 "",
@@ -401,12 +448,21 @@ public final class AssistantVoiceRuntimeServiceTest {
             )
         );
         assertEquals(
-            false,
-            AssistantVoiceRuntimeService.shouldRetargetActiveManualRecognition(
+            true,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
                 "session-old",
                 "session-new",
                 "stt-1",
                 "speak_then_listen"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-new",
+                "stt-1",
+                "speak"
             )
         );
     }
@@ -843,5 +899,64 @@ public final class AssistantVoiceRuntimeServiceTest {
             new Intent(action),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+    }
+
+    private static AssistantVoiceConfig createConfig(Map<String, String> sessionTitles) {
+        return new AssistantVoiceConfig(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            "",
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_END_SILENCE_MS,
+            "",
+            "",
+            "session-1",
+            sessionTitles,
+            Collections.emptyList(),
+            false,
+            "",
+            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_TTS_GAIN,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_ENABLED,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_GAIN,
+            AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false,
+            false,
+            true,
+            false
+        );
+    }
+
+    private static Map<String, String> sessionTitles(String... entries) {
+        LinkedHashMap<String, String> values = new LinkedHashMap<>();
+        for (int index = 0; index + 1 < entries.length; index += 2) {
+            values.put(entries[index], entries[index + 1]);
+        }
+        return values;
+    }
+
+    private static void setRuntimeConfig(
+        AssistantVoiceRuntimeService service,
+        AssistantVoiceConfig config
+    ) throws Exception {
+        Field field = AssistantVoiceRuntimeService.class.getDeclaredField("config");
+        field.setAccessible(true);
+        field.set(service, config);
+    }
+
+    private static String invokePrivateStringMethod(
+        AssistantVoiceRuntimeService service,
+        String methodName,
+        AssistantVoiceNotificationRecord notification
+    ) throws Exception {
+        Method method = AssistantVoiceRuntimeService.class.getDeclaredMethod(
+            methodName,
+            AssistantVoiceNotificationRecord.class
+        );
+        method.setAccessible(true);
+        return String.valueOf(method.invoke(service, notification));
     }
 }
