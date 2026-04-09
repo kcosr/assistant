@@ -1173,13 +1173,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (destroyed) {
             return;
         }
+        final List<AssistantVoiceNotificationRecord> fallbackNotifications =
+            new ArrayList<>(durableNotifications.values());
         networkExecutor.execute(() -> {
-            List<AssistantVoiceNotificationRecord> notifications = fetchDurableNotifications();
+            List<AssistantVoiceNotificationRecord> notifications =
+                fetchDurableNotifications(fallbackNotifications);
             mainHandler.post(() -> applyDurableNotificationSnapshot(notifications));
         });
     }
 
-    private List<AssistantVoiceNotificationRecord> fetchDurableNotifications() {
+    private List<AssistantVoiceNotificationRecord> fetchDurableNotifications(
+        List<AssistantVoiceNotificationRecord> fallbackNotifications
+    ) {
         try {
             JSONObject body = new JSONObject();
             String response = postJson(
@@ -1189,7 +1194,7 @@ public final class AssistantVoiceRuntimeService extends Service {
             return AssistantVoiceNotificationEventParser.parseListResponse(response);
         } catch (Exception error) {
             Log.w(TAG, "Failed to refresh durable notifications", error);
-            return new ArrayList<>(durableNotifications.values());
+            return fallbackNotifications;
         }
     }
 
