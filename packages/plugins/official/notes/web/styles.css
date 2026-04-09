@@ -78,6 +78,13 @@
   margin-top: var(--spacing-xs);
 }
 
+.collection-panel-content.note-edit-compact-mode [data-role='note-editor-description-row'],
+.collection-panel-content.note-edit-compact-mode [data-role='note-editor-tags-row'],
+.collection-panel-content.note-edit-compact-mode [data-role='note-editor-pinned-row'],
+.collection-panel-content.note-edit-compact-mode [data-role='note-editor-favorite-row'] {
+  display: none;
+}
+
 .collection-view-placeholder {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
