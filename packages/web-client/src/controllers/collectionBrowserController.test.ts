@@ -12,6 +12,7 @@ describe('CollectionBrowserController list CRUD UI', () => {
     document.body.innerHTML = '';
     window.localStorage.clear();
     vi.restoreAllMocks();
+    HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
   afterEach(() => {
@@ -407,6 +408,29 @@ describe('CollectionBrowserController list CRUD UI', () => {
 
     expect(noteEl?.style.display).toBe('none');
     expect(listEl?.style.display).not.toBe('none');
+  });
+
+  it('starts keyboard navigation from the first item when nothing is selected', () => {
+    const selectItem = vi.fn();
+    const { controller } = makeController({
+      getAvailableItems: () => [
+        { type: 'note', id: 'first', name: 'First' },
+        { type: 'note', id: 'second', name: 'Second' },
+      ],
+      getSupportedTypes: () => ['note'],
+      getGroupLabel: () => 'Notes',
+      selectItem,
+    });
+
+    controller.show(false);
+
+    expect(controller.handleKeyboardEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }))).toBe(
+      true,
+    );
+    expect(controller.handleKeyboardEvent(new KeyboardEvent('keydown', { key: 'Enter' }))).toBe(
+      true,
+    );
+    expect(selectItem).toHaveBeenCalledWith({ type: 'note', id: 'first' });
   });
 
   it('applies search when shared search elements are set before showing', async () => {

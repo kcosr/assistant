@@ -1578,10 +1578,7 @@ export class CollectionBrowserController {
 
     const focused = itemFocusController.getFocusedItem();
     if (!focused) {
-      const fallback = direction === 'left' || direction === 'up'
-        ? positioned[positioned.length - 1]
-        : positioned[0];
-      itemFocusController.setFocusedItem(fallback?.item ?? null);
+      itemFocusController.setFocusedItem(positioned[0]?.item ?? null);
       return;
     }
 

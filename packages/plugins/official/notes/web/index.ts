@@ -230,6 +230,24 @@ const NOTES_PANEL_TEMPLATE = `
   </aside>
 `;
 
+const NOTE_EDITOR_COMPACT_STORAGE_KEY = 'aiAssistantNotesEditorCompactMode';
+
+function readStoredCompactMode(): boolean {
+  try {
+    return window.localStorage.getItem(NOTE_EDITOR_COMPACT_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredCompactMode(value: boolean): void {
+  try {
+    window.localStorage.setItem(NOTE_EDITOR_COMPACT_STORAGE_KEY, value ? 'true' : 'false');
+  } catch {
+    // Ignore local storage failures.
+  }
+}
+
 const DEFAULT_INSTANCE_ID = 'default';
 const NOTE_SEARCH_HIT_CLASS = 'notes-search-hit';
 const NOTE_SEARCH_ACTIVE_CLASS = 'notes-search-hit-active';
@@ -1871,7 +1889,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const contentLabel = document.createElement('label');
         contentLabel.className = 'list-item-form-label';
-        contentLabel.textContent = 'Content (Markdown)';
+        contentLabel.textContent = 'Content';
 
         const contentInput = document.createElement('textarea');
         contentInput.className = 'list-item-form-textarea note-content-textarea';
@@ -1883,7 +1901,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         bodyEl.appendChild(form);
 
-        let compactMode = false;
+        let compactMode = readStoredCompactMode();
         const updateCompactMode = (): void => {
           const hideTitle = compactMode && !isNew;
           titleLabel.hidden = hideTitle;
@@ -1897,6 +1915,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         };
         compactButton.addEventListener('click', () => {
           compactMode = !compactMode;
+          writeStoredCompactMode(compactMode);
           updateCompactMode();
         });
         updateCompactMode();
