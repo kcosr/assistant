@@ -116,4 +116,27 @@ describe('notification producers', () => {
     const { notifications } = await getNotificationsStore().list();
     expect(notifications[0]?.sessionTitle).toBe('Demo session');
   });
+
+  it('warns when notification publishing fails', async () => {
+    shutdownNotificationsService();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await publishFinalResponseNotification({
+      sessionId: 'sess-1',
+      responseId: 'response-1',
+      text: 'Final answer',
+      summary: { revision: 5 } as any,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[notifications] failed to publish final response notification',
+      expect.objectContaining({
+        sessionId: 'sess-1',
+        responseId: 'response-1',
+        error: expect.anything(),
+      }),
+    );
+
+    warnSpy.mockRestore();
+  });
 });

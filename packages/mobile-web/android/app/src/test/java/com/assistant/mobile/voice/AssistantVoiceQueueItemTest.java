@@ -134,7 +134,7 @@ public final class AssistantVoiceQueueItemTest {
             Integer.valueOf(7)
         );
 
-        AssistantVoiceQueueItem item = notification.toManualMicQueueItem(true);
+        AssistantVoiceQueueItem item = notification.toManualMicQueueItem();
 
         assertNotNull(item);
         assertEquals("listen_only", item.executionMode);

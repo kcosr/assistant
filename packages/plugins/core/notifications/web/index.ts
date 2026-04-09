@@ -6,7 +6,6 @@ import type {
 } from '../../../../web-client/src/controllers/panelRegistry';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
 import {
-  resolveAutoTitle,
   resolveSessionBaseLabel,
   type AgentLabelSummary,
   type SessionLabelSummary,
@@ -484,28 +483,11 @@ function resolveClientSessionLabel(
         const matchingSession = n.sessionId
           ? getSessionSummaries().find((summary) => summary.sessionId === n.sessionId) ?? null
           : null;
-        const clientName = typeof matchingSession?.name === 'string' ? matchingSession.name.trim() : '';
-        const clientAutoTitle = resolveAutoTitle(matchingSession?.attributes);
         const clientSessionLabel = resolveClientSessionLabel(matchingSession, agentSummaries);
         const displayTitle =
           n.kind === 'session_attention'
             ? clientSessionLabel || n.sessionTitle?.trim() || n.sessionId?.trim() || n.title
             : n.title;
-        if (n.sessionId) {
-          console.info('[notifications] title render', {
-            notificationId: n.id,
-            sessionId: n.sessionId,
-            kind: n.kind,
-            notificationTitle: n.title,
-            notificationSessionTitle: n.sessionTitle,
-            clientSessionName: clientName || null,
-            clientSessionAutoTitle: clientAutoTitle || null,
-            clientSessionLabel: clientSessionLabel || null,
-            clientLastSnippet:
-              typeof matchingSession?.lastSnippet === 'string' ? matchingSession.lastSnippet : null,
-            chosenDisplayTitle: displayTitle,
-          });
-        }
         const canSpeak = nativeVoiceAvailable && spokenText.length > 0;
         const canListen = nativeVoiceAvailable && !!n.sessionId;
         const canExpand = isCompact
@@ -899,6 +881,8 @@ function resolveClientSessionLabel(
               const idx = state.notifications.findIndex((n) => n.id === event.notification!.id);
               if (idx !== -1) {
                 state.notifications[idx] = event.notification;
+              } else {
+                upsertNotification(event.notification);
               }
             }
             if (eventRevision > knownRevision) {

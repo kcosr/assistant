@@ -119,4 +119,42 @@ describe('setupVoiceFab', () => {
     expect(chip?.disabled).toBe(true);
     handle.destroy();
   });
+
+  it('ignores rapid repeated start taps while a start is already in flight', async () => {
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+
+    let resolveStart: (value: boolean) => void = () => undefined;
+    const startVoiceFromFab = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+
+    setupVoiceFab({
+      button,
+      isVisible: () => true,
+      getSpeechController: () => ({
+        getVoiceFabState: () => ({ enabled: true, mode: 'idle' as const }),
+        startVoiceFromFab,
+        stopVoiceFromFab: vi.fn(() => true),
+      }),
+      getSessionChipState: () => ({
+        visible: false,
+        interactive: false,
+        title: null,
+      }),
+      onSessionChipClick: vi.fn(),
+    });
+
+    button.click();
+    button.click();
+    await Promise.resolve();
+
+    expect(startVoiceFromFab).toHaveBeenCalledTimes(1);
+
+    resolveStart(true);
+    await Promise.resolve();
+  });
 });

@@ -224,6 +224,31 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
+  it('treats updated events for unknown notifications as an upsert', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'updated',
+        notification: makeNotification({
+          id: 'n-missed',
+          title: 'Recovered title',
+          readAt: null,
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Recovered title');
+
+    handle.unmount();
+  });
+
   it('falls back to sessionId for session attention rows until a real session label is available', async () => {
     const module = panelFactory!();
     const host = createHost();

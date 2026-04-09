@@ -2779,7 +2779,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceEventLog.put(details, "notification", describeNotification(notification));
         recordVoiceEvent("manual_notification_action", details);
         AssistantVoiceQueueItem item = microphoneAction
-            ? notification.toManualMicQueueItem(config.autoListenEnabled)
+            ? notification.toManualMicQueueItem()
             : notification.toManualSpeakerQueueItem(
                 config.notificationTitlePlaybackEnabled,
                 resolveNotificationSpokenTitle(notification)
@@ -2869,9 +2869,13 @@ public final class AssistantVoiceRuntimeService extends Service {
         return DURABLE_NOTIFICATION_ID_OFFSET + (trim(notificationId).hashCode() & 0x7FFFFFFF);
     }
 
-    private static int durableNotificationRequestCode(String notificationId, int actionIndex) {
+    static int durableNotificationRequestCode(String notificationId, int actionIndex) {
         int baseId = trim(notificationId).hashCode() & 0x7FFFFFFF;
-        return DURABLE_NOTIFICATION_ID_OFFSET + baseId + Math.max(0, actionIndex);
+        long requestCode =
+            (long) DURABLE_NOTIFICATION_ID_OFFSET
+                + ((long) baseId * 4L)
+                + Math.max(0, actionIndex);
+        return (int) (requestCode & 0x7FFFFFFF);
     }
 
     private String postJson(String url, JSONObject body) throws IOException {
@@ -3551,15 +3555,30 @@ public final class AssistantVoiceRuntimeService extends Service {
     }
 
     private static int estimateBase64DecodedBytes(String value) {
-        String normalized = trim(value);
-        if (normalized.isEmpty()) {
+        int normalizedLength = 0;
+        int padding = 0;
+        for (int index = 0; index < value.length(); index += 1) {
+            char ch = value.charAt(index);
+            if (Character.isWhitespace(ch)) {
+                continue;
+            }
+            normalizedLength += 1;
+            if (ch == '=') {
+                padding += 1;
+            } else {
+                padding = 0;
+            }
+        }
+        if (normalizedLength == 0) {
             return 0;
         }
-        try {
-            return Base64.decode(normalized, Base64.DEFAULT).length;
-        } catch (IllegalArgumentException error) {
-            return 0;
+        int fullQuartets = normalizedLength / 4;
+        int remainder = normalizedLength % 4;
+        int decodedBytes = fullQuartets * 3;
+        if (remainder > 1) {
+            decodedBytes += remainder - 1;
         }
+        return Math.max(0, decodedBytes - Math.min(padding, 2));
     }
 
     private static String describeNotification(AssistantVoiceNotificationRecord notification) {

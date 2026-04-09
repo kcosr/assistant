@@ -40,7 +40,11 @@ export async function publishFinalResponseNotification(options: {
       ...(options.sessionHub ? { sessionHub: options.sessionHub } : {}),
       ...(sessionIndex ? { sessionIndex } : {}),
     });
-  } catch {
-    // Notification transport is optional relative to the chat response.
+  } catch (error) {
+    console.warn('[notifications] failed to publish final response notification', {
+      sessionId: options.sessionId,
+      responseId: options.responseId,
+      error,
+    });
   }
 }

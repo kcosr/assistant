@@ -558,7 +558,7 @@ public final class AssistantVoicePlugin extends Plugin {
         Log.d(TAG, "openSession from intent sessionId=" + safe(sessionId));
         JSObject payload = new JSObject();
         payload.put("sessionId", sessionId.trim());
-        notifyListeners("openSession", payload);
+        notifyListeners("openSession", payload, true);
     }
 
     private static String safe(String value) {

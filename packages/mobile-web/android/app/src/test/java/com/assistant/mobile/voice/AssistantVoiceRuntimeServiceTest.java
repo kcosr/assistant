@@ -181,6 +181,15 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void durableNotificationRequestCodesDoNotCollideAcrossActionsForAdjacentIds() {
+        int firstSpeaker = AssistantVoiceRuntimeService.durableNotificationRequestCode("a", 1);
+        int secondClear = AssistantVoiceRuntimeService.durableNotificationRequestCode("b", 0);
+
+        assertFalse(firstSpeaker == secondClear);
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void buildNotificationShowsModeToggleWhenVoiceIsDisabled() {
         Context context = RuntimeEnvironment.getApplication();
 

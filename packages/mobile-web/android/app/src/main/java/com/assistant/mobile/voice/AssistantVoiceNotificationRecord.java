@@ -124,7 +124,7 @@ final class AssistantVoiceNotificationRecord {
         );
     }
 
-    AssistantVoiceQueueItem toManualMicQueueItem(boolean autoListenEnabled) {
+    AssistantVoiceQueueItem toManualMicQueueItem() {
         return new AssistantVoiceQueueItem(
             id,
             kind,

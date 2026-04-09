@@ -48,6 +48,7 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
   chip.type = 'button';
   chip.className = 'voice-fab-session-chip';
   chip.hidden = true;
+  let startInFlight = false;
 
   const positionChip = (): void => {
     const rect = button.getBoundingClientRect();
@@ -82,6 +83,7 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
     chip.textContent = title;
     chip.disabled = !chipState.interactive;
     chip.hidden = false;
+    void chip.offsetHeight;
     chip.classList.add('is-visible');
     chip.classList.toggle('is-interactive', chipState.interactive);
     positionChip();
@@ -141,11 +143,19 @@ export function setupVoiceFab(options: VoiceFabOptions): VoiceFabHandle {
       update();
       return;
     }
-    const started = await controller.startVoiceFromFab();
-    if (started) {
-      showSessionChip();
+    if (startInFlight) {
+      return;
     }
-    update();
+    startInFlight = true;
+    const started = await controller.startVoiceFromFab();
+    try {
+      if (started) {
+        showSessionChip();
+      }
+      update();
+    } finally {
+      startInFlight = false;
+    }
   };
 
   const handleResize = (): void => {

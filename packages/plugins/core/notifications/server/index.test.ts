@@ -90,7 +90,7 @@ describe('notifications server plugin', () => {
       expect(result.sessionTitle).toBe('My Session');
     });
 
-    it('does not fall back to lastSnippet when no persisted title exists', async () => {
+    it('falls back to sessionId when the session exists without a persisted title', async () => {
       const ctx = createMockCtx({
         sessionIndex: {
           getSession: vi.fn().mockResolvedValue({
@@ -104,7 +104,7 @@ describe('notifications server plugin', () => {
         ctx,
       )) as any;
 
-      expect(result.sessionTitle).toBeNull();
+      expect(result.sessionTitle).toBe('sess-1');
     });
 
     it('falls back to sessionId when session not found', async () => {
@@ -298,6 +298,15 @@ describe('notifications server plugin', () => {
         }),
       );
     });
+
+    it('does not broadcast when everything is already read', async () => {
+      const ctx = createMockCtx();
+
+      const result = (await plugin.operations!.mark_all_read({}, ctx)) as any;
+
+      expect(result.marked).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
+    });
   });
 
   describe('mark_all_unread operation', () => {
@@ -327,6 +336,17 @@ describe('notifications server plugin', () => {
           }),
         }),
       );
+    });
+
+    it('does not broadcast when everything is already unread', async () => {
+      const ctx = createMockCtx();
+      await plugin.operations!.create({ title: 'A', body: 'B' }, ctx);
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const result = (await plugin.operations!.mark_all_unread({}, ctx)) as any;
+
+      expect(result.marked).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
     });
   });
 
@@ -536,6 +556,64 @@ describe('notifications server plugin', () => {
           }),
         }),
       );
+    });
+
+    it('does not broadcast mark_all_read snapshot when nothing changes', async () => {
+      const ctx = createMockCtx();
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_read' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).not.toHaveBeenCalled();
+    });
+
+    it('does not broadcast mark_all_unread snapshot when nothing changes', async () => {
+      const ctx = createMockCtx();
+      await plugin.operations!.create({ title: 'Toggle', body: 'B' }, ctx);
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_unread' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).not.toHaveBeenCalled();
     });
 
     it('handles clear_session_attention via panel event', async () => {

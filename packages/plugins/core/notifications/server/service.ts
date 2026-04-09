@@ -85,7 +85,7 @@ async function resolveSessionTitle(
     if (!session) {
       return sessionId;
     }
-    return resolvePersistedSessionTitle(session);
+    return resolvePersistedSessionTitle(session) || sessionId;
   } catch {
     return sessionId;
   }
@@ -139,7 +139,7 @@ export async function syncSessionNotificationTitles(options: {
 
   const result = await store.updateSessionTitleWithRevision(
     options.sessionId,
-    resolvePersistedSessionTitle(options.summary),
+    resolvePersistedSessionTitle(options.summary) || options.sessionId,
   );
   if (!result) {
     return [];

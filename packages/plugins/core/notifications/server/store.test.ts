@@ -147,6 +147,30 @@ describe('NotificationsStore', () => {
     expect(['Reply 1', 'Reply 2']).toContain(notifications[0]?.title);
   });
 
+  it('preserves an existing sessionTitle when a later upsert omits it', async () => {
+    const first = await store.upsertSessionAttentionWithRevision(
+      {
+        title: 'Reply 1',
+        body: 'First answer',
+        sessionId: 'sess-1',
+        sessionTitle: 'Assistant',
+      },
+      'system',
+    );
+
+    const second = await store.upsertSessionAttentionWithRevision(
+      {
+        title: 'Reply 2',
+        body: 'Second answer',
+        sessionId: 'sess-1',
+      },
+      'system',
+    );
+
+    expect(second.value.id).toBe(first.value.id);
+    expect(second.value.sessionTitle).toBe('Assistant');
+  });
+
   it('removes session attention by session id', async () => {
     await store.upsertSessionAttention(
       {

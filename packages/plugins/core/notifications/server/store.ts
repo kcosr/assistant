@@ -300,7 +300,10 @@ export class NotificationsStore {
               readAt: null,
               source,
               sessionId,
-              sessionTitle: input.sessionTitle ?? null,
+              sessionTitle:
+                input.sessionTitle !== undefined
+                  ? input.sessionTitle
+                  : this.data.notifications[existingIndex]!.sessionTitle,
               tts,
               voiceMode: input.voiceMode ?? (tts ? 'speak' : 'none'),
               ttsText: input.ttsText ?? null,
