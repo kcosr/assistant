@@ -372,6 +372,28 @@ describe('notes panel context', () => {
     const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
     editButton?.click();
 
+    const compactButton = container.querySelector<HTMLButtonElement>(
+      '[data-role="note-editor-compact-toggle"]',
+    );
+    expect(compactButton?.getAttribute('aria-pressed')).toBe('false');
+    compactButton?.click();
+    expect(compactButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-title-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-description-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-tags-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-favorite-row"]')?.hidden,
+    ).toBe(true);
+
     const descriptionInput = container.querySelector<HTMLTextAreaElement>(
       '.note-description-textarea',
     );

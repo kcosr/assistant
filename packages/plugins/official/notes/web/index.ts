@@ -1735,6 +1735,14 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         saveButton.className = 'collection-list-actions-button';
         saveButton.textContent = 'Save';
 
+        const compactButton = document.createElement('button');
+        compactButton.type = 'button';
+        compactButton.className = 'collection-list-actions-button note-editor-compact-toggle';
+        compactButton.textContent = 'Compact';
+        compactButton.setAttribute('aria-pressed', 'false');
+        compactButton.setAttribute('data-role', 'note-editor-compact-toggle');
+
+        buttonGroup.appendChild(compactButton);
         buttonGroup.appendChild(cancelButton);
         buttonGroup.appendChild(saveButton);
 
@@ -1752,6 +1760,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const titleLabel = document.createElement('label');
         titleLabel.className = 'list-item-form-label';
         titleLabel.textContent = 'Title';
+        titleLabel.setAttribute('data-role', 'note-editor-title-row');
         const titleInput = document.createElement('input');
         titleInput.type = 'text';
         titleInput.className = 'list-item-form-input';
@@ -1797,6 +1806,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const descriptionLabel = document.createElement('label');
         descriptionLabel.className = 'list-item-form-label';
         descriptionLabel.textContent = 'Description';
+        descriptionLabel.setAttribute('data-role', 'note-editor-description-row');
         const descriptionInput = document.createElement('textarea');
         descriptionInput.className = 'list-item-form-textarea note-description-textarea';
         descriptionInput.value = note.description ?? '';
@@ -1805,6 +1815,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const tagsRow = document.createElement('div');
         tagsRow.className = 'list-item-form-label';
+        tagsRow.setAttribute('data-role', 'note-editor-tags-row');
 
         const tagsLabel = document.createElement('label');
         tagsLabel.textContent = 'Tags';
@@ -1824,6 +1835,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const pinnedRow = document.createElement('div');
         pinnedRow.className = 'list-item-form-checkbox-row';
+        pinnedRow.setAttribute('data-role', 'note-editor-pinned-row');
 
         const pinnedCheckbox = document.createElement('input');
         pinnedCheckbox.type = 'checkbox';
@@ -1841,6 +1853,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
 
         const favoriteRow = document.createElement('div');
         favoriteRow.className = 'list-item-form-checkbox-row';
+        favoriteRow.setAttribute('data-role', 'note-editor-favorite-row');
 
         const favoriteCheckbox = document.createElement('input');
         favoriteCheckbox.type = 'checkbox';
@@ -1869,6 +1882,24 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         form.appendChild(contentLabel);
 
         bodyEl.appendChild(form);
+
+        let compactMode = false;
+        const updateCompactMode = (): void => {
+          const hideTitle = compactMode && !isNew;
+          titleLabel.hidden = hideTitle;
+          descriptionLabel.hidden = compactMode;
+          tagsRow.hidden = compactMode;
+          pinnedRow.hidden = compactMode;
+          favoriteRow.hidden = compactMode;
+          bodyEl.classList.toggle('note-edit-compact-mode', compactMode);
+          compactButton.classList.toggle('is-active', compactMode);
+          compactButton.setAttribute('aria-pressed', compactMode ? 'true' : 'false');
+        };
+        compactButton.addEventListener('click', () => {
+          compactMode = !compactMode;
+          updateCompactMode();
+        });
+        updateCompactMode();
 
         let isSaving = false;
 
