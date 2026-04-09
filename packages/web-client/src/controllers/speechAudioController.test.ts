@@ -47,6 +47,8 @@ function createAudioModeSelect(): HTMLSelectElement {
 function createVoiceSettingsInputs(): {
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -87,6 +89,8 @@ function createVoiceSettingsInputs(): {
   return {
     audioModeSelectEl: createAudioModeSelect(),
     autoListenCheckboxEl: document.createElement('input'),
+    standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
+    notificationTitlePlaybackCheckboxEl: document.createElement('input'),
     voiceAdapterBaseUrlInputEl: document.createElement('input'),
     voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
@@ -107,6 +111,8 @@ function createInitialVoiceSettings(overrides?: Partial<VoiceSettings>): VoiceSe
   return {
     audioMode: 'off',
     autoListenEnabled: false,
+    standaloneNotificationPlaybackEnabled: false,
+    notificationTitlePlaybackEnabled: false,
     voiceAdapterBaseUrl: 'https://assistant/agent-voice-adapter',
     preferredVoiceSessionId: '',
     ttsPreferredSessionOnly: false,
@@ -139,6 +145,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      retargetActiveRecognition: vi.fn(),
       setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
@@ -158,6 +165,7 @@ describe('AssistantNativeVoiceBridge', () => {
     await expect(
       bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
     ).resolves.toBe(true);
+    await expect(bridge.retargetActiveRecognition('session-2')).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
@@ -171,6 +179,9 @@ describe('AssistantNativeVoiceBridge', () => {
         panelId: 'panel-1',
         sessionId: 'session-1',
       },
+    });
+    expect(target.retargetActiveRecognition).toHaveBeenCalledWith({
+      sessionId: 'session-2',
     });
     expect(target.setSessionTitles).toHaveBeenCalledWith({
       sessionTitles: {
@@ -197,6 +208,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      retargetActiveRecognition: vi.fn(),
       setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
@@ -211,12 +223,14 @@ describe('AssistantNativeVoiceBridge', () => {
 
     await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(true);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
+    await expect(bridge.retargetActiveRecognition(null)).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings(),
     });
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
+    expect(target.retargetActiveRecognition).toHaveBeenCalledWith({ sessionId: null });
     expect(target.setSessionTitles).toHaveBeenCalledWith({
       sessionTitles: {
         'session-1': 'Daily Assistant',
@@ -830,6 +844,8 @@ describe('SpeechAudioController.micButtonState', () => {
       micButtonEl: document.createElement('button'),
       audioModeSelectEl: createAudioModeSelect(),
       autoListenCheckboxEl: autoListenCheckbox,
+      standaloneNotificationPlaybackCheckboxEl: document.createElement('input'),
+      notificationTitlePlaybackCheckboxEl: document.createElement('input'),
       voiceAdapterBaseUrlInputEl: document.createElement('input'),
       voiceMicInputSelectEl: document.createElement('select'),
       voiceRecognitionStartTimeoutInputEl: document.createElement('input'),
@@ -975,6 +991,147 @@ describe('SpeechAudioController.micButtonState', () => {
     expect(micButton.classList.contains('native-listening')).toBe(true);
     expect(micButton.classList.contains('stopping')).toBe(true);
     expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
+  });
+
+  it('uses a stop-only chat button for native mobile output control', () => {
+    let isOutputActive = false;
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => 'session-1',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => isOutputActive,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      buttonMode: 'stop-only',
+      initialVoiceSettings: createInitialVoiceSettings(),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: new AssistantNativeVoiceBridge(() => ({
+        AssistantNativeVoice: {
+          stopCurrentInteraction: vi.fn(),
+        },
+      })),
+    });
+
+    controller.attach();
+    expect(micButton.classList.contains('stop-only')).toBe(true);
+    expect(micButton.classList.contains('stop-only-hidden')).toBe(true);
+    expect(micButton.disabled).toBe(true);
+    expect(micButton.getAttribute('aria-hidden')).toBe('true');
+    expect(micButton.getAttribute('aria-label')).toBe('No active turn');
+    expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
+
+    isOutputActive = true;
+    controller.syncMicButtonState();
+    expect(micButton.classList.contains('stop-only-active')).toBe(true);
+    expect(micButton.classList.contains('stop-only-hidden')).toBe(false);
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-hidden')).toBe('false');
+    expect(micButton.getAttribute('aria-label')).toBe('Stop turn');
+    expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('stop');
+  });
+});
+
+describe('SpeechAudioController.nativeFabControl', () => {
+  it('starts and stops native voice from the floating button helpers', async () => {
+    const startManualListen = vi.fn();
+    const stopCurrentInteraction = vi.fn();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => 'session-123',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'tool' }),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: new AssistantNativeVoiceBridge(() => ({
+        AssistantNativeVoice: {
+          startManualListen,
+          stopCurrentInteraction,
+        },
+      })),
+    });
+
+    controller.setAudioMode('tool');
+    await expect(controller.startVoiceFromFab()).resolves.toBe(true);
+    expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-123' });
+
+    controller.setNativeRuntimeState('listening');
+    expect(controller.getVoiceFabState()).toEqual({ enabled: true, mode: 'listening' });
+    expect(controller.isNativeListeningActive()).toBe(true);
+    expect(controller.stopVoiceFromFab()).toBe(true);
+    expect(stopCurrentInteraction).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses an explicit selected session for the floating button helpers', async () => {
+    const startManualListen = vi.fn();
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => 'session-bound-panel',
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'tool' }),
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: new AssistantNativeVoiceBridge(() => ({
+        AssistantNativeVoice: {
+          startManualListen,
+        },
+      })),
+    });
+
+    controller.setAudioMode('tool');
+
+    await expect(controller.startVoiceFromFabForSession('session-selected')).resolves.toBe(true);
+    expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-selected' });
+    expect(controller.getVoiceFabStateForSession('session-selected')).toEqual({
+      enabled: true,
+      mode: 'idle',
+    });
   });
 });
 

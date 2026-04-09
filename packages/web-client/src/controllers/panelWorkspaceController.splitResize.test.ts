@@ -182,4 +182,73 @@ describe('PanelWorkspaceController split resize', () => {
 
     expect(first.style.flex).toEqual(flexAfterCancel);
   });
+
+  it('preserves chat log bottom offset while resizing a split', () => {
+    const registry = new PanelRegistry();
+    registry.register(CHAT_PANEL_MANIFEST, createStubPanel);
+    registry.register(INPUT_PANEL_MANIFEST, createStubPanel);
+
+    const host = new PanelHostController({ registry });
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+
+    const workspace = new PanelWorkspaceController({
+      root,
+      registry,
+      host,
+      defaultLayout: () => ({
+        layout: {
+          kind: 'split',
+          splitId: 'split-1',
+          direction: 'vertical',
+          sizes: [1, 1],
+          children: [pane('pane-1', 'chat-1'), pane('pane-2', 'input-1')],
+        },
+        panels: {
+          'chat-1': { panelId: 'chat-1', panelType: 'chat' },
+          'input-1': { panelId: 'input-1', panelType: 'input' },
+        },
+        headerPanels: [],
+        headerPanelSizes: {},
+      }),
+    });
+    host.setPanelWorkspace(workspace);
+
+    const panelEl = document.createElement('div');
+    const chatLog = document.createElement('div');
+    chatLog.className = 'chat-log';
+    panelEl.appendChild(chatLog);
+    root.appendChild(panelEl);
+
+    (workspace as unknown as { panelElements: Map<string, HTMLElement> }).panelElements.set(
+      'chat-1',
+      panelEl,
+    );
+
+    let clientHeight = 300;
+    Object.defineProperty(chatLog, 'scrollHeight', { configurable: true, value: 1200 });
+    Object.defineProperty(chatLog, 'clientHeight', {
+      configurable: true,
+      get: () => clientHeight,
+    });
+    chatLog.scrollTop = 700;
+
+    const anchors = (
+      workspace as unknown as {
+        captureSplitResizeScrollAnchors: () => Map<HTMLElement, number>;
+      }
+    ).captureSplitResizeScrollAnchors();
+
+    expect(anchors.get(chatLog)).toBe(200);
+
+    clientHeight = 240;
+
+    (
+      workspace as unknown as {
+        restoreSplitResizeScrollAnchors: (anchors: Map<HTMLElement, number>) => void;
+      }
+    ).restoreSplitResizeScrollAnchors(anchors);
+
+    expect(chatLog.scrollTop).toBe(760);
+  });
 });

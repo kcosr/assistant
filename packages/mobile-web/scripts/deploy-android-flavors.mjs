@@ -10,6 +10,8 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const mobileDir = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(mobileDir, '..', '..');
 const flavorsPath = path.join(mobileDir, 'flavors.json');
+const ADB_PROBE_TIMEOUT_MS = 15_000;
+const ADB_INSTALL_TIMEOUT_MS = 180_000;
 
 function run(command, args, options = {}) {
   const cwd = options.cwd ?? mobileDir;
@@ -20,9 +22,20 @@ function run(command, args, options = {}) {
     env,
     stdio: 'inherit',
     encoding: 'utf8',
+    timeout: options.timeout,
   });
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      throw new Error(
+        `[deploy-android-flavors] Command timed out after ${options.timeout}ms: ${command} ${args.join(' ')}`,
+      );
+    }
+    throw result.error;
+  }
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    throw new Error(
+      `[deploy-android-flavors] Command failed with exit code ${result.status ?? 1}: ${command} ${args.join(' ')}`,
+    );
   }
 }
 
@@ -34,13 +47,22 @@ function runCapture(command, args, options = {}) {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
+    timeout: options.timeout,
   });
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      throw new Error(
+        `[deploy-android-flavors] Command timed out after ${options.timeout}ms: ${command} ${args.join(' ')}`,
+      );
+    }
+    throw result.error;
+  }
   if (result.status !== 0) {
     const stderr = result.stderr?.trim();
-    if (stderr) {
-      console.error(stderr);
-    }
-    process.exit(result.status ?? 1);
+    throw new Error(
+      stderr ||
+        `[deploy-android-flavors] Command failed with exit code ${result.status ?? 1}: ${command} ${args.join(' ')}`,
+    );
   }
   return result.stdout ?? '';
 }
@@ -73,6 +95,27 @@ function getConnectedDevices() {
   return devices;
 }
 
+function isDeviceResponsive(device) {
+  try {
+    const state = runCapture('adb', ['-s', device, 'get-state'], {
+      cwd: repoRoot,
+      timeout: ADB_PROBE_TIMEOUT_MS,
+    }).trim();
+    if (state !== 'device') {
+      return false;
+    }
+    runCapture('adb', ['-s', device, 'shell', 'true'], {
+      cwd: repoRoot,
+      timeout: ADB_PROBE_TIMEOUT_MS,
+    });
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[deploy-android-flavors] Skipping unresponsive device ${device}: ${message}`);
+    return false;
+  }
+}
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const skipWebBuild = args.includes('--skip-web-build');
@@ -100,6 +143,7 @@ if (!skipWebBuild) {
 
 const devices = getConnectedDevices();
 console.log(`[deploy-android-flavors] Target devices: ${devices.join(', ')}`);
+const failedInstalls = [];
 
 for (const flavorName of flavorNames) {
   const flavor = flavors[flavorName];
@@ -134,23 +178,59 @@ for (const flavorName of flavorNames) {
   }
 
   for (const device of devices) {
-    run('adb', ['-s', device, 'install', '-r', stage.debugApkPath], { cwd: repoRoot });
-    run(
-      'adb',
-      [
-        '-s',
+    if (!isDeviceResponsive(device)) {
+      failedInstalls.push({
+        flavorName,
         device,
-        'shell',
-        'monkey',
-        '-p',
-        flavor.appId,
-        '-c',
-        'android.intent.category.LAUNCHER',
-        '1',
-      ],
-      { cwd: repoRoot },
+        reason: 'device did not respond to adb probe',
+      });
+      continue;
+    }
+    try {
+      run('adb', ['-s', device, 'install', '-r', stage.debugApkPath], {
+        cwd: repoRoot,
+        timeout: ADB_INSTALL_TIMEOUT_MS,
+      });
+      run(
+        'adb',
+        [
+          '-s',
+          device,
+          'shell',
+          'monkey',
+          '-p',
+          flavor.appId,
+          '-c',
+          'android.intent.category.LAUNCHER',
+          '1',
+        ],
+        {
+          cwd: repoRoot,
+          timeout: ADB_PROBE_TIMEOUT_MS,
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[deploy-android-flavors] Failed to deploy ${flavorName} to ${device}: ${message}`,
+      );
+      failedInstalls.push({
+        flavorName,
+        device,
+        reason: message,
+      });
+    }
+  }
+}
+
+if (failedInstalls.length > 0) {
+  console.error('\n[deploy-android-flavors] Deployment finished with device failures:');
+  for (const failure of failedInstalls) {
+    console.error(
+      `- flavor=${failure.flavorName} device=${failure.device} reason=${failure.reason}`,
     );
   }
+  process.exit(1);
 }
 
 console.log('\n[deploy-android-flavors] Completed.');

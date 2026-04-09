@@ -31,6 +31,7 @@ import {
   MAX_ATTACHMENT_SIZE_BYTES,
   formatAttachmentTooLargeMessage,
 } from './attachments/constants';
+import { createNotificationRecord } from '../../plugins/core/notifications/server/service';
 
 interface AgentMessageArgs {
   agentId: string;
@@ -89,6 +90,42 @@ function parseVoicePromptArgs(raw: unknown): VoicePromptArgs {
     throw createToolError('invalid_arguments', 'text must not be empty');
   }
   return { text };
+}
+
+async function publishVoiceToolNotification(options: {
+  ctx: ToolContext;
+  text: string;
+  toolName: 'voice_speak' | 'voice_ask';
+}): Promise<void> {
+  const { ctx, text, toolName } = options;
+  if (!ctx.sessionId) {
+    return;
+  }
+  try {
+    const stateSummary =
+      ctx.sessionHub?.getSessionState(ctx.sessionId)?.summary ??
+      (ctx.sessionIndex ? await ctx.sessionIndex.getSession(ctx.sessionId) : null);
+    const sessionActivitySeq =
+      typeof stateSummary?.revision === 'number' ? Math.max(0, stateSummary.revision) : null;
+    await createNotificationRecord({
+      input: {
+        kind: 'notification',
+        title: toolName === 'voice_ask' ? 'Spoken prompt' : 'Spoken update',
+        body: text,
+        sessionId: ctx.sessionId,
+        tts: true,
+        voiceMode: toolName === 'voice_ask' ? 'speak_then_listen' : 'speak',
+        ttsText: text,
+        ...(ctx.toolCallId ? { sourceEventId: ctx.toolCallId } : {}),
+        ...(sessionActivitySeq !== null ? { sessionActivitySeq } : {}),
+      },
+      source: 'tool',
+      ...(ctx.sessionHub ? { sessionHub: ctx.sessionHub } : {}),
+      ...(ctx.sessionIndex ? { sessionIndex: ctx.sessionIndex } : {}),
+    });
+  } catch {
+    // Notifications are optional for voice tools; the transcript tool-call path still exists.
+  }
 }
 
 function parseOptionalTrimmedString(obj: Record<string, unknown>, key: string): string | undefined {
@@ -1169,8 +1206,9 @@ export function registerBuiltInSessionTools(options: {
     description:
       'Speak a one-way update to the user. Use for spoken progress updates, notifications, or confirmations when no spoken reply is expected. Only use this when the user has initiated or requested voice-style interaction.',
     parameters: voicePromptParameters,
-    handler: async (args) => {
-      parseVoicePromptArgs(args);
+    handler: async (args, ctx) => {
+      const { text } = parseVoicePromptArgs(args);
+      await publishVoiceToolNotification({ ctx, text, toolName: 'voice_speak' });
       return { accepted: true };
     },
   });
@@ -1180,8 +1218,9 @@ export function registerBuiltInSessionTools(options: {
     description:
       'Speak a prompt to the user and expect a spoken reply in a later turn. Use this when a spoken reply is expected, and only when the user has initiated or requested voice-style interaction.',
     parameters: voicePromptParameters,
-    handler: async (args) => {
-      parseVoicePromptArgs(args);
+    handler: async (args, ctx) => {
+      const { text } = parseVoicePromptArgs(args);
+      await publishVoiceToolNotification({ ctx, text, toolName: 'voice_ask' });
       return { accepted: true };
     },
   });

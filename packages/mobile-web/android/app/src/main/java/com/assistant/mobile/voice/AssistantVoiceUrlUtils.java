@@ -74,6 +74,14 @@ final class AssistantVoiceUrlUtils {
         return joinApiPath(baseUrl, "api/plugins/sessions/operations/message");
     }
 
+    static String assistantNotificationListUrl(String baseUrl) {
+        return joinApiPath(baseUrl, "api/plugins/notifications/operations/list");
+    }
+
+    static String assistantNotificationClearUrl(String baseUrl) {
+        return joinApiPath(baseUrl, "api/plugins/notifications/operations/clear");
+    }
+
     private static String joinApiPath(String baseUrl, String suffix) {
         Uri base = Uri.parse(normalizeBaseUrl(baseUrl, AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL));
         return base.buildUpon()

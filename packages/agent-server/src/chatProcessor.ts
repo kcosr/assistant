@@ -43,6 +43,7 @@ import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessionModel';
 import { resolveVisibleAssistantText } from './piAssistantText';
 import { buildMessagesForPiSync } from './history/piSessionSync';
+import { publishFinalResponseNotification } from './notificationProducers';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -774,12 +775,27 @@ export async function processUserMessage(
       if (ttsSessionForRun) {
         await ttsSessionForRun.finish();
       }
-      void sessionHub.recordSessionActivity(
+      let notificationSummary = state.summary;
+      try {
+        const postActivitySummary = await sessionHub.recordSessionActivity(
+          sessionId,
+          visibleAssistant.text.length > 120
+            ? `${visibleAssistant.text.slice(0, 117)}…`
+            : visibleAssistant.text,
+        );
+        if (postActivitySummary) {
+          notificationSummary = postActivitySummary;
+        }
+      } catch {
+        // Session-activity persistence is best-effort; use pre-bump summary.
+      }
+      void publishFinalResponseNotification({
         sessionId,
-        visibleAssistant.text.length > 120
-          ? `${visibleAssistant.text.slice(0, 117)}…`
-          : visibleAssistant.text,
-      );
+        responseId,
+        text: visibleAssistant.text,
+        sessionHub,
+        summary: notificationSummary,
+      });
       const assistantTimestampMs =
         (runResult.piSdkMessage &&
         runResult.piSdkMessage.role === 'assistant' &&

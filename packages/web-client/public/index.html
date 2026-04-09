@@ -357,6 +357,20 @@
             <input type="checkbox" id="auto-listen-checkbox" />
             Auto-listen
           </label>
+          <label
+            class="settings-dropdown-item"
+            for="standalone-notification-playback-checkbox"
+          >
+            <input type="checkbox" id="standalone-notification-playback-checkbox" />
+            Play standalone notifications aloud
+          </label>
+          <label
+            class="settings-dropdown-item"
+            for="notification-title-playback-checkbox"
+          >
+            <input type="checkbox" id="notification-title-playback-checkbox" />
+            Read notification title before speech text
+          </label>
           <label class="list-item-form-label" for="voice-adapter-base-url-input">
             <span class="list-item-form-label-text">Voice adapter URL</span>
             <input
@@ -530,6 +544,40 @@
               data-role="chat-thinking-select"
               aria-label="Select thinking level"
             ></select>
+            <button
+              type="button"
+              class="panel-header-button"
+              data-role="chat-export-html"
+              aria-label="Export chat as HTML"
+              title="Export chat as HTML"
+            >
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 3v12"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M7 10l5 5 5-5"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M5 21h14"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  fill="none"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
             <button
               type="button"
               class="panel-header-button"

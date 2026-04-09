@@ -217,6 +217,7 @@ const PiSdkChatConfigSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().int().min(1).optional(),
   maxTokens: z.number().int().min(1).optional(),
+  contextWindow: z.number().int().min(1).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxToolIterations: z.number().int().min(1).optional(),
 });
@@ -439,6 +440,9 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
                 ...(config.headers ? { headers: config.headers } : {}),
                 ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
                 ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+                ...(config.contextWindow !== undefined
+                  ? { contextWindow: config.contextWindow }
+                  : {}),
                 ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
                 ...(config.maxToolIterations !== undefined
                   ? { maxToolIterations: config.maxToolIterations }

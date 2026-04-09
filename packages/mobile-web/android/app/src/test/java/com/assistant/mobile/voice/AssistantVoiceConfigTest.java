@@ -119,6 +119,24 @@ public final class AssistantVoiceConfigTest {
     }
 
     @Test
+    public void withVoiceSettingsReadsStandaloneNotificationPlaybackSetting() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("standaloneNotificationPlaybackEnabled", false)
+        );
+
+        assertFalse(updated.standaloneNotificationPlaybackEnabled);
+    }
+
+    @Test
+    public void withVoiceSettingsReadsNotificationTitlePlaybackSetting() throws Exception {
+        AssistantVoiceConfig updated = createConfig(1.0f).withVoiceSettings(
+            new JSONObject().put("notificationTitlePlaybackEnabled", true)
+        );
+
+        assertTrue(updated.notificationTitlePlaybackEnabled);
+    }
+
+    @Test
     public void saveAndLoadPersistMediaButtonsEnabled() {
         Context context = RuntimeEnvironment.getApplication();
         AssistantVoiceConfig.save(context, createConfig(true));
@@ -225,7 +243,10 @@ public final class AssistantVoiceConfigTest {
             recognitionCueGain,
             AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
             startupPreRollMs,
-            mediaButtonsEnabled
+            mediaButtonsEnabled,
+            false,
+            true,
+            false
         );
     }
 

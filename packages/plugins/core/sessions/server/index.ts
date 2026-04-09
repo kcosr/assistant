@@ -25,6 +25,7 @@ import type { PluginModule } from '../../../../agent-server/src/plugins/types';
 import type { PiRequestHistoryAction } from '../../../../agent-server/src/history/piSessionWriter';
 import { loadCanonicalPiTranscriptEvents } from '../../../../agent-server/src/history/historyProvider';
 import { getPiTranscriptRevision } from '../../../../agent-server/src/history/piTranscriptRevision';
+import { syncSessionNotificationTitles } from '../../notifications/server/service';
 import {
   getActiveLiveTranscriptRevision,
   getLiveTranscriptSequenceWatermark,
@@ -393,6 +394,14 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             throw new ToolError('session_not_found', 'Session not found');
           }
           summary = pinnedSummary;
+        }
+
+        if (name !== undefined || sessionConfig !== undefined) {
+          void syncSessionNotificationTitles({
+            sessionId: summary.sessionId,
+            summary,
+            sessionHub,
+          });
         }
 
         return summary;

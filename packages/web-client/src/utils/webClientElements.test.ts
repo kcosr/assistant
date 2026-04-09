@@ -28,6 +28,12 @@ describe('getWebClientElements', () => {
     expect(elements?.voiceSettingsCloseButton.id).toBe('voice-settings-close-button');
     expect(elements?.audioModeSelect?.id).toBe('audio-mode-select');
     expect(elements?.autoListenCheckbox?.id).toBe('auto-listen-checkbox');
+    expect(elements?.standaloneNotificationPlaybackCheckbox?.id).toBe(
+      'standalone-notification-playback-checkbox',
+    );
+    expect(elements?.notificationTitlePlaybackCheckbox?.id).toBe(
+      'notification-title-playback-checkbox',
+    );
     expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
     expect(elements?.voicePreferredSessionSelect.id).toBe('voice-preferred-session-select');
     expect(elements?.voiceTtsPreferredSessionOnlyCheckbox.id).toBe(

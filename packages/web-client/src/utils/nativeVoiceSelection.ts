@@ -3,6 +3,15 @@ export type NativeVoiceSelectedSession = {
   sessionId: string;
 };
 
+export type NativeVoiceRuntimeState =
+  | 'disabled'
+  | 'connecting'
+  | 'idle'
+  | 'speaking'
+  | 'listening'
+  | 'error'
+  | null;
+
 type NativeVoiceSelectionInput = {
   activePanelId?: string | null;
   activePanelType?: string | null;
@@ -21,19 +30,58 @@ function normalizeId(value?: string | null): string | null {
 export function resolveNativeVoiceSelectedSession(
   input: NativeVoiceSelectionInput,
 ): NativeVoiceSelectedSession | null {
-  if (input.activePanelType !== 'chat') {
-    return null;
-  }
-
-  const panelId = normalizeId(input.activePanelId);
-  if (!panelId) {
-    return null;
-  }
-
-  const sessionId = normalizeId(input.fixedSessionId) ?? normalizeId(input.inputSessionId);
+  const sessionId = normalizeId(input.inputSessionId) ?? normalizeId(input.fixedSessionId);
   if (!sessionId) {
     return null;
   }
 
+  const panelId =
+    input.activePanelType === 'chat' ? (normalizeId(input.activePanelId) ?? '') : '';
+
   return { panelId, sessionId };
+}
+
+type VoiceFabTargetSessionInput = {
+  inputSessionId?: string | null;
+  nativeVoiceBridgeSelectedSessionId?: string | null;
+  preferredVoiceSessionId?: string | null;
+};
+
+export function resolveVoiceFabTargetSessionId(
+  input: VoiceFabTargetSessionInput,
+): string | null {
+  return (
+    normalizeId(input.inputSessionId) ??
+    normalizeId(input.preferredVoiceSessionId) ??
+    normalizeId(input.nativeVoiceBridgeSelectedSessionId)
+  );
+}
+
+type VoiceFabControllerInput<T> = {
+  inputSessionId?: string | null;
+  getControllerForSession: (sessionId: string) => T | null;
+  activeController?: T | null;
+  primaryController?: T | null;
+  nativeRuntimeState?: NativeVoiceRuntimeState;
+};
+
+export function resolveVoiceFabController<T>(
+  input: VoiceFabControllerInput<T>,
+): T | null {
+  if (
+    input.nativeRuntimeState === 'speaking' ||
+    input.nativeRuntimeState === 'listening'
+  ) {
+    return input.activeController ?? input.primaryController ?? null;
+  }
+
+  const selectedSessionId = normalizeId(input.inputSessionId);
+  if (selectedSessionId) {
+    const selectedController = input.getControllerForSession(selectedSessionId);
+    if (selectedController) {
+      return selectedController;
+    }
+  }
+
+  return input.primaryController ?? input.activeController ?? null;
 }

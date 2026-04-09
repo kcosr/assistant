@@ -9,6 +9,7 @@ This contract covers:
 
 - `voice_speak`
 - `voice_ask`
+- durable notification emission for Android queue admission and recovery
 - spoken-input submission through the existing sessions message API
 - transcript/event semantics needed by web and Android clients
 
@@ -23,6 +24,40 @@ data shape they depend on.
 - Preserve normal agent-processing semantics for spoken input.
 
 ## Tool Definitions
+
+## Notification-backed Delivery
+
+`voice_speak`, `voice_ask`, and response-mode final assistant replies now share one canonical
+server-originated Android ingress path: durable notifications plus notification mutation events.
+
+Producer mapping:
+
+- final assistant response:
+  - emits or updates one `session_attention` notification per session
+  - uses `voiceMode = speak_then_listen`
+  - clears when the server accepts a user reply in that session or when the notification is
+    explicitly dismissed
+- `voice_speak`:
+  - emits an append-only session-linked notification
+  - uses `voiceMode = speak`
+- `voice_ask`:
+  - emits an append-only session-linked notification
+  - uses `voiceMode = speak_then_listen`
+
+Shared durable notification fields needed by Android:
+
+- `kind`
+- `source`
+- `sessionId`
+- `sessionTitle`
+- `voiceMode`
+- optional `ttsText`
+- optional `sourceEventId`
+- optional `sessionActivitySeq` for stale ask validation before auto-listen
+
+The durable record and the live broadcast mutation are related but distinct shapes. Android may
+consume the mutation stream over `panel_event` and recover by listing durable notifications over the
+notifications HTTP API.
 
 ### `voice_speak`
 
@@ -58,6 +93,7 @@ Semantics:
 
 - success means the prompt/tool event was accepted into the session transcript
 - it does not mean playback occurred
+- it does not guarantee the Android runtime was alive to auto-admit the notification
 - later native playback/runtime failures are not reflected in the tool result
 
 ### `voice_ask`
@@ -92,6 +128,8 @@ Semantics:
 - same fire-and-forget semantics as `voice_speak`
 - the tool does not block waiting for speech input
 - the eventual spoken user reply is not returned through the tool result
+- any later Android auto-listen transition still depends on client-local queue state and stale-item
+  validation
 
 ## Tool Description Requirements
 

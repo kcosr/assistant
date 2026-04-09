@@ -1,24 +1,61 @@
+import type { LayoutPersistence } from '@assistant/shared';
 import type {
   PanelHandle,
   PanelHost,
   PanelInitOptions,
 } from '../../../../web-client/src/controllers/panelRegistry';
 import { PanelChromeController } from '../../../../web-client/src/controllers/panelChromeController';
+import {
+  resolveSessionBaseLabel,
+  type AgentLabelSummary,
+  type SessionLabelSummary,
+} from '../../../../web-client/src/utils/sessionLabel';
 
 interface NotificationRecord {
   id: string;
+  kind: 'session_attention' | 'notification';
   title: string;
   body: string;
   createdAt: string;
   readAt: string | null;
-  source: 'tool' | 'http' | 'cli';
+  source: 'tool' | 'http' | 'cli' | 'system';
   sessionId: string | null;
   sessionTitle: string | null;
   tts: boolean;
+  voiceMode: 'none' | 'speak' | 'speak_then_listen';
+  ttsText: string | null;
+  sourceEventId: string | null;
+  sessionActivitySeq: number | null;
+}
+
+type SessionSummary = SessionLabelSummary & {
+  lastSnippet?: string;
+};
+
+interface AssistantNativeVoiceBridgeTarget {
+  performNotificationSpeaker?: (args: { notification: NotificationRecord }) => void | Promise<void>;
+  performNotificationMic?: (args: { notification: NotificationRecord }) => void | Promise<void>;
+}
+
+interface AssistantNativeVoiceBridgeHost {
+  AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+  Capacitor?: {
+    Plugins?: {
+      AssistantNativeVoice?: AssistantNativeVoiceBridgeTarget;
+    };
+    getPlatform?: () => string;
+  };
 }
 
 type FilterMode = 'all' | 'unread';
 type DensityMode = 'card' | 'compact';
+const SNAPSHOT_RETRY_DELAY_MS = 1000;
+const SNAPSHOT_RETRY_LIMIT = 10;
+
+type LayoutPanelEntry = {
+  panelType?: string;
+  binding?: { mode?: string; sessionId?: string } | null;
+};
 
 interface PanelState {
   notifications: NotificationRecord[];
@@ -34,12 +71,18 @@ const ICON_PATHS: Record<string, string> = {
   tool: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
   http: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
   cli: 'M4 17l6-6-6-6 M12 19h8',
+  system: 'M12 2l7 4v6c0 5-3.4 9.4-7 10-3.6-.6-7-5-7-10V6l7-4z',
   chevronDown: 'M6 9l6 6 6-6',
   chevronUp: 'M18 15l-6-6-6 6',
+  chevronRight: 'M9 6l6 6-6 6',
   moreVertical: 'M12 12h.01 M12 5h.01 M12 19h.01',
+  stop: 'M8 8h8v8H8z',
   volume: 'M11 5L6 9H2v6h4l5 4V5z M19.07 4.93a10 10 0 0 1 0 14.14 M15.54 8.46a5 5 0 0 1 0 7.07',
   externalLink: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6 M15 3h6v6 M10 14L21 3',
   inbox: 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M22 12h-4l-3 3h-6l-3-3H2',
+  attention: 'M12 9v4 M12 17h.01 M10.29 3.86l-7.5 13A2 2 0 0 0 4.5 20h15a2 2 0 0 0 1.71-3l-7.5-13a2 2 0 0 0-3.42 0z',
+  close: 'M18 6L6 18 M6 6l12 12',
+  mic: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z M19 10v1a7 7 0 0 1-14 0v-1 M12 18v4 M8 22h8',
 };
 
 function createSvgIcon(pathD: string, className = 'notif-icon'): SVGSVGElement {
@@ -75,6 +118,100 @@ function formatRelativeTime(isoString: string): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+function getNativeVoiceBridgeTarget(): AssistantNativeVoiceBridgeTarget | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  const host = window as unknown as AssistantNativeVoiceBridgeHost;
+  return host.AssistantNativeVoice ?? host.Capacitor?.Plugins?.AssistantNativeVoice ?? null;
+}
+
+function isAndroidNativeVoiceAvailable(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const host = window as unknown as AssistantNativeVoiceBridgeHost;
+  const target = getNativeVoiceBridgeTarget();
+  if (!target) {
+    return false;
+  }
+  const platform = host.Capacitor?.getPlatform?.();
+  return !platform || platform === 'android';
+}
+
+function invokeNativeVoiceAction(
+  methodName: keyof AssistantNativeVoiceBridgeTarget,
+  notification: NotificationRecord,
+): boolean {
+  console.info(
+    `[notifications] invoking ${String(methodName)} id=${notification.id} sessionId=${notification.sessionId ?? ''} kind=${notification.kind} voiceMode=${notification.voiceMode}`,
+  );
+  const target = getNativeVoiceBridgeTarget();
+  const method = target?.[methodName];
+  if (typeof method !== 'function') {
+    console.warn(
+      `[notifications] ${String(methodName)} unavailable id=${notification.id} sessionId=${notification.sessionId ?? ''}`,
+    );
+    return false;
+  }
+  try {
+    const result = method({ notification });
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      void Promise.resolve(result)
+        .then(() => {
+          console.info(
+            `[notifications] ${String(methodName)} resolved id=${notification.id} sessionId=${notification.sessionId ?? ''}`,
+          );
+        })
+        .catch((error: unknown) => {
+          console.warn(`[notifications] ${String(methodName)} failed`, error);
+        });
+    } else {
+      console.info(
+        `[notifications] ${String(methodName)} dispatched synchronously id=${notification.id} sessionId=${notification.sessionId ?? ''}`,
+      );
+    }
+    return true;
+  } catch (error) {
+    console.warn(`[notifications] ${String(methodName)} failed`, error);
+    return false;
+  }
+}
+
+function resolveSpokenText(notification: NotificationRecord): string {
+  if (notification.ttsText && notification.ttsText.trim()) {
+    return notification.ttsText.trim();
+  }
+  if (notification.body.trim()) {
+    return notification.body.trim();
+  }
+  return notification.title.trim();
+}
+
+function canExpandNotificationBody(body: string): boolean {
+  const trimmed = body.trim();
+  return trimmed.length > 160 || trimmed.includes('\n');
+}
+
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && Boolean(
+      target.closest(
+        '.notif-action-btn, .notif-dismiss-btn, .notif-expand-btn, .notif-read-toggle-btn',
+      ),
+    );
+}
+
+function resolveClientSessionLabel(
+  summary: SessionSummary | null,
+  agentSummaries: AgentLabelSummary[],
+): string {
+  if (!summary) {
+    return '';
+  }
+  return resolveSessionBaseLabel(summary, agentSummaries);
+}
+
 (function () {
   if (!window.ASSISTANT_PANEL_REGISTRY) {
     return;
@@ -93,7 +230,9 @@ function formatRelativeTime(isoString: string): string {
       // Monotonic revision counter from the server. Used to discard
       // stale snapshots that arrive after newer incremental events.
       let knownRevision = -1;
-
+      let initialSnapshotReceived = false;
+      let snapshotRetryCount = 0;
+      let snapshotRetryTimer: number | null = null;
       // Load persisted state
       const persisted = host.loadPanelState() as {
         filter?: FilterMode;
@@ -170,11 +309,15 @@ function formatRelativeTime(isoString: string): string {
       controlsEl.appendChild(densityBtn);
 
       // Overflow menu button
+      const menuAnchor = document.createElement('div');
+      menuAnchor.className = 'notif-menu-anchor';
+      controlsEl.appendChild(menuAnchor);
+
       const menuBtn = document.createElement('button');
       menuBtn.className = 'notif-toggle-btn notif-menu-btn';
       menuBtn.title = 'More actions';
       menuBtn.appendChild(createSvgIcon(ICON_PATHS.moreVertical));
-      controlsEl.appendChild(menuBtn);
+      menuAnchor.appendChild(menuBtn);
 
       // Overflow menu dropdown
       const menuDropdown = document.createElement('div');
@@ -191,7 +334,7 @@ function formatRelativeTime(isoString: string): string {
       clearAllBtn.textContent = 'Clear all';
       menuDropdown.appendChild(clearAllBtn);
 
-      controlsEl.appendChild(menuDropdown);
+      menuAnchor.appendChild(menuDropdown);
 
       // Chrome controller
       const chromeController = new PanelChromeController({
@@ -241,24 +384,164 @@ function formatRelativeTime(isoString: string): string {
         densityBtn.textContent = state.density === 'card' ? 'Card' : 'Compact';
       };
 
+      const updateMarkAllButton = (): void => {
+        const unreadCount = state.notifications.filter((n) => n.readAt === null).length;
+        const markUnread = state.notifications.length > 0 && unreadCount === 0;
+        markAllReadBtn.textContent = markUnread ? 'Mark all unread' : 'Mark all read';
+        markAllReadBtn.dataset['action'] = markUnread ? 'mark_all_unread' : 'mark_all_read';
+      };
+
       const persistState = (): void => {
         host.persistPanelState({ filter: state.filter, density: state.density });
+      };
+
+      const clearSnapshotRetry = (): void => {
+        if (snapshotRetryTimer !== null) {
+          window.clearTimeout(snapshotRetryTimer);
+          snapshotRetryTimer = null;
+        }
+      };
+
+      const requestSnapshot = (): void => {
+        console.info('[notifications] request_snapshot', {
+          attempt: snapshotRetryCount + 1,
+          hasSnapshot: initialSnapshotReceived,
+        });
+        host.sendEvent({ type: 'request_snapshot' });
+      };
+
+      const closeTransientPanelIfNeeded = (): void => {
+        const layout = host.getContext('panel.layout') as LayoutPersistence | null;
+        const panelId = host.panelId();
+        const isHeaderPanel = Array.isArray(layout?.headerPanels) && layout.headerPanels.includes(panelId);
+        const isModalPanel = Array.from(
+          document.querySelectorAll<HTMLElement>('.panel-modal-overlay.open .panel-frame[data-panel-id]'),
+        ).some((frame) => frame.dataset['panelId'] === panelId);
+        if (isHeaderPanel) {
+          document.body.dispatchEvent(
+            new MouseEvent('mousedown', {
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return;
+        }
+        if (isModalPanel) {
+          host.closePanel(panelId);
+        }
+      };
+
+      const scheduleSnapshotRetry = (): void => {
+        clearSnapshotRetry();
+        if (initialSnapshotReceived || snapshotRetryCount >= SNAPSHOT_RETRY_LIMIT) {
+          return;
+        }
+        snapshotRetryTimer = window.setTimeout(() => {
+          snapshotRetryTimer = null;
+          if (initialSnapshotReceived) {
+            return;
+          }
+          snapshotRetryCount += 1;
+          requestSnapshot();
+          scheduleSnapshotRetry();
+        }, SNAPSHOT_RETRY_DELAY_MS);
+      };
+
+      const getSessionSummaries = (): SessionSummary[] => {
+        const raw = host.getContext('session.summaries');
+        return Array.isArray(raw) ? (raw as SessionSummary[]) : [];
+      };
+
+      const getAgentSummaries = (): AgentLabelSummary[] => {
+        const raw = host.getContext('agent.summaries');
+        if (!Array.isArray(raw)) {
+          return [];
+        }
+        const summaries: AgentLabelSummary[] = [];
+        for (const entry of raw) {
+          if (!entry || typeof entry !== 'object') {
+            continue;
+          }
+          const typed = entry as { agentId?: unknown; displayName?: unknown };
+          const agentId = typeof typed.agentId === 'string' ? typed.agentId.trim() : '';
+          if (!agentId) {
+            continue;
+          }
+          const displayName = typeof typed.displayName === 'string' ? typed.displayName.trim() : '';
+          summaries.push({ agentId, displayName: displayName || agentId });
+        }
+        return summaries;
       };
 
       const renderNotificationItem = (n: NotificationRecord): HTMLElement => {
         const isRead = n.readAt !== null;
         const isCompact = state.density === 'compact';
         const isExpanded = state.expandedIds.has(n.id);
+        const nativeVoiceAvailable = isAndroidNativeVoiceAvailable();
+        const spokenText = resolveSpokenText(n);
+        const agentSummaries = getAgentSummaries();
+        const matchingSession = n.sessionId
+          ? getSessionSummaries().find((summary) => summary.sessionId === n.sessionId) ?? null
+          : null;
+        const clientSessionLabel = resolveClientSessionLabel(matchingSession, agentSummaries);
+        const displayTitle =
+          n.kind === 'session_attention'
+            ? clientSessionLabel || n.sessionTitle?.trim() || n.sessionId?.trim() || n.title
+            : n.title;
+        const canSpeak = nativeVoiceAvailable && spokenText.length > 0;
+        const canListen = nativeVoiceAvailable && !!n.sessionId;
+        const canExpand = isCompact
+          ? n.body.trim().length > 0 || canSpeak || canListen
+          : canExpandNotificationBody(n.body);
 
         const item = document.createElement('div');
-        item.className = `notif-item${isRead ? ' notif-item-read' : ''}${isCompact ? ' notif-item-compact' : ''}`;
+        item.className = `notif-item${isRead ? ' notif-item-read' : ''}${isCompact ? ' notif-item-compact' : ''}${n.sessionId ? ' notif-item-linkable' : ''}`;
         item.dataset.id = n.id;
 
+        const markInteractivePress = (event: Event): void => {
+          item.classList.add('notif-item-suppress-press');
+          event.stopPropagation();
+        };
+        const clearInteractivePress = (): void => {
+          item.classList.remove('notif-item-suppress-press');
+        };
+        const stopInteractiveClick = (event: Event): void => {
+          clearInteractivePress();
+          if (event.cancelable) {
+            event.preventDefault();
+          }
+          event.stopPropagation();
+        };
+        const bindInteractiveButton = (
+          button: HTMLElement,
+          onClick: (event: Event) => void,
+        ): void => {
+          button.addEventListener('pointerdown', markInteractivePress);
+          button.addEventListener('pointerup', clearInteractivePress);
+          button.addEventListener('pointercancel', clearInteractivePress);
+          button.addEventListener('mousedown', markInteractivePress);
+          button.addEventListener('mouseup', clearInteractivePress);
+          button.addEventListener('mouseleave', clearInteractivePress);
+          button.addEventListener('click', (event) => {
+            stopInteractiveClick(event);
+            onClick(event);
+          });
+        };
+
         // Source icon
-        const sourceIcon = document.createElement('div');
-        sourceIcon.className = 'notif-source-icon';
-        sourceIcon.title = n.source;
-        sourceIcon.appendChild(createSvgIcon(ICON_PATHS[n.source] ?? ICON_PATHS.tool));
+        const sourceIcon = document.createElement('button');
+        sourceIcon.type = 'button';
+        sourceIcon.className = 'notif-source-icon notif-read-toggle-btn';
+        sourceIcon.title = isRead ? 'Mark unread' : 'Mark read';
+        sourceIcon.setAttribute('aria-label', isRead ? 'Mark unread' : 'Mark read');
+        sourceIcon.appendChild(
+          createSvgIcon(
+            n.kind === 'session_attention' ? ICON_PATHS.inbox : (ICON_PATHS[n.source] ?? ICON_PATHS.tool),
+          ),
+        );
+        bindInteractiveButton(sourceIcon, () => {
+          host.sendEvent({ type: 'toggle_read', id: n.id });
+        });
         item.appendChild(sourceIcon);
 
         // Content area
@@ -271,8 +554,32 @@ function formatRelativeTime(isoString: string): string {
 
         const titleEl = document.createElement('span');
         titleEl.className = 'notif-title';
-        titleEl.textContent = n.title;
+        titleEl.textContent = displayTitle;
         titleRow.appendChild(titleEl);
+
+        if (canExpand) {
+          const expandBtn = document.createElement('button');
+          expandBtn.type = 'button';
+          expandBtn.className = 'notif-expand-btn notif-expand-btn-inline';
+          expandBtn.title = isExpanded ? 'Collapse details' : 'Expand details';
+          expandBtn.setAttribute('aria-label', isExpanded ? 'Collapse details' : 'Expand details');
+          expandBtn.appendChild(
+            createSvgIcon(
+              isExpanded ? ICON_PATHS.chevronDown : ICON_PATHS.chevronRight,
+              'notif-icon notif-icon-xs',
+            ),
+          );
+          expandBtn.addEventListener('click', (e) => {
+            stopInteractiveClick(e);
+            if (state.expandedIds.has(n.id)) {
+              state.expandedIds.delete(n.id);
+            } else {
+              state.expandedIds.add(n.id);
+            }
+            render();
+          });
+          titleRow.appendChild(expandBtn);
+        }
 
         // Unread dot
         if (!isRead) {
@@ -281,13 +588,70 @@ function formatRelativeTime(isoString: string): string {
           titleRow.appendChild(dot);
         }
 
-        // TTS indicator
-        if (n.tts) {
-          const ttsIcon = document.createElement('span');
-          ttsIcon.className = 'notif-tts-icon';
-          ttsIcon.title = 'TTS enabled';
-          ttsIcon.appendChild(createSvgIcon(ICON_PATHS.volume, 'notif-icon notif-icon-xs'));
-          titleRow.appendChild(ttsIcon);
+        const appendActionButton = (
+          parent: HTMLElement,
+          options: {
+            className?: string;
+            title: string;
+            ariaLabel: string;
+            iconPath: string;
+            label?: string;
+            onPointerDownLog: string;
+            onClickLog: string;
+            onClick: () => void;
+          },
+        ): void => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = options.className ?? 'notif-action-btn';
+          button.title = options.title;
+          button.setAttribute('aria-label', options.ariaLabel);
+          button.appendChild(createSvgIcon(options.iconPath, 'notif-icon notif-icon-xs'));
+          if (options.label) {
+            const label = document.createElement('span');
+            label.textContent = options.label;
+            button.appendChild(label);
+          }
+          button.addEventListener('pointerdown', (e) => {
+            markInteractivePress(e);
+            console.info(options.onPointerDownLog);
+          });
+          button.addEventListener('pointerup', clearInteractivePress);
+          button.addEventListener('pointercancel', clearInteractivePress);
+          button.addEventListener('click', (e) => {
+            stopInteractiveClick(e);
+            console.info(options.onClickLog);
+            options.onClick();
+          });
+          parent.appendChild(button);
+        };
+
+        if (isCompact && (canSpeak || canListen)) {
+          const compactActionsEl = document.createElement('div');
+          compactActionsEl.className = 'notif-compact-actions';
+          if (canSpeak) {
+            appendActionButton(compactActionsEl, {
+              className: 'notif-action-btn notif-action-btn-compact',
+              title: 'Play notification',
+              ariaLabel: 'Play notification',
+              iconPath: ICON_PATHS.volume,
+              onPointerDownLog: `[notifications] speaker pointerdown id=${n.id} sessionId=${n.sessionId ?? ''}`,
+              onClickLog: `[notifications] speaker click id=${n.id} sessionId=${n.sessionId ?? ''}`,
+              onClick: () => invokeNativeVoiceAction('performNotificationSpeaker', n),
+            });
+          }
+          if (canListen) {
+            appendActionButton(compactActionsEl, {
+              className: 'notif-action-btn notif-action-btn-compact',
+              title: 'Speak now',
+              ariaLabel: 'Speak now',
+              iconPath: ICON_PATHS.mic,
+              onPointerDownLog: `[notifications] mic pointerdown id=${n.id} sessionId=${n.sessionId ?? ''}`,
+              onClickLog: `[notifications] mic click id=${n.id} sessionId=${n.sessionId ?? ''}`,
+              onClick: () => invokeNativeVoiceAction('performNotificationMic', n),
+            });
+          }
+          titleRow.appendChild(compactActionsEl);
         }
 
         const timeEl = document.createElement('span');
@@ -295,60 +659,68 @@ function formatRelativeTime(isoString: string): string {
         timeEl.textContent = formatRelativeTime(n.createdAt);
         titleRow.appendChild(timeEl);
 
+        const dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 'notif-dismiss-btn';
+        dismissBtn.setAttribute('aria-label', 'Dismiss');
+        dismissBtn.appendChild(createSvgIcon(ICON_PATHS.close, 'notif-icon notif-icon-xs'));
+        bindInteractiveButton(dismissBtn, () => {
+          host.sendEvent({ type: 'clear', id: n.id });
+        });
+        titleRow.appendChild(dismissBtn);
+
         content.appendChild(titleRow);
 
         // Body (always shown in card mode, expanded-only in compact)
         if (!isCompact || isExpanded) {
           const bodyEl = document.createElement('div');
-          bodyEl.className = 'notif-body-text';
+          bodyEl.className = `notif-body-text${isExpanded ? ' notif-body-text-expanded' : ''}`;
           bodyEl.textContent = n.body;
           content.appendChild(bodyEl);
 
-          // Session link
-          if (n.sessionId) {
-            const sessionLink = document.createElement('button');
-            sessionLink.className = 'notif-session-link';
-            sessionLink.textContent = n.sessionTitle ?? n.sessionId;
-            sessionLink.title = 'Open session';
-            sessionLink.addEventListener('click', (e) => {
-              e.stopPropagation();
-              openSession(n.sessionId!);
-            });
-            sessionLink.appendChild(
-              createSvgIcon(ICON_PATHS.externalLink, 'notif-icon notif-icon-xs'),
-            );
-            content.appendChild(sessionLink);
+          if (canSpeak || canListen) {
+            const actionsEl = document.createElement('div');
+            actionsEl.className = 'notif-actions';
+
+            if (canSpeak) {
+              appendActionButton(actionsEl, {
+                title: 'Play notification',
+                ariaLabel: 'Play notification',
+                iconPath: ICON_PATHS.volume,
+                label: 'Play',
+                onPointerDownLog: `[notifications] speaker pointerdown id=${n.id} sessionId=${n.sessionId ?? ''}`,
+                onClickLog: `[notifications] speaker click id=${n.id} sessionId=${n.sessionId ?? ''}`,
+                onClick: () => invokeNativeVoiceAction('performNotificationSpeaker', n),
+              });
+            }
+
+            if (canListen) {
+              appendActionButton(actionsEl, {
+                title: 'Speak now',
+                ariaLabel: 'Speak now',
+                iconPath: ICON_PATHS.mic,
+                label: 'Speak',
+                onPointerDownLog: `[notifications] mic pointerdown id=${n.id} sessionId=${n.sessionId ?? ''}`,
+                onClickLog: `[notifications] mic click id=${n.id} sessionId=${n.sessionId ?? ''}`,
+                onClick: () => invokeNativeVoiceAction('performNotificationMic', n),
+              });
+            }
+
+            content.appendChild(actionsEl);
           }
         }
 
         item.appendChild(content);
 
-        // Compact expand chevron
-        if (isCompact) {
-          const expandBtn = document.createElement('button');
-          expandBtn.className = 'notif-expand-btn';
-          expandBtn.title = isExpanded ? 'Collapse' : 'Expand';
-          expandBtn.appendChild(
-            createSvgIcon(
-              isExpanded ? ICON_PATHS.chevronUp : ICON_PATHS.chevronDown,
-              'notif-icon notif-icon-xs',
-            ),
-          );
-          expandBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (state.expandedIds.has(n.id)) {
-              state.expandedIds.delete(n.id);
-            } else {
-              state.expandedIds.add(n.id);
-            }
-            render();
-          });
-          item.appendChild(expandBtn);
-        }
-
         // Main item tap toggles read/unread
-        item.addEventListener('click', () => {
-          host.sendEvent({ type: 'toggle_read', id: n.id });
+        item.addEventListener('click', (event) => {
+          clearInteractivePress();
+          if (isInteractiveTarget(event.target)) {
+            return;
+          }
+          if (n.sessionId) {
+            openSession(n.sessionId);
+          }
         });
 
         return item;
@@ -371,34 +743,40 @@ function formatRelativeTime(isoString: string): string {
 
         updateFilterButton();
         updateDensityButton();
+        updateMarkAllButton();
         updateBadge();
       };
 
       // --- Session navigation ---
 
       const openSession = (sessionId: string): void => {
-        // Try to find an existing chat panel bound to this session
-        const layout = host.getContext('panel.layout') as
-          | { panels?: Array<{ id: string; type: string; binding?: { mode: string; sessionId?: string } }> }
-          | null;
+        console.info(`[notifications] openSession sessionId=${sessionId}`);
+        const layout = host.getContext('panel.layout') as LayoutPersistence | null;
+        const panels = layout?.panels as Record<string, LayoutPanelEntry> | undefined;
 
-        if (layout?.panels) {
-          const existing = layout.panels.find(
-            (p) =>
-              p.type === 'chat' &&
-              p.binding?.mode === 'fixed' &&
-              p.binding?.sessionId === sessionId,
-          );
-          if (existing) {
-            host.activatePanel(existing.id);
-            return;
+        if (panels) {
+          for (const [panelId, panel] of Object.entries(panels)) {
+            if (panel.panelType !== 'chat') {
+              continue;
+            }
+            if (panel.binding?.mode === 'fixed' && panel.binding.sessionId === sessionId) {
+              console.info(
+                `[notifications] activating existing session panel panelId=${panelId} sessionId=${sessionId}`,
+              );
+              host.activatePanel(panelId);
+              closeTransientPanelIfNeeded();
+              return;
+            }
           }
+
         }
 
+        console.info(`[notifications] opening new session panel sessionId=${sessionId}`);
         host.openPanel('chat', {
           binding: { mode: 'fixed' as const, sessionId },
           focus: true,
         });
+        closeTransientPanelIfNeeded();
       };
 
       // --- Event handlers ---
@@ -425,7 +803,12 @@ function formatRelativeTime(isoString: string): string {
       markAllReadBtn.addEventListener('click', () => {
         state.menuOpen = false;
         menuDropdown.style.display = 'none';
-        host.sendEvent({ type: 'mark_all_read' });
+        host.sendEvent({
+          type:
+            markAllReadBtn.dataset['action'] === 'mark_all_unread'
+              ? 'mark_all_unread'
+              : 'mark_all_read',
+        });
       });
 
       clearAllBtn.addEventListener('click', () => {
@@ -452,12 +835,42 @@ function formatRelativeTime(isoString: string): string {
         id?: string;
         notifications?: NotificationRecord[];
       }): void => {
+        console.info('[notifications] panel event', {
+          event: event.event,
+          revision: event.revision ?? null,
+          notificationId: event.notification?.id ?? null,
+          sessionId: event.notification?.sessionId ?? null,
+          title: event.notification?.title ?? null,
+          sessionTitle: event.notification?.sessionTitle ?? null,
+          notificationsCount: Array.isArray(event.notifications) ? event.notifications.length : null,
+        });
         const eventRevision = typeof event.revision === 'number' ? event.revision : -1;
+        const upsertNotification = (notification: NotificationRecord): void => {
+          state.notifications = state.notifications.filter((existing) => {
+            if (existing.id === notification.id) {
+              return false;
+            }
+            return !(
+              notification.kind === 'session_attention' &&
+              existing.kind === 'session_attention' &&
+              existing.sessionId === notification.sessionId
+            );
+          });
+          state.notifications.unshift(notification);
+        };
 
         switch (event.event) {
           case 'created':
             if (event.notification) {
-              state.notifications.unshift(event.notification);
+              upsertNotification(event.notification);
+            }
+            if (eventRevision > knownRevision) {
+              knownRevision = eventRevision;
+            }
+            break;
+          case 'upserted':
+            if (event.notification) {
+              upsertNotification(event.notification);
             }
             if (eventRevision > knownRevision) {
               knownRevision = eventRevision;
@@ -468,6 +881,8 @@ function formatRelativeTime(isoString: string): string {
               const idx = state.notifications.findIndex((n) => n.id === event.notification!.id);
               if (idx !== -1) {
                 state.notifications[idx] = event.notification;
+              } else {
+                upsertNotification(event.notification);
               }
             }
             if (eventRevision > knownRevision) {
@@ -488,6 +903,8 @@ function formatRelativeTime(isoString: string): string {
             if (eventRevision >= 0 && eventRevision < knownRevision) {
               return;
             }
+            initialSnapshotReceived = true;
+            clearSnapshotRetry();
             if (event.notifications) {
               state.notifications = event.notifications;
               const ids = new Set(state.notifications.map((n) => n.id));
@@ -505,8 +922,19 @@ function formatRelativeTime(isoString: string): string {
         render();
       };
 
-      // Request initial data
-      host.sendEvent({ type: 'request_snapshot' });
+      // Request initial data. Retry until the first snapshot arrives so
+      // startup timing does not leave the panel empty after app launch.
+      requestSnapshot();
+      scheduleSnapshotRetry();
+
+      const unsubscribeSessionSummaries = host.subscribeContext('session.summaries', () => {
+        console.info('[notifications] session summaries updated');
+        render();
+      });
+      const unsubscribeAgentSummaries = host.subscribeContext('agent.summaries', () => {
+        console.info('[notifications] agent summaries updated');
+        render();
+      });
 
       // Initial render
       render();
@@ -522,6 +950,7 @@ function formatRelativeTime(isoString: string): string {
           ) {
             processEvent(payload as unknown as {
               event: string;
+              revision?: number;
               notification?: NotificationRecord;
               id?: string;
               notifications?: NotificationRecord[];
@@ -529,6 +958,9 @@ function formatRelativeTime(isoString: string): string {
           }
         },
         unmount(): void {
+          clearSnapshotRetry();
+          unsubscribeSessionSummaries();
+          unsubscribeAgentSummaries();
           document.removeEventListener('click', closeMenu);
           chromeController.destroy();
           container.innerHTML = '';

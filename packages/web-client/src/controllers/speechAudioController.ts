@@ -12,6 +12,7 @@ import {
   ttsGainToPercent,
   type VoiceSettings,
 } from '../utils/voiceSettings';
+import { syncNativeInputDeviceSelect } from '../utils/nativeVoiceInputDevices';
 import type { SpeechInputController } from './speechInput';
 
 export interface AssistantNativeVoiceSelection {
@@ -67,6 +68,8 @@ export type AssistantNativeVoiceRuntimeState =
 
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
+  activeSessionId?: string | null;
+  activeDisplayTitle?: string | null;
   voiceSettings?: VoiceSettings;
   inputContext?: AssistantNativeVoiceInputContext;
   assistantBaseUrl?: string;
@@ -89,6 +92,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
   setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
+  retargetActiveRecognition?: (args: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
   setSessionTitles?: (args: AssistantNativeVoiceSessionTitlesArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
@@ -98,7 +102,7 @@ export interface AssistantNativeVoiceBridgeTarget {
     | Promise<AssistantNativeVoiceInputDevice[]>;
   getState?: () => AssistantNativeVoiceStatePayload | Promise<AssistantNativeVoiceStatePayload>;
   addListener?: (
-    eventName: 'stateChanged' | 'runtimeError',
+    eventName: 'stateChanged' | 'runtimeError' | 'openSession',
     listener: (payload: unknown) => void,
   ) => AssistantNativeVoiceListenerHandle | Promise<AssistantNativeVoiceListenerHandle>;
 }
@@ -124,6 +128,10 @@ export class AssistantNativeVoiceBridge {
 
   setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
     return this.invokeAsync('setSelectedSession', { selection });
+  }
+
+  retargetActiveRecognition(sessionId?: string | null): Promise<boolean> {
+    return this.invokeAsync('retargetActiveRecognition', { sessionId: sessionId ?? null });
   }
 
   setSessionTitles(sessionTitles: Record<string, string>): Promise<boolean> {
@@ -226,6 +234,20 @@ export class AssistantNativeVoiceBridge {
     });
   }
 
+  addOpenSessionListener(
+    listener: (payload: { sessionId: string }) => void,
+  ): (() => void) | null {
+    return this.addListener('openSession', (payload) => {
+      const sessionId =
+        typeof (payload as { sessionId?: unknown } | null)?.sessionId === 'string'
+          ? ((payload as { sessionId: string }).sessionId ?? '').trim()
+          : '';
+      if (sessionId) {
+        listener({ sessionId });
+      }
+    });
+  }
+
   private getTarget(): AssistantNativeVoiceBridgeTarget | null {
     const host = this.getHost();
     if (!host) {
@@ -235,7 +257,7 @@ export class AssistantNativeVoiceBridge {
   }
 
   private addListener(
-    eventName: 'stateChanged' | 'runtimeError',
+    eventName: 'stateChanged' | 'runtimeError' | 'openSession',
     listener: (payload: unknown) => void,
   ): (() => void) | null {
     const target = this.getTarget();
@@ -335,6 +357,8 @@ export interface SpeechAudioControllerOptions {
   micButtonEl: HTMLButtonElement;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -363,6 +387,7 @@ export interface SpeechAudioControllerOptions {
   setPendingAssistantBubble?: (bubble: HTMLDivElement | null) => void;
   voiceSettingsStorageKey: string;
   continuousListeningLongPressMs: number;
+  buttonMode?: 'voice' | 'stop-only';
   initialVoiceSettings: VoiceSettings;
   useNativeVoiceRuntime?: boolean | undefined;
   nativeVoiceBridge?: AssistantNativeVoiceBridge | null | undefined;
@@ -398,6 +423,10 @@ export class SpeechAudioController {
     this.currentAutoListenEnabled = this.currentVoiceSettings.autoListenEnabled;
   }
 
+  private get buttonMode(): 'voice' | 'stop-only' {
+    return this.options.buttonMode ?? 'voice';
+  }
+
   get voiceSettings(): VoiceSettings {
     return { ...this.currentVoiceSettings };
   }
@@ -429,10 +458,14 @@ export class SpeechAudioController {
     }
     const devices = await (this.options.nativeVoiceBridge?.listInputDevices() ??
       Promise.resolve([]));
+    this.setNativeInputDevices(devices);
+  }
+
+  setNativeInputDevices(devices: readonly AssistantNativeVoiceInputDevice[]): void {
     if (this.areNativeInputDevicesEqual(this.availableNativeInputDevices, devices)) {
       return;
     }
-    this.availableNativeInputDevices = devices;
+    this.availableNativeInputDevices = [...devices];
     console.log(
       `[client] SpeechAudio native input devices refreshed ${JSON.stringify({
         count: this.availableNativeInputDevices.length,
@@ -605,6 +638,23 @@ export class SpeechAudioController {
 
   attach(): void {
     const { micButtonEl } = this.options;
+
+    if (this.buttonMode === 'stop-only') {
+      micButtonEl.addEventListener('click', (event) => {
+        event.preventDefault();
+        this.cancelOutputOnly();
+      });
+      micButtonEl.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        this.cancelOutputOnly();
+      });
+      this.applyVoiceSettings(this.currentVoiceSettings, { persist: false, notify: false });
+      this.syncMicButtonState();
+      return;
+    }
 
     if (!this.hasSpeechInput) {
       micButtonEl.disabled = true;
@@ -941,6 +991,10 @@ export class SpeechAudioController {
   private syncVoiceSettingsInputs(): void {
     this.options.audioModeSelectEl.value = this.currentVoiceSettings.audioMode;
     this.options.autoListenCheckboxEl.checked = this.currentVoiceSettings.autoListenEnabled;
+    this.options.standaloneNotificationPlaybackCheckboxEl.checked =
+      this.currentVoiceSettings.standaloneNotificationPlaybackEnabled;
+    this.options.notificationTitlePlaybackCheckboxEl.checked =
+      this.currentVoiceSettings.notificationTitlePlaybackEnabled;
     this.options.voiceAdapterBaseUrlInputEl.value = this.currentVoiceSettings.voiceAdapterBaseUrl;
     this.syncNativeInputDeviceOptions();
     this.options.voiceRecognitionStartTimeoutInputEl.value = String(
@@ -981,6 +1035,8 @@ export class SpeechAudioController {
     const supportsNativeVoiceSettings = Boolean(this.options.useNativeVoiceRuntime);
     this.options.audioModeSelectEl.disabled = !supportsAudioOutput;
     this.options.autoListenCheckboxEl.disabled = !supportsAudioOutput;
+    this.options.standaloneNotificationPlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
+    this.options.notificationTitlePlaybackCheckboxEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceAdapterBaseUrlInputEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceMicInputSelectEl.disabled = !supportsNativeVoiceSettings;
     this.options.voiceRecognitionStartTimeoutInputEl.disabled = !supportsNativeVoiceSettings;
@@ -995,40 +1051,11 @@ export class SpeechAudioController {
   }
 
   private syncNativeInputDeviceOptions(): void {
-    const selectEl = this.options.voiceMicInputSelectEl;
-    const selectedMicDeviceId = this.currentVoiceSettings.selectedMicDeviceId;
-    const devices = this.availableNativeInputDevices;
-    const existingValues = new Set<string>();
-    selectEl.replaceChildren();
-
-    const systemDefaultOption = document.createElement('option');
-    systemDefaultOption.value = '';
-    systemDefaultOption.textContent = 'System default';
-    selectEl.appendChild(systemDefaultOption);
-    existingValues.add('');
-
-    for (const device of devices) {
-      if (existingValues.has(device.id)) {
-        continue;
-      }
-      const option = document.createElement('option');
-      option.value = device.id;
-      option.textContent = device.label;
-      selectEl.appendChild(option);
-      existingValues.add(device.id);
-    }
-
-    if (selectedMicDeviceId && !existingValues.has(selectedMicDeviceId)) {
-      const unavailableOption = document.createElement('option');
-      unavailableOption.value = selectedMicDeviceId;
-      unavailableOption.textContent = `Unavailable device [id:${selectedMicDeviceId}]`;
-      selectEl.appendChild(unavailableOption);
-    }
-
-    selectEl.value = selectedMicDeviceId;
-    if (selectEl.value !== selectedMicDeviceId) {
-      selectEl.value = '';
-    }
+    syncNativeInputDeviceSelect(
+      this.options.voiceMicInputSelectEl,
+      this.currentVoiceSettings.selectedMicDeviceId,
+      this.availableNativeInputDevices,
+    );
   }
 
   private areNativeInputDevicesEqual(
@@ -1315,6 +1342,91 @@ export class SpeechAudioController {
     return cancelled;
   }
 
+  cancelOutputOnly(): boolean {
+    const socket = this.options.getSocket();
+    const sessionId = this.options.getSessionId();
+    if (!this.options.isOutputActive() || !socket || socket.readyState !== WebSocket.OPEN) {
+      this.syncMicButtonState();
+      return false;
+    }
+
+    const control: ClientControlMessage = {
+      type: 'control',
+      action: 'cancel',
+      target: 'output',
+      ...(sessionId ? { sessionId } : {}),
+    };
+    socket.send(JSON.stringify(control));
+    this.options.setStatus('Connected');
+    this.clearPendingAssistantBubble();
+    this.options.updateScrollButtonVisibility();
+    this.syncMicButtonState();
+    return true;
+  }
+
+  getVoiceFabState(): {
+    enabled: boolean;
+    mode: 'idle' | 'speaking' | 'listening';
+  } {
+    return this.getVoiceFabStateForSession(this.options.getSessionId());
+  }
+
+  getVoiceFabStateForSession(sessionId: string | null): {
+    enabled: boolean;
+    mode: 'idle' | 'speaking' | 'listening';
+  } {
+    if (!this.isUsingNativeVoiceRuntime()) {
+      return { enabled: false, mode: 'idle' };
+    }
+    const hasSession = Boolean(sessionId && sessionId.trim().length > 0);
+    if (this.isNativeListening()) {
+      return { enabled: true, mode: 'listening' };
+    }
+    if (this.isNativeSpeaking()) {
+      return { enabled: true, mode: 'speaking' };
+    }
+    return { enabled: hasSession, mode: 'idle' };
+  }
+
+  isNativeListeningActive(): boolean {
+    return this.isNativeListening();
+  }
+
+  async startVoiceFromFab(): Promise<boolean> {
+    return this.startVoiceFromFabForSession(this.options.getSessionId());
+  }
+
+  async startVoiceFromFabForSession(sessionId: string | null): Promise<boolean> {
+    if (!this.isUsingNativeVoiceRuntime()) {
+      return false;
+    }
+    const normalizedSessionId = sessionId?.trim() ?? '';
+    if (!normalizedSessionId) {
+      return false;
+    }
+    this.continuousListeningMode = false;
+    const started = this.options.nativeVoiceBridge?.startManualListen(normalizedSessionId) ?? false;
+    if (!started) {
+      this.logState('fab-start-abort', {
+        reason: 'native-start-unavailable',
+        sessionId: normalizedSessionId,
+      });
+    }
+    return started;
+  }
+
+  stopVoiceFromFab(): boolean {
+    if (this.isUsingNativeVoiceRuntime() && this.isNativeInteractionActive()) {
+      this.options.nativeVoiceBridge?.stopCurrentInteraction();
+      return true;
+    }
+    if (this.isSpeechInputActive) {
+      this.cancelSpeechInput('fab-stop', { resetInput: false });
+      return true;
+    }
+    return false;
+  }
+
   private clearPendingAssistantBubble(): void {
     const pendingBubble = this.options.getPendingAssistantBubble?.() ?? null;
     if (!pendingBubble) {
@@ -1356,6 +1468,26 @@ export class SpeechAudioController {
 
   syncMicButtonState(): void {
     const micButton = this.options.micButtonEl;
+    if (this.buttonMode === 'stop-only') {
+      const hasActiveTurn = this.options.isOutputActive();
+      micButton.classList.remove('recording', 'interrupting', 'native-speaking', 'native-listening');
+      micButton.classList.toggle('stopping', hasActiveTurn);
+      micButton.classList.add('stop-only');
+      micButton.classList.toggle('stop-only-active', hasActiveTurn);
+      micButton.classList.toggle('stop-only-hidden', !hasActiveTurn);
+      this.renderMicButtonIcon('stop');
+      micButton.disabled = !hasActiveTurn;
+      micButton.tabIndex = hasActiveTurn ? 0 : -1;
+      micButton.setAttribute('aria-hidden', hasActiveTurn ? 'false' : 'true');
+      const label = hasActiveTurn ? 'Stop turn' : 'No active turn';
+      micButton.setAttribute('aria-label', label);
+      micButton.setAttribute('title', label);
+      return;
+    }
+
+    micButton.classList.remove('stop-only', 'stop-only-active', 'stop-only-hidden');
+    micButton.tabIndex = 0;
+    micButton.setAttribute('aria-hidden', 'false');
     const isNativeSpeaking = this.isNativeSpeaking();
     const isNativeListening = this.isNativeListening();
     const shouldShowStop =

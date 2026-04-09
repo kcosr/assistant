@@ -93,6 +93,7 @@ describe('PanelLauncherController compact picker', () => {
 
     const searchInput = launcher.querySelector<HTMLInputElement>('#search');
     expect(launcher.querySelector('.panel-launcher-title-text')?.textContent).toBe('Add Tab');
+    expect(launcherPanel.style.top).toBe(`${Math.round(window.innerHeight * 0.25)}px`);
     expect(document.activeElement).toBe(searchInput);
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));

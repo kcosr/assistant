@@ -20,6 +20,11 @@ import { SessionIndex } from '../../../../agent-server/src/sessionIndex';
 import * as sessionMessagesModule from '../../../../agent-server/src/sessionMessages';
 import type { ToolContext } from '../../../../agent-server/src/tools';
 import manifestJson from '../manifest.json';
+import {
+  getNotificationsStore,
+  initializeNotificationsService,
+  shutdownNotificationsService,
+} from '../../notifications/server/service';
 import { createPlugin } from './index';
 
 function createTempFile(prefix: string): string {
@@ -365,6 +370,59 @@ describe('sessions plugin operations', () => {
     expect(
       entries.some((entry) => entry['type'] === 'session_info' && entry['name'] === 'CLI Session'),
     ).toBe(true);
+  });
+
+  it('updates stored session notification titles when a session is renamed', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-notification-title'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'general',
+        displayName: 'General',
+        description: 'General agent',
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+    const notificationsDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'sessions-plugin-notification-title-'),
+    );
+    initializeNotificationsService(notificationsDir);
+
+    try {
+      const ctx: ToolContext = {
+        sessionId: 'calling-session',
+        signal: new AbortController().signal,
+        sessionHub,
+        sessionIndex,
+        agentRegistry,
+      };
+
+      const created = (await plugin.operations?.create({ agentId: 'general' }, ctx)) as SessionSummary;
+
+      await getNotificationsStore().upsertSessionAttention(
+        {
+          title: 'Latest assistant reply',
+          body: 'Final answer',
+          sessionId: created.sessionId,
+        },
+        'system',
+      );
+
+      await plugin.operations?.update(
+        { sessionId: created.sessionId, name: 'Renamed Session' },
+        ctx,
+      );
+
+      const { notifications } = await getNotificationsStore().list();
+      expect(notifications[0]).toMatchObject({
+        kind: 'session_attention',
+        sessionId: created.sessionId,
+        sessionTitle: 'Renamed Session',
+      });
+    } finally {
+      shutdownNotificationsService();
+      await fs.rm(notificationsDir, { recursive: true, force: true });
+    }
   });
 
   it('edits Pi-backed session history at explicit request boundaries', async () => {

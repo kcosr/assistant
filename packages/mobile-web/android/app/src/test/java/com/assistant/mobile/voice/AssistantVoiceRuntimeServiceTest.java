@@ -18,10 +18,17 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 @RunWith(RobolectricTestRunner.class)
 public final class AssistantVoiceRuntimeServiceTest {
@@ -143,6 +150,88 @@ public final class AssistantVoiceRuntimeServiceTest {
         assertEquals(
             R.drawable.ic_notification_mode_response,
             notification.actions[2].icon
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void canHandleManualNotificationSpeakerWithoutSessionButMicStillRequiresOne() {
+        AssistantVoiceNotificationRecord sessionlessNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "TEST",
+            "This is a test",
+            "",
+            "",
+            "",
+            "speak",
+            "Alternate speech",
+            "event-tool",
+            null
+        );
+
+        assertTrue(
+            AssistantVoiceRuntimeService.canHandleManualNotificationAction(
+                sessionlessNotification,
+                false
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.canHandleManualNotificationAction(
+                sessionlessNotification,
+                true
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void durableNotificationRequestCodesDoNotCollideAcrossActionsForAdjacentIds() {
+        int firstSpeaker = AssistantVoiceRuntimeService.durableNotificationRequestCode("a", 1);
+        int secondClear = AssistantVoiceRuntimeService.durableNotificationRequestCode("b", 0);
+
+        assertFalse(firstSpeaker == secondClear);
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void sessionAttentionNotificationPrefersConfigTitleOverStoredSessionTitle() throws Exception {
+        AssistantVoiceRuntimeService service = new AssistantVoiceRuntimeService();
+        setRuntimeConfig(
+            service,
+            createConfig(sessionTitles("session-1", "Assistant"))
+        );
+        AssistantVoiceNotificationRecord notification = new AssistantVoiceNotificationRecord(
+            "notif-1",
+            "session_attention",
+            "system",
+            "Latest assistant reply",
+            "Reply body",
+            "",
+            "session-1",
+            "session-1",
+            "speak",
+            "Reply body",
+            "event-1",
+            Integer.valueOf(4)
+        );
+
+        assertEquals(
+            "Assistant",
+            String.valueOf(invokePrivateStringMethod(
+                service,
+                "resolveDurableNotificationTitle",
+                notification
+            ))
+        );
+        assertEquals(
+            "Assistant",
+            String.valueOf(invokePrivateStringMethod(
+                service,
+                "resolveNotificationSpokenTitle",
+                notification
+            ))
         );
     }
 
@@ -308,6 +397,227 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void resolveRecognitionSubmitSessionIdKeepsActiveRecognitionTarget() {
+        assertEquals(
+            "session-old",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId("session-old")
+        );
+        assertEquals(
+            "",
+            AssistantVoiceRuntimeService.resolveRecognitionSubmitSessionId("")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldRetargetActiveRecognitionOnlyWhenLiveListeningSelectionChanges() {
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-new",
+                "stt-1",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-old",
+                "stt-1",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "",
+                "stt-1",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-new",
+                "",
+                "voice_manual"
+            )
+        );
+        assertEquals(
+            true,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-new",
+                "stt-1",
+                "speak_then_listen"
+            )
+        );
+        assertEquals(
+            false,
+            AssistantVoiceRuntimeService.shouldRetargetActiveRecognition(
+                "session-old",
+                "session-new",
+                "stt-1",
+                "speak"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionFailureRetryCueRequestIdRoundTripsSessionId() {
+        String sessionId = "6475d5c6-121f-48e0-93ed-725e72948dd9";
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionFailureRetryCueRequestId(sessionId);
+
+        assertEquals(
+            sessionId,
+            AssistantVoiceRuntimeService.extractRecognitionFailureRetrySessionId(playbackRequestId)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldRetryRecognitionAfterEmptyTranscriptOnlyForSessionBoundFailures() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                true,
+                false,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                true,
+                "empty_transcript",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "no_usable_speech",
+                "session-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldRetryRecognitionAfterEmptyTranscript(
+                false,
+                false,
+                "empty_transcript",
+                ""
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldBlockQueueDuringRecognitionSubmitOnlyForResponseModeSuccessfulSessionBoundSubmits() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "session-1",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_TOOL,
+                "session-1",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "",
+                true
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldBlockQueueDuringRecognitionSubmit(
+                AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+                "session-1",
+                false
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUsePlaybackDrainTimeoutFallbackOnlyWhenAwaitingDrainWithoutActiveTts() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "",
+                "request-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "request-1",
+                "request-1"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "request-1",
+                "",
+                "request-2"
+            )
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUsePlaybackDrainTimeoutFallback(
+                "",
+                "",
+                "request-1"
+            )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void resolvePlaybackDrainTimeoutScalesWithAudioDuration() {
+        assertEquals(
+            7600L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(307200, 24000)
+        );
+        assertEquals(
+            3150L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(93600, 24000)
+        );
+        assertEquals(
+            2500L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(0, 24000)
+        );
+        assertEquals(
+            2500L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(307200, 0)
+        );
+        assertEquals(
+            99625L,
+            AssistantVoiceRuntimeService.resolvePlaybackDrainTimeoutMs(4724400, 24000)
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldStopForMediaButtonKeyCodeTreatsPlayAsToggleWhenInteractionIsActive() {
         assertEquals(
             true,
@@ -329,6 +639,18 @@ public final class AssistantVoiceRuntimeServiceTest {
                 AssistantVoiceRuntimeService.STATE_LISTENING,
                 false
             )
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldDrainQueueAfterStopKeepsManualStopFlowingButClearsForModeOff() {
+        assertTrue(AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("manual_stop"));
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("manual_notification_preempt")
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldDrainQueueAfterStop("voice_mode_disabled")
         );
     }
 
@@ -372,6 +694,7 @@ public final class AssistantVoiceRuntimeServiceTest {
     }
 
     @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void shouldHandleRecognizedStopCommandRespectsEnabledSetting() {
         assertEquals(
             false,
@@ -437,6 +760,63 @@ public final class AssistantVoiceRuntimeServiceTest {
 
     @Test
     @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsRequestBodyTreatsClientIdAsOptional() {
+        assertFalse(
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+                .has("clientId")
+        );
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+                .optString("requestId")
+        );
+        assertEquals(
+            "hello",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody("", "request-1", "hello", "")
+                .optString("text")
+        );
+        assertEquals(
+            "session-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                "",
+                "request-1",
+                "hello",
+                " session-1 "
+            ).optString("sessionId")
+        );
+        assertEquals(
+            "client-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsRequestBody(
+                " client-1 ",
+                "request-1",
+                "hello",
+                ""
+            )
+                .optString("clientId")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void buildAdapterTtsStopRequestBodyTreatsClientIdAsOptional() {
+        assertFalse(
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
+                .has("clientId")
+        );
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody("", "request-1")
+                .optString("requestId")
+        );
+        assertEquals(
+            "client-1",
+            AssistantVoiceRuntimeService.buildAdapterTtsStopRequestBody(" client-1 ", "request-1")
+                .optString("clientId")
+        );
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
     public void recognitionArmingCueRequestIdRoundTripsThroughPlaybackMarker() {
         String playbackRequestId =
             AssistantVoiceRuntimeService.buildRecognitionArmingCueRequestId(" request-1 ");
@@ -446,6 +826,24 @@ public final class AssistantVoiceRuntimeServiceTest {
             AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId(playbackRequestId)
         );
         assertEquals("", AssistantVoiceRuntimeService.extractRecognitionArmingCueRequestId("tts-1"));
+    }
+
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void recognitionCompletionCueRequestIdRoundTripsThroughPlaybackMarker() {
+        String playbackRequestId =
+            AssistantVoiceRuntimeService.buildRecognitionCompletionCueRequestId(" request-1 ");
+
+        assertEquals(
+            "request-1",
+            AssistantVoiceRuntimeService.extractRecognitionCompletionCueRequestId(
+                playbackRequestId
+            )
+        );
+        assertEquals(
+            "",
+            AssistantVoiceRuntimeService.extractRecognitionCompletionCueRequestId("tts-1")
+        );
     }
 
     @Test
@@ -474,6 +872,17 @@ public final class AssistantVoiceRuntimeServiceTest {
         );
     }
 
+    @Test
+    @Config(sdk = Build.VERSION_CODES.N)
+    public void shouldUpdateStateAfterQueueAdvanceOnlyWhenNothingElseIsActive() {
+        assertTrue(
+            AssistantVoiceRuntimeService.shouldUpdateStateAfterQueueAdvance(false)
+        );
+        assertFalse(
+            AssistantVoiceRuntimeService.shouldUpdateStateAfterQueueAdvance(true)
+        );
+    }
+
     private static PendingIntent createActivityPendingIntent(Context context, String action) {
         return PendingIntent.getActivity(
             context,
@@ -490,5 +899,64 @@ public final class AssistantVoiceRuntimeServiceTest {
             new Intent(action),
             PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
         );
+    }
+
+    private static AssistantVoiceConfig createConfig(Map<String, String> sessionTitles) {
+        return new AssistantVoiceConfig(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            "",
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_END_SILENCE_MS,
+            "",
+            "",
+            "session-1",
+            sessionTitles,
+            Collections.emptyList(),
+            false,
+            "",
+            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_TTS_GAIN,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_ENABLED,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_CUE_GAIN,
+            AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false,
+            false,
+            true,
+            false
+        );
+    }
+
+    private static Map<String, String> sessionTitles(String... entries) {
+        LinkedHashMap<String, String> values = new LinkedHashMap<>();
+        for (int index = 0; index + 1 < entries.length; index += 2) {
+            values.put(entries[index], entries[index + 1]);
+        }
+        return values;
+    }
+
+    private static void setRuntimeConfig(
+        AssistantVoiceRuntimeService service,
+        AssistantVoiceConfig config
+    ) throws Exception {
+        Field field = AssistantVoiceRuntimeService.class.getDeclaredField("config");
+        field.setAccessible(true);
+        field.set(service, config);
+    }
+
+    private static String invokePrivateStringMethod(
+        AssistantVoiceRuntimeService service,
+        String methodName,
+        AssistantVoiceNotificationRecord notification
+    ) throws Exception {
+        Method method = AssistantVoiceRuntimeService.class.getDeclaredMethod(
+            methodName,
+            AssistantVoiceNotificationRecord.class
+        );
+        method.setAccessible(true);
+        return String.valueOf(method.invoke(service, notification));
     }
 }

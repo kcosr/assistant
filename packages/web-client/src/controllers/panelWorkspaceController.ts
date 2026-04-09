@@ -1655,6 +1655,28 @@ export class PanelWorkspaceController {
     }
   }
 
+  private captureSplitResizeScrollAnchors(): Map<HTMLElement, number> {
+    const anchors = new Map<HTMLElement, number>();
+    for (const container of this.panelElements.values()) {
+      const scrollables = container.querySelectorAll<HTMLElement>('.chat-log');
+      for (const element of scrollables) {
+        const bottomOffset = Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
+        anchors.set(element, bottomOffset);
+      }
+    }
+    return anchors;
+  }
+
+  private restoreSplitResizeScrollAnchors(anchors: Map<HTMLElement, number>): void {
+    for (const [element, bottomOffset] of anchors) {
+      if (!element.isConnected) {
+        continue;
+      }
+      const nextTop = Math.max(0, element.scrollHeight - element.clientHeight - bottomOffset);
+      element.scrollTop = nextTop;
+    }
+  }
+
   private render(options: { forceRemount?: boolean } = {}): void {
     this.closePanelMenu();
     this.stopPanelDrag();
@@ -1796,6 +1818,7 @@ export class PanelWorkspaceController {
     handle.addEventListener('pointerdown', (event) => {
       event.preventDefault();
       const pointerId = event.pointerId;
+      const scrollAnchors = this.captureSplitResizeScrollAnchors();
       handle.setPointerCapture(pointerId);
       handle.classList.add('dragging');
       let didStop = false;
@@ -1830,6 +1853,7 @@ export class PanelWorkspaceController {
         sizes[index + 1] = nextSecond;
         node.sizes = sizes;
         applySplitSizes(first, second, nextFirst, nextSecond);
+        this.restoreSplitResizeScrollAnchors(scrollAnchors);
       };
 
       const stopResize = () => {

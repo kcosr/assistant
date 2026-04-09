@@ -73,6 +73,8 @@ export interface InputRuntimeOptions {
   cancelQueuedMessage: (messageId: string) => void;
   audioModeSelectEl: HTMLSelectElement;
   autoListenCheckboxEl: HTMLInputElement;
+  standaloneNotificationPlaybackCheckboxEl: HTMLInputElement;
+  notificationTitlePlaybackCheckboxEl: HTMLInputElement;
   voiceAdapterBaseUrlInputEl: HTMLInputElement;
   voiceMicInputSelectEl: HTMLSelectElement;
   voiceRecognitionStartTimeoutInputEl: HTMLInputElement;
@@ -210,6 +212,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
   }
 
   let speechAudioController: SpeechAudioController | null = null;
+  const stopOnlyButtonMode = Boolean(options.useNativeVoiceRuntime && isCapacitorAndroid());
 
   const textInputController = new TextInputController({
     form: elements.form,
@@ -237,7 +240,11 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     getSessionId: options.getSelectedSessionId,
     getSocket: options.getSocket,
     onBeforeSend: () => {
-      speechAudioController?.stopPushToTalk();
+      // Native voice is app-global on Android, so a typed send in another panel
+      // should not cancel an in-flight recognition interaction.
+      if (!stopOnlyButtonMode) {
+        speechAudioController?.stopPushToTalk();
+      }
     },
     onAfterSend: () => {
       // Clear context selection after sending message
@@ -270,7 +277,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     elements.form.setAttribute('aria-disabled', disabled ? 'true' : 'false');
     elements.inputEl.disabled = disabled;
     elements.clearButtonEl.disabled = disabled;
-    elements.micButtonEl.disabled = disabled || !hasSpeechInput;
+    elements.micButtonEl.disabled = stopOnlyButtonMode ? disabled : disabled || !hasSpeechInput;
     if (elements.submitButtonEl) {
       elements.submitButtonEl.disabled = disabled;
     }
@@ -330,6 +337,8 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     micButtonEl: elements.micButtonEl,
     audioModeSelectEl: options.audioModeSelectEl,
     autoListenCheckboxEl: options.autoListenCheckboxEl,
+    standaloneNotificationPlaybackCheckboxEl: options.standaloneNotificationPlaybackCheckboxEl,
+    notificationTitlePlaybackCheckboxEl: options.notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInputEl: options.voiceAdapterBaseUrlInputEl,
     voiceMicInputSelectEl: options.voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInputEl: options.voiceRecognitionStartTimeoutInputEl,
@@ -364,6 +373,7 @@ export function createInputRuntime(options: InputRuntimeOptions): InputRuntime {
     },
     voiceSettingsStorageKey: options.voiceSettingsStorageKey,
     continuousListeningLongPressMs: options.continuousListeningLongPressMs,
+    buttonMode: stopOnlyButtonMode ? 'stop-only' : 'voice',
     initialVoiceSettings,
     useNativeVoiceRuntime: options.useNativeVoiceRuntime,
     nativeVoiceBridge: options.nativeVoiceBridge,

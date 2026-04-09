@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PanelHost, PanelModule } from '../../../../web-client/src/controllers/panelRegistry';
 
 describe('notifications panel', () => {
@@ -10,7 +10,7 @@ describe('notifications panel', () => {
     return {
       panelId: () => 'notif-panel-1',
       getBinding: () => null,
-      setBinding: () => undefined,
+      setBinding: vi.fn(),
       onBindingChange: () => () => undefined,
       setContext: () => undefined,
       getContext: () => null,
@@ -35,6 +35,7 @@ describe('notifications panel', () => {
   function makeNotification(overrides: Record<string, unknown> = {}) {
     return {
       id: `n-${Math.random().toString(36).slice(2)}`,
+      kind: 'notification',
       title: 'Test Notification',
       body: 'Test body',
       createdAt: new Date().toISOString(),
@@ -43,12 +44,18 @@ describe('notifications panel', () => {
       sessionId: null,
       sessionTitle: null,
       tts: false,
+      voiceMode: 'none',
+      ttsText: null,
+      sourceEventId: null,
+      sessionActivitySeq: null,
       ...overrides,
     };
   }
 
   beforeEach(async () => {
     panelFactory = null;
+    delete (window as any).AssistantNativeVoice;
+    delete (window as any).Capacitor;
     (window as any).ASSISTANT_PANEL_REGISTRY = {
       registerPanel: (_panelType: string, factory: () => PanelModule) => {
         panelFactory = factory;
@@ -56,6 +63,10 @@ describe('notifications panel', () => {
     };
     vi.resetModules();
     await import('./index');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('registers the panel and mounts', async () => {
@@ -67,9 +78,53 @@ describe('notifications panel', () => {
 
     expect(container.querySelector('.notif-body')).not.toBeNull();
     expect(container.querySelector('.notif-empty')).not.toBeNull();
+    expect(container.querySelector('.notif-stop-btn')).toBeNull();
 
     // Should have sent request_snapshot on mount
     expect(host.sendEvent).toHaveBeenCalledWith({ type: 'request_snapshot' });
+
+    handle.unmount();
+  });
+
+  it('retries request_snapshot until the first snapshot arrives', async () => {
+    vi.useFakeTimers();
+    expect(panelFactory).not.toBeNull();
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    expect(host.sendEvent).toHaveBeenCalledTimes(1);
+    expect(host.sendEvent).toHaveBeenLastCalledWith({ type: 'request_snapshot' });
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(host.sendEvent).toHaveBeenCalledTimes(4);
+    expect(host.sendEvent).toHaveBeenLastCalledWith({ type: 'request_snapshot' });
+
+    handle.unmount();
+  });
+
+  it('stops retrying request_snapshot after the first snapshot arrives', async () => {
+    vi.useFakeTimers();
+    expect(panelFactory).not.toBeNull();
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [],
+      },
+    } as any);
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(host.sendEvent).toHaveBeenCalledTimes(1);
+    expect(host.sendEvent).toHaveBeenLastCalledWith({ type: 'request_snapshot' });
 
     handle.unmount();
   });
@@ -135,6 +190,353 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
+  it('updates an existing notification in place on updated events', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1', title: 'Old title', readAt: null })],
+      },
+    } as any);
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'updated',
+        notification: makeNotification({
+          id: 'n1',
+          title: 'Updated title',
+          readAt: '2024-01-01T00:00:00.000Z',
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Updated title');
+    expect(items[0]?.classList.contains('notif-item-read')).toBe(true);
+
+    handle.unmount();
+  });
+
+  it('treats updated events for unknown notifications as an upsert', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'updated',
+        notification: makeNotification({
+          id: 'n-missed',
+          title: 'Recovered title',
+          readAt: null,
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('Recovered title');
+
+    handle.unmount();
+  });
+
+  it('falls back to sessionId for session attention rows until a real session label is available', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            sessionId: 'sess-1',
+            title: 'Latest 1',
+          }),
+        ],
+      },
+    } as any);
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'upserted',
+        notification: makeNotification({
+          id: 'attention-1',
+          kind: 'session_attention',
+          sessionId: 'sess-1',
+          title: 'Latest 2',
+        }),
+      },
+    } as any);
+
+    const items = container.querySelectorAll('.notif-item');
+    expect(items.length).toBe(1);
+    expect(items[0]?.querySelector('.notif-title')?.textContent).toBe('sess-1');
+    expect(items[0]?.querySelector('.notif-kind-badge')).toBeNull();
+
+    handle.unmount();
+  });
+
+  it('uses the session title as the card title for session attention rows', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            title: 'Latest assistant reply text',
+            body: 'Latest assistant reply text',
+            sessionId: 'sess-1',
+            sessionTitle: 'Project Alpha',
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Project Alpha');
+    expect(container.querySelector('.notif-body-text')?.textContent).toBe(
+      'Latest assistant reply text',
+    );
+    expect(container.querySelector('.notif-kind-badge')).toBeNull();
+    expect(
+      container.querySelector('.notif-source-icon svg path')?.getAttribute('d'),
+    ).toContain('M5.45 5.11');
+
+    handle.unmount();
+  });
+
+  it('prefers the live client session label for session attention rows', async () => {
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) => {
+        if (key === 'session.summaries') {
+          return [
+            {
+              sessionId: 'sess-1',
+              name: 'Client Session Title',
+              attributes: { core: { autoTitle: 'Ignored Auto Title' } },
+            },
+          ];
+        }
+        if (key === 'agent.summaries') {
+          return [];
+        }
+        return null;
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            title: 'Latest assistant reply',
+            body: 'Latest assistant reply text',
+            sessionId: 'sess-1',
+            sessionTitle: null,
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Client Session Title');
+    expect(container.querySelector('.notif-session-link')).toBeNull();
+
+    handle.unmount();
+  });
+
+  it('falls back to the same agent-based session label path as the chat tab', async () => {
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) => {
+        if (key === 'session.summaries') {
+          return [
+            {
+              sessionId: 'sess-1',
+              agentId: 'voice_assistant',
+            },
+          ];
+        }
+        if (key === 'agent.summaries') {
+          return [{ agentId: 'voice_assistant', displayName: 'Voice Assistant' }];
+        }
+        return null;
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            title: 'Latest assistant reply',
+            body: 'Latest assistant reply text',
+            sessionId: 'sess-1',
+            sessionTitle: null,
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Voice Assistant');
+    expect(container.querySelector('.notif-session-link')).toBeNull();
+
+    handle.unmount();
+  });
+
+  it('rerenders session attention rows when session summaries change', async () => {
+    const module = panelFactory!();
+    let sessionSummaries: Array<Record<string, unknown>> = [
+      {
+        sessionId: 'sess-1',
+        name: 'Initial Title',
+      },
+    ];
+    let sessionSummariesHandler: ((value: unknown) => void) | null = null;
+    const host = createHost({
+      getContext: (key: string) => {
+        if (key === 'session.summaries') {
+          return sessionSummaries;
+        }
+        if (key === 'agent.summaries') {
+          return [];
+        }
+        return null;
+      },
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        if (key === 'session.summaries') {
+          sessionSummariesHandler = handler;
+        }
+        return () => {
+          if (key === 'session.summaries') {
+            sessionSummariesHandler = null;
+          }
+        };
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            title: 'Latest assistant reply',
+            body: 'Latest assistant reply text',
+            sessionId: 'sess-1',
+            sessionTitle: null,
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Initial Title');
+
+    sessionSummaries = [
+      {
+        sessionId: 'sess-1',
+        name: 'Updated Title',
+      },
+    ];
+    sessionSummariesHandler?.(sessionSummaries);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Updated Title');
+
+    handle.unmount();
+  });
+
+  it('rerenders session attention rows when agent summaries change', async () => {
+    const module = panelFactory!();
+    let agentSummaries: Array<Record<string, unknown>> = [
+      { agentId: 'voice_assistant', displayName: 'Voice Assistant' },
+    ];
+    let agentSummariesHandler: ((value: unknown) => void) | null = null;
+    const host = createHost({
+      getContext: (key: string) => {
+        if (key === 'session.summaries') {
+          return [{ sessionId: 'sess-1', agentId: 'voice_assistant' }];
+        }
+        if (key === 'agent.summaries') {
+          return agentSummaries;
+        }
+        return null;
+      },
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        if (key === 'agent.summaries') {
+          agentSummariesHandler = handler;
+        }
+        return () => {
+          if (key === 'agent.summaries') {
+            agentSummariesHandler = null;
+          }
+        };
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'attention-1',
+            kind: 'session_attention',
+            title: 'Latest assistant reply',
+            body: 'Latest assistant reply text',
+            sessionId: 'sess-1',
+            sessionTitle: null,
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Voice Assistant');
+
+    agentSummaries = [{ agentId: 'voice_assistant', displayName: 'Renamed Assistant' }];
+    agentSummariesHandler?.(agentSummaries);
+
+    expect(container.querySelector('.notif-title')?.textContent).toBe('Renamed Assistant');
+
+    handle.unmount();
+  });
+
   it('removes notification on removed event', async () => {
     const module = panelFactory!();
     const host = createHost();
@@ -163,7 +565,36 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
-  it('sends toggle_read on item click', async () => {
+  it('opens the linked session on item click instead of toggling read state', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1', sessionId: 'sess-1', sessionTitle: 'My Session' })],
+      },
+    } as any);
+
+    const item = container.querySelector('.notif-item');
+    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(host.openPanel).toHaveBeenCalledWith(
+      'chat',
+      expect.objectContaining({
+        binding: { mode: 'fixed', sessionId: 'sess-1' },
+        focus: true,
+      }),
+    );
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('sends clear when dismiss button is clicked', async () => {
     const module = panelFactory!();
     const host = createHost();
     const container = document.createElement('div');
@@ -177,10 +608,76 @@ describe('notifications panel', () => {
       },
     } as any);
 
-    const item = container.querySelector('.notif-item');
-    item?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const dismissBtn = container.querySelector('.notif-dismiss-btn') as HTMLElement;
+    dismissBtn.click();
 
-    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'clear', id: 'n1' });
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('expands long notification text inline without triggering card navigation', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n-expand',
+            sessionId: 'sess-1',
+            body:
+              'First line of a longer notification body that should expand.\n'
+              + 'Second line that is only visible once expanded.',
+          }),
+        ],
+      },
+    } as any);
+
+    const expandBtn = container.querySelector('.notif-expand-btn-inline') as HTMLButtonElement;
+    expect(expandBtn).not.toBeNull();
+
+    const bodyEl = container.querySelector('.notif-body-text') as HTMLElement;
+    expect(bodyEl.classList.contains('notif-body-text-expanded')).toBe(false);
+
+    expandBtn.click();
+
+    expect(host.openPanel).not.toHaveBeenCalled();
+    expect(container.querySelector('.notif-body-text-expanded')).not.toBeNull();
+    expect(container.querySelector('.notif-expand-btn-inline')?.getAttribute('aria-label')).toBe(
+      'Collapse details',
+    );
+
+    (container.querySelector('.notif-expand-btn-inline') as HTMLButtonElement).click();
+
+    expect(container.querySelector('.notif-body-text-expanded')).toBeNull();
+    expect(container.querySelector('.notif-expand-btn-inline')?.getAttribute('aria-label')).toBe(
+      'Expand details',
+    );
+
+    handle.unmount();
+  });
+
+  it('does not render an inline expand caret for short card notifications', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n-short', body: 'Short body' })],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-expand-btn-inline')).toBeNull();
 
     handle.unmount();
   });
@@ -240,7 +737,7 @@ describe('notifications panel', () => {
     handle.unmount();
   });
 
-  it('shows session link for session-linked notifications', async () => {
+  it('does not render a separate session link row for session-linked notifications', async () => {
     const module = panelFactory!();
     const host = createHost();
     const container = document.createElement('div');
@@ -259,14 +756,22 @@ describe('notifications panel', () => {
       },
     } as any);
 
-    const sessionLink = container.querySelector('.notif-session-link');
-    expect(sessionLink).not.toBeNull();
-    expect(sessionLink?.textContent).toContain('My Session');
+    expect(container.querySelector('.notif-session-link')).toBeNull();
 
     handle.unmount();
   });
 
-  it('opens session via openPanel when session link is clicked', async () => {
+  it('renders Android-native Play and Speak actions for voice-capable notifications', async () => {
+    const performNotificationSpeaker = vi.fn();
+    const performNotificationMic = vi.fn();
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker,
+      performNotificationMic,
+    };
+    (window as any).Capacitor = {
+      getPlatform: () => 'android',
+    };
+
     const module = panelFactory!();
     const host = createHost();
     const container = document.createElement('div');
@@ -277,21 +782,255 @@ describe('notifications panel', () => {
         type: 'notification_update',
         event: 'snapshot',
         notifications: [
-          makeNotification({ sessionId: 'sess-1', sessionTitle: 'My Session' }),
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            sessionTitle: 'Session 1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
         ],
       },
     } as any);
 
-    const sessionLink = container.querySelector('.notif-session-link') as HTMLElement;
-    sessionLink.click();
+    const actionButtons = container.querySelectorAll('.notif-action-btn');
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0]?.textContent).toContain('Play');
+    expect(actionButtons[1]?.textContent).toContain('Speak');
 
-    expect(host.openPanel).toHaveBeenCalledWith(
-      'chat',
+    (actionButtons[0] as HTMLElement).click();
+    (actionButtons[1] as HTMLElement).click();
+
+    expect(performNotificationSpeaker).toHaveBeenCalledWith(
       expect.objectContaining({
-        binding: { mode: 'fixed', sessionId: 'sess-1' },
-        focus: true,
+        notification: expect.objectContaining({ id: 'n1' }),
       }),
     );
+    expect(performNotificationMic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notification: expect.objectContaining({ id: 'n1' }),
+      }),
+    );
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('renders compact-row Speaker and Mic icon buttons without the small tts glyph', async () => {
+    const performNotificationSpeaker = vi.fn();
+    const performNotificationMic = vi.fn();
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker,
+      performNotificationMic,
+    };
+    (window as any).Capacitor = {
+      getPlatform: () => 'android',
+    };
+
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    const densityBtn = container.querySelectorAll('.notif-toggle-btn')[1] as HTMLElement;
+    densityBtn.click();
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            sessionTitle: 'Session 1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    const compactButtons = container.querySelectorAll('.notif-action-btn-compact');
+    expect(compactButtons).toHaveLength(2);
+    expect(container.querySelector('.notif-tts-icon')).toBeNull();
+
+    (compactButtons[0] as HTMLElement).click();
+    (compactButtons[1] as HTMLElement).click();
+
+    expect(performNotificationSpeaker).toHaveBeenCalledTimes(1);
+    expect(performNotificationMic).toHaveBeenCalledTimes(1);
+
+    handle.unmount();
+  });
+
+  it('does not render native voice actions when the Android bridge is unavailable', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-action-btn')).toBeNull();
+
+    handle.unmount();
+  });
+
+  it('collapses the header popover after opening a session from a header panel item tap', async () => {
+    const module = panelFactory!();
+    const closePanel = vi.fn();
+    const dispatchEventSpy = vi.spyOn(document.body, 'dispatchEvent');
+    const host = createHost({
+      closePanel,
+      getContext: (key: string) => {
+        if (key !== 'panel.layout') {
+          return null;
+        }
+        return {
+          layout: { type: 'leaf', panelId: 'notif-panel-1' },
+          panels: {
+            'notif-panel-1': { panelType: 'notifications' },
+          },
+          headerPanels: ['notif-panel-1'],
+          headerPanelSizes: {},
+        };
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ sessionId: 'sess-1', sessionTitle: 'My Session' })],
+      },
+    } as any);
+
+    const item = container.querySelector('.notif-item') as HTMLElement;
+    item.click();
+
+    expect(host.openPanel).toHaveBeenCalled();
+    expect(closePanel).not.toHaveBeenCalled();
+    expect(dispatchEventSpy).toHaveBeenCalledWith(expect.any(MouseEvent));
+
+    handle.unmount();
+  });
+
+  it('closes the notifications panel after opening a session from a modal panel item tap', async () => {
+    const module = panelFactory!();
+    const closePanel = vi.fn();
+    const host = createHost({ closePanel });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    const overlay = document.createElement('div');
+    overlay.className = 'panel-modal-overlay open';
+    const frame = document.createElement('div');
+    frame.className = 'panel-frame panel-frame-modal';
+    frame.dataset['panelId'] = 'notif-panel-1';
+    overlay.appendChild(frame);
+    document.body.appendChild(overlay);
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ sessionId: 'sess-1', sessionTitle: 'My Session' })],
+      },
+    } as any);
+
+    const item = container.querySelector('.notif-item') as HTMLElement;
+    item.click();
+
+    expect(host.openPanel).toHaveBeenCalled();
+    expect(closePanel).toHaveBeenCalledWith('notif-panel-1');
+
+    overlay.remove();
+    handle.unmount();
+  });
+
+  it('activates an existing bound chat panel when the card is clicked', async () => {
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) => {
+        if (key !== 'panel.layout') {
+          return null;
+        }
+        return {
+          layout: { type: 'leaf', panelId: 'chat-1' },
+          panels: {
+            'chat-1': {
+              panelType: 'chat',
+              binding: { mode: 'fixed', sessionId: 'sess-1' },
+            },
+            'notifications-1': {
+              panelType: 'notifications',
+            },
+          },
+          headerPanels: [],
+          headerPanelSizes: {},
+        };
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({ id: 'n1', sessionId: 'sess-1', sessionTitle: 'My Session' }),
+        ],
+      },
+    } as any);
+
+    const item = container.querySelector('.notif-item') as HTMLElement;
+    item.click();
+
+    expect(host.activatePanel).toHaveBeenCalledWith('chat-1');
+    expect(host.openPanel).not.toHaveBeenCalled();
+    expect(host.sendEvent).not.toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+
+    handle.unmount();
+  });
+
+  it('does not render a redundant header stop button even when native voice is available', async () => {
+    (window as any).AssistantNativeVoice = {
+      getState: vi.fn().mockResolvedValue({ state: 'speaking' }),
+      addListener: vi.fn(() => ({ remove: vi.fn() })),
+      stopCurrentInteraction: vi.fn(),
+    };
+    (window as any).Capacitor = {
+      getPlatform: () => 'android',
+    };
+
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(container.querySelector('.notif-stop-btn')).toBeNull();
 
     handle.unmount();
   });
@@ -333,6 +1072,75 @@ describe('notifications panel', () => {
     markAllBtn.click();
 
     expect(host.sendEvent).toHaveBeenCalledWith({ type: 'mark_all_read' });
+
+    handle.unmount();
+  });
+
+  it('anchors the overflow menu dropdown to the menu button wrapper', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    const menuAnchor = container.querySelector('.notif-menu-anchor') as HTMLElement;
+    const dropdown = container.querySelector('.notif-menu-dropdown') as HTMLElement;
+
+    expect(menuAnchor).not.toBeNull();
+    expect(dropdown.parentElement).toBe(menuAnchor);
+
+    handle.unmount();
+  });
+
+  it('sends mark_all_unread when overflow menu item is clicked after everything is read', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({ id: 'n1', readAt: new Date().toISOString() }),
+          makeNotification({ id: 'n2', readAt: new Date().toISOString() }),
+        ],
+      },
+    } as any);
+
+    const menuBtn = container.querySelector('.notif-menu-btn') as HTMLElement;
+    menuBtn.dispatchEvent(new MouseEvent('click', { bubbles: false }));
+
+    const dropdown = container.querySelector('.notif-menu-dropdown') as HTMLElement;
+    const markAllBtn = dropdown.querySelector('.notif-menu-item') as HTMLElement;
+    expect(markAllBtn.textContent).toBe('Mark all unread');
+
+    markAllBtn.click();
+
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'mark_all_unread' });
+
+    handle.unmount();
+  });
+
+  it('toggles read state when the left icon button is clicked', async () => {
+    const module = panelFactory!();
+    const host = createHost();
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [makeNotification({ id: 'n1', sessionId: 'sess-1' })],
+      },
+    } as any);
+
+    const toggleBtn = container.querySelector('.notif-read-toggle-btn') as HTMLElement;
+    toggleBtn.click();
+
+    expect(host.sendEvent).toHaveBeenCalledWith({ type: 'toggle_read', id: 'n1' });
+    expect(host.openPanel).not.toHaveBeenCalled();
 
     handle.unmount();
   });

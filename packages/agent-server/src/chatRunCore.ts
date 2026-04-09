@@ -1298,11 +1298,20 @@ export async function runChatCompletionCore(
       const defaultProvider = piConfig?.provider;
       resolvedModel =
         defaultProvider === undefined
-          ? await resolvePiSdkModel({ modelSpec, ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}) })
+          ? await resolvePiSdkModel({
+              modelSpec,
+              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+              ...(piConfig?.contextWindow !== undefined
+                ? { contextWindow: piConfig.contextWindow }
+                : {}),
+            })
           : await resolvePiSdkModel({
               modelSpec,
               defaultProvider,
               ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+              ...(piConfig?.contextWindow !== undefined
+                ? { contextWindow: piConfig.contextWindow }
+                : {}),
             });
     } catch (err) {
       throw new ChatRunError(

@@ -48,11 +48,13 @@ describe('notifications server plugin', () => {
       )) as any;
 
       expect(result.id).toBeDefined();
+      expect(result.kind).toBe('notification');
       expect(result.title).toBe('Hello');
       expect(result.body).toBe('World');
       expect(result.source).toBe('tool');
       expect(result.readAt).toBeNull();
       expect(result.tts).toBe(false);
+      expect(result.voiceMode).toBe('none');
       expect(result.sessionId).toBeNull();
 
       expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
@@ -86,6 +88,23 @@ describe('notifications server plugin', () => {
 
       expect(result.sessionId).toBe('sess-1');
       expect(result.sessionTitle).toBe('My Session');
+    });
+
+    it('falls back to sessionId when the session exists without a persisted title', async () => {
+      const ctx = createMockCtx({
+        sessionIndex: {
+          getSession: vi.fn().mockResolvedValue({
+            lastSnippet: 'latest user text',
+          }),
+        },
+      });
+
+      const result = (await plugin.operations!.create(
+        { title: 'T', body: 'B', sessionId: 'sess-1' },
+        ctx,
+      )) as any;
+
+      expect(result.sessionTitle).toBe('sess-1');
     });
 
     it('falls back to sessionId when session not found', async () => {
@@ -127,6 +146,54 @@ describe('notifications server plugin', () => {
       )) as any;
 
       expect(result.source).toBe('tool');
+    });
+
+    it('upserts session attention and broadcasts singleton mutations', async () => {
+      const ctx = createMockCtx();
+      const first = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply 1',
+          body: 'First',
+          sessionId: 'sess-1',
+          source: 'system',
+          voiceMode: 'speak_then_listen',
+          sourceEventId: 'response-1',
+          sessionActivitySeq: 3,
+        },
+        ctx,
+      )) as any;
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const second = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply 2',
+          body: 'Second',
+          sessionId: 'sess-1',
+          source: 'system',
+          voiceMode: 'speak_then_listen',
+          sourceEventId: 'response-2',
+          sessionActivitySeq: 4,
+        },
+        ctx,
+      )) as any;
+
+      expect(second.id).toBe(first.id);
+      expect(second.kind).toBe('session_attention');
+      expect(second.sourceEventId).toBe('response-2');
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'upserted',
+            notification: expect.objectContaining({
+              id: first.id,
+              title: 'Reply 2',
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -231,6 +298,56 @@ describe('notifications server plugin', () => {
         }),
       );
     });
+
+    it('does not broadcast when everything is already read', async () => {
+      const ctx = createMockCtx();
+
+      const result = (await plugin.operations!.mark_all_read({}, ctx)) as any;
+
+      expect(result.marked).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mark_all_unread operation', () => {
+    it('marks all unread and broadcasts snapshot', async () => {
+      const ctx = createMockCtx();
+      const first = (await plugin.operations!.create({ title: 'A', body: 'B' }, ctx)) as any;
+      await plugin.operations!.create({ title: 'B', body: 'B' }, ctx);
+      await plugin.operations!.toggle_read({ id: first.id }, ctx);
+      await plugin.operations!.mark_all_read({}, ctx);
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const result = (await plugin.operations!.mark_all_unread({}, ctx)) as any;
+
+      expect(result.marked).toBe(2);
+
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'panel_event',
+          panelType: 'notifications',
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'snapshot',
+            revision: expect.any(Number),
+            notifications: expect.arrayContaining([
+              expect.objectContaining({ readAt: null }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('does not broadcast when everything is already unread', async () => {
+      const ctx = createMockCtx();
+      await plugin.operations!.create({ title: 'A', body: 'B' }, ctx);
+      ctx.sessionHub.broadcastToAll.mockClear();
+
+      const result = (await plugin.operations!.mark_all_unread({}, ctx)) as any;
+
+      expect(result.marked).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
+    });
   });
 
   describe('clear operation', () => {
@@ -292,6 +409,15 @@ describe('notifications server plugin', () => {
           }),
         }),
       );
+    });
+
+    it('does not broadcast when there is nothing to clear', async () => {
+      const ctx = createMockCtx();
+
+      const result = (await plugin.operations!.clear_all({}, ctx)) as any;
+
+      expect(result.cleared).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).not.toHaveBeenCalled();
     });
   });
 
@@ -380,6 +506,163 @@ describe('notifications server plugin', () => {
           }),
         }),
       );
+    });
+
+    it('handles mark_all_unread via panel event', async () => {
+      const ctx = createMockCtx();
+      const created = (await plugin.operations!.create(
+        { title: 'Toggle', body: 'B' },
+        ctx,
+      )) as any;
+      await plugin.operations!.toggle_read({ id: created.id }, ctx);
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_unread' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'panel_event',
+          panelType: 'notifications',
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'snapshot',
+            revision: expect.any(Number),
+            notifications: expect.arrayContaining([
+              expect.objectContaining({
+                id: created.id,
+                readAt: null,
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('does not broadcast mark_all_read snapshot when nothing changes', async () => {
+      const ctx = createMockCtx();
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_read' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).not.toHaveBeenCalled();
+    });
+
+    it('does not broadcast mark_all_unread snapshot when nothing changes', async () => {
+      const ctx = createMockCtx();
+      await plugin.operations!.create({ title: 'Toggle', body: 'B' }, ctx);
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'mark_all_unread' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect(sendToAll).not.toHaveBeenCalled();
+    });
+
+    it('handles clear_session_attention via panel event', async () => {
+      const ctx = createMockCtx();
+      const created = (await plugin.operations!.create(
+        {
+          kind: 'session_attention',
+          title: 'Reply',
+          body: 'Answer',
+          sessionId: 'sess-1',
+          source: 'system',
+        },
+        ctx,
+      )) as any;
+
+      const handler = plugin.panelEventHandlers!.notifications;
+      const sendToAll = vi.fn();
+
+      await handler(
+        {
+          panelId: 'p1',
+          panelType: 'notifications',
+          payload: { type: 'clear_session_attention', sessionId: 'sess-1' },
+        } as any,
+        {
+          sessionId: null,
+          panelId: 'p1',
+          panelType: 'notifications',
+          connectionId: 'c1',
+          connection: {} as any,
+          sessionHub: ctx.sessionHub,
+          sessionIndex: ctx.sessionIndex,
+          sendToClient: vi.fn(),
+          sendToSession: vi.fn(),
+          sendToAll,
+        } as any,
+      );
+
+      expect((await plugin.operations!.list({}, ctx) as any).total).toBe(0);
+      expect(ctx.sessionHub.broadcastToAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            type: 'notification_update',
+            event: 'removed',
+            id: created.id,
+          }),
+        }),
+      );
+      expect(sendToAll).not.toHaveBeenCalled();
     });
   });
 });
