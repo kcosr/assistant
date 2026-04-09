@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- Fixed note edit compact mode to collapse title/description/tag/pinned/favorite rows and fixed split-pane drag resizing to preserve the visible bottom of chat transcripts while resizing stacked panels.
 - Fixed notifications service state sharing across the bundled notifications plugin and direct agent-server imports, so final assistant replies and built-in voice tools now persist durable notification records reliably.
 - Fixed Android voice notification UX so in-app notification cards now expose the same `Play` and `Speak` actions as the durable Android system notifications.
 - Fixed Android native voice playback transport to stop requiring an adapter websocket `clientId` before issuing direct TTS requests, restoring `voice_speak`, notification-card `Play`, and spoken notification follow-ups against current adapter deployments.
