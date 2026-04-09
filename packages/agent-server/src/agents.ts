@@ -190,6 +190,7 @@ export interface PiSdkChatConfig {
   headers?: Record<string, string>;
   timeoutMs?: number;
   maxTokens?: number;
+  contextWindow?: number;
   temperature?: number;
   maxToolIterations?: number;
 }

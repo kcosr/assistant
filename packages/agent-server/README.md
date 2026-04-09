@@ -1017,6 +1017,7 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
       - connection overrides apply only when the resolved provider matches `config.provider`
       - `timeoutMs` (optional): request timeout in milliseconds
       - `maxTokens` (optional): positive integer completion limit
+      - `contextWindow` (optional): context-window override for synthesized models (used when `baseUrl` is set and provider has no built-in Pi model catalog entry)
       - `temperature` (optional): temperature to use for generation
       - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
     - for `provider: "claude-cli"`:
