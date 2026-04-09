@@ -59,6 +59,8 @@ public final class AssistantVoiceRuntimeService extends Service {
     static final String ACTION_STOP_SERVICE = "com.assistant.mobile.voice.STOP_SERVICE";
     static final String ACTION_STOP_CURRENT_INTERACTION = "com.assistant.mobile.voice.STOP_CURRENT_INTERACTION";
     static final String ACTION_START_MANUAL_LISTEN = "com.assistant.mobile.voice.START_MANUAL_LISTEN";
+    static final String ACTION_RETARGET_ACTIVE_RECOGNITION =
+        "com.assistant.mobile.voice.RETARGET_ACTIVE_RECOGNITION";
     static final String ACTION_TOGGLE_MEDIA_BUTTONS = "com.assistant.mobile.voice.TOGGLE_MEDIA_BUTTONS";
     static final String ACTION_CYCLE_AUDIO_MODE = "com.assistant.mobile.voice.CYCLE_AUDIO_MODE";
     static final String ACTION_NOTIFICATION_SPEAKER = "com.assistant.mobile.voice.NOTIFICATION_SPEAKER";
@@ -200,6 +202,12 @@ public final class AssistantVoiceRuntimeService extends Service {
             .putExtra(EXTRA_MANUAL_LISTEN_SESSION_ID, trim(sessionId));
     }
 
+    public static Intent retargetActiveRecognitionIntent(Context context, String sessionId) {
+        return new Intent(context, AssistantVoiceRuntimeService.class)
+            .setAction(ACTION_RETARGET_ACTIVE_RECOGNITION)
+            .putExtra(EXTRA_MANUAL_LISTEN_SESSION_ID, trim(sessionId));
+    }
+
     public static Intent toggleMediaButtonsIntent(Context context) {
         return new Intent(context, AssistantVoiceRuntimeService.class)
             .setAction(ACTION_TOGGLE_MEDIA_BUTTONS);
@@ -306,6 +314,14 @@ public final class AssistantVoiceRuntimeService extends Service {
             startManualListen(sessionId);
             return START_STICKY;
         }
+        if (ACTION_RETARGET_ACTIVE_RECOGNITION.equals(action)) {
+            String sessionId = intent.getStringExtra(EXTRA_MANUAL_LISTEN_SESSION_ID);
+            JSONObject details = AssistantVoiceEventLog.details();
+            AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+            recordVoiceEvent("service_action_retarget_active_recognition", details);
+            retargetActiveManualRecognition(sessionId);
+            return START_STICKY;
+        }
         if (ACTION_TOGGLE_MEDIA_BUTTONS.equals(action)) {
             applyConfig(config.withMediaButtonsEnabled(!config.mediaButtonsEnabled));
             return START_STICKY;
@@ -398,22 +414,6 @@ public final class AssistantVoiceRuntimeService extends Service {
 
         startInForeground();
         syncMediaSession();
-
-        if (shouldRetargetActiveManualRecognition(
-            previous.selectedSessionId,
-            updated.selectedSessionId,
-            activeSttRequestId,
-            activePromptToolName
-        )) {
-            activeVoiceSessionId = trim(updated.selectedSessionId);
-            JSONObject details = AssistantVoiceEventLog.details();
-            AssistantVoiceEventLog.put(details, "previousSelectedSessionId", safe(previous.selectedSessionId));
-            AssistantVoiceEventLog.put(details, "updatedSelectedSessionId", safe(updated.selectedSessionId));
-            AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
-            recordVoiceEvent("manual_listen_retarget", details);
-            AssistantVoiceConfig.saveRuntimeSnapshot(this, runtimeState, null, activeVoiceSessionId);
-            refreshNotification();
-        }
 
         if (adapterUrlChanged || assistantUrlChanged) {
             stopCurrentInteraction(false, "config_changed");
@@ -2099,6 +2099,9 @@ public final class AssistantVoiceRuntimeService extends Service {
         activeTtsSampleRate = 0;
         pendingPlaybackDrainRequestId = "";
         pendingPlaybackDrainStartsListening = false;
+        if (STATE_SPEAKING.equals(runtimeState)) {
+            syncRuntimeSnapshot(true);
+        }
         player.startStream(requestId);
         updateState(STATE_SPEAKING, null);
 
@@ -2626,6 +2629,28 @@ public final class AssistantVoiceRuntimeService extends Service {
         return !normalizedUpdatedSelectedSessionId.equals(trim(previousSelectedSessionId));
     }
 
+    private void retargetActiveManualRecognition(String sessionId) {
+        String normalizedSessionId = trim(sessionId);
+        if (
+            !shouldRetargetActiveManualRecognition(
+                activeVoiceSessionId,
+                normalizedSessionId,
+                activeSttRequestId,
+                activePromptToolName
+            )
+        ) {
+            return;
+        }
+        String previousSessionId = activeVoiceSessionId;
+        activeVoiceSessionId = normalizedSessionId;
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "previousSelectedSessionId", safe(previousSessionId));
+        AssistantVoiceEventLog.put(details, "updatedSelectedSessionId", safe(normalizedSessionId));
+        AssistantVoiceEventLog.put(details, "activeSttRequestId", safe(activeSttRequestId));
+        recordVoiceEvent("manual_listen_retarget", details);
+        syncRuntimeSnapshot(true);
+    }
+
     private void finishActiveQueueItem(boolean drainQueue) {
         activeQueueItem = null;
         if (drainQueue) {
@@ -2913,6 +2938,43 @@ public final class AssistantVoiceRuntimeService extends Service {
         syncMediaSession();
     }
 
+    private void broadcastStateChanged() {
+        Intent stateIntent = new Intent(BROADCAST_STATE_CHANGED);
+        stateIntent.setPackage(getPackageName());
+        stateIntent.putExtra(EXTRA_STATE, runtimeState);
+        sendBroadcast(stateIntent);
+    }
+
+    private void syncRuntimeSnapshot(boolean broadcastState) {
+        AssistantVoiceConfig.saveRuntimeSnapshot(
+            this,
+            runtimeState,
+            null,
+            activeVoiceSessionId,
+            resolveActiveDisplayTitle()
+        );
+        refreshNotification();
+        if (broadcastState) {
+            broadcastStateChanged();
+        }
+    }
+
+    private String resolveActiveDisplayTitle() {
+        AssistantVoiceQueueItem item = activeQueueItem;
+        if (item != null) {
+            if (!item.displayTitle.isEmpty()) {
+                return item.displayTitle;
+            }
+            if (!item.sessionTitle.isEmpty()) {
+                return item.sessionTitle;
+            }
+        }
+        if (!activeVoiceSessionId.isEmpty()) {
+            return config.getSessionTitle(activeVoiceSessionId);
+        }
+        return "";
+    }
+
     private void updateState(String nextState, String maybeErrorMessage) {
         String previousState = runtimeState;
         String normalizedState = trim(nextState);
@@ -2941,13 +3003,11 @@ public final class AssistantVoiceRuntimeService extends Service {
             this,
             normalizedState,
             normalizedError.isEmpty() ? null : normalizedError,
-            activeVoiceSessionId
+            activeVoiceSessionId,
+            resolveActiveDisplayTitle()
         );
         refreshNotification();
-        Intent stateIntent = new Intent(BROADCAST_STATE_CHANGED);
-        stateIntent.setPackage(getPackageName());
-        stateIntent.putExtra(EXTRA_STATE, normalizedState);
-        sendBroadcast(stateIntent);
+        broadcastStateChanged();
         if (!normalizedError.isEmpty()) {
             Intent errorIntent = new Intent(BROADCAST_RUNTIME_ERROR);
             errorIntent.setPackage(getPackageName());
@@ -2961,7 +3021,13 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         Log.w(TAG, "emitRuntimeError message=" + safe(message));
-        AssistantVoiceConfig.saveRuntimeSnapshot(this, runtimeState, message, activeVoiceSessionId);
+        AssistantVoiceConfig.saveRuntimeSnapshot(
+            this,
+            runtimeState,
+            message,
+            activeVoiceSessionId,
+            resolveActiveDisplayTitle()
+        );
         Intent errorIntent = new Intent(BROADCAST_RUNTIME_ERROR);
         errorIntent.setPackage(getPackageName());
         errorIntent.putExtra(EXTRA_MESSAGE, message);

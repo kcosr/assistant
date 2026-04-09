@@ -7,6 +7,7 @@ final class AssistantVoiceQueueItem {
     final String sourceEventId;
     final String sessionId;
     final String sessionTitle;
+    final String displayTitle;
     final String spokenText;
     final String executionMode;
     final Integer sessionActivitySeq;
@@ -20,6 +21,7 @@ final class AssistantVoiceQueueItem {
         String sourceEventId,
         String sessionId,
         String sessionTitle,
+        String displayTitle,
         String spokenText,
         String executionMode,
         Integer sessionActivitySeq,
@@ -32,6 +34,7 @@ final class AssistantVoiceQueueItem {
         this.sourceEventId = trim(sourceEventId);
         this.sessionId = trim(sessionId);
         this.sessionTitle = trim(sessionTitle);
+        this.displayTitle = trim(displayTitle);
         this.spokenText = trim(spokenText);
         this.executionMode = trim(executionMode);
         this.sessionActivitySeq = sessionActivitySeq;
@@ -106,6 +109,7 @@ final class AssistantVoiceQueueItem {
             "system",
             dedupId,
             sessionId,
+            normalizedSessionTitle,
             normalizedSessionTitle,
             spokenText,
             executionMode,

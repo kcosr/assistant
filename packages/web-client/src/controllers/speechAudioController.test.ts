@@ -145,6 +145,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      retargetActiveRecognition: vi.fn(),
       setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
@@ -164,6 +165,7 @@ describe('AssistantNativeVoiceBridge', () => {
     await expect(
       bridge.setSelectedSession({ panelId: 'panel-1', sessionId: 'session-1' }),
     ).resolves.toBe(true);
+    await expect(bridge.retargetActiveRecognition('session-2')).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
@@ -177,6 +179,9 @@ describe('AssistantNativeVoiceBridge', () => {
         panelId: 'panel-1',
         sessionId: 'session-1',
       },
+    });
+    expect(target.retargetActiveRecognition).toHaveBeenCalledWith({
+      sessionId: 'session-2',
     });
     expect(target.setSessionTitles).toHaveBeenCalledWith({
       sessionTitles: {
@@ -203,6 +208,7 @@ describe('AssistantNativeVoiceBridge', () => {
     const target = {
       setVoiceSettings: vi.fn(),
       setSelectedSession: vi.fn(),
+      retargetActiveRecognition: vi.fn(),
       setSessionTitles: vi.fn(),
       setAssistantBaseUrl: vi.fn(),
     };
@@ -217,12 +223,14 @@ describe('AssistantNativeVoiceBridge', () => {
 
     await expect(bridge.setVoiceSettings(createInitialVoiceSettings())).resolves.toBe(true);
     await expect(bridge.setSelectedSession(null)).resolves.toBe(true);
+    await expect(bridge.retargetActiveRecognition(null)).resolves.toBe(true);
     await expect(bridge.setSessionTitles({ 'session-1': 'Daily Assistant' })).resolves.toBe(true);
     await expect(bridge.setAssistantBaseUrl('https://assistant')).resolves.toBe(true);
     expect(target.setVoiceSettings).toHaveBeenCalledWith({
       settings: createInitialVoiceSettings(),
     });
     expect(target.setSelectedSession).toHaveBeenCalledWith({ selection: null });
+    expect(target.retargetActiveRecognition).toHaveBeenCalledWith({ sessionId: null });
     expect(target.setSessionTitles).toHaveBeenCalledWith({
       sessionTitles: {
         'session-1': 'Daily Assistant',

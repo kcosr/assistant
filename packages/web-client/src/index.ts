@@ -881,6 +881,7 @@ async function main(): Promise<void> {
   let inputSessionId: string | null = null;
   let nativeVoiceRuntimeState: AssistantNativeVoiceRuntimeState | null = null;
   let nativeVoiceActiveSessionId: string | null = null;
+  let nativeVoiceActiveDisplayTitle: string | null = null;
   let nativeVoiceBridgeSelectedSessionId: string | null = null;
   let isSettingInputSession = false;
   let pendingInputSessionId: string | null | undefined = undefined;
@@ -1217,6 +1218,7 @@ async function main(): Promise<void> {
       inputSessionId,
       nativeVoiceBridgeSelectedSessionId,
       nativeVoiceActiveSessionId,
+      nativeVoiceActiveDisplayTitle,
       normalizeSessionId,
       resolveSessionTitle,
     });
@@ -1373,6 +1375,10 @@ async function main(): Promise<void> {
     const nextActiveSessionId = normalizeSessionId(
       typeof payload?.activeSessionId === 'string' ? payload.activeSessionId : null,
     );
+    const nextActiveDisplayTitle =
+      typeof payload?.activeDisplayTitle === 'string'
+        ? payload.activeDisplayTitle.trim() || null
+        : null;
     const nextBridgeSelectedSessionId = normalizeSessionId(
       typeof payload?.selectedSession?.sessionId === 'string'
         ? payload.selectedSession.sessionId
@@ -1381,12 +1387,14 @@ async function main(): Promise<void> {
     if (
       nativeVoiceRuntimeState === nextState &&
       nativeVoiceActiveSessionId === nextActiveSessionId &&
+      nativeVoiceActiveDisplayTitle === nextActiveDisplayTitle &&
       nativeVoiceBridgeSelectedSessionId === nextBridgeSelectedSessionId
     ) {
       return;
     }
     nativeVoiceRuntimeState = nextState;
     nativeVoiceActiveSessionId = nextActiveSessionId;
+    nativeVoiceActiveDisplayTitle = nextActiveDisplayTitle;
     nativeVoiceBridgeSelectedSessionId = nextBridgeSelectedSessionId;
     for (const entry of chatPanelsById.values()) {
       entry.inputRuntime.speechAudioController?.setNativeRuntimeState(nextState);
@@ -4257,6 +4265,9 @@ async function main(): Promise<void> {
           autoFocusSearch: false,
           onSelectSession: (sessionId) => {
             setInputSessionId(sessionId);
+            if (nativeVoiceRuntimeState === 'listening') {
+              void nativeVoiceBridge.retargetActiveRecognition(sessionId);
+            }
             voiceFabHandle?.update();
           },
         });

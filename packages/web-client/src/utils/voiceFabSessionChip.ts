@@ -11,6 +11,7 @@ export interface ResolveVoiceFabSessionChipStateArgs {
   inputSessionId: string | null;
   nativeVoiceBridgeSelectedSessionId: string | null;
   nativeVoiceActiveSessionId: string | null;
+  nativeVoiceActiveDisplayTitle: string | null;
   normalizeSessionId: (sessionId: string | null) => string | null;
   resolveSessionTitle: (sessionId: string | null) => string | null;
 }
@@ -23,6 +24,7 @@ export function resolveVoiceFabSessionChipState(
     inputSessionId,
     nativeVoiceBridgeSelectedSessionId,
     nativeVoiceActiveSessionId,
+    nativeVoiceActiveDisplayTitle,
     normalizeSessionId,
     resolveSessionTitle,
   } = args;
@@ -32,6 +34,14 @@ export function resolveVoiceFabSessionChipState(
   }
 
   if (mode === 'speaking') {
+    const displayTitle = nativeVoiceActiveDisplayTitle?.trim() ?? '';
+    if (displayTitle) {
+      return {
+        visible: true,
+        interactive: false,
+        title: displayTitle,
+      };
+    }
     const sessionId =
       normalizeSessionId(nativeVoiceActiveSessionId) ??
       normalizeSessionId(inputSessionId) ??

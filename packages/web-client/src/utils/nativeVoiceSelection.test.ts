@@ -91,6 +91,22 @@ describe('resolveVoiceFabController', () => {
     ).toBe(active);
   });
 
+  it('ignores the selected session controller while native listening is active', () => {
+    const selected = { id: 'selected' };
+    const active = { id: 'active' };
+
+    expect(
+      resolveVoiceFabController({
+        inputSessionId: 'session-selected',
+        getControllerForSession: (sessionId) =>
+          sessionId === 'session-selected' ? selected : null,
+        activeController: active,
+        primaryController: null,
+        nativeRuntimeState: 'listening',
+      }),
+    ).toBe(active);
+  });
+
   it('falls back to the primary controller while native speaking is active', () => {
     const primary = { id: 'primary' };
 

@@ -52,19 +52,19 @@ type VoiceFabControllerInput<T> = {
 export function resolveVoiceFabController<T>(
   input: VoiceFabControllerInput<T>,
 ): T | null {
+  if (
+    input.nativeRuntimeState === 'speaking' ||
+    input.nativeRuntimeState === 'listening'
+  ) {
+    return input.activeController ?? input.primaryController ?? null;
+  }
+
   const selectedSessionId = normalizeId(input.inputSessionId);
   if (selectedSessionId) {
     const selectedController = input.getControllerForSession(selectedSessionId);
     if (selectedController) {
       return selectedController;
     }
-  }
-
-  if (
-    input.nativeRuntimeState === 'speaking' ||
-    input.nativeRuntimeState === 'listening'
-  ) {
-    return input.activeController ?? input.primaryController ?? null;
   }
 
   return input.primaryController ?? input.activeController ?? null;

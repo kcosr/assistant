@@ -18,6 +18,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         inputSessionId: 'selected-session',
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: 'active-session',
+        nativeVoiceActiveDisplayTitle: null,
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -35,6 +36,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         inputSessionId: 'selected-session',
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: 'active-session',
+        nativeVoiceActiveDisplayTitle: null,
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -52,6 +54,7 @@ describe('resolveVoiceFabSessionChipState', () => {
         inputSessionId: 'selected-session',
         nativeVoiceBridgeSelectedSessionId: 'bridge-session',
         nativeVoiceActiveSessionId: null,
+        nativeVoiceActiveDisplayTitle: null,
         normalizeSessionId,
         resolveSessionTitle,
       }),
@@ -59,6 +62,24 @@ describe('resolveVoiceFabSessionChipState', () => {
       visible: true,
       interactive: true,
       title: 'title:selected-session',
+    });
+  });
+
+  it('uses the native active display title for sessionless speaking items', () => {
+    expect(
+      resolveVoiceFabSessionChipState({
+        mode: 'speaking',
+        inputSessionId: 'selected-session',
+        nativeVoiceBridgeSelectedSessionId: 'bridge-session',
+        nativeVoiceActiveSessionId: null,
+        nativeVoiceActiveDisplayTitle: 'Tool Notification',
+        normalizeSessionId,
+        resolveSessionTitle,
+      }),
+    ).toEqual({
+      visible: true,
+      interactive: false,
+      title: 'Tool Notification',
     });
   });
 });

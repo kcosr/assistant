@@ -69,6 +69,7 @@ export type AssistantNativeVoiceRuntimeState =
 export interface AssistantNativeVoiceStatePayload {
   state?: string;
   activeSessionId?: string | null;
+  activeDisplayTitle?: string | null;
   voiceSettings?: VoiceSettings;
   inputContext?: AssistantNativeVoiceInputContext;
   assistantBaseUrl?: string;
@@ -91,6 +92,7 @@ export interface AssistantNativeVoiceBridgeTarget {
   setVoiceSettings?: (args: AssistantNativeVoiceSettingsArgs) => void | Promise<void>;
   setInputContext?: (args: AssistantNativeVoiceInputContextArgs) => void | Promise<void>;
   setSelectedSession?: (args: AssistantNativeVoiceSelectionArgs) => void | Promise<void>;
+  retargetActiveRecognition?: (args: AssistantNativeVoiceStartListenArgs) => void | Promise<void>;
   setSessionTitles?: (args: AssistantNativeVoiceSessionTitlesArgs) => void | Promise<void>;
   setAssistantBaseUrl?: (args: AssistantNativeVoiceUrlArgs) => void | Promise<void>;
   stopCurrentInteraction?: () => void | Promise<void>;
@@ -126,6 +128,10 @@ export class AssistantNativeVoiceBridge {
 
   setSelectedSession(selection: AssistantNativeVoiceSelection | null): Promise<boolean> {
     return this.invokeAsync('setSelectedSession', { selection });
+  }
+
+  retargetActiveRecognition(sessionId?: string | null): Promise<boolean> {
+    return this.invokeAsync('retargetActiveRecognition', { sessionId: sessionId ?? null });
   }
 
   setSessionTitles(sessionTitles: Record<string, string>): Promise<boolean> {

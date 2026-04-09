@@ -215,6 +215,19 @@ public final class AssistantVoicePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void retargetActiveRecognition(PluginCall call) {
+        String sessionId = call.getString("sessionId");
+        JSONObject details = AssistantVoiceEventLog.details();
+        AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
+        AssistantVoiceEventLog.record(getContext(), "plugin_retarget_active_recognition", details);
+        ContextCompat.startForegroundService(
+            getContext(),
+            AssistantVoiceRuntimeService.retargetActiveRecognitionIntent(getContext(), sessionId)
+        );
+        call.resolve(buildStatePayload());
+    }
+
+    @PluginMethod
     public void performNotificationSpeaker(PluginCall call) {
         AssistantVoiceNotificationRecord notification = extractNotification(call);
         if (notification == null) {
@@ -378,6 +391,7 @@ public final class AssistantVoicePlugin extends Plugin {
                 getContext(),
                 AssistantVoiceRuntimeService.STATE_DISABLED,
                 null,
+                null,
                 null
             );
             notifyListeners("stateChanged", buildStatePayload(), true);
@@ -430,10 +444,12 @@ public final class AssistantVoicePlugin extends Plugin {
             current.notificationTitlePlaybackEnabled
         );
         String activeSessionId = AssistantVoiceConfig.loadRuntimeActiveSessionId(getContext());
+        String activeDisplayTitle = AssistantVoiceConfig.loadRuntimeActiveDisplayTitle(getContext());
 
         JSObject payload = new JSObject();
         payload.put("state", AssistantVoiceConfig.loadRuntimeState(getContext()));
         payload.put("activeSessionId", activeSessionId.isEmpty() ? null : activeSessionId);
+        payload.put("activeDisplayTitle", activeDisplayTitle.isEmpty() ? null : activeDisplayTitle);
         payload.put("voiceSettings", voiceSettings);
         payload.put("assistantBaseUrl", current.assistantBaseUrl);
         payload.put("selectedSession", selection.length() == 0 ? null : selection);
