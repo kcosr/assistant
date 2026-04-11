@@ -35,7 +35,7 @@ function ensureWebSocketGlobal(): void {
 
 function createAudioModeSelect(): HTMLSelectElement {
   const select = document.createElement('select');
-  for (const value of ['off', 'tool', 'response']) {
+  for (const value of ['off', 'manual', 'tool', 'response']) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = value;
@@ -937,7 +937,7 @@ describe('SpeechAudioController.micButtonState', () => {
 
     expect(micButton.classList.contains('native-speaking')).toBe(true);
     expect(micButton.classList.contains('stopping')).toBe(false);
-    expect(micButton.getAttribute('aria-label')).toBe('Voice playback active');
+    expect(micButton.getAttribute('aria-label')).toBe('Stop playback');
     expect(micButton.querySelector<SVGElement>('.mic-icon')?.dataset['mode']).toBe('speaker');
 
     controller.setNativeRuntimeState('listening');
@@ -1412,5 +1412,244 @@ describe('SpeechAudioController.startPushToTalk', () => {
     expect(micButton.disabled).toBe(true);
     expect(micButton.getAttribute('title')).toMatch(/microphone permissions/i);
     expect(controller.hasSpeechInput).toBe(false);
+  });
+
+  it('disables the mic button in manual audio mode with playback-only label', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+    });
+
+    controller.setAudioMode('manual');
+    controller.syncMicButtonState();
+
+    expect(micButton.disabled).toBe(true);
+    expect(micButton.getAttribute('aria-label')).toBe('Notification playback only');
+  });
+
+  it('re-enables the mic button after leaving manual audio mode', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+    const speechInputController = {
+      isActive: false,
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: speechInputController as any,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+    });
+
+    controller.setAudioMode('manual');
+    controller.syncMicButtonState();
+    expect(micButton.disabled).toBe(true);
+
+    controller.setAudioMode('tool');
+    controller.syncMicButtonState();
+
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+  });
+
+  it('re-enables the mic button during manual native playback so tapping can stop speech', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+    let isOutputActive = false;
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen: vi.fn(),
+        stopCurrentInteraction: vi.fn(),
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => isOutputActive,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'manual' }),
+    });
+
+    controller.syncMicButtonState();
+    expect(micButton.disabled).toBe(true);
+
+    isOutputActive = true;
+    controller.setNativeRuntimeState('speaking');
+
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Stop playback');
+  });
+
+  it('keeps the mic button enabled on attach when native voice runtime is available', () => {
+    const micButton = document.createElement('button');
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen: vi.fn(),
+        stopCurrentInteraction: vi.fn(),
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'tool' }),
+    });
+
+    controller.attach();
+
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+  });
+
+  it('notifies listeners when switching to manual mode', () => {
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+    });
+    const handler = vi.fn();
+
+    controller.setVoiceSettingsChangeHandler(handler);
+    controller.setAudioMode('manual');
+
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ audioMode: 'manual' }));
+  });
+
+  it('does not use native voice runtime in manual mode', () => {
+    const bridge = new AssistantNativeVoiceBridge(() => ({
+      AssistantNativeVoice: {
+        startManualListen: vi.fn(),
+        stopCurrentInteraction: vi.fn(),
+      },
+    }));
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: null,
+      micButtonEl: document.createElement('button'),
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      useNativeVoiceRuntime: true,
+      nativeVoiceBridge: bridge,
+      initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'manual' }),
+    });
+
+    // isUsingNativeVoiceRuntime should return false for manual mode
+    // shouldAutoListenAfterPlayback should return false for manual mode
+    // These are tested indirectly through the mic button state
+    controller.syncMicButtonState();
+    const micButton = (controller as any).options.micButtonEl as HTMLButtonElement;
+    expect(micButton.disabled).toBe(true);
+    expect(micButton.getAttribute('aria-label')).toBe('Notification playback only');
   });
 });

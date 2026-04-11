@@ -17,6 +17,7 @@ final class AssistantVoiceConfig {
     static final String DEFAULT_VOICE_ADAPTER_BASE_URL = "https://assistant/agent-voice-adapter";
     static final String DEFAULT_ASSISTANT_BASE_URL = "https://assistant";
     static final String AUDIO_MODE_OFF = "off";
+    static final String AUDIO_MODE_MANUAL = "manual";
     static final String AUDIO_MODE_TOOL = "tool";
     static final String AUDIO_MODE_RESPONSE = "response";
     static final String DEFAULT_AUDIO_MODE = AUDIO_MODE_TOOL;
@@ -492,6 +493,7 @@ final class AssistantVoiceConfig {
         String normalized = normalizeOptional(value);
         switch (normalized) {
             case AUDIO_MODE_OFF:
+            case AUDIO_MODE_MANUAL:
             case AUDIO_MODE_TOOL:
             case AUDIO_MODE_RESPONSE:
                 return normalized;
@@ -504,12 +506,24 @@ final class AssistantVoiceConfig {
         return !AUDIO_MODE_OFF.equals(audioMode);
     }
 
+    boolean isManualMode() {
+        return AUDIO_MODE_MANUAL.equals(audioMode);
+    }
+
     boolean isToolMode() {
         return AUDIO_MODE_TOOL.equals(audioMode);
     }
 
     boolean isResponseMode() {
         return AUDIO_MODE_RESPONSE.equals(audioMode);
+    }
+
+    boolean allowsNotificationPlay() {
+        return !AUDIO_MODE_OFF.equals(audioMode);
+    }
+
+    boolean allowsNotificationSpeak() {
+        return isToolMode() || isResponseMode();
     }
 
     AssistantVoiceConfig withSelection(String panelId, String sessionId) {

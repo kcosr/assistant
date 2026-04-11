@@ -11,6 +11,8 @@ import {
   type SessionLabelSummary,
 } from '../../../../web-client/src/utils/sessionLabel';
 
+type AudioMode = 'off' | 'manual' | 'tool' | 'response';
+
 interface NotificationRecord {
   id: string;
   kind: 'session_attention' | 'notification';
@@ -63,6 +65,7 @@ interface PanelState {
   density: DensityMode;
   expandedIds: Set<string>;
   menuOpen: boolean;
+  audioMode: AudioMode;
 }
 
 // --- Icons (Lucide-style SVG paths) ---
@@ -219,12 +222,20 @@ function resolveClientSessionLabel(
 
   window.ASSISTANT_PANEL_REGISTRY.registerPanel('notifications', () => ({
     mount(container: HTMLElement, host: PanelHost, _init: PanelInitOptions): PanelHandle {
+      const initialVoiceSettings = host.getContext('voice.settings') as { audioMode?: unknown } | null;
       const state: PanelState = {
         notifications: [],
         filter: 'all',
         density: 'card',
         expandedIds: new Set(),
         menuOpen: false,
+        audioMode:
+          initialVoiceSettings?.audioMode === 'manual' ||
+          initialVoiceSettings?.audioMode === 'tool' ||
+          initialVoiceSettings?.audioMode === 'response' ||
+          initialVoiceSettings?.audioMode === 'off'
+            ? initialVoiceSettings.audioMode
+            : 'off',
       };
 
       // Monotonic revision counter from the server. Used to discard
@@ -488,8 +499,12 @@ function resolveClientSessionLabel(
           n.kind === 'session_attention'
             ? clientSessionLabel || n.sessionTitle?.trim() || n.sessionId?.trim() || n.title
             : n.title;
-        const canSpeak = nativeVoiceAvailable && spokenText.length > 0;
-        const canListen = nativeVoiceAvailable && !!n.sessionId;
+        const canSpeak =
+          nativeVoiceAvailable && state.audioMode !== 'off' && spokenText.length > 0;
+        const canListen =
+          nativeVoiceAvailable &&
+          (state.audioMode === 'tool' || state.audioMode === 'response') &&
+          !!n.sessionId;
         const canExpand = isCompact
           ? n.body.trim().length > 0 || canSpeak || canListen
           : canExpandNotificationBody(n.body);
@@ -935,6 +950,22 @@ function resolveClientSessionLabel(
         console.info('[notifications] agent summaries updated');
         render();
       });
+      const unsubscribeVoiceSettings = host.subscribeContext('voice.settings', (value) => {
+        const typed = value as { audioMode?: unknown } | null;
+        const nextAudioMode: AudioMode =
+          typed?.audioMode === 'manual' ||
+          typed?.audioMode === 'tool' ||
+          typed?.audioMode === 'response' ||
+          typed?.audioMode === 'off'
+            ? typed.audioMode
+            : 'off';
+        if (state.audioMode === nextAudioMode) {
+          return;
+        }
+        console.info(`[notifications] voice settings updated audioMode=${nextAudioMode}`);
+        state.audioMode = nextAudioMode;
+        render();
+      });
 
       // Initial render
       render();
@@ -961,6 +992,7 @@ function resolveClientSessionLabel(
           clearSnapshotRetry();
           unsubscribeSessionSummaries();
           unsubscribeAgentSummaries();
+          unsubscribeVoiceSettings();
           document.removeEventListener('click', closeMenu);
           chromeController.destroy();
           container.innerHTML = '';

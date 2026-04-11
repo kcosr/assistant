@@ -143,8 +143,8 @@ The following patches are applied automatically on `android:sync`:
   - **New Note** - Creates a new note with the shared content
   - **Add to List** - Adds a new item to a selected list
   - **Fetch to List** - (Only shown when shared content contains a URL) Sends the URL to the agent with a prompt to fetch the page content and add it to a selected list
-- On Android, the chat-based share actions (`Chat Input` and `Fetch to List`) prefer the configured
-  native voice session and fall back to the normal session picker when no preferred session is set
+- On Android, the agent-invoking share actions (`Chat Input` and `Fetch to List`) always open the
+  session picker so the target session is chosen explicitly before routing the share
 
 ### Firebase Config (`patch-android-firebase.mjs`)
 
@@ -174,9 +174,9 @@ The following patches are applied automatically on `android:sync`:
   apps for headset button ownership while enabled.
 - The same persistent Android notification also exposes compact icon actions for `Speak` or `Stop`
   depending on runtime state, the Bluetooth/headset media-button capture toggle, and a voice-mode
-  cycle action for `Off`, `Tool`, or `Response`. `Off` leaves the foreground notification alive so
-  the mode can be cycled back on without reopening the web UI, while the direct Speak/Stop action
-  stays hidden when voice mode is disabled.
+  cycle action for `Off`, `Manual`, `Tool`, or `Response`. `Off` leaves the foreground notification
+  alive so the mode can be cycled back on without reopening the web UI, while the direct
+  Speak/Stop action stays hidden when voice mode is disabled.
 - The native voice runtime also keeps a rolling app-private event log at `files/voice-runtime.log`
   so random TTS/STT state issues can be inspected later over `adb`, even after the live logcat
   window has moved on. Retrieve it with:
@@ -209,6 +209,9 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   notification playback prepends the notification title before the configured `ttsText` or body
   content using a spoken `Title: ...` join, which is especially useful for standalone CLI/HTTP/tool
   notifications.
+- In `Manual` mode, enabling `Play standalone notifications aloud` still allows standard durable
+  notifications to autoplay through native playback, but session-attention replies still wait for
+  `Response` mode and mic-driven listen/speak entry points remain disabled.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

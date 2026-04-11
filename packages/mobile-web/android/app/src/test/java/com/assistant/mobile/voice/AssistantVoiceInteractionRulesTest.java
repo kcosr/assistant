@@ -53,6 +53,83 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void manualModeNeverAutoplaysEvents() {
+        AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "call-1",
+            "voice_ask",
+            "Question?"
+        );
+        AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
+            "event-2",
+            "session-1",
+            "",
+            "assistant_response",
+            "Answer"
+        );
+
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            toolPrompt,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            assistantResponse,
+            true
+        ));
+    }
+
+    @Test
+    public void manualModeAutoplaysStandaloneNotificationsButNotSessionAttention() {
+        AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
+            "notif-response",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-1",
+            4
+        );
+        AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "Prompt",
+            "What next?",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-2",
+            5
+        );
+
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            false,
+            toolNotification
+        ));
+    }
+
+    @Test
     public void autoListenControlsRecognitionAfterPlaybackAndManualStop() {
         assertFalse(
             AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback("voice_ask", false)

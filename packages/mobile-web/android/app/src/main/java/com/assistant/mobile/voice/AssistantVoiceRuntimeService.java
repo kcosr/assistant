@@ -412,6 +412,18 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
 
+        boolean switchedToManualMode =
+            updated.isManualMode()
+                && !previous.isManualMode()
+                && (previous.isToolMode() || previous.isResponseMode());
+        if (switchedToManualMode) {
+            if (!activeSttRequestId.isEmpty()) {
+                Log.d(TAG, "applyConfig stopping active listening for manual mode transition");
+                stopCurrentInteraction(false, "manual_mode_enabled");
+            }
+            clearQueuedVoiceItems();
+        }
+
         startInForeground();
         syncMediaSession();
 
@@ -668,7 +680,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         );
 
         boolean showSpeakAction = AssistantVoiceInteractionRules.shouldShowNotificationSpeakAction(
-            config.isEnabled(),
+            config.allowsNotificationSpeak(),
             config.preferredVoiceSessionId,
             isPromptPlaybackActive(),
             !activeSttRequestId.isEmpty(),
@@ -779,6 +791,8 @@ public final class AssistantVoiceRuntimeService extends Service {
                 return R.drawable.ic_notification_mode_response;
             case AssistantVoiceConfig.AUDIO_MODE_OFF:
                 return R.drawable.ic_notification_mode_off;
+            case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
+                return R.drawable.ic_notification_mode_manual;
             case AssistantVoiceConfig.AUDIO_MODE_TOOL:
             default:
                 return R.drawable.ic_notification_mode_tool;
@@ -791,6 +805,8 @@ public final class AssistantVoiceRuntimeService extends Service {
                 return context.getString(R.string.assistant_voice_notification_audio_mode_response);
             case AssistantVoiceConfig.AUDIO_MODE_OFF:
                 return context.getString(R.string.assistant_voice_notification_audio_mode_off);
+            case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
+                return context.getString(R.string.assistant_voice_notification_audio_mode_manual);
             case AssistantVoiceConfig.AUDIO_MODE_TOOL:
             default:
                 return context.getString(R.string.assistant_voice_notification_audio_mode_tool);
@@ -805,13 +821,15 @@ public final class AssistantVoiceRuntimeService extends Service {
 
     static String nextNotificationAudioMode(String audioMode) {
         switch (trim(audioMode)) {
+            case AssistantVoiceConfig.AUDIO_MODE_OFF:
+                return AssistantVoiceConfig.AUDIO_MODE_MANUAL;
+            case AssistantVoiceConfig.AUDIO_MODE_MANUAL:
+                return AssistantVoiceConfig.AUDIO_MODE_TOOL;
             case AssistantVoiceConfig.AUDIO_MODE_TOOL:
                 return AssistantVoiceConfig.AUDIO_MODE_RESPONSE;
             case AssistantVoiceConfig.AUDIO_MODE_RESPONSE:
-                return AssistantVoiceConfig.AUDIO_MODE_OFF;
-            case AssistantVoiceConfig.AUDIO_MODE_OFF:
             default:
-                return AssistantVoiceConfig.AUDIO_MODE_TOOL;
+                return AssistantVoiceConfig.AUDIO_MODE_OFF;
         }
     }
 
@@ -1537,6 +1555,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceQueueItem next = queuedVoiceItems.remove(0);
         Log.d(TAG, "drainVoiceQueueIfPossible starting " + describeQueueItem(next));
         if (next.isListenOnly()) {
+            if (config.isManualMode()) {
+                Log.d(TAG, "drainVoiceQueueIfPossible skipped listen-only item in manual mode");
+                drainVoiceQueueIfPossible();
+                return;
+            }
             activeQueueItem = next;
             startRecognition(next.sessionId, "manual_notification_mic");
             return;
@@ -2233,16 +2256,18 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (targetSessionId.isEmpty()) {
             targetSessionId = config.preferredVoiceSessionId;
         }
-        if (!config.isEnabled() || targetSessionId.isEmpty()) {
+        if (!config.isEnabled() || config.isManualMode() || targetSessionId.isEmpty()) {
             Log.d(
                 TAG,
                 "startManualListen skipped enabled=" + config.isEnabled()
+                    + " manualMode=" + config.isManualMode()
                     + " requestedSessionId=" + safe(requestedSessionId)
                     + " targetSessionId=" + safe(targetSessionId)
             );
             JSONObject details = AssistantVoiceEventLog.details();
             AssistantVoiceEventLog.put(details, "requestedSessionId", safe(requestedSessionId));
             AssistantVoiceEventLog.put(details, "targetSessionId", safe(targetSessionId));
+            AssistantVoiceEventLog.put(details, "manualMode", config.isManualMode());
             recordVoiceEvent("manual_listen_skipped", details);
             return;
         }
@@ -2777,6 +2802,16 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!config.isEnabled()) {
             Log.d(TAG, "handleManualNotificationAction skipped voice mode disabled " + describeNotification(notification));
             emitRuntimeError("Voice mode is off");
+            return;
+        }
+        if (microphoneAction && !config.allowsNotificationSpeak()) {
+            Log.d(TAG, "handleManualNotificationAction skipped speak not allowed in " + config.audioMode + " " + describeNotification(notification));
+            emitRuntimeError("Speak is not available in this audio mode");
+            return;
+        }
+        if (!microphoneAction && !config.allowsNotificationPlay()) {
+            Log.d(TAG, "handleManualNotificationAction skipped play not allowed in " + config.audioMode + " " + describeNotification(notification));
+            emitRuntimeError("Play is not available in this audio mode");
             return;
         }
         Log.d(

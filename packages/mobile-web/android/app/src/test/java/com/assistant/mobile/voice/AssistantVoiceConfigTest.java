@@ -146,6 +146,71 @@ public final class AssistantVoiceConfigTest {
         assertTrue(loaded.mediaButtonsEnabled);
     }
 
+    @Test
+    public void manualModeHelpers() {
+        AssistantVoiceConfig manual = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_MANUAL);
+        assertTrue(manual.isManualMode());
+        assertTrue(manual.isEnabled());
+        assertTrue(manual.allowsNotificationPlay());
+        assertFalse(manual.allowsNotificationSpeak());
+    }
+
+    @Test
+    public void offModeHelpers() {
+        AssistantVoiceConfig off = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_OFF);
+        assertFalse(off.isManualMode());
+        assertFalse(off.isEnabled());
+        assertFalse(off.allowsNotificationPlay());
+        assertFalse(off.allowsNotificationSpeak());
+    }
+
+    @Test
+    public void toolModeHelpers() {
+        AssistantVoiceConfig tool = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_TOOL);
+        assertFalse(tool.isManualMode());
+        assertTrue(tool.isEnabled());
+        assertTrue(tool.allowsNotificationPlay());
+        assertTrue(tool.allowsNotificationSpeak());
+    }
+
+    @Test
+    public void responseModeHelpers() {
+        AssistantVoiceConfig response = createConfigWithAudioMode(AssistantVoiceConfig.AUDIO_MODE_RESPONSE);
+        assertFalse(response.isManualMode());
+        assertTrue(response.isEnabled());
+        assertTrue(response.allowsNotificationPlay());
+        assertTrue(response.allowsNotificationSpeak());
+    }
+
+    private static AssistantVoiceConfig createConfigWithAudioMode(String audioMode) {
+        return new AssistantVoiceConfig(
+            audioMode,
+            true,
+            "",
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_START_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_COMPLETION_TIMEOUT_MS,
+            AssistantVoiceConfig.DEFAULT_RECOGNITION_END_SILENCE_MS,
+            "panel-1",
+            "session-1",
+            "session-1",
+            Collections.emptyMap(),
+            Arrays.asList("session-1"),
+            false,
+            "",
+            AssistantVoiceConfig.DEFAULT_VOICE_ADAPTER_BASE_URL,
+            AssistantVoiceConfig.DEFAULT_ASSISTANT_BASE_URL,
+            1.0f,
+            true,
+            1.0f,
+            AssistantVoiceConfig.DEFAULT_RECOGNIZE_STOP_COMMAND_ENABLED,
+            AssistantVoiceConfig.DEFAULT_STARTUP_PRE_ROLL_MS,
+            false,
+            false,
+            true,
+            false
+        );
+    }
+
     private static AssistantVoiceConfig createConfig(Map<String, String> titles) {
         return createConfig(titles, 1.0f);
     }

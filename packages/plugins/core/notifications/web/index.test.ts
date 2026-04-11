@@ -773,7 +773,10 @@ describe('notifications panel', () => {
     };
 
     const module = panelFactory!();
-    const host = createHost();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'tool' } : null,
+    });
     const container = document.createElement('div');
     const handle = module.mount(container, host, {});
 
@@ -829,7 +832,10 @@ describe('notifications panel', () => {
     };
 
     const module = panelFactory!();
-    const host = createHost();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'tool' } : null,
+    });
     const container = document.createElement('div');
     const handle = module.mount(container, host, {});
 
@@ -862,6 +868,167 @@ describe('notifications panel', () => {
 
     expect(performNotificationSpeaker).toHaveBeenCalledTimes(1);
     expect(performNotificationMic).toHaveBeenCalledTimes(1);
+
+    handle.unmount();
+  });
+
+  it('shows only Play (not Speak) in manual audio mode', async () => {
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker: vi.fn(),
+      performNotificationMic: vi.fn(),
+    };
+    (window as any).Capacitor = { getPlatform: () => 'android' };
+
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'manual' } : null,
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    const actionButtons = container.querySelectorAll('.notif-action-btn');
+    expect(actionButtons).toHaveLength(1);
+    expect(actionButtons[0]?.textContent).toContain('Play');
+
+    handle.unmount();
+  });
+
+  it('hides both Play and Speak in off audio mode', async () => {
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker: vi.fn(),
+      performNotificationMic: vi.fn(),
+    };
+    (window as any).Capacitor = { getPlatform: () => 'android' };
+
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'off' } : null,
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    expect(container.querySelector('.notif-action-btn')).toBeNull();
+
+    handle.unmount();
+  });
+
+  it('shows both Play and Speak in tool audio mode', async () => {
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker: vi.fn(),
+      performNotificationMic: vi.fn(),
+    };
+    (window as any).Capacitor = { getPlatform: () => 'android' };
+
+    const module = panelFactory!();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'tool' } : null,
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    const actionButtons = container.querySelectorAll('.notif-action-btn');
+    expect(actionButtons).toHaveLength(2);
+    expect(actionButtons[0]?.textContent).toContain('Play');
+    expect(actionButtons[1]?.textContent).toContain('Speak');
+
+    handle.unmount();
+  });
+
+  it('updates action visibility when voice settings context changes', async () => {
+    (window as any).AssistantNativeVoice = {
+      performNotificationSpeaker: vi.fn(),
+      performNotificationMic: vi.fn(),
+    };
+    (window as any).Capacitor = { getPlatform: () => 'android' };
+
+    const module = panelFactory!();
+    const contextSubscribers = new Map<string, (value: unknown) => void>();
+    const host = createHost({
+      getContext: (key: string) =>
+        key === 'voice.settings' ? { audioMode: 'tool' } : null,
+      subscribeContext: (key: string, callback: (value: unknown) => void) => {
+        contextSubscribers.set(key, callback);
+        return () => contextSubscribers.delete(key);
+      },
+    });
+    const container = document.createElement('div');
+    const handle = module.mount(container, host, {});
+
+    handle.onEvent!({
+      payload: {
+        type: 'notification_update',
+        event: 'snapshot',
+        notifications: [
+          makeNotification({
+            id: 'n1',
+            sessionId: 'sess-1',
+            tts: true,
+            voiceMode: 'speak_then_listen',
+            ttsText: 'Speak me',
+          }),
+        ],
+      },
+    } as any);
+
+    // Initially both actions should be visible (tool mode)
+    expect(container.querySelectorAll('.notif-action-btn')).toHaveLength(2);
+
+    // Switch to manual mode — only Play should remain
+    const voiceSettingsCallback = contextSubscribers.get('voice.settings');
+    voiceSettingsCallback?.({ audioMode: 'manual' });
+    expect(container.querySelectorAll('.notif-action-btn')).toHaveLength(1);
+    expect(container.querySelector('.notif-action-btn')?.textContent).toContain('Play');
 
     handle.unmount();
   });

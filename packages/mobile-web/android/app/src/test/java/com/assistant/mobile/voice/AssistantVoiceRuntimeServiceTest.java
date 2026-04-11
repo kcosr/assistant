@@ -287,6 +287,12 @@ public final class AssistantVoiceRuntimeServiceTest {
                 AssistantVoiceConfig.AUDIO_MODE_OFF
             )
         );
+        assertEquals(
+            R.drawable.ic_notification_mode_manual,
+            AssistantVoiceRuntimeService.resolveNotificationAudioModeActionIcon(
+                AssistantVoiceConfig.AUDIO_MODE_MANUAL
+            )
+        );
     }
 
     @Test
@@ -658,16 +664,20 @@ public final class AssistantVoiceRuntimeServiceTest {
     @Config(sdk = Build.VERSION_CODES.N)
     public void nextNotificationAudioModeCyclesThroughAllModes() {
         assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_OFF)
+        );
+        assertEquals(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_MANUAL)
+        );
+        assertEquals(
             AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_TOOL)
         );
         assertEquals(
             AssistantVoiceConfig.AUDIO_MODE_OFF,
             AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_RESPONSE)
-        );
-        assertEquals(
-            AssistantVoiceConfig.AUDIO_MODE_TOOL,
-            AssistantVoiceRuntimeService.nextNotificationAudioMode(AssistantVoiceConfig.AUDIO_MODE_OFF)
         );
     }
 

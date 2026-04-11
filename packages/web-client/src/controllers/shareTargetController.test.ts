@@ -74,7 +74,6 @@ describe('shareTargetController', () => {
     initShareTarget({
       getSelectedSessionId: () => null,
       getActiveChatSessionId: () => null,
-      getPreferredShareSessionId: () => 'session-1',
       selectSession: vi.fn(),
       openSessionPicker: vi.fn(),
       getChatInputRuntimeForSession: () => null,
@@ -82,12 +81,12 @@ describe('shareTargetController', () => {
       isEnabled: () => false,
     });
 
-    await handleIncomingSharedContent({ text: 'shared text' }, { preferSessionRouting: true });
+    await handleIncomingSharedContent({ text: 'shared text' }, { requireSessionPicker: true });
 
     expect(isShareModalVisible()).toBe(true);
   });
 
-  it('routes Android chat selection into the preferred session from the share modal', async () => {
+  it('opens the session picker for Android chat selection even when a preferred session exists', async () => {
     setCapacitorPlatform('android');
     const runtime = createInputRuntime();
     const selectSession = vi.fn();
@@ -96,7 +95,6 @@ describe('shareTargetController', () => {
     initShareTarget({
       getSelectedSessionId: () => null,
       getActiveChatSessionId: () => null,
-      getPreferredShareSessionId: () => 'session-1',
       selectSession,
       openSessionPicker,
       getChatInputRuntimeForSession: (sessionId) => (sessionId === 'session-1' ? runtime : null),
@@ -104,25 +102,29 @@ describe('shareTargetController', () => {
       isEnabled: () => false,
     });
 
-    await handleIncomingSharedContent({ text: 'shared text' }, { preferSessionRouting: true });
+    await handleIncomingSharedContent({ text: 'shared text' }, { requireSessionPicker: true });
     clickShareOption('chat');
+
+    expect(selectSession).not.toHaveBeenCalled();
+    expect(openSessionPicker).toHaveBeenCalledTimes(1);
+    const pickerOptions = openSessionPicker.mock.calls[0]?.[0];
+    expect(pickerOptions?.title).toBe('Select share session');
+    pickerOptions?.onSelectSession?.('session-1');
     await Promise.resolve();
 
     expect(selectSession).toHaveBeenCalledWith('session-1');
-    expect(openSessionPicker).not.toHaveBeenCalled();
     expect(runtime.inputEl.value).toBe('shared text');
     expect(runtime.focusInput).toHaveBeenCalled();
     expect(isShareModalVisible()).toBe(false);
   });
 
-  it('opens the session picker from Android chat selection when no preferred session is set', async () => {
+  it('positions the Android share session picker consistently', async () => {
     setCapacitorPlatform('android');
     const openSessionPicker = vi.fn();
 
     initShareTarget({
       getSelectedSessionId: () => null,
       getActiveChatSessionId: () => null,
-      getPreferredShareSessionId: () => null,
       selectSession: vi.fn(),
       openSessionPicker,
       getChatInputRuntimeForSession: () => null,
@@ -130,7 +132,7 @@ describe('shareTargetController', () => {
       isEnabled: () => false,
     });
 
-    await handleIncomingSharedContent({ text: 'shared text' }, { preferSessionRouting: true });
+    await handleIncomingSharedContent({ text: 'shared text' }, { requireSessionPicker: true });
     clickShareOption('chat');
 
     expect(openSessionPicker).toHaveBeenCalledTimes(1);
@@ -142,10 +144,11 @@ describe('shareTargetController', () => {
     expect(isShareModalVisible()).toBe(false);
   });
 
-  it('waits briefly for the preferred session chat input to mount after Android chat selection', async () => {
+  it('waits briefly for the selected share session chat input to mount after Android chat selection', async () => {
     vi.useFakeTimers();
     setCapacitorPlatform('android');
     const runtime = createInputRuntime();
+    const openSessionPicker = vi.fn();
     const getChatInputRuntimeForSession = vi
       .fn<(sessionId: string) => InputRuntime | null>()
       .mockReturnValueOnce(null)
@@ -154,23 +157,24 @@ describe('shareTargetController', () => {
     initShareTarget({
       getSelectedSessionId: () => null,
       getActiveChatSessionId: () => null,
-      getPreferredShareSessionId: () => 'session-2',
       selectSession: vi.fn(),
-      openSessionPicker: vi.fn(),
+      openSessionPicker,
       getChatInputRuntimeForSession,
       openPanel: vi.fn(),
       isEnabled: () => false,
     });
 
-    await handleIncomingSharedContent({ text: 'shared text' }, { preferSessionRouting: true });
+    await handleIncomingSharedContent({ text: 'shared text' }, { requireSessionPicker: true });
     clickShareOption('chat');
+    const pickerOptions = openSessionPicker.mock.calls[0]?.[0];
+    pickerOptions?.onSelectSession?.('session-2');
     await vi.advanceTimersByTimeAsync(60);
 
     expect(getChatInputRuntimeForSession).toHaveBeenCalledWith('session-2');
     expect(runtime.inputEl.value).toBe('shared text');
   });
 
-  it('routes Android fetch-to-list submissions through the preferred session', async () => {
+  it('routes Android fetch-to-list submissions through the session picker', async () => {
     setCapacitorPlatform('android');
     const runtime = createInputRuntime();
     const selectSession = vi.fn();
@@ -179,7 +183,6 @@ describe('shareTargetController', () => {
     initShareTarget({
       getSelectedSessionId: () => null,
       getActiveChatSessionId: () => null,
-      getPreferredShareSessionId: () => 'session-3',
       selectSession,
       openSessionPicker,
       getChatInputRuntimeForSession: (sessionId) => (sessionId === 'session-3' ? runtime : null),
@@ -197,7 +200,7 @@ describe('shareTargetController', () => {
 
     await handleIncomingSharedContent(
       { text: 'https://example.com' },
-      { preferSessionRouting: true },
+      { requireSessionPicker: true },
     );
     clickShareOption('fetch-to-list');
     await waitForCondition(() => {
@@ -210,12 +213,39 @@ describe('shareTargetController', () => {
       throw new Error('Missing fetch confirm button');
     }
     confirmButton.click();
+    const pickerOptions = openSessionPicker.mock.calls[0]?.[0];
+    pickerOptions?.onSelectSession?.('session-3');
     await Promise.resolve();
 
     expect(selectSession).toHaveBeenCalledWith('session-3');
     expect(runtime.textInputController.sendUserText).toHaveBeenCalledWith(
       'Fetch https://example.com and add it to the "Inbox" list with relevant context.',
     );
+    expect(openSessionPicker).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes non-Android share chat selections to the active session without opening the picker', async () => {
+    const runtime = createInputRuntime();
+    const selectSession = vi.fn();
+    const openSessionPicker = vi.fn();
+
+    initShareTarget({
+      getSelectedSessionId: () => 'session-active',
+      getActiveChatSessionId: () => null,
+      selectSession,
+      openSessionPicker,
+      getChatInputRuntimeForSession: (sessionId) =>
+        sessionId === 'session-active' ? runtime : null,
+      openPanel: vi.fn(),
+      isEnabled: () => false,
+    });
+
+    await handleIncomingSharedContent({ text: 'shared text' });
+    clickShareOption('chat');
+    await Promise.resolve();
+
+    expect(selectSession).toHaveBeenCalledWith('session-active');
     expect(openSessionPicker).not.toHaveBeenCalled();
+    expect(runtime.inputEl.value).toBe('shared text');
   });
 });

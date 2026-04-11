@@ -3,9 +3,9 @@
  *
  * Handles receiving shared content from other apps (via Capacitor plugin).
  *
- * Shared content always opens the destination modal. On Android, the chat-based
- * destinations (`Chat Input` and `Fetch to List`) prefer the configured native
- * voice session and fall back to the normal session picker when none is set.
+ * Shared content always opens the destination modal. On Android share intents,
+ * the agent-invoking destinations (`Chat Input` and `Fetch to List`) always
+ * raise the session picker so the target session is explicit.
  *
  * Available destinations:
  * - Chat input
@@ -23,7 +23,6 @@ import type { SessionPickerOpenOptions } from './panelSessionPicker';
 export interface ShareTargetOptions {
   getSelectedSessionId: () => string | null;
   getActiveChatSessionId?: () => string | null;
-  getPreferredShareSessionId?: () => string | null;
   selectSession: (sessionId: string) => void;
   openSessionPicker: (options: SessionPickerOpenOptions) => void;
   getChatInputRuntimeForSession: (sessionId: string) => InputRuntime | null;
@@ -81,7 +80,7 @@ const SHARE_SESSION_PICKER_WIDTH = 320;
 
 let modalElements: ShareModalElements | null = null;
 let pendingContent: SharedContent | null = null;
-let pendingContentUsesPreferredShareSessionRouting = false;
+let pendingContentRequiresSessionPickerRouting = false;
 let controllerOptions: ShareTargetOptions | null = null;
 let isListenerRegistered = false;
 let isSubmitting = false;
@@ -299,7 +298,7 @@ function hideShareModal(): void {
     modalElements.container.classList.remove('visible');
   }
   pendingContent = null;
-  pendingContentUsesPreferredShareSessionRouting = false;
+  pendingContentRequiresSessionPickerRouting = false;
 }
 
 function dismissShareModal(): void {
@@ -374,10 +373,6 @@ function resolveChatSessionId(): string | null {
   return controllerOptions.getActiveChatSessionId?.() ?? null;
 }
 
-function resolvePreferredShareSessionId(): string | null {
-  return normalizeSessionId(controllerOptions?.getPreferredShareSessionId?.() ?? null);
-}
-
 function ensureShareSessionPickerAnchor(): HTMLElement {
   let anchor = document.getElementById(SHARE_SESSION_PICKER_ANCHOR_ID) as HTMLElement | null;
   if (!anchor) {
@@ -424,20 +419,9 @@ function handleShareToChat(anchor: HTMLElement): void {
     return;
   }
 
-  if (pendingContentUsesPreferredShareSessionRouting) {
-    const preferredSessionId = resolvePreferredShareSessionId();
-    if (!preferredSessionId) {
-      openShareSessionPicker(anchor, (selectedSessionId) => {
-        void shareToChatSession(selectedSessionId);
-      });
-      return;
-    }
-    void shareToChatSession(preferredSessionId).then((delivered) => {
-      if (!delivered) {
-        openShareSessionPicker(anchor, (selectedSessionId) => {
-          void shareToChatSession(selectedSessionId);
-        });
-      }
+  if (pendingContentRequiresSessionPickerRouting) {
+    openShareSessionPicker(anchor, (selectedSessionId) => {
+      void shareToChatSession(selectedSessionId);
     });
     return;
   }
@@ -663,20 +647,9 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
 
   const message = `Fetch ${urlMatch[0]} and add it to the "${listName}" list with relevant context.`;
 
-  if (pendingContentUsesPreferredShareSessionRouting) {
-    const preferredSessionId = resolvePreferredShareSessionId();
-    if (!preferredSessionId) {
-      openShareSessionPicker(anchor, (selectedSessionId) => {
-        void shareToChatSessionAndSubmit(selectedSessionId, message);
-      });
-      return;
-    }
-    void shareToChatSessionAndSubmit(preferredSessionId, message).then((delivered) => {
-      if (!delivered) {
-        openShareSessionPicker(anchor, (selectedSessionId) => {
-          void shareToChatSessionAndSubmit(selectedSessionId, message);
-        });
-      }
+  if (pendingContentRequiresSessionPickerRouting) {
+    openShareSessionPicker(anchor, (selectedSessionId) => {
+      void shareToChatSessionAndSubmit(selectedSessionId, message);
     });
     return;
   }
@@ -711,10 +684,10 @@ async function handleShareToList(): Promise<void> {
 
 export async function handleIncomingSharedContent(
   content: SharedContent,
-  options?: { preferSessionRouting?: boolean },
+  options?: { requireSessionPicker?: boolean },
 ): Promise<void> {
   pendingContent = content;
-  pendingContentUsesPreferredShareSessionRouting = options?.preferSessionRouting === true;
+  pendingContentRequiresSessionPickerRouting = options?.requireSessionPicker === true;
   await showShareModal(content);
 }
 
@@ -758,7 +731,7 @@ export function initShareTarget(options: ShareTargetOptions): void {
 
         const content = formatSharedContent(event);
         if (content?.text) {
-          void handleIncomingSharedContent(content, { preferSessionRouting: true });
+          void handleIncomingSharedContent(content, { requireSessionPicker: true });
         }
       });
 

@@ -1381,6 +1381,7 @@ async function main(): Promise<void> {
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
     currentVoiceSettings = settings;
+    panelHostController?.setContext('voice.settings', settings);
     const primary = getPrimaryChatInputRuntime();
     if (primary) {
       primary.setVoiceSettings(settings);
@@ -2330,6 +2331,7 @@ async function main(): Promise<void> {
     updateSessionAttributes,
   });
   panelHostController = panelHostControllerInstance;
+  panelHostControllerInstance.setContext('voice.settings', currentVoiceSettings);
 
   if (globalAqlHeader) {
     globalAqlHeaderController = new GlobalAqlHeaderController({
@@ -5456,10 +5458,6 @@ async function main(): Promise<void> {
       }
       const [onlySession] = activeSessions;
       return onlySession ?? null;
-    },
-    getPreferredShareSessionId: () => {
-      const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
-      return settings.preferredVoiceSessionId || null;
     },
     selectSession,
     openSessionPicker,
