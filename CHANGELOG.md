@@ -29,6 +29,8 @@
 - Changed lists tool rendering in chat to show concise formatted requests and markdown-table results for list and list-item tools, while keeping the raw JSON toggle.
 - Changed the notifications panel bulk read action into a read/unread toggle and made the leading row icon toggle read state for individual notifications.
 - Updated the Pi Agent SDK dependencies and runtime setup to use the newer mutable `agent.state` API.
+- Changed Android share-to-list routing to use a searchable in-app list picker instead of the native select control.
+- Temporarily changed the Android flavor deploy default to install only the default app flavor unless another flavor is requested explicitly.
 
 ### Fixed
 
@@ -42,6 +44,8 @@
 - Fixed standalone Android notifications so sessionless tool/CLI/HTTP notifications can autoplay from their own voice setting and manual `Play` no longer rejects them just because they are not tied to a session.
 - Fixed singleton `session_attention` notifications to persist after user replies instead of auto-clearing immediately.
 - Fixed the floating Android voice FAB so it stays enabled on the sessions panel and continues targeting the selected session even when that session is not currently bound to the active panel.
+- Fixed Android voice FAB microphone targeting so active chat panels use their bound session instead of a stale restored/native-selected session.
+- Fixed the Android share-to-list modal so the searchable list picker replaces the initial destination menu immediately while lists load, sits higher on mobile to avoid the keyboard, uses chat-picker-style square row selection, and fetch-to-list confirmation closes the list picker before opening the chat session picker.
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
 - Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))

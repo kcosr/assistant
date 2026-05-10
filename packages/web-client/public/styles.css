@@ -6892,10 +6892,17 @@ textarea.interaction-input {
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
+  box-sizing: border-box;
+  padding: var(--spacing-lg);
 }
 
 #share-target-modal.visible {
   display: flex;
+}
+
+#share-target-modal.share-list-mode {
+  align-items: flex-start;
+  padding-top: max(16px, env(safe-area-inset-top));
 }
 
 .share-target-dialog {
@@ -6906,6 +6913,9 @@ textarea.interaction-input {
   width: 90%;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
 }
 
 .share-target-dialog .dialog-header {
@@ -6947,6 +6957,7 @@ textarea.interaction-input {
 
 .share-target-dialog .dialog-body {
   padding: var(--spacing-lg);
+  overflow-y: auto;
 }
 
 .share-preview {
@@ -7037,14 +7048,32 @@ textarea.interaction-input {
   color: var(--color-text-secondary);
 }
 
-.share-list-select select {
-  padding: var(--spacing-sm) var(--spacing-md);
+.share-list-search {
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background-color: var(--color-bg-input);
+}
+
+.share-list-picker {
+  min-height: 120px;
+  max-height: min(260px, 42vh);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-surface);
+}
+
+.share-list-picker-item {
+  border: none;
+  background-color: transparent;
   color: var(--color-text-primary);
-  font-size: var(--font-size-md);
-  width: 100%;
+  text-align: left;
+}
+
+.share-list-picker-item.selected {
+  outline: 1px solid var(--color-accent-primary);
+  outline-offset: -1px;
+  border-color: var(--color-accent-primary);
+  border-radius: 0;
 }
 
 .share-list-actions {

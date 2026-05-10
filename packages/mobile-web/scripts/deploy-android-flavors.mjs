@@ -122,7 +122,14 @@ function parseArgs() {
   const flavorNames = args.filter((arg) => arg !== '--skip-web-build');
   return {
     skipWebBuild,
-    flavorNames: flavorNames.length > 0 ? flavorNames : ['default', 'work'],
+    flavorNames:
+      flavorNames.length > 0
+        ? flavorNames
+        : [
+            'default',
+            // Temporarily skip the work flavor by default while wireless Android deploys are flaky.
+            // 'work',
+          ],
   };
 }
 

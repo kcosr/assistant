@@ -296,17 +296,17 @@ ASSISTANT_API_HOST='https://assistant/assistant-work' ASSISTANT_APP_ID='com.assi
 ### One-command deploy to all connected devices
 
 ```bash
-# Build web client once, then build/install both default and work flavors
+# Build web client once, then build/install the default flavor
 npm run android:deploy:flavors
 ```
 
 This command:
 
 - builds `@assistant/web-client`
-- applies each flavor (`default`, `work`)
+- applies the default flavor
 - builds debug APK
 - installs on all connected `adb` devices
-- launches each flavor app after install
+- launches the app after install
 - skips unresponsive devices after an adb probe/install timeout and reports them at the end
 - restores `capacitor.config.json` to its original contents when finished
 
@@ -318,6 +318,9 @@ npm run android:deploy:default
 
 # Deploy the work flavor
 npm run android:deploy:work
+
+# Deploy both default and work flavors
+npm run android:deploy:flavors -- default work
 
 # Skip web rebuild if unchanged
 npm run android:deploy:flavors -- --skip-web-build

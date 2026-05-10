@@ -30,7 +30,10 @@ function normalizeId(value?: string | null): string | null {
 export function resolveNativeVoiceSelectedSession(
   input: NativeVoiceSelectionInput,
 ): NativeVoiceSelectedSession | null {
-  const sessionId = normalizeId(input.inputSessionId) ?? normalizeId(input.fixedSessionId);
+  const sessionId =
+    input.activePanelType === 'chat'
+      ? (normalizeId(input.fixedSessionId) ?? normalizeId(input.inputSessionId))
+      : (normalizeId(input.inputSessionId) ?? normalizeId(input.fixedSessionId));
   if (!sessionId) {
     return null;
   }

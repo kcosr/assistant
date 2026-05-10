@@ -7,7 +7,7 @@ import {
 } from './nativeVoiceSelection';
 
 describe('resolveNativeVoiceSelectedSession', () => {
-  it('prefers the selected input session over the active chat binding when both are present', () => {
+  it('prefers the active chat binding over stale selected input when both are present', () => {
     expect(
       resolveNativeVoiceSelectedSession({
         activePanelId: 'panel-1',
@@ -17,7 +17,7 @@ describe('resolveNativeVoiceSelectedSession', () => {
       }),
     ).toEqual({
       panelId: 'panel-1',
-      sessionId: 'session-input',
+      sessionId: 'session-fixed',
     });
   });
 

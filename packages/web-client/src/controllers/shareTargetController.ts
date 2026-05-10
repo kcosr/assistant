@@ -68,7 +68,8 @@ type ShareModalElements = {
   previewText: HTMLElement;
   optionsView: HTMLElement;
   listSelectView: HTMLElement;
-  listDropdown: HTMLSelectElement;
+  listSearchInput: HTMLInputElement;
+  listPicker: HTMLElement;
   listConfirmButton: HTMLButtonElement;
 };
 
@@ -85,6 +86,8 @@ let controllerOptions: ShareTargetOptions | null = null;
 let isListenerRegistered = false;
 let isSubmitting = false;
 let listSelectMode: 'add' | 'fetch' = 'add';
+let availableShareLists: ListSummary[] = [];
+let selectedShareList: ListSummary | null = null;
 
 function reportError(message: string, error?: unknown): void {
   if (error) {
@@ -178,8 +181,15 @@ function ensureModal(): ShareModalElements {
           </button>
         </div>
         <div class="share-list-select hidden">
-          <label for="share-list-dropdown">Select list:</label>
-          <select id="share-list-dropdown"></select>
+          <label for="share-list-search">Select list:</label>
+          <input
+            id="share-list-search"
+            class="session-picker-search share-list-search"
+            type="text"
+            placeholder="Search lists..."
+            autocomplete="off"
+          />
+          <div class="session-picker-list share-list-picker" role="listbox"></div>
           <div class="share-list-actions">
             <button type="button" class="share-list-back">Back</button>
             <button type="button" class="share-list-confirm">Add Item</button>
@@ -235,18 +245,24 @@ function ensureModal(): ShareModalElements {
   const previewText = container.querySelector<HTMLElement>('.share-preview-text');
   const optionsView = container.querySelector<HTMLElement>('.share-options');
   const listSelectView = container.querySelector<HTMLElement>('.share-list-select');
-  const listDropdown = container.querySelector<HTMLSelectElement>('#share-list-dropdown');
+  const listSearchInput = container.querySelector<HTMLInputElement>('#share-list-search');
+  const listPicker = container.querySelector<HTMLElement>('.share-list-picker');
 
   if (
     !previewTitle ||
     !previewText ||
     !optionsView ||
     !listSelectView ||
-    !listDropdown ||
+    !listSearchInput ||
+    !listPicker ||
     !listConfirm
   ) {
     throw new Error('Share target modal elements missing');
   }
+
+  listSearchInput.addEventListener('input', () => {
+    renderShareListPicker(listSearchInput.value);
+  });
 
   modalElements = {
     container,
@@ -254,7 +270,8 @@ function ensureModal(): ShareModalElements {
     previewText,
     optionsView,
     listSelectView,
-    listDropdown,
+    listSearchInput,
+    listPicker,
     listConfirmButton: listConfirm,
   };
   return modalElements;
@@ -290,6 +307,7 @@ async function showShareModal(content: SharedContent): Promise<void> {
 
   modal.optionsView.classList.remove('hidden');
   modal.listSelectView.classList.add('hidden');
+  modal.container.classList.remove('share-list-mode');
   modal.container.classList.add('visible');
 }
 
@@ -491,6 +509,85 @@ function parseListSummaries(value: unknown): ListSummary[] {
   return result;
 }
 
+function setSelectedShareList(list: ListSummary | null): void {
+  selectedShareList = list;
+  if (modalElements) {
+    modalElements.listConfirmButton.disabled = selectedShareList === null;
+  }
+}
+
+function renderShareListPicker(query: string = ''): void {
+  if (!modalElements) {
+    return;
+  }
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchingLists = availableShareLists.filter((list) =>
+    `${list.name} ${list.id}`.toLowerCase().includes(normalizedQuery),
+  );
+
+  modalElements.listPicker.innerHTML = '';
+
+  if (availableShareLists.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'session-picker-empty';
+    empty.textContent = 'No lists available';
+    modalElements.listPicker.appendChild(empty);
+    setSelectedShareList(null);
+    return;
+  }
+
+  if (matchingLists.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'session-picker-empty';
+    empty.textContent = 'No matching lists';
+    modalElements.listPicker.appendChild(empty);
+    setSelectedShareList(null);
+    return;
+  }
+
+  if (selectedShareList && !matchingLists.some((list) => list.id === selectedShareList?.id)) {
+    setSelectedShareList(null);
+  }
+
+  for (const list of matchingLists) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'session-picker-item share-list-picker-item';
+    item.dataset['listId'] = list.id;
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', selectedShareList?.id === list.id ? 'true' : 'false');
+    if (selectedShareList?.id === list.id) {
+      item.classList.add('selected');
+    }
+
+    const normalState = document.createElement('span');
+    normalState.className = 'session-picker-item-normal';
+    const label = document.createElement('span');
+    label.className = 'session-picker-item-label';
+    label.textContent = list.name;
+    normalState.appendChild(label);
+    item.appendChild(normalState);
+
+    item.addEventListener('click', () => {
+      setSelectedShareList(list);
+      renderShareListPicker(modalElements?.listSearchInput.value ?? '');
+    });
+
+    modalElements.listPicker.appendChild(item);
+  }
+}
+
+function renderShareListStatus(message: string): void {
+  if (!modalElements) {
+    return;
+  }
+  modalElements.listPicker.innerHTML = '';
+  const status = document.createElement('div');
+  status.className = 'session-picker-empty';
+  status.textContent = message;
+  modalElements.listPicker.appendChild(status);
+}
+
 async function handleShareToNote(): Promise<void> {
   if (!pendingContent || isSubmitting) {
     return;
@@ -524,37 +621,26 @@ async function showListSelectView(mode: 'add' | 'fetch'): Promise<void> {
   }
 
   listSelectMode = mode;
+  availableShareLists = [];
+  setSelectedShareList(null);
+  modal.listSearchInput.value = '';
+  modal.listConfirmButton.textContent = mode === 'fetch' ? 'Fetch & Add' : 'Add Item';
+  renderShareListStatus('Loading lists...');
+  modal.container.classList.add('share-list-mode');
+  modal.optionsView.classList.add('hidden');
+  modal.listSelectView.classList.remove('hidden');
+  modal.listSearchInput.focus();
 
   try {
     const rawLists = await callOperation<unknown>('/api/plugins/lists/operations/list', {});
     const lists = parseListSummaries(rawLists);
 
-    modal.listDropdown.innerHTML = '';
-    if (lists.length === 0) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'No lists available';
-      option.disabled = true;
-      modal.listDropdown.appendChild(option);
-      modal.listDropdown.disabled = true;
-      modal.listConfirmButton.disabled = true;
-    } else {
-      for (const list of lists) {
-        const option = document.createElement('option');
-        option.value = list.id;
-        option.textContent = list.name;
-        modal.listDropdown.appendChild(option);
-      }
-      modal.listDropdown.disabled = false;
-      modal.listConfirmButton.disabled = false;
-    }
-
-    // Update confirm button text based on mode
-    modal.listConfirmButton.textContent = mode === 'fetch' ? 'Fetch & Add' : 'Add Item';
-
-    modal.optionsView.classList.add('hidden');
-    modal.listSelectView.classList.remove('hidden');
+    availableShareLists = lists;
+    setSelectedShareList(lists[0] ?? null);
+    renderShareListPicker();
   } catch (error) {
+    setSelectedShareList(null);
+    renderShareListStatus('Failed to load lists');
     reportError('Failed to load lists.', error);
   }
 }
@@ -571,6 +657,7 @@ function handleListBack(): void {
   if (!modalElements) {
     return;
   }
+  modalElements.container.classList.remove('share-list-mode');
   modalElements.listSelectView.classList.add('hidden');
   modalElements.optionsView.classList.remove('hidden');
 }
@@ -580,8 +667,8 @@ async function handleAddToListSubmit(): Promise<void> {
     return;
   }
 
-  const listId = modalElements.listDropdown.value;
-  if (!listId) {
+  const list = selectedShareList;
+  if (!list) {
     return;
   }
 
@@ -593,7 +680,7 @@ async function handleAddToListSubmit(): Promise<void> {
   isSubmitting = true;
   try {
     await callOperation('/api/plugins/lists/operations/item-add', {
-      listId,
+      listId: list.id,
       title,
       ...(url ? { url } : {}),
       ...(notes ? { notes } : {}),
@@ -634,8 +721,8 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
     return;
   }
 
-  const listName = modalElements.listDropdown.selectedOptions[0]?.textContent;
-  if (!listName) {
+  const list = selectedShareList;
+  if (!list) {
     return;
   }
 
@@ -645,7 +732,7 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
     return;
   }
 
-  const message = `Fetch ${urlMatch[0]} and add it to the "${listName}" list with relevant context.`;
+  const message = `Fetch ${urlMatch[0]} and add it to the "${list.name}" list with relevant context.`;
 
   if (pendingContentRequiresSessionPickerRouting) {
     openShareSessionPicker(anchor, (selectedSessionId) => {
@@ -656,6 +743,7 @@ function handleFetchToListSubmit(anchor: HTMLElement): void {
 
   const sessionId = resolveChatSessionId();
   if (!sessionId) {
+    dismissShareModal();
     controllerOptions.openSessionPicker({
       anchor,
       title: 'Select chat session',

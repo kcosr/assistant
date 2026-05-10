@@ -35,7 +35,7 @@ function createInputRuntime(): InputRuntime {
   } as unknown as InputRuntime;
 }
 
-function clickShareOption(target: 'chat' | 'fetch-to-list'): void {
+function clickShareOption(target: 'chat' | 'list' | 'fetch-to-list'): void {
   const button = document.querySelector<HTMLButtonElement>(`[data-target="${target}"]`);
   if (!button) {
     throw new Error(`Missing share option: ${target}`);
@@ -174,7 +174,7 @@ describe('shareTargetController', () => {
     expect(runtime.inputEl.value).toBe('shared text');
   });
 
-  it('routes Android fetch-to-list submissions through the session picker', async () => {
+  it('routes Android fetch-to-list confirmation through the session picker', async () => {
     setCapacitorPlatform('android');
     const runtime = createInputRuntime();
     const selectSession = vi.fn();
@@ -204,15 +204,30 @@ describe('shareTargetController', () => {
     );
     clickShareOption('fetch-to-list');
     await waitForCondition(() => {
-      const dropdown = document.querySelector<HTMLSelectElement>('#share-list-dropdown');
-      return Boolean(dropdown && dropdown.options.length > 0);
+      const listItem = document.querySelector<HTMLButtonElement>(
+        '.share-list-picker-item[data-list-id="list-1"]',
+      );
+      return Boolean(listItem);
     });
+
+    const listItem = document.querySelector<HTMLButtonElement>(
+      '.share-list-picker-item[data-list-id="list-1"]',
+    );
+    if (!listItem) {
+      throw new Error('Missing list item');
+    }
+    listItem.click();
+
+    expect(openSessionPicker).not.toHaveBeenCalled();
+    expect(isShareModalVisible()).toBe(true);
 
     const confirmButton = document.querySelector<HTMLButtonElement>('.share-list-confirm');
     if (!confirmButton) {
       throw new Error('Missing fetch confirm button');
     }
     confirmButton.click();
+
+    expect(isShareModalVisible()).toBe(false);
     const pickerOptions = openSessionPicker.mock.calls[0]?.[0];
     pickerOptions?.onSelectSession?.('session-3');
     await Promise.resolve();
@@ -222,6 +237,111 @@ describe('shareTargetController', () => {
       'Fetch https://example.com and add it to the "Inbox" list with relevant context.',
     );
     expect(openSessionPicker).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a searchable list picker for add-to-list shares', async () => {
+    const openPanel = vi.fn();
+
+    initShareTarget({
+      getSelectedSessionId: () => null,
+      getActiveChatSessionId: () => null,
+      selectSession: vi.fn(),
+      openSessionPicker: vi.fn(),
+      getChatInputRuntimeForSession: () => null,
+      openPanel,
+      isEnabled: () => false,
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: [
+            { id: 'list-1', name: 'Inbox' },
+            { id: 'list-2', name: 'Reading Queue' },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, result: { id: 'item-1' } }),
+      }) as unknown as typeof fetch;
+
+    await handleIncomingSharedContent({ title: 'Article', text: 'https://example.com/a' });
+    clickShareOption('list');
+    await waitForCondition(() => {
+      const listItem = document.querySelector<HTMLButtonElement>(
+        '.share-list-picker-item[data-list-id="list-2"]',
+      );
+      return Boolean(listItem);
+    });
+
+    expect(document.querySelector('#share-list-dropdown')).toBeNull();
+    const searchInput = document.querySelector<HTMLInputElement>('#share-list-search');
+    if (!searchInput) {
+      throw new Error('Missing list search input');
+    }
+    searchInput.value = 'reading';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(
+      document.querySelector<HTMLElement>('.share-list-picker-item[data-list-id="list-1"]'),
+    ).toBeNull();
+    const readingItem = document.querySelector<HTMLButtonElement>(
+      '.share-list-picker-item[data-list-id="list-2"]',
+    );
+    readingItem?.click();
+
+    const confirmButton = document.querySelector<HTMLButtonElement>('.share-list-confirm');
+    confirmButton?.click();
+    await waitForCondition(() => openPanel.mock.calls.length > 0);
+
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      '/api/plugins/lists/operations/item-add',
+      expect.objectContaining({
+        body: JSON.stringify({
+          listId: 'list-2',
+          title: 'Article',
+          url: 'https://example.com/a',
+        }),
+      }),
+    );
+    expect(openPanel).toHaveBeenCalledWith('lists');
+  });
+
+  it('replaces the share destination options immediately when choosing a list destination', async () => {
+    initShareTarget({
+      getSelectedSessionId: () => null,
+      getActiveChatSessionId: () => null,
+      selectSession: vi.fn(),
+      openSessionPicker: vi.fn(),
+      getChatInputRuntimeForSession: () => null,
+      openPanel: vi.fn(),
+      isEnabled: () => false,
+    });
+
+    global.fetch = vi.fn(
+      () =>
+        new Promise(() => {
+          // Keep the list request pending so the test can assert the intermediate view state.
+        }),
+    ) as unknown as typeof fetch;
+
+    await handleIncomingSharedContent({ title: 'Article', text: 'https://example.com/a' });
+    clickShareOption('list');
+
+    expect(document.querySelector('#share-target-modal')?.classList.contains('share-list-mode')).toBe(
+      true,
+    );
+    expect(document.querySelector('.share-options')?.classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('.share-list-select')?.classList.contains('hidden')).toBe(
+      false,
+    );
+    expect(document.querySelector('.share-list-picker')?.textContent).toContain(
+      'Loading lists...',
+    );
   });
 
   it('routes non-Android share chat selections to the active session without opening the picker', async () => {

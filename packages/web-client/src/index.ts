@@ -1176,7 +1176,14 @@ async function main(): Promise<void> {
     if (active?.panelType !== 'chat') {
       return null;
     }
-    return normalizeSessionId(inputSessionId);
+    const panelId = typeof active.panelId === 'string' ? active.panelId.trim() : '';
+    if (!panelId) {
+      return normalizeSessionId(inputSessionId);
+    }
+    const binding = panelHostController?.getPanelBinding(panelId);
+    const boundSessionId =
+      binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
+    return boundSessionId ?? normalizeSessionId(inputSessionId);
   }
 
   function getVoiceFabSpeechController() {
