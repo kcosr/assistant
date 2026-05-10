@@ -1442,24 +1442,17 @@ export async function runChatCompletionCore(
           return undefined;
         }
       : undefined;
-    piAgentRuntime.agent.setModel(agentModel);
-    piAgentRuntime.agent.setSystemPrompt(
-      buildPiAgentContext({
-        messages: piReplayMessages,
-        text,
-        model: agentModel,
-      }).systemPrompt,
-    );
-    piAgentRuntime.agent.setThinkingLevel((reasoning ?? 'off') as PiAgentThinkingLevel);
-    piAgentRuntime.agent.setTools(agentTools as never);
+    piAgentRuntime.agent.state.model = agentModel;
+    piAgentRuntime.agent.state.thinkingLevel = (reasoning ?? 'off') as PiAgentThinkingLevel;
+    piAgentRuntime.agent.state.tools = agentTools as never;
 
     const { contextMessages, promptMessage, systemPrompt } = buildPiAgentContext({
       messages: piReplayMessages,
       text,
       model: agentModel,
     });
-    piAgentRuntime.agent.setSystemPrompt(systemPrompt);
-    piAgentRuntime.agent.replaceMessages(contextMessages);
+    piAgentRuntime.agent.state.systemPrompt = systemPrompt;
+    piAgentRuntime.agent.state.messages = contextMessages;
 
     const toolInputOffsets = new Map<string, number>();
     const toolOutputOffsets = new Map<string, number>();

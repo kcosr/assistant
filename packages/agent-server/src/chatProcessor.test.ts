@@ -26,20 +26,37 @@ vi.mock('@mariozechner/pi-agent-core', async () => {
     '@mariozechner/pi-agent-core',
   );
   class MockAgent {
-    model = { id: 'mock-model', provider: 'openai', api: 'openai-responses' };
-    tools: unknown[] = [];
-    messages: unknown[] = [];
+    state = {
+      model: { id: 'mock-model', provider: 'openai', api: 'openai-responses' },
+      systemPrompt: '',
+      thinkingLevel: 'off',
+      tools: [] as unknown[],
+      messages: [] as unknown[],
+    };
     listener: MockAgentListener = undefined;
-    setModel(model: { id: string; provider: string; api: string }) {
-      this.model = model;
+    get model() {
+      return this.state.model;
     }
-    setSystemPrompt(_value: string) {}
-    setThinkingLevel(_value: unknown) {}
+    get tools() {
+      return this.state.tools;
+    }
+    get messages() {
+      return this.state.messages;
+    }
+    setModel(model: { id: string; provider: string; api: string }) {
+      this.state.model = model;
+    }
+    setSystemPrompt(value: string) {
+      this.state.systemPrompt = value;
+    }
+    setThinkingLevel(value: unknown) {
+      this.state.thinkingLevel = String(value);
+    }
     setTools(tools: unknown[]) {
-      this.tools = tools;
+      this.state.tools = tools;
     }
     replaceMessages(messages: unknown[]) {
-      this.messages = [...messages];
+      this.state.messages = [...messages];
     }
     subscribe(fn: (event: unknown) => Promise<void> | void) {
       this.listener = fn;

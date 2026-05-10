@@ -28,6 +28,7 @@
 - Changed chat-panel session pickers so sessions already open in another chat panel remain selectable and switch focus to the existing panel instead of being blocked.
 - Changed lists tool rendering in chat to show concise formatted requests and markdown-table results for list and list-item tools, while keeping the raw JSON toggle.
 - Changed the notifications panel bulk read action into a read/unread toggle and made the leading row icon toggle read state for individual notifications.
+- Updated the Pi Agent SDK dependencies and runtime setup to use the newer mutable `agent.state` API.
 
 ### Fixed
 
