@@ -63,6 +63,8 @@ Native should only auto-admit a notification-backed voice item when all of the f
 - the notification kind matches the active audio mode:
   - `session_attention` for `Response`
   - append-only session-linked notifications for `Tool`
+  - non-`session_attention` standalone notifications for `Manual` when standalone notification
+    playback is enabled
 - the runtime is already alive and connected
 
 If native is already speaking or listening:
@@ -93,6 +95,8 @@ Queue rules:
 - one item may execute at a time
 - automatic items queue behind current local work when the runtime is already alive
 - manual `Speaker` and `Mic` actions jump ahead and may interrupt current speech
+- `Manual` mode permits explicit mic starts and manual notification `Mic` actions, but automatic
+  notification playback does not transition into recognition afterward
 - interrupted automatic audio work is discarded rather than requeued
 - `Stop` cancels the current item and flushes the local backlog
 - same-session `session_attention` items coalesce before execution

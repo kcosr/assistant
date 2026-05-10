@@ -170,6 +170,22 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void manualModeSuppressesAutomaticNotificationListenRearm() {
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            false
+        ));
+    }
+
+    @Test
     public void autoplaysOnlyUnreadNotificationsThatMatchTheCurrentAudioMode() {
         AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
             "notif-response",

@@ -1414,42 +1414,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
     expect(controller.hasSpeechInput).toBe(false);
   });
 
-  it('disables the mic button in manual audio mode with playback-only label', () => {
-    const micButton = document.createElement('button');
-    micButton.innerHTML =
-      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
-
-    const controller = new SpeechAudioController({
-      speechFeaturesEnabled: true,
-      speechInputController: null,
-      micButtonEl: micButton,
-      ...createVoiceSettingsInputs(),
-      inputEl: document.createElement('input'),
-      getPendingAssistantBubble: () => null,
-      setPendingAssistantBubble: () => {},
-      getSocket: () => null,
-      getSessionId: () => null,
-      setStatus: vi.fn(),
-      setTtsStatus: vi.fn(),
-      sendUserText: vi.fn(),
-      updateClearInputButtonVisibility: vi.fn(),
-      sendModesUpdate: vi.fn(),
-      supportsAudioOutput: () => true,
-      isOutputActive: () => false,
-      updateScrollButtonVisibility: vi.fn(),
-      voiceSettingsStorageKey: 'test-voice-settings',
-      continuousListeningLongPressMs: 250,
-      initialVoiceSettings: createInitialVoiceSettings(),
-    });
-
-    controller.setAudioMode('manual');
-    controller.syncMicButtonState();
-
-    expect(micButton.disabled).toBe(true);
-    expect(micButton.getAttribute('aria-label')).toBe('Notification playback only');
-  });
-
-  it('re-enables the mic button after leaving manual audio mode', () => {
+  it('keeps the mic button enabled in manual audio mode for explicit input', () => {
     const micButton = document.createElement('button');
     micButton.innerHTML =
       '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
@@ -1484,7 +1449,47 @@ describe('SpeechAudioController.startPushToTalk', () => {
 
     controller.setAudioMode('manual');
     controller.syncMicButtonState();
-    expect(micButton.disabled).toBe(true);
+
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+  });
+
+  it('keeps the mic button enabled after leaving manual audio mode', () => {
+    const micButton = document.createElement('button');
+    micButton.innerHTML =
+      '<svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"></svg>';
+    const speechInputController = {
+      isActive: false,
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+
+    const controller = new SpeechAudioController({
+      speechFeaturesEnabled: true,
+      speechInputController: speechInputController as any,
+      micButtonEl: micButton,
+      ...createVoiceSettingsInputs(),
+      inputEl: document.createElement('input'),
+      getPendingAssistantBubble: () => null,
+      setPendingAssistantBubble: () => {},
+      getSocket: () => null,
+      getSessionId: () => null,
+      setStatus: vi.fn(),
+      setTtsStatus: vi.fn(),
+      sendUserText: vi.fn(),
+      updateClearInputButtonVisibility: vi.fn(),
+      sendModesUpdate: vi.fn(),
+      supportsAudioOutput: () => true,
+      isOutputActive: () => false,
+      updateScrollButtonVisibility: vi.fn(),
+      voiceSettingsStorageKey: 'test-voice-settings',
+      continuousListeningLongPressMs: 250,
+      initialVoiceSettings: createInitialVoiceSettings(),
+    });
+
+    controller.setAudioMode('manual');
+    controller.syncMicButtonState();
+    expect(micButton.disabled).toBe(false);
 
     controller.setAudioMode('tool');
     controller.syncMicButtonState();
@@ -1531,7 +1536,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
     });
 
     controller.syncMicButtonState();
-    expect(micButton.disabled).toBe(true);
+    expect(micButton.disabled).toBe(false);
 
     isOutputActive = true;
     controller.setNativeRuntimeState('speaking');
@@ -1611,10 +1616,11 @@ describe('SpeechAudioController.startPushToTalk', () => {
     expect(handler).toHaveBeenCalledWith(expect.objectContaining({ audioMode: 'manual' }));
   });
 
-  it('does not use native voice runtime in manual mode', () => {
+  it('uses native voice runtime for explicit mic input in manual mode', async () => {
+    const startManualListen = vi.fn();
     const bridge = new AssistantNativeVoiceBridge(() => ({
       AssistantNativeVoice: {
-        startManualListen: vi.fn(),
+        startManualListen,
         stopCurrentInteraction: vi.fn(),
       },
     }));
@@ -1628,7 +1634,7 @@ describe('SpeechAudioController.startPushToTalk', () => {
       getPendingAssistantBubble: () => null,
       setPendingAssistantBubble: () => {},
       getSocket: () => null,
-      getSessionId: () => null,
+      getSessionId: () => 'session-manual',
       setStatus: vi.fn(),
       setTtsStatus: vi.fn(),
       sendUserText: vi.fn(),
@@ -1644,12 +1650,13 @@ describe('SpeechAudioController.startPushToTalk', () => {
       initialVoiceSettings: createInitialVoiceSettings({ audioMode: 'manual' }),
     });
 
-    // isUsingNativeVoiceRuntime should return false for manual mode
-    // shouldAutoListenAfterPlayback should return false for manual mode
-    // These are tested indirectly through the mic button state
     controller.syncMicButtonState();
     const micButton = (controller as any).options.micButtonEl as HTMLButtonElement;
-    expect(micButton.disabled).toBe(true);
-    expect(micButton.getAttribute('aria-label')).toBe('Notification playback only');
+    expect(micButton.disabled).toBe(false);
+    expect(micButton.getAttribute('aria-label')).toBe('Voice input');
+
+    await controller.startPushToTalk();
+
+    expect(startManualListen).toHaveBeenCalledWith({ sessionId: 'session-manual' });
   });
 });

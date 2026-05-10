@@ -31,6 +31,7 @@
 - Updated the Pi Agent SDK dependencies and runtime setup to use the newer mutable `agent.state` API.
 - Changed Android share-to-list routing to use a searchable in-app list picker instead of the native select control.
 - Temporarily changed the Android flavor deploy default to install only the default app flavor unless another flavor is requested explicitly.
+- Changed Android `Manual` voice mode to allow explicit mic starts while still suppressing automatic response/tool playback and notification auto-listen re-arming.
 
 ### Fixed
 

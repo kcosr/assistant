@@ -195,12 +195,6 @@ public final class AssistantVoicePlugin extends Plugin {
         JSONObject details = AssistantVoiceEventLog.details();
         AssistantVoiceEventLog.put(details, "sessionId", safe(sessionId));
         AssistantVoiceEventLog.record(getContext(), "plugin_start_manual_listen", details);
-        AssistantVoiceConfig current = AssistantVoiceConfig.load(getContext());
-        if (current.isManualMode()) {
-            Log.d(TAG, "startManualListen rejected: manual mode does not allow listen");
-            call.reject("Listen is not available in manual audio mode");
-            return;
-        }
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
             pendingPermissionAction = PENDING_ACTION_START_LISTEN;
             saveCall(call);

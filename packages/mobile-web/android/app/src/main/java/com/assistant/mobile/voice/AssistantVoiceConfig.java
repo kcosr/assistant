@@ -523,7 +523,7 @@ final class AssistantVoiceConfig {
     }
 
     boolean allowsNotificationSpeak() {
-        return isToolMode() || isResponseMode();
+        return isEnabled();
     }
 
     AssistantVoiceConfig withSelection(String panelId, String sessionId) {

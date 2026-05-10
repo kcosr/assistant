@@ -1475,7 +1475,10 @@ public final class AssistantVoiceRuntimeService extends Service {
             return;
         }
         AssistantVoiceQueueItem item = notification.toAutomaticQueueItem(
-            config.autoListenEnabled,
+            AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+                config.audioMode,
+                config.autoListenEnabled
+            ),
             config.notificationTitlePlaybackEnabled,
             resolveNotificationSpokenTitle(notification)
         );
@@ -1555,11 +1558,6 @@ public final class AssistantVoiceRuntimeService extends Service {
         AssistantVoiceQueueItem next = queuedVoiceItems.remove(0);
         Log.d(TAG, "drainVoiceQueueIfPossible starting " + describeQueueItem(next));
         if (next.isListenOnly()) {
-            if (config.isManualMode()) {
-                Log.d(TAG, "drainVoiceQueueIfPossible skipped listen-only item in manual mode");
-                drainVoiceQueueIfPossible();
-                return;
-            }
             activeQueueItem = next;
             startRecognition(next.sessionId, "manual_notification_mic");
             return;
@@ -2256,7 +2254,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (targetSessionId.isEmpty()) {
             targetSessionId = config.preferredVoiceSessionId;
         }
-        if (!config.isEnabled() || config.isManualMode() || targetSessionId.isEmpty()) {
+        if (!config.isEnabled() || targetSessionId.isEmpty()) {
             Log.d(
                 TAG,
                 "startManualListen skipped enabled=" + config.isEnabled()

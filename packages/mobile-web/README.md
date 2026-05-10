@@ -209,9 +209,10 @@ adb -s <device> exec-out run-as com.assistant.work cat files/voice-runtime.log
   notification playback prepends the notification title before the configured `ttsText` or body
   content using a spoken `Title: ...` join, which is especially useful for standalone CLI/HTTP/tool
   notifications.
-- In `Manual` mode, enabling `Play standalone notifications aloud` still allows standard durable
-  notifications to autoplay through native playback, but session-attention replies still wait for
-  `Response` mode and mic-driven listen/speak entry points remain disabled.
+- In `Manual` mode, the microphone can still be started explicitly from the app or notification
+  actions, and enabling `Play standalone notifications aloud` still allows standard durable
+  notifications to autoplay through native playback. Session-attention replies still wait for
+  `Response` mode, and automatic notification playback does not re-arm the microphone afterward.
 - Durable session-linked notifications expose `Play` and `Speak` actions both from the Android
   system notification shade and from the in-app Notifications panel cards. Manual actions
   reconstruct fresh local queue items from the stored notification, jump ahead of automatic work,

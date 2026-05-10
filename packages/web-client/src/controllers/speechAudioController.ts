@@ -1096,10 +1096,6 @@ export class SpeechAudioController {
       socketState: this.options.getSocket()?.readyState,
     });
     this.logState('start-request');
-    if (this.currentAudioMode === 'manual') {
-      this.logState('start-abort', { reason: 'manual-mode' });
-      return;
-    }
     if (this.isUsingNativeVoiceRuntime()) {
       this.logState('start-native-listen');
       const started =
@@ -1507,7 +1503,6 @@ export class SpeechAudioController {
     micButton.setAttribute('aria-hidden', 'false');
     const isNativeSpeaking = this.isNativeSpeaking();
     const isNativeListening = this.isNativeListening();
-    const manualNotificationPlaybackOnly = this.currentAudioMode === 'manual';
     const shouldShowStop =
       isNativeListening ||
       (!this.isUsingNativeVoiceRuntime() &&
@@ -1525,18 +1520,6 @@ export class SpeechAudioController {
           : 'microphone',
     );
 
-    if (manualNotificationPlaybackOnly && !shouldShowStop && !isNativeSpeaking) {
-      micButton.disabled = true;
-      if (this.hasSpeechInput) {
-        micButton.dataset['manualPlaybackOnly'] = 'true';
-      } else {
-        delete micButton.dataset['manualPlaybackOnly'];
-      }
-      micButton.setAttribute('aria-label', 'Notification playback only');
-      micButton.setAttribute('title', 'Notification playback only');
-      return;
-    }
-
     if (
       micButton.disabled &&
       (isNativeSpeaking ||
@@ -1546,10 +1529,6 @@ export class SpeechAudioController {
         this.options.isOutputActive() ||
         (!this.speechInputDisabledReason && (this.hasSpeechInput || this.isNativeRuntimeAvailable())))
     ) {
-      micButton.disabled = false;
-    }
-    if (micButton.dataset['manualPlaybackOnly'] === 'true') {
-      delete micButton.dataset['manualPlaybackOnly'];
       micButton.disabled = false;
     }
     if (micButton.disabled) {
@@ -1633,7 +1612,7 @@ export class SpeechAudioController {
   }
 
   private isUsingNativeVoiceRuntime(): boolean {
-    return this.isNativeRuntimeAvailable() && this.currentAudioMode !== 'manual';
+    return this.isNativeRuntimeAvailable();
   }
 
   private shouldAutoListenAfterPlayback(): boolean {

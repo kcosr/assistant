@@ -152,7 +152,7 @@ public final class AssistantVoiceConfigTest {
         assertTrue(manual.isManualMode());
         assertTrue(manual.isEnabled());
         assertTrue(manual.allowsNotificationPlay());
-        assertFalse(manual.allowsNotificationSpeak());
+        assertTrue(manual.allowsNotificationSpeak());
     }
 
     @Test

@@ -43,6 +43,13 @@ final class AssistantVoiceInteractionRules {
         return "voice_ask".equals(toolName) || "assistant_response".equals(toolName);
     }
 
+    static boolean shouldAutoListenAfterAutomaticNotification(
+        String audioMode,
+        boolean autoListenEnabled
+    ) {
+        return autoListenEnabled && !AssistantVoiceConfig.AUDIO_MODE_MANUAL.equals(audioMode);
+    }
+
     static boolean shouldAutoplayNotification(
         String audioMode,
         boolean standaloneNotificationPlaybackEnabled,

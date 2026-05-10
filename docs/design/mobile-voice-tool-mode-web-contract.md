@@ -119,6 +119,7 @@ Current fields:
 Supported values:
 
 - `Off`
+- `Manual`
 - `Tool`
 - `Response`
 
@@ -134,11 +135,12 @@ into recognition.
 
 Rules:
 
-- applies only when `Audio Mode` is not `Off`
+- applies only when `Audio Mode` is `Tool` or `Response`
 - when disabled, `voice_ask` and `Response` playback stop after speaking instead of auto-starting
   STT
 - when enabled, `voice_ask` and `Response` playback may transition directly into STT
-- manual long-press listen remains available regardless of this setting
+- explicit mic starts remain available in `Manual`, `Tool`, and `Response`; `Manual` mode never
+  auto-rearms recognition after notification playback
 
 ### Adapter URL
 
