@@ -84,7 +84,7 @@ If the runtime is not alive when a notification arrives:
 
 - the durable notification remains available
 - automatic playback is not replayed later by default
-- the user may recover manually from the notification's `Speaker` or `Mic` action
+- the user may recover manually from the notification's `Play` or `Speak` action
 
 ## Notification-backed Queue
 
@@ -94,8 +94,8 @@ Queue rules:
 
 - one item may execute at a time
 - automatic items queue behind current local work when the runtime is already alive
-- manual `Speaker` and `Mic` actions jump ahead and may interrupt current speech
-- `Manual` mode permits explicit mic starts and manual notification `Mic` actions, but automatic
+- manual `Play` and `Speak` actions jump ahead and may interrupt current speech
+- `Manual` mode permits explicit mic starts and manual notification `Speak` actions, but automatic
   notification playback does not transition into recognition afterward
 - interrupted automatic audio work is discarded rather than requeued
 - `Stop` cancels the current item and flushes the local backlog
@@ -106,7 +106,7 @@ For any item that could transition into recognition:
 
 - automatic `speak_then_listen` items must validate against server-generated session activity
   ordering before mic start
-- manual `Mic` recovery is intentionally looser and may proceed without that validation when needed
+- manual `Speak` recovery is intentionally looser and may proceed without that validation when needed
 
 ## Tool Runtime Mapping
 
@@ -210,7 +210,7 @@ v1 requirements:
   settings are sticky after first creation
 - lock-screen visibility is the required success condition; starting microphone capture directly from
   `Speak` while the device remains fully locked may still vary by Android version and OEM policy
-- durable session-linked notifications may expose `Speaker` and `Mic` actions that reconstruct a
+- durable session-linked notifications may expose `Play` and `Speak` actions that reconstruct a
   fresh local queue item from the stored notification context
 
 ## Bridge Contract

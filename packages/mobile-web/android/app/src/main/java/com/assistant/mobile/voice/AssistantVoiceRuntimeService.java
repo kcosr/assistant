@@ -105,6 +105,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private static final long RECOGNITION_SUBMIT_TIMEOUT_MS = 15000L;
     private static final long PLAYBACK_DRAIN_TIMEOUT_MS = 2500L;
     private static final long PLAYBACK_DRAIN_TIMEOUT_MARGIN_MS = 1200L;
+    private static final long MANUAL_PREEMPT_STOP_TIMEOUT_MS = 5000L;
     private static final int MAX_PENDING_QUEUE_ITEMS = 25;
     private static final int DURABLE_NOTIFICATION_ID_OFFSET = 24000;
     private static final long MEDIA_SESSION_PLAYBACK_ACTIONS =
@@ -152,6 +153,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private final List<AssistantVoiceQueueItem> queuedVoiceItems = new ArrayList<>();
     private final Map<String, AssistantVoiceNotificationRecord> durableNotifications =
         new LinkedHashMap<>();
+    private int durableNotificationMutationVersion = 0;
     private String activeTtsRequestId = "";
     private String pendingPlaybackDrainRequestId = "";
     private boolean pendingPlaybackDrainStartsListening = false;
@@ -162,6 +164,15 @@ public final class AssistantVoiceRuntimeService extends Service {
     private int activeTtsSampleRate = 0;
     private String pendingManualPreemptStopRequestId = "";
     private AssistantVoiceQueueItem pendingManualPreemptQueueItem = null;
+    private final Runnable manualPreemptStopTimeoutRunnable = () -> {
+        if (pendingManualPreemptStopRequestId.isEmpty()) {
+            return;
+        }
+        String requestId = pendingManualPreemptStopRequestId;
+        Log.w(TAG, "manual notification preempt timeout requestId=" + safe(requestId));
+        pendingManualPreemptStopRequestId = "";
+        enqueuePendingManualPreemptQueueItem("manual_preempt_timeout:" + safe(requestId));
+    };
     private String activeSttRequestId = "";
     private String pendingRecognitionArmingCueRequestId = "";
     private String adapterStoppedSttRequestId = "";
@@ -298,6 +309,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         String action = intent.getAction();
         if (ACTION_STOP_SERVICE.equals(action)) {
             updateState(STATE_DISABLED, null);
+            cancelAllDurableNotifications();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -365,6 +377,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         disconnectAdapterSocket();
         disconnectAssistantSocket();
         releaseMediaSession();
+        cancelAllDurableNotifications();
         player.release();
         if (micStreamer != null) {
             micStreamer.release();
@@ -1193,10 +1206,20 @@ public final class AssistantVoiceRuntimeService extends Service {
         }
         final List<AssistantVoiceNotificationRecord> fallbackNotifications =
             new ArrayList<>(durableNotifications.values());
+        final int baselineMutationVersion = durableNotificationMutationVersion;
         networkExecutor.execute(() -> {
             List<AssistantVoiceNotificationRecord> notifications =
                 fetchDurableNotifications(fallbackNotifications);
-            mainHandler.post(() -> applyDurableNotificationSnapshot(notifications));
+            mainHandler.post(() -> {
+                if (destroyed) {
+                    return;
+                }
+                if (durableNotificationMutationVersion != baselineMutationVersion) {
+                    Log.d(TAG, "skipping stale durable notification snapshot after live updates");
+                    return;
+                }
+                applyDurableNotificationSnapshot(notifications);
+            });
         });
     }
 
@@ -1232,6 +1255,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     return;
                 }
                 durableNotifications.put(update.notification.id, update.notification);
+                durableNotificationMutationVersion += 1;
                 showDurableNotification(update.notification);
                 enqueueAutomaticNotification(update.notification);
                 return;
@@ -1240,6 +1264,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     return;
                 }
                 durableNotifications.put(update.notification.id, update.notification);
+                durableNotificationMutationVersion += 1;
                 if (shouldDisplayDurableNotification(update.notification)) {
                     showDurableNotification(update.notification);
                 } else {
@@ -1251,6 +1276,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                     return;
                 }
                 durableNotifications.remove(update.id);
+                durableNotificationMutationVersion += 1;
                 cancelDurableNotification(update.id);
                 removeQueuedItemsForNotification(update.id);
                 return;
@@ -1310,6 +1336,7 @@ public final class AssistantVoiceRuntimeService extends Service {
     private void applyDurableNotificationSnapshot(List<AssistantVoiceNotificationRecord> notifications) {
         Set<String> previousIds = new LinkedHashSet<>(durableNotifications.keySet());
         durableNotifications.clear();
+        durableNotificationMutationVersion += 1;
         if (notifications != null) {
             for (AssistantVoiceNotificationRecord notification : notifications) {
                 if (notification != null) {
@@ -1860,6 +1887,7 @@ public final class AssistantVoiceRuntimeService extends Service {
         recordVoiceEvent("tts_end", details);
         if (matchesManualPreemptStop && !matchesActiveRequest) {
             pendingManualPreemptStopRequestId = "";
+            mainHandler.removeCallbacks(manualPreemptStopTimeoutRunnable);
             enqueuePendingManualPreemptQueueItem("media_tts_end:" + safe(status));
             return;
         }
@@ -2201,6 +2229,11 @@ public final class AssistantVoiceRuntimeService extends Service {
         if (!ttsRequestId.isEmpty()) {
             if ("manual_notification_preempt".equals(reason)) {
                 pendingManualPreemptStopRequestId = ttsRequestId;
+                mainHandler.removeCallbacks(manualPreemptStopTimeoutRunnable);
+                mainHandler.postDelayed(
+                    manualPreemptStopTimeoutRunnable,
+                    MANUAL_PREEMPT_STOP_TIMEOUT_MS
+                );
             } else {
                 clearPendingManualPreemptState("stop_current_interaction:" + reason);
             }
@@ -2458,6 +2491,18 @@ public final class AssistantVoiceRuntimeService extends Service {
             "handleAdapterTtsStopAcknowledged requestId=" + requestId
                 + " waitingForMediaTtsEnd=true"
         );
+    }
+
+    private void cancelAllDurableNotifications() {
+        if (durableNotifications.isEmpty()) {
+            return;
+        }
+        List<String> notificationIds = new ArrayList<>(durableNotifications.keySet());
+        for (String notificationId : notificationIds) {
+            cancelDurableNotification(notificationId);
+        }
+        durableNotifications.clear();
+        durableNotificationMutationVersion += 1;
     }
 
     static JSONObject buildAdapterTtsRequestBody(
@@ -3502,6 +3547,7 @@ public final class AssistantVoiceRuntimeService extends Service {
                 + " requestId=" + safe(pendingManualPreemptStopRequestId)
                 + " item=" + describeQueueItem(pendingManualPreemptQueueItem)
         );
+        mainHandler.removeCallbacks(manualPreemptStopTimeoutRunnable);
         pendingManualPreemptStopRequestId = "";
         pendingManualPreemptQueueItem = null;
     }

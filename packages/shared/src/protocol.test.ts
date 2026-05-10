@@ -335,6 +335,32 @@ describe('server message validation', () => {
     expect(validateServerMessage(message)).toEqual(message);
   });
 
+  it('accepts current notification event records', () => {
+    const message: ServerMessage = {
+      type: 'notification_event',
+      event: 'upserted',
+      revision: 5,
+      notification: {
+        id: 'notification-1',
+        kind: 'session_attention',
+        title: 'Latest assistant reply',
+        body: 'Answer',
+        createdAt: '2026-05-10T12:00:00.000Z',
+        readAt: null,
+        source: 'system',
+        sessionId: 'session-1',
+        sessionTitle: 'Session 1',
+        tts: true,
+        voiceMode: 'speak_then_listen',
+        ttsText: 'Answer',
+        sourceEventId: 'response-1',
+        sessionActivitySeq: 12,
+      },
+    };
+
+    expect(validateServerMessage(message)).toEqual(message);
+  });
+
   it('accepts a subscribed acknowledgement with an echoed mask', () => {
     const message: ServerMessage = {
       type: 'subscribed',

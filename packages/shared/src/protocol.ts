@@ -837,11 +837,18 @@ export const ServerSessionHistoryChangedMessageSchema = z.object({
   revision: z.number().int().nonnegative().optional(),
 });
 
-export const NotificationSourceSchema = z.enum(['tool', 'http', 'cli']);
+export const NotificationKindSchema = z.enum(['session_attention', 'notification']);
+export type NotificationKind = z.infer<typeof NotificationKindSchema>;
+
+export const NotificationSourceSchema = z.enum(['tool', 'http', 'cli', 'system']);
 export type NotificationSource = z.infer<typeof NotificationSourceSchema>;
+
+export const NotificationVoiceModeSchema = z.enum(['none', 'speak', 'speak_then_listen']);
+export type NotificationVoiceMode = z.infer<typeof NotificationVoiceModeSchema>;
 
 export const NotificationRecordSchema = z.object({
   id: z.string(),
+  kind: NotificationKindSchema,
   title: z.string(),
   body: z.string(),
   createdAt: z.string(),
@@ -850,12 +857,16 @@ export const NotificationRecordSchema = z.object({
   sessionId: z.string().nullable(),
   sessionTitle: z.string().nullable(),
   tts: z.boolean(),
+  voiceMode: NotificationVoiceModeSchema,
+  ttsText: z.string().nullable(),
+  sourceEventId: z.string().nullable(),
+  sessionActivitySeq: z.number().int().nonnegative().nullable(),
 });
 export type NotificationRecord = z.infer<typeof NotificationRecordSchema>;
 
 export const ServerNotificationEventMessageSchema = z.object({
   type: z.literal('notification_event'),
-  event: z.enum(['created', 'updated', 'removed', 'snapshot']),
+  event: z.enum(['created', 'upserted', 'updated', 'removed', 'snapshot']),
   revision: z.number().int().nonnegative(),
   notification: NotificationRecordSchema.optional(),
   id: z.string().optional(),

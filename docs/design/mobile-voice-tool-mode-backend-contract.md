@@ -35,8 +35,8 @@ Producer mapping:
 - final assistant response:
   - emits or updates one `session_attention` notification per session
   - uses `voiceMode = speak_then_listen`
-  - clears when the server accepts a user reply in that session or when the notification is
-    explicitly dismissed
+  - remains active across user replies so the latest response can still be replayed
+  - is replaced by the next assistant response for that session or explicitly dismissed by the user
 - `voice_speak`:
   - emits an append-only session-linked notification
   - uses `voiceMode = speak`
