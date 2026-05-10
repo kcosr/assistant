@@ -100,6 +100,111 @@ interface ToolOutputBlockState {
 
 const toolOutputBlockStates = new WeakMap<HTMLDivElement, ToolOutputBlockState>();
 
+function writeToolOutputSnapshotDataset(block: HTMLDivElement, state: ToolOutputBlockState): void {
+  block.dataset['snapshotToolName'] = state.toolName;
+  block.dataset['snapshotInputKind'] = state.input.kind;
+  switch (state.input.kind) {
+    case 'formatted':
+      block.dataset['snapshotArgsJson'] = state.input.argsJson;
+      delete block.dataset['snapshotInputText'];
+      delete block.dataset['snapshotInputLabel'];
+      break;
+    case 'streaming':
+    case 'custom':
+      block.dataset['snapshotInputText'] = state.input.text;
+      block.dataset['snapshotInputLabel'] = state.input.label;
+      delete block.dataset['snapshotArgsJson'];
+      break;
+    case 'none':
+    default:
+      delete block.dataset['snapshotArgsJson'];
+      delete block.dataset['snapshotInputText'];
+      delete block.dataset['snapshotInputLabel'];
+      break;
+  }
+
+  block.dataset['snapshotOutputText'] = state.outputText;
+  if (state.outputStatus) {
+    try {
+      block.dataset['snapshotOutputStatus'] = JSON.stringify(state.outputStatus);
+    } catch {
+      delete block.dataset['snapshotOutputStatus'];
+    }
+  } else {
+    delete block.dataset['snapshotOutputStatus'];
+  }
+}
+
+function readToolOutputSnapshotStatus(block: HTMLDivElement): ToolOutputStatus | undefined {
+  const raw = block.dataset['snapshotOutputStatus'];
+  if (!raw) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw) as ToolOutputStatus;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildToolOutputSnapshotStateFromDataset(
+  source: HTMLDivElement,
+  clone: HTMLDivElement,
+): ToolOutputBlockState | null {
+  const headerButton = clone.querySelector<HTMLButtonElement>('.tool-output-header');
+  const toggleIcon = clone.querySelector<HTMLSpanElement>('.tool-output-toggle');
+  const content = clone.querySelector<HTMLDivElement>('.tool-output-content');
+  const inputSection = clone.querySelector<HTMLDivElement>('.tool-output-input');
+  const outputSection = clone.querySelector<HTMLDivElement>('.tool-output-result');
+  if (!headerButton || !toggleIcon || !content || !inputSection || !outputSection) {
+    return null;
+  }
+
+  const inputKind = source.dataset['snapshotInputKind'] ?? (source.dataset['argsJson'] ? 'formatted' : 'none');
+  let input: ToolOutputInputState;
+  switch (inputKind) {
+    case 'formatted':
+      input = {
+        kind: 'formatted',
+        argsJson: source.dataset['snapshotArgsJson'] ?? source.dataset['argsJson'] ?? '',
+      };
+      break;
+    case 'streaming':
+      input = {
+        kind: 'streaming',
+        text: source.dataset['snapshotInputText'] ?? '',
+        label: source.dataset['snapshotInputLabel'] ?? 'Input',
+      };
+      break;
+    case 'custom':
+      input = {
+        kind: 'custom',
+        text: source.dataset['snapshotInputText'] ?? '',
+        label: source.dataset['snapshotInputLabel'] ?? 'Input',
+      };
+      break;
+    case 'none':
+    default:
+      input = { kind: 'none' };
+      break;
+  }
+
+  const outputStatus = readToolOutputSnapshotStatus(source);
+  return {
+    headerButton,
+    toggleIcon,
+    content,
+    inputSection,
+    outputSection,
+    toolName: source.dataset['snapshotToolName'] ?? source.dataset['toolName'] ?? 'tool',
+    input,
+    outputText: source.dataset['snapshotOutputText'] ?? '',
+    ...(outputStatus ? { outputStatus } : {}),
+    nearViewport: true,
+    staticContent: false,
+  };
+}
+
 export function getToolOutputToggleSymbol(expanded: boolean): string {
   return expanded ? '▼' : '▶';
 }
@@ -216,6 +321,345 @@ function tryParseJsonRecord(rawJson: string | undefined): Record<string, unknown
   }
 }
 
+function tryParseJsonValue(rawJson: string | undefined): unknown {
+  if (!rawJson || rawJson.trim().length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(rawJson) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+const LIST_ITEM_QUERY_TOOL_NAMES = new Set([
+  'lists_items_list',
+  'lists_items_search',
+  'lists_items_aql',
+]);
+const LIST_ITEM_MUTATION_TOOL_NAMES = new Set(['lists_item_add', 'lists_item_update']);
+const LIST_DEFINITION_TOOL_NAMES = new Set([
+  'lists_list',
+  'lists_get',
+  'lists_create',
+  'lists_update',
+]);
+
+type ListsToolInputPreview = Pick<ToolInputPreview, 'headerLabel' | 'label' | 'formattedText' | 'renderMode'>;
+
+function isListItemLike(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value['title'] === 'string' &&
+    (typeof value['position'] === 'number' || typeof value['listId'] === 'string')
+  );
+}
+
+function isListDefinitionLike(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    typeof value['id'] === 'string' &&
+    typeof value['name'] === 'string'
+  );
+}
+
+function normalizeListsTableText(value: string, maxLength = 120): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function formatListsTableValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return normalizeListsTableText(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => formatListsTableValue(entry))
+      .filter((entry) => entry.length > 0)
+      .join(', ');
+  }
+  if (isRecord(value)) {
+    return normalizeListsTableText(JSON.stringify(value));
+  }
+  return normalizeListsTableText(String(value));
+}
+
+function escapeMarkdownTableCell(value: string): string {
+  if (!value) {
+    return '';
+  }
+  return value.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, '<br>');
+}
+
+function buildMarkdownTable(headers: string[], rows: string[][]): string {
+  const headerRow = `| ${headers.map(escapeMarkdownTableCell).join(' | ')} |`;
+  const separatorRow = `| ${headers.map(() => '---').join(' | ')} |`;
+  const bodyRows = rows.map(
+    (row) => `| ${row.map((value) => escapeMarkdownTableCell(value)).join(' | ')} |`,
+  );
+  return [headerRow, separatorRow, ...bodyRows].join('\n');
+}
+
+function formatTags(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+  return value
+    .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+    .filter((tag) => tag.length > 0)
+    .join(', ');
+}
+
+function getListsToolInputPreview(
+  toolName: string,
+  args: Record<string, unknown>,
+): ListsToolInputPreview | null {
+  if (
+    !LIST_ITEM_QUERY_TOOL_NAMES.has(toolName) &&
+    !LIST_ITEM_MUTATION_TOOL_NAMES.has(toolName) &&
+    !LIST_DEFINITION_TOOL_NAMES.has(toolName)
+  ) {
+    return null;
+  }
+
+  const rows: string[][] = [];
+  const listId = typeof args['listId'] === 'string' ? args['listId'].trim() : '';
+  const id = typeof args['id'] === 'string' ? args['id'].trim() : '';
+  const name = typeof args['name'] === 'string' ? args['name'].trim() : '';
+  const title = typeof args['title'] === 'string' ? args['title'].trim() : '';
+  const lookupTitle = typeof args['lookupTitle'] === 'string' ? args['lookupTitle'].trim() : '';
+  const query = typeof args['query'] === 'string' ? args['query'].trim() : '';
+  const tags = formatTags(args['tags']);
+  const url = typeof args['url'] === 'string' ? args['url'].trim() : '';
+  const notes = typeof args['notes'] === 'string' ? args['notes'].trim() : '';
+  const position = typeof args['position'] === 'number' ? String(args['position']) : '';
+
+  if (listId) {
+    rows.push(['List', `\`${listId}\``]);
+  } else if (id && (toolName === 'lists_get' || toolName === 'lists_update')) {
+    rows.push(['List', `\`${id}\``]);
+  }
+  if (name && (toolName === 'lists_create' || toolName === 'lists_update')) {
+    rows.push(['Name', name]);
+  }
+  if (title) {
+    rows.push(['Title', title]);
+  } else if (lookupTitle) {
+    rows.push(['Item', lookupTitle]);
+  }
+  if (query) {
+    rows.push(['Query', query]);
+  }
+  if (position) {
+    rows.push(['Position', position]);
+  }
+  if (url) {
+    rows.push(['URL', url]);
+  }
+  if (notes) {
+    rows.push(['Notes', normalizeListsTableText(notes)]);
+  }
+  if (tags) {
+    rows.push(['Tags', tags]);
+  }
+
+  const customFields = args['customFields'];
+  if (isRecord(customFields)) {
+    for (const [key, value] of Object.entries(customFields)) {
+      const formattedValue = formatListsTableValue(value);
+      if (!formattedValue) {
+        continue;
+      }
+      rows.push([key, formattedValue]);
+    }
+  }
+
+  const fallbackHeaderLabel = title || name || listId || id || query || lookupTitle;
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return {
+    headerLabel: fallbackHeaderLabel,
+    label: 'Request',
+    formattedText: buildMarkdownTable(['Field', 'Value'], rows),
+    renderMode: 'markdown',
+  };
+}
+
+function formatListsItemRows(items: Record<string, unknown>[]): string {
+  const includeUrl = items.some((item) => typeof item['url'] === 'string' && item['url'].trim().length > 0);
+  const includeNotes = items.some(
+    (item) => typeof item['notes'] === 'string' && item['notes'].trim().length > 0,
+  );
+  const customFieldOrder: string[] = [];
+  const customFieldSeen = new Set<string>();
+  for (const item of items) {
+    const customFields = item['customFields'];
+    if (!isRecord(customFields)) {
+      continue;
+    }
+    for (const [key, value] of Object.entries(customFields)) {
+      if (customFieldSeen.has(key) || formatListsTableValue(value).length === 0) {
+        continue;
+      }
+      customFieldSeen.add(key);
+      customFieldOrder.push(key);
+    }
+  }
+  const includeTags = items.some((item) => formatTags(item['tags']).length > 0);
+
+  const headers = ['Position', 'Title'];
+  if (includeUrl) {
+    headers.push('URL');
+  }
+  if (includeNotes) {
+    headers.push('Notes');
+  }
+  for (const key of customFieldOrder) {
+    headers.push(key);
+  }
+  if (includeTags) {
+    headers.push('Tags');
+  }
+
+  const rows = items.map((item) => {
+    const row = [
+      typeof item['position'] === 'number' ? String(item['position']) : '',
+      typeof item['title'] === 'string' ? item['title'].trim() : '',
+    ];
+    if (includeUrl) {
+      row.push(typeof item['url'] === 'string' ? item['url'].trim() : '');
+    }
+    if (includeNotes) {
+      row.push(typeof item['notes'] === 'string' ? normalizeListsTableText(item['notes']) : '');
+    }
+    const customFields = isRecord(item['customFields']) ? item['customFields'] : null;
+    for (const key of customFieldOrder) {
+      row.push(customFields ? formatListsTableValue(customFields[key]) : '');
+    }
+    if (includeTags) {
+      row.push(formatTags(item['tags']));
+    }
+    return row;
+  });
+
+  return buildMarkdownTable(headers, rows);
+}
+
+function formatListsDefinitionRows(lists: Record<string, unknown>[]): string {
+  const includeDescription = lists.some(
+    (list) => typeof list['description'] === 'string' && list['description'].trim().length > 0,
+  );
+  const includeDefaultTags = lists.some((list) => formatTags(list['defaultTags']).length > 0);
+  const includeTags = lists.some((list) => formatTags(list['tags']).length > 0);
+  const includeFavorite = lists.some((list) => list['favorite'] === true);
+
+  const headers = ['Name', 'ID'];
+  if (includeDescription) {
+    headers.push('Description');
+  }
+  if (includeDefaultTags) {
+    headers.push('Default tags');
+  }
+  if (includeTags) {
+    headers.push('Tags');
+  }
+  if (includeFavorite) {
+    headers.push('Favorite');
+  }
+
+  const rows = lists.map((list) => {
+    const row = [
+      typeof list['name'] === 'string' ? list['name'].trim() : '',
+      typeof list['id'] === 'string' ? list['id'].trim() : '',
+    ];
+    if (includeDescription) {
+      row.push(
+        typeof list['description'] === 'string'
+          ? normalizeListsTableText(list['description'])
+          : '',
+      );
+    }
+    if (includeDefaultTags) {
+      row.push(formatTags(list['defaultTags']));
+    }
+    if (includeTags) {
+      row.push(formatTags(list['tags']));
+    }
+    if (includeFavorite) {
+      row.push(list['favorite'] === true ? 'Yes' : '');
+    }
+    return row;
+  });
+
+  return buildMarkdownTable(headers, rows);
+}
+
+function getListsToolResultPreview(toolName: string, rawValue: unknown): ToolResultPreview | null {
+  if (LIST_ITEM_QUERY_TOOL_NAMES.has(toolName)) {
+    if (!Array.isArray(rawValue)) {
+      return null;
+    }
+    const items = rawValue.filter(isListItemLike);
+    if (items.length === 0) {
+      return null;
+    }
+    return {
+      formattedText: formatListsItemRows(items),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (LIST_ITEM_MUTATION_TOOL_NAMES.has(toolName)) {
+    if (!isListItemLike(rawValue)) {
+      return null;
+    }
+    return {
+      formattedText: formatListsItemRows([rawValue]),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (toolName === 'lists_get' || toolName === 'lists_create' || toolName === 'lists_update') {
+    if (!isListDefinitionLike(rawValue)) {
+      return null;
+    }
+    return {
+      formattedText: formatListsDefinitionRows([rawValue]),
+      renderMode: 'markdown',
+    };
+  }
+
+  if (toolName === 'lists_list') {
+    if (!Array.isArray(rawValue)) {
+      return null;
+    }
+    const lists = rawValue.filter(isListDefinitionLike);
+    if (lists.length === 0) {
+      return null;
+    }
+    return {
+      formattedText: formatListsDefinitionRows(lists),
+      renderMode: 'markdown',
+    };
+  }
+
+  return null;
+}
+
 function getToolInputPreview(toolName: string, argsJson: string): ToolInputPreview {
   const parsed = tryParseToolArgs(argsJson);
   if (!parsed) {
@@ -230,6 +674,15 @@ function getToolInputPreview(toolName: string, argsJson: string): ToolInputPrevi
   const { args, complete } = parsed;
   const rawJson = complete ? JSON.stringify(args) : undefined;
   const prettyJson = complete ? JSON.stringify(args, null, 2) : undefined;
+
+  const listsPreview = getListsToolInputPreview(toolName, args);
+  if (listsPreview) {
+    return {
+      ...listsPreview,
+      ...(prettyJson ? { prettyJson } : {}),
+      ...(rawJson ? { rawJson } : {}),
+    };
+  }
 
   if (toolName === 'agents_message' && typeof args['content'] === 'string') {
     return {
@@ -397,6 +850,14 @@ function getToolResultPreview(options: {
     };
   }
 
+  const listsResultPreview = getListsToolResultPreview(
+    toolName,
+    tryParseJsonValue(outputStatus?.rawJson) ?? tryParseJsonValue(outputText),
+  );
+  if (listsResultPreview) {
+    return listsResultPreview;
+  }
+
   return null;
 }
 
@@ -488,6 +949,10 @@ export function createToolOutputBlock(options: ToolOutputBlockOptions): HTMLDivE
     nearViewport: true,
     staticContent: false,
   });
+  const state = toolOutputBlockStates.get(block);
+  if (state) {
+    writeToolOutputSnapshotDataset(block, state);
+  }
 
   block.appendChild(headerButton);
   block.appendChild(content);
@@ -901,7 +1366,12 @@ function renderToolOutputResult(state: ToolOutputBlockState): void {
         toggleBtn,
         () => {
           outputBody.innerHTML = '';
-          if (isMarkdownResult || agentCallback || isAgentMessage) {
+          if (
+            isMarkdownResult ||
+            agentCallback ||
+            isAgentMessage ||
+            resultPreview?.renderMode === 'markdown'
+          ) {
             outputBody.classList.add('markdown-content');
           }
           applyMarkdownToElement(outputBody, formattedMarkdown);
@@ -1017,6 +1487,54 @@ export function setToolOutputBlockExpanded(block: HTMLDivElement, expanded: bool
   syncToolOutputBlockContent(block);
 }
 
+export function materializeToolOutputBlockForSnapshot(block: HTMLDivElement): void {
+  const state = getToolOutputBlockState(block);
+  if (!state) {
+    return;
+  }
+  renderToolOutputInput(state);
+  renderToolOutputResult(state);
+}
+
+export function cloneToolOutputBlockForSnapshot(source: HTMLDivElement): HTMLDivElement {
+  const clone = source.cloneNode(true) as HTMLDivElement;
+  const state = getToolOutputBlockState(source);
+  const snapshotState = state
+    ? (() => {
+        const headerButton = clone.querySelector<HTMLButtonElement>('.tool-output-header');
+        const toggleIcon = clone.querySelector<HTMLSpanElement>('.tool-output-toggle');
+        const content = clone.querySelector<HTMLDivElement>('.tool-output-content');
+        const inputSection = clone.querySelector<HTMLDivElement>('.tool-output-input');
+        const outputSection = clone.querySelector<HTMLDivElement>('.tool-output-result');
+        if (!headerButton || !toggleIcon || !content || !inputSection || !outputSection) {
+          return null;
+        }
+        return {
+          ...state,
+          headerButton,
+          toggleIcon,
+          content,
+          inputSection,
+          outputSection,
+          nearViewport: true,
+        } satisfies ToolOutputBlockState;
+      })()
+    : buildToolOutputSnapshotStateFromDataset(source, clone);
+
+  if (!snapshotState) {
+    clone.dataset['exportSnapshotState'] = 'incomplete';
+    clone.dataset['exportSnapshotInputLength'] = '0';
+    clone.dataset['exportSnapshotOutputLength'] = '0';
+    return clone;
+  }
+  renderToolOutputInput(snapshotState);
+  renderToolOutputResult(snapshotState);
+  clone.dataset['exportSnapshotState'] = state ? 'present' : 'rehydrated';
+  clone.dataset['exportSnapshotInputLength'] = `${snapshotState.inputSection.textContent?.trim().length ?? 0}`;
+  clone.dataset['exportSnapshotOutputLength'] = `${snapshotState.outputSection.textContent?.trim().length ?? 0}`;
+  return clone;
+}
+
 export function updateToolOutputBlockStreamingInput(
   block: HTMLDivElement,
   text: string,
@@ -1028,6 +1546,7 @@ export function updateToolOutputBlockStreamingInput(
   }
   const preview = getToolInputPreview(state.toolName, text);
   state.input = { kind: 'streaming', text, label: preview.label || label };
+  writeToolOutputSnapshotDataset(block, state);
   syncToolOutputBlockContent(block);
 }
 
@@ -1184,6 +1703,7 @@ export function updateToolOutputBlockContent(
   } else {
     delete state.outputStatus;
   }
+  writeToolOutputSnapshotDataset(block, state);
   if (canUseStreamingPlainTextOutput(status, toolName)) {
     const streamingPre = state.outputSection.querySelector<HTMLPreElement>(
       '.tool-output-streaming-pre',
@@ -1231,6 +1751,7 @@ export function setToolOutputBlockInput(block: HTMLDivElement, argsJson: string)
   block.dataset['argsJson'] = argsJson;
   state.input =
     argsJson.trim().length > 0 ? { kind: 'formatted', argsJson } : { kind: 'none' };
+  writeToolOutputSnapshotDataset(block, state);
   syncToolOutputBlockContent(block);
 }
 
@@ -1273,6 +1794,7 @@ export function setToolOutputBlockPending(
     outputStatus.statusLabel = statusLabel;
   }
   blockState.outputStatus = outputStatus;
+  writeToolOutputSnapshotDataset(block, blockState);
   syncToolOutputBlockContent(block);
 }
 

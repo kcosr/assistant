@@ -26,10 +26,14 @@ export interface AgentSummary {
 export interface SessionPickerOpenOptions {
   anchor: HTMLElement;
   title: string;
+  autoFocusSearch?: boolean;
+  selectedSessionId?: string | null;
   disabledSessionIds?: Set<string>;
+  openSessionIds?: Set<string>;
   allowUnbound?: boolean;
   createSessionOptions?: CreateSessionOptions;
   onSelectSession: (sessionId: string) => void;
+  onSelectOpenSession?: (sessionId: string) => void;
   onSelectUnbound?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onClearSession?: (sessionId: string) => void;
@@ -101,6 +105,7 @@ export class SessionPickerController {
         .filter((entry) => entry[0] && entry[1]),
     );
     const disabled = options.disabledSessionIds ?? new Set<string>();
+    const openSessionIds = options.openSessionIds ?? new Set<string>();
 
     const getAgentLabel = (agentId?: string): string => {
       const trimmed = typeof agentId === 'string' ? agentId.trim() : '';
@@ -166,13 +171,17 @@ export class SessionPickerController {
       const addItem = (
         label: string,
         onSelect: () => void | Promise<void>,
-        itemOptions?: { disabled?: boolean; sessionId?: string },
+        itemOptions?: { disabled?: boolean; sessionId?: string; selected?: boolean },
       ): void => {
         const item = document.createElement('div');
         item.className = 'session-picker-item';
         item.setAttribute('role', 'button');
         if (itemOptions?.sessionId) {
           item.dataset['sessionId'] = itemOptions.sessionId;
+        }
+        if (itemOptions?.selected) {
+          item.classList.add('selected');
+          item.setAttribute('aria-current', 'true');
         }
 
         const normalState = document.createElement('div');
@@ -354,10 +363,15 @@ export class SessionPickerController {
         for (const session of filteredSessions) {
           const label = this.formatSessionLabel(session, agentSummaries);
           const isDisabled = disabled.has(session.sessionId);
+          const isOpen = openSessionIds.has(session.sessionId);
+          const isSelected = session.sessionId === options.selectedSessionId;
           addItem(
-            isDisabled ? `${label} (open)` : label,
-            () => options.onSelectSession(session.sessionId),
-            { disabled: isDisabled, sessionId: session.sessionId },
+            isOpen ? `${label} (open)` : label,
+            () =>
+              isOpen && options.onSelectOpenSession
+                ? options.onSelectOpenSession(session.sessionId)
+                : options.onSelectSession(session.sessionId),
+            { disabled: isDisabled, sessionId: session.sessionId, selected: isSelected },
           );
         }
       }
@@ -394,16 +408,23 @@ export class SessionPickerController {
       }
 
       if (this.items.length > 0) {
-        this.setFocusedIndex(0);
+        const selectedIndex = options.selectedSessionId
+          ? this.items.findIndex(
+              (entry) => entry.element.dataset['sessionId'] === options.selectedSessionId,
+            )
+          : -1;
+        this.setFocusedIndex(selectedIndex >= 0 ? selectedIndex : 0);
       }
     };
 
     renderList();
     this.positionMenu(menu, options.anchor);
 
-    setTimeout(() => {
-      searchInput.focus();
-    }, 0);
+    if (options.autoFocusSearch !== false) {
+      setTimeout(() => {
+        searchInput.focus();
+      }, 0);
+    }
 
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;

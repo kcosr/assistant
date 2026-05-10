@@ -14,14 +14,24 @@
 - Added `sessionConfig` parameter to the `agents_message` tool, allowing callers to specify `model`, `thinking`, `workingDir`, and `skills` when creating new sessions via agent messaging. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added skills root normalization relative to config directory (matching existing context files behavior). ([#93](https://github.com/kcosr/assistant/pull/93))
 - Added "Only play speech from notification session" toggle to voice settings. When enabled, TTS autoplay (both tool-mode and response-mode) is restricted to the configured notification session, preventing unsolicited speech from other sessions. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Added notification-backed Android voice queueing with durable `session_attention` response notifications, append-only `voice_speak` / `voice_ask` notifications, queue-driven `speak` / `speak_then_listen` playback, stale ask validation, Android-local diagnostics, and manual `Play` / `Speak` recovery actions. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Added self-contained HTML export from chat panels, preserving rendered chat formatting, offline tool expand/collapse behavior, and embedded attachment previews/downloads. ([#97](https://github.com/kcosr/assistant/pull/97))
 
 ### Changed
 
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
+- Changed Android native voice controls so the floating mobile FAB owns explicit voice start/stop with a target-session title chip, the chat-row control becomes stop-only, `Manual` mode allows explicit mic starts without automatic response/tool playback, and voice settings include standalone notification playback plus notification-title speech toggles. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Changed chat-panel session pickers so sessions already open in another chat panel remain selectable and switch focus to the existing panel instead of being blocked. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Changed lists tool rendering in chat to show concise formatted requests and markdown-table results for list and list-item tools, while keeping the raw JSON toggle. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Changed the notifications panel bulk read action into a read/unread toggle and made the leading row icon toggle read state for individual notifications. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Updated the Pi Agent SDK dependencies and runtime setup to use the newer mutable `agent.state` API. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Changed Android share-to-list routing to use a searchable in-app list picker instead of the native select control. ([#97](https://github.com/kcosr/assistant/pull/97))
+- Temporarily changed the Android flavor deploy default to install only the default app flavor unless another flavor is requested explicitly. ([#97](https://github.com/kcosr/assistant/pull/97))
 
 ### Fixed
 
+- Fixed note edit compact mode to collapse title/description/tag/pinned/favorite rows and fixed split-pane drag resizing to preserve the visible bottom of chat transcripts while resizing stacked panels. ([#97](https://github.com/kcosr/assistant/pull/97))
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
 - Fixed first streaming `tool_output_chunk` (offset=0) being silently dropped by the renderer's dedup logic, improving incremental output visibility for all tool calls. ([#94](https://github.com/kcosr/assistant/pull/94))

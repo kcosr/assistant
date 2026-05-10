@@ -1190,6 +1190,12 @@ body.preload * {
 }
 
 @media (max-width: 720px) {
+  .global-aql-modal-overlay {
+    align-items: flex-start;
+    padding-top: 25vh;
+    padding-bottom: var(--spacing-lg);
+  }
+
   .toolbar-center {
     display: none;
   }
@@ -2090,6 +2096,64 @@ button.settings-dropdown-item {
 .command-palette-fab .icon-sm {
   width: 18px;
   height: 18px;
+}
+
+.command-palette-fab.voice-fab {
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--color-accent-primary) 88%, white), var(--color-accent-primary));
+  color: var(--color-text-on-accent);
+}
+
+.command-palette-fab.voice-fab.voice-fab-disabled {
+  background: color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-border-default));
+  color: var(--color-text-muted);
+  box-shadow: var(--shadow-sm);
+  opacity: 1;
+}
+
+.command-palette-fab.voice-fab.voice-fab-listening {
+  background: var(--theme-danger);
+  color: var(--color-text-on-accent);
+}
+
+.command-palette-fab.voice-fab.voice-fab-speaking {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 193, 107, 0.95), rgba(255, 152, 0, 0.92) 38%, rgba(255, 85, 85, 0.96) 100%);
+  color: var(--color-text-on-accent);
+  animation: native-voice-button-pulse 1.2s ease-in-out infinite;
+}
+
+.command-palette-fab.voice-fab.voice-fab-speaking .icon-sm {
+  animation: native-voice-pulse 1.2s ease-in-out infinite;
+}
+
+.voice-fab-session-chip {
+  position: fixed;
+  z-index: 201;
+  max-width: min(60vw, 280px);
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.voice-fab-session-chip.is-visible {
+  display: inline-flex;
+  align-items: center;
+}
+
+.voice-fab-session-chip.is-interactive {
+  background: color-mix(in srgb, var(--color-bg-elevated) 94%, var(--color-accent-primary));
+  cursor: pointer;
 }
 
 .command-palette-input {
@@ -3385,6 +3449,19 @@ body.panel-reordering {
 .session-picker-item:hover,
 .session-picker-item.focused {
   background-color: var(--color-bg-hover);
+}
+
+.session-picker-item.selected {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 12%, transparent);
+}
+
+.session-picker-item.selected .session-picker-item-label {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.session-picker-item.selected.focused {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 18%, var(--color-bg-hover));
 }
 
 .session-picker-item.disabled {
@@ -6499,6 +6576,28 @@ textarea.interaction-input {
   }
 }
 
+.input-mic-button.stop-only {
+  background: color-mix(in srgb, var(--color-bg-elevated) 90%, var(--color-border-default));
+  color: var(--color-text-muted);
+  border-color: color-mix(in srgb, var(--color-border-default) 85%, transparent);
+}
+
+.input-mic-button.stop-only.stop-only-active {
+  background: var(--theme-danger);
+  color: var(--color-text-on-accent);
+  border-color: color-mix(in srgb, var(--theme-danger) 70%, transparent);
+}
+
+.input-mic-button.stop-only.stop-only-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.input-mic-button.stop-only:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .mic-icon {
   width: 18px;
   height: 18px;
@@ -6793,10 +6892,17 @@ textarea.interaction-input {
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
+  box-sizing: border-box;
+  padding: var(--spacing-lg);
 }
 
 #share-target-modal.visible {
   display: flex;
+}
+
+#share-target-modal.share-list-mode {
+  align-items: flex-start;
+  padding-top: max(16px, env(safe-area-inset-top));
 }
 
 .share-target-dialog {
@@ -6807,6 +6913,9 @@ textarea.interaction-input {
   width: 90%;
   box-shadow: var(--shadow-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
 }
 
 .share-target-dialog .dialog-header {
@@ -6848,6 +6957,7 @@ textarea.interaction-input {
 
 .share-target-dialog .dialog-body {
   padding: var(--spacing-lg);
+  overflow-y: auto;
 }
 
 .share-preview {
@@ -6938,14 +7048,32 @@ textarea.interaction-input {
   color: var(--color-text-secondary);
 }
 
-.share-list-select select {
-  padding: var(--spacing-sm) var(--spacing-md);
+.share-list-search {
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background-color: var(--color-bg-input);
+}
+
+.share-list-picker {
+  min-height: 120px;
+  max-height: min(260px, 42vh);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-bg-surface);
+}
+
+.share-list-picker-item {
+  border: none;
+  background-color: transparent;
   color: var(--color-text-primary);
-  font-size: var(--font-size-md);
-  width: 100%;
+  text-align: left;
+}
+
+.share-list-picker-item.selected {
+  outline: 1px solid var(--color-accent-primary);
+  outline-offset: -1px;
+  border-color: var(--color-accent-primary);
+  border-radius: 0;
 }
 
 .share-list-actions {

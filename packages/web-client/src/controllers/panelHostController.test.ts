@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PanelEventEnvelope, PanelTypeManifest, SessionContext } from '@assistant/shared';
 
 import { PanelRegistry } from './panelRegistry';
@@ -230,6 +230,43 @@ describe('PanelHostController', () => {
 
     expect(receivedByPanel.get('event-a')).toEqual([event]);
     expect(receivedByPanel.get('event-b')).toEqual([event]);
+  });
+
+  it('uses placeholder-aware close when panels request chrome close', () => {
+    const registry = new PanelRegistry();
+    const manifest: PanelTypeManifest = { type: 'close-panel', title: 'Close Panel' };
+    const closeInvocations: string[] = [];
+
+    registry.register(manifest, () => ({
+      mount(_container, host) {
+        host.closePanel(host.panelId());
+        return { unmount() {} };
+      },
+    }));
+
+    const closePanelToPlaceholder = vi.fn((panelId: string) => {
+      closeInvocations.push(panelId);
+    });
+    const closePanel = vi.fn();
+
+    const hostController = new PanelHostController({ registry });
+    hostController.setPanelWorkspace({
+      openPanel: () => null,
+      closePanel,
+      closePanelToPlaceholder,
+      activatePanel: () => undefined,
+      movePanel: () => undefined,
+    });
+
+    hostController.mountPanel({
+      panelId: 'close-1',
+      panelType: manifest.type,
+      container: document.createElement('div'),
+    });
+
+    expect(closePanelToPlaceholder).toHaveBeenCalledWith('close-1');
+    expect(closeInvocations).toEqual(['close-1']);
+    expect(closePanel).not.toHaveBeenCalled();
   });
 
   it('delivers existing context values to new subscribers', () => {

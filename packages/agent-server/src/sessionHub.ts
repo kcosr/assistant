@@ -35,6 +35,7 @@ import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
 import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
 import { resetLiveTranscriptSessionState } from './events/chatEventUtils';
+import { syncSessionNotificationTitles } from '../../plugins/core/notifications/server/service';
 import {
   CliToolCallRendezvous,
   type CliToolCallMatchOptions,
@@ -415,6 +416,11 @@ export class SessionHub {
     }
 
     this.broadcastSessionUpdated(summary, { includeAttributes: true });
+    void syncSessionNotificationTitles({
+      sessionId,
+      summary,
+      sessionHub: this,
+    });
 
     return summary;
   }

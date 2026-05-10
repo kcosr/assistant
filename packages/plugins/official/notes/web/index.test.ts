@@ -372,6 +372,35 @@ describe('notes panel context', () => {
     const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
     editButton?.click();
 
+    const compactButton = container.querySelector<HTMLButtonElement>(
+      '[data-role="note-editor-compact-toggle"]',
+    );
+    expect(compactButton?.getAttribute('aria-pressed')).toBe('false');
+    compactButton?.click();
+    expect(compactButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(window.localStorage.getItem('aiAssistantNotesEditorCompactMode')).toBe('true');
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-title-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-description-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-tags-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-favorite-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
+    ).toContain('Content');
+    expect(
+      container.querySelector<HTMLElement>('.list-item-form-label:last-of-type')?.textContent,
+    ).not.toContain('Markdown');
+
     const descriptionInput = container.querySelector<HTMLTextAreaElement>(
       '.note-description-textarea',
     );
@@ -388,6 +417,157 @@ describe('notes panel context', () => {
 
     await waitFor(() => writePayload !== null);
     expect(writePayload?.description).toBe('Updated description');
+
+    handle.unmount();
+  });
+
+  it('restores compact mode from local storage when reopening the editor', async () => {
+    window.localStorage.setItem('aiAssistantNotesEditorCompactMode', 'true');
+    vi.resetModules();
+    await import('./index');
+
+    const factory = factories['notes'];
+    expect(factory).toBeDefined();
+
+    const panelModule = factory!();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const context = new Map<string, unknown>();
+    const subscribers = new Map<string, Set<(value: unknown) => void>>();
+    const notify = (key: string, value: unknown) => {
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        handler(value);
+      }
+    };
+
+    const host = {
+      panelId: () => 'notes-compact-restore',
+      getContext: (key: string) => context.get(key) ?? null,
+      subscribeContext: (key: string, handler: (value: unknown) => void) => {
+        const handlers = subscribers.get(key) ?? new Set();
+        handlers.add(handler);
+        subscribers.set(key, handlers);
+        return () => {
+          handlers.delete(handler);
+        };
+      },
+      setContext: (key: string, value: unknown) => {
+        context.set(key, value);
+        notify(key, value);
+      },
+      persistPanelState: () => undefined,
+      loadPanelState: () => ({
+        selectedNoteTitle: 'Dev Note',
+        selectedNoteInstanceId: 'default',
+        mode: 'note',
+        instanceIds: ['default'],
+      }),
+      setPanelMetadata: () => undefined,
+      openPanel: () => null,
+      closePanel: () => undefined,
+      openPanelMenu: () => undefined,
+      startPanelDrag: () => undefined,
+      startPanelReorder: () => undefined,
+    };
+
+    const jsonResponse = (result: unknown) =>
+      new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (!url.includes('/api/plugins/notes/operations/')) {
+          return jsonResponse({});
+        }
+        const operation = url.split('/').pop() ?? '';
+        const body = init?.body ? JSON.parse(init.body as string) : {};
+
+        if (operation === 'instance_list') {
+          return jsonResponse([{ id: 'default', label: 'Default' }]);
+        }
+        if (operation === 'list') {
+          if (body.instance_id === 'default') {
+            return jsonResponse([
+              { title: 'Dev Note', tags: [], created: '2024-01-01', updated: '2024-01-02' },
+            ]);
+          }
+          return jsonResponse([]);
+        }
+        if (operation === 'read') {
+          return jsonResponse({
+            title: 'Dev Note',
+            content: 'Hello',
+            description: 'Short description',
+            tags: ['alpha'],
+            created: '2024-01-01',
+            updated: '2024-01-02',
+          });
+        }
+        return jsonResponse([]);
+      }),
+    );
+
+    const keyboardShortcuts = createShortcutHarness(() => {
+      const active = context.get('panel.active') as
+        | { panelId?: string; panelType?: string }
+        | null;
+      if (!active || typeof active.panelId !== 'string' || typeof active.panelType !== 'string') {
+        return null;
+      }
+      return { panelId: active.panelId, panelType: active.panelType };
+    });
+    host.setContext('core.services', {
+      dialogManager: { hasOpenDialog: false },
+      contextMenuManager: { close: () => undefined, setActiveMenu: () => undefined },
+      listColumnPreferencesClient: {
+        load: () => Promise.resolve(),
+      },
+      keyboardShortcuts,
+      focusInput: () => undefined,
+      setStatus: () => undefined,
+      isMobileViewport: () => false,
+      notifyContextAvailabilityChange: () => undefined,
+    });
+
+    const handle = panelModule.mount(container, host);
+    handle.onVisibilityChange?.(true);
+
+    const waitFor = async (predicate: () => boolean) => {
+      const start = Date.now();
+      while (Date.now() - start < 2000) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('Timed out waiting for restored compact editor');
+    };
+
+    await waitFor(
+      () => container.querySelector<HTMLElement>('.collection-note-description') !== null,
+    );
+
+    const editButton = container.querySelector<HTMLButtonElement>('.collection-note-edit-button');
+    editButton?.click();
+
+    await waitFor(
+      () => container.querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]') !== null,
+    );
+
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-role="note-editor-compact-toggle"]')?.getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-pinned-row"]')?.hidden,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLElement>('[data-role="note-editor-favorite-row"]')?.hidden,
+    ).toBe(true);
 
     handle.unmount();
   });

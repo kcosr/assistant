@@ -3762,6 +3762,17 @@ export class ChatRenderer {
     if (titleEl) {
       titleEl.textContent = attachment.title || attachment.fileName;
     }
+    bubble.dataset['attachmentFileName'] = attachment.fileName;
+    bubble.dataset['attachmentTitle'] = attachment.title ?? '';
+    bubble.dataset['attachmentContentType'] = attachment.contentType;
+    bubble.dataset['attachmentDownloadUrl'] = attachment.downloadUrl;
+    bubble.dataset['attachmentPreviewType'] = attachment.previewType;
+    bubble.dataset['attachmentPreviewTruncated'] = attachment.previewTruncated === true ? 'true' : 'false';
+    if (typeof attachment.previewText === 'string') {
+      bubble.dataset['attachmentPreviewText'] = attachment.previewText;
+    } else {
+      delete bubble.dataset['attachmentPreviewText'];
+    }
 
     const metaEl = bubble.querySelector<HTMLElement>('.attachment-tool-meta');
     if (metaEl) {
@@ -4113,5 +4124,9 @@ export class ChatRenderer {
     }
     const trimmed = responseIdRaw.trim();
     return trimmed || null;
+  }
+
+  getCanonicalToolBlock(callId: string): HTMLDivElement | null {
+    return this.toolCallElements.get(callId) ?? null;
   }
 }

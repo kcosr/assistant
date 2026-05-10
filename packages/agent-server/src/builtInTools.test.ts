@@ -10,6 +10,11 @@ import { MAX_ATTACHMENT_SIZE_BYTES } from './attachments/constants';
 import { BuiltInToolHost } from './tools';
 import type { BuiltInToolDefinition, ToolContext } from './tools';
 import { registerBuiltInSessionTools } from './builtInTools';
+import {
+  getNotificationsStore,
+  initializeNotificationsService,
+  shutdownNotificationsService,
+} from '../../plugins/core/notifications/server/service';
 
 // Agent tool tests moved to packages/plugins/core/agents/server/index.test.ts.
 
@@ -200,6 +205,66 @@ describe('registerBuiltInSessionTools', () => {
     ).resolves.toEqual({
       accepted: true,
     });
+  });
+
+  it('publishes voice tool notifications with the expected fields', async () => {
+    const host = createHost();
+    const notificationsDir = await createTempDir('built-in-tools-notifications');
+    initializeNotificationsService(notificationsDir);
+
+    try {
+      const ctx = createContext({
+        sessionHub: {
+          getSessionState: () => ({
+            summary: { revision: 5 },
+          }),
+        } as never,
+        sessionIndex: {
+          getSession: async () => ({
+            name: 'Voice Session',
+          }),
+        } as never,
+      });
+
+      await expect(host.callTool('voice_speak', '{"text":"Status update"}', ctx)).resolves.toEqual({
+        accepted: true,
+      });
+      await expect(
+        host.callTool('voice_ask', '{"text":"What should I do next?"}', ctx),
+      ).resolves.toEqual({
+        accepted: true,
+      });
+
+      const { notifications } = await getNotificationsStore().list();
+      expect(notifications).toHaveLength(2);
+      expect(notifications[0]).toMatchObject({
+        kind: 'notification',
+        title: 'Spoken prompt',
+        body: 'What should I do next?',
+        source: 'tool',
+        sessionId: 'session-1',
+        sessionTitle: 'Voice Session',
+        voiceMode: 'speak_then_listen',
+        ttsText: 'What should I do next?',
+        sourceEventId: 'tool-call-1',
+        sessionActivitySeq: 5,
+      });
+      expect(notifications[1]).toMatchObject({
+        kind: 'notification',
+        title: 'Spoken update',
+        body: 'Status update',
+        source: 'tool',
+        sessionId: 'session-1',
+        sessionTitle: 'Voice Session',
+        voiceMode: 'speak',
+        ttsText: 'Status update',
+        sourceEventId: 'tool-call-1',
+        sessionActivitySeq: 5,
+      });
+    } finally {
+      shutdownNotificationsService();
+      await fs.rm(notificationsDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects missing or empty voice prompt text', async () => {

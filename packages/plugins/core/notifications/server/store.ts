@@ -5,6 +5,8 @@ import crypto from 'node:crypto';
 import type {
   NotificationRecord,
   NotificationSource,
+  NotificationKind,
+  NotificationVoiceMode,
   NotificationListOptions,
   NotificationListResult,
 } from './types';
@@ -19,7 +21,78 @@ export interface NotificationSnapshot {
   revision: number;
 }
 
+export interface NotificationMutationResult<T> {
+  value: T;
+  revision: number;
+}
+
 const DEFAULT_MAX_NOTIFICATIONS = 500;
+const DEFAULT_KIND: NotificationKind = 'notification';
+
+function normalizeKind(value: unknown): NotificationKind {
+  return value === 'session_attention' ? 'session_attention' : DEFAULT_KIND;
+}
+
+function normalizeSource(value: unknown): NotificationSource {
+  switch (value) {
+    case 'http':
+    case 'cli':
+    case 'system':
+    case 'tool':
+      return value;
+    default:
+      return 'tool';
+  }
+}
+
+function normalizeVoiceMode(
+  value: unknown,
+  tts: boolean,
+): NotificationVoiceMode {
+  switch (value) {
+    case 'speak':
+    case 'speak_then_listen':
+    case 'none':
+      return value;
+    default:
+      return tts ? 'speak' : 'none';
+  }
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeNullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : null;
+}
+
+function normalizeStoredNotification(value: NotificationRecord): NotificationRecord {
+  const tts = value.tts === true;
+  return {
+    id: value.id,
+    kind: normalizeKind((value as NotificationRecord & { kind?: unknown }).kind),
+    title: value.title,
+    body: value.body,
+    createdAt: value.createdAt,
+    readAt: value.readAt ?? null,
+    source: normalizeSource(value.source),
+    sessionId: normalizeNullableString(value.sessionId),
+    sessionTitle: normalizeNullableString(value.sessionTitle),
+    tts,
+    voiceMode: normalizeVoiceMode(
+      (value as NotificationRecord & { voiceMode?: unknown }).voiceMode,
+      tts,
+    ),
+    ttsText: normalizeNullableString((value as NotificationRecord & { ttsText?: unknown }).ttsText),
+    sourceEventId: normalizeNullableString(
+      (value as NotificationRecord & { sourceEventId?: unknown }).sourceEventId,
+    ),
+    sessionActivitySeq: normalizeNullableNumber(
+      (value as NotificationRecord & { sessionActivitySeq?: unknown }).sessionActivitySeq,
+    ),
+  };
+}
 
 export class NotificationsStore {
   private dataPath: string;
@@ -61,7 +134,11 @@ export class NotificationsStore {
       const content = await readFile(this.dataPath, 'utf-8');
       const parsed = JSON.parse(content) as StoreData;
       if (Array.isArray(parsed.notifications)) {
-        this.data = parsed;
+        this.data = {
+          notifications: parsed.notifications
+            .filter((notification): notification is NotificationRecord => !!notification)
+            .map(normalizeStoredNotification),
+        };
       }
     } catch (err) {
       const error = err as NodeJS.ErrnoException;
@@ -106,14 +183,46 @@ export class NotificationsStore {
   }
 
   async insert(
-    input: { title: string; body: string; sessionId?: string | null; sessionTitle?: string | null; tts?: boolean },
+    input: {
+      kind?: NotificationKind;
+      title: string;
+      body: string;
+      sessionId?: string | null;
+      sessionTitle?: string | null;
+      tts?: boolean;
+      voiceMode?: NotificationVoiceMode;
+      ttsText?: string | null;
+      sourceEventId?: string | null;
+      sessionActivitySeq?: number | null;
+    },
     source: NotificationSource,
   ): Promise<NotificationRecord> {
+    const { value } = await this.insertWithRevision(input, source);
+    return value;
+  }
+
+  async insertWithRevision(
+    input: {
+      kind?: NotificationKind;
+      title: string;
+      body: string;
+      sessionId?: string | null;
+      sessionTitle?: string | null;
+      tts?: boolean;
+      voiceMode?: NotificationVoiceMode;
+      ttsText?: string | null;
+      sourceEventId?: string | null;
+      sessionActivitySeq?: number | null;
+    },
+    source: NotificationSource,
+  ): Promise<NotificationMutationResult<NotificationRecord>> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
 
+      const tts = input.tts ?? false;
       const record: NotificationRecord = {
         id: crypto.randomUUID(),
+        kind: input.kind ?? DEFAULT_KIND,
         title: input.title,
         body: input.body,
         createdAt: new Date().toISOString(),
@@ -121,7 +230,11 @@ export class NotificationsStore {
         source,
         sessionId: input.sessionId ?? null,
         sessionTitle: input.sessionTitle ?? null,
-        tts: input.tts ?? false,
+        tts,
+        voiceMode: input.voiceMode ?? (tts ? 'speak' : 'none'),
+        ttsText: input.ttsText ?? null,
+        sourceEventId: input.sourceEventId ?? null,
+        sessionActivitySeq: input.sessionActivitySeq ?? null,
       };
 
       this.data.notifications.unshift(record);
@@ -129,7 +242,100 @@ export class NotificationsStore {
       this.bumpRevision();
       await this.save();
 
-      return record;
+      return { value: record, revision: this._revision };
+    });
+  }
+
+  async upsertSessionAttention(
+    input: {
+      title: string;
+      body: string;
+      sessionId: string;
+      sessionTitle?: string | null;
+      tts?: boolean;
+      voiceMode?: NotificationVoiceMode;
+      ttsText?: string | null;
+      sourceEventId?: string | null;
+      sessionActivitySeq?: number | null;
+    },
+    source: NotificationSource,
+  ): Promise<NotificationRecord> {
+    const { value } = await this.upsertSessionAttentionWithRevision(input, source);
+    return value;
+  }
+
+  async upsertSessionAttentionWithRevision(
+    input: {
+      title: string;
+      body: string;
+      sessionId: string;
+      sessionTitle?: string | null;
+      tts?: boolean;
+      voiceMode?: NotificationVoiceMode;
+      ttsText?: string | null;
+      sourceEventId?: string | null;
+      sessionActivitySeq?: number | null;
+    },
+    source: NotificationSource,
+  ): Promise<NotificationMutationResult<NotificationRecord>> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      const sessionId = input.sessionId.trim();
+      const existingIndex = this.data.notifications.findIndex(
+        (notification) =>
+          notification.kind === 'session_attention' && notification.sessionId === sessionId,
+      );
+      const tts = input.tts ?? false;
+      const now = new Date().toISOString();
+
+      const record: NotificationRecord =
+        existingIndex >= 0
+          ? {
+              ...this.data.notifications[existingIndex]!,
+              kind: 'session_attention',
+              title: input.title,
+              body: input.body,
+              createdAt: now,
+              readAt: null,
+              source,
+              sessionId,
+              sessionTitle:
+                input.sessionTitle !== undefined
+                  ? input.sessionTitle
+                  : this.data.notifications[existingIndex]!.sessionTitle,
+              tts,
+              voiceMode: input.voiceMode ?? (tts ? 'speak' : 'none'),
+              ttsText: input.ttsText ?? null,
+              sourceEventId: input.sourceEventId ?? null,
+              sessionActivitySeq: input.sessionActivitySeq ?? null,
+            }
+          : {
+              id: crypto.randomUUID(),
+              kind: 'session_attention',
+              title: input.title,
+              body: input.body,
+              createdAt: now,
+              readAt: null,
+              source,
+              sessionId,
+              sessionTitle: input.sessionTitle ?? null,
+              tts,
+              voiceMode: input.voiceMode ?? (tts ? 'speak' : 'none'),
+              ttsText: input.ttsText ?? null,
+              sourceEventId: input.sourceEventId ?? null,
+              sessionActivitySeq: input.sessionActivitySeq ?? null,
+            };
+
+      if (existingIndex >= 0) {
+        this.data.notifications.splice(existingIndex, 1);
+      }
+      this.data.notifications.unshift(record);
+      this.pruneIfNeeded();
+      this.bumpRevision();
+      await this.save();
+
+      return { value: record, revision: this._revision };
     });
   }
 
@@ -178,6 +384,13 @@ export class NotificationsStore {
   }
 
   async toggleRead(id: string): Promise<NotificationRecord | null> {
+    const result = await this.toggleReadWithRevision(id);
+    return result?.value ?? null;
+  }
+
+  async toggleReadWithRevision(
+    id: string,
+  ): Promise<NotificationMutationResult<NotificationRecord> | null> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
 
@@ -190,11 +403,16 @@ export class NotificationsStore {
       this.bumpRevision();
       await this.save();
 
-      return notification;
+      return { value: notification, revision: this._revision };
     });
   }
 
   async markAllRead(): Promise<number> {
+    const result = await this.markAllReadSnapshot();
+    return result.count;
+  }
+
+  async markAllReadSnapshot(): Promise<NotificationSnapshot & { count: number }> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
 
@@ -212,41 +430,168 @@ export class NotificationsStore {
         await this.save();
       }
 
-      return count;
+      return {
+        count,
+        notifications: [...this.data.notifications],
+        total: this.data.notifications.length,
+        revision: this._revision,
+      };
+    });
+  }
+
+  async markAllUnread(): Promise<number> {
+    const result = await this.markAllUnreadSnapshot();
+    return result.count;
+  }
+
+  async markAllUnreadSnapshot(): Promise<NotificationSnapshot & { count: number }> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      let count = 0;
+      for (const notification of this.data.notifications) {
+        if (notification.readAt !== null) {
+          notification.readAt = null;
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        this.bumpRevision();
+        await this.save();
+      }
+
+      return {
+        count,
+        notifications: [...this.data.notifications],
+        total: this.data.notifications.length,
+        revision: this._revision,
+      };
     });
   }
 
   async remove(id: string): Promise<boolean> {
+    const result = await this.removeWithRevision(id);
+    return result !== null;
+  }
+
+  async removeWithRevision(id: string): Promise<NotificationMutationResult<true> | null> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
 
       const index = this.data.notifications.findIndex((n) => n.id === id);
       if (index === -1) {
-        return false;
+        return null;
       }
 
       this.data.notifications.splice(index, 1);
       this.bumpRevision();
       await this.save();
 
-      return true;
+      return { value: true, revision: this._revision };
+    });
+  }
+
+  async removeSessionAttention(sessionId: string): Promise<NotificationRecord | null> {
+    const result = await this.removeSessionAttentionWithRevision(sessionId);
+    return result?.value ?? null;
+  }
+
+  async removeSessionAttentionWithRevision(
+    sessionId: string,
+  ): Promise<NotificationMutationResult<NotificationRecord> | null> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      const normalizedSessionId = sessionId.trim();
+      const index = this.data.notifications.findIndex(
+        (notification) =>
+          notification.kind === 'session_attention' &&
+          notification.sessionId === normalizedSessionId,
+      );
+      if (index === -1) {
+        return null;
+      }
+
+      const [removed] = this.data.notifications.splice(index, 1);
+      this.bumpRevision();
+      await this.save();
+
+      return removed ? { value: removed, revision: this._revision } : null;
     });
   }
 
   async removeAll(): Promise<number> {
+    const result = await this.removeAllSnapshot();
+    return result.count;
+  }
+
+  async removeAllSnapshot(): Promise<NotificationSnapshot & { count: number }> {
     return this.exclusive(async () => {
       await this.ensureLoaded();
 
       const count = this.data.notifications.length;
       if (count === 0) {
-        return 0;
+        return {
+          count: 0,
+          notifications: [...this.data.notifications],
+          total: this.data.notifications.length,
+          revision: this._revision,
+        };
       }
 
       this.data.notifications = [];
       this.bumpRevision();
       await this.save();
 
-      return count;
+      return {
+        count,
+        notifications: [],
+        total: 0,
+        revision: this._revision,
+      };
+    });
+  }
+
+  async updateSessionTitleWithRevision(
+    sessionId: string,
+    sessionTitle: string | null,
+  ): Promise<NotificationMutationResult<NotificationRecord[]> | null> {
+    return this.exclusive(async () => {
+      await this.ensureLoaded();
+
+      const normalizedSessionId = sessionId.trim();
+      if (!normalizedSessionId) {
+        return null;
+      }
+      const normalizedSessionTitle = normalizeNullableString(sessionTitle);
+      const updated: NotificationRecord[] = [];
+
+      for (let index = 0; index < this.data.notifications.length; index += 1) {
+        const notification = this.data.notifications[index];
+        if (!notification || notification.sessionId !== normalizedSessionId) {
+          continue;
+        }
+        if (notification.sessionTitle === normalizedSessionTitle) {
+          continue;
+        }
+
+        const nextNotification: NotificationRecord = {
+          ...notification,
+          sessionTitle: normalizedSessionTitle,
+        };
+        this.data.notifications[index] = nextNotification;
+        updated.push(nextNotification);
+      }
+
+      if (updated.length === 0) {
+        return null;
+      }
+
+      this.bumpRevision();
+      await this.save();
+
+      return { value: updated, revision: this._revision };
     });
   }
 

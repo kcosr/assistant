@@ -300,6 +300,19 @@ export class ServerMessageHandler {
     this.options.setSessionsPanelBadge?.(badge);
   }
 
+  private getErrorSessionId(message: { details?: unknown }): string | null {
+    const details = message.details;
+    if (!details || typeof details !== 'object' || Array.isArray(details)) {
+      return null;
+    }
+    const rawSessionId = (details as { sessionId?: unknown }).sessionId;
+    if (typeof rawSessionId !== 'string') {
+      return null;
+    }
+    const trimmed = rawSessionId.trim();
+    return trimmed || null;
+  }
+
   async handle(message: ServerMessage): Promise<void> {
     switch (message.type) {
       case 'transcript_event': {
@@ -505,14 +518,15 @@ export class ServerMessageHandler {
           break;
         }
         const selectedSessionId = this.options.getSelectedSessionId();
-        const runtime = selectedSessionId
-          ? this.options.getChatRuntimeForSession(selectedSessionId)
+        const targetSessionId = this.getErrorSessionId(message);
+        const runtime = targetSessionId
+          ? this.options.getChatRuntimeForSession(targetSessionId)
           : null;
         if (runtime) {
           clearExternalSentIndicators(runtime.elements.chatLog);
         }
         this.options.setStatus(this.options.statusEl, `Error: ${message.code}`);
-        if (runtime) {
+        if (runtime && message.code !== 'session_deleted') {
           const bubble = this.options.appendMessage(
             runtime.elements.chatLog,
             'error',
@@ -520,7 +534,12 @@ export class ServerMessageHandler {
           );
           this.options.scrollMessageIntoView(runtime.elements.chatLog, bubble);
         }
-        if (selectedSessionId) {
+        if (targetSessionId) {
+          this.markRequestFinished(targetSessionId, undefined);
+          this.options.syncSessionRequestActivityUi(targetSessionId, false);
+          this.options.setChatPanelStatusForSession?.(targetSessionId, 'error');
+          this.options.getSpeechAudioControllerForSession(targetSessionId)?.syncMicButtonState();
+        } else if (selectedSessionId) {
           this.markRequestFinished(selectedSessionId, undefined);
           this.options.syncSessionRequestActivityUi(selectedSessionId, false);
           this.options.setChatPanelStatusForSession?.(selectedSessionId, 'error');

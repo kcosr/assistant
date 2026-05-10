@@ -48,6 +48,69 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('can open without autofocus for the voice-chip session picker flow', async () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    anchor.textContent = 'open';
+    document.body.appendChild(anchor);
+    anchor.focus();
+
+    controller.open({
+      anchor,
+      title: 'Select voice session',
+      autoFocusSearch: false,
+      onSelectSession: () => undefined,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const searchInput = document.querySelector<HTMLInputElement>('.session-picker-search');
+    expect(searchInput).toBeTruthy();
+    expect(document.activeElement).toBe(anchor);
+
+    controller.close();
+  });
+
+  it('highlights the selected bound session and avoids search autofocus', async () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [
+        { sessionId: 's1', name: 'Session 1' },
+        { sessionId: 's2', name: 'Session 2' },
+      ],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    anchor.textContent = 'open';
+    document.body.appendChild(anchor);
+    anchor.focus();
+
+    controller.open({
+      anchor,
+      title: 'Select session',
+      selectedSessionId: 's2',
+      autoFocusSearch: false,
+      onSelectSession: () => undefined,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const selectedItem = document.querySelector<HTMLElement>(
+      '.session-picker-item[data-session-id="s2"]',
+    );
+    expect(selectedItem?.classList.contains('selected')).toBe(true);
+    expect(selectedItem?.classList.contains('focused')).toBe(true);
+    expect(document.activeElement).toBe(anchor);
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({
@@ -281,5 +344,35 @@ describe('SessionPickerController', () => {
     );
 
     controller.close();
+  });
+
+  it('keeps open sessions selectable and routes them through the open-session handler', () => {
+    const onSelectSession = vi.fn();
+    const onSelectOpenSession = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      openSessionIds: new Set(['s1']),
+      onSelectSession,
+      onSelectOpenSession,
+    });
+
+    const item = document.querySelector<HTMLDivElement>('.session-picker-item[data-session-id="s1"]');
+    expect(item?.classList.contains('disabled')).toBe(false);
+    expect(item?.textContent).toContain('(open)');
+
+    item?.click();
+
+    expect(onSelectOpenSession).toHaveBeenCalledWith('s1');
+    expect(onSelectSession).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { isCapacitorAndroid } from './capacitor';
 
-export type AudioMode = 'off' | 'tool' | 'response';
+export type AudioMode = 'off' | 'manual' | 'tool' | 'response';
 
 export function getDefaultAudioMode(): AudioMode {
   return isCapacitorAndroid() ? 'tool' : 'off';
@@ -12,6 +12,8 @@ export function normalizeAudioMode(value: string | null | undefined): AudioMode 
       return 'tool';
     case 'response':
       return 'response';
+    case 'manual':
+      return 'manual';
     case 'off':
       return 'off';
     default:

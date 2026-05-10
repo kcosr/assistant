@@ -44,6 +44,7 @@ import { resolveVisibleAssistantText } from '../piAssistantText';
 import { resolveSessionModelForRun, resolveSessionThinkingForRun } from '../sessionModel';
 import { buildMessagesForPiSync, resolveInterruptedPiSyncMessages } from '../history/piSessionSync';
 import type { AgentTool } from '../tools';
+import { publishFinalResponseNotification } from '../notificationProducers';
 
 const LATE_PROVIDER_TAIL_CUSTOM_TYPE = 'assistant.late_provider_tail';
 
@@ -679,12 +680,27 @@ export async function handleTextInputWithChatCompletions(options: {
       if (ttsSessionForRun) {
         await ttsSessionForRun.finish();
       }
-      void sessionHub.recordSessionActivity(
+      let notificationSummary = state.summary;
+      try {
+        const postActivitySummary = await sessionHub.recordSessionActivity(
+          sessionId,
+          visibleAssistant.text.length > 120
+            ? `${visibleAssistant.text.slice(0, 117)}…`
+            : visibleAssistant.text,
+        );
+        if (postActivitySummary) {
+          notificationSummary = postActivitySummary;
+        }
+      } catch {
+        // Session-activity persistence is best-effort; use pre-bump summary.
+      }
+      void publishFinalResponseNotification({
         sessionId,
-        visibleAssistant.text.length > 120
-          ? `${visibleAssistant.text.slice(0, 117)}…`
-          : visibleAssistant.text,
-      );
+        responseId,
+        text: visibleAssistant.text,
+        sessionHub,
+        summary: notificationSummary,
+      });
       const assistantTimestampMs =
         (runResult.piSdkMessage &&
         runResult.piSdkMessage.role === 'assistant' &&

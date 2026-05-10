@@ -53,6 +53,83 @@ public final class AssistantVoiceInteractionRulesTest {
     }
 
     @Test
+    public void manualModeNeverAutoplaysEvents() {
+        AssistantVoicePromptEvent toolPrompt = new AssistantVoicePromptEvent(
+            "event-1",
+            "session-1",
+            "call-1",
+            "voice_ask",
+            "Question?"
+        );
+        AssistantVoicePromptEvent assistantResponse = new AssistantVoicePromptEvent(
+            "event-2",
+            "session-1",
+            "",
+            "assistant_response",
+            "Answer"
+        );
+
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            toolPrompt,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayEvent(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            assistantResponse,
+            true
+        ));
+    }
+
+    @Test
+    public void manualModeAutoplaysStandaloneNotificationsButNotSessionAttention() {
+        AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
+            "notif-response",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-1",
+            4
+        );
+        AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "Prompt",
+            "What next?",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-2",
+            5
+        );
+
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            false,
+            toolNotification
+        ));
+    }
+
+    @Test
     public void autoListenControlsRecognitionAfterPlaybackAndManualStop() {
         assertFalse(
             AssistantVoiceInteractionRules.shouldStartRecognitionAfterPlayback("voice_ask", false)
@@ -90,6 +167,94 @@ public final class AssistantVoiceInteractionRulesTest {
                 false
             )
         );
+    }
+
+    @Test
+    public void manualModeSuppressesAutomaticNotificationListenRearm() {
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_MANUAL,
+            true
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoListenAfterAutomaticNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            false
+        ));
+    }
+
+    @Test
+    public void autoplaysOnlyUnreadNotificationsThatMatchTheCurrentAudioMode() {
+        AssistantVoiceNotificationRecord responseNotification = new AssistantVoiceNotificationRecord(
+            "notif-response",
+            "session_attention",
+            "system",
+            "Latest reply",
+            "Answer",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-1",
+            4
+        );
+        AssistantVoiceNotificationRecord toolNotification = new AssistantVoiceNotificationRecord(
+            "notif-tool",
+            "notification",
+            "tool",
+            "Prompt",
+            "What next?",
+            "",
+            "session-1",
+            "Session 1",
+            "speak_then_listen",
+            "",
+            "event-2",
+            5
+        );
+        AssistantVoiceNotificationRecord readToolNotification = new AssistantVoiceNotificationRecord(
+            "notif-read",
+            "notification",
+            "tool",
+            "Read prompt",
+            "Already handled",
+            "2026-04-06T12:00:00.000Z",
+            "session-1",
+            "Session 1",
+            "speak",
+            "",
+            "event-3",
+            6
+        );
+
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false,
+            responseNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            responseNotification
+        ));
+        assertTrue(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            true,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_RESPONSE,
+            false,
+            toolNotification
+        ));
+        assertFalse(AssistantVoiceInteractionRules.shouldAutoplayNotification(
+            AssistantVoiceConfig.AUDIO_MODE_TOOL,
+            true,
+            readToolNotification
+        ));
     }
 
     @Test

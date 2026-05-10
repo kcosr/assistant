@@ -100,6 +100,7 @@ public final class AssistantVoiceSessionSocketProtocolTest {
             + "\"type\":\"transcript_event\","
             + "\"event\":{"
             + "\"eventId\":\"event-2\","
+            + "\"responseId\":\"response-2\","
             + "\"sessionId\":\"session-123\","
             + "\"chatEventType\":\"assistant_done\","
             + "\"payload\":{"
@@ -116,5 +117,6 @@ public final class AssistantVoiceSessionSocketProtocolTest {
         assertNotNull(prompt);
         assertTrue("assistant_response".equals(prompt.toolName));
         assertTrue("Final response text".equals(prompt.text));
+        assertTrue("response-2".equals(prompt.toolCallId));
     }
 }

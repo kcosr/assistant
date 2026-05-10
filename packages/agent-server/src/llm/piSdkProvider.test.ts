@@ -79,6 +79,7 @@ describe('resolvePiSdkModel', () => {
     const resolved = await resolvePiSdkModel({
       modelSpec: 'mock-scenarios/scenarios',
       baseUrl: 'http://127.0.0.1:4010/v1',
+      contextWindow: 65536,
     });
 
     expect(resolved.providerId).toBe('mock-scenarios');
@@ -91,7 +92,7 @@ describe('resolvePiSdkModel', () => {
       baseUrl: 'http://127.0.0.1:4010/v1',
       reasoning: true,
       input: ['text'],
-      contextWindow: 128000,
+      contextWindow: 65536,
       maxTokens: 16000,
       cost: {
         input: 0,

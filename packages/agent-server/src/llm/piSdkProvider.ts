@@ -101,8 +101,9 @@ function buildSyntheticPiSdkModel(options: {
   providerId: string;
   modelId: string;
   baseUrl: string;
+  contextWindow?: number;
 }): Model<Api> {
-  const { providerId, modelId, baseUrl } = options;
+  const { providerId, modelId, baseUrl, contextWindow } = options;
   return {
     id: modelId,
     name: modelId,
@@ -117,7 +118,10 @@ function buildSyntheticPiSdkModel(options: {
       cacheRead: 0,
       cacheWrite: 0,
     },
-    contextWindow: 128000,
+    contextWindow:
+      typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
+        ? Math.floor(contextWindow)
+        : 128000,
     maxTokens: 16000,
   };
 }
@@ -126,8 +130,9 @@ export async function resolvePiSdkModel(options: {
   modelSpec: string;
   defaultProvider?: string;
   baseUrl?: string;
+  contextWindow?: number;
 }): Promise<PiSdkModelResolution> {
-  const { modelSpec, defaultProvider, baseUrl } = options;
+  const { modelSpec, defaultProvider, baseUrl, contextWindow } = options;
   const trimmedSpec = modelSpec.trim();
   if (!trimmedSpec) {
     throw new Error('Pi chat requires a non-empty model id');
@@ -164,6 +169,7 @@ export async function resolvePiSdkModel(options: {
         providerId,
         modelId,
         baseUrl: baseUrl.trim(),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
       });
       return {
         model: syntheticModel,

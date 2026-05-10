@@ -650,6 +650,7 @@ Notes:
   allows custom endpoints such as local mocks or proxies to be targeted without adding extra config
   fields.
 - `config.maxTokens`, `config.temperature`, `config.timeoutMs`: optional Pi SDK request overrides.
+- `config.contextWindow`: optional context window override used for synthesized models (providers without a built-in Pi catalog entry when `config.baseUrl` is set).
 - `config.maxToolIterations`: max consecutive tool iterations before aborting with an error
   (default: 100).
 
