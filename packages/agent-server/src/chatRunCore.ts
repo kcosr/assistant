@@ -24,7 +24,7 @@ import {
   type AgentEvent,
   type AgentMessage,
   type ThinkingLevel as PiAgentThinkingLevel,
-} from '@mariozechner/pi-agent-core';
+} from '@earendil-works/pi-agent-core';
 import {
   type AssistantMessage,
   type AssistantMessageEvent,
@@ -33,7 +33,7 @@ import {
   type TextContent,
   type ToolCall,
   type ToolResultMessage,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 import type { EnvConfig } from './envConfig';
 import type { EventStore } from './events';
 import {
@@ -74,13 +74,13 @@ import type { AgentTool as NativeAgentTool } from './tools';
 
 type ChatProvider = 'pi' | 'claude-cli' | 'codex-cli' | 'pi-cli';
 type OutputModeValue = 'text' | 'speech' | 'both';
-type PiAiModule = typeof import('@mariozechner/pi-ai');
+type PiAiModule = typeof import('@earendil-works/pi-ai');
 
 let piAiModulePromise: Promise<PiAiModule> | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
-    piAiModulePromise = import('@mariozechner/pi-ai');
+    piAiModulePromise = import('@earendil-works/pi-ai');
   }
   return piAiModulePromise;
 }

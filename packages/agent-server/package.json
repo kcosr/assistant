@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "@assistant/shared": "*",
-    "@mariozechner/pi-agent-core": "^0.70.5",
-    "@mariozechner/pi-ai": "^0.70.5",
-    "@mariozechner/pi-coding-agent": "^0.70.5",
+    "@earendil-works/pi-agent-core": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@earendil-works/pi-coding-agent": "^0.74.0",
     "@mozilla/readability": "^0.5.0",
     "cron-parser": "^4.9.0",
     "cronstrue": "^2.50.0",

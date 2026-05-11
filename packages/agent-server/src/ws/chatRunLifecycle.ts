@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   AssistantMessage as PiAssistantMessage,
   Message as PiSdkMessage,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 import type {
   ChatEvent,
   ClientAudioCapabilities,

@@ -12,7 +12,7 @@ import type {
   ToolCall,
   ToolResultMessage,
   Usage,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 import type { AssistantTextPhase } from '@assistant/shared';
 
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
@@ -42,12 +42,12 @@ export interface PiAssistantTextBlock {
   textSignature?: string;
 }
 
-type PiAiModule = typeof import('@mariozechner/pi-ai');
+type PiAiModule = typeof import('@earendil-works/pi-ai');
 let piAiModulePromise: Promise<PiAiModule> | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
-    piAiModulePromise = import('@mariozechner/pi-ai');
+    piAiModulePromise = import('@earendil-works/pi-ai');
   }
   return piAiModulePromise;
 }
@@ -160,8 +160,29 @@ export async function resolvePiSdkModel(options: {
     throw new Error(`Pi chat provider "${providerRaw}" is not available`);
   }
 
-  const { getModels } = await loadPiAiModule();
-  const models = getModels(providerId as any);
+  const { getModels, getProviders } = await loadPiAiModule();
+  const knownProvider = getProviders().find(
+    (provider) => provider.toLowerCase() === providerId.toLowerCase(),
+  );
+  if (!knownProvider) {
+    if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
+      const modelId = modelIdRaw.trim();
+      const syntheticModel = buildSyntheticPiSdkModel({
+        providerId,
+        modelId,
+        baseUrl: baseUrl.trim(),
+        ...(contextWindow !== undefined ? { contextWindow } : {}),
+      });
+      return {
+        model: syntheticModel,
+        providerId,
+        modelId: syntheticModel.id,
+      };
+    }
+    throw new Error(`No Pi models found for provider "${providerId}"`);
+  }
+
+  const models = getModels(knownProvider);
   if (!models || models.length === 0) {
     if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
       const modelId = modelIdRaw.trim();

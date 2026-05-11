@@ -38,7 +38,7 @@ import type { AttachmentStore } from './attachments/store';
 import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
-import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
+import type { Agent as PiAgent } from '@earendil-works/pi-agent-core';
 import { resetLiveTranscriptSessionState } from './events/chatEventUtils';
 import { syncSessionNotificationTitles } from '../../plugins/core/notifications/server/service';
 import {

@@ -1,4 +1,4 @@
-import type { AssistantMessage, Usage } from '@mariozechner/pi-ai';
+import type { AssistantMessage, Usage } from '@earendil-works/pi-ai';
 import type { SessionContextUsage, TokenUsageBreakdown } from '@assistant/shared';
 
 export function calculateContextTokens(usage: Pick<Usage, 'totalTokens' | 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): number {

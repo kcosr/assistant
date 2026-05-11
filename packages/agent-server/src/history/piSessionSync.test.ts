@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import {

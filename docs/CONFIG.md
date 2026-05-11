@@ -50,7 +50,7 @@ Pi SDK chat uses provider-specific environment variables. Common examples includ
 
 The assistant does not resolve these itself; it passes requests to the Pi SDK, which
 reads the provider environment variables directly. For a complete list, see the
-`@mariozechner/pi-ai` README.
+`@earendil-works/pi-ai` README.
 
 ### Server
 
@@ -345,7 +345,7 @@ relative file paths and `bash` commands anchor to the session picker’s working
 
 Notes:
 
-- Coding tools now execute directly through the imported `@mariozechner/pi-coding-agent` local tool implementations.
+- Coding tools now execute directly through the imported `@earendil-works/pi-coding-agent` local tool implementations.
 
 ##### Agents plugin tools (when enabled)
 

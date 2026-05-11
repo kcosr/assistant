@@ -13,7 +13,7 @@ import type {
   Usage,
   Api,
   Model,
-} from '@mariozechner/pi-ai';
+} from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';

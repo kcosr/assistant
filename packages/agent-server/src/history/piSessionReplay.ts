@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';

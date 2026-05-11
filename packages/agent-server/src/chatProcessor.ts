@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 import type {
   ServerTextDoneMessage,
   ServerUserAudioMessage,

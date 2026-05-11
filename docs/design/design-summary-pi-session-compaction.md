@@ -2,7 +2,7 @@
 
 ## Overview
 
-Add Pi-style context compaction for assistant's in-process `pi` provider sessions. Assistant already mirrors Pi SDK sessions to canonical Pi JSONL under `~/.pi/agent/sessions/...` and reloads Pi-backed state from that log; this feature extends that path so the log can contain Pi-compatible `compaction` entries, assistant can rebuild effective model context from them, users can trigger manual compaction from the chat request menu, and the server can automatically compact after threshold or context-overflow conditions. The compaction algorithm is vendored/adapted into assistant from pi-mono's coding-agent reference implementation rather than imported from `@mariozechner/pi-coding-agent` internals.
+Add Pi-style context compaction for assistant's in-process `pi` provider sessions. Assistant already mirrors Pi SDK sessions to canonical Pi JSONL under `~/.pi/agent/sessions/...` and reloads Pi-backed state from that log; this feature extends that path so the log can contain Pi-compatible `compaction` entries, assistant can rebuild effective model context from them, users can trigger manual compaction from the chat request menu, and the server can automatically compact after threshold or context-overflow conditions. The compaction algorithm is vendored/adapted into assistant from pi-mono's coding-agent reference implementation rather than imported from `@earendil-works/pi-coding-agent` internals.
 
 ## Motivation
 
@@ -24,7 +24,7 @@ In scope:
 Out of scope:
 
 - Changing `claude-cli`, `codex-cli`, or `pi-cli` compaction behavior.
-- Importing or deep-importing `@mariozechner/pi-coding-agent` compaction modules directly.
+- Importing or deep-importing `@earendil-works/pi-coding-agent` compaction modules directly.
 - Adding extension hook support equivalent to Pi mono's `session_before_compact` / `session_compact` hooks.
 - Adding a custom-instructions UI for manual compaction.
 - Changing non-Pi event-store session persistence.
@@ -373,4 +373,4 @@ Manual checks:
 - Auto compaction is enabled by default for provider `pi`, matching Pi mono defaults, but can be disabled with `chat.config.compaction.enabled: false`.
 - The feature targets in-process Pi SDK sessions only; `pi-cli` may display existing Pi CLI compaction entries but assistant will not initiate compaction for `pi-cli` sessions.
 - The existing `session_history_changed` websocket message is sufficient for UI transcript reloads after compaction.
-- The already-installed `@mariozechner/pi-coding-agent` dependency remains for local coding tools, but compaction code is vendored/adapted into assistant because the package exports only `.` and `./hooks` and does not expose the full preparation API needed here.
+- The already-installed `@earendil-works/pi-coding-agent` dependency remains for local coding tools, but compaction code is vendored/adapted into assistant because the package exports only `.` and `./hooks` and does not expose the full preparation API needed here.

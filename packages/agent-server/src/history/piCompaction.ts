@@ -1,10 +1,10 @@
-import type { AgentMessage } from '@mariozechner/pi-agent-core';
-import type { Api, Model, Usage } from '@mariozechner/pi-ai';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
+import type { Api, Model, Usage } from '@earendil-works/pi-ai';
 
 import { calculateContextTokens } from '../contextUsage';
 
 /*
- * Adapted from @mariozechner/pi-coding-agent 0.62.0 compaction helpers
+ * Adapted from @earendil-works/pi-coding-agent 0.62.0 compaction helpers
  * (packages/coding-agent/src/core/compaction). Kept local so assistant does
  * not depend on package internals.
  */
@@ -212,12 +212,12 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
-type PiAiModule = typeof import('@mariozechner/pi-ai');
+type PiAiModule = typeof import('@earendil-works/pi-ai');
 let piAiModulePromise: Promise<PiAiModule> | null = null;
 
 async function loadPiAiModule(): Promise<PiAiModule> {
   if (!piAiModulePromise) {
-    piAiModulePromise = import('@mariozechner/pi-ai');
+    piAiModulePromise = import('@earendil-works/pi-ai');
   }
   return piAiModulePromise;
 }

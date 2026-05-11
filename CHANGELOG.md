@@ -20,6 +20,7 @@
 
 ### Changed
 
+- Migrated Pi SDK dependencies from `@mariozechner/*` packages to the `@earendil-works/*` scope at `0.74.0`.
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Changed Android native voice controls so the floating mobile FAB owns explicit voice start/stop with a target-session title chip, the chat-row control becomes stop-only, `Manual` mode allows explicit mic starts without automatic response/tool playback, and voice settings include standalone notification playback plus notification-title speech toggles. ([#97](https://github.com/kcosr/assistant/pull/97))

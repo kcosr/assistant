@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { OAuthCredentials } from '@mariozechner/pi-ai';
+import type { OAuthCredentials } from '@earendil-works/pi-ai';
 
 type StoredOAuthCredential = { type: 'oauth' } & OAuthCredentials & Record<string, unknown>;
 type StoredApiKeyCredential = { type: 'api_key'; key: string };
@@ -10,12 +10,12 @@ type StoredCredential = StoredOAuthCredential | StoredApiKeyCredential;
 
 type AuthFileData = Record<string, StoredCredential>;
 
-type PiAiOAuthModule = typeof import('@mariozechner/pi-ai/oauth');
+type PiAiOAuthModule = typeof import('@earendil-works/pi-ai/oauth');
 let oauthModulePromise: Promise<PiAiOAuthModule> | null = null;
 
 async function loadOAuthModule(): Promise<PiAiOAuthModule> {
   if (!oauthModulePromise) {
-    oauthModulePromise = import('@mariozechner/pi-ai/oauth');
+    oauthModulePromise = import('@earendil-works/pi-ai/oauth');
   }
   return oauthModulePromise;
 }
@@ -136,7 +136,10 @@ export async function resolvePiAgentAuthApiKey(options: {
 
   try {
     const { getOAuthApiKey } = await loadOAuthModule();
-    const resolved = await getOAuthApiKey(providerLower as any, credsByProvider as any);
+    const resolved = await getOAuthApiKey(
+      providerLower as Parameters<typeof getOAuthApiKey>[0],
+      credsByProvider,
+    );
     if (!resolved) {
       return undefined;
     }
