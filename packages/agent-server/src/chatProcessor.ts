@@ -870,6 +870,7 @@ export async function processUserMessage(
           const compacted = await sessionHub.compactSession({
             sessionId,
             reason: 'threshold',
+            allowActiveRun: true,
           });
           state.summary = compacted.summary;
         } catch (err) {

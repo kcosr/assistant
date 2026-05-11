@@ -1,7 +1,11 @@
 import type { SessionConfig, SessionHistoryEditAction } from '@assistant/shared';
 
 import { apiFetch } from '../utils/api';
-import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
+import {
+  readSessionOperationError,
+  readSessionOperationResult,
+  sessionsOperationPath,
+} from '../utils/sessionsApi';
 
 export interface SessionManagerOptions {
   getSelectedSessionId: () => string | null;
@@ -159,7 +163,9 @@ export class SessionManager {
         body: JSON.stringify({ sessionId }),
       });
       if (!response.ok) {
-        this.options.setStatus('Failed to compact context');
+        this.options.setStatus(
+          await readSessionOperationError(response, 'Failed to compact context'),
+        );
         return;
       }
 

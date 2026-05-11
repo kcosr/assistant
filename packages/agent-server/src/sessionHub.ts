@@ -761,34 +761,6 @@ export class SessionHub {
       const chatMessages = await this.resolveChatMessages(summary, true);
       currentState.summary = summary;
       currentState.chatMessages = chatMessages;
-      if (currentState.piAgentRuntime) {
-        currentState.piAgentRuntime.agent.state.messages = chatMessages
-          .filter((message) => message.role !== 'system')
-          .map((message) => {
-            if (message.role === 'user') {
-              return {
-                role: 'user',
-                content: message.content,
-                timestamp: message.historyTimestampMs ?? Date.now(),
-              };
-            }
-            if (message.role === 'assistant' && message.piSdkMessage) {
-              return message.piSdkMessage as never;
-            }
-            if (message.role === 'tool') {
-              return {
-                role: 'toolResult',
-                toolCallId: message.tool_call_id,
-                toolName: 'tool',
-                content: [{ type: 'text', text: message.content }],
-                isError: false,
-                timestamp: message.historyTimestampMs ?? Date.now(),
-              };
-            }
-            return null;
-          })
-          .filter((message): message is never => message !== null);
-      }
     }
 
     const usageSummary = await this.updateSessionContextUsage(sessionId, null);

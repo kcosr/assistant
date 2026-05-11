@@ -124,7 +124,8 @@ vi.mock('./llm/piSdkProvider', async () => {
 });
 
 vi.mock('./notificationProducers', async () => {
-  const actual = await vi.importActual<typeof import('./notificationProducers')>('./notificationProducers');
+  const actual =
+    await vi.importActual<typeof import('./notificationProducers')>('./notificationProducers');
   return {
     ...actual,
     publishFinalResponseNotification: vi.fn(async () => undefined),
@@ -174,6 +175,33 @@ function createAssistantMessage(options: {
     stopReason,
     timestamp: Date.now(),
   };
+}
+
+function createEnvConfig(): EnvConfig {
+  return {
+    apiKey: 'test-api-key',
+    port: 0,
+    toolsEnabled: false,
+    dataDir: '/tmp/assistant-tests',
+    audioInputMode: 'manual',
+    audioSampleRate: 24000,
+    audioTranscriptionEnabled: false,
+    audioOutputVoice: undefined,
+    audioOutputSpeed: undefined,
+    ttsModel: 'gpt-4o-mini-tts',
+    ttsVoice: undefined,
+    ttsFrameDurationMs: 250,
+    ttsBackend: 'openai',
+    elevenLabsApiKey: undefined,
+    elevenLabsVoiceId: undefined,
+    elevenLabsModelId: undefined,
+    elevenLabsBaseUrl: undefined,
+    maxMessagesPerMinute: 60,
+    maxAudioBytesPerMinute: 2_000_000,
+    maxToolCallsPerMinute: 30,
+    debugChatCompletions: false,
+    debugHttpRequests: false,
+  } as EnvConfig;
 }
 
 describe('processUserMessage stream event emission', () => {
@@ -695,6 +723,118 @@ describe('processUserMessage stream event emission', () => {
     ).rejects.toMatchObject({ code: 'tool_iteration_limit' });
   });
 
+  it('allows threshold compaction while the just-finished Pi run is still active', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: {
+        id: 'gpt-4o-mini',
+        provider: 'openai',
+        api: 'openai-responses',
+        contextWindow: 100,
+      } as never,
+      providerId: 'openai',
+      modelId: 'gpt-4o-mini',
+    });
+
+    const assistantMessage = createAssistantMessage({
+      text: 'Final answer',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      api: 'openai-responses',
+    });
+    assistantMessage.usage = {
+      ...assistantMessage.usage,
+      totalTokens: 91,
+    };
+
+    vi.mocked(runPiSdkChatCompletionIteration).mockImplementationOnce(async (options) => {
+      await options.onDeltaText?.('Final answer', 'Final answer', 'final_answer');
+      return {
+        text: 'Final answer',
+        toolCalls: [],
+        aborted: false,
+        assistantMessage: assistantMessage as never,
+      };
+    });
+
+    const compactSession = vi.fn(async (options) => ({
+      summary: {
+        sessionId: 's1',
+        agentId: 'pi',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        model: 'openai/gpt-4o-mini',
+      },
+      compacted: true as const,
+      reason: options.reason,
+      result: {
+        summary: 'Compacted summary',
+        firstKeptEntryId: 'entry-kept',
+        tokensBefore: 91,
+      },
+    }));
+
+    const agent = {
+      agentId: 'pi',
+      displayName: 'Pi',
+      description: 'Pi SDK agent.',
+      chat: {
+        provider: 'pi',
+        models: ['openai/gpt-4o-mini'],
+        config: {
+          contextWindow: 100,
+          compaction: {
+            reserveTokens: 10,
+            keepRecentTokens: 20,
+          },
+        },
+      },
+    };
+    const sessionHub: SessionHub = {
+      broadcastToSession: () => undefined,
+      broadcastToSessionExcluding: () => undefined,
+      recordSessionActivity: () => undefined,
+      processNextQueuedMessage: async () => false,
+      compactSession,
+      getAgentRegistry: () =>
+        ({
+          getAgent: (agentId: string) => (agentId === 'pi' ? agent : undefined),
+        }) as never,
+      getPiSessionWriter: () => undefined,
+      updateSessionAttributes: vi.fn(async () => undefined),
+      updateSessionContextUsage: vi.fn(async () => undefined),
+    } as unknown as SessionHub;
+
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        agentId: 'pi',
+        model: 'openai/gpt-4o-mini',
+      },
+      chatMessages: [],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+
+    await processUserMessage({
+      sessionId: 's1',
+      state,
+      text: 'hi',
+      sessionHub,
+      envConfig: createEnvConfig(),
+      chatCompletionTools: [],
+      handleChatToolCalls: async () => undefined,
+      outputMode: 'text',
+      ttsBackendFactory: null,
+    });
+
+    expect(compactSession).toHaveBeenCalledWith({
+      sessionId: 's1',
+      reason: 'threshold',
+      allowActiveRun: true,
+    });
+  });
+
   it('emits commentary and final assistant_done events from Pi assistant text blocks', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-4o-mini', provider: 'openai', api: 'openai-responses' } as never,
@@ -1213,7 +1353,7 @@ describe('processUserMessage stream event emission', () => {
     });
 
     expect(sync).toHaveBeenCalledTimes(1);
-    const syncPayload = ((sync.mock.calls as unknown) as Array<[unknown]>)[0]?.[0];
+    const syncPayload = (sync.mock.calls as unknown as Array<[unknown]>)[0]?.[0];
     expect(syncPayload).toBeDefined();
     expect(syncPayload).toMatchObject({
       summary: state.summary,

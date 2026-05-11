@@ -100,7 +100,7 @@ type PiSessionCompactionEntry = PiSessionEntryBase & {
   firstKeptEntryId: string;
   tokensBefore: number;
   details?: PiCompactionDetails;
-  fromHook?: false;
+  fromHook?: boolean;
 };
 
 type PiSessionEntry =

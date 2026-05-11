@@ -3,6 +3,12 @@ import { completeSimple, type Api, type Model, type Usage } from '@mariozechner/
 
 import { calculateContextTokens } from '../contextUsage';
 
+/*
+ * Adapted from @mariozechner/pi-coding-agent 0.62.0 compaction helpers
+ * (packages/coding-agent/src/core/compaction). Kept local so assistant does
+ * not depend on package internals.
+ */
+
 export const COMPACTION_SUMMARY_PREFIX =
   'The conversation history before this point was compacted into the following summary:\n\n<summary>\n';
 export const COMPACTION_SUMMARY_SUFFIX = '\n</summary>';
