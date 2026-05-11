@@ -695,7 +695,7 @@ function normalizeExportNote(note: string): string {
   return note.trim().replace(/^[-*•–—](?:\s+|$)/, '').trim();
 }
 
-function formatExportDescription(taskDescription: string, notes: string[]): string {
+function composeExportRowDescription(taskDescription: string, notes: string[]): string {
   const description = taskDescription.trim();
   const noteText = notes.map((note) => `${EXPORT_NOTE_PREFIX}${note}`).join('\n');
   if (description && noteText) {
@@ -1360,29 +1360,25 @@ if (!registry || typeof registry.registerPanel !== 'function') {
           totalMinutes += entry.duration_minutes;
           const task = getTaskById(entry.task_id);
           const item = task ? task.name : 'Unknown task';
-          const taskDescription = task?.description.trim() ?? '';
-          const existing =
-            taskMap.get(entry.task_id) ??
-            ({
+          const taskDescription = (task?.description ?? '').trim();
+          let record = taskMap.get(entry.task_id);
+          if (!record) {
+            record = {
               item,
               taskDescription,
               totalMinutes: 0,
               notes: new Map<string, string>(),
-            } as const);
-          const next = {
-            item: existing.item,
-            taskDescription: existing.taskDescription,
-            totalMinutes: existing.totalMinutes + entry.duration_minutes,
-            notes: existing.notes,
-          };
+            };
+            taskMap.set(entry.task_id, record);
+          }
+          record.totalMinutes += entry.duration_minutes;
           const normalizedNote = normalizeExportNote(entry.note);
           if (normalizedNote) {
             const key = normalizedNote.toLowerCase();
-            if (!next.notes.has(key)) {
-              next.notes.set(key, normalizedNote);
+            if (!record.notes.has(key)) {
+              record.notes.set(key, normalizedNote);
             }
           }
-          taskMap.set(entry.task_id, next);
         }
         const rows = Array.from(taskMap.values())
           .map((record) => {
@@ -1390,7 +1386,7 @@ if (!registry || typeof registry.registerPanel !== 'function') {
             return {
               item: record.item,
               total_minutes: record.totalMinutes,
-              description: formatExportDescription(record.taskDescription, notes),
+              description: composeExportRowDescription(record.taskDescription, notes),
             };
           })
           .sort((a, b) => a.item.localeCompare(b.item));

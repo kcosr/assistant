@@ -503,4 +503,26 @@ describe('time tracker range picker', () => {
       },
     ]);
   });
+
+  it('exports missing task entries as unknown task rows without task description', async () => {
+    const rows = await buildExportRows(
+      [],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'missing-task',
+          duration_minutes: 20,
+          note: '- Investigated orphaned entry',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'Unknown task',
+        total_minutes: 20,
+        description: '• Investigated orphaned entry',
+      },
+    ]);
+  });
 });
