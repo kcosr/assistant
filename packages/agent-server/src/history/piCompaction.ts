@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@mariozechner/pi-agent-core';
-import { completeSimple, type Api, type Model, type Usage } from '@mariozechner/pi-ai';
+import type { Api, Model, Usage } from '@mariozechner/pi-ai';
 
 import { calculateContextTokens } from '../contextUsage';
 
@@ -211,6 +211,16 @@ Summarize the prefix to provide context for the retained suffix:
 Be concise. Focus on what's needed to understand the kept suffix.`;
 
 const TOOL_RESULT_MAX_CHARS = 2000;
+
+type PiAiModule = typeof import('@mariozechner/pi-ai');
+let piAiModulePromise: Promise<PiAiModule> | null = null;
+
+async function loadPiAiModule(): Promise<PiAiModule> {
+  if (!piAiModulePromise) {
+    piAiModulePromise = import('@mariozechner/pi-ai');
+  }
+  return piAiModulePromise;
+}
 
 function getString(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -735,6 +745,7 @@ async function generateSummary(options: {
     promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
   }
   promptText += basePrompt;
+  const { completeSimple } = await loadPiAiModule();
   const response = await completeSimple(
     model,
     {
