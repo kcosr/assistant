@@ -3,14 +3,14 @@
 ## Overview
 
 Replace the OpenAI chat integration in assistant with the native Pi SDK integration
-used by agent-hub. We add a Pi SDK provider that wraps `@mariozechner/pi-ai`
+used by agent-hub. We add a Pi SDK provider that wraps `@earendil-works/pi-ai`
 streaming and wire it into the agent server’s chat run loop so tool calls,
 streaming deltas, and event logging continue to work. Upstream providers (OpenAI,
 Anthropic, etc.) are configured and resolved inside Pi.
 
 ## Goals
 
-- Use the Pi SDK (`@mariozechner/pi-ai`) for in-process chat completions.
+- Use the Pi SDK (`@earendil-works/pi-ai`) for in-process chat completions.
 - Preserve streaming deltas, tool call handling, and chat event logging.
 - Keep assistant-owned model/thinking selection (per-agent + session overrides) and pass it through to Pi.
 - Document configuration and defaults clearly.
@@ -111,7 +111,7 @@ Introduce a Pi SDK adapter similar to `SdkLlmProvider` in agent-hub:
 
 ### Dependencies
 
-- Add `@mariozechner/pi-ai` to `packages/agent-server/package.json`.
+- Add `@earendil-works/pi-ai` to `packages/agent-server/package.json`.
 - Keep `openai` only for TTS/STT.
 
 ### Docs & Defaults

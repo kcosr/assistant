@@ -3,16 +3,23 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
+import { buildCompactionSummaryText, buildEffectivePiSessionEntryPath } from './piCompaction';
 
 type PiSessionInfo = {
   sessionId: string;
   cwd: string;
+};
+
+type PiReplayEntryRecord = Record<string, unknown> & {
+  type: string;
+  id: string;
+  parentId: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,6 +47,58 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
         return [];
       }
     });
+}
+
+function normalizeReplayEntries(entries: Array<Record<string, unknown>>): PiReplayEntryRecord[] {
+  return entries.flatMap((entry) => {
+    const type = getString(entry['type']);
+    if (!type || type === 'session') {
+      return [];
+    }
+    const id = getString(entry['id']);
+    if (!id) {
+      return [];
+    }
+    const parentId = getString(entry['parentId']);
+    return [
+      {
+        ...entry,
+        type,
+        id,
+        parentId: parentId || null,
+      },
+    ];
+  });
+}
+
+function createCompactionSummaryReplayEntry(
+  compaction: PiReplayEntryRecord,
+): PiReplayEntryRecord | undefined {
+  const summary = getString(compaction['summary']);
+  if (!summary) {
+    return undefined;
+  }
+  return {
+    type: 'message',
+    id: `${compaction.id || 'compaction'}:summary`,
+    parentId: null,
+    timestamp: compaction['timestamp'],
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: buildCompactionSummaryText(summary) }],
+      timestamp: resolveTimestamp(compaction) ?? Date.now(),
+      meta: { source: 'user' },
+    },
+  };
+}
+
+function buildEffectivePiReplayEntries(
+  entries: Array<Record<string, unknown>>,
+): PiReplayEntryRecord[] {
+  return buildEffectivePiSessionEntryPath(normalizeReplayEntries(entries), {
+    createCompactionSummaryEntry: createCompactionSummaryReplayEntry,
+    includeRawCompactionEntry: false,
+  });
 }
 
 function encodePiCwd(cwd: string): string | null {
@@ -77,13 +136,13 @@ function extractTextValue(value: unknown): string {
     return getString(value['refusal']);
   }
   if (type === 'thinking' || type === 'reasoning' || type === 'analysis') {
-    return getString(value['thinking']) || getString(value['text']) || extractTextValue(value['content']);
+    return (
+      getString(value['thinking']) || getString(value['text']) || extractTextValue(value['content'])
+    );
   }
   if ('text' in value || 'content' in value || 'thinking' in value) {
     return (
-      getString(value['text']) ||
-      getString(value['thinking']) ||
-      extractTextValue(value['content'])
+      getString(value['text']) || getString(value['thinking']) || extractTextValue(value['content'])
     );
   }
   return '';
@@ -165,7 +224,9 @@ async function findPiSessionFile(
   return path.join(sessionDir, matches[matches.length - 1]!);
 }
 
-function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletionMessageMeta | undefined {
+function toUserMetaFromMessage(
+  message: Record<string, unknown>,
+): ChatCompletionMessageMeta | undefined {
   const meta = isRecord(message['meta']) ? message['meta'] : null;
   if (!meta) {
     return undefined;
@@ -191,7 +252,7 @@ function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletion
 }
 
 export function buildCanonicalPiReplayMessages(content: string): ChatCompletionMessage[] {
-  const entries = parseJsonLines(content);
+  const entries = buildEffectivePiReplayEntries(parseJsonLines(content));
   const messages: ChatCompletionMessage[] = [];
 
   for (const entry of entries) {

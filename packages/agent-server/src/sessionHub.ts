@@ -27,13 +27,18 @@ import type { ChatCompletionMessage } from './chatCompletionTypes';
 import type { TtsStreamingSession } from './tts/types';
 import type { SessionConnection } from './ws/sessionConnection';
 import type { PiSessionWriter, PiRequestHistoryAction } from './history/piSessionWriter';
+import {
+  DEFAULT_PI_COMPACTION_SETTINGS,
+  type PiCompactionSettings,
+  type PiCompactionResult,
+} from './history/piCompaction';
 import { buildChatMessagesFromEvents } from './sessionChatMessages';
 import { isSessionContextUsageEqual } from './contextUsage';
 import type { AttachmentStore } from './attachments/store';
 import { getSelectedSessionSkillIds } from './sessionConfig';
 import { SessionConnectionRegistry } from './sessionConnectionRegistry';
 import { InteractionRegistry } from './ws/interactionRegistry';
-import type { Agent as PiAgent } from '@mariozechner/pi-agent-core';
+import type { Agent as PiAgent } from '@earendil-works/pi-agent-core';
 import { resetLiveTranscriptSessionState } from './events/chatEventUtils';
 import { syncSessionNotificationTitles } from '../../plugins/core/notifications/server/service';
 import {
@@ -41,6 +46,9 @@ import {
   type CliToolCallMatchOptions,
   type CliToolCallRecord,
 } from './ws/cliToolCallRendezvous';
+import { resolveSessionModelForRun } from './sessionModel';
+import { resolvePiSdkAuthApiKey, resolvePiSdkModel } from './llm/piSdkProvider';
+import type { PiSdkChatConfig } from './agents';
 
 export interface LogicalSessionState {
   summary: SessionSummary;
@@ -59,76 +67,76 @@ export interface LogicalSessionState {
     | undefined;
   activeChatRun?:
     | {
-      /**
-       * Identifier for the current outer assistant request group.
-       * This is the visible transcript boundary and can span multiple turns.
-       */
-      requestId?: string;
-      /**
-       * Identifier for the current turn. Used to group
-       * chat events (user message, assistant response,
-       * tools, callbacks) in the unified event log.
-       */
-      turnId?: string;
-      responseId: string;
-      abortController: AbortController;
-      ttsSession?: TtsStreamingSession;
-      /**
-       * Optional identifier used to group streaming messages and tool
-       * calls that belong to a single agent-to-agent exchange initiated
-       * via agents_message.
-       *
-       * When present, this value is propagated to server messages so
-       * clients can render the entire exchange inside a single tool
-       * block.
-       */
-      agentExchangeId?: string;
-      /**
-       * Approximate playback offset (in ms) where the client
-       * requested output cancellation for the current response.
-       */
-      audioTruncatedAtMs?: number;
-      /**
-       * Accumulated text from the streaming response so far. Used to
-       * save partial text when the response is interrupted.
-       */
-      accumulatedText: string;
-      /**
-       * True once any assistant output begins (thinking/text/tool).
-       * Used to distinguish "cancel before output" from real interruptions.
-       */
-      outputStarted?: boolean;
-      /**
-       * Timestamp of the first text delta. Used to ensure interrupted
-       * assistant messages are logged with correct ordering.
-       */
-      textStartedAt?: string;
-      /**
-       * Tool calls that have started during this chat run but have not
-       * yet completed. Used so that output cancellation can mark them
-       * as interrupted in the conversation log.
-       */
-      activeToolCalls?: Map<
-        string,
-        {
-          callId: string;
-          toolName: string;
-          argsJson: string;
-        }
-      >;
-      /**
-       * True when this chat run was cancelled via an explicit output
-       * cancel control message. This is used to distinguish user
-       * interrupts from other abort reasons (for example, session
-       * switching) so that only user cancels mark tool calls as
-       * interrupted.
-       */
-      outputCancelled?: boolean;
-      /**
-       * Prevents duplicate interrupt/error/turn_end persistence when
-       * multiple terminal paths race with each other.
-       */
-      terminalEventsFinalized?: boolean;
+        /**
+         * Identifier for the current outer assistant request group.
+         * This is the visible transcript boundary and can span multiple turns.
+         */
+        requestId?: string;
+        /**
+         * Identifier for the current turn. Used to group
+         * chat events (user message, assistant response,
+         * tools, callbacks) in the unified event log.
+         */
+        turnId?: string;
+        responseId: string;
+        abortController: AbortController;
+        ttsSession?: TtsStreamingSession;
+        /**
+         * Optional identifier used to group streaming messages and tool
+         * calls that belong to a single agent-to-agent exchange initiated
+         * via agents_message.
+         *
+         * When present, this value is propagated to server messages so
+         * clients can render the entire exchange inside a single tool
+         * block.
+         */
+        agentExchangeId?: string;
+        /**
+         * Approximate playback offset (in ms) where the client
+         * requested output cancellation for the current response.
+         */
+        audioTruncatedAtMs?: number;
+        /**
+         * Accumulated text from the streaming response so far. Used to
+         * save partial text when the response is interrupted.
+         */
+        accumulatedText: string;
+        /**
+         * True once any assistant output begins (thinking/text/tool).
+         * Used to distinguish "cancel before output" from real interruptions.
+         */
+        outputStarted?: boolean;
+        /**
+         * Timestamp of the first text delta. Used to ensure interrupted
+         * assistant messages are logged with correct ordering.
+         */
+        textStartedAt?: string;
+        /**
+         * Tool calls that have started during this chat run but have not
+         * yet completed. Used so that output cancellation can mark them
+         * as interrupted in the conversation log.
+         */
+        activeToolCalls?: Map<
+          string,
+          {
+            callId: string;
+            toolName: string;
+            argsJson: string;
+          }
+        >;
+        /**
+         * True when this chat run was cancelled via an explicit output
+         * cancel control message. This is used to distinguish user
+         * interrupts from other abort reasons (for example, session
+         * switching) so that only user cancels mark tool calls as
+         * interrupted.
+         */
+        outputCancelled?: boolean;
+        /**
+         * Prevents duplicate interrupt/error/turn_end persistence when
+         * multiple terminal paths race with each other.
+         */
+        terminalEventsFinalized?: boolean;
       }
     | undefined;
   deleted?: boolean;
@@ -680,6 +688,103 @@ export class SessionHub {
     return { summary, changed: true, droppedRequestIds: result.droppedRequestIds };
   }
 
+  private resolvePiCompactionSettings(config: PiSdkChatConfig | undefined): PiCompactionSettings {
+    const compaction = config?.compaction;
+    return {
+      enabled: compaction?.enabled ?? DEFAULT_PI_COMPACTION_SETTINGS.enabled,
+      reserveTokens: compaction?.reserveTokens ?? DEFAULT_PI_COMPACTION_SETTINGS.reserveTokens,
+      keepRecentTokens:
+        compaction?.keepRecentTokens ?? DEFAULT_PI_COMPACTION_SETTINGS.keepRecentTokens,
+    };
+  }
+
+  async compactSession(options: {
+    sessionId: string;
+    reason: 'manual' | 'threshold' | 'overflow';
+    allowActiveRun?: boolean;
+    signal?: AbortSignal;
+  }): Promise<{
+    summary: SessionSummary;
+    compacted: true;
+    reason: 'manual' | 'threshold' | 'overflow';
+    result: PiCompactionResult;
+  }> {
+    const { sessionId, reason, allowActiveRun = false, signal } = options;
+    const existing = await this.sessionIndex.getSession(sessionId);
+    if (!existing) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (existing.deleted) {
+      throw new Error(`Cannot compact deleted session: ${sessionId}`);
+    }
+    const state = this.sessions.get(sessionId);
+    if (state?.activeChatRun && !allowActiveRun) {
+      throw new Error('Cannot compact context while the session is running');
+    }
+    const agent = existing.agentId ? this.agentRegistry.getAgent(existing.agentId) : undefined;
+    if (agent?.chat?.provider !== 'pi') {
+      throw new Error('Context compaction is only supported for Pi-backed sessions');
+    }
+    if (!this.piSessionWriter) {
+      throw new Error('Pi session writer is unavailable');
+    }
+    const piConfig = agent.chat.config as PiSdkChatConfig | undefined;
+    const modelSpec = resolveSessionModelForRun({ agent, summary: existing });
+    if (!modelSpec) {
+      throw new Error('Pi chat requires at least one model to compact context');
+    }
+    const resolvedModel = await resolvePiSdkModel({
+      modelSpec,
+      ...(piConfig?.provider ? { defaultProvider: piConfig.provider } : {}),
+      ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+      ...(piConfig?.contextWindow !== undefined ? { contextWindow: piConfig.contextWindow } : {}),
+    });
+    const configProvider = piConfig?.provider?.trim();
+    const providerMatchesConfig =
+      !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
+    const authApiKey = await resolvePiSdkAuthApiKey({ providerId: resolvedModel.providerId });
+    const apiKey = providerMatchesConfig ? (piConfig?.apiKey ?? authApiKey) : authApiKey;
+    const compactSignal = signal ?? state?.activeChatRun?.abortController.signal;
+    const result = await this.piSessionWriter.compact({
+      summary: existing,
+      settings: this.resolvePiCompactionSettings(piConfig),
+      model: {
+        ...resolvedModel.model,
+        ...(providerMatchesConfig && piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+        ...(providerMatchesConfig && piConfig?.headers ? { headers: piConfig.headers } : {}),
+      },
+      ...(apiKey ? { apiKey } : {}),
+      ...(compactSignal ? { signal: compactSignal } : {}),
+      updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
+    });
+
+    let summary = (await this.sessionIndex.markSessionActivity(sessionId)) ?? result.summary;
+    const currentState = this.sessions.get(sessionId);
+    if (currentState) {
+      const chatMessages = await this.resolveChatMessages(summary, true);
+      currentState.summary = summary;
+      currentState.chatMessages = chatMessages;
+    }
+
+    const usageSummary = await this.updateSessionContextUsage(sessionId, null);
+    if (usageSummary) {
+      summary = usageSummary;
+      const currentStateAfterUsage = this.sessions.get(sessionId);
+      if (currentStateAfterUsage) {
+        currentStateAfterUsage.summary = usageSummary;
+      }
+    }
+    this.broadcastSessionUpdated(summary, { includeAttributes: true, contextUsage: null });
+    const changedMessage: ServerSessionHistoryChangedMessage = {
+      type: 'session_history_changed',
+      sessionId,
+      updatedAt: summary.updatedAt,
+      revision: summary.revision,
+    };
+    this.connections.broadcastToSession(sessionId, changedMessage);
+    return { summary, compacted: true, reason, result: result.result };
+  }
+
   async touchSession(sessionId: string): Promise<SessionSummary | undefined> {
     const summary = await this.sessionIndex.touchSession(sessionId);
     if (!summary) {
@@ -828,10 +933,7 @@ export class SessionHub {
     );
   }
 
-  async loadSessionEvents(
-    summary: SessionSummary,
-    forceReload?: boolean,
-  ): Promise<ChatEvent[]> {
+  async loadSessionEvents(summary: SessionSummary, forceReload?: boolean): Promise<ChatEvent[]> {
     const agentId = summary.agentId;
     const agent = agentId ? this.agentRegistry.getAgent(agentId) : undefined;
     const providerId = agent?.chat?.provider;

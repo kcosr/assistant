@@ -11,7 +11,7 @@ import type {
   createLsTool as createLsToolType,
   createReadTool as createReadToolType,
   createWriteTool as createWriteToolType,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 
 import type { ToolContext } from './types';
 import { CodingToolHost } from './codingToolHost';
@@ -27,7 +27,7 @@ type CodingAgentModule = {
 };
 
 async function loadCodingAgentModule(): Promise<CodingAgentModule> {
-  return (await import('@mariozechner/pi-coding-agent')) as CodingAgentModule;
+  return (await import('@earendil-works/pi-coding-agent')) as CodingAgentModule;
 }
 
 function createTempDir(prefix: string): string {

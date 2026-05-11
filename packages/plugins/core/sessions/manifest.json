@@ -249,6 +249,21 @@
       "capabilities": ["sessions.write"]
     },
     {
+      "id": "compact",
+      "summary": "Compact Pi-backed session context.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Session id."
+          }
+        },
+        "required": ["sessionId"]
+      },
+      "capabilities": ["sessions.write"]
+    },
+    {
       "id": "delete",
       "summary": "Delete a session.",
       "inputSchema": {

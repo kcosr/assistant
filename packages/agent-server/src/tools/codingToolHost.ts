@@ -10,7 +10,7 @@ import type {
   createLsTool as createLsToolType,
   createReadTool as createReadToolType,
   createWriteTool as createWriteToolType,
-} from '@mariozechner/pi-coding-agent';
+} from '@earendil-works/pi-coding-agent';
 
 import type { AgentTool, Tool, ToolContext, ToolHost } from './types';
 import { ToolError } from './errors';
@@ -104,7 +104,7 @@ let codingAgentModulePromise: Promise<CodingAgentModule> | null = null;
 
 async function loadCodingAgentModule(): Promise<CodingAgentModule> {
   if (!codingAgentModulePromise) {
-    codingAgentModulePromise = import('@mariozechner/pi-coding-agent').then(
+    codingAgentModulePromise = import('@earendil-works/pi-coding-agent').then(
       (module) => module as CodingAgentModule,
     );
   }

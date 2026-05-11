@@ -51,7 +51,7 @@ Credentials can be:
 
 ### Pi SDK Provider Auth
 
-The `@mariozechner/pi-ai` SDK resolves API keys in this order:
+The `@earendil-works/pi-ai` SDK resolves API keys in this order:
 1. Explicit `options.apiKey` passed to `streamSimple()`
 2. Environment variables (e.g., `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN`)
 
@@ -77,7 +77,7 @@ Behavior:
 2. Reads `~/.pi/agent/auth.json` (or `$PI_CODING_AGENT_DIR/auth.json`).
 3. For `type: "api_key"`: returns the `key` field directly.
 4. For `type: "oauth"`:
-   - Calls `getOAuthApiKey()` from `@mariozechner/pi-ai` which handles refresh if expired.
+   - Calls `getOAuthApiKey()` from `@earendil-works/pi-ai` which handles refresh if expired.
    - Writes updated credentials back to `auth.json` (preserving extra fields like `accountId`).
    - Returns the access token.
 5. Returns `undefined` if no credentials found or on error.
@@ -144,7 +144,7 @@ entry is used. No `chat.config.apiKey` is needed.
 
 ### Token Refresh
 
-OAuth tokens expire. The `getOAuthApiKey()` function from `@mariozechner/pi-ai`:
+OAuth tokens expire. The `getOAuthApiKey()` function from `@earendil-works/pi-ai`:
 1. Checks if the token is expired (`Date.now() >= expires`).
 2. If expired, calls the provider's `refreshToken()` method.
 3. Returns updated credentials.
@@ -174,14 +174,14 @@ level with a clear "no API key" error.
 
 ## Dependencies
 
-No new dependencies. Uses existing `@mariozechner/pi-ai` exports:
+No new dependencies. Uses existing `@earendil-works/pi-ai` exports:
 - `getOAuthApiKey()`
 - `OAuthCredentials` type
 
 ## Testing
 
 Manual testing:
-1. Run `npx @mariozechner/pi-ai login anthropic` to populate auth.json.
+1. Run `npx @earendil-works/pi-ai login anthropic` to populate auth.json.
 2. Configure agent with `anthropic/claude-sonnet-4-5` model.
 3. Verify assistant uses OAuth token (check debug logs or network).
 4. Let token expire and verify refresh works.
@@ -195,6 +195,7 @@ Unit tests (future):
 ## Future Considerations
 
 - **File locking**: Add `proper-lockfile` if multi-process refresh races become an issue.
-- **Additional providers**: Could extend to `github-copilot`, `google-gemini-cli` if needed.
+- **Additional providers**: Could extend to `github-copilot` if needed. Pi 0.71.0 removed the
+  built-in Google Gemini CLI OAuth provider.
 - **Cache in memory**: Currently re-reads auth.json per chat run; could cache with TTL.
 - **Login UI**: Could add OAuth login to assistant's web UI in the future.

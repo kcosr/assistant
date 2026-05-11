@@ -15,3 +15,27 @@ export async function readSessionOperationResult<T>(response: Response): Promise
   }
   return data as T;
 }
+
+export async function readSessionOperationError(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const data = (await response.clone().json()) as unknown;
+    if (data && typeof data === 'object' && 'error' in data) {
+      const error = (data as { error?: unknown }).error;
+      if (typeof error === 'string' && error.trim()) {
+        return error.trim();
+      }
+    }
+  } catch {
+    // Fall through to text response handling.
+  }
+
+  try {
+    const text = (await response.text()).trim();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}

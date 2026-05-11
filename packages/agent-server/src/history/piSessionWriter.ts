@@ -11,7 +11,9 @@ import type {
   ToolCall,
   ToolResultMessage,
   Usage,
-} from '@mariozechner/pi-ai';
+  Api,
+  Model,
+} from '@earendil-works/pi-ai';
 
 import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCompletionTypes';
 import type { SessionSummary } from '../sessionIndex';
@@ -22,6 +24,17 @@ import {
   getNextPiTranscriptRevision,
   getPiTranscriptRevision,
 } from './piTranscriptRevision';
+import {
+  compactPiMessages,
+  buildCompactionSummaryText,
+  buildEffectivePiSessionEntryPath,
+  buildPiSessionEntryPath,
+  type PiCompactionDetails,
+  type PiCompactionResult,
+  type PiCompactionSettings,
+  preparePiCompaction,
+  type PiSessionPathEntry,
+} from './piCompaction';
 
 type PiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -83,13 +96,23 @@ type PiSessionCustomMessageEntry = PiSessionEntryBase & {
   label?: string;
 };
 
+type PiSessionCompactionEntry = PiSessionEntryBase & {
+  type: 'compaction';
+  summary: string;
+  firstKeptEntryId: string;
+  tokensBefore: number;
+  details?: PiCompactionDetails;
+  fromHook?: boolean;
+};
+
 type PiSessionEntry =
   | PiSessionMessageEntry
   | PiSessionModelChangeEntry
   | PiSessionThinkingChangeEntry
   | PiSessionInfoEntry
   | PiSessionCustomEntry
-  | PiSessionCustomMessageEntry;
+  | PiSessionCustomMessageEntry
+  | PiSessionCompactionEntry;
 
 type PiSessionWriterState = {
   sessionId: string;
@@ -357,7 +380,9 @@ function collectToolCallIdsFromPiMessage(message: PiSdkMessage): string[] {
   return ids;
 }
 
-function collectToolCallIdsFromAssistantMessage(message: ChatCompletionMessage & { role: 'assistant' }): string[] {
+function collectToolCallIdsFromAssistantMessage(
+  message: ChatCompletionMessage & { role: 'assistant' },
+): string[] {
   const piSdkMessage = message.piSdkMessage;
   if (piSdkMessage) {
     return collectToolCallIdsFromPiMessage(piSdkMessage);
@@ -423,7 +448,9 @@ function normalizePiContentBlockForSignature(block: unknown): unknown {
         ...(typeof block['thinkingSignature'] === 'string'
           ? { thinkingSignature: block['thinkingSignature'] }
           : {}),
-        ...(block['summary'] !== undefined ? { summary: stableNormalizeJson(block['summary']) } : {}),
+        ...(block['summary'] !== undefined
+          ? { summary: stableNormalizeJson(block['summary']) }
+          : {}),
       };
     default:
       return stableNormalizeJson(block);
@@ -602,8 +629,20 @@ function resolveMessageSyncAlignment(options: {
   const maxOverlap = Math.min(persistedSignatures.length, currentSignatures.length);
   for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
     const persistedStart = persistedSignatures.length - overlap;
-    for (let currentStart = currentSignatures.length - overlap; currentStart >= 0; currentStart -= 1) {
-      if (signaturesEqual(persistedSignatures, persistedStart, currentSignatures, currentStart, overlap)) {
+    for (
+      let currentStart = currentSignatures.length - overlap;
+      currentStart >= 0;
+      currentStart -= 1
+    ) {
+      if (
+        signaturesEqual(
+          persistedSignatures,
+          persistedStart,
+          currentSignatures,
+          currentStart,
+          overlap,
+        )
+      ) {
         return {
           startIndex: currentStart + overlap,
           matchedCount: overlap,
@@ -673,7 +712,8 @@ function normalizePiUserMeta(value: unknown): ChatCompletionMessageMeta | undefi
     return undefined;
   }
   const visibilityRaw = typeof value['visibility'] === 'string' ? value['visibility'].trim() : '';
-  const visibility = visibilityRaw === 'visible' || visibilityRaw === 'hidden' ? visibilityRaw : undefined;
+  const visibility =
+    visibilityRaw === 'visible' || visibilityRaw === 'hidden' ? visibilityRaw : undefined;
   return {
     source,
     ...(typeof value['fromAgentId'] === 'string' && value['fromAgentId'].trim().length > 0
@@ -776,9 +816,7 @@ function buildToolResultMessage(options: {
   };
 }
 
-async function loadExistingPiSessionState(
-  filePath: string,
-): Promise<{
+async function loadExistingPiSessionState(filePath: string): Promise<{
   leafId: string | null;
   messageCount: number;
   messageSignatures: string[];
@@ -999,16 +1037,105 @@ async function loadPiSessionFileRecords(filePath: string): Promise<PiSessionFile
   return { header, entries };
 }
 
-function getRequestBoundaryRecord(
-  entry: PiSessionEntryRecord,
-):
-  | {
-      kind: 'start' | 'end';
-      requestId: string;
-      status?: PiTurnStatus;
-      trigger?: PiTurnTrigger;
+function toPiCompactionPathEntry(entry: PiSessionEntryRecord): PiSessionPathEntry | null {
+  if (entry.type === 'message' && isRecord(entry['message'])) {
+    return {
+      type: 'message',
+      id: entry.id,
+      parentId: entry.parentId,
+      timestamp: getString(entry['timestamp']),
+      message: entry['message'] as never,
+    };
+  }
+  if (entry.type === 'custom_message') {
+    return {
+      type: 'custom_message',
+      id: entry.id,
+      parentId: entry.parentId,
+      timestamp: getString(entry['timestamp']),
+      customType: getString(entry['customType']),
+      content:
+        typeof entry['content'] === 'string' || Array.isArray(entry['content'])
+          ? (entry['content'] as string | unknown[])
+          : '',
+      details: entry['details'],
+      display: entry['display'] === true,
+    };
+  }
+  if (entry.type === 'compaction') {
+    return {
+      type: 'compaction',
+      id: entry.id,
+      parentId: entry.parentId,
+      timestamp: getString(entry['timestamp']),
+      summary: getString(entry['summary']),
+      firstKeptEntryId: getString(entry['firstKeptEntryId']),
+      tokensBefore:
+        typeof entry['tokensBefore'] === 'number' && Number.isFinite(entry['tokensBefore'])
+          ? Math.max(0, Math.floor(entry['tokensBefore']))
+          : 0,
+      details: entry['details'],
+      ...(entry['fromHook'] === true ? { fromHook: true } : {}),
+    };
+  }
+  return {
+    ...entry,
+    timestamp: getString(entry['timestamp']),
+  } as PiSessionPathEntry;
+}
+
+function buildEffectiveMessageSignatureEntries(
+  entries: PiSessionEntryRecord[],
+): PiSessionEntryRecord[] {
+  return buildEffectivePiSessionEntryPath(entries);
+}
+
+function buildEffectiveMessageSignatures(entries: PiSessionEntryRecord[]): string[] {
+  return buildEffectiveMessageSignatureEntries(entries).flatMap((entry) => {
+    if (entry.type === 'compaction') {
+      const summary = getString(entry['summary']);
+      if (!summary) {
+        return [];
+      }
+      return [
+        signatureFromPiMessage({
+          role: 'user',
+          content: [{ type: 'text', text: buildCompactionSummaryText(summary) }],
+          timestamp:
+            typeof entry['timestamp'] === 'string' ? Date.parse(entry['timestamp']) || 0 : 0,
+          meta: { source: 'user' },
+        }),
+      ];
     }
-  | null {
+    if (entry.type === 'message') {
+      return [signatureFromPiMessage(entry['message'])];
+    }
+    if (entry.type === 'custom_message') {
+      const customType = getString(entry['customType']);
+      if (customType === ORPHAN_TOOL_RESULT_CUSTOM_TYPE) {
+        return [
+          signatureFromCustomMessageEntry({
+            customType,
+            content:
+              typeof entry['content'] === 'string' || Array.isArray(entry['content'])
+                ? (entry['content'] as string | unknown[])
+                : '',
+            details: entry['details'],
+            display: entry['display'] === true,
+          }),
+        ];
+      }
+    }
+    return [];
+  });
+}
+
+function getRequestBoundaryRecord(entry: PiSessionEntryRecord): {
+  kind: 'start' | 'end';
+  requestId: string;
+  status?: PiTurnStatus;
+  trigger?: PiTurnTrigger;
+} | null {
   if (entry.type !== 'custom') {
     return null;
   }
@@ -1021,20 +1148,16 @@ function getRequestBoundaryRecord(
   }
   const data = isRecord(entry['data']) ? entry['data'] : null;
   const requestId =
-    data &&
-    typeof data['requestId'] === 'string' &&
-    data['requestId'].trim().length > 0
+    data && typeof data['requestId'] === 'string' && data['requestId'].trim().length > 0
       ? data['requestId'].trim()
       : '';
   if (!requestId) {
     return null;
   }
   const triggerRaw = data?.['trigger'];
-  const trigger =
-    triggerRaw === 'user' || triggerRaw === 'callback' ? triggerRaw : undefined;
+  const trigger = triggerRaw === 'user' || triggerRaw === 'callback' ? triggerRaw : undefined;
   const statusRaw = data?.['status'];
-  const status =
-    statusRaw === 'completed' || statusRaw === 'interrupted' ? statusRaw : undefined;
+  const status = statusRaw === 'completed' || statusRaw === 'interrupted' ? statusRaw : undefined;
   return {
     kind: customType === ASSISTANT_REQUEST_START_CUSTOM_TYPE ? 'start' : 'end',
     requestId,
@@ -1148,7 +1271,8 @@ function getSyntheticRequestTrigger(entry: PiSessionEntryRecord): PiTurnTrigger 
 }
 
 function resolveEntryTimestamp(entry: PiSessionEntryRecord | undefined, fallback: string): string {
-  const timestamp = entry && typeof entry['timestamp'] === 'string' ? entry['timestamp'].trim() : '';
+  const timestamp =
+    entry && typeof entry['timestamp'] === 'string' ? entry['timestamp'].trim() : '';
   return timestamp || fallback;
 }
 
@@ -1164,7 +1288,9 @@ function materializeExplicitRequestBoundaries(options: {
 
   const materialized: PiSessionEntryRecord[] = [];
   for (const span of spans) {
-    const spanEntries = entries.slice(span.startIndex, span.endIndex + 1).map((entry) => cloneJson(entry));
+    const spanEntries = entries
+      .slice(span.startIndex, span.endIndex + 1)
+      .map((entry) => cloneJson(entry));
     if (spanEntries.length === 0) {
       continue;
     }
@@ -1323,9 +1449,7 @@ export class PiSessionWriter {
 
   async clearSession(options: {
     summary: SessionSummary;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, updateAttributes } = options;
     const providerInfo = getProviderAttributes(summary.attributes, 'pi', ['pi-cli']);
@@ -1385,9 +1509,7 @@ export class PiSessionWriter {
     summary: SessionSummary;
     action: PiRequestHistoryAction;
     requestId: string;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<{ summary: SessionSummary; changed: boolean; droppedRequestIds: string[] }> {
     const { summary, action, requestId, updateAttributes } = options;
     const trimmedRequestId = requestId.trim();
@@ -1420,32 +1542,30 @@ export class PiSessionWriter {
 
     const filteredEntriesRaw =
       action === 'trim_after'
-        ? records.entries
-            .slice(0, droppedRanges[0]!.startIndex)
-            .map((entry) => cloneJson(entry))
+        ? records.entries.slice(0, droppedRanges[0]!.startIndex).map((entry) => cloneJson(entry))
         : filterEntriesByDroppedRanges(records.entries, droppedRanges);
-    const filteredEntries =
-      hadExplicitRequestSpans
-        ? filterConversationalEntriesOutsideRanges(
-            filteredEntriesRaw,
-            collectExplicitRequestSpans(filteredEntriesRaw),
-          )
-        : filteredEntriesRaw;
-    const keptEntries =
-      hadExplicitRequestSpans
-        ? rechainEntries(filteredEntries)
-        : rechainEntries(
-            materializeExplicitRequestBoundaries({
-              entries: filteredEntries,
-              spans: collectSyntheticRequestSpans(filteredEntries),
-              fallbackTimestamp: this.now().toISOString(),
-            }),
-          );
+    const filteredEntries = hadExplicitRequestSpans
+      ? filterConversationalEntriesOutsideRanges(
+          filteredEntriesRaw,
+          collectExplicitRequestSpans(filteredEntriesRaw),
+        )
+      : filteredEntriesRaw;
+    const keptEntries = hadExplicitRequestSpans
+      ? rechainEntries(filteredEntries)
+      : rechainEntries(
+          materializeExplicitRequestBoundaries({
+            entries: filteredEntries,
+            spans: collectSyntheticRequestSpans(filteredEntries),
+            fallbackTimestamp: this.now().toISOString(),
+          }),
+        );
     const tempFilePath = `${state.sessionFile}.tmp-${randomUUID()}`;
 
     await this.queueWrite(state, async () => {
       await fs.mkdir(state.sessionDir, { recursive: true });
-      const payload = [records.header, ...keptEntries].map((entry) => JSON.stringify(entry)).join('\n');
+      const payload = [records.header, ...keptEntries]
+        .map((entry) => JSON.stringify(entry))
+        .join('\n');
       await fs.writeFile(tempFilePath, `${payload}\n`, 'utf8');
       await fs.rename(tempFilePath, state.sessionFile);
     });
@@ -1469,15 +1589,102 @@ export class PiSessionWriter {
     return { summary: currentSummary, changed: true, droppedRequestIds };
   }
 
+  async compact(options: {
+    summary: SessionSummary;
+    settings: PiCompactionSettings;
+    model: Model<Api>;
+    apiKey?: string;
+    customInstructions?: string;
+    signal?: AbortSignal;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
+  }): Promise<{ summary: SessionSummary; result: PiCompactionResult }> {
+    const { summary, settings, model, apiKey, customInstructions, signal, updateAttributes } =
+      options;
+    const stateInfo = await this.ensureSessionState({
+      summary,
+      ...(updateAttributes ? { updateAttributes } : {}),
+    });
+    const state = stateInfo.state;
+    const records = await loadPiSessionFileRecords(state.sessionFile);
+    if (!records) {
+      throw new Error('Pi session history is unavailable');
+    }
+    const pathEntries = buildPiSessionEntryPath(records.entries)
+      .map((entry) => toPiCompactionPathEntry(entry))
+      .filter((entry): entry is PiSessionPathEntry => !!entry);
+    const preparation = preparePiCompaction(pathEntries, settings);
+    if (!preparation) {
+      throw new Error('Already compacted');
+    }
+    if (
+      preparation.messagesToSummarize.length === 0 &&
+      preparation.turnPrefixMessages.length === 0
+    ) {
+      throw new Error('Nothing to compact (session too small)');
+    }
+    const result = await compactPiMessages({
+      preparation,
+      model,
+      ...(apiKey ? { apiKey } : {}),
+      ...(customInstructions ? { customInstructions } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    if (!result.summary.trim()) {
+      throw new Error('Nothing to compact (session too small)');
+    }
+
+    const entry: PiSessionCompactionEntry = {
+      type: 'compaction',
+      id: generateEntryId(),
+      parentId: state.leafId,
+      timestamp: this.now().toISOString(),
+      summary: result.summary,
+      firstKeptEntryId: result.firstKeptEntryId,
+      tokensBefore: result.tokensBefore,
+      ...(result.details ? { details: result.details } : {}),
+      fromHook: false,
+    };
+
+    await this.queueWrite(state, async () => {
+      if (!state.flushed) {
+        await this.ensureSessionFile(state);
+      }
+      await this.appendEntries(state, [entry]);
+    });
+
+    state.leafId = entry.id;
+    const updatedRecords = await loadPiSessionFileRecords(state.sessionFile);
+    if (updatedRecords) {
+      state.messageSignatures = buildEffectiveMessageSignatures(updatedRecords.entries);
+      state.writtenMessageCount = state.messageSignatures.length;
+    }
+
+    let currentSummary = stateInfo.summary;
+    if (updateAttributes) {
+      try {
+        const updated = await updateAttributes(
+          buildPiTranscriptRevisionPatch({
+            revision: getNextPiTranscriptRevision(currentSummary.attributes),
+          }),
+        );
+        if (updated) {
+          currentSummary = updated;
+        }
+      } catch (err) {
+        this.log('Failed to update Pi transcript revision after compaction', err);
+      }
+    }
+
+    return { summary: currentSummary, result };
+  }
+
   async sync(options: {
     summary: SessionSummary;
     messages: ChatCompletionMessage[];
     modelSpec?: string;
     defaultProvider?: string;
     thinkingLevel?: string;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, messages, modelSpec, defaultProvider, thinkingLevel, updateAttributes } =
       options;
@@ -1500,7 +1707,11 @@ export class PiSessionWriter {
       currentSignatures,
     });
 
-    if (alignment.mode === 'none' && state.messageSignatures.length > 0 && currentSignatures.length > 0) {
+    if (
+      alignment.mode === 'none' &&
+      state.messageSignatures.length > 0 &&
+      currentSignatures.length > 0
+    ) {
       this.log('Pi session sync skipped due to unreconcilable message alignment', {
         sessionId: summary.sessionId,
         piSessionId: state.piSessionId,
@@ -1540,7 +1751,12 @@ export class PiSessionWriter {
 
     const entries: PiSessionEntry[] = [];
 
-    if (modelInfo && (!state.lastModel || state.lastModel.modelId !== modelInfo.modelId || state.lastModel.provider !== modelInfo.provider)) {
+    if (
+      modelInfo &&
+      (!state.lastModel ||
+        state.lastModel.modelId !== modelInfo.modelId ||
+        state.lastModel.provider !== modelInfo.provider)
+    ) {
       const modelEntry: PiSessionModelChangeEntry = {
         type: 'model_change',
         id: generateEntryId(),
@@ -1569,7 +1785,8 @@ export class PiSessionWriter {
 
     for (const message of newMessages) {
       const messageTimestampValue =
-        typeof message.historyTimestampMs === 'number' && Number.isFinite(message.historyTimestampMs)
+        typeof message.historyTimestampMs === 'number' &&
+        Number.isFinite(message.historyTimestampMs)
           ? message.historyTimestampMs
           : this.now().getTime();
       if (message.role === 'user') {
@@ -1680,9 +1897,7 @@ export class PiSessionWriter {
     payload: unknown;
     turnId?: string;
     responseId?: string;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, eventType, payload, turnId, responseId, updateAttributes } = options;
 
@@ -1727,9 +1942,7 @@ export class PiSessionWriter {
     summary: SessionSummary;
     turnId: string;
     trigger: PiTurnTrigger;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, turnId, trigger, updateAttributes } = options;
     const trimmedTurnId = turnId.trim();
@@ -1744,7 +1957,8 @@ export class PiSessionWriter {
     });
     currentSummary = stateInfo.summary;
     const state = stateInfo.state;
-    const openRequestId = state.openRequestId ?? (await resolveOpenRequestIdFromFile(state.sessionFile));
+    const openRequestId =
+      state.openRequestId ?? (await resolveOpenRequestIdFromFile(state.sessionFile));
 
     const entries: PiSessionEntry[] = [];
     let nextParentId = state.leafId;
@@ -1794,9 +2008,7 @@ export class PiSessionWriter {
     summary: SessionSummary;
     turnId: string;
     status: PiTurnStatus;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, turnId, status, updateAttributes } = options;
     const trimmedTurnId = turnId.trim();
@@ -1812,7 +2024,8 @@ export class PiSessionWriter {
     currentSummary = stateInfo.summary;
     const state = stateInfo.state;
 
-    const targetRequestId = state.openRequestId ?? (await resolveOpenRequestIdFromFile(state.sessionFile));
+    const targetRequestId =
+      state.openRequestId ?? (await resolveOpenRequestIdFromFile(state.sessionFile));
     if (!targetRequestId) {
       return currentSummary === summary ? undefined : currentSummary;
     }
@@ -1840,9 +2053,7 @@ export class PiSessionWriter {
   async appendSessionInfo(options: {
     summary: SessionSummary;
     name: string;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
     const { summary, name, updateAttributes } = options;
 
@@ -1903,12 +2114,17 @@ export class PiSessionWriter {
     details?: unknown;
     display?: boolean;
     label?: string;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<SessionSummary | undefined> {
-    const { summary, customType, content, details, display = true, label, updateAttributes } =
-      options;
+    const {
+      summary,
+      customType,
+      content,
+      details,
+      display = true,
+      label,
+      updateAttributes,
+    } = options;
 
     const trimmedCustomType = customType.trim();
     if (!trimmedCustomType) {
@@ -1950,9 +2166,7 @@ export class PiSessionWriter {
 
   private async ensureSessionState(options: {
     summary: SessionSummary;
-    updateAttributes?: (
-      patch: SessionAttributesPatch,
-    ) => Promise<SessionSummary | undefined>;
+    updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<{ summary: SessionSummary; state: PiSessionWriterState }> {
     const { summary, updateAttributes } = options;
     const existing = this.sessions.get(summary.sessionId);
@@ -2020,6 +2234,11 @@ export class PiSessionWriter {
           leafId = existingState.leafId;
           messageCount = existingState.messageCount;
           messageSignatures = existingState.messageSignatures;
+          const records = await loadPiSessionFileRecords(sessionFile);
+          if (records) {
+            messageSignatures = buildEffectiveMessageSignatures(records.entries);
+            messageCount = messageSignatures.length;
+          }
           hasAssistant = existingState.hasAssistant;
           toolCallIds = existingState.toolCallIds;
           lastModel = existingState.lastModel;
@@ -2072,10 +2291,7 @@ export class PiSessionWriter {
     return { summary: currentSummary, state };
   }
 
-  private async queueWrite(
-    state: PiSessionWriterState,
-    task: () => Promise<void>,
-  ): Promise<void> {
+  private async queueWrite(state: PiSessionWriterState, task: () => Promise<void>): Promise<void> {
     state.writeQueue = state.writeQueue.then(task).catch((err) => {
       this.log('Pi session write failed', err);
     });
@@ -2092,7 +2308,10 @@ export class PiSessionWriter {
     state.flushed = true;
   }
 
-  private async appendEntries(state: PiSessionWriterState, entries: PiSessionEntry[]): Promise<void> {
+  private async appendEntries(
+    state: PiSessionWriterState,
+    entries: PiSessionEntry[],
+  ): Promise<void> {
     if (entries.length === 0) {
       return;
     }

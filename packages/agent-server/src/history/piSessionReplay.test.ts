@@ -224,4 +224,95 @@ describe('buildCanonicalPiReplayMessages', () => {
       historyTimestampMs: 5,
     });
   });
+
+  it('rebuilds effective context from the latest compaction entry', () => {
+    const content = [
+      JSON.stringify({
+        type: 'session',
+        version: 3,
+        id: 'pi-session',
+        timestamp: '2026-03-26T00:00:00.000Z',
+        cwd: '/tmp/example',
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'old-user',
+        parentId: null,
+        timestamp: '2026-03-26T00:00:01.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Discarded request' }],
+          timestamp: 1,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'kept-user',
+        parentId: 'old-user',
+        timestamp: '2026-03-26T00:00:02.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Kept request' }],
+          timestamp: 2,
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'kept-assistant',
+        parentId: 'kept-user',
+        timestamp: '2026-03-26T00:00:03.000Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Kept answer' }],
+          api: 'openai-responses',
+          provider: 'openai-codex',
+          model: 'gpt-5.4',
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: 'stop',
+          timestamp: 3,
+        },
+      }),
+      JSON.stringify({
+        type: 'compaction',
+        id: 'compact-1',
+        parentId: 'kept-assistant',
+        timestamp: '2026-03-26T00:00:04.000Z',
+        summary: 'Older work summary.',
+        firstKeptEntryId: 'kept-user',
+        tokensBefore: 1000,
+        details: { readFiles: [], modifiedFiles: [] },
+        fromHook: false,
+      }),
+      JSON.stringify({
+        type: 'message',
+        id: 'post-user',
+        parentId: 'compact-1',
+        timestamp: '2026-03-26T00:00:05.000Z',
+        message: {
+          role: 'user',
+          content: [{ type: 'text', text: 'Post-compaction request' }],
+          timestamp: 5,
+        },
+      }),
+    ].join('\n');
+
+    const messages = buildCanonicalPiReplayMessages(content);
+
+    expect(messages.map((message) => message.role)).toEqual(['user', 'user', 'assistant', 'user']);
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content:
+        'The conversation history before this point was compacted into the following summary:\n\n<summary>\nOlder work summary.\n</summary>',
+    });
+    expect(messages[1]).toMatchObject({ role: 'user', content: 'Kept request' });
+    expect(messages[2]).toMatchObject({ role: 'assistant', content: 'Kept answer' });
+    expect(messages[3]).toMatchObject({ role: 'user', content: 'Post-compaction request' });
+  });
 });

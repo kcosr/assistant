@@ -50,7 +50,7 @@ Pi SDK chat uses provider-specific environment variables. Common examples includ
 
 The assistant does not resolve these itself; it passes requests to the Pi SDK, which
 reads the provider environment variables directly. For a complete list, see the
-`@mariozechner/pi-ai` README.
+`@earendil-works/pi-ai` README.
 
 ### Server
 
@@ -338,13 +338,14 @@ relative file paths and `bash` commands anchor to the session picker’s working
 }
 ```
 
-| Field                 | Type   | Description                                                                                                                        |
-| --------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `mode`                | string | Execution mode. Only `local` is supported.                                                                                         |
+| Field                 | Type   | Description                                                                                                                         |
+| --------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `mode`                | string | Execution mode. Only `local` is supported.                                                                                          |
 | `local.workspaceRoot` | string | Root directory for local workspaces. `${session.workingDir}` resolves from `attributes.core.workingDir` for interactive tool calls. |
 
 Notes:
-- Coding tools now execute directly through the imported `@mariozechner/pi-coding-agent` local tool implementations.
+
+- Coding tools now execute directly through the imported `@earendil-works/pi-coding-agent` local tool implementations.
 
 ##### Agents plugin tools (when enabled)
 
@@ -631,6 +632,11 @@ Notes:
       "maxTokens": 4096,
       "temperature": 0.7,
       "maxToolIterations": 100,
+      "compaction": {
+        "enabled": true,
+        "reserveTokens": 16384,
+        "keepRecentTokens": 20000
+      },
       "headers": {
         "X-Request-Source": "assistant"
       }
@@ -653,6 +659,11 @@ Notes:
 - `config.contextWindow`: optional context window override used for synthesized models (providers without a built-in Pi catalog entry when `config.baseUrl` is set).
 - `config.maxToolIterations`: max consecutive tool iterations before aborting with an error
   (default: 100).
+- `config.compaction`: optional Pi SDK context compaction controls. Compaction is enabled by
+  default with Pi-compatible defaults: `reserveTokens: 16384` and `keepRecentTokens: 20000`.
+  Manual compaction is available from the chat request history menu for in-process Pi SDK sessions, and
+  automatic threshold compaction runs after completed Pi turns when usage exceeds
+  `contextWindow - reserveTokens`.
 
 Pi SDK sessions are mirrored to the Pi JSONL format so they can be resumed by the
 pi-mono CLI. Sessions are written to:
@@ -660,7 +671,9 @@ pi-mono CLI. Sessions are written to:
 The `cwd` comes from `attributes.core.workingDir` when available (otherwise the
 server working directory).
 Canceled runs still write partial assistant/tool entries so the pi-mono CLI can resume.
-Pi-backed sessions always persist canonical Pi JSONL history for replay and reload.
+Pi-backed sessions always persist canonical Pi JSONL history for replay and reload. Compacted Pi
+JSONL logs keep the full raw history on disk and add Pi-compatible `compaction` entries; future
+model context is rebuilt as summary plus the recent kept messages.
 
 #### CLI Providers (`claude-cli`, `codex-cli`, `pi-cli`)
 

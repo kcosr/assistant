@@ -39,9 +39,9 @@ const mockPiAgentPrompt = vi.fn<
   }) => Promise<void>
 >();
 
-vi.mock('@mariozechner/pi-agent-core', async () => {
-  const actual = await vi.importActual<typeof import('@mariozechner/pi-agent-core')>(
-    '@mariozechner/pi-agent-core',
+vi.mock('@earendil-works/pi-agent-core', async () => {
+  const actual = await vi.importActual<typeof import('@earendil-works/pi-agent-core')>(
+    '@earendil-works/pi-agent-core',
   );
   class MockAgent {
     state = {
@@ -100,7 +100,8 @@ vi.mock('@mariozechner/pi-agent-core', async () => {
 });
 
 vi.mock('../llm/piSdkProvider', async () => {
-  const actual = await vi.importActual<typeof import('../llm/piSdkProvider')>('../llm/piSdkProvider');
+  const actual =
+    await vi.importActual<typeof import('../llm/piSdkProvider')>('../llm/piSdkProvider');
   return {
     ...actual,
     resolvePiSdkModel: vi.fn(),
@@ -323,15 +324,12 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
                     id: call.id,
                     name: call.name,
                     arguments:
-                      call.argumentsJson.trim().length > 0
-                        ? JSON.parse(call.argumentsJson)
-                        : {},
+                      call.argumentsJson.trim().length > 0 ? JSON.parse(call.argumentsJson) : {},
                   })),
-              ]
-            : result.assistantMessage.content,
+                ]
+              : result.assistantMessage.content,
         };
         if (!sawTextDelta) {
-          let textSoFar = '';
           for (const [index, block] of assistantMessage.content.entries()) {
             if (
               block.type !== 'text' ||
@@ -341,7 +339,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
             ) {
               continue;
             }
-            textSoFar += block.text;
             await emit({
               type: 'message_update',
               message: assistantMessage,
@@ -657,6 +654,186 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
   });
 
+  it('compacts and retries once when a Pi run hits context overflow', async () => {
+    vi.mocked(resolvePiSdkModel).mockResolvedValue({
+      model: {
+        id: 'gpt-5.4',
+        provider: 'openai-codex',
+        api: 'openai-responses',
+        contextWindow: 100,
+      } as never,
+      providerId: 'openai-codex',
+      modelId: 'gpt-5.4',
+    });
+
+    const retryMessageSets: unknown[][] = [];
+    vi.mocked(runPiSdkChatCompletionIteration)
+      .mockImplementationOnce(async (options) => {
+        retryMessageSets.push(structuredClone(options.messages));
+        return {
+          text: '',
+          toolCalls: [],
+          aborted: false,
+          assistantMessage: {
+            role: 'assistant',
+            content: [],
+            api: 'openai-responses',
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            usage: {
+              input: 100,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 100,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'error',
+            errorMessage: 'context_length_exceeded: maximum context length exceeded',
+            timestamp: Date.now(),
+          } as never,
+        };
+      })
+      .mockImplementationOnce(async (options) => {
+        retryMessageSets.push(structuredClone(options.messages));
+        return {
+          text: 'Recovered answer',
+          toolCalls: [],
+          aborted: false,
+          assistantMessage: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'text',
+                text: 'Recovered answer',
+                textSignature: '{"v":1,"id":"msg-final","phase":"final_answer"}',
+              },
+            ],
+            api: 'openai-responses',
+            provider: 'openai-codex',
+            model: 'gpt-5.4',
+            usage: {
+              input: 40,
+              output: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 45,
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            },
+            stopReason: 'stop',
+            timestamp: Date.now(),
+          } as never,
+        };
+      });
+
+    const broadcast: ServerMessage[] = [];
+    const sendError = vi.fn();
+    const state: LogicalSessionState = {
+      summary: {
+        sessionId: 's1',
+        title: 'Test',
+        createdAt: '',
+        updatedAt: '',
+        deleted: false,
+        agentId: 'pi',
+        attributes: {},
+      },
+      chatMessages: [{ role: 'user', content: 'Earlier request' }],
+      messageQueue: [],
+    } as unknown as LogicalSessionState;
+    const compactSession = vi.fn(async () => {
+      expect(JSON.stringify(state.chatMessages)).not.toContain('context_length_exceeded');
+      state.chatMessages = [
+        {
+          role: 'user',
+          content:
+            'The conversation history before this point was compacted into the following summary:\n\n<summary>\nEarlier work summary\n</summary>',
+        },
+        { role: 'user', content: 'Current request' },
+      ];
+      return {
+        summary: {
+          ...state.summary,
+          updatedAt: 'after-compact',
+        },
+        compacted: true as const,
+        reason: 'overflow' as const,
+        result: {
+          summary: 'Earlier work summary',
+          firstKeptEntryId: 'current-user',
+          tokensBefore: 100,
+        },
+      };
+    });
+    const sessionHub: SessionHub = {
+      getAgentRegistry: () =>
+        new AgentRegistry([
+          {
+            agentId: 'pi',
+            displayName: 'Pi',
+            description: 'Pi',
+            chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+          },
+        ]),
+      broadcastToSession: (_sessionId: string, message: ServerMessage) => {
+        broadcast.push(message);
+      },
+      broadcastToSessionExcluding: () => undefined,
+      updateSessionAttributes: async () => undefined,
+      updateSessionContextUsage: vi.fn(async () => undefined),
+      recordSessionActivity: vi.fn(async () => undefined),
+      queueMessage: async () => {
+        throw new Error('queueMessage should not be called in this test');
+      },
+      dequeueMessageById: async () => undefined,
+      processNextQueuedMessage: async () => false,
+      getPiSessionWriter: () => undefined,
+      compactSession,
+    } as unknown as SessionHub;
+
+    await handleTextInputWithChatCompletions({
+      message: { type: 'text_input', text: 'Current request', sessionId: 's1' },
+      state,
+      sessionId: 's1',
+      connection: {} as never,
+      sessionHub,
+      config: createEnvConfig(),
+      chatCompletionTools: [],
+      outputMode: 'text',
+      clientAudioCapabilities: undefined,
+      ttsBackendFactory: null,
+      handleChatToolCalls: async () => undefined,
+      setActiveRunState: () => undefined,
+      clearActiveRunState: () => undefined,
+      sendError,
+      log: () => undefined,
+      eventStore: createTestEventStore(),
+    });
+
+    expect(compactSession).toHaveBeenCalledWith({
+      sessionId: 's1',
+      reason: 'overflow',
+      allowActiveRun: true,
+      signal: expect.any(AbortSignal),
+    });
+    expect(runPiSdkChatCompletionIteration).toHaveBeenCalledTimes(2);
+    expect(retryMessageSets[1]).toMatchObject([
+      {
+        role: 'user',
+        content: expect.stringContaining('Earlier work summary'),
+      },
+      { role: 'user', content: 'Current request' },
+    ]);
+    expect(JSON.stringify(retryMessageSets[1])).not.toContain('context_length_exceeded');
+    expect(sendError).not.toHaveBeenCalled();
+    expect(
+      broadcast.find(
+        (message): message is Extract<ServerMessage, { type: 'text_done' }> =>
+          message.type === 'text_done',
+      )?.text,
+    ).toBe('Recovered answer');
+  });
+
   it('broadcasts live transcript events for Pi assistant output without an EventStore', async () => {
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
@@ -790,7 +967,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
         provider: 'openai-codex',
         model: 'gpt-5.4',
         api: 'openai-responses',
-      }) as any,
+      }) as never,
     }));
 
     const recordSessionActivity = vi.fn(async () => ({
@@ -850,7 +1027,8 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       }),
     );
     expect(recordSessionActivity.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(publishFinalResponseNotification).mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      vi.mocked(publishFinalResponseNotification).mock.invocationCallOrder[0] ??
+        Number.POSITIVE_INFINITY,
     );
   });
 
@@ -1008,10 +1186,14 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     }> = [];
 
     const piSessionWriter = {
-      sync: vi.fn(async (options: { messages: Array<{ role: string; content?: string; piSdkMessage?: unknown }> }) => {
-        syncedMessages.push(...options.messages);
-        return undefined;
-      }),
+      sync: vi.fn(
+        async (options: {
+          messages: Array<{ role: string; content?: string; piSdkMessage?: unknown }>;
+        }) => {
+          syncedMessages.push(...options.messages);
+          return undefined;
+        },
+      ),
     };
 
     const sessionHub: SessionHub = {
@@ -1041,7 +1223,9 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       chatMessages: [],
     } as unknown as LogicalSessionState;
 
-    let capturedFirstIterationMessages: Array<{ role: string; content?: string | undefined }> | undefined;
+    let capturedFirstIterationMessages:
+      | Array<{ role: string; content?: string | undefined }>
+      | undefined;
 
     vi.mocked(resolvePiSdkModel).mockResolvedValue({
       model: { id: 'gpt-5.4', provider: 'openai-codex', api: 'openai-responses' } as never,
@@ -1396,7 +1580,9 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
         aborted: false,
         assistantMessage: {
           role: 'assistant',
-          content: [{ type: 'toolCall', id: 'call-1', name: 'bash', arguments: { command: 'printf hi' } }],
+          content: [
+            { type: 'toolCall', id: 'call-1', name: 'bash', arguments: { command: 'printf hi' } },
+          ],
           api: 'openai-responses',
           provider: 'openai-codex',
           model: 'gpt-5.4',
@@ -2135,7 +2321,8 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       .filter(
         (message): message is Extract<ServerMessage, { type: 'transcript_event' }> =>
           message.type === 'transcript_event' &&
-          (message.event.chatEventType === 'tool_call' || message.event.chatEventType === 'tool_result'),
+          (message.event.chatEventType === 'tool_call' ||
+            message.event.chatEventType === 'tool_result'),
       )
       .map((message) => message.event.chatEventType);
 
@@ -2241,7 +2428,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
     });
 
     expect(sync).toHaveBeenCalledTimes(1);
-    const syncPayload = ((sync.mock.calls as unknown) as Array<[unknown]>)[0]?.[0];
+    const syncPayload = (sync.mock.calls as unknown as Array<[unknown]>)[0]?.[0];
     expect(syncPayload).toBeDefined();
     expect(syncPayload).toMatchObject({
       summary: state.summary,

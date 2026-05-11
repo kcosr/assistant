@@ -1,6 +1,7 @@
 import type {
   CombinedPluginManifest,
   SessionClearResponse,
+  SessionCompactResponse,
   SessionHistoryEditResponse,
   SessionReplayResponse,
   SessionAttributesPatch,
@@ -32,10 +33,7 @@ import {
   mergeBufferedLiveTranscriptEvents,
   seedLiveTranscriptSessionState,
 } from '../../../../agent-server/src/events/chatEventUtils';
-import {
-  projectTranscriptEvents,
-  sliceProjectedTranscript,
-} from './transcriptProjection';
+import { projectTranscriptEvents, sliceProjectedTranscript } from './transcriptProjection';
 
 type PluginFactoryArgs = { manifest: CombinedPluginManifest };
 
@@ -96,7 +94,10 @@ function getSessionRevision(summary: SessionSummary): number {
   return Math.max(0, summary.revision ?? 0);
 }
 
-function getTranscriptRevision(summary: SessionSummary, providerId: string | null | undefined): number {
+function getTranscriptRevision(
+  summary: SessionSummary,
+  providerId: string | null | undefined,
+): number {
   if (providerId === 'pi' || providerId === 'pi-cli') {
     return getPiTranscriptRevision(summary.attributes);
   }
@@ -106,6 +107,12 @@ function getTranscriptRevision(summary: SessionSummary, providerId: string | nul
 function requireSessionId(raw: unknown): string {
   const sessionId = requireNonEmptyString(raw, 'sessionId');
   return sessionId;
+}
+
+function compactErrorCode(message: string): string {
+  return message === 'Cannot compact context while the session is running'
+    ? 'session_busy'
+    : 'invalid_arguments';
 }
 
 function requireRequestId(raw: unknown): string {
@@ -683,7 +690,9 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
 
         try {
           const summary = await sessionHub.clearSession(sessionId);
-          const agent = summary.agentId ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId) : undefined;
+          const agent = summary.agentId
+            ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId)
+            : undefined;
           return {
             sessionId,
             cleared: true,
@@ -695,10 +704,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           throw new ToolError('invalid_arguments', message);
         }
       },
-      'history-edit': async (
-        args,
-        ctx,
-      ): Promise<SessionHistoryEditResponse> => {
+      'history-edit': async (args, ctx): Promise<SessionHistoryEditResponse> => {
         const sessionHub = requireSessionHub(ctx);
         const sessionIndex = requireSessionIndex(ctx);
         const parsed = asObject(args);
@@ -717,7 +723,9 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
             action,
             requestId,
           });
-          const agent = summary.agentId ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId) : undefined;
+          const agent = summary.agentId
+            ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId)
+            : undefined;
           return {
             sessionId,
             action,
@@ -729,6 +737,39 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to edit session history';
           throw new ToolError('invalid_arguments', message);
+        }
+      },
+      compact: async (args, ctx): Promise<SessionCompactResponse> => {
+        const sessionHub = requireSessionHub(ctx);
+        const sessionIndex = requireSessionIndex(ctx);
+        const parsed = asObject(args);
+        const sessionId = requireSessionId(parsed['sessionId']);
+
+        const existing = await sessionIndex.getSession(sessionId);
+        if (!existing) {
+          throw new ToolError('session_not_found', 'Session not found');
+        }
+
+        try {
+          const { summary, result } = await sessionHub.compactSession({
+            sessionId,
+            reason: 'manual',
+            ...(ctx.signal ? { signal: ctx.signal } : {}),
+          });
+          const agent = summary.agentId
+            ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId)
+            : undefined;
+          return {
+            sessionId,
+            compacted: true,
+            reason: 'manual',
+            updatedAt: summary.updatedAt,
+            revision: getTranscriptRevision(summary, agent?.chat?.provider),
+            result,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to compact context';
+          throw new ToolError(compactErrorCode(message), message);
         }
       },
       delete: async (

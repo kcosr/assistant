@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 import type {
   ServerTextDoneMessage,
   ServerUserAudioMessage,
@@ -44,6 +44,8 @@ import { resolveSessionModelForRun, resolveSessionThinkingForRun } from './sessi
 import { resolveVisibleAssistantText } from './piAssistantText';
 import { buildMessagesForPiSync } from './history/piSessionSync';
 import { publishFinalResponseNotification } from './notificationProducers';
+import { DEFAULT_PI_COMPACTION_SETTINGS, shouldCompactPiContext } from './history/piCompaction';
+import { calculateContextTokens } from './contextUsage';
 
 function buildAssistantDoneEvents(options: {
   sessionId: string;
@@ -97,6 +99,7 @@ async function persistInterruptedPiAssistantMessage(options: {
     fullText: string;
     piSdkMessage?: PiSdkMessage;
     piReplayMessages?: ChatCompletionMessage[];
+    piContextWindow?: number;
   };
   log: (...args: unknown[]) => void;
 }): Promise<void> {
@@ -759,9 +762,7 @@ export async function processUserMessage(
             },
           });
         }
-        const events: ChatEvent[] = [
-          ...assistantDoneEvents,
-        ];
+        const events: ChatEvent[] = [...assistantDoneEvents];
         void appendAndBroadcastChatEvents(
           {
             ...(eventStore ? { eventStore } : {}),
@@ -847,6 +848,40 @@ export async function processUserMessage(
       ...(chatProvider === 'pi' ? { piTurnEndStatus: 'completed' as const } : {}),
     });
 
+    if (runResult.provider === 'pi' && runResult.piSdkMessage?.role === 'assistant') {
+      const piConfig = agent?.chat?.config as PiSdkChatConfig | undefined;
+      const compactionSettings = {
+        enabled: piConfig?.compaction?.enabled ?? DEFAULT_PI_COMPACTION_SETTINGS.enabled,
+        reserveTokens:
+          piConfig?.compaction?.reserveTokens ?? DEFAULT_PI_COMPACTION_SETTINGS.reserveTokens,
+        keepRecentTokens:
+          piConfig?.compaction?.keepRecentTokens ?? DEFAULT_PI_COMPACTION_SETTINGS.keepRecentTokens,
+      };
+      const contextWindow = runResult.piContextWindow ?? piConfig?.contextWindow ?? 0;
+      if (
+        runResult.piSdkMessage.usage &&
+        shouldCompactPiContext({
+          contextTokens: calculateContextTokens(runResult.piSdkMessage.usage),
+          contextWindow,
+          settings: compactionSettings,
+        })
+      ) {
+        try {
+          const compacted = await sessionHub.compactSession({
+            sessionId,
+            reason: 'threshold',
+            allowActiveRun: true,
+            ...(state.activeChatRun?.abortController.signal
+              ? { signal: state.activeChatRun.abortController.signal }
+              : {}),
+          });
+          state.summary = compacted.summary;
+        } catch (err) {
+          log('failed to compact Pi session after threshold check', err);
+        }
+      }
+    }
+
     const durationMs = Date.now() - startTime;
 
     let responseText = fullText;
@@ -897,12 +932,11 @@ export async function processUserMessage(
         interruptReason: timedOut ? 'timeout' : 'error',
         error: {
           code: timedOut ? 'upstream_timeout' : isChatRunError(err) ? err.code : 'upstream_error',
-          message:
-            timedOut
-              ? 'Chat backend request timed out'
-              : isChatRunError(err)
-                ? err.message
-                : 'Chat backend error',
+          message: timedOut
+            ? 'Chat backend request timed out'
+            : isChatRunError(err)
+              ? err.message
+              : 'Chat backend error',
         },
         prependEvents: buildInterruptedAssistantEvents(),
         ...(chatProvider === 'pi' ? { piTurnEndStatus: 'interrupted' as const } : {}),

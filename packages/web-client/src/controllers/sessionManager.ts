@@ -1,7 +1,11 @@
 import type { SessionConfig, SessionHistoryEditAction } from '@assistant/shared';
 
 import { apiFetch } from '../utils/api';
-import { readSessionOperationResult, sessionsOperationPath } from '../utils/sessionsApi';
+import {
+  readSessionOperationError,
+  readSessionOperationResult,
+  sessionsOperationPath,
+} from '../utils/sessionsApi';
 
 export interface SessionManagerOptions {
   getSelectedSessionId: () => string | null;
@@ -148,6 +152,27 @@ export class SessionManager {
     } catch (err) {
       console.error('Failed to edit session history', err);
       this.options.setStatus('Failed to edit session history');
+    }
+  }
+
+  async compactSession(sessionId: string): Promise<void> {
+    try {
+      const response = await apiFetch(sessionsOperationPath('compact'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!response.ok) {
+        this.options.setStatus(
+          await readSessionOperationError(response, 'Failed to compact context'),
+        );
+        return;
+      }
+
+      await readSessionOperationResult<{ compacted?: boolean }>(response);
+    } catch (err) {
+      console.error('Failed to compact context', err);
+      this.options.setStatus('Failed to compact context');
     }
   }
 

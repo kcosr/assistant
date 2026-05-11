@@ -193,6 +193,11 @@ export interface PiSdkChatConfig {
   contextWindow?: number;
   temperature?: number;
   maxToolIterations?: number;
+  compaction?: {
+    enabled?: boolean;
+    reserveTokens?: number;
+    keepRecentTokens?: number;
+  };
 }
 
 export class AgentRegistry {

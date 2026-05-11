@@ -140,6 +140,108 @@ describe('sessions plugin operations', () => {
     );
   });
 
+  it('delegates compact operation to SessionHub', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-compact'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = await sessionIndex.createSession({
+      sessionId: 'compact-target',
+      agentId: 'pi-agent',
+    });
+    const compactSessionSpy = vi.spyOn(sessionHub, 'compactSession').mockResolvedValue({
+      summary: created,
+      compacted: true,
+      reason: 'manual',
+      result: {
+        summary: 'Compacted history',
+        firstKeptEntryId: 'entry-kept',
+        tokensBefore: 42,
+        details: {
+          readFiles: [],
+          modifiedFiles: [],
+        },
+      },
+    });
+
+    const result = await plugin.operations?.compact({ sessionId: created.sessionId }, ctx);
+
+    expect(compactSessionSpy).toHaveBeenCalledWith({
+      sessionId: created.sessionId,
+      reason: 'manual',
+      signal: ctx.signal,
+    });
+    expect(result).toEqual({
+      sessionId: created.sessionId,
+      compacted: true,
+      reason: 'manual',
+      updatedAt: created.updatedAt,
+      revision: getPiTranscriptRevision(created.attributes),
+      result: {
+        summary: 'Compacted history',
+        firstKeptEntryId: 'entry-kept',
+        tokensBefore: 42,
+        details: {
+          readFiles: [],
+          modifiedFiles: [],
+        },
+      },
+    });
+  });
+
+  it('maps active-run compact failures to session_busy', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-compact-busy'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = await sessionIndex.createSession({
+      sessionId: 'compact-busy-target',
+      agentId: 'pi-agent',
+    });
+    vi.spyOn(sessionHub, 'compactSession').mockRejectedValue(
+      new Error('Cannot compact context while the session is running'),
+    );
+
+    await expect(
+      plugin.operations?.compact({ sessionId: created.sessionId }, ctx),
+    ).rejects.toMatchObject({
+      code: 'session_busy',
+      message: 'Cannot compact context while the session is running',
+    });
+  });
+
   it('persists model, thinking, title, and working dir from sessionConfig', async () => {
     const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-config'));
     const agentRegistry = new AgentRegistry([
@@ -397,7 +499,10 @@ describe('sessions plugin operations', () => {
         agentRegistry,
       };
 
-      const created = (await plugin.operations?.create({ agentId: 'general' }, ctx)) as SessionSummary;
+      const created = (await plugin.operations?.create(
+        { agentId: 'general' },
+        ctx,
+      )) as SessionSummary;
 
       await getNotificationsStore().upsertSessionAttention(
         {
@@ -728,7 +833,10 @@ describe('sessions plugin operations', () => {
       updateAttributes: (patch) => sessionHub.updateSessionAttributes(summary.sessionId, patch),
     });
 
-    const bumpedSummary = await sessionHub.recordSessionActivity(created.sessionId, 'pi replay revision bump');
+    const bumpedSummary = await sessionHub.recordSessionActivity(
+      created.sessionId,
+      'pi replay revision bump',
+    );
     const result = (await plugin.operations?.events(
       { sessionId: created.sessionId, force: true },
       ctx,
@@ -760,7 +868,9 @@ describe('sessions plugin operations', () => {
   });
 
   it('keeps rewritten Pi replay visible when the pi-cli alias only stores transcript revision', async () => {
-    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-events-pi-delete-middle'));
+    const sessionIndex = new SessionIndex(
+      createTempFile('sessions-plugin-events-pi-delete-middle'),
+    );
     const agentRegistry = new AgentRegistry([
       {
         agentId: 'pi-agent',
@@ -769,7 +879,9 @@ describe('sessions plugin operations', () => {
         chat: { provider: 'pi' },
       },
     ]);
-    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-plugin-events-pi-delete-middle-'));
+    const baseDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'sessions-plugin-events-pi-delete-middle-'),
+    );
     const piSessionWriter = new PiSessionWriter({ baseDir, log: () => undefined });
     const sessionHub = new SessionHub({ sessionIndex, agentRegistry, piSessionWriter });
     const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
@@ -835,7 +947,11 @@ describe('sessions plugin operations', () => {
           id: 'req-1-assistant-msg',
           parentId: 'req-1-user-msg',
           timestamp: '2026-01-18T00:00:05.000Z',
-          message: { role: 'assistant', id: 'resp-1', content: [{ type: 'text', text: 'first reply' }] },
+          message: {
+            role: 'assistant',
+            id: 'resp-1',
+            content: [{ type: 'text', text: 'first reply' }],
+          },
         }),
         JSON.stringify({
           type: 'custom',
@@ -881,7 +997,11 @@ describe('sessions plugin operations', () => {
           id: 'req-3-assistant-msg',
           parentId: 'req-3-user-msg',
           timestamp: '2026-01-18T00:00:11.000Z',
-          message: { role: 'assistant', id: 'resp-3', content: [{ type: 'text', text: 'third reply' }] },
+          message: {
+            role: 'assistant',
+            id: 'resp-3',
+            content: [{ type: 'text', text: 'third reply' }],
+          },
         }),
         JSON.stringify({
           type: 'custom',
@@ -981,38 +1101,38 @@ describe('sessions plugin operations', () => {
       activeRequestId: 'request-live',
     });
 
-    await appendAndBroadcastChatEvents(
-      { sessionHub, sessionId: created.sessionId },
-      [
-        {
-          id: 'user-live',
-          sessionId: created.sessionId,
-          turnId: 'request-live',
-          timestamp: Date.now(),
-          type: 'user_message',
-          payload: { text: 'stream this reply' },
-        },
-        {
-          id: 'thinking-live',
-          sessionId: created.sessionId,
-          turnId: 'request-live',
-          responseId: 'resp-live',
-          timestamp: Date.now(),
-          type: 'thinking_chunk',
-          payload: { text: 'Thinking…' },
-        },
-        {
-          id: 'assistant-live',
-          sessionId: created.sessionId,
-          turnId: 'request-live',
-          responseId: 'resp-live',
-          timestamp: Date.now(),
-          type: 'assistant_chunk',
-          payload: { text: 'partial reply', phase: 'final_answer' },
-        },
-      ],
+    await appendAndBroadcastChatEvents({ sessionHub, sessionId: created.sessionId }, [
+      {
+        id: 'user-live',
+        sessionId: created.sessionId,
+        turnId: 'request-live',
+        timestamp: Date.now(),
+        type: 'user_message',
+        payload: { text: 'stream this reply' },
+      },
+      {
+        id: 'thinking-live',
+        sessionId: created.sessionId,
+        turnId: 'request-live',
+        responseId: 'resp-live',
+        timestamp: Date.now(),
+        type: 'thinking_chunk',
+        payload: { text: 'Thinking…' },
+      },
+      {
+        id: 'assistant-live',
+        sessionId: created.sessionId,
+        turnId: 'request-live',
+        responseId: 'resp-live',
+        timestamp: Date.now(),
+        type: 'assistant_chunk',
+        payload: { text: 'partial reply', phase: 'final_answer' },
+      },
+    ]);
+    const bumpedSummary = await sessionHub.recordSessionActivity(
+      created.sessionId,
+      'stream this reply',
     );
-    const bumpedSummary = await sessionHub.recordSessionActivity(created.sessionId, 'stream this reply');
     expect(Math.max(0, bumpedSummary?.revision ?? 0)).toBeGreaterThan(liveRevision);
 
     const result = (await plugin.operations?.events(
@@ -1083,7 +1203,10 @@ describe('sessions plugin operations', () => {
       agentRegistry,
     };
 
-    const created = (await plugin.operations?.create({ agentId: 'general' }, ctx)) as SessionSummary;
+    const created = (await plugin.operations?.create(
+      { agentId: 'general' },
+      ctx,
+    )) as SessionSummary;
 
     await expect(
       plugin.operations?.events({ sessionId: created.sessionId, force: true }, ctx),

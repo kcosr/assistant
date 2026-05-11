@@ -4,18 +4,18 @@ import path from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@mariozechner/pi-ai', () => ({
+vi.mock('@earendil-works/pi-ai', () => ({
   getModels: vi.fn(),
   getProviders: vi.fn(),
   streamSimple: vi.fn(),
 }));
 
-vi.mock('@mariozechner/pi-ai/oauth', () => ({
+vi.mock('@earendil-works/pi-ai/oauth', () => ({
   getOAuthApiKey: vi.fn(),
 }));
 
-import { getModels, getProviders, streamSimple } from '@mariozechner/pi-ai';
-import { getOAuthApiKey } from '@mariozechner/pi-ai/oauth';
+import { getModels, getProviders, streamSimple } from '@earendil-works/pi-ai';
+import { getOAuthApiKey } from '@earendil-works/pi-ai/oauth';
 
 import type { ChatCompletionMessage } from '../chatCompletionTypes';
 import {

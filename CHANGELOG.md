@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added Pi SDK session context compaction with Pi-compatible JSONL `compaction` entries, manual chat menu/API compaction, effective replay context, and threshold auto-compaction. ([#98](https://github.com/kcosr/assistant/pull/98))
 - Added core notifications panel plugin with server-side storage, tool/HTTP/CLI ingress, live WebSocket panel updates, All/Unread filtering, Card/Compact density modes, read/unread toggle, session-linked navigation with resolved session titles, overflow menu for bulk actions, and panel tab unread-count badge. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Added bang shell command feature (`!command`) for executing shell commands directly in chat with real-time streaming output, dedicated terminal bubble rendering, and `_assistant_` prefix LLM suppression. Gated behind `bangCommandEnabled` agent config flag (default: false). ([#94](https://github.com/kcosr/assistant/pull/94))
 - Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics. ([#93](https://github.com/kcosr/assistant/pull/93))
@@ -19,6 +20,7 @@
 
 ### Changed
 
+- Migrated Pi SDK dependencies from `@mariozechner/*` packages to the `@earendil-works/*` scope at `0.74.0`. ([#98](https://github.com/kcosr/assistant/pull/98))
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Moved environment variable substitution to run before Zod validation (previously ran after), enabling `${VAR}` usage in template definitions. ([#93](https://github.com/kcosr/assistant/pull/93))
 - Changed Android native voice controls so the floating mobile FAB owns explicit voice start/stop with a target-session title chip, the chat-row control becomes stop-only, `Manual` mode allows explicit mic starts without automatic response/tool playback, and voice settings include standalone notification playback plus notification-title speech toggles. ([#97](https://github.com/kcosr/assistant/pull/97))

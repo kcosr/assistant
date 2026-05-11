@@ -176,10 +176,7 @@ describe('SessionHub clearSession', () => {
     const encoded = encodePiCwd('/home/kevin');
     const sessionDir = path.join(baseDir, encoded);
     await fs.mkdir(sessionDir, { recursive: true });
-    const sessionFile = path.join(
-      sessionDir,
-      `2026-02-04T00-00-00-000Z_pi-session-1.jsonl`,
-    );
+    const sessionFile = path.join(sessionDir, `2026-02-04T00-00-00-000Z_pi-session-1.jsonl`);
     await fs.writeFile(sessionFile, '{"type":"session"}\n', 'utf8');
 
     const sessionHub = new SessionHub({
@@ -219,10 +216,7 @@ describe('SessionHub clearSession', () => {
     const encoded = encodePiCwd('/home/kevin');
     const sessionDir = path.join(baseDir, encoded);
     await fs.mkdir(sessionDir, { recursive: true });
-    const sessionFile = path.join(
-      sessionDir,
-      '2026-02-04T00-00-00-000Z_pi-session-delete-1.jsonl',
-    );
+    const sessionFile = path.join(sessionDir, '2026-02-04T00-00-00-000Z_pi-session-delete-1.jsonl');
     await fs.writeFile(sessionFile, '{"type":"session"}\n', 'utf8');
 
     const sessionHub = new SessionHub({
@@ -278,8 +272,7 @@ describe('SessionHub clearSession', () => {
       piSessionWriter,
     });
 
-    let summary =
-      (await sessionIndex.getSession(session.sessionId)) ?? summaryWithDir;
+    let summary = (await sessionIndex.getSession(session.sessionId)) ?? summaryWithDir;
 
     await piSessionWriter.appendTurnStart({
       summary,
@@ -514,13 +507,139 @@ describe('SessionHub clearSession', () => {
     });
 
     expect(result.droppedRequestIds).toEqual(['turn-1']);
-    expect(await attachmentStore.getAttachment(session.sessionId, kept.attachmentId)).not.toBeNull();
+    expect(
+      await attachmentStore.getAttachment(session.sessionId, kept.attachmentId),
+    ).not.toBeNull();
     const metadataPath = path.join(attachmentDir, session.sessionId, 'metadata.json');
     const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8')) as {
       attachments: Array<{ requestId: string }>;
     };
     expect(metadata.attachments).toHaveLength(1);
     expect(metadata.attachments[0]?.requestId).toBe('turn-2');
+  });
+});
+
+describe('SessionHub compactSession guards', () => {
+  it('rejects missing sessions', async () => {
+    const sessionHub = new SessionHub({
+      sessionIndex: new SessionIndex(createTempFile('session-hub-compact-missing')),
+      agentRegistry: new AgentRegistry([]),
+      eventStore: createTestEventStore(),
+    });
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'missing-session', reason: 'manual' }),
+    ).rejects.toThrow('Session not found: missing-session');
+  });
+
+  it('rejects deleted sessions', async () => {
+    const sessionHub = new SessionHub({
+      sessionIndex: {
+        getSession: async () => ({
+          sessionId: 'deleted-session',
+          agentId: 'pi',
+          createdAt: '',
+          updatedAt: '',
+          deleted: true,
+        }),
+      } as unknown as SessionIndex,
+      agentRegistry: new AgentRegistry([]),
+      eventStore: createTestEventStore(),
+    });
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'deleted-session', reason: 'manual' }),
+    ).rejects.toThrow('Cannot compact deleted session: deleted-session');
+  });
+
+  it('rejects active sessions unless active runs are allowed', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-active'));
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry: new AgentRegistry([
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi',
+          chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+        },
+      ]),
+      eventStore: createTestEventStore(),
+    });
+    await sessionIndex.createSession({ sessionId: 'active-session', agentId: 'pi' });
+    const state = await sessionHub.ensureSessionState('active-session');
+    state.activeChatRun = {
+      responseId: 'response-1',
+      abortController: new AbortController(),
+    } as never;
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'active-session', reason: 'manual' }),
+    ).rejects.toThrow('Cannot compact context while the session is running');
+  });
+
+  it('rejects non-Pi sessions', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-non-pi'));
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry: new AgentRegistry([
+        {
+          agentId: 'codex',
+          displayName: 'Codex',
+          description: 'Codex',
+          chat: { provider: 'codex-cli' },
+        },
+      ]),
+      eventStore: createTestEventStore(),
+    });
+    await sessionIndex.createSession({ sessionId: 'codex-session', agentId: 'codex' });
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'codex-session', reason: 'manual' }),
+    ).rejects.toThrow('Context compaction is only supported for Pi-backed sessions');
+  });
+
+  it('rejects Pi sessions when the writer is unavailable', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-no-writer'));
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry: new AgentRegistry([
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi',
+          chat: { provider: 'pi', models: ['openai-codex/gpt-5.4'] },
+        },
+      ]),
+      eventStore: createTestEventStore(),
+    });
+    await sessionIndex.createSession({ sessionId: 'pi-session', agentId: 'pi' });
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'pi-session', reason: 'manual' }),
+    ).rejects.toThrow('Pi session writer is unavailable');
+  });
+
+  it('rejects Pi sessions without a compactable model', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-no-model'));
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry: new AgentRegistry([
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi',
+          chat: { provider: 'pi' },
+        },
+      ]),
+      eventStore: createTestEventStore(),
+      piSessionWriter: {} as PiSessionWriter,
+    });
+    await sessionIndex.createSession({ sessionId: 'pi-no-model-session', agentId: 'pi' });
+
+    await expect(
+      sessionHub.compactSession({ sessionId: 'pi-no-model-session', reason: 'manual' }),
+    ).rejects.toThrow('Pi chat requires at least one model to compact context');
   });
 });
 
@@ -584,7 +703,11 @@ describe('SessionHub loadSessionMessages', () => {
       throw new Error('Expected session summary to exist');
     }
 
-    const state = await sessionHub.ensureSessionState(reloadedSummary.sessionId, reloadedSummary, true);
+    const state = await sessionHub.ensureSessionState(
+      reloadedSummary.sessionId,
+      reloadedSummary,
+      true,
+    );
     const messages = state.chatMessages;
 
     expect(messages).toEqual([

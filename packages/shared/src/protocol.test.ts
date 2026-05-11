@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CURRENT_PROTOCOL_VERSION,
   PanelDisplayModeSchema,
+  SessionCompactResponseSchema,
   SessionHistoryEditRequestSchema,
   SessionReplayResponseSchema,
   safeValidateClientMessage,
@@ -372,6 +373,33 @@ describe('server message validation', () => {
       },
     };
     expect(validateServerMessage(message)).toEqual(message);
+  });
+});
+
+describe('session operation schemas', () => {
+  it('accepts compact responses with result details', () => {
+    expect(
+      SessionCompactResponseSchema.parse({
+        sessionId: 'session-1',
+        compacted: true,
+        reason: 'manual',
+        updatedAt: '2026-05-10T00:00:00.000Z',
+        revision: 2,
+        result: {
+          summary: 'Summary',
+          firstKeptEntryId: 'entry-1',
+          tokensBefore: 123,
+          details: {
+            readFiles: ['a.ts'],
+            modifiedFiles: ['b.ts'],
+          },
+        },
+      }),
+    ).toMatchObject({
+      sessionId: 'session-1',
+      compacted: true,
+      reason: 'manual',
+    });
   });
 });
 

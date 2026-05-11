@@ -1,4 +1,4 @@
-import type { Message as PiSdkMessage } from '@mariozechner/pi-ai';
+import type { Message as PiSdkMessage } from '@earendil-works/pi-ai';
 
 import { extractAssistantTextBlocksFromPiMessage } from './llm/piSdkProvider';
 
