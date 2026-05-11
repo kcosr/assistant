@@ -180,6 +180,7 @@ export interface ChatRunCoreResult {
   piSdkMessage?: PiSdkMessage;
   piReplayMessages?: ChatCompletionMessage[];
   piBaseReplayMessages?: ChatCompletionMessage[];
+  piContextWindow?: number;
 }
 
 export class ChatRunError extends Error {
@@ -730,7 +731,9 @@ function parseToolResultErrorState(content: string): boolean {
   return false;
 }
 
-function getMessageTimestampMs(message: Exclude<ChatCompletionMessage, { role: 'system' }>): number {
+function getMessageTimestampMs(
+  message: Exclude<ChatCompletionMessage, { role: 'system' }>,
+): number {
   return message.historyTimestampMs ?? Date.now();
 }
 
@@ -826,8 +829,12 @@ function buildPiAgentContext(options: {
 } {
   const { messages, text, model } = options;
   const systemPrompt = messages[0]?.role === 'system' ? messages[0].content : '';
-  const nonSystemMessages = (messages[0]?.role === 'system' ? messages.slice(1) : messages.slice())
-    .filter((message): message is Exclude<ChatCompletionMessage, { role: 'system' }> => message.role !== 'system');
+  const nonSystemMessages = (
+    messages[0]?.role === 'system' ? messages.slice(1) : messages.slice()
+  ).filter(
+    (message): message is Exclude<ChatCompletionMessage, { role: 'system' }> =>
+      message.role !== 'system',
+  );
   const lastMessage = nonSystemMessages[nonSystemMessages.length - 1];
   const toolNameIndex = buildToolNameIndex(nonSystemMessages);
   const promptSource =
@@ -957,6 +964,7 @@ export async function runChatCompletionCore(
   let lastPiSdkMessage: PiSdkMessage | undefined;
   let piReplayMessages: ChatCompletionMessage[] | undefined;
   let piBaseReplayMessages: ChatCompletionMessage[] | undefined;
+  let piContextWindow: number | undefined;
 
   if (provider === 'claude-cli') {
     const claudeConfig = resolveCliRuntimeConfig(
@@ -1190,9 +1198,7 @@ export async function runChatCompletionCore(
         ...(typeof rawSessionId === 'string' && rawSessionId.trim().length > 0
           ? { sessionId: rawSessionId.trim() }
           : {}),
-        ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0
-          ? { cwd: rawCwd.trim() }
-          : {}),
+        ...(typeof rawCwd === 'string' && rawCwd.trim().length > 0 ? { cwd: rawCwd.trim() } : {}),
       };
     }
     const resumeSessionId = storedPiSession?.sessionId;
@@ -1329,8 +1335,9 @@ export async function runChatCompletionCore(
       providerId: resolvedModel.providerId,
       log,
     });
-    const apiKey =
-      providerMatchesConfig ? piConfig?.apiKey ?? piAgentAuthApiKey : piAgentAuthApiKey;
+    const apiKey = providerMatchesConfig
+      ? (piConfig?.apiKey ?? piAgentAuthApiKey)
+      : piAgentAuthApiKey;
     const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
     const headers = providerMatchesConfig ? piConfig?.headers : undefined;
     const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
@@ -1365,6 +1372,7 @@ export async function runChatCompletionCore(
       ...(baseUrl ? { baseUrl } : {}),
       ...(headers ? { headers } : {}),
     };
+    piContextWindow = agentModel.contextWindow;
     type PiRuntimeConfig = {
       apiKey?: string;
       temperature?: number;
@@ -1378,7 +1386,7 @@ export async function runChatCompletionCore(
     };
     const piAgentRuntime =
       state.piAgentRuntime ??
-      (() => {
+      ((() => {
         const runtime: PiRuntimeState = {
           requestConfig: {},
           onPayload: undefined,
@@ -1411,7 +1419,7 @@ export async function runChatCompletionCore(
         });
         state.piAgentRuntime = runtime as LogicalSessionState['piAgentRuntime'];
         return runtime;
-      })() as PiRuntimeState;
+      })() as PiRuntimeState);
     piAgentRuntime.requestConfig = {
       ...(apiKey ? { apiKey } : {}),
       ...(piConfig?.temperature !== undefined ? { temperature: piConfig.temperature } : {}),
@@ -1576,7 +1584,9 @@ export async function runChatCompletionCore(
             } else if (assistantEvent.type === 'thinking_end') {
               const block = partial.content[assistantEvent.contentIndex];
               await streamHandlers.emitThinkingDone(
-                block && block.type === 'thinking' ? block.thinking : streamHandlers.getThinkingText(),
+                block && block.type === 'thinking'
+                  ? block.thinking
+                  : streamHandlers.getThinkingText(),
               );
             }
           } else if (assistantEvent.type === 'toolcall_start') {
@@ -1812,10 +1822,7 @@ export async function runChatCompletionCore(
       finalPiSdkMessage = resolvedPiMessage;
     }
   } else {
-    throw new ChatRunError(
-      'agent_config_error',
-      `Unsupported chat provider "${provider}"`,
-    );
+    throw new ChatRunError('agent_config_error', `Unsupported chat provider "${provider}"`);
   }
 
   const resolvedPiSdkMessage = finalPiSdkMessage ?? lastPiSdkMessage;
@@ -1826,10 +1833,9 @@ export async function runChatCompletionCore(
     provider,
     aborted,
     ...(abortReason ? { abortReason } : {}),
-    ...(provider === 'pi' && resolvedPiSdkMessage
-      ? { piSdkMessage: resolvedPiSdkMessage }
-      : {}),
+    ...(provider === 'pi' && resolvedPiSdkMessage ? { piSdkMessage: resolvedPiSdkMessage } : {}),
     ...(provider === 'pi' && piReplayMessages ? { piReplayMessages } : {}),
     ...(provider === 'pi' && piBaseReplayMessages ? { piBaseReplayMessages } : {}),
+    ...(provider === 'pi' && typeof piContextWindow === 'number' ? { piContextWindow } : {}),
   };
 }

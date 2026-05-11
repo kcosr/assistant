@@ -303,7 +303,8 @@ async function main(): Promise<void> {
       deactivateWindowSlot(WINDOW_ID);
     },
     onResume: () => {
-      const scheme = document.documentElement.getAttribute('data-theme-scheme') === 'dark' ? 'dark' : 'light';
+      const scheme =
+        document.documentElement.getAttribute('data-theme-scheme') === 'dark' ? 'dark' : 'light';
       void syncStatusBarThemeForScheme(scheme, { force: true });
       startHeartbeat();
       ensureConnected('capacitor-resume');
@@ -376,7 +377,9 @@ async function main(): Promise<void> {
   };
   const sessionTranscriptReplayState = new Map<string, SessionTranscriptReplayState>();
 
-  function getOrCreateSessionTranscriptReplayState(sessionId: string): SessionTranscriptReplayState {
+  function getOrCreateSessionTranscriptReplayState(
+    sessionId: string,
+  ): SessionTranscriptReplayState {
     const trimmed = sessionId.trim();
     const existing = sessionTranscriptReplayState.get(trimmed);
     if (existing) {
@@ -961,7 +964,8 @@ async function main(): Promise<void> {
       return null;
     }
     const activePanelId =
-      (panelHostController?.getContext('panel.active') as { panelId?: string } | null)?.panelId ?? null;
+      (panelHostController?.getContext('panel.active') as { panelId?: string } | null)?.panelId ??
+      null;
     if (activePanelId) {
       const activeEntry = entries.find((entry) => entry.panelId === activePanelId);
       if (activeEntry) {
@@ -1181,8 +1185,7 @@ async function main(): Promise<void> {
       return normalizeSessionId(inputSessionId);
     }
     const binding = panelHostController?.getPanelBinding(panelId);
-    const boundSessionId =
-      binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
+    const boundSessionId = binding?.mode === 'fixed' ? normalizeSessionId(binding.sessionId) : null;
     return boundSessionId ?? normalizeSessionId(inputSessionId);
   }
 
@@ -1227,10 +1230,7 @@ async function main(): Promise<void> {
           return nativeVoiceBridge.startManualListen(normalizedTargetSessionId);
         },
         stopVoiceFromFab: () => {
-          if (
-            nativeVoiceRuntimeState === 'speaking' ||
-            nativeVoiceRuntimeState === 'listening'
-          ) {
+          if (nativeVoiceRuntimeState === 'speaking' || nativeVoiceRuntimeState === 'listening') {
             void nativeVoiceBridge.stopCurrentInteraction();
             return true;
           }
@@ -3408,15 +3408,15 @@ async function main(): Promise<void> {
           }
         : action === 'trim_after'
           ? {
-            title: 'Delete After',
-            message: 'Remove this request and all requests after it?',
-            confirmText: 'Delete',
-          }
+              title: 'Delete After',
+              message: 'Remove this request and all requests after it?',
+              confirmText: 'Delete',
+            }
           : {
-            title: 'Delete Request',
-            message: 'Remove this request from the session history?',
-            confirmText: 'Delete',
-          };
+              title: 'Delete Request',
+              message: 'Remove this request from the session history?',
+              confirmText: 'Delete',
+            };
 
     dialogManager.showConfirmDialog({
       ...options,
@@ -3438,6 +3438,21 @@ async function main(): Promise<void> {
       confirmClassName: 'danger',
       onConfirm: () => {
         void clearSession(sessionId);
+      },
+      cancelCloseBehavior: 'remove-only',
+      confirmCloseBehavior: 'remove-only',
+    });
+  }
+
+  function showCompactContextConfirmation(sessionId: string): void {
+    panelWorkspace?.closeHeaderPopover();
+    dialogManager.showConfirmDialog({
+      title: 'Compact Context',
+      message: 'Summarize older Pi session history and keep recent context?',
+      confirmText: 'Compact',
+      confirmClassName: 'primary',
+      onConfirm: () => {
+        void requireSessionManager().compactSession(sessionId);
       },
       cancelCloseBehavior: 'remove-only',
       confirmCloseBehavior: 'remove-only',
@@ -3487,6 +3502,12 @@ async function main(): Promise<void> {
           label: 'Reset Session',
           onClick: () => {
             showResetHistoryConfirmation(sessionId);
+          },
+        },
+        {
+          label: 'Compact Context',
+          onClick: () => {
+            showCompactContextConfirmation(sessionId);
           },
         },
       ],
@@ -4730,9 +4751,7 @@ async function main(): Promise<void> {
           if (projectedEvents.length > 0) {
             chatRenderer.replayProjectedEvents(projectedEvents, {
               reset: true,
-              ...(replayCursorSequence !== null
-                ? { watermarkSequence: replayCursorSequence }
-                : {}),
+              ...(replayCursorSequence !== null ? { watermarkSequence: replayCursorSequence } : {}),
             });
             chatScrollManager.scrollToBottomAfterLayout();
           } else {
@@ -4751,13 +4770,14 @@ async function main(): Promise<void> {
           }
         } else if (projectedEvents.length > 0) {
           chatRenderer.replayProjectedEvents(projectedEvents, {
-            ...(replayCursorSequence !== null
-              ? { watermarkSequence: replayCursorSequence }
-              : {}),
+            ...(replayCursorSequence !== null ? { watermarkSequence: replayCursorSequence } : {}),
           });
           chatScrollManager.scrollToBottomAfterLayout();
         } else if (replayCursorSequence !== null) {
-          chatRenderer.setProjectedTranscriptSequenceWatermark(replay.revision, replayCursorSequence);
+          chatRenderer.setProjectedTranscriptSequenceWatermark(
+            replay.revision,
+            replayCursorSequence,
+          );
         }
 
         replayState.loaded = true;
@@ -4843,9 +4863,7 @@ async function main(): Promise<void> {
     return null;
   };
 
-  const parsePanelCommandMode = (
-    value: unknown,
-  ): 'tab' | 'split' | 'header' | null => {
+  const parsePanelCommandMode = (value: unknown): 'tab' | 'split' | 'header' | null => {
     const mode = normalizeCommandString(value);
     if (!mode) {
       return null;
@@ -4868,14 +4886,13 @@ async function main(): Promise<void> {
       : null;
   };
 
-  const parsePanelCommandSize = (
-    value: unknown,
-  ): PanelPlacement['size'] | undefined => {
+  const parsePanelCommandSize = (value: unknown): PanelPlacement['size'] | undefined => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return undefined;
     }
     const record = value as Record<string, unknown>;
-    const width = typeof record['width'] === 'number' && record['width'] > 0 ? record['width'] : undefined;
+    const width =
+      typeof record['width'] === 'number' && record['width'] > 0 ? record['width'] : undefined;
     const height =
       typeof record['height'] === 'number' && record['height'] > 0 ? record['height'] : undefined;
     if (width === undefined && height === undefined) {

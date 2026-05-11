@@ -614,6 +614,28 @@ export const SessionClearResponseSchema = z.object({
 });
 export type SessionClearResponse = z.infer<typeof SessionClearResponseSchema>;
 
+export const SessionCompactResponseSchema = z.object({
+  sessionId: z.string(),
+  compacted: z.boolean(),
+  reason: z.literal('manual'),
+  updatedAt: z.string(),
+  revision: z.number().int().nonnegative(),
+  result: z
+    .object({
+      summary: z.string(),
+      firstKeptEntryId: z.string(),
+      tokensBefore: z.number().int().nonnegative(),
+      details: z
+        .object({
+          readFiles: z.array(z.string()),
+          modifiedFiles: z.array(z.string()),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+export type SessionCompactResponse = z.infer<typeof SessionCompactResponseSchema>;
+
 export const ServerToolCallMessageSchema = z.object({
   type: z.literal('tool_call'),
   sessionId: z.string().optional(),
@@ -872,9 +894,7 @@ export const ServerNotificationEventMessageSchema = z.object({
   id: z.string().optional(),
   notifications: z.array(NotificationRecordSchema).optional(),
 });
-export type ServerNotificationEventMessage = z.infer<
-  typeof ServerNotificationEventMessageSchema
->;
+export type ServerNotificationEventMessage = z.infer<typeof ServerNotificationEventMessageSchema>;
 
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   ServerSessionReadyMessageSchema,

@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added Pi SDK session context compaction with Pi-compatible JSONL `compaction` entries, manual chat menu/API compaction, effective replay context, and threshold auto-compaction.
 - Added core notifications panel plugin with server-side storage, tool/HTTP/CLI ingress, live WebSocket panel updates, All/Unread filtering, Card/Compact density modes, read/unread toggle, session-linked navigation with resolved session titles, overflow menu for bulk actions, and panel tab unread-count badge. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Added bang shell command feature (`!command`) for executing shell commands directly in chat with real-time streaming output, dedicated terminal bubble rendering, and `_assistant_` prefix LLM suppression. Gated behind `bangCommandEnabled` agent config flag (default: false). ([#94](https://github.com/kcosr/assistant/pull/94))
 - Added template-based agent configuration with `extends` support. Templates are named partial agent configs defined in a top-level `templates` section of `config.json`. Agents and templates can extend one or more templates via `extends` (string or array). Deep merge with null-clearing semantics. ([#93](https://github.com/kcosr/assistant/pull/93))
@@ -63,7 +64,6 @@
 
 ### Removed
 
-
 ## [0.18.1] - 2026-04-05
 
 ### Breaking Changes
@@ -84,7 +84,6 @@
 - Fixed panel inventory and `panels_selected` to report the actual active chat tab as the selected panel instead of surfacing a stale `empty` placeholder when chat is focused.
 
 ### Removed
-
 
 ## [0.18.0] - 2026-04-05
 
@@ -107,6 +106,7 @@
 - Added installable PWA icons to the mobile web manifest so the mobile app can be added to a home screen with proper `any maskable` icon sizes from 48px through 512px.
 
 ### Changed
+
 - Allowed Pi-backed agents to target custom `provider/model` ids through `chat.config.baseUrl` by
   synthesizing an `openai-responses` model when the provider has no built-in Pi model catalog.
 - Changed Android share-intent chat destinations to prefer the configured native voice session
@@ -156,7 +156,6 @@
 - Removed dead Pi EventStore overlay mirroring; Pi sessions now ignore EventStore persistence on the canonical path instead of duplicating overlay writes into the Pi transcript log.
 - Removed the dead Pi `ChatEvent` reconstruction helper and stale Pi history-provider test matrix; Pi replay validation now targets canonical transcript projection only.
 - Removed Pi replay support for legacy assistant overlay custom entries; canonical replay now restores only from canonical Pi `message` records plus request-boundary markers.
-
 
 ## [0.17.5] - 2026-04-01
 

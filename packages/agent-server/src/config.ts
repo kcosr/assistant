@@ -220,6 +220,13 @@ const PiSdkChatConfigSchema = z.object({
   contextWindow: z.number().int().min(1).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxToolIterations: z.number().int().min(1).optional(),
+  compaction: z
+    .object({
+      enabled: z.boolean().optional(),
+      reserveTokens: z.number().int().min(1).optional(),
+      keepRecentTokens: z.number().int().min(1).optional(),
+    })
+    .optional(),
 });
 
 const ChatConfigSchema = z.object({
@@ -426,6 +433,20 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
         rawChat.config !== undefined && rawChat.config !== null
           ? PiSdkChatConfigSchema.parse(rawChat.config)
           : undefined;
+      const compaction =
+        config?.compaction !== undefined
+          ? {
+              ...(config.compaction.enabled !== undefined
+                ? { enabled: config.compaction.enabled }
+                : {}),
+              ...(config.compaction.reserveTokens !== undefined
+                ? { reserveTokens: config.compaction.reserveTokens }
+                : {}),
+              ...(config.compaction.keepRecentTokens !== undefined
+                ? { keepRecentTokens: config.compaction.keepRecentTokens }
+                : {}),
+            }
+          : undefined;
 
       base.chat = {
         provider: 'pi',
@@ -447,6 +468,7 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
                 ...(config.maxToolIterations !== undefined
                   ? { maxToolIterations: config.maxToolIterations }
                   : {}),
+                ...(compaction ? { compaction } : {}),
               },
             }
           : {}),

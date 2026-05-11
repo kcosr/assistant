@@ -9,6 +9,7 @@ import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCo
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
+import { buildCompactionSummaryText } from './piCompaction';
 
 type PiSessionInfo = {
   sessionId: string;
@@ -40,6 +41,85 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
         return [];
       }
     });
+}
+
+function buildEntryPath(entries: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const sessionEntries = entries.filter((entry) => getString(entry['type']) !== 'session');
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const entry of sessionEntries) {
+    const id = getString(entry['id']);
+    if (id) {
+      byId.set(id, entry);
+    }
+  }
+  const leaf = sessionEntries[sessionEntries.length - 1];
+  if (!leaf) {
+    return [];
+  }
+  const pathEntries: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  let current: Record<string, unknown> | undefined = leaf;
+  while (current) {
+    const id = getString(current['id']);
+    if (!id || seen.has(id)) {
+      break;
+    }
+    seen.add(id);
+    pathEntries.unshift(current);
+    const parentId: unknown = current['parentId'];
+    current = typeof parentId === 'string' ? byId.get(parentId) : undefined;
+  }
+  return pathEntries;
+}
+
+function buildEffectivePiReplayEntries(
+  entries: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const pathEntries = buildEntryPath(entries);
+  let compactionIndex = -1;
+  for (let i = pathEntries.length - 1; i >= 0; i -= 1) {
+    if (getString(pathEntries[i]?.['type']) === 'compaction') {
+      compactionIndex = i;
+      break;
+    }
+  }
+  if (compactionIndex === -1) {
+    return pathEntries;
+  }
+
+  const compaction = pathEntries[compactionIndex]!;
+  const firstKeptEntryId = getString(compaction['firstKeptEntryId']);
+  const effective: Array<Record<string, unknown>> = [];
+  const summary = getString(compaction['summary']);
+  if (summary) {
+    effective.push({
+      type: 'message',
+      id: `${getString(compaction['id']) || 'compaction'}:summary`,
+      parentId: null,
+      timestamp: compaction['timestamp'],
+      message: {
+        role: 'user',
+        content: [{ type: 'text', text: buildCompactionSummaryText(summary) }],
+        timestamp: resolveTimestamp(compaction) ?? Date.now(),
+        meta: { source: 'user' },
+      },
+    });
+  }
+
+  let foundFirstKept = false;
+  for (let i = 0; i < compactionIndex; i += 1) {
+    const entry = pathEntries[i]!;
+    if (getString(entry['id']) === firstKeptEntryId) {
+      foundFirstKept = true;
+    }
+    if (foundFirstKept) {
+      effective.push(entry);
+    }
+  }
+  for (let i = compactionIndex + 1; i < pathEntries.length; i += 1) {
+    effective.push(pathEntries[i]!);
+  }
+  return effective;
 }
 
 function encodePiCwd(cwd: string): string | null {
@@ -77,13 +157,13 @@ function extractTextValue(value: unknown): string {
     return getString(value['refusal']);
   }
   if (type === 'thinking' || type === 'reasoning' || type === 'analysis') {
-    return getString(value['thinking']) || getString(value['text']) || extractTextValue(value['content']);
+    return (
+      getString(value['thinking']) || getString(value['text']) || extractTextValue(value['content'])
+    );
   }
   if ('text' in value || 'content' in value || 'thinking' in value) {
     return (
-      getString(value['text']) ||
-      getString(value['thinking']) ||
-      extractTextValue(value['content'])
+      getString(value['text']) || getString(value['thinking']) || extractTextValue(value['content'])
     );
   }
   return '';
@@ -165,7 +245,9 @@ async function findPiSessionFile(
   return path.join(sessionDir, matches[matches.length - 1]!);
 }
 
-function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletionMessageMeta | undefined {
+function toUserMetaFromMessage(
+  message: Record<string, unknown>,
+): ChatCompletionMessageMeta | undefined {
   const meta = isRecord(message['meta']) ? message['meta'] : null;
   if (!meta) {
     return undefined;
@@ -191,7 +273,7 @@ function toUserMetaFromMessage(message: Record<string, unknown>): ChatCompletion
 }
 
 export function buildCanonicalPiReplayMessages(content: string): ChatCompletionMessage[] {
-  const entries = parseJsonLines(content);
+  const entries = buildEffectivePiReplayEntries(parseJsonLines(content));
   const messages: ChatCompletionMessage[] = [];
 
   for (const entry of entries) {

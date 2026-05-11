@@ -781,6 +781,11 @@ describe('loadConfig', () => {
               contextWindow: 65536,
               temperature: 0.7,
               maxToolIterations: 25,
+              compaction: {
+                enabled: true,
+                reserveTokens: 8192,
+                keepRecentTokens: 12000,
+              },
             },
           },
         },
@@ -813,6 +818,11 @@ describe('loadConfig', () => {
         contextWindow: 65536,
         temperature: 0.7,
         maxToolIterations: 25,
+        compaction: {
+          enabled: true,
+          reserveTokens: 8192,
+          keepRecentTokens: 12000,
+        },
       },
     });
   });
