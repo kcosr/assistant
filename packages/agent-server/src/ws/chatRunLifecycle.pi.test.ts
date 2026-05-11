@@ -330,7 +330,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
               : result.assistantMessage.content,
         };
         if (!sawTextDelta) {
-          let textSoFar = '';
           for (const [index, block] of assistantMessage.content.entries()) {
             if (
               block.type !== 'text' ||
@@ -340,7 +339,6 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
             ) {
               continue;
             }
-            textSoFar += block.text;
             await emit({
               type: 'message_update',
               message: assistantMessage,
@@ -744,6 +742,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       messageQueue: [],
     } as unknown as LogicalSessionState;
     const compactSession = vi.fn(async () => {
+      expect(JSON.stringify(state.chatMessages)).not.toContain('context_length_exceeded');
       state.chatMessages = [
         {
           role: 'user',
@@ -968,7 +967,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
         provider: 'openai-codex',
         model: 'gpt-5.4',
         api: 'openai-responses',
-      }) as any,
+      }) as never,
     }));
 
     const recordSessionActivity = vi.fn(async () => ({

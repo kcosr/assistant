@@ -9,11 +9,17 @@ import type { ChatCompletionMessage, ChatCompletionMessageMeta } from '../chatCo
 import type { SessionSummary } from '../sessionIndex';
 import { extractAssistantTextBlocksFromPiMessage } from '../llm/piSdkProvider';
 import { getProviderAttributes } from './providerAttributes';
-import { buildCompactionSummaryText } from './piCompaction';
+import { buildCompactionSummaryText, buildEffectivePiSessionEntryPath } from './piCompaction';
 
 type PiSessionInfo = {
   sessionId: string;
   cwd: string;
+};
+
+type PiReplayEntryRecord = Record<string, unknown> & {
+  type: string;
+  id: string;
+  parentId: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,83 +49,56 @@ function parseJsonLines(content: string): Array<Record<string, unknown>> {
     });
 }
 
-function buildEntryPath(entries: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  const sessionEntries = entries.filter((entry) => getString(entry['type']) !== 'session');
-  const byId = new Map<string, Record<string, unknown>>();
-  for (const entry of sessionEntries) {
+function normalizeReplayEntries(entries: Array<Record<string, unknown>>): PiReplayEntryRecord[] {
+  return entries.flatMap((entry) => {
+    const type = getString(entry['type']);
+    if (!type || type === 'session') {
+      return [];
+    }
     const id = getString(entry['id']);
-    if (id) {
-      byId.set(id, entry);
+    if (!id) {
+      return [];
     }
+    const parentId = getString(entry['parentId']);
+    return [
+      {
+        ...entry,
+        type,
+        id,
+        parentId: parentId || null,
+      },
+    ];
+  });
+}
+
+function createCompactionSummaryReplayEntry(
+  compaction: PiReplayEntryRecord,
+): PiReplayEntryRecord | undefined {
+  const summary = getString(compaction['summary']);
+  if (!summary) {
+    return undefined;
   }
-  const leaf = sessionEntries[sessionEntries.length - 1];
-  if (!leaf) {
-    return [];
-  }
-  const pathEntries: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
-  let current: Record<string, unknown> | undefined = leaf;
-  while (current) {
-    const id = getString(current['id']);
-    if (!id || seen.has(id)) {
-      break;
-    }
-    seen.add(id);
-    pathEntries.unshift(current);
-    const parentId: unknown = current['parentId'];
-    current = typeof parentId === 'string' ? byId.get(parentId) : undefined;
-  }
-  return pathEntries;
+  return {
+    type: 'message',
+    id: `${compaction.id || 'compaction'}:summary`,
+    parentId: null,
+    timestamp: compaction['timestamp'],
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: buildCompactionSummaryText(summary) }],
+      timestamp: resolveTimestamp(compaction) ?? Date.now(),
+      meta: { source: 'user' },
+    },
+  };
 }
 
 function buildEffectivePiReplayEntries(
   entries: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const pathEntries = buildEntryPath(entries);
-  let compactionIndex = -1;
-  for (let i = pathEntries.length - 1; i >= 0; i -= 1) {
-    if (getString(pathEntries[i]?.['type']) === 'compaction') {
-      compactionIndex = i;
-      break;
-    }
-  }
-  if (compactionIndex === -1) {
-    return pathEntries;
-  }
-
-  const compaction = pathEntries[compactionIndex]!;
-  const firstKeptEntryId = getString(compaction['firstKeptEntryId']);
-  const effective: Array<Record<string, unknown>> = [];
-  const summary = getString(compaction['summary']);
-  if (summary) {
-    effective.push({
-      type: 'message',
-      id: `${getString(compaction['id']) || 'compaction'}:summary`,
-      parentId: null,
-      timestamp: compaction['timestamp'],
-      message: {
-        role: 'user',
-        content: [{ type: 'text', text: buildCompactionSummaryText(summary) }],
-        timestamp: resolveTimestamp(compaction) ?? Date.now(),
-        meta: { source: 'user' },
-      },
-    });
-  }
-
-  let foundFirstKept = false;
-  for (let i = 0; i < compactionIndex; i += 1) {
-    const entry = pathEntries[i]!;
-    if (getString(entry['id']) === firstKeptEntryId) {
-      foundFirstKept = true;
-    }
-    if (foundFirstKept) {
-      effective.push(entry);
-    }
-  }
-  for (let i = compactionIndex + 1; i < pathEntries.length; i += 1) {
-    effective.push(pathEntries[i]!);
-  }
-  return effective;
+): PiReplayEntryRecord[] {
+  return buildEffectivePiSessionEntryPath(normalizeReplayEntries(entries), {
+    createCompactionSummaryEntry: createCompactionSummaryReplayEntry,
+    includeRawCompactionEntry: false,
+  });
 }
 
 function encodePiCwd(cwd: string): string | null {

@@ -338,7 +338,8 @@ Implemented tests:
 - `packages/agent-server/src/history/piCompaction.test.ts`: covers the Pi threshold rule and previous-summary update behavior.
 - `packages/agent-server/src/history/piSessionReplay.test.ts`: loads a Pi JSONL file with a `compaction` entry and verifies effective context is summary + kept messages + post-compaction messages.
 - `packages/agent-server/src/chatProcessor.test.ts`: threshold auto-compaction delegates to `SessionHub.compactSession` after a completed Pi run, with `allowActiveRun: true` because the active run is cleared in the processor's `finally` block.
-- `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`: one-shot overflow compaction/retry when a Pi run returns a context-overflow error.
+- `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`: one-shot overflow compaction/retry when a Pi run returns a context-overflow error; verifies the overflow error assistant is not present in the compacted or retried context.
+- `packages/agent-server/src/sessionHub.test.ts`: direct guard coverage for missing, deleted, active, non-Pi, writer-unavailable, and model-missing compaction failures.
 - `packages/plugins/core/sessions/server/index.test.ts`: `compact` operation delegates to `SessionHub.compactSession` and returns the expected response.
 - `packages/shared/src/protocol.test.ts`: accepts any new compact response schema.
 
@@ -346,7 +347,7 @@ Follow-up coverage still worth adding:
 
 - `packages/agent-server/src/history/piCompaction.test.ts`: token estimation edge cases, cut-point selection, split-turn summary preparation, and file-op details.
 - `packages/agent-server/src/history/piSessionWriter.test.ts`: compaction entry append, effective signature reload, appending messages after compaction, and history rewrite compatibility.
-- `packages/agent-server/src/sessionHub.test.ts`: non-Pi and active-session rejections, successful state reload, revision/context usage updates, and broadcasts.
+- `packages/agent-server/src/sessionHub.test.ts`: successful compaction state reload, revision/context usage updates, and broadcasts.
 - Web client unit coverage for `SessionManager.compactSession` error display if a controller harness is added.
 
 Commands:

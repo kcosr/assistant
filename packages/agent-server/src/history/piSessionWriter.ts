@@ -27,6 +27,8 @@ import {
 import {
   compactPiMessages,
   buildCompactionSummaryText,
+  buildEffectivePiSessionEntryPath,
+  buildPiSessionEntryPath,
   type PiCompactionDetails,
   type PiCompactionResult,
   type PiCompactionSettings,
@@ -1035,29 +1037,6 @@ async function loadPiSessionFileRecords(filePath: string): Promise<PiSessionFile
   return { header, entries };
 }
 
-function buildCurrentEntryPath(entries: PiSessionEntryRecord[]): PiSessionEntryRecord[] {
-  const byId = new Map<string, PiSessionEntryRecord>();
-  for (const entry of entries) {
-    byId.set(entry.id, entry);
-  }
-  const leaf = entries[entries.length - 1];
-  if (!leaf) {
-    return [];
-  }
-  const pathEntries: PiSessionEntryRecord[] = [];
-  const seen = new Set<string>();
-  let current: PiSessionEntryRecord | undefined = leaf;
-  while (current) {
-    if (seen.has(current.id)) {
-      break;
-    }
-    seen.add(current.id);
-    pathEntries.unshift(current);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  return pathEntries;
-}
-
 function toPiCompactionPathEntry(entry: PiSessionEntryRecord): PiSessionPathEntry | null {
   if (entry.type === 'message' && isRecord(entry['message'])) {
     return {
@@ -1108,35 +1087,7 @@ function toPiCompactionPathEntry(entry: PiSessionEntryRecord): PiSessionPathEntr
 function buildEffectiveMessageSignatureEntries(
   entries: PiSessionEntryRecord[],
 ): PiSessionEntryRecord[] {
-  const pathEntries = buildCurrentEntryPath(entries);
-  let compactionIndex = -1;
-  for (let i = pathEntries.length - 1; i >= 0; i -= 1) {
-    if (pathEntries[i]?.type === 'compaction') {
-      compactionIndex = i;
-      break;
-    }
-  }
-  if (compactionIndex === -1) {
-    return pathEntries;
-  }
-
-  const compaction = pathEntries[compactionIndex]!;
-  const firstKeptEntryId = getString(compaction['firstKeptEntryId']);
-  const effective: PiSessionEntryRecord[] = [compaction];
-  let foundFirstKept = false;
-  for (let i = 0; i < compactionIndex; i += 1) {
-    const entry = pathEntries[i]!;
-    if (entry.id === firstKeptEntryId) {
-      foundFirstKept = true;
-    }
-    if (foundFirstKept) {
-      effective.push(entry);
-    }
-  }
-  for (let i = compactionIndex + 1; i < pathEntries.length; i += 1) {
-    effective.push(pathEntries[i]!);
-  }
-  return effective;
+  return buildEffectivePiSessionEntryPath(entries);
 }
 
 function buildEffectiveMessageSignatures(entries: PiSessionEntryRecord[]): string[] {
@@ -1658,7 +1609,7 @@ export class PiSessionWriter {
     if (!records) {
       throw new Error('Pi session history is unavailable');
     }
-    const pathEntries = buildCurrentEntryPath(records.entries)
+    const pathEntries = buildPiSessionEntryPath(records.entries)
       .map((entry) => toPiCompactionPathEntry(entry))
       .filter((entry): entry is PiSessionPathEntry => !!entry);
     const preparation = preparePiCompaction(pathEntries, settings);

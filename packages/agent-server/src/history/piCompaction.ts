@@ -43,6 +43,12 @@ export type PiCompactionEntryLike = {
   fromHook?: boolean;
 };
 
+export type PiSessionEntryRecordLike = Record<string, unknown> & {
+  type: string;
+  id: string;
+  parentId: string | null;
+};
+
 export type PiCustomAgentMessage = {
   role: 'custom';
   customType: string;
@@ -206,6 +212,10 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
 
 const TOOL_RESULT_MAX_CHARS = 2000;
 
+function getString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -306,6 +316,69 @@ function createCompactionSummaryMessage(entry: PiCompactionEntryLike): PiCompact
     tokensBefore: entry.tokensBefore,
     timestamp: new Date(entry.timestamp).getTime(),
   };
+}
+
+export function buildPiSessionEntryPath<T extends PiSessionEntryRecordLike>(entries: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const entry of entries) {
+    byId.set(entry.id, entry);
+  }
+  const leaf = entries[entries.length - 1];
+  if (!leaf) {
+    return [];
+  }
+  const pathEntries: T[] = [];
+  const seen = new Set<string>();
+  let current: T | undefined = leaf;
+  while (current) {
+    if (seen.has(current.id)) {
+      break;
+    }
+    seen.add(current.id);
+    pathEntries.unshift(current);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return pathEntries;
+}
+
+export function buildEffectivePiSessionEntryPath<T extends PiSessionEntryRecordLike>(
+  entries: T[],
+  options: {
+    createCompactionSummaryEntry?: (compaction: T) => T | undefined;
+    includeRawCompactionEntry?: boolean;
+  } = {},
+): T[] {
+  const pathEntries = buildPiSessionEntryPath(entries);
+  let compactionIndex = -1;
+  for (let i = pathEntries.length - 1; i >= 0; i -= 1) {
+    if (pathEntries[i]?.type === 'compaction') {
+      compactionIndex = i;
+      break;
+    }
+  }
+  if (compactionIndex === -1) {
+    return pathEntries;
+  }
+
+  const compaction = pathEntries[compactionIndex]!;
+  const summaryEntry = options.createCompactionSummaryEntry?.(compaction);
+  const effective: T[] =
+    summaryEntry || options.includeRawCompactionEntry !== false ? [summaryEntry ?? compaction] : [];
+  const firstKeptEntryId = getString(compaction['firstKeptEntryId']);
+  let foundFirstKept = false;
+  for (let i = 0; i < compactionIndex; i += 1) {
+    const entry = pathEntries[i]!;
+    if (entry.id === firstKeptEntryId) {
+      foundFirstKept = true;
+    }
+    if (foundFirstKept) {
+      effective.push(entry);
+    }
+  }
+  for (let i = compactionIndex + 1; i < pathEntries.length; i += 1) {
+    effective.push(pathEntries[i]!);
+  }
+  return effective;
 }
 
 function getMessageFromEntry(entry: PiSessionPathEntry): PiCompactionAgentMessage | undefined {
