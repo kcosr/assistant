@@ -661,7 +661,7 @@ Notes:
   (default: 100).
 - `config.compaction`: optional Pi SDK context compaction controls. Compaction is enabled by
   default with Pi-compatible defaults: `reserveTokens: 16384` and `keepRecentTokens: 20000`.
-  Manual compaction is available from the chat request history menu for Pi-backed sessions, and
+  Manual compaction is available from the chat request history menu for in-process Pi SDK sessions, and
   automatic threshold compaction runs after completed Pi turns when usage exceeds
   `contextWindow - reserveTokens`.
 

@@ -2163,6 +2163,18 @@ async function main(): Promise<void> {
     return provider === 'pi' || provider === 'pi-cli';
   }
 
+  function isSessionPiSdkBacked(sessionId: string | null): boolean {
+    if (!sessionId) {
+      return false;
+    }
+    const session = sessionSummaries.find((summary) => summary.sessionId === sessionId) ?? null;
+    if (!session?.agentId) {
+      return false;
+    }
+    const agent = agentSummaries.find((summary) => summary.agentId === session.agentId) ?? null;
+    return agent?.provider === 'pi';
+  }
+
   function sendSetSessionModel(sessionId: string, model: string): void {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
@@ -3504,12 +3516,16 @@ async function main(): Promise<void> {
             showResetHistoryConfirmation(sessionId);
           },
         },
-        {
-          label: 'Compact Context',
-          onClick: () => {
-            showCompactContextConfirmation(sessionId);
-          },
-        },
+        ...(isSessionPiSdkBacked(sessionId)
+          ? [
+              {
+                label: 'Compact Context',
+                onClick: () => {
+                  showCompactContextConfirmation(sessionId);
+                },
+              },
+            ]
+          : []),
       ],
     });
   }

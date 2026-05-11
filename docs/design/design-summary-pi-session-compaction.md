@@ -92,12 +92,12 @@ Error behavior:
 - `session_not_found` if the session does not exist.
 - `invalid_arguments` if the session is not Pi-backed.
 - `invalid_arguments` if `PiSessionWriter` is unavailable.
-- `invalid_arguments` if the session has an active chat run; manual compaction does not interrupt active runs.
+- `session_busy` if the session has an active chat run; manual compaction does not interrupt active runs.
 - `invalid_arguments` with `Already compacted` or `Nothing to compact (session too small)` when no compaction entry can be produced.
 
 ### UI behavior
 
-- Add **Compact Context** at the bottom of the existing request history menu, below **Reset Session**.
+- Add **Compact Context** at the bottom of the existing request history menu, below **Reset Session**, only for provider `pi` sessions.
 - The action opens a confirmation dialog:
   - Title: `Compact Context`
   - Message: `Summarize older Pi session history and keep recent context?`

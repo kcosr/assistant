@@ -815,6 +815,7 @@ describe('handleTextInputWithChatCompletions (pi)', () => {
       sessionId: 's1',
       reason: 'overflow',
       allowActiveRun: true,
+      signal: expect.any(AbortSignal),
     });
     expect(runPiSdkChatCompletionIteration).toHaveBeenCalledTimes(2);
     expect(retryMessageSets[1]).toMatchObject([

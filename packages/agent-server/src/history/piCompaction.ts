@@ -43,6 +43,27 @@ export type PiCompactionEntryLike = {
   fromHook?: boolean;
 };
 
+export type PiCustomAgentMessage = {
+  role: 'custom';
+  customType: string;
+  content: string | unknown[];
+  display: boolean;
+  details?: unknown;
+  timestamp: number;
+};
+
+export type PiCompactionSummaryMessage = {
+  role: 'compactionSummary';
+  summary: string;
+  tokensBefore: number;
+  timestamp: number;
+};
+
+export type PiCompactionAgentMessage =
+  | AgentMessage
+  | PiCustomAgentMessage
+  | PiCompactionSummaryMessage;
+
 export type PiSessionPathEntry =
   | {
       type: 'message';
@@ -72,8 +93,8 @@ export type PiSessionPathEntry =
 
 export type PiCompactionPreparation = {
   firstKeptEntryId: string;
-  messagesToSummarize: AgentMessage[];
-  turnPrefixMessages: AgentMessage[];
+  messagesToSummarize: PiCompactionAgentMessage[];
+  turnPrefixMessages: PiCompactionAgentMessage[];
   isSplitTurn: boolean;
   tokensBefore: number;
   previousSummary?: string;
@@ -219,7 +240,10 @@ function extractTextBlocks(content: unknown): string {
     .join('');
 }
 
-function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
+function extractFileOpsFromMessage(
+  message: PiCompactionAgentMessage,
+  fileOps: FileOperations,
+): void {
   if (message.role !== 'assistant' || !Array.isArray(message.content)) {
     return;
   }
@@ -264,27 +288,27 @@ function formatFileOperations(details: PiCompactionDetails): string {
 
 function createCustomMessage(
   entry: Extract<PiSessionPathEntry, { type: 'custom_message' }>,
-): AgentMessage {
+): PiCustomAgentMessage {
   return {
     role: 'custom',
     customType: entry.customType,
-    content: entry.content as never,
+    content: entry.content,
     display: entry.display,
     details: entry.details,
     timestamp: new Date(entry.timestamp).getTime(),
-  } as AgentMessage;
+  };
 }
 
-function createCompactionSummaryMessage(entry: PiCompactionEntryLike): AgentMessage {
+function createCompactionSummaryMessage(entry: PiCompactionEntryLike): PiCompactionSummaryMessage {
   return {
     role: 'compactionSummary',
     summary: entry.summary,
     tokensBefore: entry.tokensBefore,
     timestamp: new Date(entry.timestamp).getTime(),
-  } as AgentMessage;
+  };
 }
 
-function getMessageFromEntry(entry: PiSessionPathEntry): AgentMessage | undefined {
+function getMessageFromEntry(entry: PiSessionPathEntry): PiCompactionAgentMessage | undefined {
   if (entry.type === 'message') {
     return (entry as Extract<PiSessionPathEntry, { type: 'message' }>).message;
   }
@@ -297,7 +321,7 @@ function getMessageFromEntry(entry: PiSessionPathEntry): AgentMessage | undefine
   return undefined;
 }
 
-function estimateUsageTokensFromMessage(message: AgentMessage): Usage | undefined {
+function estimateUsageTokensFromMessage(message: PiCompactionAgentMessage): Usage | undefined {
   if (message.role !== 'assistant') {
     return undefined;
   }
@@ -311,7 +335,7 @@ function estimateUsageTokensFromMessage(message: AgentMessage): Usage | undefine
   return assistant.usage;
 }
 
-export function estimatePiMessageTokens(message: AgentMessage): number {
+export function estimatePiMessageTokens(message: PiCompactionAgentMessage): number {
   let chars = 0;
   if (message.role === 'user') {
     chars = extractTextBlocks((message as { content?: unknown }).content).length;
@@ -331,15 +355,15 @@ export function estimatePiMessageTokens(message: AgentMessage): number {
     }
   } else if (message.role === 'toolResult') {
     chars = extractTextBlocks((message as { content?: unknown }).content).length;
-  } else if ((message as { role?: string }).role === 'compactionSummary') {
-    chars = String((message as { summary?: unknown }).summary ?? '').length;
-  } else if ((message as { role?: string }).role === 'custom') {
-    chars = extractTextBlocks((message as { content?: unknown }).content).length;
+  } else if (message.role === 'compactionSummary') {
+    chars = message.summary.length;
+  } else if (message.role === 'custom') {
+    chars = extractTextBlocks(message.content).length;
   }
   return Math.ceil(chars / 4);
 }
 
-export function estimatePiContextTokens(messages: AgentMessage[]): number {
+export function estimatePiContextTokens(messages: PiCompactionAgentMessage[]): number {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const usage = estimateUsageTokensFromMessage(messages[i]!);
     if (usage) {
@@ -435,7 +459,7 @@ function findCutPoint(
 }
 
 function extractFileOperations(
-  messages: AgentMessage[],
+  messages: PiCompactionAgentMessage[],
   entries: PiSessionPathEntry[],
   prevCompactionIndex: number,
 ): FileOperations {
@@ -497,7 +521,7 @@ export function preparePiCompaction(
 
   const boundaryStart = prevCompactionIndex + 1;
   const boundaryEnd = pathEntries.length;
-  const usageMessages: AgentMessage[] = [];
+  const usageMessages: PiCompactionAgentMessage[] = [];
   for (let i = prevCompactionIndex >= 0 ? prevCompactionIndex : 0; i < boundaryEnd; i += 1) {
     const message = getMessageFromEntry(pathEntries[i]!);
     if (message) {
@@ -512,7 +536,7 @@ export function preparePiCompaction(
   }
 
   const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
-  const messagesToSummarize: AgentMessage[] = [];
+  const messagesToSummarize: PiCompactionAgentMessage[] = [];
   for (let i = boundaryStart; i < historyEnd; i += 1) {
     const message = getMessageFromEntry(pathEntries[i]!);
     if (message) {
@@ -520,7 +544,7 @@ export function preparePiCompaction(
     }
   }
 
-  const turnPrefixMessages: AgentMessage[] = [];
+  const turnPrefixMessages: PiCompactionAgentMessage[] = [];
   if (cutPoint.isSplitTurn) {
     for (let i = cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i += 1) {
       const message = getMessageFromEntry(pathEntries[i]!);
@@ -551,7 +575,7 @@ export function preparePiCompaction(
   };
 }
 
-function serializeConversation(messages: AgentMessage[]): string {
+function serializeConversation(messages: PiCompactionAgentMessage[]): string {
   const parts: string[] = [];
   for (const message of messages) {
     if (message.role === 'user') {
@@ -593,13 +617,13 @@ function serializeConversation(messages: AgentMessage[]): string {
       if (content) {
         parts.push(`[Tool result]: ${truncateForSummary(content, TOOL_RESULT_MAX_CHARS)}`);
       }
-    } else if ((message as { role?: string }).role === 'custom') {
-      const content = extractTextBlocks((message as { content?: unknown }).content);
+    } else if (message.role === 'custom') {
+      const content = extractTextBlocks(message.content);
       if (content) {
         parts.push(`[User]: ${content}`);
       }
-    } else if ((message as { role?: string }).role === 'compactionSummary') {
-      const summary = String((message as { summary?: unknown }).summary ?? '').trim();
+    } else if (message.role === 'compactionSummary') {
+      const summary = message.summary.trim();
       if (summary) {
         parts.push(`[Compaction summary]: ${summary}`);
       }
@@ -609,7 +633,7 @@ function serializeConversation(messages: AgentMessage[]): string {
 }
 
 async function generateSummary(options: {
-  messages: AgentMessage[];
+  messages: PiCompactionAgentMessage[];
   model: Model<Api>;
   reserveTokens: number;
   apiKey?: string;

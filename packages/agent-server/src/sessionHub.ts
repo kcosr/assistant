@@ -702,13 +702,14 @@ export class SessionHub {
     sessionId: string;
     reason: 'manual' | 'threshold' | 'overflow';
     allowActiveRun?: boolean;
+    signal?: AbortSignal;
   }): Promise<{
     summary: SessionSummary;
     compacted: true;
     reason: 'manual' | 'threshold' | 'overflow';
     result: PiCompactionResult;
   }> {
-    const { sessionId, reason, allowActiveRun = false } = options;
+    const { sessionId, reason, allowActiveRun = false, signal } = options;
     const existing = await this.sessionIndex.getSession(sessionId);
     if (!existing) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -743,6 +744,7 @@ export class SessionHub {
       !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
     const authApiKey = await resolvePiSdkAuthApiKey({ providerId: resolvedModel.providerId });
     const apiKey = providerMatchesConfig ? (piConfig?.apiKey ?? authApiKey) : authApiKey;
+    const compactSignal = signal ?? state?.activeChatRun?.abortController.signal;
     const result = await this.piSessionWriter.compact({
       summary: existing,
       settings: this.resolvePiCompactionSettings(piConfig),
@@ -752,6 +754,7 @@ export class SessionHub {
         ...(providerMatchesConfig && piConfig?.headers ? { headers: piConfig.headers } : {}),
       },
       ...(apiKey ? { apiKey } : {}),
+      ...(compactSignal ? { signal: compactSignal } : {}),
       updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
     });
 

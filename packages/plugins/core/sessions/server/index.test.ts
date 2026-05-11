@@ -185,6 +185,7 @@ describe('sessions plugin operations', () => {
     expect(compactSessionSpy).toHaveBeenCalledWith({
       sessionId: created.sessionId,
       reason: 'manual',
+      signal: ctx.signal,
     });
     expect(result).toEqual({
       sessionId: created.sessionId,
@@ -201,6 +202,43 @@ describe('sessions plugin operations', () => {
           modifiedFiles: [],
         },
       },
+    });
+  });
+
+  it('maps active-run compact failures to session_busy', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('sessions-plugin-compact-busy'));
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-agent',
+        displayName: 'Pi Agent',
+        description: 'Pi-backed agent',
+        chat: { provider: 'pi' },
+      },
+    ]);
+    const sessionHub = new SessionHub({ sessionIndex, agentRegistry });
+    const plugin = createPlugin({ manifest: manifestJson as CombinedPluginManifest });
+
+    const ctx: ToolContext = {
+      sessionId: 'calling-session',
+      signal: new AbortController().signal,
+      sessionHub,
+      sessionIndex,
+      agentRegistry,
+    };
+
+    const created = await sessionIndex.createSession({
+      sessionId: 'compact-busy-target',
+      agentId: 'pi-agent',
+    });
+    vi.spyOn(sessionHub, 'compactSession').mockRejectedValue(
+      new Error('Cannot compact context while the session is running'),
+    );
+
+    await expect(
+      plugin.operations?.compact({ sessionId: created.sessionId }, ctx),
+    ).rejects.toMatchObject({
+      code: 'session_busy',
+      message: 'Cannot compact context while the session is running',
     });
   });
 

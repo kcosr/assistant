@@ -1644,9 +1644,11 @@ export class PiSessionWriter {
     model: Model<Api>;
     apiKey?: string;
     customInstructions?: string;
+    signal?: AbortSignal;
     updateAttributes?: (patch: SessionAttributesPatch) => Promise<SessionSummary | undefined>;
   }): Promise<{ summary: SessionSummary; result: PiCompactionResult }> {
-    const { summary, settings, model, apiKey, customInstructions, updateAttributes } = options;
+    const { summary, settings, model, apiKey, customInstructions, signal, updateAttributes } =
+      options;
     const stateInfo = await this.ensureSessionState({
       summary,
       ...(updateAttributes ? { updateAttributes } : {}),
@@ -1674,6 +1676,7 @@ export class PiSessionWriter {
       model,
       ...(apiKey ? { apiKey } : {}),
       ...(customInstructions ? { customInstructions } : {}),
+      ...(signal ? { signal } : {}),
     });
     if (!result.summary.trim()) {
       throw new Error('Nothing to compact (session too small)');

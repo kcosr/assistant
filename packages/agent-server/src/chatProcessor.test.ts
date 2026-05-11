@@ -832,6 +832,7 @@ describe('processUserMessage stream event emission', () => {
       sessionId: 's1',
       reason: 'threshold',
       allowActiveRun: true,
+      signal: expect.any(AbortSignal),
     });
   });
 

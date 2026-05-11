@@ -1911,6 +1911,7 @@ export async function runChatCompletionCore(
           sessionId,
           reason: 'overflow',
           allowActiveRun: true,
+          signal: abortController.signal,
         });
         state.summary = compacted.summary;
         const retryMessages =

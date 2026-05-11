@@ -871,6 +871,9 @@ export async function processUserMessage(
             sessionId,
             reason: 'threshold',
             allowActiveRun: true,
+            ...(state.activeChatRun?.abortController.signal
+              ? { signal: state.activeChatRun.abortController.signal }
+              : {}),
           });
           state.summary = compacted.summary;
         } catch (err) {

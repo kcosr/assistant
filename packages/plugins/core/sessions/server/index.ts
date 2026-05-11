@@ -109,6 +109,12 @@ function requireSessionId(raw: unknown): string {
   return sessionId;
 }
 
+function compactErrorCode(message: string): string {
+  return message === 'Cannot compact context while the session is running'
+    ? 'session_busy'
+    : 'invalid_arguments';
+}
+
 function requireRequestId(raw: unknown): string {
   return requireNonEmptyString(raw, 'requestId');
 }
@@ -748,6 +754,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           const { summary, result } = await sessionHub.compactSession({
             sessionId,
             reason: 'manual',
+            ...(ctx.signal ? { signal: ctx.signal } : {}),
           });
           const agent = summary.agentId
             ? requireAgentRegistry(ctx, sessionHub).getAgent(summary.agentId)
@@ -762,7 +769,7 @@ export function createPlugin(_options: PluginFactoryArgs): PluginModule {
           };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Failed to compact context';
-          throw new ToolError('invalid_arguments', message);
+          throw new ToolError(compactErrorCode(message), message);
         }
       },
       delete: async (
