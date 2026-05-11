@@ -2,11 +2,11 @@
 
 ## Overview
 
-Add Pi-style context compaction for assistant's in-process `pi` provider sessions. Assistant already mirrors Pi SDK sessions to canonical Pi JSONL under `~/.pi/agent/sessions/...` and reloads Pi-backed state from that log; this feature extends that path so the log can contain Pi-compatible `compaction` entries, assistant can rebuild effective model context from them, users can trigger manual compaction from the chat request menu, and the server can automatically compact after threshold conditions. The compaction algorithm is vendored/adapted into assistant from pi-mono's coding-agent reference implementation rather than imported from `@mariozechner/pi-coding-agent` internals.
+Add Pi-style context compaction for assistant's in-process `pi` provider sessions. Assistant already mirrors Pi SDK sessions to canonical Pi JSONL under `~/.pi/agent/sessions/...` and reloads Pi-backed state from that log; this feature extends that path so the log can contain Pi-compatible `compaction` entries, assistant can rebuild effective model context from them, users can trigger manual compaction from the chat request menu, and the server can automatically compact after threshold or context-overflow conditions. The compaction algorithm is vendored/adapted into assistant from pi-mono's coding-agent reference implementation rather than imported from `@mariozechner/pi-coding-agent` internals.
 
 ## Motivation
 
-Long Pi-backed sessions can overflow while the agent is still working through tool calls. Pi mono mitigates this with threshold compaction and one-shot overflow recovery; this implementation adds the threshold/manual compaction foundation first so long-running local Pi SDK sessions can shed old context before the next turn.
+Long Pi-backed sessions can overflow while the agent is still working through tool calls. Pi mono mitigates this with threshold compaction and one-shot overflow recovery; assistant should mirror that behavior so unattended local Pi SDK sessions can continue instead of failing at the context limit.
 
 ## Scope
 
@@ -18,6 +18,7 @@ In scope:
 - Add a sessions plugin HTTP/tool operation for manual compaction.
 - Add per-agent Pi SDK compaction config with Pi mono-compatible defaults.
 - Add threshold auto-compaction after completed Pi runs.
+- Add defensive context-overflow detection that compacts and retries once.
 - Keep Pi transcript projection compatible with existing `summary_message` display.
 
 Out of scope:
@@ -27,7 +28,6 @@ Out of scope:
 - Adding extension hook support equivalent to Pi mono's `session_before_compact` / `session_compact` hooks.
 - Adding a custom-instructions UI for manual compaction.
 - Changing non-Pi event-store session persistence.
-- Adding defensive context-overflow detection that compacts and retries once. This remains a follow-up item.
 
 ## Contract
 
@@ -157,9 +157,9 @@ After a successful provider `pi` chat run:
 5. If over threshold, append a `compaction` entry with reason `threshold`, reload effective context into `state.chatMessages`, clear/update context usage as appropriate, and broadcast history change. The next Pi run rebuilds `piAgentRuntime.agent.state.messages` from canonical replay.
 6. Do not retry or continue automatically for threshold compaction; it prepares the next run.
 
-### Deferred overflow recovery
+### Overflow recovery
 
-One-shot overflow recovery is intentionally not part of this patch. A follow-up implementation should handle Pi assistant messages that end with `stopReason: 'error'`:
+When a Pi assistant message ends with `stopReason: 'error'`:
 
 1. If `isContextOverflow(message, contextWindow)` is false, keep current error behavior.
 2. If true and no overflow recovery was attempted for this outer run:
@@ -261,7 +261,7 @@ Assistant's internal Pi session entry union must add the `compaction` entry shap
 | `packages/agent-server/src/history/piSessionReplay.ts`    | Rebuild effective context from latest compaction instead of iterating only `message` entries; current replay loop only consumes `type: message` at lines 193-261.                                                         | `packages/agent-server/src/history/piSessionReplay.test.ts`                                                                 |
 | `packages/agent-server/src/history/historyProvider.ts`    | Keep/verify transcript projection for `compaction`; existing code maps `compaction` to `summary_message` at lines 2123-2137.                                                                                              | `packages/agent-server/src/history/historyProvider` coverage via `chatEventUtils.test.ts` and sessions plugin replay tests. |
 | `packages/agent-server/src/sessionHub.ts`                 | Add `compactSession`; enforce no active run for manual compaction; update state and broadcast history change like `editSessionHistory`; current Pi writer access is lines 166-212 and history edit flow is lines 610-680. | `packages/agent-server/src/sessionHub.test.ts`                                                                              |
-| `packages/agent-server/src/chatRunCore.ts`                | Pass Pi context-window information through the run result so the processor can evaluate threshold compaction after a completed turn. Overflow detection/retry is deferred.                                                | `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`                                                                  |
+| `packages/agent-server/src/chatRunCore.ts`                | Add overflow detection/retry around Pi agent prompt; current Pi branch creates the agent at lines 1285-1455 and throws upstream errors at lines 1799-1810.                                                                | `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`                                                                  |
 | `packages/agent-server/src/chatProcessor.ts`              | Trigger threshold auto-compaction after Pi sync/finalization; current final Pi sync is lines 818-833 and turn finalization is lines 840-848.                                                                              | `packages/agent-server/src/chatProcessor.test.ts`, Pi lifecycle tests.                                                      |
 | `packages/agent-server/src/chatTurnFinalization.ts`       | No code change required; `chatProcessor.ts` calls `finalizeChatTurn()` before threshold compaction, so the compaction entry remains outside the just-finished request boundary.                                           | `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`                                                                  |
 | `packages/plugins/core/sessions/manifest.json`            | Add `compact` operation next to `clear` and `history-edit`; existing operations are listed around lines 213-247.                                                                                                          | `packages/plugins/core/sessions/server/index.test.ts`                                                                       |
@@ -282,7 +282,8 @@ Assistant's internal Pi session entry union must add the `compaction` entry shap
 6. Add sessions plugin `compact` operation and web-client `SessionManager.compactSession()` method.
 7. Add **Compact Context** to the chat request history menu with confirmation and status handling.
 8. Add threshold auto-compaction after successful Pi turn finalization and final Pi history sync.
-9. Add tests for config parsing, compaction preparation, Pi JSONL replay, writer alignment, manual operation, UI action path, and threshold compaction.
+9. Add one-shot overflow recovery in the Pi runtime path using `isContextOverflow`, compacting and retrying the same prompt once.
+10. Add tests for config parsing, compaction preparation, Pi JSONL replay, writer alignment, manual operation, UI action path, threshold compaction, and overflow retry.
 
 ## Diagrams
 
@@ -303,11 +304,27 @@ sequenceDiagram
   Sessions-->>UI: {compacted:true, revision}
 ```
 
+```mermaid
+sequenceDiagram
+  participant Runtime as Pi chat runtime
+  participant Model as Pi SDK/model
+  participant Writer as PiSessionWriter
+
+  Runtime->>Model: prompt / continue
+  Model-->>Runtime: assistant error (context overflow)
+  Runtime->>Runtime: detect isContextOverflow and not attempted
+  Runtime->>Writer: compact persisted/effective context
+  Writer-->>Runtime: compaction result
+  Runtime->>Runtime: reload effective context without overflow error
+  Runtime->>Model: retry same prompt once
+```
+
 ## Risks
 
 - **Replay mismatch after compaction:** `PiSessionWriter.sync()` currently aligns against every persisted message signature; after compaction it must align against effective context or future writes may be skipped as unreconcilable.
 - **Visible transcript vs model context divergence:** transcript projection should show `summary_message`, while model context should receive a synthetic user summary message. These are related but not identical paths.
 - **Request boundary ordering:** auto threshold compaction should append after `appendTurnEnd`, otherwise history edit spans and replay grouping could include compaction inside the just-finished request.
+- **Overflow retry duplication:** retrying after an overflow must avoid duplicating user prompts, tool results, or partial assistant text in `state.chatMessages` and Pi JSONL.
 - **Stale usage after compaction:** kept assistant messages may carry pre-compaction usage; threshold logic must ignore usage older than the latest compaction entry, mirroring Pi mono's stale-usage guard.
 - **Concurrent manual compaction:** manual compaction must reject active runs, and writer operations must remain serialized through the existing write queue.
 - **Default-on behavior:** enabling compaction by default mirrors Pi mono but changes runtime behavior for existing Pi SDK agents; documentation and config override are required.
@@ -321,6 +338,7 @@ Implemented tests:
 - `packages/agent-server/src/history/piCompaction.test.ts`: covers the Pi threshold rule and previous-summary update behavior.
 - `packages/agent-server/src/history/piSessionReplay.test.ts`: loads a Pi JSONL file with a `compaction` entry and verifies effective context is summary + kept messages + post-compaction messages.
 - `packages/agent-server/src/chatProcessor.test.ts`: threshold auto-compaction delegates to `SessionHub.compactSession` after a completed Pi run, with `allowActiveRun: true` because the active run is cleared in the processor's `finally` block.
+- `packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts`: one-shot overflow compaction/retry when a Pi run returns a context-overflow error.
 - `packages/plugins/core/sessions/server/index.test.ts`: `compact` operation delegates to `SessionHub.compactSession` and returns the expected response.
 - `packages/shared/src/protocol.test.ts`: accepts any new compact response schema.
 
@@ -330,7 +348,6 @@ Follow-up coverage still worth adding:
 - `packages/agent-server/src/history/piSessionWriter.test.ts`: compaction entry append, effective signature reload, appending messages after compaction, and history rewrite compatibility.
 - `packages/agent-server/src/sessionHub.test.ts`: non-Pi and active-session rejections, successful state reload, revision/context usage updates, and broadcasts.
 - Web client unit coverage for `SessionManager.compactSession` error display if a controller harness is added.
-- Future overflow recovery coverage when that feature is implemented.
 
 Commands:
 
@@ -338,7 +355,7 @@ Commands:
 npm run build -w @assistant/shared
 npm run build -w @assistant/agent-server
 npm run build -w @assistant/web-client
-npm test -- packages/agent-server/src/history/piCompaction.test.ts packages/agent-server/src/history/piSessionReplay.test.ts packages/agent-server/src/chatProcessor.test.ts packages/plugins/core/sessions/server/index.test.ts packages/shared/src/protocol.test.ts
+npm test -- packages/agent-server/src/history/piCompaction.test.ts packages/agent-server/src/history/piSessionReplay.test.ts packages/agent-server/src/chatProcessor.test.ts packages/agent-server/src/ws/chatRunLifecycle.pi.test.ts packages/plugins/core/sessions/server/index.test.ts packages/shared/src/protocol.test.ts
 npm run lint
 npm run format
 ```
@@ -347,6 +364,7 @@ Manual checks:
 
 - Start the server with a Pi SDK agent and low synthetic `contextWindow` / high reserve to force threshold compaction.
 - Verify **Compact Context** appears at the bottom of the request history menu and causes a compaction summary to appear in replay.
+- Verify a forced context overflow compacts and retries once without surfacing the first overflow error.
 
 ## Open Assumptions
 

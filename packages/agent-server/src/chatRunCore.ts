@@ -66,6 +66,7 @@ import {
   resolvePiSdkAuthApiKey,
 } from './llm/piSdkProvider';
 import {
+  calculateContextTokens,
   extractSessionContextUsageFromAssistantMessage,
   isSessionContextUsageEqual,
 } from './contextUsage';
@@ -199,6 +200,50 @@ export function isChatRunError(err: unknown): err is ChatRunError {
 }
 
 const DEFAULT_PI_REQUEST_TIMEOUT_MS = 300_000;
+const PI_CONTEXT_OVERFLOW_RECOVERY_MESSAGE =
+  'Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.';
+
+function isPiContextOverflow(
+  message: AssistantMessage,
+  contextWindow: number | undefined,
+): boolean {
+  if (message.stopReason !== 'error') {
+    return false;
+  }
+
+  if (
+    typeof contextWindow === 'number' &&
+    Number.isFinite(contextWindow) &&
+    contextWindow > 0 &&
+    message.usage &&
+    calculateContextTokens(message.usage) >= contextWindow
+  ) {
+    return true;
+  }
+
+  const contentText = message.content
+    .filter((block): block is TextContent => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
+  const errorText = `${message.errorMessage ?? ''}\n${contentText}`.toLowerCase();
+  if (!errorText.trim()) {
+    return false;
+  }
+
+  return [
+    'context_length_exceeded',
+    'context length',
+    'context window',
+    'maximum context',
+    'max context',
+    'too many tokens',
+    'token limit',
+    'input is too long',
+    'prompt is too long',
+    'exceeds the maximum',
+    'exceeded maximum',
+  ].some((pattern) => errorText.includes(pattern));
+}
 
 function isPiReasoningLevel(
   value: string,
@@ -1343,10 +1388,10 @@ export async function runChatCompletionCore(
     const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
       summary: state.summary,
     });
+    const systemMessage =
+      state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
     piReplayMessages = state.chatMessages;
     if (canonicalReplayMessages) {
-      const systemMessage =
-        state.chatMessages[0]?.role === 'system' ? state.chatMessages[0] : undefined;
       const currentUserMessage =
         state.chatMessages[state.chatMessages.length - 1]?.role === 'user'
           ? state.chatMessages[state.chatMessages.length - 1]
@@ -1454,21 +1499,27 @@ export async function runChatCompletionCore(
     piAgentRuntime.agent.state.thinkingLevel = (reasoning ?? 'off') as PiAgentThinkingLevel;
     piAgentRuntime.agent.state.tools = agentTools as never;
 
-    const { contextMessages, promptMessage, systemPrompt } = buildPiAgentContext({
-      messages: piReplayMessages,
-      text,
-      model: agentModel,
-    });
-    piAgentRuntime.agent.state.systemPrompt = systemPrompt;
-    piAgentRuntime.agent.state.messages = contextMessages;
+    let promptMessage: AgentMessage;
+    const configurePiAgentContext = (messages: ChatCompletionMessage[]): void => {
+      const context = buildPiAgentContext({
+        messages,
+        text,
+        model: agentModel,
+      });
+      piAgentRuntime.agent.state.systemPrompt = context.systemPrompt;
+      piAgentRuntime.agent.state.messages = context.contextMessages;
+      promptMessage = context.promptMessage;
+    };
+    configurePiAgentContext(piReplayMessages);
 
     const toolInputOffsets = new Map<string, number>();
     const toolOutputOffsets = new Map<string, number>();
     const toolOutputTexts = new Map<string, string>();
     piBaseReplayMessages = piReplayMessages.slice();
-    const piReplayAccumulator = piReplayMessages.slice();
+    let piReplayAccumulator = piReplayMessages.slice();
     let toolIterationCount = 0;
     let hitToolIterationLimit = false;
+    let overflowRecoveryAttempted = false;
 
     const emitToolResultMessage = async (
       event: Extract<AgentEvent, { type: 'tool_execution_end' }>,
@@ -1709,43 +1760,72 @@ export async function runChatCompletionCore(
       }
     };
 
-    const subscription = piAgentRuntime.agent.subscribe((event) => {
-      subscriptionWork = subscriptionWork
-        .then(async () => {
-          if (subscriptionError) {
-            return;
-          }
-          await handleAgentEvent(event);
-        })
-        .catch((error) => {
-          if (subscriptionError) {
-            return;
-          }
-          subscriptionError = error;
-          piAgentRuntime.agent.abort();
-        });
-    });
+    const subscribePiAgentEvents = (): (() => void) =>
+      piAgentRuntime.agent.subscribe((event) => {
+        subscriptionWork = subscriptionWork
+          .then(async () => {
+            if (subscriptionError) {
+              return;
+            }
+            await handleAgentEvent(event);
+          })
+          .catch((error) => {
+            if (subscriptionError) {
+              return;
+            }
+            subscriptionError = error;
+            piAgentRuntime.agent.abort();
+          });
+      });
+    const subscription = subscribePiAgentEvents();
 
     const onAbort = () => {
       piAgentRuntime.agent.abort();
     };
-    abortController.signal.addEventListener('abort', onAbort, { once: true });
-    let promptError: unknown = null;
+    const promptPiAgent = async (): Promise<void> => {
+      let promptError: unknown = null;
+      abortController.signal.addEventListener('abort', onAbort, { once: true });
+      try {
+        await piAgentRuntime.agent.prompt(promptMessage);
+      } catch (error) {
+        promptError = error;
+      } finally {
+        abortController.signal.removeEventListener('abort', onAbort);
+        await subscriptionWork;
+      }
+
+      if (subscriptionError) {
+        throw subscriptionError;
+      }
+      if (promptError) {
+        throw promptError;
+      }
+    };
+
+    const persistPiContextBeforeOverflowCompaction = async (): Promise<void> => {
+      const writer = sessionHub.getPiSessionWriter?.();
+      if (!writer) {
+        return;
+      }
+      const updatedSummary = await writer.sync({
+        summary: state.summary,
+        messages: piReplayAccumulator,
+        ...(modelSpec ? { modelSpec } : {}),
+        ...(piConfig?.provider ? { defaultProvider: piConfig.provider } : {}),
+        ...(thinking ? { thinkingLevel: thinking } : {}),
+        updateAttributes: (patch) => sessionHub.updateSessionAttributes(sessionId, patch),
+      });
+      if (updatedSummary) {
+        state.summary = updatedSummary;
+      }
+      state.chatMessages = piReplayAccumulator.slice();
+    };
+
     try {
-      await piAgentRuntime.agent.prompt(promptMessage);
-    } catch (error) {
-      promptError = error;
+      await promptPiAgent();
     } finally {
-      abortController.signal.removeEventListener('abort', onAbort);
       subscription();
       await subscriptionWork;
-    }
-
-    if (subscriptionError) {
-      throw subscriptionError;
-    }
-    if (promptError) {
-      throw promptError;
     }
 
     piReplayMessages = piReplayAccumulator.slice();
@@ -1814,10 +1894,80 @@ export async function runChatCompletionCore(
           : 'aborted';
       finalPiSdkMessage = resolvedPiMessage;
     } else if (resolvedPiMessage?.stopReason === 'error') {
-      throw new ChatRunError(
-        'upstream_error',
-        resolvedPiMessage.errorMessage || 'Chat backend error',
-      );
+      if (
+        overflowRecoveryAttempted ||
+        !isPiContextOverflow(resolvedPiMessage, resolvedModel.model.contextWindow)
+      ) {
+        throw new ChatRunError(
+          'upstream_error',
+          resolvedPiMessage.errorMessage || 'Chat backend error',
+        );
+      }
+
+      overflowRecoveryAttempted = true;
+      try {
+        await persistPiContextBeforeOverflowCompaction();
+        const compacted = await sessionHub.compactSession({
+          sessionId,
+          reason: 'overflow',
+          allowActiveRun: true,
+        });
+        state.summary = compacted.summary;
+        const retryMessages =
+          (await loadCanonicalPiReplayMessages({
+            summary: state.summary,
+          })) ?? state.chatMessages;
+        piReplayMessages = [
+          ...(systemMessage && retryMessages[0]?.role !== 'system' ? [systemMessage] : []),
+          ...retryMessages,
+        ];
+        piBaseReplayMessages = piReplayMessages.slice();
+        piReplayAccumulator = piReplayMessages.slice();
+        lastPiSdkMessage = undefined;
+        finalPiSdkMessage = undefined;
+        fullText = '';
+        if (state.activeChatRun) {
+          state.activeChatRun.accumulatedText = '';
+        }
+        toolIterationCount = 0;
+        hitToolIterationLimit = false;
+        configurePiAgentContext(piReplayMessages);
+
+        const retrySubscription = subscribePiAgentEvents();
+        try {
+          await promptPiAgent();
+        } finally {
+          retrySubscription();
+          await subscriptionWork;
+        }
+      } catch (error) {
+        throw new ChatRunError('upstream_error', PI_CONTEXT_OVERFLOW_RECOVERY_MESSAGE, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      piReplayMessages = piReplayAccumulator.slice();
+      const retryPiMessage = (finalPiSdkMessage ?? lastPiSdkMessage) as PiSdkMessage | undefined;
+      if (retryPiMessage?.role !== 'assistant') {
+        finalPiSdkMessage = retryPiMessage;
+      } else if (retryPiMessage.stopReason === 'aborted' || abortController.signal.aborted) {
+        aborted = true;
+        abortReason =
+          abortController.signal.reason === 'timeout' || retryPiMessage.errorMessage === 'timeout'
+            ? 'timeout'
+            : 'aborted';
+        finalPiSdkMessage = retryPiMessage;
+      } else if (retryPiMessage.stopReason === 'error') {
+        if (isPiContextOverflow(retryPiMessage, resolvedModel.model.contextWindow)) {
+          throw new ChatRunError('upstream_error', PI_CONTEXT_OVERFLOW_RECOVERY_MESSAGE);
+        }
+        throw new ChatRunError(
+          'upstream_error',
+          retryPiMessage.errorMessage || 'Chat backend error',
+        );
+      } else {
+        finalPiSdkMessage = retryPiMessage;
+      }
     } else {
       finalPiSdkMessage = resolvedPiMessage;
     }
