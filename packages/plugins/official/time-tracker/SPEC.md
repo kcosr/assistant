@@ -356,7 +356,8 @@ All operations accept an optional `instance_id` (defaults to `default`).
 
 - Export is initiated from the time-tracker panel and respects the current view filters (instance, task, date range, and "Show reported").
 - The export dialog shows a summary and offers to mark exported entries as reported (default on).
-- The XLSX file includes columns: Item, Hours, Minutes, Hours (Decimal), Description (multi-line notes, each line prefixed with "•").
+- The XLSX file includes columns: Item, Hours, Minutes, Hours (Decimal), Description.
+- Description is built per task row from the trimmed task description followed by `Notes:` and unique normalized entry-note bullets when both are present. Rows with only notes keep the notes-only bullet list, rows with only a task description use that text, and rows with neither leave Description empty.
 - Column widths are fixed for Item (80) and Description (160).
 - A totals row with formulas is appended, and the Hours (Decimal) total cell is highlighted green.
 

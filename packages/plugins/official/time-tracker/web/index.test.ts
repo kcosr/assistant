@@ -16,8 +16,31 @@ vi.mock('../../../../web-client/src/utils/api', () => ({
 }));
 
 type OperationCall = {
+  plugin: string;
   operation: string;
   body: Record<string, unknown>;
+};
+
+type MockTask = {
+  id: string;
+  name: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type MockEntry = {
+  id: string;
+  task_id: string;
+  duration_minutes: number;
+  note?: string;
+  entry_date?: string;
+  reported?: boolean;
+  entry_type?: 'manual' | 'timer';
+  start_time?: string | null;
+  end_time?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 const flushPromises = async (): Promise<void> => {
@@ -37,20 +60,33 @@ describe('time tracker range picker', () => {
   const originalTz = process.env.TZ;
   let panelFactory: PanelFactory | null = null;
   let operationCalls: OperationCall[] = [];
+  let mockTasks: MockTask[] = [];
+  let mockEntries: MockEntry[] = [];
 
   beforeEach(() => {
     panelFactory = null;
     operationCalls = [];
+    mockTasks = [
+      {
+        id: 'task-1',
+        name: 'Task',
+        description: '',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    mockEntries = [];
 
     apiFetch.mockReset();
     apiFetch.mockImplementation(async (url: string, options?: RequestInit) => {
-      const match = /\/api\/plugins\/time-tracker\/operations\/([^/?#]+)/.exec(url);
-      const operation = match?.[1] ?? '';
+      const match = /\/api\/plugins\/([^/]+)\/operations\/([^/?#]+)/.exec(url);
+      const plugin = match?.[1] ?? '';
+      const operation = match?.[2] ?? '';
       const body = options?.body
         ? (JSON.parse(options.body.toString()) as Record<string, unknown>)
         : {};
 
-      operationCalls.push({ operation, body });
+      operationCalls.push({ plugin, operation, body });
 
       const json = (result: unknown) => ({
         ok: true,
@@ -58,25 +94,33 @@ describe('time tracker range picker', () => {
         json: async () => ({ ok: true, result }),
       });
 
+      if (plugin === 'artifacts' && operation === 'instance_list') {
+        return json([{ id: 'default', label: 'Default' }]);
+      }
+      if (plugin === 'artifacts' && operation === 'upload') {
+        return json({ id: 'artifact-1', filename: 'time-report.xlsx' });
+      }
+      if (plugin !== 'time-tracker') {
+        return json(null);
+      }
       if (operation === 'instance_list') {
         return json([{ id: 'default', label: 'Default' }]);
       }
       if (operation === 'task_list') {
-        return json([
-          {
-            id: 'task-1',
-            name: 'Task',
-            description: '',
-            created_at: '2026-01-01T00:00:00.000Z',
-            updated_at: '2026-01-01T00:00:00.000Z',
-          },
-        ]);
+        return json(mockTasks);
       }
       if (operation === 'entry_list') {
-        return json([]);
+        return json(mockEntries);
       }
       if (operation === 'timer_status') {
         return json(null);
+      }
+      if (operation === 'export_xlsx') {
+        return json({
+          filename: 'time-report.xlsx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          content: 'dGVzdA==',
+        });
       }
       return json(null);
     });
@@ -176,6 +220,51 @@ describe('time tracker range picker', () => {
     await flushPromises();
   };
 
+  const makeEntry = (entry: MockEntry): MockEntry => ({
+    entry_date: '2026-01-01',
+    reported: false,
+    entry_type: 'manual',
+    start_time: null,
+    end_time: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    note: '',
+    ...entry,
+  });
+
+  const buildExportRows = async (
+    tasks: MockTask[],
+    entries: MockEntry[],
+  ): Promise<Array<Record<string, unknown>>> => {
+    mockTasks = tasks;
+    mockEntries = entries;
+
+    const { container, handle } = await mountPanel();
+    try {
+      const openButton = container.querySelector<HTMLButtonElement>('[data-role="export-xlsx"]');
+      expect(openButton).not.toBeNull();
+      openButton?.click();
+      await flushPromises();
+
+      const submitButton = document.body.querySelector<HTMLButtonElement>(
+        '.time-tracker-export-dialog .confirm-dialog-button.primary',
+      );
+      expect(submitButton).not.toBeNull();
+      submitButton?.click();
+      await flushPromises();
+      await flushPromises();
+
+      const exportCall = operationCalls.find(
+        (call) => call.plugin === 'time-tracker' && call.operation === 'export_xlsx',
+      );
+      expect(exportCall).toBeTruthy();
+      expect(Array.isArray(exportCall?.body['rows'])).toBe(true);
+      return exportCall?.body['rows'] as Array<Record<string, unknown>>;
+    } finally {
+      handle.unmount();
+    }
+  };
+
   it.each([
     { label: 'desktop', isMobileViewport: false },
     { label: 'mobile', isMobileViewport: true },
@@ -272,5 +361,146 @@ describe('time tracker range picker', () => {
     } finally {
       handle.unmount();
     }
+  });
+
+  it('exports task description before unique note bullets', async () => {
+    const rows = await buildExportRows(
+      [
+        {
+          id: 'task-1',
+          name: 'Client follow-up',
+          description: '  Summarize client rollout blockers.  ',
+        },
+      ],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'task-1',
+          duration_minutes: 30,
+          note: ' - Drafted status update ',
+        }),
+        makeEntry({
+          id: 'entry-2',
+          task_id: 'task-1',
+          duration_minutes: 45,
+          note: '• Confirmed owners',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'Client follow-up',
+        total_minutes: 75,
+        description:
+          'Summarize client rollout blockers.\n\nNotes:\n• Drafted status update\n• Confirmed owners',
+      },
+    ]);
+  });
+
+  it('exports task description only when entries have no notes', async () => {
+    const rows = await buildExportRows(
+      [{ id: 'task-1', name: 'Planning', description: ' Quarterly planning summary ' }],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'task-1',
+          duration_minutes: 60,
+          note: '',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'Planning',
+        total_minutes: 60,
+        description: 'Quarterly planning summary',
+      },
+    ]);
+  });
+
+  it('preserves notes-only export descriptions', async () => {
+    const rows = await buildExportRows(
+      [{ id: 'task-1', name: 'Implementation', description: '' }],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'task-1',
+          duration_minutes: 25,
+          note: 'Built report view',
+        }),
+        makeEntry({
+          id: 'entry-2',
+          task_id: 'task-1',
+          duration_minutes: 35,
+          note: '* Added tests',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'Implementation',
+        total_minutes: 60,
+        description: '• Built report view\n• Added tests',
+      },
+    ]);
+  });
+
+  it('deduplicates normalized notes case-insensitively', async () => {
+    const rows = await buildExportRows(
+      [{ id: 'task-1', name: 'QA', description: 'Verification pass' }],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'task-1',
+          duration_minutes: 10,
+          note: '- Smoke tested export',
+        }),
+        makeEntry({
+          id: 'entry-2',
+          task_id: 'task-1',
+          duration_minutes: 20,
+          note: 'smoke tested export',
+        }),
+        makeEntry({
+          id: 'entry-3',
+          task_id: 'task-1',
+          duration_minutes: 30,
+          note: '— Checked workbook formatting',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'QA',
+        total_minutes: 60,
+        description: 'Verification pass\n\nNotes:\n• Smoke tested export\n• Checked workbook formatting',
+      },
+    ]);
+  });
+
+  it('exports an empty description when a row has neither task description nor notes', async () => {
+    const rows = await buildExportRows(
+      [{ id: 'task-1', name: 'Admin', description: '   ' }],
+      [
+        makeEntry({
+          id: 'entry-1',
+          task_id: 'task-1',
+          duration_minutes: 15,
+          note: ' - ',
+        }),
+      ],
+    );
+
+    expect(rows).toEqual([
+      {
+        item: 'Admin',
+        total_minutes: 15,
+        description: '',
+      },
+    ]);
   });
 });

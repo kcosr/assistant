@@ -303,6 +303,7 @@ type ArtifactMetadata = {
 };
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120];
+const EXPORT_NOTE_PREFIX = '• ';
 
 const fallbackDialogManager = new DialogManager();
 const fallbackContextMenuManager = new ContextMenuManager({
@@ -688,6 +689,22 @@ function setVisible(el: HTMLElement | null, visible: boolean): void {
     return;
   }
   el.style.display = visible ? '' : 'none';
+}
+
+function normalizeExportNote(note: string): string {
+  return note.trim().replace(/^[-*•–—](?:\s+|$)/, '').trim();
+}
+
+function formatExportDescription(taskDescription: string, notes: string[]): string {
+  const description = taskDescription.trim();
+  const noteText = notes.map((note) => `${EXPORT_NOTE_PREFIX}${note}`).join('\n');
+  if (description && noteText) {
+    return `${description}\n\nNotes:\n${noteText}`;
+  }
+  if (description) {
+    return description;
+  }
+  return noteText;
 }
 
 function isSameDay(a: Date, b: Date): boolean {
@@ -1329,33 +1346,37 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         entryCount: number;
         taskCount: number;
       } {
-        function normalizeExportNote(note: string): string {
-          return note.replace(/^[-*•–—]\s+/, '');
-        }
-
         const taskMap = new Map<
           string,
-          { item: string; totalMinutes: number; notes: Map<string, string> }
+          {
+            item: string;
+            taskDescription: string;
+            totalMinutes: number;
+            notes: Map<string, string>;
+          }
         >();
         let totalMinutes = 0;
         for (const entry of entries) {
           totalMinutes += entry.duration_minutes;
           const task = getTaskById(entry.task_id);
           const item = task ? task.name : 'Unknown task';
+          const taskDescription = task?.description.trim() ?? '';
           const existing =
             taskMap.get(entry.task_id) ??
-            ({ item, totalMinutes: 0, notes: new Map<string, string>() } as const);
+            ({
+              item,
+              taskDescription,
+              totalMinutes: 0,
+              notes: new Map<string, string>(),
+            } as const);
           const next = {
             item: existing.item,
+            taskDescription: existing.taskDescription,
             totalMinutes: existing.totalMinutes + entry.duration_minutes,
             notes: existing.notes,
           };
-          const rawNote = entry.note.trim();
-          if (rawNote) {
-            const normalizedNote = normalizeExportNote(rawNote);
-            if (!normalizedNote) {
-              continue;
-            }
+          const normalizedNote = normalizeExportNote(entry.note);
+          if (normalizedNote) {
             const key = normalizedNote.toLowerCase();
             if (!next.notes.has(key)) {
               next.notes.set(key, normalizedNote);
@@ -1366,12 +1387,10 @@ if (!registry || typeof registry.registerPanel !== 'function') {
         const rows = Array.from(taskMap.values())
           .map((record) => {
             const notes = Array.from(record.notes.values());
-            const description =
-              notes.length > 0 ? notes.map((note) => `• ${note}`).join('\n') : '';
             return {
               item: record.item,
               total_minutes: record.totalMinutes,
-              description,
+              description: formatExportDescription(record.taskDescription, notes),
             };
           })
           .sort((a, b) => a.item.localeCompare(b.item));
