@@ -20,6 +20,7 @@
 
 ### Changed
 
+- Changed the Voice notification session control to use the shared searchable session picker, replacing the prior native select. ([#100](https://github.com/kcosr/assistant/pull/100))
 - Changed time-tracker XLSX exports to include each task description before unique entry-note bullets in the Description column. ([#99](https://github.com/kcosr/assistant/pull/99))
 - Migrated Pi SDK dependencies from `@mariozechner/*` packages to the `@earendil-works/*` scope at `0.74.0`. ([#98](https://github.com/kcosr/assistant/pull/98))
 - Removed startup caches for instruction skills and context files. Skills and context files are now read from disk on every access, ensuring the skills dropdown and system prompt always reflect the current state of files without requiring a server restart. ([#93](https://github.com/kcosr/assistant/pull/93))
