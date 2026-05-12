@@ -111,13 +111,26 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
-  it('can pin the picker near the viewport top for mobile dialog flows', () => {
+  it('can pin the picker near a dialog top for mobile dialog flows', () => {
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
       getAgentSummaries: () => [],
       openSessionComposer: vi.fn(),
     });
 
+    const dialog = document.createElement('div');
+    dialog.getBoundingClientRect = () =>
+      ({
+        x: 16,
+        y: 36,
+        top: 36,
+        left: 16,
+        right: 344,
+        bottom: 720,
+        width: 328,
+        height: 684,
+        toJSON: () => ({}),
+      }) as DOMRect;
     const anchor = document.createElement('button');
     anchor.getBoundingClientRect = () =>
       ({
@@ -131,18 +144,20 @@ describe('SessionPickerController', () => {
         height: 38,
         toJSON: () => ({}),
       }) as DOMRect;
-    document.body.appendChild(anchor);
+    dialog.appendChild(anchor);
+    document.body.appendChild(dialog);
 
     controller.open({
       anchor,
       title: 'Select voice notification session',
       autoFocusSearch: false,
       placement: 'viewport-top',
+      placementContainer: dialog,
       onSelectSession: () => undefined,
     });
 
     const menu = document.querySelector<HTMLElement>('.session-picker-popover');
-    expect(menu?.style.top).toBe('8px');
+    expect(menu?.style.top).toBe('44px');
     expect(menu?.style.left).toBe('24px');
 
     controller.close();

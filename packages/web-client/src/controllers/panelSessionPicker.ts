@@ -28,6 +28,7 @@ export interface SessionPickerOpenOptions {
   title: string;
   autoFocusSearch?: boolean;
   placement?: 'anchor' | 'viewport-top';
+  placementContainer?: HTMLElement | null;
   selectedSessionId?: string | null;
   disabledSessionIds?: Set<string>;
   openSessionIds?: Set<string>;
@@ -620,9 +621,10 @@ export class SessionPickerController {
       const viewportTop = viewport?.offsetTop ?? 0;
       const viewportWidth = viewport?.width ?? window.innerWidth;
       const viewportHeight = viewport?.height ?? window.innerHeight;
+      const containerTop = options.placementContainer?.getBoundingClientRect().top;
       const maxLeft = viewportLeft + viewportWidth - menuRect.width - padding;
       left = Math.min(Math.max(anchorRect.left, viewportLeft + padding), maxLeft);
-      top = viewportTop + padding;
+      top = Math.max(viewportTop, containerTop ?? viewportTop) + padding;
       menu.style.maxHeight = `${Math.max(180, Math.min(360, viewportHeight - padding * 2))}px`;
     }
 
