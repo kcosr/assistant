@@ -3194,7 +3194,7 @@ body.panel-reordering {
 /* Session picker dropdown */
 .session-picker-popover {
   position: fixed;
-  z-index: 1102;
+  z-index: 1104;
   display: flex;
   flex-direction: column;
   min-width: 240px;
