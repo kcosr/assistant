@@ -95,6 +95,8 @@ Voice notification session behavior:
 - The Voice Settings modal uses the same searchable session picker for the notification session
   preference.
 - The control shows `None` when no preferred notification session is selected.
+- If the saved session no longer exists, the control can briefly show
+  `Unavailable session (<id>)` before the existing cleanup path clears the preference.
 - Selecting a session updates the `preferredVoiceSessionId` voice preference through the normal
   voice settings path.
 - The picker includes a `None` row to clear the preferred notification session.

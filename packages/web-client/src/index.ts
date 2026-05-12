@@ -72,7 +72,6 @@ import {
   type CreateScheduledSessionInput,
   type SessionComposerOpenOptions,
 } from './controllers/sessionComposerController';
-import type { PanelInitOptions } from './controllers/panelRegistry';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
 import { CHAT_PANEL_MANIFEST, createChatPanel } from './panels/chat';
@@ -628,8 +627,7 @@ async function main(): Promise<void> {
     CHAT_PANEL_MANIFEST,
     createChatPanel({
       getRuntimeOptions: getChatRuntimeOptions,
-      onRuntimeReady: ({ runtime, dom, host, init }) =>
-        registerChatPanelRuntime({ runtime, dom, host, init }),
+      onRuntimeReady: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
     }),
   );
   registerBuiltInPanel(WORKSPACE_NAVIGATOR_PANEL_MANIFEST, createWorkspaceNavigatorPanel());
@@ -1358,8 +1356,7 @@ async function main(): Promise<void> {
   }
 
   function syncNativeVoiceSettings(): void {
-    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
-    nativeVoiceSettingsSync.request(settings);
+    nativeVoiceSettingsSync.request(getCurrentVoiceSettings());
   }
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
@@ -1684,7 +1681,6 @@ async function main(): Promise<void> {
     runtime: ChatRuntime;
     dom: ChatPanelDom;
     host: PanelHost;
-    init: PanelInitOptions;
   }): () => void {
     const { runtime, dom, host } = options;
     const panelId = host.panelId();
@@ -2747,8 +2743,7 @@ async function main(): Promise<void> {
 
   panelHostControllerInstance.setContext(CHAT_PANEL_SERVICES_CONTEXT_KEY, {
     getRuntimeOptions: getChatRuntimeOptions,
-    registerChatPanel: ({ runtime, dom, host, init }) =>
-      registerChatPanelRuntime({ runtime, dom, host, init }),
+    registerChatPanel: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
   } satisfies ChatPanelServices);
 
   await fetchPlugins();
@@ -3911,6 +3906,7 @@ async function main(): Promise<void> {
   });
   settingsDropdownController.attach();
   const closeVoiceSettingsModal = (): void => {
+    sessionPickerController?.close();
     clearVoiceSettingsDeviceRefreshTimers();
     voiceSettingsModalEl.hidden = true;
     voiceSettingsModalEl.style.display = 'none';
@@ -3966,9 +3962,6 @@ async function main(): Promise<void> {
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
   });
-  const syncVoiceSettingsFromCurrentInputs = (): void => {
-    syncVoiceSettingsFromInputs();
-  };
   [
     audioModeSelectEl,
     autoListenCheckboxEl,
@@ -3986,7 +3979,7 @@ async function main(): Promise<void> {
     voiceStartupPreRollSliderEl,
     voiceTtsGainSliderEl,
   ].forEach((control) => {
-    control.addEventListener('change', syncVoiceSettingsFromCurrentInputs);
+    control.addEventListener('change', () => syncVoiceSettingsFromInputs());
   });
   voicePreferredSessionButtonEl.addEventListener('click', () => {
     const settings = getCurrentVoiceSettings();

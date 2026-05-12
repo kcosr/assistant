@@ -144,6 +144,39 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('keeps the session row selected when a nullable session choice has a value', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      selectedSessionId: 's1',
+      clearSelectionLabel: 'None',
+      onSelectSession: () => undefined,
+      onSelectClearSelection: () => undefined,
+    });
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.session-picker-item'));
+    expect(items.at(0)?.textContent).toContain('None');
+    expect(items.at(0)?.classList.contains('selected')).toBe(false);
+    expect(items.at(0)?.classList.contains('focused')).toBe(false);
+
+    const selectedSession = document.querySelector<HTMLElement>(
+      '.session-picker-item[data-session-id="s1"]',
+    );
+    expect(selectedSession?.classList.contains('selected')).toBe(true);
+    expect(selectedSession?.classList.contains('focused')).toBe(true);
+
+    controller.close();
+  });
+
   it('does not render a clear-selection row unless a caller opts in', () => {
     const controller = new SessionPickerController({
       getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
