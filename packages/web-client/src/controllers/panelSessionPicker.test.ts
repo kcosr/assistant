@@ -111,6 +111,145 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('can pin the picker near a dialog top for mobile dialog flows', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const dialog = document.createElement('div');
+    dialog.getBoundingClientRect = () =>
+      ({
+        x: 16,
+        y: 36,
+        top: 36,
+        left: 16,
+        right: 344,
+        bottom: 720,
+        width: 328,
+        height: 684,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    const anchor = document.createElement('button');
+    anchor.getBoundingClientRect = () =>
+      ({
+        x: 24,
+        y: 540,
+        top: 540,
+        left: 24,
+        right: 304,
+        bottom: 578,
+        width: 280,
+        height: 38,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    dialog.appendChild(anchor);
+    document.body.appendChild(dialog);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      autoFocusSearch: false,
+      placement: 'viewport-top',
+      placementContainer: dialog,
+      onSelectSession: () => undefined,
+    });
+
+    const menu = document.querySelector<HTMLElement>('.session-picker-popover');
+    expect(menu?.style.top).toBe('44px');
+    expect(menu?.style.left).toBe('24px');
+
+    controller.close();
+  });
+
+  it('renders an explicit clear-selection row for nullable session choices', () => {
+    const onSelectClearSelection = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      selectedSessionId: '',
+      clearSelectionLabel: 'None',
+      onSelectSession: () => undefined,
+      onSelectClearSelection,
+    });
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.session-picker-item'));
+    expect(items.at(0)?.textContent).toContain('None');
+    expect(items.at(0)?.classList.contains('selected')).toBe(true);
+    expect(items.at(0)?.classList.contains('focused')).toBe(true);
+
+    items.at(0)?.click();
+
+    expect(onSelectClearSelection).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.session-picker-popover')).toBeNull();
+
+    controller.close();
+  });
+
+  it('keeps the session row selected when a nullable session choice has a value', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      selectedSessionId: 's1',
+      clearSelectionLabel: 'None',
+      onSelectSession: () => undefined,
+      onSelectClearSelection: () => undefined,
+    });
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.session-picker-item'));
+    expect(items.at(0)?.textContent).toContain('None');
+    expect(items.at(0)?.classList.contains('selected')).toBe(false);
+    expect(items.at(0)?.classList.contains('focused')).toBe(false);
+
+    const selectedSession = document.querySelector<HTMLElement>(
+      '.session-picker-item[data-session-id="s1"]',
+    );
+    expect(selectedSession?.classList.contains('selected')).toBe(true);
+    expect(selectedSession?.classList.contains('focused')).toBe(true);
+
+    controller.close();
+  });
+
+  it('does not render a clear-selection row unless a caller opts in', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession: () => undefined,
+    });
+
+    expect(document.querySelector('.session-picker-item')?.textContent).not.toContain('None');
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({
@@ -366,7 +505,9 @@ describe('SessionPickerController', () => {
       onSelectOpenSession,
     });
 
-    const item = document.querySelector<HTMLDivElement>('.session-picker-item[data-session-id="s1"]');
+    const item = document.querySelector<HTMLDivElement>(
+      '.session-picker-item[data-session-id="s1"]',
+    );
     expect(item?.classList.contains('disabled')).toBe(false);
     expect(item?.textContent).toContain('(open)');
 

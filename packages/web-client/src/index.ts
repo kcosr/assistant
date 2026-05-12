@@ -72,7 +72,6 @@ import {
   type CreateScheduledSessionInput,
   type SessionComposerOpenOptions,
 } from './controllers/sessionComposerController';
-import type { PanelInitOptions } from './controllers/panelRegistry';
 import type { ChatRuntime } from './panels/chat';
 import type { ChatPanelDom } from './panels/chat/chatPanel';
 import { CHAT_PANEL_MANIFEST, createChatPanel } from './panels/chat';
@@ -171,7 +170,6 @@ const PROTOCOL_VERSION = CURRENT_PROTOCOL_VERSION;
 
 const RECONNECT_DELAY_MS = 2000;
 const MAX_RECONNECT_DELAY_MS = 30000;
-const WS_DEBUG_STORAGE_KEY = 'aiAssistantWsDebug';
 const WINDOW_ID = getClientWindowId();
 let stopWindowSlotHeartbeat: (() => void) | null = null;
 const startHeartbeat = (): void => {
@@ -185,18 +183,6 @@ const stopHeartbeat = (): void => {
   stopWindowSlotHeartbeat = null;
 };
 startHeartbeat();
-
-const isDebugFlagEnabled = (key: string): boolean => {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  try {
-    const stored = window.localStorage?.getItem(key);
-    return stored === '1' || stored === 'true';
-  } catch {
-    return false;
-  }
-};
 
 const logWsMessage = (_message: ServerMessage): void => {};
 
@@ -541,7 +527,8 @@ async function main(): Promise<void> {
     standaloneNotificationPlaybackCheckbox: standaloneNotificationPlaybackCheckboxEl,
     notificationTitlePlaybackCheckbox: notificationTitlePlaybackCheckboxEl,
     voiceAdapterBaseUrlInput: voiceAdapterBaseUrlInputEl,
-    voicePreferredSessionSelect: voicePreferredSessionSelectEl,
+    voicePreferredSessionButton: voicePreferredSessionButtonEl,
+    voicePreferredSessionLabel: voicePreferredSessionLabelEl,
     voiceTtsPreferredSessionOnlyCheckbox: voiceTtsPreferredSessionOnlyCheckboxEl,
     voiceMicInputSelect: voiceMicInputSelectEl,
     voiceRecognitionStartTimeoutInput: voiceRecognitionStartTimeoutInputEl,
@@ -640,8 +627,7 @@ async function main(): Promise<void> {
     CHAT_PANEL_MANIFEST,
     createChatPanel({
       getRuntimeOptions: getChatRuntimeOptions,
-      onRuntimeReady: ({ runtime, dom, host, init }) =>
-        registerChatPanelRuntime({ runtime, dom, host, init }),
+      onRuntimeReady: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
     }),
   );
   registerBuiltInPanel(WORKSPACE_NAVIGATOR_PANEL_MANIFEST, createWorkspaceNavigatorPanel());
@@ -1093,46 +1079,34 @@ async function main(): Promise<void> {
     return true;
   }
 
-  function syncPreferredVoiceSessionOptions(): void {
-    const selectEl = voicePreferredSessionSelectEl;
-    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+  function getCurrentVoiceSettings(): VoiceSettings {
+    return getPrimaryChatInputRuntime()?.getVoiceSettings() ?? currentVoiceSettings;
+  }
+
+  function getPreferredVoiceSessionLabel(settings: VoiceSettings): string {
     const selectedSessionId = settings.preferredVoiceSessionId;
-    const existingValues = new Set<string>();
-    selectEl.replaceChildren();
-
-    const noneOption = document.createElement('option');
-    noneOption.value = '';
-    noneOption.textContent = 'None';
-    selectEl.appendChild(noneOption);
-    existingValues.add('');
-
-    for (const summary of sessionSummaries) {
-      if (existingValues.has(summary.sessionId)) {
-        continue;
-      }
-      const option = document.createElement('option');
-      option.value = summary.sessionId;
-      option.textContent = getSessionLabel(summary.sessionId);
-      selectEl.appendChild(option);
-      existingValues.add(summary.sessionId);
+    if (!selectedSessionId) {
+      return 'None';
     }
+    const exists = sessionSummaries.some((summary) => summary.sessionId === selectedSessionId);
+    return exists
+      ? getSessionLabel(selectedSessionId)
+      : `Unavailable session (${selectedSessionId})`;
+  }
 
-    if (selectedSessionId && !existingValues.has(selectedSessionId)) {
-      const unavailableOption = document.createElement('option');
-      unavailableOption.value = selectedSessionId;
-      unavailableOption.textContent = `Unavailable session (${selectedSessionId})`;
-      selectEl.appendChild(unavailableOption);
-    }
-
-    selectEl.value = selectedSessionId;
-    if (selectEl.value !== selectedSessionId) {
-      selectEl.value = '';
-    }
+  function syncPreferredVoiceSessionControl(): void {
+    const settings = getCurrentVoiceSettings();
+    const label = getPreferredVoiceSessionLabel(settings);
+    voicePreferredSessionLabelEl.textContent = label;
+    voicePreferredSessionButtonEl.title = label;
+    voicePreferredSessionButtonEl.setAttribute(
+      'aria-label',
+      `Voice notification session: ${label}`,
+    );
   }
 
   function clearMissingPreferredVoiceSession(): void {
-    const currentSettings =
-      getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const currentSettings = getCurrentVoiceSettings();
     const preferredSessionId = currentSettings.preferredVoiceSessionId;
     if (!preferredSessionId) {
       return;
@@ -1382,8 +1356,7 @@ async function main(): Promise<void> {
   }
 
   function syncNativeVoiceSettings(): void {
-    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
-    nativeVoiceSettingsSync.request(settings);
+    nativeVoiceSettingsSync.request(getCurrentVoiceSettings());
   }
 
   function applyVoiceSettingsToChatInputs(settings: VoiceSettings): void {
@@ -1708,9 +1681,8 @@ async function main(): Promise<void> {
     runtime: ChatRuntime;
     dom: ChatPanelDom;
     host: PanelHost;
-    init: PanelInitOptions;
   }): () => void {
-    const { runtime, dom, host, init } = options;
+    const { runtime, dom, host } = options;
     const panelId = host.panelId();
     let bindingSessionId: string | null = null;
     const inputRuntime = createInputRuntime({
@@ -2771,8 +2743,7 @@ async function main(): Promise<void> {
 
   panelHostControllerInstance.setContext(CHAT_PANEL_SERVICES_CONTEXT_KEY, {
     getRuntimeOptions: getChatRuntimeOptions,
-    registerChatPanel: ({ runtime, dom, host, init }) =>
-      registerChatPanelRuntime({ runtime, dom, host, init }),
+    registerChatPanel: ({ runtime, dom, host }) => registerChatPanelRuntime({ runtime, dom, host }),
   } satisfies ChatPanelServices);
 
   await fetchPlugins();
@@ -3252,7 +3223,7 @@ async function main(): Promise<void> {
         }
       }
       clearMissingPreferredVoiceSession();
-      syncPreferredVoiceSessionOptions();
+      syncPreferredVoiceSessionControl();
       syncNativeSessionTitles();
       syncSessionContext();
       for (const sessionId of currentModelBySession.keys()) {
@@ -3264,7 +3235,7 @@ async function main(): Promise<void> {
     },
     setAgentSummaries: (agents) => {
       agentSummaries = agents;
-      syncPreferredVoiceSessionOptions();
+      syncPreferredVoiceSessionControl();
       syncNativeSessionTitles();
       syncSessionContext();
     },
@@ -3935,6 +3906,7 @@ async function main(): Promise<void> {
   });
   settingsDropdownController.attach();
   const closeVoiceSettingsModal = (): void => {
+    sessionPickerController?.close();
     clearVoiceSettingsDeviceRefreshTimers();
     voiceSettingsModalEl.hidden = true;
     voiceSettingsModalEl.style.display = 'none';
@@ -3951,9 +3923,8 @@ async function main(): Promise<void> {
     scheduleVoiceSettingsNativeInputDeviceRefreshes();
     audioModeSelectEl.focus();
   };
-  const syncVoiceSettingsFromInputs = (): void => {
-    const currentSettings =
-      getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+  const syncVoiceSettingsFromInputs = (overrides?: Partial<VoiceSettings>): void => {
+    const currentSettings = getCurrentVoiceSettings();
     const nextSettings = normalizeVoiceSettings({
       ...currentSettings,
       audioMode: audioModeSelectEl.value,
@@ -3966,7 +3937,7 @@ async function main(): Promise<void> {
       recognitionCompletionTimeoutMs: voiceRecognitionCompletionTimeoutInputEl.value,
       recognitionEndSilenceMs: voiceRecognitionEndSilenceInputEl.value,
       recognizeStopCommandEnabled: voiceRecognizeStopCommandCheckboxEl.checked,
-      preferredVoiceSessionId: voicePreferredSessionSelectEl.value,
+      preferredVoiceSessionId: currentSettings.preferredVoiceSessionId,
       ttsPreferredSessionOnly: voiceTtsPreferredSessionOnlyCheckboxEl.checked,
       recognitionCueEnabled: voiceRecognitionCueCheckboxEl.checked,
       recognitionCueGain: recognitionCueGainPercentToValue(
@@ -3978,48 +3949,71 @@ async function main(): Promise<void> {
         currentSettings.startupPreRollMs,
       ),
       ttsGain: ttsGainPercentToValue(voiceTtsGainSliderEl.value, currentSettings.ttsGain),
+      ...overrides,
     });
     if (areVoiceSettingsEqual(currentSettings, nextSettings)) {
+      syncPreferredVoiceSessionControl();
       return;
     }
     applyVoiceSettingsToChatInputs(nextSettings);
+    syncPreferredVoiceSessionControl();
   };
   closeVoiceSettingsModal();
   voiceSettingsButtonEl.addEventListener('click', () => {
     openVoiceSettingsModal();
   });
-  audioModeSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  autoListenCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  standaloneNotificationPlaybackCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  notificationTitlePlaybackCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceAdapterBaseUrlInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voicePreferredSessionSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceTtsPreferredSessionOnlyCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceMicInputSelectEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognitionStartTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognitionCompletionTimeoutInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognitionEndSilenceInputEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognizeStopCommandCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
-  voiceRecognitionCueCheckboxEl.addEventListener('change', syncVoiceSettingsFromInputs);
+  [
+    audioModeSelectEl,
+    autoListenCheckboxEl,
+    standaloneNotificationPlaybackCheckboxEl,
+    notificationTitlePlaybackCheckboxEl,
+    voiceAdapterBaseUrlInputEl,
+    voiceTtsPreferredSessionOnlyCheckboxEl,
+    voiceMicInputSelectEl,
+    voiceRecognitionStartTimeoutInputEl,
+    voiceRecognitionCompletionTimeoutInputEl,
+    voiceRecognitionEndSilenceInputEl,
+    voiceRecognizeStopCommandCheckboxEl,
+    voiceRecognitionCueCheckboxEl,
+    voiceRecognitionCueGainSliderEl,
+    voiceStartupPreRollSliderEl,
+    voiceTtsGainSliderEl,
+  ].forEach((control) => {
+    control.addEventListener('change', () => syncVoiceSettingsFromInputs());
+  });
+  voicePreferredSessionButtonEl.addEventListener('click', () => {
+    const settings = getCurrentVoiceSettings();
+    const useMobilePickerPlacement = isMobileViewport();
+    const voiceSettingsDialogEl =
+      voicePreferredSessionButtonEl.closest<HTMLElement>('.voice-settings-dialog');
+    openSessionPicker({
+      anchor: voicePreferredSessionButtonEl,
+      title: 'Select voice notification session',
+      autoFocusSearch: !useMobilePickerPlacement,
+      placement: useMobilePickerPlacement ? 'viewport-top' : 'anchor',
+      placementContainer: useMobilePickerPlacement ? voiceSettingsDialogEl : null,
+      selectedSessionId: settings.preferredVoiceSessionId,
+      clearSelectionLabel: 'None',
+      onSelectClearSelection: () => {
+        syncVoiceSettingsFromInputs({ preferredVoiceSessionId: '' });
+      },
+      onSelectSession: (sessionId) => {
+        syncVoiceSettingsFromInputs({ preferredVoiceSessionId: sessionId });
+      },
+    });
+  });
   voiceRecognitionCueGainSliderEl.addEventListener('input', syncRecognitionCueGainLabelFromSlider);
-  voiceRecognitionCueGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceStartupPreRollSliderEl.addEventListener('input', syncStartupPreRollLabelFromSlider);
-  voiceStartupPreRollSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   voiceTtsGainSliderEl.addEventListener('input', syncTtsGainLabelFromSlider);
-  voiceTtsGainSliderEl.addEventListener('change', syncVoiceSettingsFromInputs);
   const resetVoiceSettingsInputs = (): void => {
-    const settings = getPrimaryChatInputRuntime()?.getVoiceSettings() ?? initialVoiceSettings;
+    const settings = getCurrentVoiceSettings();
     audioModeSelectEl.value = settings.audioMode;
     autoListenCheckboxEl.checked = settings.autoListenEnabled;
     standaloneNotificationPlaybackCheckboxEl.checked =
       settings.standaloneNotificationPlaybackEnabled;
     notificationTitlePlaybackCheckboxEl.checked = settings.notificationTitlePlaybackEnabled;
     voiceAdapterBaseUrlInputEl.value = settings.voiceAdapterBaseUrl;
-    syncPreferredVoiceSessionOptions();
-    voicePreferredSessionSelectEl.value = settings.preferredVoiceSessionId;
-    if (voicePreferredSessionSelectEl.value !== settings.preferredVoiceSessionId) {
-      voicePreferredSessionSelectEl.value = '';
-    }
+    syncPreferredVoiceSessionControl();
     voiceTtsPreferredSessionOnlyCheckboxEl.checked = settings.ttsPreferredSessionOnly;
     voiceMicInputSelectEl.value = settings.selectedMicDeviceId;
     if (voiceMicInputSelectEl.value !== settings.selectedMicDeviceId) {

@@ -27,14 +27,18 @@ export interface SessionPickerOpenOptions {
   anchor: HTMLElement;
   title: string;
   autoFocusSearch?: boolean;
+  placement?: 'anchor' | 'viewport-top';
+  placementContainer?: HTMLElement | null;
   selectedSessionId?: string | null;
   disabledSessionIds?: Set<string>;
   openSessionIds?: Set<string>;
   allowUnbound?: boolean;
+  clearSelectionLabel?: string;
   createSessionOptions?: CreateSessionOptions;
   onSelectSession: (sessionId: string) => void;
   onSelectOpenSession?: (sessionId: string) => void;
   onSelectUnbound?: () => void;
+  onSelectClearSelection?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onClearSession?: (sessionId: string) => void;
   onEditSession?: (sessionId: string) => void;
@@ -348,6 +352,15 @@ export class SessionPickerController {
         });
       }
 
+      const clearSelectionLabel = options.clearSelectionLabel?.trim();
+      if (clearSelectionLabel) {
+        addSection('Selection');
+        addItem(clearSelectionLabel, () => options.onSelectClearSelection?.(), {
+          disabled: !options.onSelectClearSelection,
+          selected: !options.selectedSessionId,
+        });
+      }
+
       addSection('Sessions');
       const filteredSessions = sessions.filter((session) => {
         if (!filter) {
@@ -418,7 +431,7 @@ export class SessionPickerController {
     };
 
     renderList();
-    this.positionMenu(menu, options.anchor);
+    this.positionMenu(menu, options);
 
     if (options.autoFocusSearch !== false) {
       setTimeout(() => {
@@ -590,7 +603,8 @@ export class SessionPickerController {
     return true;
   }
 
-  private positionMenu(menu: HTMLDivElement, anchor: HTMLElement): void {
+  private positionMenu(menu: HTMLDivElement, options: SessionPickerOpenOptions): void {
+    const anchor = options.anchor;
     const anchorRect = anchor.getBoundingClientRect();
     const targetWidth = Math.min(360, Math.max(280, anchorRect.width));
     menu.style.minWidth = `${targetWidth}px`;
@@ -600,6 +614,19 @@ export class SessionPickerController {
 
     let left = anchorRect.left;
     let top = anchorRect.bottom + 6;
+
+    if (options.placement === 'viewport-top') {
+      const viewport = window.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const containerTop = options.placementContainer?.getBoundingClientRect().top;
+      const maxLeft = viewportLeft + viewportWidth - menuRect.width - padding;
+      left = Math.min(Math.max(anchorRect.left, viewportLeft + padding), maxLeft);
+      top = Math.max(viewportTop, containerTop ?? viewportTop) + padding;
+      menu.style.maxHeight = `${Math.max(180, Math.min(360, viewportHeight - padding * 2))}px`;
+    }
 
     if (left + menuRect.width > window.innerWidth - padding) {
       left = window.innerWidth - menuRect.width - padding;

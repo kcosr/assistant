@@ -358,17 +358,11 @@
             <input type="checkbox" id="auto-listen-checkbox" />
             Auto-listen
           </label>
-          <label
-            class="settings-dropdown-item"
-            for="standalone-notification-playback-checkbox"
-          >
+          <label class="settings-dropdown-item" for="standalone-notification-playback-checkbox">
             <input type="checkbox" id="standalone-notification-playback-checkbox" />
             Play standalone notifications aloud
           </label>
-          <label
-            class="settings-dropdown-item"
-            for="notification-title-playback-checkbox"
-          >
+          <label class="settings-dropdown-item" for="notification-title-playback-checkbox">
             <input type="checkbox" id="notification-title-playback-checkbox" />
             Read notification title before speech text
           </label>
@@ -382,11 +376,19 @@
               spellcheck="false"
             />
           </label>
-          <label class="list-item-form-label" for="voice-preferred-session-select">
+          <label class="list-item-form-label" for="voice-preferred-session-button">
             <span class="list-item-form-label-text">Voice notification session</span>
-            <select id="voice-preferred-session-select" class="list-item-form-input">
-              <option value="">None</option>
-            </select>
+            <button
+              type="button"
+              id="voice-preferred-session-button"
+              class="list-item-form-input voice-preferred-session-button"
+              aria-haspopup="listbox"
+              aria-label="Voice notification session: None"
+            >
+              <span id="voice-preferred-session-label" class="voice-preferred-session-label">
+                None
+              </span>
+            </button>
           </label>
           <label class="settings-dropdown-item" for="voice-tts-preferred-session-only-checkbox">
             <input type="checkbox" id="voice-tts-preferred-session-only-checkbox" />
