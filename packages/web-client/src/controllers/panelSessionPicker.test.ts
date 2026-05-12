@@ -111,6 +111,60 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('renders an explicit clear-selection row for nullable session choices', () => {
+    const onSelectClearSelection = vi.fn();
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      selectedSessionId: '',
+      clearSelectionLabel: 'None',
+      onSelectSession: () => undefined,
+      onSelectClearSelection,
+    });
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>('.session-picker-item'));
+    expect(items.at(0)?.textContent).toContain('None');
+    expect(items.at(0)?.classList.contains('selected')).toBe(true);
+    expect(items.at(0)?.classList.contains('focused')).toBe(true);
+
+    items.at(0)?.click();
+
+    expect(onSelectClearSelection).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('.session-picker-popover')).toBeNull();
+
+    controller.close();
+  });
+
+  it('does not render a clear-selection row unless a caller opts in', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession: () => undefined,
+    });
+
+    expect(document.querySelector('.session-picker-item')?.textContent).not.toContain('None');
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({
@@ -366,7 +420,9 @@ describe('SessionPickerController', () => {
       onSelectOpenSession,
     });
 
-    const item = document.querySelector<HTMLDivElement>('.session-picker-item[data-session-id="s1"]');
+    const item = document.querySelector<HTMLDivElement>(
+      '.session-picker-item[data-session-id="s1"]',
+    );
     expect(item?.classList.contains('disabled')).toBe(false);
     expect(item?.textContent).toContain('(open)');
 

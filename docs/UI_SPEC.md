@@ -44,6 +44,8 @@ Required elements:
 - **Command Palette**: search actions.
 - **Connection Status**: current server connectivity.
 - **Settings**: preferences and layout reset (theme + UI/code font selectors).
+- **Voice Settings**: audio and voice preferences, including a searchable session picker for the
+  notification session preference.
 - **Header Panels**: pinned panel buttons that open a popover panel anchored in the toolbar.
 
 ### Header Panels (Pinned)
@@ -87,6 +89,15 @@ Binding indicator behavior:
 - Panels do not implicitly follow a global "active session"; chat binding is explicit
 - Non-chat panels do not expose session binding controls
 - New unbound chat panels auto-open the session picker to prompt session selection
+
+Voice notification session behavior:
+
+- The Voice Settings modal uses the same searchable session picker for the notification session
+  preference.
+- The control shows `None` when no preferred notification session is selected.
+- Selecting a session updates the `preferredVoiceSessionId` voice preference through the normal
+  voice settings path.
+- The picker includes a `None` row to clear the preferred notification session.
 
 ### Unavailable Panels
 

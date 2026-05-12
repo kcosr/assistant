@@ -31,10 +31,12 @@ export interface SessionPickerOpenOptions {
   disabledSessionIds?: Set<string>;
   openSessionIds?: Set<string>;
   allowUnbound?: boolean;
+  clearSelectionLabel?: string;
   createSessionOptions?: CreateSessionOptions;
   onSelectSession: (sessionId: string) => void;
   onSelectOpenSession?: (sessionId: string) => void;
   onSelectUnbound?: () => void;
+  onSelectClearSelection?: () => void;
   onDeleteSession?: (sessionId: string) => void;
   onClearSession?: (sessionId: string) => void;
   onEditSession?: (sessionId: string) => void;
@@ -345,6 +347,15 @@ export class SessionPickerController {
         addSection('Unbound');
         addItem('Unbound', () => options.onSelectUnbound?.(), {
           disabled: !options.onSelectUnbound,
+        });
+      }
+
+      const clearSelectionLabel = options.clearSelectionLabel?.trim();
+      if (clearSelectionLabel) {
+        addSection('Selection');
+        addItem(clearSelectionLabel, () => options.onSelectClearSelection?.(), {
+          disabled: !options.onSelectClearSelection,
+          selected: !options.selectedSessionId,
         });
       }
 

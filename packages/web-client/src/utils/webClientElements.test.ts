@@ -35,7 +35,9 @@ describe('getWebClientElements', () => {
       'notification-title-playback-checkbox',
     );
     expect(elements?.voiceAdapterBaseUrlInput.id).toBe('voice-adapter-base-url-input');
-    expect(elements?.voicePreferredSessionSelect.id).toBe('voice-preferred-session-select');
+    expect(elements?.voicePreferredSessionButton.id).toBe('voice-preferred-session-button');
+    expect(elements?.voicePreferredSessionLabel.id).toBe('voice-preferred-session-label');
+    expect(document.getElementById('voice-preferred-session-select')).toBeNull();
     expect(elements?.voiceTtsPreferredSessionOnlyCheckbox.id).toBe(
       'voice-tts-preferred-session-only-checkbox',
     );
@@ -91,7 +93,9 @@ describe('getWebClientElements', () => {
     );
     expect(recognizeStopCommandControl?.hasAttribute('hidden')).toBe(true);
 
-    const startupPreRollControl = dom.window.document.getElementById('voice-startup-pre-roll-control');
+    const startupPreRollControl = dom.window.document.getElementById(
+      'voice-startup-pre-roll-control',
+    );
     expect(startupPreRollControl?.hasAttribute('hidden')).toBe(true);
 
     const ttsGainControl = dom.window.document.getElementById('voice-tts-gain-control');

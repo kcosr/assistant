@@ -9,7 +9,8 @@ export interface WebClientElements {
   standaloneNotificationPlaybackCheckbox: HTMLInputElement;
   notificationTitlePlaybackCheckbox: HTMLInputElement;
   voiceAdapterBaseUrlInput: HTMLInputElement;
-  voicePreferredSessionSelect: HTMLSelectElement;
+  voicePreferredSessionButton: HTMLButtonElement;
+  voicePreferredSessionLabel: HTMLElement;
   voiceTtsPreferredSessionOnlyCheckbox: HTMLInputElement;
   voiceMicInputSelect: HTMLSelectElement;
   voiceRecognitionStartTimeoutInput: HTMLInputElement;
@@ -93,9 +94,10 @@ export function getWebClientElements(): WebClientElements | null {
     'notification-title-playback-checkbox',
   );
   const voiceAdapterBaseUrlInput = getElement<HTMLInputElement>('voice-adapter-base-url-input');
-  const voicePreferredSessionSelect = getElement<HTMLSelectElement>(
-    'voice-preferred-session-select',
+  const voicePreferredSessionButton = getElement<HTMLButtonElement>(
+    'voice-preferred-session-button',
   );
+  const voicePreferredSessionLabel = getElement<HTMLElement>('voice-preferred-session-label');
   const voiceTtsPreferredSessionOnlyCheckbox = getElement<HTMLInputElement>(
     'voice-tts-preferred-session-only-checkbox',
   );
@@ -163,7 +165,8 @@ export function getWebClientElements(): WebClientElements | null {
     !standaloneNotificationPlaybackCheckbox ||
     !notificationTitlePlaybackCheckbox ||
     !voiceAdapterBaseUrlInput ||
-    !voicePreferredSessionSelect ||
+    !voicePreferredSessionButton ||
+    !voicePreferredSessionLabel ||
     !voiceTtsPreferredSessionOnlyCheckbox ||
     !voiceMicInputSelect ||
     !voiceRecognitionStartTimeoutInput ||
@@ -203,7 +206,8 @@ export function getWebClientElements(): WebClientElements | null {
     standaloneNotificationPlaybackCheckbox,
     notificationTitlePlaybackCheckbox,
     voiceAdapterBaseUrlInput,
-    voicePreferredSessionSelect,
+    voicePreferredSessionButton,
+    voicePreferredSessionLabel,
     voiceTtsPreferredSessionOnlyCheckbox,
     voiceMicInputSelect,
     voiceRecognitionStartTimeoutInput,
