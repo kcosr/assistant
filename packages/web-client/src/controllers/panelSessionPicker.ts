@@ -27,6 +27,7 @@ export interface SessionPickerOpenOptions {
   anchor: HTMLElement;
   title: string;
   autoFocusSearch?: boolean;
+  placement?: 'anchor' | 'viewport-top';
   selectedSessionId?: string | null;
   disabledSessionIds?: Set<string>;
   openSessionIds?: Set<string>;
@@ -429,7 +430,7 @@ export class SessionPickerController {
     };
 
     renderList();
-    this.positionMenu(menu, options.anchor);
+    this.positionMenu(menu, options);
 
     if (options.autoFocusSearch !== false) {
       setTimeout(() => {
@@ -601,7 +602,8 @@ export class SessionPickerController {
     return true;
   }
 
-  private positionMenu(menu: HTMLDivElement, anchor: HTMLElement): void {
+  private positionMenu(menu: HTMLDivElement, options: SessionPickerOpenOptions): void {
+    const anchor = options.anchor;
     const anchorRect = anchor.getBoundingClientRect();
     const targetWidth = Math.min(360, Math.max(280, anchorRect.width));
     menu.style.minWidth = `${targetWidth}px`;
@@ -611,6 +613,18 @@ export class SessionPickerController {
 
     let left = anchorRect.left;
     let top = anchorRect.bottom + 6;
+
+    if (options.placement === 'viewport-top') {
+      const viewport = window.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const maxLeft = viewportLeft + viewportWidth - menuRect.width - padding;
+      left = Math.min(Math.max(anchorRect.left, viewportLeft + padding), maxLeft);
+      top = viewportTop + padding;
+      menu.style.maxHeight = `${Math.max(180, Math.min(360, viewportHeight - padding * 2))}px`;
+    }
 
     if (left + menuRect.width > window.innerWidth - padding) {
       left = window.innerWidth - menuRect.width - padding;

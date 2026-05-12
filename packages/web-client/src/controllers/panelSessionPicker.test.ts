@@ -111,6 +111,43 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('can pin the picker near the viewport top for mobile dialog flows', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [{ sessionId: 's1', name: 'Session 1' }],
+      getAgentSummaries: () => [],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    anchor.getBoundingClientRect = () =>
+      ({
+        x: 24,
+        y: 540,
+        top: 540,
+        left: 24,
+        right: 304,
+        bottom: 578,
+        width: 280,
+        height: 38,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Select voice notification session',
+      autoFocusSearch: false,
+      placement: 'viewport-top',
+      onSelectSession: () => undefined,
+    });
+
+    const menu = document.querySelector<HTMLElement>('.session-picker-popover');
+    expect(menu?.style.top).toBe('8px');
+    expect(menu?.style.left).toBe('24px');
+
+    controller.close();
+  });
+
   it('renders an explicit clear-selection row for nullable session choices', () => {
     const onSelectClearSelection = vi.fn();
     const controller = new SessionPickerController({

@@ -3983,9 +3983,12 @@ async function main(): Promise<void> {
   });
   voicePreferredSessionButtonEl.addEventListener('click', () => {
     const settings = getCurrentVoiceSettings();
+    const useMobilePickerPlacement = isMobileViewport();
     openSessionPicker({
       anchor: voicePreferredSessionButtonEl,
       title: 'Select voice notification session',
+      autoFocusSearch: !useMobilePickerPlacement,
+      placement: useMobilePickerPlacement ? 'viewport-top' : 'anchor',
       selectedSessionId: settings.preferredVoiceSessionId,
       clearSelectionLabel: 'None',
       onSelectClearSelection: () => {
