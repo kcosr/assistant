@@ -35,6 +35,7 @@
 
 ### Fixed
 
+- Fixed chat session picker search so existing sessions match only the displayed label and session id prefix, not hidden agent metadata. ([#101](https://github.com/kcosr/assistant/pull/101))
 - Fixed note edit compact mode to collapse title/description/tag/pinned/favorite rows and fixed split-pane drag resizing to preserve the visible bottom of chat transcripts while resizing stacked panels. ([#97](https://github.com/kcosr/assistant/pull/97))
 - Fixed header dock + button to pin panels to header instead of adding tabs (regression from e6353e8), and fixed compact panel launcher positioning to anchor below the clicked button. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Fixed Android Capacitor status bar styling so native status bar icons/text now follow the effective web light/dark theme, including live updates for `auto` system theme changes. ([#95](https://github.com/kcosr/assistant/pull/95))
