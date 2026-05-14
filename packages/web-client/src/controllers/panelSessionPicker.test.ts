@@ -250,6 +250,77 @@ describe('SessionPickerController', () => {
     controller.close();
   });
 
+  it('searches existing sessions by effective label without hidden agent terms', () => {
+    const controller = new SessionPickerController({
+      getSessionSummaries: () => [
+        {
+          sessionId: 'named-01',
+          name: 'Project Notes',
+          agentId: 'assistant',
+        },
+        {
+          sessionId: 'auto-001',
+          agentId: 'assistant',
+          attributes: {
+            core: { autoTitle: 'Sprint Review' },
+          },
+        },
+        {
+          sessionId: 'fallback-01',
+          agentId: 'assistant',
+        },
+        {
+          sessionId: 'idmatch1-session',
+          name: 'Quarterly Plan',
+          agentId: 'assistant',
+        },
+      ],
+      getAgentSummaries: () => [{ agentId: 'assistant', displayName: 'Assistant' }],
+      openSessionComposer: vi.fn(),
+    });
+
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+
+    controller.open({
+      anchor,
+      title: 'Sessions',
+      onSelectSession: () => undefined,
+    });
+
+    const searchInput = document.querySelector<HTMLInputElement>('.session-picker-search');
+    expect(searchInput).toBeTruthy();
+
+    searchInput!.value = 'assistant';
+    searchInput!.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const matchingSessionLabels = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.session-picker-item[data-session-id] .session-picker-item-label',
+      ),
+    ).map((item) => item.textContent);
+    expect(matchingSessionLabels).toEqual(['Assistant (fallback)']);
+
+    const newSessionLabels = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.session-picker-item:not([data-session-id]) .session-picker-item-label',
+      ),
+    ).map((item) => item.textContent);
+    expect(newSessionLabels).toContain('Assistant');
+
+    searchInput!.value = 'idmatch1';
+    searchInput!.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const idPrefixSessionLabels = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.session-picker-item[data-session-id] .session-picker-item-label',
+      ),
+    ).map((item) => item.textContent);
+    expect(idPrefixSessionLabels).toEqual(['Quarterly Plan (idmatch1)']);
+
+    controller.close();
+  });
+
   it('invokes clear from the session row action button', () => {
     const onClearSession = vi.fn();
     const controller = new SessionPickerController({

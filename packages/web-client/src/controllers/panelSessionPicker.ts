@@ -1,6 +1,6 @@
 import type { CreateSessionOptions } from './sessionManager';
 import type { SessionComposerOpenOptions } from './sessionComposerController';
-import { formatSessionLabel, resolveAutoTitle } from '../utils/sessionLabel';
+import { formatSessionLabel, resolveSessionBaseLabel } from '../utils/sessionLabel';
 import { ICONS } from '../utils/icons';
 
 export interface SessionSummary {
@@ -103,32 +103,13 @@ export class SessionPickerController {
 
     const sessions = this.getOrderedSessions();
     const agentSummaries = this.options.getAgentSummaries();
-    const agentNameById = new Map(
-      agentSummaries
-        .map((agent) => [agent.agentId, agent.displayName] as const)
-        .filter((entry) => entry[0] && entry[1]),
-    );
     const disabled = options.disabledSessionIds ?? new Set<string>();
     const openSessionIds = options.openSessionIds ?? new Set<string>();
 
-    const getAgentLabel = (agentId?: string): string => {
-      const trimmed = typeof agentId === 'string' ? agentId.trim() : '';
-      if (!trimmed) {
-        return '';
-      }
-      return agentNameById.get(trimmed) ?? trimmed;
-    };
-
     const getSessionSearchLabel = (summary: SessionSummary): string => {
-      const name = typeof summary.name === 'string' ? summary.name.trim() : '';
-      const autoTitle = resolveAutoTitle(summary.attributes);
-      const agentId = typeof summary.agentId === 'string' ? summary.agentId.trim() : '';
-      const agentLabel = getAgentLabel(agentId);
+      const baseLabel = resolveSessionBaseLabel(summary, agentSummaries);
       const idPrefix = summary.sessionId.slice(0, 8);
-      return [name, autoTitle, agentLabel, agentId, idPrefix]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+      return [baseLabel, idPrefix].filter(Boolean).join(' ').toLowerCase();
     };
 
     const getAgentSearchLabel = (summary: AgentSummary): string => {
