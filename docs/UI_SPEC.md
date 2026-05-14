@@ -85,6 +85,8 @@ Each panel renders inside a standardized frame:
 Binding indicator behavior:
 
 - Chat panels show a session picker dropdown with search, keyboard navigation, and sections for Unbound (optional), Sessions, and New session
+- Existing session search matches the displayed session label (explicit name, auto title, or fallback
+  agent label) and session id prefix; New session options match agent display names.
 - Session rows expose actions: rename, clear history, and delete (hover-revealed on desktop; sub-menu on touch devices)
 - Panels do not implicitly follow a global "active session"; chat binding is explicit
 - Non-chat panels do not expose session binding controls
