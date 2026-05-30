@@ -9,16 +9,11 @@ import type {
   ServerThinkingDeltaMessage,
   ServerThinkingDoneMessage,
   ServerThinkingStartMessage,
-  ServerToolCallStartMessage,
   ServerToolResultMessage,
 } from '@assistant/shared';
 
 import type { AgentDefinition, PiSdkChatConfig } from './agents';
-import type {
-  ChatCompletionMessage,
-  ChatCompletionToolCallMessageToolCall,
-  ChatCompletionToolCallState,
-} from './chatCompletionTypes';
+import type { ChatCompletionMessage, ChatCompletionToolCallState } from './chatCompletionTypes';
 import {
   Agent,
   type AgentEvent,
@@ -26,6 +21,7 @@ import {
   type ThinkingLevel as PiAgentThinkingLevel,
 } from '@earendil-works/pi-agent-core';
 import {
+  type Api,
   type AssistantMessage,
   type AssistantMessageEvent,
   type Message as PiSdkMessage,
@@ -60,11 +56,7 @@ import { resolveCliRuntimeConfig } from './ws/cliRuntimeConfig';
 import { runPiCliChat, type PiCliChatConfig, type PiSessionInfo } from './ws/piCliChat';
 import { buildProviderAttributesPatch, getProviderAttributes } from './history/providerAttributes';
 import { loadCanonicalPiReplayMessages } from './history/piSessionReplay';
-import {
-  parseAssistantTextSignature,
-  resolvePiSdkModel,
-  resolvePiSdkAuthApiKey,
-} from './llm/piSdkProvider';
+import { parseAssistantTextSignature, resolvePiSdkRuntimeModel } from './llm/piSdkProvider';
 import {
   calculateContextTokens,
   extractSessionContextUsageFromAssistantMessage,
@@ -199,7 +191,6 @@ export function isChatRunError(err: unknown): err is ChatRunError {
   return err instanceof ChatRunError;
 }
 
-const DEFAULT_PI_REQUEST_TIMEOUT_MS = 300_000;
 const PI_CONTEXT_OVERFLOW_RECOVERY_MESSAGE =
   'Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.';
 
@@ -438,7 +429,7 @@ function getRequestId(
   return requestId ?? state.activeChatRun?.requestId ?? responseId;
 }
 
-function createRequestPayload(requestId?: string): {} | { requestId: string } {
+function createRequestPayload(requestId?: string): { requestId?: string } {
   return requestId ? { requestId } : {};
 }
 
@@ -784,7 +775,7 @@ function getMessageTimestampMs(
 
 function buildSyntheticAssistantMessage(options: {
   message: Extract<ChatCompletionMessage, { role: 'assistant' }>;
-  model: Model<any>;
+  model: Model<Api>;
 }): AssistantMessage {
   const { message, model } = options;
   const content: Array<TextContent | ToolCall> = [];
@@ -837,7 +828,7 @@ function buildToolNameIndex(messages: ChatCompletionMessage[]): Map<string, stri
 function toPiAgentMessage(options: {
   message: Exclude<ChatCompletionMessage, { role: 'system' }>;
   toolNameIndex: Map<string, string>;
-  model: Model<any>;
+  model: Model<Api>;
 }): AgentMessage {
   const { message, toolNameIndex, model } = options;
   if (message.role === 'user') {
@@ -866,7 +857,7 @@ function toPiAgentMessage(options: {
 function buildPiAgentContext(options: {
   messages: ChatCompletionMessage[];
   text: string;
-  model: Model<any>;
+  model: Model<Api>;
 }): {
   systemPrompt: string;
   contextMessages: AgentMessage[];
@@ -963,9 +954,7 @@ export async function runChatCompletionCore(
     agent,
     provider,
     envConfig,
-    chatCompletionTools,
     agentTools = [],
-    handleChatToolCalls,
     sessionHub,
     output,
     abortController,
@@ -1344,26 +1333,13 @@ export async function runChatCompletionCore(
       );
     }
 
-    let resolvedModel: Awaited<ReturnType<typeof resolvePiSdkModel>>;
+    let resolvedRuntime: Awaited<ReturnType<typeof resolvePiSdkRuntimeModel>>;
     try {
-      const defaultProvider = piConfig?.provider;
-      resolvedModel =
-        defaultProvider === undefined
-          ? await resolvePiSdkModel({
-              modelSpec,
-              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-              ...(piConfig?.contextWindow !== undefined
-                ? { contextWindow: piConfig.contextWindow }
-                : {}),
-            })
-          : await resolvePiSdkModel({
-              modelSpec,
-              defaultProvider,
-              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-              ...(piConfig?.contextWindow !== undefined
-                ? { contextWindow: piConfig.contextWindow }
-                : {}),
-            });
+      resolvedRuntime = await resolvePiSdkRuntimeModel({
+        modelSpec,
+        ...(piConfig ? { config: piConfig } : {}),
+        log,
+      });
     } catch (err) {
       throw new ChatRunError(
         'agent_config_error',
@@ -1373,18 +1349,6 @@ export async function runChatCompletionCore(
 
     const thinking = resolveSessionThinkingForRun({ agent, summary: state.summary });
     const reasoning = thinking && isPiReasoningLevel(thinking) ? thinking : undefined;
-    const configProvider = piConfig?.provider?.trim();
-    const providerMatchesConfig =
-      !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
-    const piAgentAuthApiKey = await resolvePiSdkAuthApiKey({
-      providerId: resolvedModel.providerId,
-      log,
-    });
-    const apiKey = providerMatchesConfig
-      ? (piConfig?.apiKey ?? piAgentAuthApiKey)
-      : piAgentAuthApiKey;
-    const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
-    const headers = providerMatchesConfig ? piConfig?.headers : undefined;
     const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
       summary: state.summary,
     });
@@ -1412,11 +1376,7 @@ export async function runChatCompletionCore(
       ];
     }
 
-    const agentModel: Model<any> = {
-      ...resolvedModel.model,
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(headers ? { headers } : {}),
-    };
+    const agentModel = resolvedRuntime.runtimeModel;
     piContextWindow = agentModel.contextWindow;
     type PiRuntimeConfig = {
       apiKey?: string;
@@ -1426,7 +1386,7 @@ export async function runChatCompletionCore(
     };
     type PiRuntimeState = {
       requestConfig: PiRuntimeConfig;
-      onPayload?: ((payload: unknown, model: Model<any>) => unknown | Promise<unknown>) | undefined;
+      onPayload?: ((payload: unknown, model: Model<Api>) => unknown | Promise<unknown>) | undefined;
       agent: Agent;
     };
     const piAgentRuntime =
@@ -1466,10 +1426,14 @@ export async function runChatCompletionCore(
         return runtime;
       })() as PiRuntimeState);
     piAgentRuntime.requestConfig = {
-      ...(apiKey ? { apiKey } : {}),
-      ...(piConfig?.temperature !== undefined ? { temperature: piConfig.temperature } : {}),
-      ...(piConfig?.maxTokens !== undefined ? { maxTokens: piConfig.maxTokens } : {}),
-      ...(headers ? { headers } : {}),
+      ...(resolvedRuntime.apiKey ? { apiKey: resolvedRuntime.apiKey } : {}),
+      ...(resolvedRuntime.providerMatchesConfig && piConfig?.temperature !== undefined
+        ? { temperature: piConfig.temperature }
+        : {}),
+      ...(resolvedRuntime.providerMatchesConfig && piConfig?.maxTokens !== undefined
+        ? { maxTokens: piConfig.maxTokens }
+        : {}),
+      ...(resolvedRuntime.headers ? { headers: resolvedRuntime.headers } : {}),
     };
     piAgentRuntime.onPayload = envConfig.debugChatCompletions
       ? async (payload, model) => {
@@ -1478,7 +1442,7 @@ export async function runChatCompletionCore(
             direction: 'request',
             sessionId,
             responseId,
-            provider: resolvedModel.providerId,
+            provider: resolvedRuntime.providerId,
             model: model.id,
             ...(debugChatCompletionsContext !== undefined
               ? { debugContext: debugChatCompletionsContext }
@@ -1834,7 +1798,7 @@ export async function runChatCompletionCore(
       maybeResolvedPiMessage?.role === 'assistant' ? maybeResolvedPiMessage : undefined;
     if (resolvedPiMessage) {
       const contextUsage = extractSessionContextUsageFromAssistantMessage({
-        contextWindow: resolvedModel.model.contextWindow,
+        contextWindow: resolvedRuntime.model.contextWindow,
         message: resolvedPiMessage,
       });
       if (contextUsage && !isSessionContextUsageEqual(state.summary.contextUsage, contextUsage)) {
@@ -1849,8 +1813,8 @@ export async function runChatCompletionCore(
           direction: 'response',
           sessionId,
           responseId,
-          provider: resolvedModel.providerId,
-          model: resolvedModel.model.id,
+          provider: resolvedRuntime.providerId,
+          model: resolvedRuntime.model.id,
           ...(debugChatCompletionsContext !== undefined
             ? { debugContext: debugChatCompletionsContext }
             : {}),
@@ -1896,7 +1860,7 @@ export async function runChatCompletionCore(
     } else if (resolvedPiMessage?.stopReason === 'error') {
       if (
         overflowRecoveryAttempted ||
-        !isPiContextOverflow(resolvedPiMessage, resolvedModel.model.contextWindow)
+        !isPiContextOverflow(resolvedPiMessage, resolvedRuntime.model.contextWindow)
       ) {
         throw new ChatRunError(
           'upstream_error',
@@ -1959,7 +1923,7 @@ export async function runChatCompletionCore(
             : 'aborted';
         finalPiSdkMessage = retryPiMessage;
       } else if (retryPiMessage.stopReason === 'error') {
-        if (isPiContextOverflow(retryPiMessage, resolvedModel.model.contextWindow)) {
+        if (isPiContextOverflow(retryPiMessage, resolvedRuntime.model.contextWindow)) {
           throw new ChatRunError('upstream_error', PI_CONTEXT_OVERFLOW_RECOVERY_MESSAGE);
         }
         throw new ChatRunError(

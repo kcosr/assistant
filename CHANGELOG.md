@@ -8,6 +8,7 @@
 
 ### Added
 
+- Added Pi SDK custom-model config support for `api`, `authHeader`, `compat`, synthesized model metadata, and compaction so Assistant agents can target OpenAI-compatible endpoints that need Pi compatibility flags. ([#102](https://github.com/kcosr/assistant/pull/102))
 - Added Pi SDK session context compaction with Pi-compatible JSONL `compaction` entries, manual chat menu/API compaction, effective replay context, and threshold auto-compaction. ([#98](https://github.com/kcosr/assistant/pull/98))
 - Added core notifications panel plugin with server-side storage, tool/HTTP/CLI ingress, live WebSocket panel updates, All/Unread filtering, Card/Compact density modes, read/unread toggle, session-linked navigation with resolved session titles, overflow menu for bulk actions, and panel tab unread-count badge. ([#96](https://github.com/kcosr/assistant/pull/96))
 - Added bang shell command feature (`!command`) for executing shell commands directly in chat with real-time streaming output, dedicated terminal bubble rendering, and `_assistant_` prefix LLM suppression. Gated behind `bangCommandEnabled` agent config flag (default: false). ([#94](https://github.com/kcosr/assistant/pull/94))

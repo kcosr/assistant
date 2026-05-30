@@ -772,13 +772,27 @@ describe('loadConfig', () => {
             thinking: ['low'],
             config: {
               provider: 'anthropic',
+              api: 'openai-completions',
               baseUrl: 'https://api.anthropic.com',
               apiKey: '${PI_API_KEY}',
+              authHeader: true,
               headers: {
                 'X-Request-Source': '${PI_HEADER_SOURCE}',
               },
               maxTokens: 4096,
               contextWindow: 65536,
+              reasoning: true,
+              input: ['text', 'image'],
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              compat: {
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+              },
               temperature: 0.7,
               maxToolIterations: 25,
               compaction: {
@@ -809,13 +823,27 @@ describe('loadConfig', () => {
       thinking: ['low'],
       config: {
         provider: 'anthropic',
+        api: 'openai-completions',
         baseUrl: 'https://api.anthropic.com',
         apiKey: 'test-pi-key',
+        authHeader: true,
         headers: {
           'X-Request-Source': 'assistant',
         },
         maxTokens: 4096,
         contextWindow: 65536,
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+        },
         temperature: 0.7,
         maxToolIterations: 25,
         compaction: {
@@ -825,6 +853,38 @@ describe('loadConfig', () => {
         },
       },
     });
+  });
+
+  it('rejects invalid pi sdk custom model metadata config', async () => {
+    const filePath = createTempFile('config-pi-invalid-custom-model-metadata');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi SDK agent.',
+          chat: {
+            provider: 'pi',
+            models: ['local/model'],
+            config: {
+              provider: 'local',
+              api: 'openai-completon',
+              baseUrl: 'http://127.0.0.1:4010/v1',
+              cost: {
+                input: -1,
+              },
+              compat: {
+                supportsDeveloprRole: false,
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow();
   });
 
   it('throws a descriptive error for invalid JSON', async () => {

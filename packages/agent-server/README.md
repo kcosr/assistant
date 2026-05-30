@@ -557,15 +557,15 @@ Plugins can opt into periodic git snapshots of their data directories:
 
 The coding plugin provides tools for working with the configured workspace root. Tools are designed to be safe by default (no path traversal outside the workspace) and to truncate very large outputs.
 
-| Tool    | Description                                                                                     |
-| ------- | ----------------------------------------------------------------------------------------------- |
-| `bash`  | Run a bash command in the workspace root and return combined stdout/stderr (tail‑truncated). |
-| `read`  | Read a text or image file from the workspace root with optional line offsets and limits.     |
-| `write` | Write/overwrite a text file in the workspace root, creating parent directories as needed.    |
-| `edit`  | Replace an exact, unique text span in a file and return a human‑readable diff.                  |
+| Tool    | Description                                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------------- |
+| `bash`  | Run a bash command in the workspace root and return combined stdout/stderr (tail‑truncated).            |
+| `read`  | Read a text or image file from the workspace root with optional line offsets and limits.                |
+| `write` | Write/overwrite a text file in the workspace root, creating parent directories as needed.               |
+| `edit`  | Replace an exact, unique text span in a file and return a human‑readable diff.                          |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a "/" suffix for directories. |
-| `find`  | Find files by glob pattern. Uses `fd` when available, falling back to Node.js glob.             |
-| `grep`  | Search file contents for a pattern using ripgrep when available, with a Node.js fallback.       |
+| `find`  | Find files by glob pattern. Uses `fd` when available, falling back to Node.js glob.                     |
+| `grep`  | Search file contents for a pattern using ripgrep when available, with a Node.js fallback.               |
 
 #### `grep`
 
@@ -750,8 +750,8 @@ The coding plugin provides tools for working with the configured workspace root 
 | `write` | Write content to a file in the workspace, creating parent directories if needed and overwriting existing files. |
 | `edit`  | Edit a file by replacing an exact text match; the old text must be unique within the file.                      |
 | `ls`    | List directory contents (including dotfiles), sorted alphabetically, with a “/” suffix for directories.         |
-| `find`  | Find files by glob pattern relative to the current workspace, respecting ignore files and truncation limits.     |
-| `grep`  | Search file contents for matching lines with file paths and line numbers, with truncation for large results.     |
+| `find`  | Find files by glob pattern relative to the current workspace, respecting ignore files and truncation limits.    |
+| `grep`  | Search file contents for matching lines with file paths and line numbers, with truncation for large results.    |
 
 `plugins.coding.local.workspaceRoot` may be set to `${session.workingDir}`. When present,
 relative coding-tool paths and `bash` commands resolve from the session’s
@@ -813,10 +813,10 @@ The diff plugin supports instances; object entries can override the base config:
       "workspaceRoot": "/path/to/workspace",
       "instances": [
         "work",
-        { "id": "oss", "label": "Open Source", "workspaceRoot": "/path/to/oss" }
-      ]
-    }
-  }
+        { "id": "oss", "label": "Open Source", "workspaceRoot": "/path/to/oss" },
+      ],
+    },
+  },
 }
 ```
 
@@ -1010,14 +1010,18 @@ Agents are configured in `config.json` under `agents`. Each agent supports:
   - `config`:
     - for `provider: "pi"`:
       - `provider` (optional): default provider used when a model omits a prefix (required if any model omits a prefix)
+      - `api` (optional): API implementation for synthesized custom models, such as `openai-completions` for OpenAI-compatible Chat Completions endpoints. Defaults to `openai-responses`; must be one of the Pi SDK built-in API implementations.
       - `apiKey` (optional): API key override for the configured provider
+      - `authHeader` (optional): when `true`, also sends `Authorization: Bearer <apiKey>` in request headers, matching Pi `models.json` behavior
       - `baseUrl` (optional): base URL override for the configured provider
-        - when `baseUrl` is set and the resolved provider has no built-in Pi model list, the server synthesizes an `openai-responses` model for the configured `provider/model` id so custom endpoints can be targeted without adding new config fields
+        - when `baseUrl` is set and the resolved provider has no built-in Pi model list, the server synthesizes a model for the configured `provider/model` id so custom endpoints can be targeted without adding new config fields
       - `headers` (optional): custom HTTP headers to send with each request
+      - `compat` (optional): validated Pi model compatibility overrides such as `supportsDeveloperRole`, `supportsReasoningEffort`, `supportsUsageInStreaming`, `maxTokensField`, and `thinkingFormat`
       - connection overrides apply only when the resolved provider matches `config.provider`
       - `timeoutMs` (optional): request timeout in milliseconds
       - `maxTokens` (optional): positive integer completion limit
-      - `contextWindow` (optional): context-window override for synthesized models (used when `baseUrl` is set and provider has no built-in Pi model catalog entry)
+      - `contextWindow` (optional): context-window override for resolved Pi models, including synthesized custom models
+      - `reasoning`, `input`, and `cost` (optional): model metadata overrides for resolved Pi models, including synthesized custom models
       - `temperature` (optional): temperature to use for generation
       - `maxToolIterations` (optional): max consecutive tool iterations before aborting with an error (default 100)
     - for `provider: "claude-cli"`:

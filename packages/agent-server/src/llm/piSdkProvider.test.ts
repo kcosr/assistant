@@ -24,6 +24,7 @@ import {
   mapChatCompletionToolsToPiTools,
   resolvePiSdkAuthApiKey,
   resolvePiSdkModel,
+  resolvePiSdkRuntimeModel,
   runPiSdkChatCompletionIteration,
 } from './piSdkProvider';
 
@@ -79,7 +80,21 @@ describe('resolvePiSdkModel', () => {
     const resolved = await resolvePiSdkModel({
       modelSpec: 'mock-scenarios/scenarios',
       baseUrl: 'http://127.0.0.1:4010/v1',
+      api: 'openai-completions',
       contextWindow: 65536,
+      maxTokens: 4096,
+      reasoning: false,
+      input: ['text', 'image'],
+      cost: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
     });
 
     expect(resolved.providerId).toBe('mock-scenarios');
@@ -87,18 +102,22 @@ describe('resolvePiSdkModel', () => {
     expect(resolved.model).toMatchObject({
       id: 'scenarios',
       name: 'scenarios',
-      api: 'openai-responses',
+      api: 'openai-completions',
       provider: 'mock-scenarios',
       baseUrl: 'http://127.0.0.1:4010/v1',
-      reasoning: true,
-      input: ['text'],
+      reasoning: false,
+      input: ['text', 'image'],
       contextWindow: 65536,
-      maxTokens: 16000,
+      maxTokens: 4096,
       cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
       },
     });
   });
@@ -129,6 +148,135 @@ describe('resolvePiSdkModel', () => {
         baseUrl: 'http://127.0.0.1:4010/v1',
       }),
     ).rejects.toThrow('Pi model "openai/not-a-real-model" was not found');
+  });
+
+  it('does not apply config-owned custom endpoint overrides to a different explicit provider', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    await expect(
+      resolvePiSdkRuntimeModel({
+        modelSpec: 'other/scenarios',
+        config: {
+          provider: 'local',
+          baseUrl: 'http://127.0.0.1:4010/v1',
+          api: 'openai-completions',
+          apiKey: 'local-key',
+          authHeader: true,
+        },
+      }),
+    ).rejects.toThrow('No Pi models found for provider "other"');
+  });
+
+  it('builds runtime model headers and compat for matching custom endpoints', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    const resolved = await resolvePiSdkRuntimeModel({
+      modelSpec: 'local/scenarios',
+      config: {
+        provider: 'local',
+        baseUrl: 'http://127.0.0.1:4010/v1',
+        api: 'openai-completions',
+        apiKey: 'local-key',
+        authHeader: true,
+        headers: {
+          'X-Request-Source': 'assistant',
+        },
+        contextWindow: 65536,
+        maxTokens: 4096,
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+        },
+      },
+    });
+
+    expect(resolved.providerMatchesConfig).toBe(true);
+    expect(resolved.apiKey).toBe('local-key');
+    expect(resolved.runtimeModel).toMatchObject({
+      id: 'scenarios',
+      api: 'openai-completions',
+      provider: 'local',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      contextWindow: 65536,
+      maxTokens: 4096,
+      headers: {
+        'X-Request-Source': 'assistant',
+        Authorization: 'Bearer local-key',
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
+    });
+  });
+
+  it('applies matching custom metadata overrides to built-in models', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockImplementation((provider: string) => {
+      if (provider === 'openai') {
+        return [
+          {
+            id: 'gpt-4o-mini',
+            provider: 'openai',
+            api: 'openai-responses',
+            contextWindow: 128000,
+            maxTokens: 16000,
+            reasoning: true,
+            input: ['text'],
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+          } as never,
+        ];
+      }
+      return [];
+    });
+
+    const resolved = await resolvePiSdkRuntimeModel({
+      modelSpec: 'openai/gpt-4o-mini',
+      config: {
+        provider: 'openai',
+        api: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:4010/v1',
+        contextWindow: 65536,
+        maxTokens: 4096,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: {
+          input: 1,
+          output: 2,
+          cacheRead: 3,
+          cacheWrite: 4,
+        },
+        compat: {
+          supportsDeveloperRole: false,
+        },
+      },
+    });
+
+    expect(resolved.runtimeModel).toMatchObject({
+      id: 'gpt-4o-mini',
+      api: 'openai-completions',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      contextWindow: 65536,
+      maxTokens: 4096,
+      reasoning: false,
+      input: ['text', 'image'],
+      cost: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+      },
+    });
   });
 });
 
@@ -217,10 +365,9 @@ describe('resolvePiSdkAuthApiKey', () => {
         }),
       );
 
-      const persisted = JSON.parse(await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8')) as Record<
-        string,
-        { access?: string; refresh?: string; accountId?: string }
-      >;
+      const persisted = JSON.parse(
+        await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8'),
+      ) as Record<string, { access?: string; refresh?: string; accountId?: string }>;
       expect(persisted['OpenAI-Codex']).toMatchObject({
         access: 'new-access',
         refresh: 'new-refresh',
@@ -273,7 +420,13 @@ describe('buildPiContext', () => {
 
     const assistantMessage = context.messages[1] as {
       role: string;
-      content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>;
+      content: Array<{
+        type: string;
+        text?: string;
+        id?: string;
+        name?: string;
+        arguments?: unknown;
+      }>;
     };
     expect(assistantMessage.role).toBe('assistant');
     expect(assistantMessage.content[0]).toEqual({ type: 'text', text: 'Hi there' });
@@ -492,9 +645,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       { type: 'toolcall_end', toolCall: { id: 'tc-1', name: 'doThing', arguments: { ok: 1 } } },
     ];
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const textDeltas: string[] = [];
     const toolStarts: Array<{ id: string; name: string }> = [];
@@ -538,17 +689,13 @@ describe('runPiSdkChatCompletionIteration', () => {
       },
     ]);
     expect(result.text).toBe('Hello world');
-    expect(result.toolCalls).toEqual([
-      { id: 'tc-1', name: 'doThing', argumentsJson: '{"ok":1}' },
-    ]);
+    expect(result.toolCalls).toEqual([{ id: 'tc-1', name: 'doThing', argumentsJson: '{"ok":1}' }]);
   });
 
   it('only tags streamed text deltas with final_answer for openai-responses models', async () => {
     const events = [{ type: 'text_delta', delta: 'Hello' }];
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const openAiPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -562,9 +709,7 @@ describe('runPiSdkChatCompletionIteration', () => {
     });
     expect(openAiPhases).toEqual(['final_answer']);
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const anthropicPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -581,10 +726,7 @@ describe('runPiSdkChatCompletionIteration', () => {
 
   it('marks aborted when the stream stops with aborted', async () => {
     vi.mocked(streamSimple).mockReturnValue(
-      createStream(
-        [{ type: 'error', reason: 'aborted' }],
-        { stopReason: 'aborted' },
-      ) as never,
+      createStream([{ type: 'error', reason: 'aborted' }], { stopReason: 'aborted' }) as never,
     );
 
     const result = await runPiSdkChatCompletionIteration({
@@ -633,9 +775,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       timestamp: Date.now(),
     } as const;
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream([], assistantMessage) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream([], assistantMessage) as never);
 
     const onPayload = vi.fn();
     const onResponse = vi.fn();
