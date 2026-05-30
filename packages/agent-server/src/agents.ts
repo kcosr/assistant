@@ -1,3 +1,5 @@
+import type { Api, Model } from '@earendil-works/pi-ai';
+
 export interface CliWrapperConfig {
   /**
    * Command wrapper path for running CLI tools in a container.
@@ -185,12 +187,31 @@ export interface PiSdkChatConfig {
    * Example: "anthropic" for "claude-sonnet-4-5".
    */
   provider?: string;
+  /**
+   * API implementation for synthesized custom Pi models.
+   * Example: "openai-completions" for OpenAI-compatible Chat Completions endpoints.
+   */
+  api?: string;
   apiKey?: string;
+  /**
+   * When true, add `Authorization: Bearer <apiKey>` to request headers.
+   * This mirrors Pi's models.json `authHeader` behavior.
+   */
+  authHeader?: boolean;
   baseUrl?: string;
   headers?: Record<string, string>;
   timeoutMs?: number;
   maxTokens?: number;
   contextWindow?: number;
+  reasoning?: boolean;
+  input?: ('text' | 'image')[];
+  cost?: {
+    input?: number | undefined;
+    output?: number | undefined;
+    cacheRead?: number | undefined;
+    cacheWrite?: number | undefined;
+  };
+  compat?: Model<Api>['compat'];
   temperature?: number;
   maxToolIterations?: number;
   compaction?: {

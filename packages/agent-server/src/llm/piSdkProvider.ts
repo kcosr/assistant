@@ -101,28 +101,46 @@ function buildSyntheticPiSdkModel(options: {
   providerId: string;
   modelId: string;
   baseUrl: string;
+  api?: string;
   contextWindow?: number;
+  maxTokens?: number;
+  reasoning?: boolean;
+  input?: ('text' | 'image')[];
+  cost?: {
+    input?: number | undefined;
+    output?: number | undefined;
+    cacheRead?: number | undefined;
+    cacheWrite?: number | undefined;
+  };
+  compat?: Model<Api>['compat'];
 }): Model<Api> {
   const { providerId, modelId, baseUrl, contextWindow } = options;
+  const cost = options.cost ?? {};
   return {
     id: modelId,
     name: modelId,
-    api: 'openai-responses',
+    api: (options.api ?? 'openai-responses') as Api,
     provider: providerId,
     baseUrl,
-    reasoning: true,
-    input: ['text'],
+    reasoning: options.reasoning ?? true,
+    input: options.input ?? ['text'],
     cost: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
+      input: cost.input ?? 0,
+      output: cost.output ?? 0,
+      cacheRead: cost.cacheRead ?? 0,
+      cacheWrite: cost.cacheWrite ?? 0,
     },
     contextWindow:
       typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
         ? Math.floor(contextWindow)
         : 128000,
-    maxTokens: 16000,
+    maxTokens:
+      typeof options.maxTokens === 'number' &&
+      Number.isFinite(options.maxTokens) &&
+      options.maxTokens > 0
+        ? Math.floor(options.maxTokens)
+        : 16000,
+    ...(options.compat !== undefined ? { compat: options.compat } : {}),
   };
 }
 
@@ -130,7 +148,18 @@ export async function resolvePiSdkModel(options: {
   modelSpec: string;
   defaultProvider?: string;
   baseUrl?: string;
+  api?: string;
   contextWindow?: number;
+  maxTokens?: number;
+  reasoning?: boolean;
+  input?: ('text' | 'image')[];
+  cost?: {
+    input?: number | undefined;
+    output?: number | undefined;
+    cacheRead?: number | undefined;
+    cacheWrite?: number | undefined;
+  };
+  compat?: Model<Api>['compat'];
 }): Promise<PiSdkModelResolution> {
   const { modelSpec, defaultProvider, baseUrl, contextWindow } = options;
   const trimmedSpec = modelSpec.trim();
@@ -150,9 +179,7 @@ export async function resolvePiSdkModel(options: {
   }
 
   if (!providerRaw) {
-    throw new Error(
-      'Pi chat requires provider/model format when chat.config.provider is not set',
-    );
+    throw new Error('Pi chat requires provider/model format when chat.config.provider is not set');
   }
 
   const providerId = await resolveProviderId(providerRaw);
@@ -171,7 +198,13 @@ export async function resolvePiSdkModel(options: {
         providerId,
         modelId,
         baseUrl: baseUrl.trim(),
+        ...(options.api !== undefined ? { api: options.api } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+        ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+        ...(options.input !== undefined ? { input: options.input } : {}),
+        ...(options.cost !== undefined ? { cost: options.cost } : {}),
+        ...(options.compat !== undefined ? { compat: options.compat } : {}),
       });
       return {
         model: syntheticModel,
@@ -190,7 +223,13 @@ export async function resolvePiSdkModel(options: {
         providerId,
         modelId,
         baseUrl: baseUrl.trim(),
+        ...(options.api !== undefined ? { api: options.api } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
+        ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+        ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+        ...(options.input !== undefined ? { input: options.input } : {}),
+        ...(options.cost !== undefined ? { cost: options.cost } : {}),
+        ...(options.compat !== undefined ? { compat: options.compat } : {}),
       });
       return {
         model: syntheticModel,
@@ -293,9 +332,7 @@ export function parseAssistantTextSignature(
       return null;
     }
     const phase =
-      parsed.phase === 'commentary' || parsed.phase === 'final_answer'
-        ? parsed.phase
-        : undefined;
+      parsed.phase === 'commentary' || parsed.phase === 'final_answer' ? parsed.phase : undefined;
     return { id: parsed.id, ...(phase ? { phase } : {}) };
   } catch {
     return null;
@@ -488,10 +525,10 @@ export function buildPiContext(options: {
   return context;
 }
 
-function createTimeoutSignal(options: {
+function createTimeoutSignal(options: { signal: AbortSignal; timeoutMs?: number }): {
   signal: AbortSignal;
-  timeoutMs?: number;
-}): { signal: AbortSignal; clear: () => void } {
+  clear: () => void;
+} {
   const { signal, timeoutMs } = options;
   if (!timeoutMs || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return { signal, clear: () => undefined };

@@ -26,6 +26,7 @@ import {
   type ThinkingLevel as PiAgentThinkingLevel,
 } from '@earendil-works/pi-agent-core';
 import {
+  type Api,
   type AssistantMessage,
   type AssistantMessageEvent,
   type Message as PiSdkMessage,
@@ -784,7 +785,7 @@ function getMessageTimestampMs(
 
 function buildSyntheticAssistantMessage(options: {
   message: Extract<ChatCompletionMessage, { role: 'assistant' }>;
-  model: Model<any>;
+  model: Model<Api>;
 }): AssistantMessage {
   const { message, model } = options;
   const content: Array<TextContent | ToolCall> = [];
@@ -837,7 +838,7 @@ function buildToolNameIndex(messages: ChatCompletionMessage[]): Map<string, stri
 function toPiAgentMessage(options: {
   message: Exclude<ChatCompletionMessage, { role: 'system' }>;
   toolNameIndex: Map<string, string>;
-  model: Model<any>;
+  model: Model<Api>;
 }): AgentMessage {
   const { message, toolNameIndex, model } = options;
   if (message.role === 'user') {
@@ -866,7 +867,7 @@ function toPiAgentMessage(options: {
 function buildPiAgentContext(options: {
   messages: ChatCompletionMessage[];
   text: string;
-  model: Model<any>;
+  model: Model<Api>;
 }): {
   systemPrompt: string;
   contextMessages: AgentMessage[];
@@ -1347,22 +1348,26 @@ export async function runChatCompletionCore(
     let resolvedModel: Awaited<ReturnType<typeof resolvePiSdkModel>>;
     try {
       const defaultProvider = piConfig?.provider;
+      const piModelOverrides = {
+        ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
+        ...(piConfig?.api ? { api: piConfig.api } : {}),
+        ...(piConfig?.contextWindow !== undefined ? { contextWindow: piConfig.contextWindow } : {}),
+        ...(piConfig?.maxTokens !== undefined ? { maxTokens: piConfig.maxTokens } : {}),
+        ...(piConfig?.reasoning !== undefined ? { reasoning: piConfig.reasoning } : {}),
+        ...(piConfig?.input !== undefined ? { input: piConfig.input } : {}),
+        ...(piConfig?.cost !== undefined ? { cost: piConfig.cost } : {}),
+        ...(piConfig?.compat !== undefined ? { compat: piConfig.compat } : {}),
+      };
       resolvedModel =
         defaultProvider === undefined
           ? await resolvePiSdkModel({
               modelSpec,
-              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-              ...(piConfig?.contextWindow !== undefined
-                ? { contextWindow: piConfig.contextWindow }
-                : {}),
+              ...piModelOverrides,
             })
           : await resolvePiSdkModel({
               modelSpec,
               defaultProvider,
-              ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-              ...(piConfig?.contextWindow !== undefined
-                ? { contextWindow: piConfig.contextWindow }
-                : {}),
+              ...piModelOverrides,
             });
     } catch (err) {
       throw new ChatRunError(
@@ -1384,7 +1389,11 @@ export async function runChatCompletionCore(
       ? (piConfig?.apiKey ?? piAgentAuthApiKey)
       : piAgentAuthApiKey;
     const baseUrl = providerMatchesConfig ? piConfig?.baseUrl : undefined;
-    const headers = providerMatchesConfig ? piConfig?.headers : undefined;
+    const configuredHeaders = providerMatchesConfig ? piConfig?.headers : undefined;
+    const headers =
+      providerMatchesConfig && piConfig?.authHeader && apiKey
+        ? { ...configuredHeaders, Authorization: `Bearer ${apiKey}` }
+        : configuredHeaders;
     const canonicalReplayMessages = await loadCanonicalPiReplayMessages({
       summary: state.summary,
     });
@@ -1412,10 +1421,14 @@ export async function runChatCompletionCore(
       ];
     }
 
-    const agentModel: Model<any> = {
+    const agentModel: Model<Api> = {
       ...resolvedModel.model,
+      ...(providerMatchesConfig && piConfig?.api ? { api: piConfig.api } : {}),
       ...(baseUrl ? { baseUrl } : {}),
       ...(headers ? { headers } : {}),
+      ...(providerMatchesConfig && piConfig?.compat !== undefined
+        ? { compat: piConfig.compat }
+        : {}),
     };
     piContextWindow = agentModel.contextWindow;
     type PiRuntimeConfig = {
@@ -1426,7 +1439,7 @@ export async function runChatCompletionCore(
     };
     type PiRuntimeState = {
       requestConfig: PiRuntimeConfig;
-      onPayload?: ((payload: unknown, model: Model<any>) => unknown | Promise<unknown>) | undefined;
+      onPayload?: ((payload: unknown, model: Model<Api>) => unknown | Promise<unknown>) | undefined;
       agent: Agent;
     };
     const piAgentRuntime =

@@ -772,13 +772,27 @@ describe('loadConfig', () => {
             thinking: ['low'],
             config: {
               provider: 'anthropic',
+              api: 'openai-completions',
               baseUrl: 'https://api.anthropic.com',
               apiKey: '${PI_API_KEY}',
+              authHeader: true,
               headers: {
                 'X-Request-Source': '${PI_HEADER_SOURCE}',
               },
               maxTokens: 4096,
               contextWindow: 65536,
+              reasoning: true,
+              input: ['text', 'image'],
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+              },
+              compat: {
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+              },
               temperature: 0.7,
               maxToolIterations: 25,
               compaction: {
@@ -809,13 +823,27 @@ describe('loadConfig', () => {
       thinking: ['low'],
       config: {
         provider: 'anthropic',
+        api: 'openai-completions',
         baseUrl: 'https://api.anthropic.com',
         apiKey: 'test-pi-key',
+        authHeader: true,
         headers: {
           'X-Request-Source': 'assistant',
         },
         maxTokens: 4096,
         contextWindow: 65536,
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+        },
         temperature: 0.7,
         maxToolIterations: 25,
         compaction: {

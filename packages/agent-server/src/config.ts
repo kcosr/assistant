@@ -212,12 +212,28 @@ const PiCliChatConfigSchema = z.object({
 
 const PiSdkChatConfigSchema = z.object({
   provider: NonEmptyTrimmedStringSchema.optional(),
+  api: NonEmptyTrimmedStringSchema.optional(),
   apiKey: NonEmptyTrimmedStringSchema.optional(),
+  authHeader: z.boolean().optional(),
   baseUrl: NonEmptyTrimmedStringSchema.optional(),
   headers: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().int().min(1).optional(),
   maxTokens: z.number().int().min(1).optional(),
   contextWindow: z.number().int().min(1).optional(),
+  reasoning: z.boolean().optional(),
+  input: z
+    .array(z.enum(['text', 'image']))
+    .min(1)
+    .optional(),
+  cost: z
+    .object({
+      input: z.number().optional(),
+      output: z.number().optional(),
+      cacheRead: z.number().optional(),
+      cacheWrite: z.number().optional(),
+    })
+    .optional(),
+  compat: z.record(z.string(), z.unknown()).optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxToolIterations: z.number().int().min(1).optional(),
   compaction: z
@@ -456,7 +472,9 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
           ? {
               config: {
                 ...(config.provider ? { provider: config.provider } : {}),
+                ...(config.api ? { api: config.api } : {}),
                 ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+                ...(config.authHeader !== undefined ? { authHeader: config.authHeader } : {}),
                 ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
                 ...(config.headers ? { headers: config.headers } : {}),
                 ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
@@ -464,6 +482,10 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
                 ...(config.contextWindow !== undefined
                   ? { contextWindow: config.contextWindow }
                   : {}),
+                ...(config.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
+                ...(config.input !== undefined ? { input: config.input } : {}),
+                ...(config.cost !== undefined ? { cost: config.cost } : {}),
+                ...(config.compat !== undefined ? { compat: config.compat } : {}),
                 ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
                 ...(config.maxToolIterations !== undefined
                   ? { maxToolIterations: config.maxToolIterations }

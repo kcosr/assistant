@@ -79,7 +79,21 @@ describe('resolvePiSdkModel', () => {
     const resolved = await resolvePiSdkModel({
       modelSpec: 'mock-scenarios/scenarios',
       baseUrl: 'http://127.0.0.1:4010/v1',
+      api: 'openai-completions',
       contextWindow: 65536,
+      maxTokens: 4096,
+      reasoning: false,
+      input: ['text', 'image'],
+      cost: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
     });
 
     expect(resolved.providerId).toBe('mock-scenarios');
@@ -87,18 +101,22 @@ describe('resolvePiSdkModel', () => {
     expect(resolved.model).toMatchObject({
       id: 'scenarios',
       name: 'scenarios',
-      api: 'openai-responses',
+      api: 'openai-completions',
       provider: 'mock-scenarios',
       baseUrl: 'http://127.0.0.1:4010/v1',
-      reasoning: true,
-      input: ['text'],
+      reasoning: false,
+      input: ['text', 'image'],
       contextWindow: 65536,
-      maxTokens: 16000,
+      maxTokens: 4096,
       cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
       },
     });
   });
@@ -217,10 +235,9 @@ describe('resolvePiSdkAuthApiKey', () => {
         }),
       );
 
-      const persisted = JSON.parse(await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8')) as Record<
-        string,
-        { access?: string; refresh?: string; accountId?: string }
-      >;
+      const persisted = JSON.parse(
+        await fs.readFile(path.join(tempDir, 'auth.json'), 'utf8'),
+      ) as Record<string, { access?: string; refresh?: string; accountId?: string }>;
       expect(persisted['OpenAI-Codex']).toMatchObject({
         access: 'new-access',
         refresh: 'new-refresh',
@@ -273,7 +290,13 @@ describe('buildPiContext', () => {
 
     const assistantMessage = context.messages[1] as {
       role: string;
-      content: Array<{ type: string; text?: string; id?: string; name?: string; arguments?: unknown }>;
+      content: Array<{
+        type: string;
+        text?: string;
+        id?: string;
+        name?: string;
+        arguments?: unknown;
+      }>;
     };
     expect(assistantMessage.role).toBe('assistant');
     expect(assistantMessage.content[0]).toEqual({ type: 'text', text: 'Hi there' });
@@ -492,9 +515,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       { type: 'toolcall_end', toolCall: { id: 'tc-1', name: 'doThing', arguments: { ok: 1 } } },
     ];
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const textDeltas: string[] = [];
     const toolStarts: Array<{ id: string; name: string }> = [];
@@ -538,17 +559,13 @@ describe('runPiSdkChatCompletionIteration', () => {
       },
     ]);
     expect(result.text).toBe('Hello world');
-    expect(result.toolCalls).toEqual([
-      { id: 'tc-1', name: 'doThing', argumentsJson: '{"ok":1}' },
-    ]);
+    expect(result.toolCalls).toEqual([{ id: 'tc-1', name: 'doThing', argumentsJson: '{"ok":1}' }]);
   });
 
   it('only tags streamed text deltas with final_answer for openai-responses models', async () => {
     const events = [{ type: 'text_delta', delta: 'Hello' }];
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const openAiPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -562,9 +579,7 @@ describe('runPiSdkChatCompletionIteration', () => {
     });
     expect(openAiPhases).toEqual(['final_answer']);
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream(events, { stopReason: 'stop' }) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream(events, { stopReason: 'stop' }) as never);
 
     const anthropicPhases: Array<string | undefined> = [];
     await runPiSdkChatCompletionIteration({
@@ -581,10 +596,7 @@ describe('runPiSdkChatCompletionIteration', () => {
 
   it('marks aborted when the stream stops with aborted', async () => {
     vi.mocked(streamSimple).mockReturnValue(
-      createStream(
-        [{ type: 'error', reason: 'aborted' }],
-        { stopReason: 'aborted' },
-      ) as never,
+      createStream([{ type: 'error', reason: 'aborted' }], { stopReason: 'aborted' }) as never,
     );
 
     const result = await runPiSdkChatCompletionIteration({
@@ -633,9 +645,7 @@ describe('runPiSdkChatCompletionIteration', () => {
       timestamp: Date.now(),
     } as const;
 
-    vi.mocked(streamSimple).mockReturnValue(
-      createStream([], assistantMessage) as never,
-    );
+    vi.mocked(streamSimple).mockReturnValue(createStream([], assistantMessage) as never);
 
     const onPayload = vi.fn();
     const onResponse = vi.fn();
