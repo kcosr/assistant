@@ -855,6 +855,38 @@ describe('loadConfig', () => {
     });
   });
 
+  it('rejects invalid pi sdk custom model metadata config', async () => {
+    const filePath = createTempFile('config-pi-invalid-custom-model-metadata');
+    const configJson = {
+      agents: [
+        {
+          agentId: 'pi',
+          displayName: 'Pi',
+          description: 'Pi SDK agent.',
+          chat: {
+            provider: 'pi',
+            models: ['local/model'],
+            config: {
+              provider: 'local',
+              api: 'openai-completon',
+              baseUrl: 'http://127.0.0.1:4010/v1',
+              cost: {
+                input: -1,
+              },
+              compat: {
+                supportsDeveloprRole: false,
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    await fs.writeFile(filePath, JSON.stringify(configJson), 'utf8');
+
+    expect(() => loadConfig(filePath)).toThrow();
+  });
+
   it('throws a descriptive error for invalid JSON', async () => {
     const filePath = createTempFile('config-invalid-json');
     await fs.writeFile(filePath, '{ "agents": [ }', 'utf8');

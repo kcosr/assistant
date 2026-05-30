@@ -3,7 +3,7 @@ import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import fs from 'node:fs/promises';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AgentRegistry } from './agents';
 import { AttachmentStore } from './attachments/store';
@@ -640,6 +640,93 @@ describe('SessionHub compactSession guards', () => {
     await expect(
       sessionHub.compactSession({ sessionId: 'pi-no-model-session', reason: 'manual' }),
     ).rejects.toThrow('Pi chat requires at least one model to compact context');
+  });
+
+  it('uses Pi custom-model config when compacting context', async () => {
+    const sessionIndex = new SessionIndex(createTempFile('session-hub-compact-custom-model'));
+    const compat = {
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+    };
+    const agentRegistry = new AgentRegistry([
+      {
+        agentId: 'pi-local',
+        displayName: 'Pi Local',
+        description: 'Pi backed by a local endpoint',
+        chat: {
+          provider: 'pi',
+          models: ['local/scenarios'],
+          config: {
+            provider: 'local',
+            baseUrl: 'http://127.0.0.1:4010/v1',
+            api: 'openai-completions',
+            apiKey: 'local-key',
+            authHeader: true,
+            headers: {
+              'X-Request-Source': 'assistant',
+            },
+            maxTokens: 4096,
+            contextWindow: 65536,
+            reasoning: false,
+            input: ['text', 'image'],
+            cost: {
+              input: 1,
+              output: 2,
+              cacheRead: 3,
+              cacheWrite: 4,
+            },
+            compat,
+          },
+        },
+      },
+    ]);
+    const compact = vi.fn(async (options: { summary: unknown }) => ({
+      summary: options.summary,
+      result: {
+        summary: 'Compacted',
+        firstKeptEntryId: 'entry-1',
+        tokensBefore: 123,
+      },
+    }));
+    const sessionHub = new SessionHub({
+      sessionIndex,
+      agentRegistry,
+      eventStore: createTestEventStore(),
+      piSessionWriter: { compact } as unknown as PiSessionWriter,
+    });
+    await sessionIndex.createSession({
+      sessionId: 'pi-local-session',
+      agentId: 'pi-local',
+    });
+
+    await sessionHub.compactSession({ sessionId: 'pi-local-session', reason: 'manual' });
+
+    expect(compact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'local-key',
+        model: expect.objectContaining({
+          id: 'scenarios',
+          api: 'openai-completions',
+          provider: 'local',
+          baseUrl: 'http://127.0.0.1:4010/v1',
+          maxTokens: 4096,
+          contextWindow: 65536,
+          reasoning: false,
+          input: ['text', 'image'],
+          cost: {
+            input: 1,
+            output: 2,
+            cacheRead: 3,
+            cacheWrite: 4,
+          },
+          compat,
+          headers: {
+            'X-Request-Source': 'assistant',
+            Authorization: 'Bearer local-key',
+          },
+        }),
+      }),
+    );
   });
 });
 

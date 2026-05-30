@@ -20,7 +20,11 @@ export async function publishFinalResponseNotification(options: {
   if (!options.text.trim()) {
     return;
   }
-  const sessionIndex = options.sessionIndex ?? options.sessionHub?.getSessionIndex();
+  const sessionIndex =
+    options.sessionIndex ??
+    (typeof options.sessionHub?.getSessionIndex === 'function'
+      ? options.sessionHub.getSessionIndex()
+      : undefined);
   try {
     await createNotificationRecord({
       input: {

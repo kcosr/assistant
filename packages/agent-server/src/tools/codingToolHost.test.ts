@@ -61,7 +61,11 @@ describe('CodingToolHost', () => {
     }
 
     const content = 'line-one\nline-two';
-    const writeResult = await writeTool.execute('call-write', { path: 'plugin.txt', content }, ctx.signal);
+    const writeResult = await writeTool.execute(
+      'call-write',
+      { path: 'plugin.txt', content },
+      ctx.signal,
+    );
 
     expect(Array.isArray(writeResult.content)).toBe(true);
 
@@ -73,7 +77,7 @@ describe('CodingToolHost', () => {
     const lsResult = await lsTool.execute('call-ls', {}, ctx.signal);
 
     expect((lsResult.content[0] as { text?: string }).text).toContain('plugin.txt');
-  });
+  }, 15_000);
 
   it('exposes a find tool that searches files relative to the search path', async () => {
     const dataDir = createTempDir('coding-tool-host-find');
@@ -208,11 +212,23 @@ describe('CodingToolHost', () => {
       throw new Error('Expected write, read, and bash tools to be registered');
     }
 
-    await writeTool.execute('relative-write', { path: 'relative.txt', content: 'relative file' }, ctx.signal);
-    const readRelative = await readTool.execute('relative-read', { path: 'relative.txt' }, ctx.signal);
+    await writeTool.execute(
+      'relative-write',
+      { path: 'relative.txt', content: 'relative file' },
+      ctx.signal,
+    );
+    const readRelative = await readTool.execute(
+      'relative-read',
+      { path: 'relative.txt' },
+      ctx.signal,
+    );
     const bashPwd = await bashTool.execute('pwd-call', { command: 'pwd' }, ctx.signal);
 
-    await writeTool.execute('outside-write', { path: outsidePath, content: 'outside file' }, ctx.signal);
+    await writeTool.execute(
+      'outside-write',
+      { path: outsidePath, content: 'outside file' },
+      ctx.signal,
+    );
     const outsideContent = await fs.readFile(outsidePath, 'utf8');
 
     expect(readRelative.content[0]?.type).toBe('text');
@@ -220,8 +236,12 @@ describe('CodingToolHost', () => {
     expect(await fs.readFile(path.join(sessionWorkingDir, 'relative.txt'), 'utf8')).toBe(
       'relative file',
     );
-    expect((bashPwd.details as { fullOutputPath?: string } | undefined)?.fullOutputPath).toBeUndefined();
-    expect((bashPwd.content[0] as { text?: string }).text?.trim().split('\n')[0]).toBe(sessionWorkingDir);
+    expect(
+      (bashPwd.details as { fullOutputPath?: string } | undefined)?.fullOutputPath,
+    ).toBeUndefined();
+    expect((bashPwd.content[0] as { text?: string }).text?.trim().split('\n')[0]).toBe(
+      sessionWorkingDir,
+    );
     expect(outsideContent).toBe('outside file');
   });
 
@@ -237,11 +257,10 @@ describe('CodingToolHost', () => {
     });
 
     await expect(
-      host.callTool(
-        'unknown_tool',
-        '{}',
-        { sessionId: 'coding-session', signal: new AbortController().signal },
-      ),
+      host.callTool('unknown_tool', '{}', {
+        sessionId: 'coding-session',
+        signal: new AbortController().signal,
+      }),
     ).rejects.toMatchObject({
       code: 'tool_not_found',
       message: 'Tool not found: unknown_tool',

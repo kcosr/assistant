@@ -15,6 +15,7 @@ import type {
 } from '@earendil-works/pi-ai';
 import type { AssistantTextPhase } from '@assistant/shared';
 
+import type { PiSdkChatConfig } from '../agents';
 import type { ChatCompletionMessage, ChatCompletionToolCallState } from '../chatCompletionTypes';
 import { resolvePiAgentAuthApiKey } from './piAgentAuth';
 
@@ -34,6 +35,13 @@ export interface PiSdkModelResolution {
   model: Model<Api>;
   providerId: string;
   modelId: string;
+}
+
+export interface PiSdkRuntimeModelResolution extends PiSdkModelResolution {
+  runtimeModel: Model<Api>;
+  providerMatchesConfig: boolean;
+  apiKey?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PiAssistantTextBlock {
@@ -85,6 +93,18 @@ function createEmptyUsage(): Usage {
   };
 }
 
+function buildPiModelCost(
+  cost: PiSdkChatConfig['cost'] | undefined,
+  fallback?: Model<Api>['cost'],
+): Model<Api>['cost'] {
+  return {
+    input: cost?.input ?? fallback?.input ?? 0,
+    output: cost?.output ?? fallback?.output ?? 0,
+    cacheRead: cost?.cacheRead ?? fallback?.cacheRead ?? 0,
+    cacheWrite: cost?.cacheWrite ?? fallback?.cacheWrite ?? 0,
+  };
+}
+
 async function resolveProviderId(providerRaw: string): Promise<string | undefined> {
   const trimmed = providerRaw.trim();
   if (!trimmed) {
@@ -115,7 +135,6 @@ function buildSyntheticPiSdkModel(options: {
   compat?: Model<Api>['compat'];
 }): Model<Api> {
   const { providerId, modelId, baseUrl, contextWindow } = options;
-  const cost = options.cost ?? {};
   return {
     id: modelId,
     name: modelId,
@@ -124,12 +143,7 @@ function buildSyntheticPiSdkModel(options: {
     baseUrl,
     reasoning: options.reasoning ?? true,
     input: options.input ?? ['text'],
-    cost: {
-      input: cost.input ?? 0,
-      output: cost.output ?? 0,
-      cacheRead: cost.cacheRead ?? 0,
-      cacheWrite: cost.cacheWrite ?? 0,
-    },
+    cost: buildPiModelCost(options.cost),
     contextWindow:
       typeof contextWindow === 'number' && Number.isFinite(contextWindow) && contextWindow > 0
         ? Math.floor(contextWindow)
@@ -141,6 +155,146 @@ function buildSyntheticPiSdkModel(options: {
         ? Math.floor(options.maxTokens)
         : 16000,
     ...(options.compat !== undefined ? { compat: options.compat } : {}),
+  };
+}
+
+function buildSyntheticPiSdkModelResolution(options: {
+  providerId: string;
+  modelIdRaw: string;
+  baseUrl: string;
+  contextWindow?: number;
+  api?: string;
+  maxTokens?: number;
+  reasoning?: boolean;
+  input?: ('text' | 'image')[];
+  cost?: {
+    input?: number | undefined;
+    output?: number | undefined;
+    cacheRead?: number | undefined;
+    cacheWrite?: number | undefined;
+  };
+  compat?: Model<Api>['compat'];
+}): PiSdkModelResolution {
+  const { providerId, modelIdRaw, baseUrl, contextWindow } = options;
+  const syntheticModel = buildSyntheticPiSdkModel({
+    providerId,
+    modelId: modelIdRaw.trim(),
+    baseUrl: baseUrl.trim(),
+    ...(options.api !== undefined ? { api: options.api } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
+    ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
+    ...(options.input !== undefined ? { input: options.input } : {}),
+    ...(options.cost !== undefined ? { cost: options.cost } : {}),
+    ...(options.compat !== undefined ? { compat: options.compat } : {}),
+  });
+  return {
+    model: syntheticModel,
+    providerId,
+    modelId: syntheticModel.id,
+  };
+}
+
+function getModelSpecProvider(modelSpec: string): string | undefined {
+  const trimmed = modelSpec.trim();
+  const slashIndex = trimmed.indexOf('/');
+  if (slashIndex === -1) {
+    return undefined;
+  }
+  const provider = trimmed.slice(0, slashIndex).trim();
+  return provider || undefined;
+}
+
+function providerMatchesRawConfig(provider: string | undefined, configProvider: string): boolean {
+  return Boolean(provider && provider.toLowerCase() === configProvider.toLowerCase());
+}
+
+function buildPiModelOverrides(config: PiSdkChatConfig | undefined) {
+  return {
+    ...(config?.baseUrl ? { baseUrl: config.baseUrl } : {}),
+    ...(config?.api ? { api: config.api } : {}),
+    ...(config?.contextWindow !== undefined ? { contextWindow: config.contextWindow } : {}),
+    ...(config?.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+    ...(config?.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
+    ...(config?.input !== undefined ? { input: config.input } : {}),
+    ...(config?.cost !== undefined ? { cost: config.cost } : {}),
+    ...(config?.compat !== undefined ? { compat: config.compat } : {}),
+  };
+}
+
+function buildPiRuntimeModelOverrides(
+  config: PiSdkChatConfig | undefined,
+  fallbackModel: Model<Api>,
+): Partial<Model<Api>> {
+  return {
+    ...(config?.api ? { api: config.api as Api } : {}),
+    ...(config?.baseUrl ? { baseUrl: config.baseUrl } : {}),
+    ...(config?.contextWindow !== undefined ? { contextWindow: config.contextWindow } : {}),
+    ...(config?.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
+    ...(config?.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
+    ...(config?.input !== undefined ? { input: config.input } : {}),
+    ...(config?.cost !== undefined
+      ? { cost: buildPiModelCost(config.cost, fallbackModel.cost) }
+      : {}),
+    ...(config?.compat !== undefined ? { compat: config.compat } : {}),
+  };
+}
+
+export async function resolvePiSdkRuntimeModel(options: {
+  modelSpec: string;
+  config?: PiSdkChatConfig | undefined;
+  log?: (...args: unknown[]) => void;
+}): Promise<PiSdkRuntimeModelResolution> {
+  const { modelSpec, config, log } = options;
+  const configProviderRaw = config?.provider?.trim();
+  const configProvider = configProviderRaw || undefined;
+  const modelSpecProvider = getModelSpecProvider(modelSpec);
+  const modelSpecUsesConfigProvider =
+    !configProvider ||
+    !modelSpecProvider ||
+    providerMatchesRawConfig(modelSpecProvider, configProvider);
+  const modelOverrides = modelSpecUsesConfigProvider ? buildPiModelOverrides(config) : {};
+  const resolvedModel =
+    configProvider === undefined
+      ? await resolvePiSdkModel({
+          modelSpec,
+          ...modelOverrides,
+        })
+      : await resolvePiSdkModel({
+          modelSpec,
+          defaultProvider: configProvider,
+          ...modelOverrides,
+        });
+  const providerMatchesConfig =
+    !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
+  const authApiKey = await resolvePiSdkAuthApiKey({
+    providerId: resolvedModel.providerId,
+    ...(log ? { log } : {}),
+  });
+  const apiKey = providerMatchesConfig ? (config?.apiKey ?? authApiKey) : authApiKey;
+  const configuredHeaders = providerMatchesConfig ? config?.headers : undefined;
+  if (providerMatchesConfig && config?.authHeader && !apiKey) {
+    log?.('Pi chat authHeader is enabled but no API key is configured or available', {
+      providerId: resolvedModel.providerId,
+      modelSpec,
+    });
+  }
+  const headers =
+    providerMatchesConfig && config?.authHeader && apiKey
+      ? { ...configuredHeaders, Authorization: `Bearer ${apiKey}` }
+      : configuredHeaders;
+  const runtimeModel: Model<Api> = {
+    ...resolvedModel.model,
+    ...(providerMatchesConfig ? buildPiRuntimeModelOverrides(config, resolvedModel.model) : {}),
+    ...(headers ? { headers } : {}),
+  };
+
+  return {
+    ...resolvedModel,
+    runtimeModel,
+    providerMatchesConfig,
+    ...(apiKey ? { apiKey } : {}),
+    ...(headers ? { headers } : {}),
   };
 }
 
@@ -193,11 +347,10 @@ export async function resolvePiSdkModel(options: {
   );
   if (!knownProvider) {
     if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
-      const modelId = modelIdRaw.trim();
-      const syntheticModel = buildSyntheticPiSdkModel({
+      return buildSyntheticPiSdkModelResolution({
         providerId,
-        modelId,
-        baseUrl: baseUrl.trim(),
+        modelIdRaw,
+        baseUrl,
         ...(options.api !== undefined ? { api: options.api } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
@@ -206,11 +359,6 @@ export async function resolvePiSdkModel(options: {
         ...(options.cost !== undefined ? { cost: options.cost } : {}),
         ...(options.compat !== undefined ? { compat: options.compat } : {}),
       });
-      return {
-        model: syntheticModel,
-        providerId,
-        modelId: syntheticModel.id,
-      };
     }
     throw new Error(`No Pi models found for provider "${providerId}"`);
   }
@@ -218,11 +366,10 @@ export async function resolvePiSdkModel(options: {
   const models = getModels(knownProvider);
   if (!models || models.length === 0) {
     if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
-      const modelId = modelIdRaw.trim();
-      const syntheticModel = buildSyntheticPiSdkModel({
+      return buildSyntheticPiSdkModelResolution({
         providerId,
-        modelId,
-        baseUrl: baseUrl.trim(),
+        modelIdRaw,
+        baseUrl,
         ...(options.api !== undefined ? { api: options.api } : {}),
         ...(contextWindow !== undefined ? { contextWindow } : {}),
         ...(options.maxTokens !== undefined ? { maxTokens: options.maxTokens } : {}),
@@ -231,11 +378,6 @@ export async function resolvePiSdkModel(options: {
         ...(options.cost !== undefined ? { cost: options.cost } : {}),
         ...(options.compat !== undefined ? { compat: options.compat } : {}),
       });
-      return {
-        model: syntheticModel,
-        providerId,
-        modelId: syntheticModel.id,
-      };
     }
     throw new Error(`No Pi models found for provider "${providerId}"`);
   }

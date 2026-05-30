@@ -47,7 +47,7 @@ import {
   type CliToolCallRecord,
 } from './ws/cliToolCallRendezvous';
 import { resolveSessionModelForRun } from './sessionModel';
-import { resolvePiSdkAuthApiKey, resolvePiSdkModel } from './llm/piSdkProvider';
+import { resolvePiSdkRuntimeModel } from './llm/piSdkProvider';
 import type { PiSdkChatConfig } from './agents';
 
 export interface LogicalSessionState {
@@ -733,27 +733,17 @@ export class SessionHub {
     if (!modelSpec) {
       throw new Error('Pi chat requires at least one model to compact context');
     }
-    const resolvedModel = await resolvePiSdkModel({
+    const resolvedRuntime = await resolvePiSdkRuntimeModel({
       modelSpec,
-      ...(piConfig?.provider ? { defaultProvider: piConfig.provider } : {}),
-      ...(piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-      ...(piConfig?.contextWindow !== undefined ? { contextWindow: piConfig.contextWindow } : {}),
+      ...(piConfig ? { config: piConfig } : {}),
+      log: (...args) => console.warn('[sessionHub]', ...args),
     });
-    const configProvider = piConfig?.provider?.trim();
-    const providerMatchesConfig =
-      !configProvider || configProvider.toLowerCase() === resolvedModel.providerId.toLowerCase();
-    const authApiKey = await resolvePiSdkAuthApiKey({ providerId: resolvedModel.providerId });
-    const apiKey = providerMatchesConfig ? (piConfig?.apiKey ?? authApiKey) : authApiKey;
     const compactSignal = signal ?? state?.activeChatRun?.abortController.signal;
     const result = await this.piSessionWriter.compact({
       summary: existing,
       settings: this.resolvePiCompactionSettings(piConfig),
-      model: {
-        ...resolvedModel.model,
-        ...(providerMatchesConfig && piConfig?.baseUrl ? { baseUrl: piConfig.baseUrl } : {}),
-        ...(providerMatchesConfig && piConfig?.headers ? { headers: piConfig.headers } : {}),
-      },
-      ...(apiKey ? { apiKey } : {}),
+      model: resolvedRuntime.runtimeModel,
+      ...(resolvedRuntime.apiKey ? { apiKey: resolvedRuntime.apiKey } : {}),
       ...(compactSignal ? { signal: compactSignal } : {}),
       updateAttributes: (patch) => this.updateSessionAttributes(sessionId, patch),
     });

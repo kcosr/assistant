@@ -24,6 +24,7 @@ import {
   mapChatCompletionToolsToPiTools,
   resolvePiSdkAuthApiKey,
   resolvePiSdkModel,
+  resolvePiSdkRuntimeModel,
   runPiSdkChatCompletionIteration,
 } from './piSdkProvider';
 
@@ -147,6 +148,135 @@ describe('resolvePiSdkModel', () => {
         baseUrl: 'http://127.0.0.1:4010/v1',
       }),
     ).rejects.toThrow('Pi model "openai/not-a-real-model" was not found');
+  });
+
+  it('does not apply config-owned custom endpoint overrides to a different explicit provider', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    await expect(
+      resolvePiSdkRuntimeModel({
+        modelSpec: 'other/scenarios',
+        config: {
+          provider: 'local',
+          baseUrl: 'http://127.0.0.1:4010/v1',
+          api: 'openai-completions',
+          apiKey: 'local-key',
+          authHeader: true,
+        },
+      }),
+    ).rejects.toThrow('No Pi models found for provider "other"');
+  });
+
+  it('builds runtime model headers and compat for matching custom endpoints', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockReturnValue([]);
+
+    const resolved = await resolvePiSdkRuntimeModel({
+      modelSpec: 'local/scenarios',
+      config: {
+        provider: 'local',
+        baseUrl: 'http://127.0.0.1:4010/v1',
+        api: 'openai-completions',
+        apiKey: 'local-key',
+        authHeader: true,
+        headers: {
+          'X-Request-Source': 'assistant',
+        },
+        contextWindow: 65536,
+        maxTokens: 4096,
+        compat: {
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+        },
+      },
+    });
+
+    expect(resolved.providerMatchesConfig).toBe(true);
+    expect(resolved.apiKey).toBe('local-key');
+    expect(resolved.runtimeModel).toMatchObject({
+      id: 'scenarios',
+      api: 'openai-completions',
+      provider: 'local',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      contextWindow: 65536,
+      maxTokens: 4096,
+      headers: {
+        'X-Request-Source': 'assistant',
+        Authorization: 'Bearer local-key',
+      },
+      compat: {
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
+    });
+  });
+
+  it('applies matching custom metadata overrides to built-in models', async () => {
+    vi.mocked(getProviders).mockReturnValue(['openai'] as never);
+    vi.mocked(getModels).mockImplementation((provider: string) => {
+      if (provider === 'openai') {
+        return [
+          {
+            id: 'gpt-4o-mini',
+            provider: 'openai',
+            api: 'openai-responses',
+            contextWindow: 128000,
+            maxTokens: 16000,
+            reasoning: true,
+            input: ['text'],
+            cost: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+          } as never,
+        ];
+      }
+      return [];
+    });
+
+    const resolved = await resolvePiSdkRuntimeModel({
+      modelSpec: 'openai/gpt-4o-mini',
+      config: {
+        provider: 'openai',
+        api: 'openai-completions',
+        baseUrl: 'http://127.0.0.1:4010/v1',
+        contextWindow: 65536,
+        maxTokens: 4096,
+        reasoning: false,
+        input: ['text', 'image'],
+        cost: {
+          input: 1,
+          output: 2,
+          cacheRead: 3,
+          cacheWrite: 4,
+        },
+        compat: {
+          supportsDeveloperRole: false,
+        },
+      },
+    });
+
+    expect(resolved.runtimeModel).toMatchObject({
+      id: 'gpt-4o-mini',
+      api: 'openai-completions',
+      baseUrl: 'http://127.0.0.1:4010/v1',
+      contextWindow: 65536,
+      maxTokens: 4096,
+      reasoning: false,
+      input: ['text', 'image'],
+      cost: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+      },
+      compat: {
+        supportsDeveloperRole: false,
+      },
+    });
   });
 });
 

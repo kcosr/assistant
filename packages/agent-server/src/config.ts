@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { z } from 'zod';
-import type { AgentDefinition } from './agents';
+import type { AgentDefinition, PiSdkChatConfig } from './agents';
 import { DEFAULT_ATTACHMENT_PREVIEW_SNIPPET_CHARS } from './attachments/constants';
 import { normalizeContextFileSourcesForConfigDir } from './contextFiles';
 import { normalizeInstructionSkillSourcesForConfigDir } from './instructionSkills';
@@ -210,9 +210,47 @@ const PiCliChatConfigSchema = z.object({
   wrapper: CliWrapperConfigSchema.optional(),
 });
 
+const PiSdkApiSchema = z.enum([
+  'openai-completions',
+  'mistral-conversations',
+  'openai-responses',
+  'azure-openai-responses',
+  'openai-codex-responses',
+  'anthropic-messages',
+  'bedrock-converse-stream',
+  'google-generative-ai',
+  'google-vertex',
+]);
+
+const PiSdkCompatSchema = z
+  .object({
+    supportsStore: z.boolean().optional(),
+    supportsDeveloperRole: z.boolean().optional(),
+    supportsReasoningEffort: z.boolean().optional(),
+    supportsUsageInStreaming: z.boolean().optional(),
+    maxTokensField: z.enum(['max_completion_tokens', 'max_tokens']).optional(),
+    requiresToolResultName: z.boolean().optional(),
+    requiresAssistantAfterToolResult: z.boolean().optional(),
+    requiresThinkingAsText: z.boolean().optional(),
+    requiresReasoningContentOnAssistantMessages: z.boolean().optional(),
+    thinkingFormat: z
+      .enum(['openai', 'openrouter', 'deepseek', 'zai', 'qwen', 'qwen-chat-template'])
+      .optional(),
+    openRouterRouting: z.record(z.string(), z.unknown()).optional(),
+    vercelGatewayRouting: z.record(z.string(), z.unknown()).optional(),
+    zaiToolStream: z.boolean().optional(),
+    supportsStrictMode: z.boolean().optional(),
+    cacheControlFormat: z.literal('anthropic').optional(),
+    sendSessionAffinityHeaders: z.boolean().optional(),
+    supportsLongCacheRetention: z.boolean().optional(),
+    sendSessionIdHeader: z.boolean().optional(),
+    supportsEagerToolInputStreaming: z.boolean().optional(),
+  })
+  .strict();
+
 const PiSdkChatConfigSchema = z.object({
   provider: NonEmptyTrimmedStringSchema.optional(),
-  api: NonEmptyTrimmedStringSchema.optional(),
+  api: PiSdkApiSchema.optional(),
   apiKey: NonEmptyTrimmedStringSchema.optional(),
   authHeader: z.boolean().optional(),
   baseUrl: NonEmptyTrimmedStringSchema.optional(),
@@ -227,13 +265,13 @@ const PiSdkChatConfigSchema = z.object({
     .optional(),
   cost: z
     .object({
-      input: z.number().optional(),
-      output: z.number().optional(),
-      cacheRead: z.number().optional(),
-      cacheWrite: z.number().optional(),
+      input: z.number().min(0).optional(),
+      output: z.number().min(0).optional(),
+      cacheRead: z.number().min(0).optional(),
+      cacheWrite: z.number().min(0).optional(),
     })
     .optional(),
-  compat: z.record(z.string(), z.unknown()).optional(),
+  compat: PiSdkCompatSchema.optional(),
   temperature: z.number().min(0).max(2).optional(),
   maxToolIterations: z.number().int().min(1).optional(),
   compaction: z
@@ -485,7 +523,9 @@ export const AgentConfigSchema = RawAgentConfigSchema.transform((value) => {
                 ...(config.reasoning !== undefined ? { reasoning: config.reasoning } : {}),
                 ...(config.input !== undefined ? { input: config.input } : {}),
                 ...(config.cost !== undefined ? { cost: config.cost } : {}),
-                ...(config.compat !== undefined ? { compat: config.compat } : {}),
+                ...(config.compat !== undefined
+                  ? { compat: config.compat as PiSdkChatConfig['compat'] }
+                  : {}),
                 ...(config.temperature !== undefined ? { temperature: config.temperature } : {}),
                 ...(config.maxToolIterations !== undefined
                   ? { maxToolIterations: config.maxToolIterations }

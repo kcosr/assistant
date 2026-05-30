@@ -83,10 +83,42 @@ vi.mock('@earendil-works/pi-agent-core', async () => {
 
 vi.mock('./llm/piSdkProvider', async () => {
   const actual = await vi.importActual<typeof import('./llm/piSdkProvider')>('./llm/piSdkProvider');
+  const resolvePiSdkModel = vi.fn();
+  const resolvePiSdkRuntimeModel = vi.fn(
+    async (options: {
+      modelSpec: string;
+      config?: {
+        provider?: string;
+        apiKey?: string;
+        headers?: Record<string, string>;
+        authHeader?: boolean;
+      };
+    }) => {
+      const resolved = await resolvePiSdkModel({
+        modelSpec: options.modelSpec,
+        ...(options.config?.provider ? { defaultProvider: options.config.provider } : {}),
+      });
+      const headers =
+        options.config?.authHeader && options.config.apiKey
+          ? { ...(options.config.headers ?? {}), Authorization: `Bearer ${options.config.apiKey}` }
+          : options.config?.headers;
+      return {
+        ...resolved,
+        runtimeModel: {
+          ...resolved.model,
+          ...(headers ? { headers } : {}),
+        },
+        providerMatchesConfig: true,
+        ...(options.config?.apiKey ? { apiKey: options.config.apiKey } : {}),
+        ...(headers ? { headers } : {}),
+      };
+    },
+  );
   return {
     ...actual,
     runPiSdkChatCompletionIteration: vi.fn(),
-    resolvePiSdkModel: vi.fn(),
+    resolvePiSdkModel,
+    resolvePiSdkRuntimeModel,
     extractAssistantTextBlocksFromPiMessage: vi.fn(
       (message: { content?: Array<Record<string, unknown>> } | undefined) => {
         const content = Array.isArray(message?.content) ? message.content : [];
